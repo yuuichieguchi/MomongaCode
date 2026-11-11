@@ -1,4 +1,4 @@
-import { protectedSetFor } from '@momonga/foundation';
+import { protectedSetFor, verdictSubjectOf } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
 import { askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
@@ -8,18 +8,9 @@ import { describeWitness, isMismatch } from './report.ts';
 import type { Finding, VerificationReport } from './report.ts';
 import type { VerifyRequest } from './verify.ts';
 
-export type RuleVerifyInput = Pick<VerifyRequest, 'rules' | 'roots' | 'mode' | 'home' | 'cwd' | 'enforcement' | 'protectedSet' | 'secretLocations'>;
+export type RuleVerifyInput = Pick<VerifyRequest, 'rules' | 'roots' | 'mode' | 'home' | 'cwd' | 'exemptDirectory' | 'enforcement' | 'protectedSet' | 'secretLocations'>;
 
-export const ruleVerifyInputOf = ({ rules, roots, mode, home, cwd, enforcement, protectedSet, secretLocations }: RuleVerifyInput): RuleVerifyInput => ({
-  rules,
-  roots,
-  mode,
-  home,
-  cwd,
-  enforcement,
-  protectedSet,
-  secretLocations,
-});
+export const ruleVerifyInputOf = (facts: RuleVerifyInput): RuleVerifyInput => verdictSubjectOf(facts);
 
 const refutationOf = (property: string, finding: Finding): RuleRefutation => ({
   property,

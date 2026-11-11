@@ -12,7 +12,7 @@ vi.setConfig({ testTimeout: HANG_GUARD_MS });
 const runningWorkerCount = (): number => (process.report.getReport() as unknown as { workers: unknown[] }).workers.length;
 
 const job: RuleVerifyJob = {
-  input: { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', cwd: '/work', enforcement: 'exact-paths', protectedSet: {} as never, secretLocations: [] },
+  input: { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', cwd: '/work', exemptDirectory: null, enforcement: 'exact-paths', protectedSet: {} as never, secretLocations: [] },
   solver: { kind: 'installed', entry: '/nowhere/z3.js' },
   solverVersion: 'z3 1',
   budgetMs: 60_000,
@@ -20,25 +20,29 @@ const job: RuleVerifyJob = {
 
 const REPLYING = `
 const { parentPort, workerData, isMainThread } = require('node:worker_threads');
-parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [String(isMainThread), workerData.input.cwd] } });
+parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [String(isMainThread), workerData.input.cwd] }, report: 'the report of the thread' });
 `;
 const BLOCKING_THEN_REPLYING = `
 const { parentPort, workerData } = require('node:worker_threads');
 Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400);
-parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] } });
+parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] }, report: '' });
 `;
 const REFUSING = `require('node:worker_threads').parentPort.postMessage({ ok: false, reason: 'the Z3 solver at /nowhere/z3.js cannot be used' });`;
 const THROWING = `throw new Error('no memory for the solver');`;
 const EXITING = `process.exit(3);`;
-const MALFORMED = `require('node:worker_threads').parentPort.postMessage({ ok: true, verdict: { verdict: 'certain' } });`;
+const MALFORMED = `require('node:worker_threads').parentPort.postMessage({ ok: true, verdict: { verdict: 'certain' }, report: '' });`;
+const WITHOUT_REPORT = `require('node:worker_threads').parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: 'z3 1', refuted: [], unknown: [], notProved: [] } });`;
 const SILENT = `setInterval(() => undefined, 1000);`;
 
-const unknownWith = (reason: string | RegExp) => ({ verdict: 'unknown', solver: 'z3 1', refuted: [], unknown: [{ property: 'verification', reason: typeof reason === 'string' ? reason : expect.stringMatching(reason) }], notProved: [] });
+const unknownWith = (reason: string | RegExp) => ({
+  verdict: { verdict: 'unknown', solver: 'z3 1', refuted: [], unknown: [{ property: 'verification', reason: typeof reason === 'string' ? reason : expect.stringMatching(reason) }], notProved: [] },
+  report: typeof reason === 'string' ? `The rules were not verified: ${reason}` : expect.stringMatching(/^The rules were not verified: /),
+});
 
 describe('a verification in its own thread', () => {
   it('gives the verdict of the thread, which is not the calling thread and receives the job', async () => {
-    const verdict = await verifyInThread({ code: REPLYING, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal);
-    expect(verdict).toEqual({ verdict: 'proved', solver: 'z3 1', refuted: [], unknown: [], notProved: ['false', '/work'] });
+    const verification = await verifyInThread({ code: REPLYING, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal);
+    expect(verification).toEqual({ verdict: { verdict: 'proved', solver: 'z3 1', refuted: [], unknown: [], notProved: ['false', '/work'] }, report: 'the report of the thread' });
     expect(runningWorkerCount()).toBe(0);
   });
 
@@ -69,6 +73,10 @@ describe('a verification in its own thread', () => {
 
   it('is unknown with the reason when the reply is not a verdict', async () => {
     expect(await verifyInThread({ code: MALFORMED, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal)).toEqual(unknownWith('the verification thread gave a reply that is not a verdict'));
+  });
+
+  it('is unknown with the reason when the reply has no report', async () => {
+    expect(await verifyInThread({ code: WITHOUT_REPORT, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal)).toEqual(unknownWith('the verification thread gave a reply that is not a verdict'));
   });
 
   it('is unknown with the reason when the job cannot be given to a thread', async () => {

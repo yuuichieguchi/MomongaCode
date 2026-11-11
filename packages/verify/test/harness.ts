@@ -63,6 +63,7 @@ export type VerifyOptions = {
   secretLocations?: readonly SecretLocation[];
   budgetMs?: number;
   roots?: readonly string[];
+  exemptDirectory?: string;
 };
 
 export const verifyScenario = async (api: Z3Engine['api'], layout: Layout, rules: readonly PermissionRule[], options: VerifyOptions = {}): Promise<VerificationReport> => {
@@ -77,7 +78,7 @@ export const verifyScenario = async (api: Z3Engine['api'], layout: Layout, rules
     protectedSet: await protectedSetFor(roots, fileSystem),
     fs: hostFilesystemOf(fileSystem),
     secretLocations: options.secretLocations ?? [sshLocation(layout)],
-    exemptDirectory: null,
+    exemptDirectory: options.exemptDirectory ?? null,
     enforcement: ruleEnforcementOf('none'),
     budgetMs: options.budgetMs ?? 120_000,
   });

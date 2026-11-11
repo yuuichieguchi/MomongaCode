@@ -1,10 +1,10 @@
 import path from 'node:path';
-import { nodeFileSystem, parseOutsideJson, protectedSetFor } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { mapAsync, nodeFileSystem, protectedSetFor, sha256Hex } from '@momonga/foundation';
+import type { MomongaPaths, VerdictSubject } from '@momonga/foundation';
 import { askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
-import type { RuleVerifierPort } from '../ports.ts';
+import type { RuleVerification, RuleVerifierPort } from '../ports.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { RULE_VERIFIER_THREAD_CODE } from './rule-verifier-thread-code.generated.ts';
 import { verifyInThread } from './rule-verifier-thread-client.ts';
@@ -24,23 +24,20 @@ export type RuleSolverSource = (paths: Pick<MomongaPaths, 'executables'>) => Rul
 
 export const RULE_VERIFY_LOAD_ALLOWANCE_MS = 10_000;
 
-const INSTALLED_PACKAGE = `${path.sep}node_modules${path.sep}z3-solver${path.sep}`;
+const INSTALLED_SOLVER_CODE: readonly string[] = ['z3-built.js', 'z3-built.wasm'];
 
-const installedVersionOf = async (entry: string): Promise<string> => {
-  const at = entry.lastIndexOf(INSTALLED_PACKAGE);
-  if (at < 0) throw new Error(`the Z3 solver at ${entry} is not inside a z3-solver package`);
-  const manifest: unknown = parseOutsideJson(new TextDecoder().decode(await nodeFileSystem.readFile(path.join(entry.slice(0, at + INSTALLED_PACKAGE.length), 'package.json'))));
-  if (typeof manifest !== 'object' || manifest === null || !('version' in manifest) || typeof manifest.version !== 'string') {
-    throw new Error(`the z3-solver package of ${entry} states no version`);
-  }
-  return `z3-solver ${manifest.version}`;
+const installedIdentityOf = async (entry: string): Promise<string> => {
+  const files = [entry, ...INSTALLED_SOLVER_CODE.map((name) => path.join(path.dirname(entry), name))];
+  const hashes = await mapAsync(files, async (file) => sha256Hex(await nodeFileSystem.readFile(file)));
+  return `z3 ${sha256Hex(JSON.stringify(hashes))}`;
 };
 
 export const installedRuleSolver = (from: string): RuleSolverHost => {
   const loadVerifier = (): Promise<VerifyModule> => import('@momonga/verify');
+  let identity: Promise<string> | undefined;
   return {
     loadVerifier,
-    solverVersion: async () => installedVersionOf((await loadVerifier()).resolveInstalledZ3(from)),
+    solverVersion: () => (identity ??= loadVerifier().then((verifier) => installedIdentityOf(verifier.resolveInstalledZ3(from)))),
     recipe: async (verifier) => ({ kind: 'installed', entry: verifier.resolveInstalledZ3(from) }),
   };
 };
@@ -54,9 +51,19 @@ export type RuleVerifierDeps = {
 
 export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers }: RuleVerifierDeps): RuleVerifierPort => {
   const prepared = new WeakSet<object>();
-  const preparedInput = (input: unknown): RuleVerifyInput => {
-    if (typeof input !== 'object' || input === null || !prepared.has(input)) throw new Error('the rule verifier was given an input it did not prepare');
+  const preparedInput = (input: VerdictSubject): RuleVerifyInput => {
+    if (!prepared.has(input)) throw new Error('the rule verifier was given an input it did not prepare');
     return input as RuleVerifyInput;
+  };
+  const report = async (input: VerdictSubject, signal: AbortSignal): Promise<RuleVerification> => {
+    const request = preparedInput(input);
+    signal.throwIfAborted();
+    const verifier = await host.loadVerifier();
+    return verifyInThread(
+      { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers, loadAllowanceMs: RULE_VERIFY_LOAD_ALLOWANCE_MS },
+      { input: request, solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS },
+      signal,
+    );
   };
   return {
     solverVersion: host.solverVersion,
@@ -70,15 +77,7 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers }
       prepared.add(input);
       return input;
     },
-    verify: async (input, signal) => {
-      const request = preparedInput(input);
-      signal.throwIfAborted();
-      const verifier = await host.loadVerifier();
-      return verifyInThread(
-        { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers, loadAllowanceMs: RULE_VERIFY_LOAD_ALLOWANCE_MS },
-        { input: request, solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS },
-        signal,
-      );
-    },
+    report,
+    verify: async (input, signal) => (await report(input, signal)).verdict,
   };
 };

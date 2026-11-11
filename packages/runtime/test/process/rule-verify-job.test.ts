@@ -3,7 +3,7 @@ import { runRuleVerifyJob } from '../../src/process/rule-verifier-thread.ts';
 import type { RuleVerifyJob } from '../../src/process/rule-verifier-thread.ts';
 
 const job: RuleVerifyJob = {
-  input: { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', cwd: '/work', enforcement: 'exact-paths', protectedSet: {} as never, secretLocations: [] },
+  input: { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', cwd: '/work', exemptDirectory: null, enforcement: 'exact-paths', protectedSet: {} as never, secretLocations: [] },
   solver: { kind: 'installed', entry: '/nowhere/z3.js' },
   solverVersion: 'z3 1',
   budgetMs: 60_000,

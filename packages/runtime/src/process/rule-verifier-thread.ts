@@ -18,7 +18,9 @@ export type RuleVerifyJob = {
   readonly budgetMs: number;
 };
 
-export type RuleVerifyReply = { readonly ok: true; readonly verdict: RuleVerdict } | { readonly ok: false; readonly reason: string };
+export type RuleVerification = { readonly verdict: RuleVerdict; readonly report: string };
+
+export type RuleVerifyReply = ({ readonly ok: true } & RuleVerification) | { readonly ok: false; readonly reason: string };
 
 const sourceOf = async (verifier: VerifyModule, recipe: RuleSolverRecipe): Promise<SolverSource> => {
   if (recipe.kind === 'installed') return { entry: recipe.entry };
@@ -36,13 +38,13 @@ const sourceOf = async (verifier: VerifyModule, recipe: RuleSolverRecipe): Promi
 
 export type RuleVerifyAbort = { readonly abort: string };
 
-export const runRuleVerifyJob = async (job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerdict> => {
+export const runRuleVerifyJob = async (job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerification> => {
   signal.throwIfAborted();
   const verifier = await import('@momonga/verify');
   const engine = await verifier.openZ3(await sourceOf(verifier, job.solver));
   try {
-    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createPolicyFilesystem(), exemptDirectory: null, budgetMs: job.budgetMs, signal });
-    return verifier.verdictOfReport(report, job.solverVersion);
+    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createPolicyFilesystem(), budgetMs: job.budgetMs, signal });
+    return { verdict: verifier.verdictOfReport(report, job.solverVersion), report: verifier.formatReport(report) };
   } finally {
     await engine.close();
   }
@@ -61,7 +63,7 @@ if (!isMainThread && parentPort !== null && isRuleVerifyJob(workerData)) {
   });
   const post = (reply: RuleVerifyReply): void => port.postMessage(reply);
   void runRuleVerifyJob(workerData, asker.signal).then(
-    (verdict) => post({ ok: true, verdict }),
+    (verification) => post({ ok: true, ...verification }),
     (error: unknown) => post({ ok: false, reason: error instanceof Error ? error.message : String(error) }),
   );
 }

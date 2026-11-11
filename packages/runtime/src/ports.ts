@@ -1,5 +1,5 @@
 import type { Lease, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
-import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement, SandboxNetworkSetting } from '@momonga/foundation';
+import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement, SandboxNetworkSetting, VerdictSubject } from '@momonga/foundation';
 import type {
   Capabilities,
   CompactRequest,
@@ -125,13 +125,17 @@ export type RuleVerifyRequest = {
   mode: PermissionMode;
   home: string;
   cwd: string;
+  exemptDirectory: string | null;
   enforcement: RuleEnforcement;
 };
 
+export type RuleVerification = { verdict: RuleVerdict; report: string };
+
 export type RuleVerifierPort = {
   solverVersion(): Promise<string>;
-  inputOf(request: RuleVerifyRequest, signal: AbortSignal): Promise<unknown>;
-  verify(input: unknown, signal: AbortSignal): Promise<RuleVerdict>;
+  inputOf(request: RuleVerifyRequest, signal: AbortSignal): Promise<VerdictSubject>;
+  verify(input: VerdictSubject, signal: AbortSignal): Promise<RuleVerdict>;
+  report(input: VerdictSubject, signal: AbortSignal): Promise<RuleVerification>;
 };
 
 export type ToolRuntimePort = {

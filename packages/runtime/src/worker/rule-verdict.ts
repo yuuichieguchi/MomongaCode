@@ -1,5 +1,5 @@
 import type { PermissionRule } from '@momonga/config';
-import { ruleFingerprint } from '@momonga/foundation';
+import { verdictKey } from '@momonga/foundation';
 import type { RuleEnforcement } from '@momonga/foundation';
 import { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, isFinalRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from '@momonga/protocol';
 import type { PinnedRuleVerdict, RuleVerdict, RunEventPayload, RunState } from '@momonga/protocol';
@@ -11,11 +11,9 @@ import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
 import type { WorkerOptions } from './types.ts';
 
-export { ruleFingerprint };
-
 export type RuleVerdictSources = { options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier'>; control: Pick<ClaimControl, 'signal' | 'recordingRaised' | 'fail'> };
 
-export type RuleSetFacts = { rules: readonly PermissionRule[]; roots: readonly string[]; enforcement: RuleEnforcement };
+export type RuleSetFacts = { rules: readonly PermissionRule[]; roots: readonly string[]; exemptDirectory: string; enforcement: RuleEnforcement };
 
 type Undecided = { verdict: RuleVerdict; retry: Promise<void> | undefined };
 
@@ -31,8 +29,11 @@ const undecidedOf = (verifier: RuleVerifierPort): Map<string, Undecided> => {
 
 export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, session: HeldSession, facts: RuleSetFacts): Promise<PinnedRuleVerdict> => {
   const verifier: RuleVerifierPort = options.ruleVerifier;
-  const input = await verifier.inputOf({ rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, enforcement: facts.enforcement }, control.signal);
-  const fingerprint = ruleFingerprint({ input, solverVersion: await verifier.solverVersion() });
+  const input = await verifier.inputOf(
+    { rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, exemptDirectory: facts.exemptDirectory, enforcement: facts.enforcement },
+    control.signal,
+  );
+  const fingerprint = verdictKey(input, await verifier.solverVersion());
   const stored = options.store.ruleVerdicts.get(fingerprint);
   if (stored !== undefined) return { fingerprint, ...stored.verdict };
   const undecided = undecidedOf(verifier);
@@ -69,7 +70,7 @@ export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: 
   try {
     const rules = await permissionRulesFor(options, session);
     const policy = await options.tools.policyFor(session, { env: sources.env, rules, readableDirectories: sources.readableDirectories, ruleEnforcement: held.ruleEnforcement, signal: control.signal });
-    return await ruleVerdictFor(sources, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
+    return await ruleVerdictFor(sources, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement });
   } finally {
     held.done();
   }

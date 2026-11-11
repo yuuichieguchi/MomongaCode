@@ -19,7 +19,7 @@ export const createFakeRuleVerifier = (): FakeRuleVerifier => {
     },
     inputOf: async (request) => {
       fake.requests.push(request);
-      return { ...request, rules: request.rules.map((rule) => ({ text: rule.text, effect: rule.effect })), protectedSet: [], secretLocations: [] };
+      return { ...request, rules: request.rules.map((rule) => ({ text: rule.text, effect: rule.effect })), protectedSet: { paths: [], lexicalPaths: [], literals: [] }, secretLocations: [] };
     },
     verify: async (input, signal) => {
       fake.verified.push(input);
@@ -27,6 +27,7 @@ export const createFakeRuleVerifier = (): FakeRuleVerifier => {
       answered.push(answer);
       return answer;
     },
+    report: async (input, signal) => ({ verdict: await fake.verify(input, signal), report: 'the report of the fake verifier' }),
   };
   return fake;
 };

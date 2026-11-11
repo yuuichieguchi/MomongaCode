@@ -61,9 +61,9 @@ describe('the verdict of a verification report', () => {
 });
 
 describe('the input a verdict is stored under', () => {
-  it('holds the verified facts and nothing of the way they were verified', () => {
-    const facts = { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', cwd: '/work', enforcement: 'exact-paths', protectedSet: { paths: [] }, secretLocations: [] };
-    const given = { ...facts, fs: { canonicalise: () => undefined }, budgetMs: 5, exemptDirectory: null, clock: { now: () => 0 } };
+  it('holds the verified facts, the exempt scratch folder included and each root once, and nothing of the way they were verified', () => {
+    const facts = { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', cwd: '/work', exemptDirectory: '/home/u/.momonga/tmp/sessions/s1', enforcement: 'exact-paths', protectedSet: { paths: [] }, secretLocations: [] };
+    const given = { ...facts, roots: ['/work', '/work'], fs: { canonicalise: () => undefined }, budgetMs: 5, clock: { now: () => 0 } };
     expect(ruleVerifyInputOf(given as never)).toEqual(facts);
   });
 });

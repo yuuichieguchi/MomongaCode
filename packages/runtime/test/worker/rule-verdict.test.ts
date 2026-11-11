@@ -2,7 +2,6 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { POLICY_REFUTED_CODE, policyRefutedMessage } from '@momonga/protocol';
 import type { RuleVerdict } from '@momonga/protocol';
-import { ruleFingerprint } from '../../src/worker/rule-verdict.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -92,6 +91,16 @@ describe('the verdict of the permission rules before a run', () => {
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'run.started')[0]?.pins['policyVerdict']).toEqual({ fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/), ...proved });
     expect(env.ruleVerifier.verified).toHaveLength(1);
+  });
+
+  it('the verified subject names the scratch folder the session exempts from the file rules, so the proof models what the run does', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(textStep('Hello.'));
+    env.enqueue('Say hello');
+
+    await env.runOnce(env.worker());
+
+    expect(env.ruleVerifier.requests[0]?.exemptDirectory).toBe(env.sessionTmpDir);
   });
 
   it('a second run with the same input reads the stored verdict and does not call the verifier', async () => {
@@ -258,25 +267,5 @@ describe('the verdict of the permission rules before a run', () => {
     expect(verdictEvents(env, run.id)).toHaveLength(1);
     expect(verdictEvents(env, run.id)[0]).toMatchObject({ level: 'info' });
     expect(env.ruleVerifier.verified).toHaveLength(2);
-  });
-});
-
-describe('the fingerprint of a rule set', () => {
-  const base = { input: { rules: [{ text: 'Read(.env)', effect: 'deny' }], roots: ['/work'], mode: 'manual', home: '/home/u', cwd: '/work', enforcement: 'exact-paths', protectedSet: { paths: ['/work/.git'] }, secretLocations: ['/home/u/.ssh'] }, solverVersion: SOLVER };
-
-  it('is the same for the same input whatever the key order', () => {
-    const reordered = { solverVersion: SOLVER, input: Object.fromEntries(Object.entries(base.input).reverse()) };
-    expect(ruleFingerprint(reordered)).toBe(ruleFingerprint(base));
-  });
-
-  it.each(Object.keys(base.input).map((field) => [field] as const))('changes when %s changes', (field) => {
-    for (const suffix of ['x', ' ', '/more']) {
-      const changed = { ...base, input: { ...base.input, [field]: `${JSON.stringify(base.input[field as keyof typeof base.input])}${suffix}` } };
-      expect(ruleFingerprint(changed)).not.toBe(ruleFingerprint(base));
-    }
-  });
-
-  it('changes when the solver version changes', () => {
-    expect(ruleFingerprint({ ...base, solverVersion: 'fake-solver 2' })).not.toBe(ruleFingerprint(base));
   });
 });
