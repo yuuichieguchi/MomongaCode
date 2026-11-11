@@ -27,7 +27,7 @@ import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_NOT_ENFORCED, NETWORK_RULE_SU
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { escapePointerSegment } from './json-file.ts';
 import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
+import type { RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -60,6 +60,7 @@ export type ResolvedSettings = {
   sandboxNetwork: SandboxNetworkSetting;
   sandboxUnixSockets: ResolvedSandboxUnixSockets;
   telemetry?: TelemetrySettings;
+  retention?: RetentionSettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   limits?: LimitsSettings;
@@ -264,6 +265,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
       sandboxNetwork,
       sandboxUnixSockets,
       telemetry,
+      retention,
       network,
       pricing,
       limits,
@@ -318,6 +320,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (sandboxNetwork !== undefined) merged.sandboxNetwork = sandboxNetwork;
     if (sandboxUnixSockets !== undefined) unixSockets = { source: layer.source, allow: sandboxUnixSockets.allow ?? [] };
     if (telemetry !== undefined) merged.telemetry = telemetry;
+    if (retention !== undefined) merged.retention = retention;
     if (network !== undefined) merged.network = network;
     if (pricing !== undefined) merged.pricing = pricing;
     if (limits !== undefined) merged.limits = limits;

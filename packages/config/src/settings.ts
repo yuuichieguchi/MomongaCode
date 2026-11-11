@@ -316,15 +316,22 @@ export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platfo
 
 export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
 
-export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean; contentRetentionDays?: number };
+export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean };
 
-export type ResolvedTelemetrySettings = { captureMessageContent: boolean; contentRetentionDays: number };
-
-export const DEFAULT_CONTENT_RETENTION_DAYS = 30;
+export type ResolvedTelemetrySettings = { captureMessageContent: boolean };
 
 export const resolveTelemetrySettings = (settings: TelemetrySettings | undefined): ResolvedTelemetrySettings => ({
   captureMessageContent: settings?.captureMessageContent === true,
-  contentRetentionDays: settings?.contentRetentionDays ?? DEFAULT_CONTENT_RETENTION_DAYS,
+});
+
+export type RetentionSettings = { days?: number };
+
+export type ResolvedRetentionSettings = { days: number };
+
+export const DEFAULT_RETENTION_DAYS = 30;
+
+export const resolveRetentionSettings = (settings: RetentionSettings | undefined): ResolvedRetentionSettings => ({
+  days: settings?.days ?? DEFAULT_RETENTION_DAYS,
 });
 
 export type PriceEntrySettings = {
@@ -416,6 +423,7 @@ export type Settings = {
   sandboxNetwork?: SandboxNetworkSetting;
   sandboxUnixSockets?: SandboxUnixSocketsSettings;
   telemetry?: TelemetrySettings;
+  retention?: RetentionSettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   limits?: LimitsSettings;
@@ -468,19 +476,22 @@ const assertNotHttpSse = (server: unknown, source: string, name: string): void =
   }
 };
 
-const OLD_MODEL_KEYS: Readonly<Record<string, string>> = {
-  targets: 'models.targets is not a setting any more; declare each server under models.connections with its models (see README, Models).',
-  aliases: 'models.aliases is not a setting any more; list the models to try after the model in models.fallback and choose the first with models.start (see README, Models).',
-};
+const RETIRED_KEYS: ReadonlyArray<{ readonly path: readonly [string, string]; readonly sentence: string }> = [
+  { path: ['models', 'targets'], sentence: 'models.targets is not a setting any more; declare each server under models.connections with its models (see README, Models).' },
+  { path: ['models', 'aliases'], sentence: 'models.aliases is not a setting any more; list the models to try after the model in models.fallback and choose the first with models.start (see README, Models).' },
+  { path: ['telemetry', 'contentRetentionDays'], sentence: 'telemetry.contentRetentionDays is not a setting any more; set retention.days in the user settings, the one retention period of every store.' },
+];
 
 const OLD_BILLING_SCOPE_KEY = 'alias';
 
-const assertNoOldModelKeys = (value: unknown, source: string): void => {
-  const models = isRecord(value) ? value['models'] : undefined;
-  if (!isRecord(models)) return;
-  for (const [key, sentence] of Object.entries(OLD_MODEL_KEYS)) {
-    if (Object.hasOwn(models, key)) throw new ConfigError(`${source}: ${sentence}`);
+const assertNoRetiredKeys = (value: unknown, source: string): void => {
+  if (!isRecord(value)) return;
+  for (const { path: [object, key], sentence } of RETIRED_KEYS) {
+    const holder = value[object];
+    if (isRecord(holder) && Object.hasOwn(holder, key)) throw new ConfigError(`${source}: ${sentence}`);
   }
+  const models = value['models'];
+  if (!isRecord(models)) return;
   const changes = models['billingChanges'];
   if (!Array.isArray(changes)) return;
   changes.forEach((change, index) => {
@@ -536,7 +547,7 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   if (isRecord(value) && isRecord(value['mcpServers'])) {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
-  assertNoOldModelKeys(value, source);
+  assertNoRetiredKeys(value, source);
   assertPlanAdapters(value, source);
   assertStopValues(value, source);
   assertMcpConnectTimeout(value, source);

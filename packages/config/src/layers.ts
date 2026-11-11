@@ -119,6 +119,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.telemetry;
   }
 
+  if (settings.retention !== undefined) {
+    warnings.push(`${source}: retention is only honored in user settings; discarded`);
+    delete restricted.retention;
+  }
+
   if (settings.network !== undefined) {
     warnings.push(`${source}: network is only honored in user settings; discarded`);
     delete restricted.network;

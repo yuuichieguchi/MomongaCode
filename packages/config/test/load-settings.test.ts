@@ -33,6 +33,7 @@ describe('SETTINGS_SCHEMA', () => {
         'operations',
         'permissions',
         'pricing',
+        'retention',
         'runtime',
         'sandbox',
         'sandboxNetwork',
