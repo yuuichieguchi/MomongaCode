@@ -357,14 +357,14 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   listExhausted: db.prepare(`SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER}`),
   exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
-  unshownPendingRuns: db.prepare(
-    `SELECT DISTINCT a.run_id AS run_id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
-     WHERE a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
-     ORDER BY a.run_id`,
+  pendingPermissionRequests: db.prepare(
+    `SELECT e.* FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.status = 'pending' AND a.kind = 'permission'
+     ORDER BY a.run_id, e.seq`,
   ),
-  unshownPendingOfRun: db.prepare(
-    `SELECT a.id AS id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
-     WHERE a.run_id = :runId AND a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
+  pendingPermissionRequestsOfRun: db.prepare(
+    `SELECT e.* FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.run_id = :runId AND a.status = 'pending' AND a.kind = 'permission'
      ORDER BY e.seq`,
   ),
   listSweeperOwned: db.prepare(
@@ -535,6 +535,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     observeDecode(rows);
     return decodeRunEvents(rows, decodeContext);
   };
+
+  const unshownRequestsOf = (rows: readonly Row[]): { runId: string; approvalId: string }[] =>
+    decodeEvents(rows).flatMap((event) => (event.type === 'tool.permission.requested' && event.shown === undefined ? [{ runId: event.runId, approvalId: event.approvalId }] : []));
 
   const decodeKnownEvents = (rows: readonly Row[]): (RunEvent | SessionEvent)[] => {
     observeDecode(rows);
@@ -1874,11 +1877,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     reaskUnshownApprovals: async (onError) => {
       const reasked: string[] = [];
-      for (const row of sql.unshownPendingRuns.all()) {
-        const runId = readerFor('approvals', 'unshown', row).string('run_id');
+      const unshownRuns = [...new Set(unshownRequestsOf(sql.pendingPermissionRequests.all()).map((request) => request.runId))];
+      for (const runId of unshownRuns) {
         try {
           const didReask = await derivedReads.write({ runTree: runId }, () => {
-            const ids = sql.unshownPendingOfRun.all({ runId }).map((entry) => readerFor('approvals', runId, entry).string('id'));
+            const ids = unshownRequestsOf(sql.pendingPermissionRequestsOfRun.all({ runId })).map((request) => request.approvalId);
             if (ids.length === 0) return false;
             const events = ids.map((id) => {
               const approval = approvalOps.store.get(id);
