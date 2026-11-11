@@ -52,7 +52,7 @@ describe('the gateway process wires the settings file into its managed server st
       timers: createFakeTimers(clock),
       logger: createJsonLogger({ service: 'gateway', clock, stream: { write: () => true } }),
     });
-    const managed = servedOptions.find((options) => options.target === 'system');
+    const managed = servedOptions.find((options) => options.target === 'apple/system');
     expect(managed).toBeDefined();
     expect(managed?.readStopGraceMs()).toBe(700);
     writeSettings(home, settingsWith(1500));

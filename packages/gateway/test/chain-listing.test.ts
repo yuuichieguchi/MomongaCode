@@ -115,7 +115,7 @@ describe('rule M: a managed server that lists another id than its entry is never
     const key = fmRecordKey('cd'.repeat(32), '25A100');
     await saveProbeRecord(probeRecordDir, key, { ...makeReport(1, 1), modelId: 'renamed-by-the-server' }, FM_CURRENCY);
     const managed = await createManagedTarget({
-      ...fmTargetBase('system'),
+      ...fmTargetBase('apple'),
       server: idleServer,
       binary: '/opt/fake/fm',
       exec: async () => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
@@ -124,7 +124,9 @@ describe('rule M: a managed server that lists another id than its entry is never
       toolCallingSetting: 'native',
       declaredModel: 'system',
     });
-    const refusal = await managed.capabilities({ name: 'apple/system', display: 'system', model: 'system' }, undefined).then(
+    const asked = { name: 'apple/system', display: 'system', model: 'system' };
+    await managed.capabilities(asked, undefined);
+    const refusal = await managed.upstreamModel(asked, new AbortController().signal).then(
       () => undefined,
       (error: unknown) => error as { status: number; body: Record<string, unknown> },
     );
@@ -133,7 +135,7 @@ describe('rule M: a managed server that lists another id than its entry is never
       type: 'invalid_request',
       code: MODEL_ID_CHANGED_CODE,
       param: 'model',
-      message: 'The server of system lists "renamed-by-the-server", not "system". Run /models add to add the model it serves now.',
+      message: 'The server apple of the model apple/system lists "renamed-by-the-server", not "system". Run /models add to add the model it serves now.',
     });
   });
 });
