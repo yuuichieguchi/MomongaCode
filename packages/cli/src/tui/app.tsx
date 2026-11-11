@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
-import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, NO_MODEL_CONNECTED_TEXT, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, PLAN_DISABLED_STATE } from '@momonga/protocol';
+import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
 import type { ChainCapabilities, ImageAttachment, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -150,7 +150,7 @@ const PROMPT_CONTEXTS: readonly KeyContext[] = ['select', 'viewer', 'chat'];
 
 type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'welcome' } | { kind: 'unconnected' } | { kind: 'ready' };
 
-const NO_MODEL_NOTE = NO_MODEL_CONNECTED_TEXT;
+const NO_MODEL_NOTE = messageOf('noModelConnected', 'tui');
 const RESUBMIT_NOTICE = 'Signed in again. Retrying your last prompt.';
 
 const PLAN_BLOCK_CODES: ReadonlySet<string> = new Set([PLAN_USE_NOT_ENABLED_CODE, PLAN_NOT_ELIGIBLE_CODE]);

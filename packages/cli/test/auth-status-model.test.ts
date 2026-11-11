@@ -1,3 +1,4 @@
+import { messageOf } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import type { MomongaModelList } from '@momonga/protocol';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
@@ -33,6 +34,6 @@ describe('momonga auth status names the model new sessions start with', () => {
   it('says that no model is connected when the gateway lists none', async () => {
     const status = await statusOf({ object: 'list', data: [], start: null, roles: {} }, { json: false });
 
-    expect(status.text.trimEnd().split('\n').at(-1)).toBe('model: none (No model is connected. Use /login to connect one.)');
+    expect(status.text.trimEnd().split('\n').at(-1)).toBe(`model: none (${messageOf('noModelConnected', 'cli')})`);
   });
 });

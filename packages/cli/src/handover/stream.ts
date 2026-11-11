@@ -4,6 +4,7 @@ import type { CliPorts } from '../ports.ts';
 import type { OutputFormat } from '../run/output-format.ts';
 import type { Mover, MoveSurface } from './mover.ts';
 import { HANDOVER_FORMAT, recordFileOf } from './record.ts';
+import { SURFACE_OF_KIND } from './texts.ts';
 
 export type StreamMove = { mover: Pick<Mover, 'attach' | 'check'>; kind: 'attach' | 'headless'; recordFile(session: string): string };
 
@@ -30,6 +31,8 @@ export type StreamFacts = {
 };
 
 export const streamSurface = (facts: StreamFacts): MoveSurface => ({
+  surface: SURFACE_OF_KIND[facts.move.kind],
+  kept: () => ({ kind: 'run', runId: facts.runId }),
   recordFile: () => {
     const session = facts.session();
     return session === undefined ? undefined : facts.move.recordFile(session);

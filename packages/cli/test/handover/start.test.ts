@@ -58,7 +58,7 @@ describe('the start of a process that was handed a session (16.6, red test 27)',
     const started = takeHandoverStart([HANDOVER_FLAG, FILE], {}, reading({ [FILE]: textOf(RECORD) })).started;
     expect(adoptionOf(undefined, ['attach'])).toEqual({ kind: 'none' });
     expect(adoptionOf(started, ['attach', 'headless'])).toEqual({ kind: 'record', record: RECORD, file: FILE });
-    expect(adoptionOf(started, ['tui'])).toEqual({ kind: 'refused', reason: 'the record is of an attach session', session: 'session-1', terminal: undefined });
+    expect(adoptionOf(started, ['tui'])).toEqual({ kind: 'refused', reason: 'the record is of an attach session', kept: { kind: 'run', runId: 'run-1' }, terminal: undefined });
   });
 });
 
@@ -118,20 +118,20 @@ const refusalIo = () => {
 describe('a new process that does not adopt (M3, red tests 17 and 25)', () => {
   it('restores exactly the modes of the value, then prints the message, and writes nothing else', () => {
     const { io, log } = refusalIo();
-    const code = refuseStart(io, { reason: 'the record is not JSON', session: 'session-1', terminal: { screen: 'fullscreen', modes: ['alt-screen', 'kitty-keys'] } });
+    const code = refuseStart(io, { reason: 'the record is not JSON', kept: { kind: 'unnamed' }, terminal: { screen: 'fullscreen', modes: ['alt-screen', 'kitty-keys'] } });
     expect(code).toBe(1);
-    expect(log).toEqual([`terminal:${leaveSequenceOf(['alt-screen', 'kitty-keys'])}`, 'raw:false', `stderr:momonga: ${restoreRefusedText({ reason: 'the record is not JSON', session: 'session-1' })}\n`]);
+    expect(log).toEqual([`terminal:${leaveSequenceOf(['alt-screen', 'kitty-keys'])}`, 'raw:false', `stderr:momonga: ${restoreRefusedText({ reason: 'the record is not JSON', kept: { kind: 'unnamed' } })}\n`]);
   });
 
   it('leaves every mode of the table when the value was lost', () => {
     const { io, log } = refusalIo();
-    refuseStart(io, { reason: 'the record is not JSON', session: 'session-1', terminal: undefined });
+    refuseStart(io, { reason: 'the record is not JSON', kept: { kind: 'unnamed' }, terminal: undefined });
     expect(log.slice(0, 2)).toEqual([`terminal:${LEAVE_EVERY_MODE}`, 'raw:false']);
   });
 
   it('writes no sequence for a client without a screen', () => {
     const { io, log } = refusalIo();
-    refuseStart({ stderr: io.stderr }, { reason: 'the record is not JSON', session: 'session-1', terminal: undefined });
-    expect(log).toEqual([`stderr:momonga: ${restoreRefusedText({ reason: 'the record is not JSON', session: 'session-1' })}\n`]);
+    refuseStart({ stderr: io.stderr }, { reason: 'the record is not JSON', kept: { kind: 'unnamed' }, terminal: undefined });
+    expect(log).toEqual([`stderr:momonga: ${restoreRefusedText({ reason: 'the record is not JSON', kept: { kind: 'unnamed' } })}\n`]);
   });
 });
