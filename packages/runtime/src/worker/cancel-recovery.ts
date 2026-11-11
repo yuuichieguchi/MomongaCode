@@ -3,7 +3,7 @@ import type { RunState } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim, Run } from '@momonga/store';
 import type { HeldSession } from './known.ts';
-import type { AbandonTarget, ResultOutcome, ToolCall } from '@momonga/tools';
+import type { AbandonOutcome, AbandonTarget, ResultOutcome, ToolCall } from '@momonga/tools';
 import type { ClaimControl } from './claim-control.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { heldLinkOf, stepOfCall } from './held-calls.ts';
@@ -157,9 +157,10 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
   if (control.shuttingDown()) throw new ShutdownError();
 
   const targets: AbandonTarget[] = unsettled.flatMap((call) => (call.idemKey === undefined ? [] : [{ callId: call.callId, idemKey: call.idemKey }]));
+  const abandoned = new Map<string, AbandonOutcome>();
   if (targets.length > 0) {
     try {
-      await options.tools.executor.abandon(targets, { signal: control.recoverySignal });
+      for (const outcome of await options.tools.executor.abandon(targets, { signal: control.recoverySignal })) abandoned.set(outcome.callId, outcome);
     } catch (error) {
       absorb(error);
     }
@@ -176,11 +177,14 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
     })),
     ...unsettled.map((call) => {
       const held = heldLinkOf(journal.state, call.callId);
+      const recorded = abandoned.get(call.callId);
       return {
         type: 'tool.reconciled' as const,
         callId: call.callId,
         outcome: 'unknown' as const,
         output: ABANDONED_OUTPUT,
+        ...(recorded?.command === undefined ? {} : { command: recorded.command }),
+        ...(recorded?.files === undefined ? {} : { files: recorded.files }),
         ...(held === undefined ? {} : { held }),
       };
     }),

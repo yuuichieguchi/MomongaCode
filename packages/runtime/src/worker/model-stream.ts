@@ -1,7 +1,8 @@
 import { isFatalStoreError } from '@momonga/store';
 import type { NewBilledDetail, CallTiming, CreateResponseBody, ModelCost, PlanAccountRef, ResponseResource, StreamEvent, UnpricedOutcome, Usage } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
-import { carriesOutput, planAccountRefOf, reportedCachedTokensOf } from '@momonga/protocol';
+import { MODEL_COST_SCHEMA, carriesOutput, planAccountRefOf, reportedCachedTokensOf } from '@momonga/protocol';
+import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ClaimContext } from './claim-context.ts';
 import { streamAdmitted } from './admitted-request.ts';
 import type { AdmissionProof } from './admitted-request.ts';
@@ -107,8 +108,15 @@ export const cachedInputOf = (usage: Usage, extension: { cacheReadNotReported?: 
 
 export type BilledExtension = { cacheReadNotReported?: true; cacheWriteInputTokens?: number; cost?: ModelCost; unpriced?: UnpricedOutcome };
 
+const checkModelCost = defineProductSchema<ModelCost>('run-api/ModelCost', MODEL_COST_SCHEMA);
+
 export const priceOutcomeOf = (extension: BilledExtension | undefined): { cost: ModelCost } | { unpriced: UnpricedOutcome } | Record<string, never> => {
-  if (extension?.cost !== undefined) return { cost: extension.cost };
+  if (extension?.cost !== undefined) {
+    const verdict = checkModelCost(extension.cost);
+    return verdict.valid
+      ? { cost: verdict.value }
+      : { unpriced: { code: 'unpriceable_usage', reason: `the server replied with a cost that is not a valid price: ${productErrorsText(verdict.errors, 'cost')}` } };
+  }
   if (extension?.unpriced !== undefined) return { unpriced: extension.unpriced };
   return {};
 };

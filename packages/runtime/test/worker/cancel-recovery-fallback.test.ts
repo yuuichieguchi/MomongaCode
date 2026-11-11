@@ -493,4 +493,19 @@ describe('cancel recovery fallback', () => {
     expect(env.toolbox.reconciles).toEqual([keys[MARK.callId]]);
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: MARK.callId, outcome: 'already_applied' })]);
   });
+
+  it('an abandoned call carries the command and the written paths the executor recorded for it, and one without recorded facts carries none', async () => {
+    const env = await makeEnv();
+    const recorded = { callId: 'call_r_2', name: 'mcp__remote__run', args: { value: 'three' }, facts: { command: 'make deploy', files: [{ path: '/proj/out.txt', access: 'write' as const }] } };
+    const { run } = await seedStartedCalls(env, [recorded, REMOTE]);
+
+    await env.settled(env.runOnce(env.worker('worker-1')), 'the cancel recovery');
+
+    expect(env.run(run.id).status).toBe('CANCELLED');
+    const reconciled = env.ofType(run.id, 'tool.reconciled');
+    expect(reconciled.find((event) => event.callId === recorded.callId)).toMatchObject({ outcome: 'unknown', command: 'make deploy', files: [{ path: '/proj/out.txt', access: 'write' }] });
+    const bare = reconciled.find((event) => event.callId === REMOTE.callId);
+    expect(bare).not.toHaveProperty('command');
+    expect(bare).not.toHaveProperty('files');
+  });
 });
