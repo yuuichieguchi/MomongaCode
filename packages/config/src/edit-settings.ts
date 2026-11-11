@@ -2,6 +2,7 @@ import path from 'node:path';
 import { answeredNow, canonicalJson, isRecord, syncPaths, systemFileLockPorts } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { editUserSettings } from './edit-user-settings.ts';
+import { settingsWriterPorts } from './file-lock.ts';
 import { appendPermissionRule } from './append-rule.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { readJsonFile } from './json-file.ts';
@@ -153,7 +154,6 @@ export const editSettings = async (settingsPlace: SettingsPlace, layer: Settings
     return;
   }
   await editUserSettings(
-    settingsPlace.home,
     located.file,
     (document) => {
       const before = canonicalJson(document);
@@ -164,7 +164,7 @@ export const editSettings = async (settingsPlace: SettingsPlace, layer: Settings
       if (refusal !== undefined) throw new ConfigError(refusal);
       return true;
     },
-    options,
+    settingsWriterPorts(settingsPlace.home, options),
   );
 };
 

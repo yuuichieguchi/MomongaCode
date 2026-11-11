@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import * as config from '@momonga/config';
-import { ConfigError, PROJECT_MANDATE_FILE, loadProjectMandate } from '@momonga/config';
+import { ConfigError, PROJECT_MANDATE_FILE, editProjectMandate, loadProjectMandate, settingsFileLock, systemFileLockPorts } from '@momonga/config';
 import { distrusting, makeDir, makeTree, trusting, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
@@ -10,13 +9,8 @@ const signal = new AbortController().signal;
 
 type Edit = (document: Record<string, unknown>) => boolean;
 type Trust = { isTrusted(directory: string, signal: AbortSignal): boolean | Promise<boolean> };
-type EditProjectMandate = (projectDir: string, edit: Edit, options: { home: string; trust: Trust; signal: AbortSignal }) => Promise<void>;
 
-const editProjectMandate: EditProjectMandate = (projectDir, edit, options) => {
-  const exported = (config as Record<string, unknown>)['editProjectMandate'];
-  if (typeof exported !== 'function') throw new Error('@momonga/config does not export editProjectMandate (packages/config/src/edit-project-file.ts)');
-  return (exported as EditProjectMandate)(projectDir, edit, options);
-};
+const optionsOf = (tree: Tree, trust: Trust) => ({ trust, lock: settingsFileLock(tree.home), randomHex: systemFileLockPorts.randomHex, signal });
 
 const mandateFile = (tree: Tree): string => path.join(tree.project, PROJECT_MANDATE_FILE);
 
@@ -25,7 +19,7 @@ const setting = (values: Record<string, unknown>): Edit => (document) => {
   return true;
 };
 
-const trustedEdit = (tree: Tree, edit: Edit): Promise<void> => editProjectMandate(tree.project, edit, { home: tree.home, trust: trusting(tree), signal });
+const trustedEdit = (tree: Tree, edit: Edit): Promise<void> => editProjectMandate(tree.project, edit, optionsOf(tree, trusting(tree)));
 
 const DECLARED = { ask: ['GitPush(origin:release/*)'], deny: ['Bash(curl:*)'], until: ['npm test'], steps: 20 };
 
@@ -54,12 +48,12 @@ describe('editProjectMandate: the one writer of .momonga/mandate.json', () => {
         return false;
       },
     };
-    const refused = editProjectMandate(tree.project, setting(DECLARED), { home: tree.home, trust, signal });
+    const refused = editProjectMandate(tree.project, setting(DECLARED), optionsOf(tree, trust));
     await expect(refused).rejects.toBeInstanceOf(ConfigError);
     await expect(refused).rejects.toThrow(`${mandateFile(tree)}: the folder ${tree.project} is not trusted, so its mandate file is not written`);
     expect(asked).toEqual([tree.project]);
     expect(fs.existsSync(path.join(tree.project, '.momonga'))).toBe(false);
-    await expect(editProjectMandate(tree.project, setting(DECLARED), { home: tree.home, trust: distrusting(), signal })).rejects.toBeInstanceOf(ConfigError);
+    await expect(editProjectMandate(tree.project, setting(DECLARED), optionsOf(tree, distrusting()))).rejects.toBeInstanceOf(ConfigError);
   });
 
   it.each([

@@ -1,6 +1,7 @@
 import { isRecord } from '@momonga/foundation';
 import { editUserSettings } from './edit-user-settings.ts';
-import type { EditUserSettingsOptions } from './edit-user-settings.ts';
+import { settingsWriterPorts } from './file-lock.ts';
+import type { SettingsWriterOptions } from './file-lock.ts';
 import type { ResolvedTuiSettings } from './settings.ts';
 
 export const writeTuiSetting = async <Name extends keyof ResolvedTuiSettings>(
@@ -8,10 +9,9 @@ export const writeTuiSetting = async <Name extends keyof ResolvedTuiSettings>(
   settingsFile: string,
   name: Name,
   value: ResolvedTuiSettings[Name],
-  options: EditUserSettingsOptions,
+  options: SettingsWriterOptions,
 ): Promise<void> => {
   await editUserSettings(
-    home,
     settingsFile,
     (document) => {
       const existing = document['tui'];
@@ -20,6 +20,6 @@ export const writeTuiSetting = async <Name extends keyof ResolvedTuiSettings>(
       document['tui'] = { ...existing, [name]: value };
       return true;
     },
-    options,
+    settingsWriterPorts(home, options),
   );
 };

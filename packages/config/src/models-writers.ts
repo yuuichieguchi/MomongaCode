@@ -14,6 +14,7 @@ import {
 import type { ModelView, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { ConfigError } from './config-error.ts';
 import { editUserSettings } from './edit-user-settings.ts';
+import { settingsWriterPorts } from './file-lock.ts';
 import { userModelsOf } from './layers.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
 import { endpointKeyOf } from './probe-record-key.ts';
@@ -796,7 +797,6 @@ export type EditModelsSettingsOptions = { signal: AbortSignal; planProfiles?: Pl
 export const editModelsSettings = async (home: string, settingsFile: string, operations: ModelsOperations, options: EditModelsSettingsOptions): Promise<ModelsEditResult> => {
   let result: ModelsEditResult | undefined;
   await editUserSettings(
-    home,
     settingsFile,
     (document) => {
       const plan = planModelsEdit(document, operations, { kinds: SERVER_KINDS, home, ...(options.planProfiles === undefined ? {} : { planProfiles: options.planProfiles }) });
@@ -808,7 +808,7 @@ export const editModelsSettings = async (home: string, settingsFile: string, ope
       Object.assign(document, plan.document);
       return true;
     },
-    { signal: options.signal },
+    settingsWriterPorts(home, { signal: options.signal }),
   );
   if (result === undefined) throw new TypeError(`${settingsFile}: the settings writer ended without a result`);
   return result;
