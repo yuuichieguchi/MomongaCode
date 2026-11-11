@@ -53,6 +53,18 @@ const witnessedTerm: Term = ({ candidate }) => {
   return { name, passed: witnessed.k === 0, detail: `${witnessed.k} of ${witnessed.n} witnessed trials of the candidate duplicated an effect; the candidate must have none` };
 };
 
+const notRunTerm: Term = ({ baseline, candidate }) => {
+  const missing = [
+    ...(baseline.report.population?.notRun ?? []).map((entry) => `baseline ${entry.id} (${entry.reason})`),
+    ...(candidate.report.population?.notRun ?? []).map((entry) => `candidate ${entry.id} (${entry.reason})`),
+  ];
+  return {
+    name: 'notRun',
+    passed: missing.length === 0,
+    detail: missing.length === 0 ? 'every unit of both reports ran' : `${missing.length} unit(s) did not run, so the reports do not measure the whole suite: ${missing.join('; ')}`,
+  };
+};
+
 const taskUnits: KindRow['unitsOf'] = (report) =>
   unitsOrRefuse(report.tasks, 'per-task rows', 'benchmark').map((row) => ({ id: row.task, numerator: row.met, denominator: row.trials }));
 
@@ -112,7 +124,7 @@ export const compareReliability = (baseline: ReliabilityReport, candidate: Relia
   assertUnique(row, 'candidate', candidate);
   assertPaired(row, baseline, candidate);
   const pairing: Pairing = { baseline: before, candidate: after, seed: options.seed };
-  const checks = [answererTerm(before.harness, after.harness, row.requireModel), ...row.terms.map((term) => term(pairing))];
+  const checks = [answererTerm(before.harness, after.harness, row.requireModel), notRunTerm(pairing), ...row.terms.map((term) => term(pairing))];
   return { gateName: 'reliability', kind, baseline: before.harness, candidate: after.harness, gate: { passed: checks.every((check) => check.passed), checks } };
 };
 

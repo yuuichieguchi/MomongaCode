@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { AnsweredByView, Mandate, PermissionMode, PublicRunEvent, RunCostView, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, foldFacts } from '@momonga/reliability';
-import type { FactsEvent, GroupKey, ReliabilityReport } from '@momonga/reliability';
+import type { FactsEvent, GroupKey, NotRun, ReliabilityReport } from '@momonga/reliability';
 import { BENCH_DEFAULT_RUNS, mandateOfTask, parseBenchmark, treeDigest } from './bench.ts';
 import type { BenchTask, Benchmark } from './bench.ts';
 import { gradeTrial } from './bench-grade.ts';
@@ -49,13 +49,11 @@ export type BenchRunPorts = {
   model: string;
   codeDigest: string;
   groupBy: GroupKey;
-  onTrial?(trial: { taskId: string; trial: number; met: boolean | 'invalid_setup' }): void;
+  onTrial?(trial: { taskId: string; trial: number; met: boolean | 'not_run' }): void;
   signal?: AbortSignal;
 };
 
-export type InvalidSetup = { taskId: string; trial: number };
-
-export type BenchRunResult = { report: ReliabilityReport; invalidSetup: InvalidSetup[] };
+export type BenchRunResult = { report: ReliabilityReport; trialsRun: number };
 
 type FoldedType = Exclude<(typeof FACTS_EVENT_TYPES)[number], 'run.started'>;
 
@@ -140,6 +138,25 @@ const inHome = async <T>(home: BenchTrialHome, work: () => Promise<T>): Promise<
   return result;
 };
 
+const SETUP_FAILED_REASON = 'its setup did not exit 0';
+
+type Attempt = { kind: 'ran'; outcome: Trial } | { kind: 'not_run'; reason: string };
+
+const attemptTrial = async (task: BenchTask, trial: number, repository: string, ports: BenchRunPorts): Promise<Attempt> => {
+  try {
+    const home = await ports.open(task, trial);
+    return await inHome(home, async (): Promise<Attempt> => {
+      await ports.files.cp(repository, home.cwd);
+      if (!(await setUp(task, home.cwd, ports.probe, ports.signal))) return { kind: 'not_run', reason: SETUP_FAILED_REASON };
+      ports.signal?.throwIfAborted();
+      return { kind: 'ran', outcome: await runTrial(task, repository, home.cwd, home.api, ports) };
+    });
+  } catch (error) {
+    if (ports.signal?.aborted === true) throw error;
+    return { kind: 'not_run', reason: error instanceof Error ? error.message : String(error) };
+  }
+};
+
 const verifiedRepositories = async (files: WorkspaceFiles, benchmark: Benchmark, root: string): Promise<Map<string, string>> => {
   const directories = new Map<string, string>();
   for (const task of benchmark.tasks) {
@@ -160,7 +177,7 @@ export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts):
   const benchmark = parseBenchmark(await ports.files.readTextFile(benchmarkFile), benchmarkFile);
   const repositories = await verifiedRepositories(ports.files, benchmark, path.dirname(path.resolve(benchmarkFile)));
   const trials: BenchmarkTrial[] = [];
-  const invalidSetup: InvalidSetup[] = [];
+  const notRun: NotRun[] = [];
   const answeredBy: AnsweredByView[] = [];
   let unrecordedAnswers = 0;
   for (const task of benchmark.tasks) {
@@ -168,18 +185,13 @@ export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts):
     if (repository === undefined) throw new EvalError(`task ${task.id} names the repository ${task.repository}, which was not verified`);
     for (let trial = 0; trial < (task.runs ?? BENCH_DEFAULT_RUNS); trial += 1) {
       ports.signal?.throwIfAborted();
-      const home = await ports.open(task, trial);
-      const outcome = await inHome(home, async () => {
-        await ports.files.cp(repository, home.cwd);
-        if (!(await setUp(task, home.cwd, ports.probe, ports.signal))) return undefined;
-        ports.signal?.throwIfAborted();
-        return runTrial(task, repository, home.cwd, home.api, ports);
-      });
-      if (outcome === undefined) {
-        invalidSetup.push({ taskId: task.id, trial });
-        ports.onTrial?.({ taskId: task.id, trial, met: 'invalid_setup' });
+      const attempt = await attemptTrial(task, trial, repository, ports);
+      if (attempt.kind === 'not_run') {
+        notRun.push({ id: `task ${task.id} trial ${trial}`, reason: attempt.reason });
+        ports.onTrial?.({ taskId: task.id, trial, met: 'not_run' });
         continue;
       }
+      const { outcome } = attempt;
       trials.push({ taskId: task.id, trial, facts: outcome.facts, children: outcome.children, costs: outcome.costs });
       answeredBy.push(...outcome.answeredBy);
       if (outcome.answeredBy.length === 0) unrecordedAnswers += 1;
@@ -187,7 +199,7 @@ export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts):
     }
   }
   return {
-    report: buildBenchmarkReport({ benchmark, trials, answeredBy, unrecordedAnswers, codeDigest: ports.codeDigest, groupBy: ports.groupBy }),
-    invalidSetup,
+    report: buildBenchmarkReport({ benchmark, trials, notRun, answeredBy, unrecordedAnswers, codeDigest: ports.codeDigest, groupBy: ports.groupBy }),
+    trialsRun: trials.length,
   };
 };

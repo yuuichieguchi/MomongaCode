@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { UserModels } from '@momonga/config';
 import { caseSettingsFor, failedWithCleanup, runBenchmark, validateBenchmark } from '@momonga/eval';
 import type { BenchProblem, BenchRunApi, BenchRunResult, TaskValidation, WorkspaceFiles, WorkspaceProbe } from '@momonga/eval';
-import { codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_OK, codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { MAIN_AGENT } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
@@ -178,7 +178,7 @@ const run = async (
 ): Promise<number> => {
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const models = await shellModelsOf(ports, options.interrupt);
-  const { report, invalidSetup } = await runBenchLive(hostEffects(ports, resolveLayoutLocks(paths).mechanism), {
+  const { report, trialsRun } = await runBenchLive(hostEffects(ports, resolveLayoutLocks(paths).mechanism), {
     benchmarkFile,
     model: pinnedModelOf(models, options.model),
     models,
@@ -194,8 +194,9 @@ const run = async (
   });
   if (options.report !== undefined) await ports.files.writeText(path.resolve(ports.cwd, options.report), encodeReliabilityReport(report));
   ports.stdout.write(formatReliabilityReport(report));
-  for (const entry of invalidSetup) ports.stdout.write(`invalid_setup: task ${entry.taskId} trial ${entry.trial} (excluded: its setup did not exit 0)\n`);
-  return 0;
+  if (trialsRun > 0) return EXIT_OK;
+  ports.stderr.write('no trial ran, so the report measures nothing\n');
+  return EXIT_FAILURE;
 };
 
 export const evaluateBench = async (
