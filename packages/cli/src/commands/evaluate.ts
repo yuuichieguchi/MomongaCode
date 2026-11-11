@@ -84,6 +84,7 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
         return { api, workspace: { cwd, env }, oracle: { base: base.path, probe: nodeWorkspaceProbe(env), files: ports.files }, close: async () => undefined };
       },
       ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
+      ...(interrupt === undefined ? {} : { signal: interrupt }),
     });
   } finally {
     await Promise.all(workspaces.map((workspace) => workspace.dispose()));
