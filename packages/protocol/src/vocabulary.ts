@@ -265,6 +265,7 @@ export type MessageInputs = {
   signInIdentityQuestion: [given: { readonly provider: string; readonly identity: string; readonly account: string }];
   signInIdentityNotConfirmed: [given: { readonly identity: string; readonly account: string; readonly command: string }];
   planRecordUnreadable: [given: { readonly account: string; readonly cause: string | undefined; readonly signInCommand: string }];
+  accountWithoutModel: [given: { readonly provider: string; readonly account: string }];
   serverFormNotOffered: [given: { readonly server: string; readonly platform: string; readonly accepted: readonly string[]; readonly offered: readonly string[] }];
 };
 
@@ -300,8 +301,16 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
     `The sign-in for ${given.identity} was not saved under the label ${given.account}, because the account was not confirmed. Run ${given.command} to sign in again${SIGN_IN_AGAIN_UNASKED[surface]}.`,
   planRecordUnreadable: (surface, given) =>
     `The saved record of ${given.account} cannot be read${given.cause === undefined ? '' : ` (${given.cause})`}. Run ${given.signInCommand} to replace it with a new sign-in, or ${forgetRecordCommand(surface, given.account)} to forget it on this computer; forgetting it does not revoke the session at the provider.`,
+  accountWithoutModel: (surface, given) => `No ${WORDS.model} uses this account yet. ${ACCOUNT_MODEL_STEP[surface](given)}`,
   serverFormNotOffered: (_surface, given) =>
     `the ${WORDS.server} ${JSON.stringify(given.server)} cannot be used on ${given.platform}: it accepts only the socket forms [${given.accepted.join(', ')}], and ${given.platform} offers [${given.offered.join(', ')}]`,
+};
+
+const ACCOUNT_MODEL_STEP: Readonly<Record<Surface, (given: { readonly provider: string; readonly account: string }) => string>> = {
+  cli: (given) => `Run ${WORDS.command} models catalog ${given.account} to list its ${WORDS.model}s, then ${ADD_MODEL_COMMAND} --plan ${given.provider} --account ${given.account} --model <${WORDS.ownName}> --yes to add one.`,
+  tui: () => `Use /model to choose one of its ${WORDS.model}s.`,
+  acp: (given) => ACCOUNT_MODEL_STEP.cli(given),
+  gateway: (given) => ACCOUNT_MODEL_STEP.cli(given),
 };
 
 const forgetRecordCommand = (surface: Surface, account: string): string => (surface === 'tui' ? TUI_SIGN_OUT_COMMAND : signOutCommand(account));

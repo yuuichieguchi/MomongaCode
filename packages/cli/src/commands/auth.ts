@@ -140,11 +140,15 @@ const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSig
       return [identityNotConfirmedLine('cli', { profile: profile.id, account }, answer.identity)];
     case PLAN_DISABLED_STATE:
       return planDisabledLines('cli', profile, answer.account.label);
-    case SIGNED_IN_OUTCOME:
+    case SIGNED_IN_OUTCOME: {
+      const inUse = answer.account.pinnedBy.length > 0;
       return [
         signedInLine(answer.account),
-        ...(answer.firstSignIn ? [profile.messages.firstSignIn.title, profile.messages.firstSignIn.body, `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`] : []),
+        ...(inUse ? [] : [messageOf('accountWithoutModel', 'cli', { provider: profile.id, account: answer.account.label })]),
+        ...(answer.firstSignIn && inUse ? [profile.messages.firstSignIn.title, profile.messages.firstSignIn.body] : []),
+        ...(answer.firstSignIn ? [`${profile.messages.manageUsageLabel}: ${profile.usageUrl}`] : []),
       ];
+    }
   }
 };
 
