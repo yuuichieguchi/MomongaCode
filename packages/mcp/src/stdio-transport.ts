@@ -6,17 +6,16 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type ReapTiming, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
+import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type ReapTiming, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
-export const DEFAULT_CLOSE_GRACE_MS = 2000;
 const NEWLINE = 0x0a;
 const CLOSE_REAP_OCCASION: RetryKind = 'shutdown';
 
 export type CloseGrace = number | (() => number);
 
-export const closeGraceOf = (grace: CloseGrace | undefined): number => (typeof grace === 'function' ? grace() : (grace ?? DEFAULT_CLOSE_GRACE_MS));
+export const closeGraceOf = (grace: CloseGrace | undefined): number => (typeof grace === 'function' ? grace() : (grace ?? SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.default));
 
 export type McpMarkerOptions = { dir: string; onWarning(message: string): void };
 

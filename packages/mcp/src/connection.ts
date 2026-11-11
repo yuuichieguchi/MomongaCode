@@ -157,9 +157,14 @@ const describeExit = (transport: ConnectionTransport): string | undefined => {
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const SHORTEST_CLOSE_LIMIT_MS = 1;
+const limitAlreadyEnded = (limitMs: number, label: string): OperationLimit => {
+  const ended = new AbortController();
+  ended.abort(new OperationLimitError(limitMs, label));
+  return { signal: ended.signal, dispose: () => undefined };
+};
 
-const closeLimitMsOf = (closeGraceMs: number): number => (closeGraceMs > 0 ? closeGraceMs : SHORTEST_CLOSE_LIMIT_MS);
+const closeLimitOf = (parent: AbortSignal, closeGraceMs: number, timers: McpTimers): OperationLimit =>
+  closeGraceMs === 0 ? limitAlreadyEnded(closeGraceMs, CLOSE_LIMIT_LABEL) : operationLimit(parent, closeGraceMs, CLOSE_LIMIT_LABEL, timers);
 
 const ownLimitOf = (limit: OperationLimit, parent: AbortSignal): OperationLimitError | undefined => {
   const reason: unknown = limit.signal.reason;
@@ -664,7 +669,7 @@ class ManagedConnection implements McpServerConnection {
 
   private async endSession(transport: ConnectionTransport, graceMs: number): Promise<void> {
     const close = new AbortController();
-    const limit = operationLimit(close.signal, closeLimitMsOf(graceMs), CLOSE_LIMIT_LABEL, this.timers);
+    const limit = closeLimitOf(close.signal, graceMs, this.timers);
     const scope = this.storeScopeUnder(limit.signal);
     try {
       await runInStoreScope(scope, () => settledOrAborted(transport.terminateSession(), limit.signal));

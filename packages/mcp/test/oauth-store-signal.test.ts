@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LOCK_TIMEOUT_MS, OperationLimitError, StoreCallEndedError, createFileCredentialStore } from '@momonga/foundation';
+import { DEFAULT_LOCK_TIMEOUT_MS, OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, createFileCredentialStore } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder } from '@momonga/testkit';
@@ -429,7 +429,7 @@ describe('a signed-in connection against its store after an operation was stoppe
   };
 
   it.for([
-    { title: 'the default of 2000 ms', closeGraceMs: undefined, graceMs: 2000 },
+    { title: 'the default of the setting', closeGraceMs: undefined, graceMs: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.default },
     { title: 'a configured 500 ms', closeGraceMs: 500, graceMs: 500 },
   ])('close with a store that hangs ends at the close grace and names the store call ($title)', async ({ closeGraceMs, graceMs }) => {
     const server = await signedInServer(closeGraceMs === undefined ? {} : { closeGraceMs });
