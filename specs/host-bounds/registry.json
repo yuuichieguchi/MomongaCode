@@ -343,8 +343,7 @@
       {"name":"MEMORY_TEXT_MAX_CHARS","file":"packages/tools/src/memory/constants.ts","lacks":["row"]},
       {"name":"MEMORY_TOOL_TIMEOUT_MS","file":"packages/tools/src/memory/constants.ts","lacks":["kind","row"]},
       {"name":"MAX_ASK_BYTES","file":"packages/tools/src/operations/git-credential.ts","lacks":["row"]},
-      {"name":"FIRST_BUDGET_CHARS","file":"packages/tools/src/paging.ts","lacks":["row"]},
-      {"name":"SHRINK_BUDGET_MS","file":"packages/verify/src/dialect-model/harness.ts","lacks":["kind","row"]}
+      {"name":"FIRST_BUDGET_CHARS","file":"packages/tools/src/paging.ts","lacks":["row"]}
     ],
     "literalBounds": {
       "packages/gateway/src/defaults.ts": 9,

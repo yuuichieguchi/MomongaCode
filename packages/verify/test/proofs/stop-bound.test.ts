@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { RUNTIME_ABORT_BUDGET_MS, groupTerminationBoundMs } from '@momonga/foundation';
 import { SANDBOX_KILL_GRACE_MS, SANDBOX_STOP_BOUND_MS } from '@momonga/sandbox';
 import { heldCallWaitMs } from '@momonga/tools';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
-import { expectRefuted, prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith, ProofInt } from '../support/proofs/arith.ts';
+import { expectRefuted, prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const RETIRED_KILL_WAIT_FLOOR_MS = 1000;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, REAP_POLL_INTERVAL_MS, managedServerStopBoundMs, gatewayMaxCloseMs, managedServerReapBoundMs, markerReapClockBoundMs, supervisorMaxCloseMs } from '@momonga/foundation';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
-import { prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith, ProofInt } from '../support/proofs/arith.ts';
+import { prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const MANAGED_STOP_WINDOWS = 4;

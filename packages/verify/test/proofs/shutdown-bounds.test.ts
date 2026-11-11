@@ -30,9 +30,9 @@ import {
 } from '@momonga/foundation';
 import type { StopValues as ProductStopValues } from '@momonga/foundation';
 import { resolveStartTiming, supervisorStartBoundMs } from '@momonga/supervisor';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
-import { expectRefuted, prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ProofArith, ProofInt } from '../support/proofs/arith.ts';
+import { expectRefuted, prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const constant = (arith: ProofArith, value: number): ProofInt => arith.ctx.Int.val(BigInt(value));

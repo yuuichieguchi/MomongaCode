@@ -137,8 +137,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/tools/src/ripgrep-locator.ts': { 'node:fs/promises': 3 },
   'packages/tools/src/timers.ts': { 'setTimeout': 1 },
   'packages/tools/src/work-tree-observer.ts': { 'node:child_process': 1, 'node:fs': 4 },
-  'packages/verify/src/dialect-model/gate.ts': { 'Date.now': 4 },
-  'packages/verify/src/dialect-model/harness.ts': { 'Date.now': 3 },
   'packages/verify/src/distribution-files.ts': { 'node:fs/promises': 2 },
 };
 

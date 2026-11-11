@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { DialectDefinition } from '@momonga/protocol';
 import { renderSchema } from '../../gateway/src/dialect/render.ts';
-import { resolveRules, type Definition } from '../src/dialect-model/definition.ts';
-import { checkCase, type CaseInput } from '../src/dialect-model/harness.ts';
-import type { Json } from '../src/dialect-model/json.ts';
-import { render } from '../src/dialect-model/render.ts';
+import { resolveRules, type Definition } from './support/dialect-model/definition.ts';
+import { checkCase, type CaseInput } from './support/dialect-model/harness.ts';
+import type { Json } from './support/dialect-model/json.ts';
+import { render } from './support/dialect-model/render.ts';
 
 const dropMinContains: Definition = { rules: [{ select: [{ kinds: ['any'] }], op: 'drop', keys: ['minContains'] }] };
 
