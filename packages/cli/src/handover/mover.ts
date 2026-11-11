@@ -69,8 +69,9 @@ export const createMover = (ports: MoverPorts): Mover => {
   };
 
   const replaceWith = async (on: MoveSurface, file: string, version: string, parties: HandoverRecordParties): Promise<void> => {
+    const record = on.snapshot(version);
     try {
-      const encoded = encodeRecord(on.snapshot(version), parties);
+      const encoded = encodeRecord(record, parties);
       if (encoded.kind !== 'fits') {
         on.resume();
         tooLarge(on, version);
@@ -87,8 +88,11 @@ export const createMover = (ports: MoverPorts): Mover => {
     }
     try {
       await ports.replace(ports.target(file, on.terminal()), {
-        release: () => {
-          on.release();
+        release: () => on.release(),
+        relayed: (childPid) => {
+          const named = encodeRecord(record, { ...parties, reader: childPid });
+          if (named.kind !== 'fits') throw new Error(`the record naming the relayed process ${childPid} is larger than 1 MiB`);
+          ports.write(file, named.text);
           ports.handOver(file);
         },
       });

@@ -40,6 +40,7 @@ const setup = (faults: Faults = {}) => {
       targets.push(target);
       if (faults.replace !== undefined) return Promise.reject(faults.replace);
       hooks.release();
+      hooks.relayed(5151);
       return new Promise(() => undefined);
     },
   });
@@ -72,7 +73,7 @@ const setup = (faults: Faults = {}) => {
   return { mover, log, written, targets, said, state };
 };
 
-const MOVE = ['snapshot', 'suspend', 'say', 'snapshot', 'write', 'replace', 'release', 'hand over'];
+const MOVE = ['snapshot', 'suspend', 'say', 'snapshot', 'write', 'replace', 'release', 'write', 'hand over'];
 
 const settled = async (): Promise<void> => {
   for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
@@ -98,8 +99,8 @@ describe('a session client moves at a quiet point (16.5, 16.8)', () => {
     await settled();
     expect(log).toEqual(MOVE);
     expect(said).toEqual([restartingText('1.2.4')]);
-    expect(written.map((entry) => entry.file)).toEqual([FILE]);
-    expect(parseRecord(written[0]?.text ?? '')).toEqual({ kind: 'record', record: recordFor('1.2.4') });
+    expect(written.map((entry) => entry.file)).toEqual([FILE, FILE]);
+    for (const entry of written) expect(parseRecord(entry.text)).toEqual({ kind: 'record', record: recordFor('1.2.4') });
     expect(targets).toEqual([{ file: '/opt/momonga', args: ['--handover', FILE], env: { MOMONGA_HANDOVER_TERMINAL: '{"screen":"fullscreen","modes":["alt-screen","kitty-keys"]}' } }]);
   });
 
@@ -186,11 +187,15 @@ describe('a move that fails (16.4, M4)', () => {
     expect(targets).toHaveLength(1);
   });
 
-  it('hands the hold of the record over when the process is released for the relay', async () => {
-    const { mover, log } = setup();
+  it('names the relayed child as the reader of the record, under the hold, and only then hands the hold over', async () => {
+    const { mover, log, written } = setup();
     void mover.learned('1.2.4');
     await settled();
-    expect(log.slice(-3)).toEqual(['replace', 'release', 'hand over']);
+    expect(log.slice(-4)).toEqual(['replace', 'release', 'write', 'hand over']);
+    expect(written.map(({ text }): unknown => JSON.parse(text))).toEqual([
+      expect.objectContaining({ pid: 4242, reader: 4242, namespace: 'single' }),
+      expect.objectContaining({ pid: 4242, reader: 5151, namespace: 'single' }),
+    ]);
   });
 
   it('stays, removes the record, says why and makes one attempt when the exec fails (red test 16)', async () => {

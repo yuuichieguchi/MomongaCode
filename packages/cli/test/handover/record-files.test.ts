@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { handoverLeftovers, handoverRecordOwner, isProcessAlive, momongaPaths, nodeFileSystem, pidNamespaceOf, sweepLeftovers } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { nodeRecordFiles } from '../../src/node-ports.ts';
+import { spawn } from 'node:child_process';
 import { createMover } from '../../src/handover/mover.ts';
+import { replaceProcess } from '../../src/handover/replace-process.ts';
+import type { RelayChild } from '../../src/handover/replace-process.ts';
 import { HANDOVER_FORMAT, encodeRecord, parseRecord, recordFileOf } from '../../src/handover/record.ts';
 import type { StreamRecord } from '../../src/handover/record.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -128,5 +131,70 @@ describe('a record belongs to one attached client', () => {
     expect(handoverRecordOwner(recordFiles.read(attach))).toBe(2);
     recordFiles.remove(attach);
     expect(fs.readdirSync(path.dirname(tui))).toEqual([]);
+  });
+});
+
+describe('P-323: a relayed record names the child as its reader', () => {
+  it('the sweep keeps the record while the relayed child lives, after the relay parent has handed its lock over, and removes it once the child is gone', async () => {
+    const paths = pathsOf();
+    const file = recordFileOf(paths, 'attach', 'session-1');
+    const namespace = await pidNamespaceOf(nodeFileSystem);
+    const children: RelayChild[] = [];
+    let childPid: number | undefined;
+    const spawned = new Promise<void>((resolve) => {
+      const mover = createMover({
+        version: '1.2.3',
+        parties: async () => ({ writer: process.pid, reader: process.pid, namespace }),
+        write: recordFiles.write,
+        remove: recordFiles.remove,
+        handOver: (handed) => {
+          recordFiles.handOver(handed);
+          resolve();
+        },
+        target: () => ({ file: process.execPath, args: ['-e', 'setInterval(() => undefined, 1000)'], env: {} }),
+        replace: (target, hooks) =>
+          replaceProcess(
+            target,
+            {
+              execve: undefined,
+              spawn: (command, args) => {
+                const child = spawn(command, args, { stdio: 'ignore' });
+                childPid = child.pid;
+                children.push(child);
+                return child;
+              },
+              exit: () => undefined,
+              onSignal: () => undefined,
+            },
+            hooks,
+          ),
+      });
+      mover.attach({
+        surface: 'cli',
+        kept: () => ({ kind: 'run', runId: RECORD.runId }),
+        recordFile: () => file,
+        quiet: () => true,
+        snapshot: () => RECORD,
+        terminal: () => undefined,
+        suspend: async () => undefined,
+        release: () => undefined,
+        resume: () => undefined,
+        say: () => undefined,
+      });
+      void mover.learned('1.2.4');
+    });
+    await spawned;
+    const child = children[0];
+    if (child === undefined || childPid === undefined) throw new Error('the relay started no child');
+    const ended = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+    try {
+      expect(JSON.parse(recordFiles.read(file))).toMatchObject({ pid: process.pid, reader: childPid, namespace });
+      expect((await sweep(paths)).removed).toEqual([]);
+      expect(fs.existsSync(file)).toBe(true);
+    } finally {
+      child.kill('SIGKILL');
+      await ended;
+    }
+    expect((await sweep(paths)).removed).toEqual([file]);
   });
 });

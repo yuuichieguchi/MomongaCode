@@ -33,7 +33,7 @@ if (role === 'new') {
     writeFileSync(recordFile, encoded.text);
     process.send?.('held');
     process.disconnect?.();
-    void replaceProcess({ file: process.execPath, args: [process.argv[1] ?? '', 'new', recordFile], env: process.env }, { ...hostReplace, execve: undefined }, { release: () => undefined });
+    void replaceProcess({ file: process.execPath, args: [process.argv[1] ?? '', 'new', recordFile], env: process.env }, { ...hostReplace, execve: undefined }, { release: () => undefined, relayed: () => undefined });
   });
   await answer(carried, 'old');
 }
