@@ -15,7 +15,7 @@ import type { ContextHostEffects, ContextRuntime, ContextLiveInput } from '../sr
 import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_MODEL, PLAN_TARGET, PRODUCT_WRITTEN_PLAN_CONNECTION, absentGatewaySocket, listingEntry, modelsFailureOn, serveModelsListing, productWrittenPlanModels } from './fake-models-listing.ts';
 import { userModelsOf } from './user-models.ts';
 import { ContextHostError } from '../src/eval/context-host.ts';
-import { KEYCHAIN_UNANSWERED_ADVICE, afterPendingIo, keychainFixture, outcomeOf, useLimitTimers } from './keychain-fixture.ts';
+import { KEYCHAIN_UNANSWERED_ADVICE, keychainFixture, outcomeOf, useLimitTimers, stillPendingAfter, settledAfter } from './keychain-fixture.ts';
 
 const AUTO_MODE_RUNS = 148;
 
@@ -315,11 +315,9 @@ describe('the credential phase of a check against a secret store that does not a
       await vi.advanceTimersByTimeAsync(FIRST_ANSWERS_AFTER_MS);
       firstAnswer.resolve();
       await keychain.arrived('find-generic-password', 2);
-      await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - FIRST_ANSWERS_AFTER_MS - 1);
-      await afterPendingIo();
-      expect(attempt.state()).toBe('pending');
+      await stillPendingAfter(attempt, COMMAND_LIMIT_MS - FIRST_ANSWERS_AFTER_MS - 1);
       await vi.advanceTimersByTimeAsync(1);
-      await afterPendingIo();
+      await settledAfter(attempt);
 
       expect(attempt.state()).toBe('rejected');
       expect(attempt.error()).toBeInstanceOf(ContextHostError);
