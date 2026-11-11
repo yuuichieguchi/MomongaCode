@@ -233,14 +233,19 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   let onWorkEnded: () => void = () => undefined;
   const stepsInFlight = (): number => workers.reduce((sum, { worker }) => sum + worker.claimsInFlight(), 0);
 
+  const abortOnLatchedFatal = (): void => {
+    if (fatalError === undefined) return;
+    if (phase === 'running') void abort();
+    else if (phase === 'draining') requestAbort();
+  };
+
   const latchFatal = (error: Error): void => {
     if (phase === 'closed') return;
     logger.error('runtime.fatal', { err: error });
     if (fatalError !== undefined) return;
     fatalError = error;
     resolveFatal(error);
-    if (phase === 'running') void abort();
-    else if (phase === 'draining') requestAbort();
+    abortOnLatchedFatal();
   };
 
   const report = (error: unknown): void => {
@@ -1069,6 +1074,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       announceReady(fields, stdout);
       logger.info('runtime ready');
       phase = 'running';
+      abortOnLatchedFatal();
       return fields;
     });
 
