@@ -159,7 +159,7 @@ export { createOperationTools } from './operations/runner.ts';
 export type { OperationDeps, OperationSettings } from './operations/runner.ts';
 export { createSandboxedArgvRunner, networkScopeOfDestinations } from './operations/argv.ts';
 export type { ArgvOptions, ArgvResult, ArgvRunner, ReconcileSandbox, SandboxedRunnerPorts } from './operations/argv.ts';
-export { createGitReader, resolveDestinations } from './operations/git-read.ts';
+export { createGitReader, resolveDestinations, resolveRepository } from './operations/git-read.ts';
 export type { Destinations, GitRead, GitReadOptions, GitReader } from './operations/git-read.ts';
 export { ForgeDescriptorError, loadForgeDescriptors, parseForgeDescriptor } from './forge/descriptor.ts';
 export type { ForgeDescriptor, ForgeOperationDescriptor } from './forge/descriptor.ts';

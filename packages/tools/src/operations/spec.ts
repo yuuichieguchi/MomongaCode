@@ -198,6 +198,20 @@ const boundInputs = (effect: ArgvCall | ForgeCall, require: readonly ClauseItem[
   return new Set([...fromEffect, ...clauses.flatMap((clause) => (isComparison(clause) ? clause.filter(isInputOperand) : []))]);
 };
 
+export const asksForge = (spec: Pick<OperationSpec, 'subject' | 'observe' | 'effect'>): boolean =>
+  spec.subject.kind === 'forge' || spec.observe.some((probe) => 'forge' in probe.via) || (spec.effect !== undefined && 'forge' in spec.effect);
+
+export const FORGE_REMOTE_INPUT = 'remote';
+
+const takesOptionalForgeRemote = (input: Record<string, unknown>): boolean => {
+  const properties = input['properties'];
+  const required = input['required'];
+  if (typeof properties !== 'object' || properties === null) return false;
+  const declared = (properties as Record<string, unknown>)[FORGE_REMOTE_INPUT];
+  const isString = typeof declared === 'object' && declared !== null && (declared as Record<string, unknown>)['type'] === 'string';
+  return isString && !(Array.isArray(required) && required.includes(FORGE_REMOTE_INPUT));
+};
+
 export const parseOperationSpec = (value: unknown): OperationSpec => {
   const verdict = validateSpec(value);
   if (!verdict.valid) {
@@ -218,6 +232,7 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
     const unbound = subjectInputs(spec.subject).find((reference) => !bound.has(reference));
     if (unbound !== undefined) throw new OperationSpecError(`${spec.name}: the approval names ${unbound}, which is neither an argument of the effect nor required against an observation`);
   }
+  if (asksForge(spec) && !takesOptionalForgeRemote(spec.input)) throw new OperationSpecError(`${spec.name} asks a forge and must take the optional string input ${FORGE_REMOTE_INPUT}, which names the remote whose forge is asked`);
   const ids = spec.observe.map((probe) => probe.id);
   if (new Set(ids).size !== ids.length) throw new OperationSpecError(`${spec.name} declares a probe id twice`);
   return { ...spec, input: withRefNameRule(spec.input), require: spec.require ?? [] };

@@ -1,3 +1,4 @@
+import { WORDS } from '@momonga/protocol';
 import type { ChildPorts } from '../ports.ts';
 import { readOnlyEnvironment } from '../read-only-call.ts';
 import { ToolExecutionError } from '../types.ts';
@@ -41,6 +42,13 @@ const urlsOf = async (read: GitReader, remote: string, direction: readonly strin
     .trim()
     .split('\n')
     .filter((line) => line !== '');
+};
+
+export const resolveRepository = async (read: GitReader, options: GitReadOptions): Promise<string> => {
+  const result = await read(['rev-parse', '--show-toplevel'], options);
+  const top = result.stdout.replace(/\r?\n$/, '');
+  if (result.exitCode !== 0 || top === '') throw new ToolExecutionError(`the ${WORDS.folder} ${options.cwd} is not inside a git repository, so there is no repository to act on`);
+  return top;
 };
 
 export const resolveDestinations = async (read: GitReader, remote: string, options: GitReadOptions): Promise<Destinations> => ({

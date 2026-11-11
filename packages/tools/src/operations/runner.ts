@@ -6,12 +6,12 @@ import type { ToolIdempotencyRecord } from '../ports.ts';
 import type { ForgeAccess } from '../forge/instances.ts';
 import { parseRemoteUrl } from '../forge/remote.ts';
 import { readOnlyEnvironment } from '../read-only-call.ts';
-import { resolveDestinations, sameList } from './git-read.ts';
+import { resolveDestinations, resolveRepository, sameList } from './git-read.ts';
 import type { Destinations, GitReader } from './git-read.ts';
 import type { ArgvRunner, RenderedNetwork } from './argv.ts';
 import type { GitHostCredential } from './git-credential.ts';
 import { OPERATION_SPECS } from './catalogue.ts';
-import { describeClause, evaluateClauses, failedClauses } from './spec.ts';
+import { FORGE_REMOTE_INPUT, asksForge, describeClause, evaluateClauses, failedClauses } from './spec.ts';
 import type { ArgvCall, ArgvItem, ForgeCall, Network, OperationSpec, Probe } from './spec.ts';
 import { isTruthy, lookup, lookupList, renderTemplate } from './template.ts';
 import type { Scope } from './template.ts';
@@ -34,6 +34,9 @@ const callOf = (idemKey: string, destination?: string): Record<string, string> =
 const remoteEnvironment = (env: Readonly<Record<string, string>>): Record<string, string> => ({ ...env, GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat', PAGER: 'cat' });
 
 const FORGE_REMOTE = 'forgeRemote';
+const REPO_ROOT = 'repoRoot';
+
+type Located = { repoRoot: string; forgeRemote?: string };
 
 const renderArgv = (items: readonly ArgvItem[], scope: Scope): string[] =>
   items.flatMap((item) => {
@@ -97,13 +100,16 @@ const flatten = (observation: Observation, prefix = ''): string[] =>
 
 type Runtime = { spec: OperationSpec; deps: OperationDeps };
 
-const usesForge = (spec: OperationSpec): boolean =>
-  spec.subject.kind === 'forge' || spec.observe.some((probe) => 'forge' in probe.via) || (spec.effect !== undefined && 'forge' in spec.effect);
+const forgeRemoteNameOf = (input: Record<string, unknown>): string => {
+  const named = input[FORGE_REMOTE_INPUT];
+  return typeof named === 'string' ? named : DEFAULT_REMOTE;
+};
 
-const resolveForgeRemote = async (runtime: Runtime, ctx: SubjectContext, call: GateCall): Promise<string> => {
-  const { fetch } = await resolveDestinations(runtime.deps.readGit, DEFAULT_REMOTE, { cwd: ctx.workingDirectory, env: call.env, signal: call.signal });
+const resolveForgeRemote = async (runtime: Runtime, input: Record<string, unknown>, repoRoot: string, call: GateCall): Promise<string> => {
+  const remote = forgeRemoteNameOf(input);
+  const { fetch } = await resolveDestinations(runtime.deps.readGit, remote, { cwd: repoRoot, env: call.env, signal: call.signal });
   const first = fetch[0];
-  if (first === undefined) throw new ToolExecutionError(`the repository has no remote named ${DEFAULT_REMOTE}`);
+  if (first === undefined) throw new ToolExecutionError(`the repository has no remote named ${remote}`);
   return first;
 };
 
@@ -118,10 +124,10 @@ const extractOf = (stdout: string, mode: 'trim' | 'firstField' | undefined): str
   return mode === 'firstField' ? (text.split(/\s+/)[0] ?? '') : text;
 };
 
-const observeArgv = async (runtime: Runtime, via: Extract<Probe['via'], { argv: unknown }>, ctx: ReconcileContext, scope: Scope): Promise<string | undefined> => {
+const observeArgv = async (runtime: Runtime, via: Extract<Probe['via'], { argv: unknown }>, ctx: ReconcileContext, scope: Scope, repoRoot: string): Promise<string | undefined> => {
   const network = renderNetwork(via.network, scope);
   const result = await runtime.deps.runArgv(renderArgv(via.argv, scope), {
-    cwd: ctx.session.cwd,
+    cwd: repoRoot,
     env: network === 'none' ? readOnlyEnvironment(ctx.env) : remoteEnvironment(ctx.env),
     signal: ctx.signal,
     network,
@@ -135,21 +141,21 @@ const observeArgv = async (runtime: Runtime, via: Extract<Probe['via'], { argv: 
 
 const AGREEMENT_LOST = 'mixed';
 
-const observeEach = async (runtime: Runtime, via: Extract<Probe['via'], { argv: unknown }>, ctx: ReconcileContext, scope: Scope): Promise<string | undefined> => {
+const observeEach = async (runtime: Runtime, via: Extract<Probe['via'], { argv: unknown }>, ctx: ReconcileContext, scope: Scope, repoRoot: string): Promise<string | undefined> => {
   const urls = recordedPushUrls(scope);
   if (urls.length === 0) throw new ToolExecutionError(`${runtime.spec.name} observes each push destination but none is recorded`);
   const values: Array<string | undefined> = [];
   for (const url of urls) {
     const input = scope['input'];
-    values.push(await observeArgv(runtime, via, ctx, { ...scope, input, call: callOf(ctx.idemKey, url) }));
+    values.push(await observeArgv(runtime, via, ctx, { ...scope, input, call: callOf(ctx.idemKey, url) }, repoRoot));
   }
   if (values.some((value) => value === undefined)) return undefined;
   return new Set(values).size === 1 ? (values[0] as string) : AGREEMENT_LOST;
 };
 
-const observeProbe = async (runtime: Runtime, probe: Probe, ctx: ReconcileContext, scope: Scope): Promise<unknown> => {
+const observeProbe = async (runtime: Runtime, probe: Probe, ctx: ReconcileContext, scope: Scope, repoRoot: string): Promise<unknown> => {
   const via = probe.via;
-  if ('argv' in via) return via.each === undefined ? observeArgv(runtime, via, ctx, scope) : observeEach(runtime, via, ctx, scope);
+  if ('argv' in via) return via.each === undefined ? observeArgv(runtime, via, ctx, scope, repoRoot) : observeEach(runtime, via, ctx, scope, repoRoot);
   const answer = await runtime.deps.forge.request({
     remoteUrl: forgeRemoteOf(scope),
     operation: via.forge,
@@ -176,25 +182,31 @@ const placesOf = (runtime: Runtime): string => (fetchesFrom(runtime) ? 'fetch so
 
 const reachedOf = (runtime: Runtime, destinations: Destinations): string[] => (fetchesFrom(runtime) ? destinations.fetch.slice(0, 1) : destinations.push);
 
-const destinationsOf = async (runtime: Runtime, input: Record<string, unknown>, ctx: SubjectContext, call: GateCall): Promise<string[] | undefined> => {
+const destinationsOf = async (runtime: Runtime, input: Record<string, unknown>, repoRoot: string, call: GateCall): Promise<string[] | undefined> => {
   const remote = remoteNameOf(runtime, input);
-  return remote === undefined ? undefined : reachedOf(runtime, await resolveDestinations(runtime.deps.readGit, remote, { cwd: ctx.workingDirectory, env: call.env, signal: call.signal }));
+  return remote === undefined ? undefined : reachedOf(runtime, await resolveDestinations(runtime.deps.readGit, remote, { cwd: repoRoot, env: call.env, signal: call.signal }));
 };
 
 const GATE_PUSH = 'pushUrls';
 const GATE_FETCH = 'fetchUrls';
 
 const gateFactsOf = async (runtime: Runtime, input: Record<string, unknown>, ctx: SubjectContext, call: GateCall): Promise<GateFacts> => {
-  const forge = usesForge(runtime.spec) ? { [FORGE_REMOTE]: await resolveForgeRemote(runtime, ctx, call) } : {};
+  const repoRoot = await resolveRepository(runtime.deps.readGit, { cwd: ctx.cwd, env: call.env, signal: call.signal });
+  const located = { [REPO_ROOT]: repoRoot, ...(asksForge(runtime.spec) ? { [FORGE_REMOTE]: await resolveForgeRemote(runtime, input, repoRoot, call) } : {}) };
   const remote = remoteNameOf(runtime, input);
-  if (remote === undefined) return forge;
-  const destinations = await resolveDestinations(runtime.deps.readGit, remote, { cwd: ctx.workingDirectory, env: call.env, signal: call.signal });
-  return { ...forge, [GATE_PUSH]: reachedOf(runtime, destinations), [GATE_FETCH]: destinations.fetch };
+  if (remote === undefined) return located;
+  const destinations = await resolveDestinations(runtime.deps.readGit, remote, { cwd: repoRoot, env: call.env, signal: call.signal });
+  return { ...located, [GATE_PUSH]: reachedOf(runtime, destinations), [GATE_FETCH]: destinations.fetch };
 };
 
-type Recorded = { forgeRemote?: string | undefined };
+const locatedOf = (name: string, source: Record<string, unknown> | undefined): Located => {
+  const repoRoot = source?.[REPO_ROOT];
+  if (typeof repoRoot !== 'string') throw new ToolExecutionError(`${name} was started without the repository its permission was decided on`);
+  const forgeRemote = source?.[FORGE_REMOTE];
+  return { repoRoot, ...(typeof forgeRemote === 'string' ? { forgeRemote } : {}) };
+};
 
-const observe = async (runtime: Runtime, ctx: ReconcileContext, input: Record<string, unknown>, before: Observation | undefined, recorded: Recorded, destinations?: string[]): Promise<Observation> => {
+const observe = async (runtime: Runtime, ctx: ReconcileContext, input: Record<string, unknown>, before: Observation | undefined, recorded: Located, destinations?: string[]): Promise<Observation> => {
   const observed: Observation = {};
   if (destinations !== undefined) observed[PUSH_URLS] = destinations;
   for (const probe of runtime.spec.observe) {
@@ -205,13 +217,13 @@ const observe = async (runtime: Runtime, ctx: ReconcileContext, input: Record<st
       ...(destinations === undefined ? {} : { [PUSH_URLS]: destinations }),
       ...(recorded.forgeRemote === undefined ? {} : { [FORGE_REMOTE]: recorded.forgeRemote }),
     };
-    const value = await observeProbe(runtime, probe, ctx, scope);
+    const value = await observeProbe(runtime, probe, ctx, scope, recorded.repoRoot);
     if (value !== undefined) observed[probe.id] = value;
   }
   return observed;
 };
 
-const scopeOf = (ctx: ReconcileContext, input: Record<string, unknown>, before: Observation | undefined, after: Observation | undefined, recorded: Recorded = {}): Scope => ({
+const scopeOf = (ctx: ReconcileContext, input: Record<string, unknown>, before: Observation | undefined, after: Observation | undefined, recorded: Pick<Located, 'forgeRemote'> = {}): Scope => ({
   input,
   call: callOf(ctx.idemKey),
   ...(recorded.forgeRemote === undefined ? {} : { [FORGE_REMOTE]: recorded.forgeRemote }),
@@ -228,12 +240,10 @@ const targetOf = (runtime: Runtime, scope: Scope): string => {
 
 const reportOf = (runtime: Runtime, scope: Scope): string => renderTemplate(runtime.spec.report, scope);
 
-const recordedOf = (prepared: Record<string, unknown>): Recorded => (typeof prepared[FORGE_REMOTE] === 'string' ? { forgeRemote: prepared[FORGE_REMOTE] } : {});
-
-const readPrepared = (record: ToolIdempotencyRecord): { before: Observation; recorded: Recorded } => {
+const readPrepared = (name: string, record: ToolIdempotencyRecord): { before: Observation; recorded: Located } => {
   const prepared: unknown = record.meta['prepared'];
   if (!isRecord(prepared) || !isRecord(prepared['before'])) throw new ToolExecutionError('the interrupted call has no recorded observation to compare with');
-  return { before: prepared['before'], recorded: recordedOf(prepared) };
+  return { before: prepared['before'], recorded: locatedOf(name, prepared) };
 };
 
 const settledResult = (runtime: Runtime, scope: Scope, outcome: 'applied' | 'already_applied'): ToolResult => ({
@@ -248,11 +258,11 @@ const failedResult = (runtime: Runtime, scope: Scope, reason: string, observed: 
   effect: { operation: runtime.spec.name, target: targetOf(runtime, scope), outcome: 'failed' },
 });
 
-const runEffect = async (runtime: Runtime, effect: ArgvCall | ForgeCall, ctx: ToolContext, scope: Scope): Promise<string | undefined> => {
+const runEffect = async (runtime: Runtime, effect: ArgvCall | ForgeCall, ctx: ToolContext, scope: Scope, repoRoot: string): Promise<string | undefined> => {
   if ('argv' in effect) {
     const network = renderNetwork(effect.network, scope);
     const result = await runtime.deps.runArgv(renderArgv(effect.argv, scope), {
-      cwd: ctx.session.cwd,
+      cwd: repoRoot,
       env: remoteEnvironment(ctx.env),
       signal: ctx.signal,
       network,
@@ -275,18 +285,17 @@ const runEffect = async (runtime: Runtime, effect: ArgvCall | ForgeCall, ctx: To
 const executeOperation = async (runtime: Runtime, input: Record<string, unknown>, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult> => {
   const { spec } = runtime;
   const call: GateCall = { signal: ctx.signal, env: ctx.env };
+  const recorded = locatedOf(spec.name, prepared);
   if (spec.effect === undefined) {
-    const located: Recorded = usesForge(spec) ? { forgeRemote: await resolveForgeRemote(runtime, ctx, call) } : {};
-    const after = await observe(runtime, ctx, input, undefined, located);
+    const after = await observe(runtime, ctx, input, undefined, recorded);
     return { status: 'completed', output: reportOf(runtime, scopeOf(ctx, input, undefined, after)) };
   }
   if (prepared === undefined || !isRecord(prepared['before'])) throw new ToolExecutionError(`${spec.name} was started without a recorded observation`);
   const before = prepared['before'];
-  const recorded = recordedOf(prepared);
   const beforeScope = scopeOf(ctx, input, before, before, recorded);
   const approved = before[PUSH_URLS];
   if (Array.isArray(approved)) {
-    const current = (await destinationsOf(runtime, input, ctx, call)) ?? [];
+    const current = (await destinationsOf(runtime, input, recorded.repoRoot, call)) ?? [];
     if (!sameList(approved, current)) return failedResult(runtime, beforeScope, `the ${placesOf(runtime)} changed after the approval, so nothing was sent: approved ${JSON.stringify(approved)}, now ${JSON.stringify(current)}`, undefined);
   }
   if (spec.require.length > 0) {
@@ -299,7 +308,7 @@ const executeOperation = async (runtime: Runtime, input: Record<string, unknown>
   const effectScope = scopeOf(ctx, input, before, undefined, recorded);
   let effectProblem: string | undefined;
   try {
-    effectProblem = await runEffect(runtime, spec.effect, ctx, effectScope);
+    effectProblem = await runEffect(runtime, spec.effect, ctx, effectScope, recorded.repoRoot);
   } catch (error) {
     effectProblem = error instanceof Error ? error.message : String(error);
   }
@@ -312,7 +321,7 @@ const executeOperation = async (runtime: Runtime, input: Record<string, unknown>
 const reconcileOperation = async (runtime: Runtime, input: Record<string, unknown>, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult> => {
   const { spec } = runtime;
   if (record.authorisedAt === undefined) return { outcome: 'not_applied', output: '' };
-  const { before, recorded } = readPrepared(record);
+  const { before, recorded } = readPrepared(spec.name, record);
   const after = await observe(runtime, ctx, input, before, recorded);
   const scope = scopeOf(ctx, input, before, after, recorded);
   const effectOf = (outcome: OperationEffect['outcome']): OperationEffect => ({ operation: spec.name, target: targetOf(runtime, scope), outcome });
@@ -326,8 +335,8 @@ const reconcileOperation = async (runtime: Runtime, input: Record<string, unknow
   };
 };
 
-const approvedDestinations = async (runtime: Runtime, input: Record<string, unknown>, ctx: ToolContext, gateFacts: Record<string, unknown> | undefined): Promise<string[] | undefined> => {
-  const current = await destinationsOf(runtime, input, ctx, { signal: ctx.signal, env: ctx.env });
+const approvedDestinations = async (runtime: Runtime, input: Record<string, unknown>, ctx: ToolContext, repoRoot: string, gateFacts: Record<string, unknown> | undefined): Promise<string[] | undefined> => {
+  const current = await destinationsOf(runtime, input, repoRoot, { signal: ctx.signal, env: ctx.env });
   if (current === undefined) return undefined;
   const approved = stringList(gateFacts?.[GATE_PUSH]);
   if (approved === undefined) throw new ToolExecutionError(`${runtime.spec.name} was started without the ${placesOf(runtime)} its permission was decided on`);
@@ -393,19 +402,26 @@ const toolOf = (spec: OperationSpec, deps: OperationDeps): AnyTool => {
     subject: (input: Record<string, unknown>, _ctx: SubjectContext, gateFacts?: GateFacts): PermissionSubject => subjectOf(runtime, input, gateFacts),
     execute: (input: Record<string, unknown>, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult> => executeOperation(runtime, input, ctx, prepared),
   };
+  const locate = async (input: Record<string, unknown>, ctx: ToolContext, gateFacts: Record<string, unknown> | undefined): Promise<{ facts: Record<string, unknown>; located: Located }> => {
+    const facts = gateFacts ?? (await gateFactsOf(runtime, input, ctx, { signal: ctx.signal, env: ctx.env }));
+    return { facts, located: locatedOf(spec.name, facts) };
+  };
   if (spec.sideEffect === 'read_only') {
-    return defineTool<Record<string, unknown>>({ ...body, sideEffect: 'read_only' });
+    return defineTool<Record<string, unknown>>({
+      ...body,
+      sideEffect: 'read_only',
+      prepare: async (input: Record<string, unknown>, ctx: ToolContext, gateFacts?: Record<string, unknown>): Promise<Record<string, unknown>> => ({ ...(await locate(input, ctx, gateFacts)).located }),
+    });
   }
   const stateful = {
     ...body,
     sideEffect: spec.sideEffect,
     subjectKind: spec.subject.kind,
     prepare: async (input: Record<string, unknown>, ctx: ToolContext, gateFacts?: Record<string, unknown>): Promise<Record<string, unknown>> => {
-      const facts = gateFacts ?? (await gateFactsOf(runtime, input, ctx, { signal: ctx.signal, env: ctx.env }));
-      const approved = await approvedDestinations(runtime, input, ctx, facts);
-      const forgeRemote = typeof facts[FORGE_REMOTE] === 'string' ? facts[FORGE_REMOTE] : undefined;
-      const before = await observe(runtime, ctx, input, undefined, { forgeRemote }, approved);
-      return { before, observedAt: ctx.clock.now(), ...(forgeRemote === undefined ? {} : { [FORGE_REMOTE]: forgeRemote }) };
+      const { facts, located } = await locate(input, ctx, gateFacts);
+      const approved = await approvedDestinations(runtime, input, ctx, located.repoRoot, facts);
+      const before = await observe(runtime, ctx, input, undefined, located, approved);
+      return { before, observedAt: ctx.clock.now(), ...located };
     },
     reconcile: (input: Record<string, unknown>, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult> => reconcileOperation(runtime, input, record, ctx),
   };

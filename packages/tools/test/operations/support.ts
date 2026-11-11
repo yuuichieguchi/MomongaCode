@@ -86,7 +86,7 @@ export const remoteSha = (world: GitWorld, ref: string): string => {
   return out === '' ? ZERO : (out.split(/\s+/)[0] as string);
 };
 
-export type CountingRunner = { run: ArgvRunner; calls: Array<readonly string[]>; environments: Array<Readonly<Record<string, string>>> };
+export type CountingRunner = { run: ArgvRunner; calls: Array<readonly string[]>; environments: Array<Readonly<Record<string, string>>>; directories: string[] };
 
 const execArgv = (argv: readonly string[], cwd: string, env: Readonly<Record<string, string>>, signal: AbortSignal): Promise<{ exitCode: number; stdout: string; stderr: string }> =>
   new Promise((resolve) => {
@@ -100,8 +100,10 @@ const execArgv = (argv: readonly string[], cwd: string, env: Readonly<Record<str
 export const countingRunner = (): CountingRunner => {
   const calls: Array<readonly string[]> = [];
   const environments: Array<Readonly<Record<string, string>>> = [];
+  const directories: string[] = [];
   const run: ArgvRunner = async (argv, options) => {
     calls.push([...argv]);
+    directories.push(options.cwd);
     const credentials = options.credentials ?? [];
     if (credentials.length === 0) {
       environments.push(options.env);
@@ -117,7 +119,7 @@ export const countingRunner = (): CountingRunner => {
       await channel.close();
     }
   };
-  return { run, calls, environments };
+  return { run, calls, environments, directories };
 };
 
 export const TEST_FETCH: ForgeFetch = (url, { boundMs: _boundMs, ...init }) => fetch(url, init);
