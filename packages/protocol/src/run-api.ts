@@ -117,9 +117,8 @@ const inboxPending: JsonSchema = { type: 'array', items: inboxRowView, maxItems:
 const inboxChangeRow = closed({ id: string, delivery: storedEnumOf(INBOX_DELIVERIES), state: storedEnumOf(INBOX_STATES), seq: { type: 'integer', minimum: 1 } }, ['id', 'delivery', 'state', 'seq']);
 
 export const base64ByteLength = (data: string): number => {
-  if (data.length % 4 !== 0) throw new RangeError(`base64 data of ${data.length} characters is not ${BASE64_RULE}`);
   const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
-  return (data.length / 4) * 3 - padding;
+  return Math.floor(((data.length - padding) * 3) / 4);
 };
 
 const elicitationRequest = {
