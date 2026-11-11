@@ -1,5 +1,6 @@
 import type { CallStop } from './call-stop.ts';
-import type { Awaitable, Clock, NetworkScope, OutboundNetwork, PathResolver } from '@momonga/foundation';
+import type { Awaitable, Clock, FileSystem, NetworkScope, OutboundNetwork, PathResolver, Random } from '@momonga/foundation';
+import type { ShellHost } from './builtins/shell.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
 import { OPERATION_EFFECT_OUTCOMES } from '@momonga/protocol';
@@ -116,6 +117,9 @@ export type ReconcileContext = SubjectContext & {
   deadlineAt: number;
   blobs: BlobPort;
   clock: Clock;
+  shellHost: ShellHost;
+  random: Random;
+  files: FileSystem;
   jobs?: BackgroundJobs;
   session: ToolSessionState;
   attachProcess(process: { pgid: number; startedAt: number }): Promise<void>;

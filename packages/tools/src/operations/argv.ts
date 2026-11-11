@@ -63,7 +63,7 @@ type Supplied = { env: Readonly<Record<string, string>>; sandboxPolicy: SandboxP
 const supplyCredentials = async (ports: SandboxedRunnerPorts, options: ArgvOptions, granted: { env: Readonly<Record<string, string>>; sandboxPolicy: SandboxPolicy }): Promise<Supplied> => {
   const credentials = options.credentials ?? [];
   if (credentials.length === 0) return { ...granted, redact: (text) => text, close: async () => undefined };
-  const channel: GitCredentialChannel = await openGitCredentialChannel(credentials, { root: ports.credentialRoot });
+  const channel: GitCredentialChannel = await openGitCredentialChannel(credentials, { root: ports.credentialRoot, random: options.context.random, files: options.context.files });
   return {
     env: channel.environment(granted.env),
     sandboxPolicy: { ...granted.sandboxPolicy, unixSocketAllow: [...(granted.sandboxPolicy.unixSocketAllow ?? []), channel.directory] },
@@ -132,7 +132,7 @@ const runEffect = async (ports: SandboxedRunnerPorts, argv: readonly string[], o
     );
     const attached = groupRecordOutcome(context.attachProcess({ pgid: child.pgid, startedAt: context.clock.now() }), file);
     const captures = [createCapture(), createCapture()] as const;
-    const pump = pumpOutput([child.stdout, child.stderr], (index, chunk) => captures[index === 0 ? 0 : 1].push(chunk));
+    const pump = pumpOutput([child.stdout, child.stderr], (index, chunk) => captures[index === 0 ? 0 : 1].push(chunk), ports.shellHost.child);
     try {
       const [exit] = await Promise.all([child.exited, attached]);
       await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: options.signal });

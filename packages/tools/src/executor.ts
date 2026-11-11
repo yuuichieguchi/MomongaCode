@@ -1,12 +1,11 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostKernelLock, hostPaths, hostReapTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, nodeFileSystem, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostKernelLock, hostPaths, hostReapTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
 import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
-import type { Awaitable, Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, ReapReport, ReapTiming, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, ReapTiming, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
@@ -22,7 +21,8 @@ import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
 import type { PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
 import { RetiringYield } from './ports.ts';
-import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
+import type { ShellHost } from './builtins/shell.ts';
+import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, ToolTimers, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { callStopOf } from './call-stop.ts';
 import type { CallStop } from './call-stop.ts';
@@ -158,6 +158,9 @@ export type ToolExecutorOptions = {
   idempotency: IdempotencyPort;
   blobs: BlobPort;
   clock: Clock;
+  shellHost: ShellHost;
+  random: Random;
+  files: FileSystem;
   outboundNetwork: OutboundNetwork;
   idempotencyTtlMs?: number;
   readOnlyRetry?: { attempts: number; baseMs: number; maxMs: number };
@@ -308,12 +311,12 @@ const launcherGuardKeys = async (literals: readonly string[], paths: PathResolve
   return new Set(await mapAsync(forms.flatMap((literal) => [literal, ...lexicalAncestorsOf(literal)]), (literal) => parentCanonicalKey(literal, paths)));
 };
 
-const isEmptyRegularFile = async (target: string, signal: AbortSignal): Promise<boolean> => {
-  const stat = await settledOrAborted(nodeFileSystem.lstat(target), signal);
+const isEmptyRegularFile = async (files: Pick<FileSystem, 'lstat'>, target: string, signal: AbortSignal): Promise<boolean> => {
+  const stat = await settledOrAborted(files.lstat(target), signal);
   return stat.isFile() && stat.size === 0;
 };
 
-const requireResolvable = async (entry: string, paths: PathResolver, signal: AbortSignal): Promise<void> => {
+const requireResolvable = async (files: Pick<FileSystem, 'lstat'>, entry: string, paths: PathResolver, signal: AbortSignal): Promise<void> => {
   try {
     await paths.canonicalPath(entry);
     return;
@@ -327,7 +330,7 @@ const requireResolvable = async (entry: string, paths: PathResolver, signal: Abo
         if ((inner as NodeJS.ErrnoException).code !== 'ENOTDIR') throw inner;
         continue;
       }
-      if (await isEmptyRegularFile(real, signal)) return;
+      if (await isEmptyRegularFile(files, real, signal)) return;
       throw error;
     }
     throw error;
@@ -338,14 +341,14 @@ type AccessFacts = Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir'
 
 type WriteGuard = (subject: PermissionSubject, cwd: string) => Promise<string | undefined>;
 
-const createWriteGuard = async (batch: AccessFacts, paths: PathResolver): Promise<WriteGuard> => {
+const createWriteGuard = async (files: Pick<FileSystem, 'lstat'>, batch: AccessFacts, paths: PathResolver): Promise<WriteGuard> => {
   for (const root of batch.sandboxPolicy.writableRoots) await paths.canonicalPath(root);
   const layout = momongaLayout(batch.home);
   const homeGuards = new Set([layout.root, layout.keychains]);
   const approvalGated = new Set(batch.sandboxPolicy.protectedSet.paths);
   const entries = batch.sandboxPolicy.writeDenied.filter((entry) => homeGuards.has(entry) || !approvalGated.has(entry));
   const guards = await mapAsync(entries, async (entry) => {
-    await requireResolvable(entry, paths, batch.signal);
+    await requireResolvable(files, entry, paths, batch.signal);
     return (await paths.locateThroughFiles(entry)).parts;
   });
   const launcherKeys = await launcherGuardKeys(batch.sandboxPolicy.writeDeniedLiterals, paths);
@@ -375,11 +378,11 @@ type BatchAccess = ReadAccessMatcher & {
   isWritable: (absolute: string) => Promise<boolean>;
 };
 
-const accessOf = async (facts: AccessFacts): Promise<BatchAccess> => {
+const accessOf = async (files: Pick<FileSystem, 'lstat'>, facts: AccessFacts): Promise<BatchAccess> => {
   const paths = hostPaths(facts.signal);
   const { writableRoots } = facts.sandboxPolicy;
   const isWritable = writableCheckOf(writableAreaOf({ writableRoots, entries: facts.sandboxPolicy.fileRules.entries }), paths);
-  return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(facts, paths), isWritable };
+  return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(files, facts, paths), isWritable };
 };
 
 const unlessCancelled = async <T, C>(signal: AbortSignal, action: () => Promise<T>, cancelled: C): Promise<T | C> => {
@@ -508,23 +511,23 @@ const createLimiter = (limit: number): { acquire(): Promise<() => void> } => {
   };
 };
 
-const pause = (ms: number, signal: AbortSignal): Promise<void> =>
+const pause = (timers: ToolTimers, ms: number, signal: AbortSignal): Promise<void> =>
   new Promise<void>((resolve) => {
     if (ms <= 0 || signal.aborted) {
       resolve();
       return;
     }
     const finish = (): void => {
-      clearTimeout(handle);
+      timers.clearTimeout(handle);
       signal.removeEventListener('abort', finish);
       resolve();
     };
-    const handle = setTimeout(finish, ms);
+    const handle = timers.setTimeout(finish, ms);
     signal.addEventListener('abort', finish, { once: true });
   });
 
-const settleWithin = async (pending: Promise<unknown>, ms: number): Promise<void> => {
-  const timer = cancellableTimer(ms);
+const settleWithin = async (timers: ToolTimers, pending: Promise<unknown>, ms: number): Promise<void> => {
+  const timer = cancellableTimer(timers, ms);
   try {
     await Promise.race([pending, timer.done]);
   } finally {
@@ -534,6 +537,7 @@ const settleWithin = async (pending: Promise<unknown>, ms: number): Promise<void
 
 export const createToolExecutor = (options: ToolExecutorOptions): InspectableToolExecutor => {
   const { idempotency, blobs, clock } = options;
+  const timers: ToolTimers = options.shellHost.child;
   const ttlMs = options.idempotencyTtlMs ?? DEFAULT_IDEMPOTENCY_TTL_MS;
   const retry = options.readOnlyRetry ?? DEFAULT_READ_ONLY_RETRY;
   const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
@@ -990,8 +994,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let markerOwned = false;
     let processAttached = false;
     let noteAfterOutput: string | undefined;
-    let fixedTimer: NodeJS.Timeout | undefined;
-    let idleTimer: NodeJS.Timeout | undefined;
+    let fixedTimer: unknown;
+    let idleTimer: unknown;
     let bounds: { startedAt: number; totalMs: number; idleMs: number | undefined } | undefined;
     let fired: CallStop['bound'] = 'total';
     const expire = (bound: CallStop['bound']): void => {
@@ -1001,10 +1005,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
     const armIdle = (): void => {
       if (bounds === undefined || abortReason !== undefined) return;
-      clearTimeout(idleTimer);
+      timers.clearTimeout(idleTimer);
       const now = clock.now();
       const stop = callStopOf({ startedAt: bounds.startedAt, lastProgressAt: now, idleMs: bounds.idleMs, totalMs: bounds.totalMs, deadlineAt });
-      if (stop.bound === 'idle') idleTimer = setTimeout(() => expire('idle'), Math.max(0, stop.at - now));
+      if (stop.bound === 'idle') idleTimer = timers.setTimeout(() => expire('idle'), Math.max(0, stop.at - now));
     };
     let heldLock: CallLock | undefined;
     let effect: Promise<unknown> | undefined;
@@ -1059,6 +1063,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       deadlineAt,
       blobs: scopedBlobs(batch.runId),
       clock,
+      shellHost: options.shellHost,
+      random: options.random,
+      files: options.files,
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       session: batch.session,
       attachProcess: (processInfo) => {
@@ -1090,7 +1097,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         bounds = { startedAt: now, totalMs, idleMs };
         armIdle();
         const fixed = callStopOf({ startedAt: now, lastProgressAt: now, idleMs: undefined, totalMs, deadlineAt });
-        fixedTimer = setTimeout(() => expire(fixed.bound), Math.max(0, fixed.at - now));
+        fixedTimer = timers.setTimeout(() => expire(fixed.bound), Math.max(0, fixed.at - now));
       },
       stop: () => {
         const startedAt = bounds?.startedAt ?? clock.now();
@@ -1100,8 +1107,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       reportProgress: armIdle,
       disarmTimer: () => {
         bounds = undefined;
-        clearTimeout(idleTimer);
-        clearTimeout(fixedTimer);
+        timers.clearTimeout(idleTimer);
+        timers.clearTimeout(fixedTimer);
       },
       closeContext: () => {
         contextClosed = true;
@@ -1186,8 +1193,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return { callId, kind: 'waiting', awaits: pending.awaits, ...(pending.wakeAt === undefined ? {} : { wakeAt: pending.wakeAt }) };
       },
       release: () => {
-        clearTimeout(idleTimer);
-        clearTimeout(fixedTimer);
+        timers.clearTimeout(idleTimer);
+        timers.clearTimeout(fixedTimer);
         const lock = heldLock;
         heldLock = undefined;
         if (lock !== undefined) {
@@ -1325,7 +1332,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const sharedAtEnd = batch.windowShared?.() === true;
     if (closed === undefined) return {};
     state.closed = { mark: closed.mark, ran: state.ran };
-    return { files: await observedToolFiles(closed.files, batch.signal), ...(window.sharedAtStart || sharedAtEnd ? { windowShared: true as const } : {}) };
+    return { files: await observedToolFiles(options.files, closed.files, batch.signal), ...(window.sharedAtStart || sharedAtEnd ? { windowShared: true as const } : {}) };
   };
 
   const performExecution = async (batch: ExecutionBatchInput, plan: ExecutionPlan): Promise<CallOutcome> => {
@@ -1440,7 +1447,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
                 !scope.controller.signal.aborted &&
                 batch.deadlineAt - clock.now() > 0;
               if (!retryable) return { status: 'failed', output: describeThrown(tool.name, error) };
-              await pause(computeBackoff({ attempt, baseMs: retry.baseMs, maxMs: retry.maxMs, random: Math.random }), scope.controller.signal);
+              await pause(timers, computeBackoff({ attempt, baseMs: retry.baseMs, maxMs: retry.maxMs, random: () => options.random.float() }), scope.controller.signal);
               if (scope.controller.signal.aborted) return { status: 'failed', output: describeThrown(tool.name, error) };
             }
           }
@@ -1471,7 +1478,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           const { detached, ...reported } = hooked;
           return scope.complete(await finalizeResult({ ...reported, ...(detached === true ? {} : facts.command === undefined ? {} : { command: facts.command }), ...effects }, tool, fitOfCall(batch.outputFit, call), batch.runId, batch.formatOutput), reconciled);
         }
-        await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
+        await settleWithin(timers, running, ABORT_SETTLE_LIMIT_MS);
         return settleInterrupted(scope, tool, target.input, key, scope.abortReason() === 'timeout' ? 'timeout' : 'cancelled', {
           fit: fitOfCall(batch.reconcileFit, call),
           runId: batch.runId,
@@ -1530,7 +1537,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   ): Promise<ReconcileResult> => {
     const running = reconcileInterrupted(tool, input, record, ctx);
     const finished = running.then((value) => ({ value }));
-    const cap = cancellableTimer(reconcileCapMs);
+    const cap = cancellableTimer(timers, reconcileCapMs);
     let first: { value: ReconcileResult } | void;
     try {
       first = await Promise.race([finished, cap.done]);
@@ -1539,7 +1546,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
     if (first !== undefined) return first.value;
     abortTool();
-    const grace = cancellableTimer(reconcileGraceMs);
+    const grace = cancellableTimer(timers, reconcileGraceMs);
     try {
       await Promise.race([finished, grace.done]);
     } finally {
@@ -1601,7 +1608,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (given.sandboxPolicy.fileRules.fingerprint !== expected) {
       throw new SandboxPolicyError('file_rules_stale', 'the sandbox policy was built from different permission rules, roots or session tmp dir than this batch');
     }
-    return { batch: given, access: await unlessCancelled(given.signal, () => accessOf(given), undefined) };
+    return { batch: given, access: await unlessCancelled(given.signal, () => accessOf(options.files, given), undefined) };
   };
 
   const userRefusal: UserPolicy['userRefusal'] = async (subject, facts) => {
@@ -1609,7 +1616,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       { callId: USER_CALL_ID },
       USER_TOOLS[subject.tool],
       subject.tool === 'Read' ? { kind: 'path', tool: subject.tool, paths: [subject.path], access: 'read' } : { kind: 'command', tool: subject.tool, command: subject.command },
-      await accessOf(facts),
+      await accessOf(options.files, facts),
       { ...facts, mode: USER_MODE },
     );
     if ('outcome' in verdict) return verdict.outcome.result.denial?.reason ?? verdict.outcome.result.output;

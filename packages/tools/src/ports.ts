@@ -1,5 +1,24 @@
+import type { EventEmitter } from 'node:events';
+import type { Readable } from 'node:stream';
 import type { JobView } from '@momonga/protocol';
 import type { SandboxedProcess } from '@momonga/sandbox';
+
+export type PortChild = EventEmitter & {
+  stdout: Readable | null | undefined;
+  stderr: Readable | null | undefined;
+  kill(signal: NodeJS.Signals): boolean;
+  unref(): void;
+};
+
+export type ChildSpawnOptions = { cwd?: string; env: Readonly<Record<string, string>>; signal?: AbortSignal };
+
+export type ChildPorts = {
+  spawn(file: string, args: readonly string[], options: ChildSpawnOptions): PortChild;
+  setTimeout(callback: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+};
+
+export type ToolTimers = Pick<ChildPorts, 'setTimeout' | 'clearTimeout'>;
 
 export type ToolIdempotencyRecord = {
   key: string;

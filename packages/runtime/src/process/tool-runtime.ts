@@ -20,6 +20,7 @@ import {
   hostInspectorPorts,
   ruleEnforcementOf,
   sha256Hex,
+  systemRandom,
 } from '@momonga/foundation';
 import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, ReapTiming, RolePort, RuleEnforcement, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
@@ -144,6 +145,9 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     idempotency: store.idempotency,
     blobs: store.blobs,
     clock,
+    shellHost: options.shellHost,
+    random: systemRandom,
+    files: nodeFileSystem,
     processMarkerDir: paths.markers.tools,
     earlierMarkerDirs: async () =>
       (await nodeFileSystem.readdir(options.sharedPaths.markers.root))

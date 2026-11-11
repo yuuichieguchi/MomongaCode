@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, looksBinary, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
@@ -106,14 +105,14 @@ export const editTool = defineTool<EditInput>({
     if (input.old_string === input.new_string) throw new ToolExecutionError('old_string and new_string are identical; nothing to change');
     const target = await canonicalPathOf(ctx, 'file_path', input.file_path);
     const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
-    const stat = await statIfExists(target);
+    const stat = await statIfExists(ctx.files, target);
     if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${shown}`);
     if (stat.isDirectory()) throw new ToolExecutionError(`${shown} is a directory, not a file`);
     const problem = regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
-    if (await looksBinary(target)) throw new ToolExecutionError(`${shown} is a binary file and cannot be edited as text`);
-    const preHash = await assertReadAndUnchanged(ctx.session, target, shown);
-    const replacement = computeReplacement(await fs.promises.readFile(target, 'utf8'), input, shown);
+    if (await looksBinary(ctx.files, target)) throw new ToolExecutionError(`${shown} is a binary file and cannot be edited as text`);
+    const preHash = await assertReadAndUnchanged(ctx.files, ctx.session, target, shown);
+    const replacement = computeReplacement(await ctx.files.readTextFile(target), input, shown);
     return { path: target, preHash, postHash: sha256Hex(replacement.updated) };
   },
   execute: async (input, ctx, prepared) => {
@@ -121,22 +120,24 @@ export const editTool = defineTool<EditInput>({
     const requested = resolvedPathOf(ctx, input.file_path);
     const shown = await shownPath(ctx, requested);
     await assertSameLocation(ctx, requested, plan.path, await canonicalPathOf(ctx, 'file_path', input.file_path));
-    const stat = await statIfExists(plan.path);
+    const stat = await statIfExists(ctx.files, plan.path);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
-    if (stat === undefined || (await sha256OfFile(plan.path)) !== plan.preHash) {
+    if (stat === undefined || (await sha256OfFile(ctx.files, plan.path)) !== plan.preHash) {
       throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
     }
-    const original = await fs.promises.readFile(plan.path, 'utf8');
+    const original = await ctx.files.readTextFile(plan.path);
     const replacement = computeReplacement(original, input, shown);
     if (sha256Hex(replacement.updated) !== plan.postHash) throw new ToolExecutionError('Edit result does not match the prepared state');
     const warning = await writeFileAtomically({
+      files: ctx.files,
+      random: ctx.random,
       scope: ctx,
       target: plan.path,
       requestedPath: requested,
       content: replacement.updated,
       mode: stat.mode & 0o777,
-      onRenamed: () => updateLedgerAfterWrite(ctx.session, plan.path, plan.postHash),
+      onRenamed: () => updateLedgerAfterWrite(ctx.files, ctx.session, plan.path, plan.postHash),
     });
     return {
       status: 'completed',

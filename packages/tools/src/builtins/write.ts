@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, newFileMode, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
@@ -38,11 +37,11 @@ export const writeTool = defineTool<WriteInput>({
   prepare: async (input, ctx) => {
     const target = await canonicalPathOf(ctx, 'file_path', input.file_path);
     const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
-    const stat = await statIfExists(target);
+    const stat = await statIfExists(ctx.files, target);
     if (stat?.isDirectory() === true) throw new ToolExecutionError(`${shown} is a directory, not a file`);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
-    const preHash = stat === undefined ? null : await assertReadAndUnchanged(ctx.session, target, shown);
+    const preHash = stat === undefined ? null : await assertReadAndUnchanged(ctx.files, ctx.session, target, shown);
     return { path: target, preHash, postHash: sha256Hex(input.content) };
   },
   execute: async (input, ctx, prepared) => {
@@ -51,25 +50,27 @@ export const writeTool = defineTool<WriteInput>({
     const requested = resolvedPathOf(ctx, input.file_path);
     const shown = await shownPath(ctx, requested);
     await assertSameLocation(ctx, requested, plan.path, await canonicalPathOf(ctx, 'file_path', input.file_path));
-    const stat = await statIfExists(plan.path);
+    const stat = await statIfExists(ctx.files, plan.path);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
     let oldText: string | null = null;
     if (stat !== undefined) {
-      if ((await sha256OfFile(plan.path)) !== plan.preHash) {
+      if ((await sha256OfFile(ctx.files, plan.path)) !== plan.preHash) {
         throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
       }
-      oldText = await fs.promises.readFile(plan.path, 'utf8');
+      oldText = await ctx.files.readTextFile(plan.path);
     } else if (plan.preHash !== null) {
       throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
     }
     const warning = await writeFileAtomically({
+      files: ctx.files,
+      random: ctx.random,
       scope: ctx,
       target: plan.path,
       requestedPath: requested,
       content: input.content,
       mode: stat === undefined ? newFileMode() : stat.mode & 0o777,
-      onRenamed: () => updateLedgerAfterWrite(ctx.session, plan.path, plan.postHash),
+      onRenamed: () => updateLedgerAfterWrite(ctx.files, ctx.session, plan.path, plan.postHash),
     });
     const lines = pluralize(splitLines(input.content).length, 'line', 'lines');
     return {

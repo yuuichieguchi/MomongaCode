@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { createOperationTools, hostGitReader, openGitCredentialChannel } from '@momonga/tools';
+import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { createOperationTools, hostGitReader, nodeShellHost, openGitCredentialChannel } from '@momonga/tools';
 import type { AnyTool, ArgvRunner, ForgeAccess, ForgeFetch, OperationSettings, ReconcileContext, ReconcileResult, ToolContext, ToolIdempotencyRecord, ToolResult } from '@momonga/tools';
 import { testPaths } from '@momonga/testkit';
 
@@ -106,7 +107,7 @@ export const countingRunner = (): CountingRunner => {
       environments.push(options.env);
       return execArgv(argv, options.cwd, options.env, options.signal);
     }
-    const channel = await openGitCredentialChannel(credentials, { root: os.tmpdir() });
+    const channel = await openGitCredentialChannel(credentials, { root: os.tmpdir(), random: systemRandom, files: nodeFileSystem });
     try {
       const env = channel.environment(options.env);
       environments.push(env);
@@ -152,6 +153,9 @@ export const contextFor = (cwd: string, env: Readonly<Record<string, string>>, i
     signal: new AbortController().signal,
     deadlineAt: Date.now() + 120_000,
     clock: { now: () => Date.now() },
+    shellHost: nodeShellHost(),
+    random: systemRandom,
+    files: nodeFileSystem,
     session: { cwd, workingDirectory: cwd, readLedger: new Map() },
     attachProcess: () => undefined,
     update: () => undefined,

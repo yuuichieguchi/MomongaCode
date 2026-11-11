@@ -133,7 +133,7 @@ describe('PreToolUse hook processes', () => {
   });
 
   it('finds its shell through the injected host and not through the platform of this machine', async () => {
-    const { context } = contextFor(settings('PreToolUse', 'true'), { shellHost: { platform: 'win32', isExecutable: () => false } });
+    const { context } = contextFor(settings('PreToolUse', 'true'), { shellHost: { ...nodeShellHost(), platform: 'win32', isExecutable: () => false } });
     await expect(createToolHooks(context).preToolUse(call)).rejects.toThrow('Git for Windows');
   });
 

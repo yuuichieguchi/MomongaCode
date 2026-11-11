@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { sha256Hex } from '@momonga/foundation';
+import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createGitWorkTreeObserver, observedToolFiles } from '@momonga/tools';
 import type { ObservedFile, WorkTreeObserver } from '@momonga/tools';
@@ -110,7 +110,7 @@ describe('the git work-tree observer on a real temporary repository', () => {
       put('src/a.ts', 'hashed\n');
       fs.rmSync(path.join(project, 'src/old.ts'));
     });
-    expect(await observedToolFiles(files ?? [], signal())).toEqual([
+    expect(await observedToolFiles(nodeFileSystem, files ?? [], signal())).toEqual([
       { path: path.join(project, 'src/a.ts'), sha256: sha256Hex('hashed\n'), access: 'write' },
       { path: path.join(project, 'src/old.ts'), access: 'remove' },
     ]);

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import type { ChildPorts } from '../ports.ts';
 import { readOnlyEnvironment } from '../read-only-call.ts';
 import { ToolExecutionError } from '../types.ts';
 
@@ -8,22 +8,24 @@ export type GitReadOptions = { cwd: string; env: Readonly<Record<string, string>
 
 export type GitReader = (args: readonly string[], options: GitReadOptions) => Promise<GitRead>;
 
-export const hostGitReader: GitReader = (args, { cwd, env, signal }) =>
-  new Promise((resolve, reject) => {
-    const child = spawn('git', [...args], { cwd, env: readOnlyEnvironment(env), stdio: ['ignore', 'pipe', 'pipe'], signal });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      stdout += chunk;
+export const createGitReader =
+  (child: Pick<ChildPorts, 'spawn'>): GitReader =>
+  (args, { cwd, env, signal }) =>
+    new Promise((resolve, reject) => {
+      const started = child.spawn('git', args, { cwd, env: readOnlyEnvironment(env), signal });
+      let stdout = '';
+      let stderr = '';
+      started.stdout?.setEncoding('utf8');
+      started.stderr?.setEncoding('utf8');
+      started.stdout?.on('data', (chunk: string) => {
+        stdout += chunk;
+      });
+      started.stderr?.on('data', (chunk: string) => {
+        stderr += chunk;
+      });
+      started.on('error', (error: Error) => reject(signal.aborted ? new ToolExecutionError('the call was cancelled or ran out of time') : error));
+      started.on('close', (code: number | null) => resolve({ exitCode: code ?? 1, stdout, stderr }));
     });
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
-    });
-    child.on('error', (error) => reject(signal.aborted ? new ToolExecutionError('the call was cancelled or ran out of time') : error));
-    child.on('close', (code) => resolve({ exitCode: code ?? 1, stdout, stderr }));
-  });
 
 export type Destinations = { push: string[]; fetch: string[] };
 

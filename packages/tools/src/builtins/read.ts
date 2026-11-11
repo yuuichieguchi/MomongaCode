@@ -36,27 +36,28 @@ export const readTool = defineTool<ReadInput>({
   execute: async (input, ctx) => {
     const canonical = await canonicalPathOf(ctx, 'file_path', input.file_path);
     const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
-    const stat = await statIfExists(canonical);
+    const stat = await statIfExists(ctx.files, canonical);
     if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${shown}`);
     if (stat.isDirectory()) {
       throw new ToolExecutionError(`${shown} is a directory, not a file; use Glob to find files or Bash with ls to list it`);
     }
     const problem = regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
-    if (await looksBinary(canonical)) {
+    if (await looksBinary(ctx.files, canonical)) {
       throw new ToolExecutionError(`${shown} is a binary file (${stat.size} bytes) and cannot be read as text`);
     }
     const offset = input.offset ?? 1;
     const lastLine = offset + (input.limit ?? DEFAULT_LINE_LIMIT) - 1;
     const selected: string[] = [];
     const scan = await scanLines(
+      ctx.files,
       canonical,
       (line, lineNumber) => {
         if (lineNumber >= offset && lineNumber <= lastLine) selected.push(line);
       },
       ctx.signal,
     );
-    await recordInLedger(ctx.session, canonical, scan.sha256);
+    await recordInLedger(ctx.files, ctx.session, canonical, scan.sha256);
     const files = [{ path: canonical, sha256: scan.sha256, access: 'read' as const }];
     if (scan.totalLines === 0) return { status: 'completed', output: '(file is empty)', files };
     if (offset > scan.totalLines) return { status: 'completed', output: pastEndMessage(offset, 'file', scan.totalLines), files };
