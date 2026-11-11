@@ -245,7 +245,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   const onData = (chunk: Uint8Array): void => {
     stopKeySettle();
     const events = parser.push(chunk);
-    if (parser.holdsLoneEscape()) keySettle = { timer: timers.setTimeout(endKeySettle, KEY_SETTLE_MS) };
+    if (parser.holdsOpen()) keySettle = { timer: timers.setTimeout(endKeySettle, KEY_SETTLE_MS) };
     deliver(events);
   };
 

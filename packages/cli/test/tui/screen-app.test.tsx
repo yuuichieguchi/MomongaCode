@@ -98,7 +98,7 @@ describe('the layout of the full screen', () => {
     await runStarted(backend, app, 'go');
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: { command: 'ls' } }));
     backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }] }));
-    const lines = linesOf(await untilFrame(app, 'Permission requested: Bash ls'));
+    const lines = linesOf(await untilFrame(app, (now) => now.includes('Permission requested: Bash ls') && now.includes('to choose')));
     expect(lines).toHaveLength(16);
     expect(lines.filter((line) => line.includes('│ >'))).toEqual([]);
     expect(lines.slice(9, 15).map((line) => line.replace(/^│ /, '').replace(/ *│$/, ''))).toEqual([expect.stringMatching(/^╭─+╮$/), 'Permission requested: Bash ls', 'asks', '› 1. Allow once', '1-9 or enter to choose · up/down to move · ctrl+c: cancel the run', expect.stringMatching(/^╰─+╯$/)]);

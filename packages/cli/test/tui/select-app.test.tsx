@@ -36,14 +36,14 @@ const approving = async (options: readonly unknown[], size: { columns?: number; 
   await untilFrame(started.app, 'mode: manual');
   await runStarted(started.backend, started.app, 'go');
   askFor(started.backend, 'c1', 'ap1', options, reason);
-  await untilFrame(started.app, 'Permission requested: Bash c1');
+  await untilFrame(started.app, (now) => now.includes('Permission requested: Bash c1') && now.includes('to choose'));
   return started;
 };
 
 describe('the folder trust prompt is the selection component and only enter decides', () => {
   const trusting = async () => {
     const started = await start({ trust: { path: '/work/project', decision: null } });
-    await untilFrame(started.app, 'Do you trust the files in /work/project?');
+    await untilFrame(started.app, (now) => now.includes('Do you trust the files in /work/project?') && now.includes('to choose'));
     return started;
   };
 
@@ -229,7 +229,7 @@ describe('the decision of an MCP input is the selection component', () => {
     await runStarted(started.backend, started.app, 'ask');
     started.backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'mcp__calc__ask', kind: 'other', title: 'mcp__calc__ask {}', rawInput: {} }));
     started.backend.emit(frame({ type: 'tool.elicitation.requested', inputId: 'in1', callId: 'c1', server: 'calc', requests: [FORM] }));
-    await untilFrame(started.app, 'MCP server calc asks for input');
+    await untilFrame(started.app, (now) => now.includes('MCP server calc asks for input') && now.includes('to confirm the value'));
     return started;
   };
 

@@ -1,8 +1,8 @@
 import { MAX_SEQUENCE_BYTES, PASTE_ABANDON_BYTES, PASTE_MAX_BYTES } from './constants.ts';
-import { MOUSE_BUTTONS, NO_KEY_MODIFIERS, WHEEL_BUTTONS } from './events.ts';
+import { KEY_RELEASED, MOUSE_BUTTONS, NO_KEY_MODIFIERS, WHEEL_BUTTONS } from './events.ts';
 import type { KeyEvent, KeyModifiers, KeyName, TerminalEvent } from './events.ts';
 
-export type InputParser = { push(bytes: Uint8Array): TerminalEvent[]; holdsLoneEscape(): boolean; settle(): TerminalEvent[] };
+export type InputParser = { push(bytes: Uint8Array): TerminalEvent[]; holdsOpen(): boolean; settle(): TerminalEvent[] };
 
 const ESC = '\u001b';
 const BEL = '\u0007';
@@ -146,7 +146,7 @@ const kittyKey = (parameters: string): Interpreted => {
   const code = numberOf(codeText);
   const modified = modifiedOf(modifierField);
   if (code === undefined || modified === undefined) return 'unknown';
-  if (modified.released) return [];
+  if (modified.released) return [KEY_RELEASED];
   if (textField !== '') {
     const codePoints = numbersOf(textField, ':');
     if (codePoints === undefined || !codePoints.every(isPrintable)) return 'unknown';
@@ -169,14 +169,14 @@ const tildeKey = (parameters: string): Interpreted => {
   const name = TILDE_KEYS[code];
   const modified = modifiedOf(fields[1]);
   if (name === undefined || modified === undefined) return 'unknown';
-  return modified.released ? [] : [namedKey(name, modified.modifiers)];
+  return modified.released ? [KEY_RELEASED] : [namedKey(name, modified.modifiers)];
 };
 
 const letterKey = (parameters: string, final: string): Interpreted => {
   const fields = parameters === '' ? [] : parameters.split(';');
   const modified = modifiedOf(fields.at(-1) === undefined || fields.length < 2 ? undefined : fields.at(-1));
   if (modified === undefined) return 'unknown';
-  if (modified.released) return [];
+  if (modified.released) return [KEY_RELEASED];
   if (final === 'Z') return [namedKey('tab', { ...modified.modifiers, shift: true })];
   const name = LETTER_KEYS[final];
   return name === undefined ? 'unknown' : [namedKey(name, modified.modifiers)];
@@ -355,7 +355,23 @@ export const createInputParser = (): InputParser => {
 
   const holdsLoneEscape = (): boolean => pending === ESC && readEndedWithEscape && paste === undefined;
 
+  const holdsBareIntroducer = (): boolean => paste === undefined && pending.length === 2 && pending.startsWith(ESC) && INTRODUCERS[pending.charAt(1)] !== undefined;
+
+  const holdsAbandonedPaste = (): boolean => paste?.abandoned === true;
+
+  const holdsOpen = (): boolean => holdsLoneEscape() || holdsBareIntroducer() || holdsAbandonedPaste();
+
   const settle = (): TerminalEvent[] => {
+    if (holdsAbandonedPaste()) {
+      paste = undefined;
+      pending = '';
+      return [];
+    }
+    if (holdsBareIntroducer()) {
+      const key = plainKey(pending.charCodeAt(1), true);
+      pending = '';
+      return [key];
+    }
     if (!holdsLoneEscape()) return [];
     pending = '';
     readEndedWithEscape = false;
@@ -394,5 +410,5 @@ export const createInputParser = (): InputParser => {
     return events;
   };
 
-  return { push, holdsLoneEscape, settle };
+  return { push, holdsOpen, settle };
 };

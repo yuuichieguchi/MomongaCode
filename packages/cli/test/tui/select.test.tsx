@@ -202,7 +202,7 @@ describe('the list in the rows it is given', () => {
 describe('the rows as drawn', () => {
   const drawn = (of: SelectSpec, state: SelectState, extra: { sending?: boolean; error?: string } = {}): string => {
     const frame = { width: 60, rows: 20, border: false };
-    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1)} state={state} border={false} keys={DEFAULT_KEY_TABLE} sending={extra.sending === true} {...(extra.error === undefined ? {} : { error: extra.error })} />);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1)} state={state} border={false} keys={DEFAULT_KEY_TABLE} sending={extra.sending === true} settling={false} {...(extra.error === undefined ? {} : { error: extra.error })} />);
     const shown = app.lastFrame() ?? '';
     app.unmount();
     return shown;

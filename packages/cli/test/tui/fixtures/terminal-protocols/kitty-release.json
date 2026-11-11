@@ -2,5 +2,5 @@
   "name": "kitty-release",
   "source": "kitty keyboard protocol page (sw.kovidgoyal.net/kitty/keyboard-protocol)",
   "hex": "1b5b31333b323a3375",
-  "events": []
+  "events": [{ "type": "release" }]
 }

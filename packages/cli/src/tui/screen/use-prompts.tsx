@@ -16,7 +16,7 @@ import type { Loaded, Overlay, OverlayPorts, WaitingOverlay } from '../picker.ts
 import { detailCapacity, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectKey, selectLayout, selectRowAt, selectStart, selectText, SelectView, selectWheel } from '../select.tsx';
 import type { SelectFrame, SelectLayout, SelectLine, SelectOutcome, SelectSpec, SelectState, SelectStep, TextRow } from '../select.tsx';
 import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
-import { toolOf, withElicitationFlow } from '../transcript.ts';
+import { promptTakesFocus, toolOf, withElicitationFlow } from '../transcript.ts';
 import type { Entry, PendingApproval, PendingElicitation } from '../transcript.ts';
 import { WHEEL_ROWS } from './constants.ts';
 import type { ScreenTerminal } from './input.ts';
@@ -25,7 +25,10 @@ import type { RowAllocation } from './layout.ts';
 import type { Invitation } from './menu.tsx';
 import { approvalSpec, approvalWording, decisionChoices, ElicitationFields, elicitationSpec, TRUST_CHOICES, trustSpec } from './prompt-panel.tsx';
 import type { TrustDecision } from './prompt-panel.tsx';
+import { createPromptGate, UNDER_HANDS_LINE } from './prompt-settle.ts';
+import type { PromptIntent, PromptSource } from './prompt-settle.ts';
 import type { TranscriptState, TranscriptStore } from './store.ts';
+import type { ScreenTimers } from './timers.ts';
 
 const WAITING_INPUT_BYTES = PASTED_CALLBACK_MAX_BYTES + 1;
 
@@ -52,6 +55,10 @@ const selectActionOf = (event: KeyEvent, keys: KeyTable): ActionId | undefined =
 export type PromptsHost = {
   backend: TuiBackend;
   store: TranscriptStore;
+  terminal: ScreenTerminal;
+  timers: ScreenTimers;
+  keySettleMs: number;
+  draftHeld(): boolean;
   columns: number;
   panelRows: number;
   keys: KeyTable;
@@ -89,9 +96,15 @@ export type Prompts = {
   wheel(facts: PanelFacts, rows: number): void;
 };
 
-type Active = { owner: string; spec: SelectSpec; border: boolean; sending: boolean; on(outcome: SelectOutcome): void; highlighted?: (index: number) => void };
+type Active = { owner: string; spec: SelectSpec; border: boolean; sending: boolean; settle?: string; on(outcome: SelectOutcome): void; highlighted?: (index: number) => void };
 
 const TRUST_OWNER = 'trust';
+
+const DIGIT = /^[1-9]$/;
+
+const approvalOwner = (approval: PendingApproval): string => `approval:${approval.approvalId}`;
+
+const elicitationSettle = (pending: PendingElicitation): string => `input:${pending.inputId}`;
 
 const waitingCount = (state: TranscriptState): number =>
   (state.approval === undefined ? 0 : 1) + state.queuedApprovals.length + (state.elicitation === undefined ? 0 : 1) + state.queuedElicitations.length;
@@ -143,6 +156,34 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   const [overlayEditor, setOverlayEditor] = useState<EditorState>(emptyEditor());
   const overlayEditorRef = useRef<EditorState>(overlayEditor);
   const [invitation, setInvitation] = useState<Invitation | undefined>(undefined);
+
+  const [gate] = useState(() => createPromptGate({ timers: host.timers, settleMs: host.keySettleMs, onChange: redraw }));
+  const { terminal } = host;
+  useEffect(
+    () =>
+      terminal.input.observe((event) => {
+        if (event.type === 'key') gate.keyPressed();
+        else if (event.type === 'release') gate.keyReleased();
+      }),
+    [terminal, gate],
+  );
+  useEffect(() => gate.stop, [gate]);
+
+  const shownAs = (settle: string, spec: SelectSpec): SelectSpec => {
+    gate.show(settle, host.draftHeld());
+    return gate.view(settle).underHands ? { ...spec, decideOn: 'immediate', enterOff: true, lines: [...(spec.lines ?? []), UNDER_HANDS_LINE] } : spec;
+  };
+
+  const takes = (active: Active, intent: PromptIntent, source: PromptSource): boolean => active.settle === undefined || gate.takes(active.settle, intent, source);
+
+  const settlingOf = (active: Active): boolean => active.settle !== undefined && gate.view(active.settle).settling;
+
+  const intentOf = (active: Active, event: KeyEvent, keys: KeyTable): PromptIntent => {
+    const typed = keys.typedOf(event);
+    const action = active.spec.filter && typed !== undefined ? undefined : keys.actionOf(SELECT_CONTEXTS, event, 'plain');
+    if (action === 'select.decide') return 'enter';
+    return action === undefined && typed !== undefined && DIGIT.test(typed) ? 'choice' : 'other';
+  };
 
   const flows = useRef(0);
   const heldKeys = useRef<KeyEvent[] | undefined>(undefined);
@@ -291,6 +332,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   };
 
   const selectInput = (active: Active, event: KeyEvent, keys: KeyTable): void => {
+    if (!takes(active, intentOf(active, event, keys), 'key')) return;
     const action = active.spec.filter && keys.typedOf(event) !== undefined ? undefined : keys.actionOf(SELECT_CONTEXTS, event, 'plain');
     if (action === 'select.interrupt') {
       active.on({ kind: 'interrupt', action: active.spec.interrupt });
@@ -311,7 +353,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   };
 
   const selectPress = (active: Active, row: number): void => {
-    if (active.sending || detailOf(active) !== undefined) return;
+    if (active.sending || detailOf(active) !== undefined || !takes(active, 'choice', 'pointer')) return;
     const index = selectRowAt(layoutOf(active), row);
     if (index !== undefined) apply(active, selectClick(active.spec, stateOf(active), index));
   };
@@ -329,7 +371,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const shown = detailOf(active);
     if (shown !== undefined) return <DetailView text={textOf(active)} frame={frameOf(active)} top={shown.top} keys={host.keys} />;
     const error = errorFor(active);
-    return <SelectView spec={active.spec} state={stateOf(active)} layout={layoutOf(active)} border={frameOf(active).border} sending={active.sending} keys={host.keys} {...(error === undefined ? {} : { error })} />;
+    return <SelectView spec={active.spec} state={stateOf(active)} layout={layoutOf(active)} border={frameOf(active).border} sending={active.sending} settling={settlingOf(active)} keys={host.keys} {...(error === undefined ? {} : { error })} />;
   };
 
   const markSent = (owner: string): void => {
@@ -347,11 +389,12 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   };
 
   const approvalActive = (approval: PendingApproval): Active => {
-    const owner = `approval:${approval.approvalId}`;
+    const owner = approvalOwner(approval);
     const { title, lines } = approvalTextOf(approval);
     return {
       owner,
-      spec: approvalSpec(approval, title, lines, waitingCount(store.state())),
+      settle: owner,
+      spec: shownAs(owner, approvalSpec(approval, title, lines, waitingCount(store.state()))),
       border: true,
       sending: sent.current === owner,
       on: (outcome) => {
@@ -415,7 +458,8 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const flow = flowOf(pending);
     return {
       owner: `input:${pending.inputId}:${flowGeneration.current}`,
-      spec: elicitationSpec({ ...pending, flow }, toolOf(store, pending.callId)?.title ?? pending.callId, waitingCount(store.state())),
+      settle: elicitationSettle(pending),
+      spec: shownAs(elicitationSettle(pending), elicitationSpec({ ...pending, flow }, toolOf(store, pending.callId)?.title ?? pending.callId, waitingCount(store.state()))),
       border: true,
       sending: pending.submitted,
       on: (outcome) => {
@@ -432,6 +476,9 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       return;
     }
     const action = selectActionOf(event, keys);
+    const settle = elicitationSettle(pending);
+    gate.show(settle, host.draftHeld());
+    if (!gate.takes(settle, action === 'select.interrupt' || action === 'select.escape' ? 'other' : 'text', 'key')) return;
     if (action === 'select.interrupt') {
       host.cancelNewest();
       return;
@@ -452,7 +499,8 @@ export const usePrompts = (host: PromptsHost): Prompts => {
 
   const trustActive = (path: string): Active => ({
     owner: TRUST_OWNER,
-    spec: trustSpec(path),
+    settle: TRUST_OWNER,
+    spec: shownAs(TRUST_OWNER, trustSpec(path)),
     border: true,
     sending: sent.current === TRUST_OWNER,
     on: (outcome) => {
@@ -492,8 +540,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     if (!ready) return undefined;
     const state = store.state();
     if (state.elicitation !== undefined) return flowOf(state.elicitation).stage === 'decision' ? elicitationActive(state.elicitation) : undefined;
-    return state.approval === undefined ? undefined : approvalActive(state.approval);
+    return state.approval === undefined || !promptTakesFocus(state) ? undefined : approvalActive(state.approval);
   };
+
+  const fieldsShown = (facts: PanelFacts): PendingElicitation | undefined => (facts.ready && facts.trustPath === undefined && overlayRef.current === undefined ? store.state().elicitation : undefined);
 
   const typeIntoWaiting = (current: WaitingOverlay, after: EditorState): void => {
     const before = overlayEditorRef.current;
@@ -637,7 +687,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     promptStage: () => {
       const state = store.state();
       if (state.elicitation !== undefined) return flowOf(state.elicitation).stage === 'decision' ? 'decision' : 'fields';
-      return state.approval === undefined ? undefined : 'decision';
+      return state.approval === undefined || !promptTakesFocus(state) ? undefined : 'decision';
     },
     detailShown: (facts) => {
       const active = panelActive(facts);
@@ -656,7 +706,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
         elicitationKey(state.elicitation, event, keys);
         return true;
       }
-      if (state.approval !== undefined) {
+      if (state.approval !== undefined && promptTakesFocus(state)) {
         selectInput(approvalActive(state.approval), event, keys);
         return true;
       }
@@ -670,18 +720,29 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       }
       const state = store.state();
       if (state.elicitation !== undefined) {
-        if (state.elicitation.flow.stage === 'fields') replaceElicitEditor(insertText(elicitEditorRef.current, text));
+        if (state.elicitation.flow.stage === 'fields' && gate.takes(elicitationSettle(state.elicitation), 'text', 'pointer')) replaceElicitEditor(insertText(elicitEditorRef.current, text));
         return true;
       }
       return false;
     },
     panel: (facts) => {
       const active = panelActive(facts);
+      const pending = active === undefined ? fieldsShown(facts) : undefined;
+      if (pending !== undefined) gate.show(elicitationSettle(pending), host.draftHeld());
+      else if (active?.settle === undefined) gate.show(undefined, false);
       if (active !== undefined) return selectView(active);
       if (overlay !== undefined && overlay.kind !== 'pick') return <OverlayView overlay={overlay} editor={overlayEditor} keys={host.keys} />;
-      const pending = facts.ready && facts.trustPath === undefined && overlay === undefined ? store.state().elicitation : undefined;
       if (pending === undefined) return undefined;
-      return <ElicitationFields elicitation={{ ...pending, flow: flowOf(pending) }} title={toolOf(store, pending.callId)?.title ?? pending.callId} editor={elicitEditor} waiting={waitingCount(store.state())} keys={host.keys} />;
+      return (
+        <ElicitationFields
+          elicitation={{ ...pending, flow: flowOf(pending) }}
+          title={toolOf(store, pending.callId)?.title ?? pending.callId}
+          editor={elicitEditor}
+          waiting={waitingCount(store.state())}
+          settling={gate.view(elicitationSettle(pending)).settling}
+          keys={host.keys}
+        />
+      );
     },
     press: (facts, row) => {
       const active = panelActive(facts);

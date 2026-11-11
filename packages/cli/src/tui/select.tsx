@@ -22,6 +22,7 @@ export type SelectSpec = {
   readonly filter: boolean;
   readonly confirm?: (row: SelectRow, decideKey: string) => string;
   readonly alt?: { readonly label: string };
+  readonly enterOff?: true;
 };
 
 export type SelectState = { readonly index: number; readonly top: number; readonly scrolled: boolean; readonly filter: string; readonly confirming: number | undefined };
@@ -77,7 +78,7 @@ export const SELECT_CONTEXTS: readonly KeyContext[] = ['select'];
 export const selectHint = (spec: SelectSpec, keys: KeyTable): string => {
   const decide = keys.keyHint('select.decide');
   const digits = spec.decideOn === 'immediate' && !spec.filter ? ['1-9'] : [];
-  const choosers = [...digits, ...(decide === '' ? [] : [decide])];
+  const choosers = [...digits, ...(decide === '' || spec.enterOff === true ? [] : [decide])];
   const choose = choosers.length === 0 ? [] : [`${choosers.join(' or ')} to choose`];
   const move = keyed(keyPair(keys, 'select.up', 'select.down'), (key) => `${key} to move`);
   const escapeKey = keys.keyHint('select.escape');
@@ -166,6 +167,7 @@ export const selectAct = (spec: SelectSpec, state: SelectState, action: ActionId
     case 'select.last':
       return moved(spec, state, capacity, (_, count) => count - 1);
     case 'select.decide':
+      if (spec.enterOff === true) return { state };
       return stopsOf(spec, state.filter).includes(state.index) ? chosen(spec, state, state.index, capacity) : { state };
     case 'select.escape':
       if (state.filter !== '') return filtered(spec, state, '', capacity);
@@ -304,9 +306,9 @@ export function MoreRow({ direction, count }: { direction: 'up' | 'down'; count:
   return <Text dimColor wrap="truncate">{moreRowText(direction, count, screenReader)}</Text>;
 }
 
-export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; keys: KeyTable; error?: string };
+export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; settling: boolean; keys: KeyTable; error?: string };
 
-export function SelectView({ spec, state, layout, border, sending, keys, error }: SelectViewProps) {
+export function SelectView({ spec, state, layout, border, sending, settling, keys, error }: SelectViewProps) {
   const { screenReader } = currentA11y();
   const stops = spec.rows.flatMap((row, index) => (row.separator === true ? [] : [index]));
   const confirming = state.confirming === undefined ? undefined : spec.rows[state.confirming];
@@ -328,7 +330,7 @@ export function SelectView({ spec, state, layout, border, sending, keys, error }
       {layout.below > 0 ? <MoreRow direction="down" count={layout.below} /> : null}
       {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming, keys.keyHint('select.decide')))}</Text>}
       {error === undefined ? null : <Text {...styleOfTokens(['error'])} wrap="truncate">{escapeTerminalLine(error)}</Text>}
-      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : selectHint(spec, keys)}</Text>
+      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : settling ? ' ' : selectHint(spec, keys)}</Text>
     </Panel>
   );
 }

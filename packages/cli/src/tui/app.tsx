@@ -63,13 +63,14 @@ import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.ts
 import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
 import { createSlashRegistry, namesOf, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
 import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
+import { KEY_SETTLE_MS } from './terminal/constants.ts';
 import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
 import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
 import type { NotifyMode, TuiSettingsPort } from './screen/notify.ts';
 import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } from './screen/theme.ts';
 import type { ColourHost, ThemeId } from './screen/theme.ts';
-import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, blockingPrompt, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
+import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, blockingPrompt, nextMode, promptTakesFocus, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
 import type { Entry } from './transcript.ts';
 import { attachmentDigest } from '../handover/record.ts';
 import type { HandoverAttachment, HandoverInput, HandoverNote } from '../handover/record.ts';
@@ -102,6 +103,7 @@ export type AppProps = {
   copyOnSelect?: boolean;
   colour?: ColourHost;
   tuiSettings?: TuiSettingsPort;
+  keySettleMs?: number;
   move?: TuiMovePort;
   adoption?: TuiAdoption;
   now(): number;
@@ -579,6 +581,10 @@ export function App(props: AppProps) {
   const prompts = usePrompts({
     backend,
     store,
+    terminal,
+    timers,
+    keySettleMs: props.keySettleMs ?? KEY_SETTLE_MS,
+    draftHeld: () => editorRef.current.text !== '',
     columns,
     panelRows: panelRowsCap(rows),
     keys,
@@ -1424,7 +1430,7 @@ export function App(props: AppProps) {
 
   const onPaste = (text: string): void => {
     if (prompts.paste(text)) return;
-    if (phase.kind === 'trust' || phase.kind === 'welcome' || overlay !== undefined || transcript.approval !== undefined) return;
+    if (phase.kind === 'trust' || phase.kind === 'welcome' || overlay !== undefined || promptTakesFocus(transcript)) return;
     disarmExit();
     setHint(undefined);
     const paths = imageInput ? pastedImagePaths(text) : undefined;
