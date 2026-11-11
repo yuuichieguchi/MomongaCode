@@ -1224,11 +1224,11 @@ ALTER TABLE sessions ADD COLUMN sandbox_network TEXT CHECK (sandbox_network IS N
 
 const ISSUE_WATCH = `
 CREATE TABLE issue_watch_starts (
-  project_key TEXT NOT NULL,
+  folder_key TEXT NOT NULL,
   reference TEXT NOT NULL,
   started_run_id TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  PRIMARY KEY (project_key, reference)
+  PRIMARY KEY (folder_key, reference)
 ) WITHOUT ROWID;
 `;
 
@@ -1510,7 +1510,7 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     version: 48,
-    name: 'record for every project the issues the issue watch has started, one row per issue reference written before its run starts, so a restart never starts an issue twice',
+    name: 'record for every folder the issues the issue watch has started, one row per issue reference written before its run starts, so a restart never starts an issue twice',
     sql: ISSUE_WATCH,
   },
 ];
