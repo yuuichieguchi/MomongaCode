@@ -1,11 +1,10 @@
-import { ModelsEditRefused, PLAN_PROFILES, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf } from '@momonga/config';
+import { ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
 import { EXIT_FAILURE, EXIT_USAGE, createBinaryHashCache, currentSocketResolver, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch } from '@momonga/foundation';
 import {
   GENERIC_SERVER_KIND,
   LOCAL_SERVER_CANDIDATES,
-  MANAGED_SERVERS,
   MODEL_NOT_LISTED_CODE,
   ModelRefError,
   SERVER_KINDS,
@@ -279,14 +278,12 @@ export type AcceptedPlan = Exclude<ModelsEditPlan, { refused: unknown }>;
 
 export type ModelsProposal = { operations: ModelsOperations; confirm(plan: AcceptedPlan): string };
 
-const BUILT_IN_SERVERS = Object.fromEntries(MANAGED_SERVERS.map((server) => [server.id, server]));
-
 export const modelsEditOf = async (shell: ModelsHost): Promise<ModelsEdit> => {
   const text = await shell.files.readTextIfPresent(shell.settingsFile);
   const document: unknown = text === undefined ? {} : parseOutsideJson(text);
   if (!isRecord(document)) throw new ShellRefusal(`${shell.settingsFile}: settings must be a JSON object`);
   const { resolved } = loadUserModels({ home: shell.home });
-  return { document, resolved, displays: displayMapOf(resolved.views), ports: { kinds: SERVER_KINDS, planProfiles: PLAN_PROFILES, servers: BUILT_IN_SERVERS, home: shell.home } };
+  return { document, resolved, displays: displayMapOf(resolved.views), ports: { kinds: SERVER_KINDS, home: shell.home } };
 };
 
 export const displayIn = (edit: ModelsEdit, canon: string): string => edit.displays.get(canon) ?? canon;

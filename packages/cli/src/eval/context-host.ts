@@ -13,7 +13,7 @@ import {
   typedModelText,
 } from '@momonga/protocol';
 import type { Capabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
-import { PLAN_PROFILES, planModelsEdit, probeRecordKeyOf, registeredServer } from '@momonga/config';
+import { planModelsEdit, probeRecordKeyOf, registeredServer } from '@momonga/config';
 import type { ConnectionDraft, EndpointProbeKey, ModelEntry, ModelsOperation, ModelsOperations, ModelsSettings, OpenResponsesTarget, ResolvedModel, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
@@ -231,8 +231,6 @@ const declaredProgramOf = (models: ResolvedModels, id: string): ModelsOperation 
 
 const addOperation = (connection: Json, model: Json): ModelsOperation => ({ kind: 'addModel', choice: { connection: connection as ConnectionDraft, model: model as ModelEntry } });
 
-const BUILT_IN_SERVERS = Object.fromEntries(MANAGED_SERVERS.map((server) => [server.id, server]));
-
 export const liveSettingsFor = (user: UserModels, models: readonly string[], relay?: PlanRelay): LiveSettings => {
   const { resolved } = user;
   const displays = displayMapOf(resolved.views);
@@ -285,7 +283,7 @@ export const liveSettingsFor = (user: UserModels, models: readonly string[], rel
   }
   const [first, ...rest] = operations;
   if (first === undefined) throw new ContextHostError('a case home needs at least one model');
-  const plan = planModelsEdit({}, [first, ...rest], { kinds: SERVER_KINDS, planProfiles: PLAN_PROFILES, servers: BUILT_IN_SERVERS });
+  const plan = planModelsEdit({}, [first, ...rest], { kinds: SERVER_KINDS });
   if ('refused' in plan) throw new ContextHostError(`the settings of a case home could not be built: ${plan.refused.message}`);
   const written = plan.document['models'];
   if (!isRecord(written)) throw new TypeError('the planned settings of a case home hold no models');

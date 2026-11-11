@@ -72,6 +72,19 @@ const loaderWarnings = (place: SettingsPlace, layer: SettingsLayer, located: Loc
   }
 };
 
+type WrittenLoad = { readonly loads: true; readonly warnings: readonly string[] } | { readonly loads: false };
+
+const writtenLoadOf = (place: SettingsPlace, layer: SettingsLayer, located: Located, document: unknown): WrittenLoad => {
+  try {
+    return { loads: true, warnings: loaderWarnings(place, layer, located, document) };
+  } catch (error) {
+    if (error instanceof ConfigError) return { loads: false };
+    throw error;
+  }
+};
+
+const discardedByLoader = (written: WrittenLoad, result: readonly string[]): string | undefined => (written.loads ? result.find((warning) => !written.warnings.includes(warning)) : undefined);
+
 const parentOf = (document: Record<string, unknown>, file: string, keys: SettingsPath): Record<string, unknown> => {
   let current = document;
   keys.forEach((key, index) => {
@@ -144,10 +157,10 @@ export const editSettings = async (settingsPlace: SettingsPlace, layer: Settings
     located.file,
     (document) => {
       const before = canonicalJson(document);
-      const known = loaderWarnings(settingsPlace, layer, located, document);
+      const written = writtenLoadOf(settingsPlace, layer, located, document);
       apply(document, located.file, operation);
       if (canonicalJson(document) === before) return false;
-      const refusal = loaderWarnings(settingsPlace, layer, located, document).find((warning) => !known.includes(warning));
+      const refusal = discardedByLoader(written, loaderWarnings(settingsPlace, layer, located, document));
       if (refusal !== undefined) throw new ConfigError(refusal);
       return true;
     },

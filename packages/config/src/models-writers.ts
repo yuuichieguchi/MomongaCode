@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { isRecord } from '@momonga/foundation';
 import {
-  MANAGED_SERVERS,
   PROVIDER_NAME_PATTERN,
   SERVER_ADAPTER_LABELS,
   SERVER_KINDS,
@@ -12,13 +11,13 @@ import {
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
-import type { ManagedServerDescription, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
+import type { ModelView, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { editUserSettings } from './edit-user-settings.ts';
-import { resolveModels } from './models.ts';
+import { userModelsOf } from './layers.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
-import { PLAN_PROFILES } from './plan-profiles.ts';
 import { endpointKeyOf } from './probe-record-key.ts';
 import { providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
+import type { ProviderNameInput } from './provider-name.ts';
 import { serverRegistryOf } from './server-registry.ts';
 import { MODEL_ROLES } from './settings-schema.ts';
 import { assertSettings } from './settings.ts';
@@ -55,7 +54,7 @@ export type ModelsEditPlan = { document: Record<string, unknown>; references: Mo
 
 export type ModelsEditResult = { wrote: boolean; summaries: string[]; model?: string };
 
-export type ModelsEditPorts = { kinds: ServerKinds; planProfiles: PlanProfiles; servers: Readonly<Record<string, ManagedServerDescription>>; home?: string };
+export type ModelsEditPorts = { kinds: ServerKinds; planProfiles?: PlanProfiles; home?: string };
 
 export class ModelsEditRefused extends Error {
   readonly code: ModelsEditRefusalCode;
@@ -85,7 +84,9 @@ type Json = Record<string, unknown>;
 
 type Place = { connection: number; entry: number };
 
-type State = { document: Json; resolved: ResolvedModels; warnings: string[]; views: ModelViews; displays: ReadonlyMap<string, string>; grid: string[][]; places: ReadonlyMap<string, Place> };
+type State = { document: Json; providers: readonly (string | undefined)[]; views: ModelViews; displays: ReadonlyMap<string, string>; grid: string[][]; places: ReadonlyMap<string, Place> };
+
+type Loaded = { resolved: ResolvedModels; warnings: string[] };
 
 const recordAt = (holder: Json, key: string): Json => {
   const value = holder[key];
@@ -113,28 +114,77 @@ const dropIfEmpty = (holder: Json, key: string): void => {
   if (Array.isArray(value) ? value.length === 0 : isRecord(value) && Object.keys(value).length === 0) delete holder[key];
 };
 
-const loadState = (document: Json, ports: ModelsEditPorts): State => {
+const loadedOf = (document: Json, ports: ModelsEditPorts): Loaded => {
   let settings;
-  let servers;
   try {
     settings = assertSettings(document, SOURCE);
-    servers = { ...ports.servers, ...serverRegistryOf(settings.models?.servers, SOURCE) };
+    serverRegistryOf(settings.models?.servers, SOURCE);
   } catch (error) {
     return refuse('invalid_value', sentenceOf(error));
   }
   const warnings: string[] = [];
-  let resolved: ResolvedModels;
   try {
-    resolved = resolveModels(settings.models, { source: SOURCE, home: ports.home, warnings, servers, planProfiles: ports.planProfiles, classifier: settings.autoMode?.classifier, kinds: ports.kinds });
+    const resolved = userModelsOf(settings, { source: SOURCE, home: ports.home, warnings, kinds: ports.kinds, ...(ports.planProfiles === undefined ? {} : { planProfiles: ports.planProfiles }) });
+    return { resolved, warnings: warnings.map(sentenceOf) };
   } catch (error) {
     return refuse('would_not_load', `${NOT_SAVED}${sentenceOf(error)}`);
   }
-  const grid = (settings.models?.connections ?? []).map((connection, index) => {
-    const { provider, defaultTag } = resolved.connections[index] as ResolvedModels['connections'][number];
-    return (connection.models ?? []).map((entry) => canonOf(provider, withDefaultTag(entry.id, defaultTag)));
+};
+
+const writtenConnections = (document: Json): unknown[] => {
+  const models = document['models'];
+  const connections = isRecord(models) ? models['connections'] : undefined;
+  return Array.isArray(connections) ? connections : [];
+};
+
+const writtenEntries = (connection: Json): unknown[] => (Array.isArray(connection['models']) ? connection['models'] : []);
+
+const writtenText = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
+const nameInputOf = (connection: Json): ProviderNameInput | undefined => {
+  const adapter = writtenText(connection['adapter']);
+  if (adapter === undefined) return undefined;
+  const plan = connection['plan'];
+  const profile = isRecord(plan) ? writtenText(plan['profile']) : undefined;
+  return {
+    adapter,
+    provider: writtenText(connection['provider']),
+    baseUrl: writtenText(connection['baseUrl']),
+    socketPath: writtenText(connection['socketPath']),
+    server: writtenText(connection['server']),
+    plan: isRecord(plan) && profile !== undefined ? { profile, account: writtenText(plan['account']) } : undefined,
+  };
+};
+
+const writtenNameOf = (connection: unknown, kinds: ServerKinds): string | undefined => {
+  const input = isRecord(connection) ? nameInputOf(connection) : undefined;
+  if (input === undefined) return undefined;
+  try {
+    return providerNameOf(input, kinds);
+  } catch {
+    return undefined;
+  }
+};
+
+const tagOf = (connection: Json, kinds: ServerKinds): string | undefined => serverKindOf({ adapter: String(connection['adapter']) }, kinds)?.defaultTag;
+
+const writtenViewsOf = (connection: unknown, provider: string | undefined, kinds: ServerKinds): ModelView[] => {
+  if (provider === undefined || !isRecord(connection)) return [];
+  const defaultTag = tagOf(connection, kinds);
+  return writtenEntries(connection).map((entry) => {
+    const ownName = withDefaultTag(String(isRecord(entry) ? entry['id'] : undefined), defaultTag);
+    return { canon: canonOf(provider, ownName), provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }) };
   });
+};
+
+const readState = (document: Json, kinds: ServerKinds): State => {
+  const connections = writtenConnections(document);
+  const providers = connections.map((connection) => writtenNameOf(connection, kinds));
+  const rows = connections.map((connection, index) => writtenViewsOf(connection, providers[index], kinds));
+  const views = rows.flat();
+  const grid = rows.map((row) => row.map((view) => view.canon));
   const places = new Map(grid.flatMap((canons, connection) => canons.map((canon, entry): [string, Place] => [canon, { connection, entry }])));
-  return { document, resolved, warnings: warnings.map(sentenceOf), views: resolved.views, displays: displayMapOf(resolved.views), grid, places };
+  return { document, providers, views, displays: displayMapOf(views), grid, places };
 };
 
 const displayIn = (state: State, canon: string): string => state.displays.get(canon) ?? canon;
@@ -149,7 +199,7 @@ const requireConfigured = (state: State, canon: string): string => {
 };
 
 const connectionIndexOf = (state: State, provider: string): number => {
-  const index = state.resolved.connections.findIndex((connection) => connection.provider === provider);
+  const index = state.providers.indexOf(provider);
   return index >= 0 ? index : refuse('unresolved', `The server "${provider}" is not configured.`);
 };
 
@@ -205,23 +255,8 @@ const rewriteReferences = (document: Json, state: State, moves: Moves): ModelsRe
   return references;
 };
 
-const tagOf = (connection: Json, kinds: ServerKinds): string | undefined => serverKindOf({ adapter: String(connection['adapter']) }, kinds)?.defaultTag;
-
-const gridOf = (document: Json, kinds: ServerKinds): string[][] | undefined => {
-  try {
-    return connectionsIn(document).map((connection) => {
-      const provider = providerNameOf(connection as Parameters<typeof providerNameOf>[0], kinds);
-      const tag = tagOf(connection, kinds);
-      return entriesIn(connection).map((entry) => canonOf(provider, withDefaultTag(String(entry['id']), tag)));
-    });
-  } catch {
-    return undefined;
-  }
-};
-
 const rewriteMoved = (document: Json, state: State, kinds: ServerKinds): ModelsReference[] => {
-  const after = gridOf(document, kinds);
-  if (after === undefined) return [];
+  const after = readState(document, kinds).grid;
   const moves = new Map<string, string>();
   state.grid.forEach((canons, connection) =>
     canons.forEach((canon, entry) => {
@@ -232,7 +267,7 @@ const rewriteMoved = (document: Json, state: State, kinds: ServerKinds): ModelsR
   return rewriteReferences(document, state, moves);
 };
 
-type Applied = { references?: ModelsReference[]; model?: (after: State) => string; summary: (after: State) => string };
+type Applied = { references?: ModelsReference[]; model?: (after: State) => string; summary: (after: State, last: Loaded) => string };
 
 const countText = (count: number): string => `${count} ${count === 1 ? 'model' : 'models'}`;
 
@@ -532,7 +567,7 @@ const setConnectionField = (document: Json, state: State, operation: Extract<Mod
     for (const entry of entriesIn(connection)) entry['id'] = withDefaultTag(String(entry['id']), tag);
   }
   const references = rewriteMoved(document, state, ports.kinds);
-  const name = (after: State): string => after.resolved.connections[index]?.provider ?? operation.provider;
+  const name = (after: State): string => after.providers[index] ?? operation.provider;
   if (value === undefined) return { references, summary: (after) => `Cleared ${fieldLabel(field)} of ${name(after)}.` };
   return { references, summary: (after) => `Set ${fieldLabel(field)} of ${name(after)} to ${fieldValueText(field, value)}.` };
 };
@@ -544,10 +579,10 @@ const setProvider = (document: Json, state: State, operation: Extract<ModelsOper
   if (name === null) {
     delete connection['provider'];
     const references = rewriteMoved(document, state, ports.kinds);
-    return { references, summary: (after) => `${operation.provider} is now named ${after.resolved.connections[index]?.provider ?? operation.provider}.` };
+    return { references, summary: (after) => `${operation.provider} is now named ${after.providers[index] ?? operation.provider}.` };
   }
   if (!PROVIDER_NAME_PATTERN.test(name)) refuse('invalid_value', NAME_RULE_TEXT);
-  if (state.resolved.connections.some((other, otherIndex) => otherIndex !== index && other.provider === name)) refuse('name_taken', `${name} is already used by another server.`);
+  if (state.providers.some((other, otherIndex) => otherIndex !== index && other === name)) refuse('name_taken', `${name} is already used by another server.`);
   reservedRefusal(name, connection['adapter'], ports.kinds);
   connection['provider'] = name;
   const references = rewriteMoved(document, state, ports.kinds);
@@ -562,10 +597,10 @@ const declaredServerOf = (document: Json, id: string): Json => {
   return refuse('unresolved', `The server program "${id}" is not declared.`);
 };
 
-const declareServer = (document: Json, operation: Extract<ModelsOperation, { kind: 'declareServer' }>, ports: ModelsEditPorts): Applied => {
+const declareServer = (document: Json, operation: Extract<ModelsOperation, { kind: 'declareServer' }>): Applied => {
   const { id, command, args, readyPath } = operation;
   const servers = declaredServersIn(document);
-  if (Object.hasOwn(servers, id) || Object.hasOwn(ports.servers, id)) refuse('name_taken', `${id} is already used by another server.`);
+  if (Object.hasOwn(servers, id) || Object.hasOwn(serverRegistryOf(undefined, SOURCE), id)) refuse('name_taken', `${id} is already used by another server.`);
   servers[id] = { command, args: [...args], readyPath };
   return { summary: () => `Declared the server program ${id}.` };
 };
@@ -582,8 +617,8 @@ const setServerField = (document: Json, operation: Extract<ModelsOperation, { ki
 const forgetServer = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'forgetServer' }>): Applied => {
   const { id } = operation;
   declaredServerOf(document, id);
-  const user = state.resolved.connections.find((connection) => connection.server === id);
-  if (user !== undefined) refuse('duplicate', `${id} is used by ${user.provider}; remove that server first.`);
+  const user = writtenConnections(document).findIndex((connection) => isRecord(connection) && connection['server'] === id);
+  if (user >= 0) refuse('duplicate', `${id} is used by ${state.providers[user] ?? `models.connections[${user}]`}; remove that server first.`);
   const models = modelsIn(document);
   delete declaredServersIn(document)[id];
   dropIfEmpty(models, 'servers');
@@ -594,7 +629,7 @@ const setTimeouts = (document: Json, operation: Extract<ModelsOperation, { kind:
   const models = modelsIn(document);
   if (operation.headersTimeoutMs !== undefined) models['headersTimeoutMs'] = operation.headersTimeoutMs;
   if (operation.idleTimeoutMs !== undefined) models['idleTimeoutMs'] = operation.idleTimeoutMs;
-  return { summary: (after) => `Waits saved: first reply ${durationText(after.resolved.headersTimeoutMs)}, no data ${durationText(after.resolved.idleTimeoutMs)}.` };
+  return { summary: (_after, last) => `Waits saved: first reply ${durationText(last.resolved.headersTimeoutMs)}, no data ${durationText(last.resolved.idleTimeoutMs)}.` };
 };
 
 const setDialects = (document: Json, operation: Extract<ModelsOperation, { kind: 'setDialects' }>): Applied => {
@@ -629,7 +664,7 @@ const apply = (document: Json, state: State, operation: ModelsOperation, ports: 
     case 'setProvider':
       return setProvider(document, state, operation, ports);
     case 'declareServer':
-      return declareServer(document, operation, ports);
+      return declareServer(document, operation);
     case 'setServerField':
       return setServerField(document, operation);
     case 'forgetServer':
@@ -641,45 +676,24 @@ const apply = (document: Json, state: State, operation: ModelsOperation, ports: 
   }
 };
 
-const loadedOrRefusal = (document: Json, ports: ModelsEditPorts): State | ModelsEditRefused => {
-  try {
-    return loadState(document, ports);
-  } catch (error) {
-    if (error instanceof ModelsEditRefused) return error;
-    throw error;
-  }
-};
-
 const planned = (given: unknown, operations: ModelsOperations, ports: ModelsEditPorts): Exclude<ModelsEditPlan, { refused: ModelsEditRefusal }> => {
   if (!isRecord(given)) return refuse('invalid_value', 'The settings must be a JSON object.');
-  let state = loadState(structuredClone(given), ports);
-  let unloadable: ModelsEditRefused | undefined;
+  let state = readState(structuredClone(given), ports.kinds);
   const references: ModelsReference[] = [];
-  const summaries: ((last: State) => string)[] = [];
-  const models: ((last: State) => string)[] = [];
+  const summaries: ((last: Loaded) => string)[] = [];
+  const models: string[] = [];
   for (const operation of operations) {
     const document = structuredClone(state.document);
     const applied = apply(document, state, operation, ports);
     references.push(...(applied.references ?? []));
-    const after = loadedOrRefusal(document, ports);
-    if (after instanceof ModelsEditRefused) {
-      unloadable = after;
-      state = { ...state, document };
-      summaries.push(applied.summary);
-      if (applied.model !== undefined) models.push(applied.model);
-      continue;
-    }
-    unloadable = undefined;
+    const after = readState(document, ports.kinds);
     state = after;
-    const summary = applied.summary(after);
-    summaries.push(() => summary);
-    const model = applied.model?.(after);
-    if (model !== undefined) models.push(() => model);
+    summaries.push((last) => applied.summary(after, last));
+    if (applied.model !== undefined) models.push(applied.model(after));
   }
-  if (unloadable !== undefined) throw unloadable;
-  const last = state;
-  const model = models[0]?.(last);
-  return { document: last.document, references, warnings: last.warnings, summaries: summaries.map((summary) => summary(last)), ...(model === undefined ? {} : { model }) };
+  const last = loadedOf(state.document, ports);
+  const [model] = models;
+  return { document: state.document, references, warnings: last.warnings, summaries: summaries.map((summary) => summary(last)), ...(model === undefined ? {} : { model }) };
 };
 
 export const planModelsEdit = (document: unknown, operations: ModelsOperations, ports: ModelsEditPorts): ModelsEditPlan => {
@@ -691,15 +705,15 @@ export const planModelsEdit = (document: unknown, operations: ModelsOperations, 
   }
 };
 
-const BUILT_IN_SERVERS: Readonly<Record<string, ManagedServerDescription>> = Object.fromEntries(MANAGED_SERVERS.map((server) => [server.id, server]));
+export type EditModelsSettingsOptions = { signal: AbortSignal; planProfiles?: PlanProfiles };
 
-export const editModelsSettings = async (home: string, settingsFile: string, operations: ModelsOperations, options: { signal: AbortSignal }): Promise<ModelsEditResult> => {
+export const editModelsSettings = async (home: string, settingsFile: string, operations: ModelsOperations, options: EditModelsSettingsOptions): Promise<ModelsEditResult> => {
   let result: ModelsEditResult | undefined;
   await editUserSettings(
     home,
     settingsFile,
     (document) => {
-      const plan = planModelsEdit(document, operations, { kinds: SERVER_KINDS, planProfiles: PLAN_PROFILES, servers: BUILT_IN_SERVERS, home });
+      const plan = planModelsEdit(document, operations, { kinds: SERVER_KINDS, home, ...(options.planProfiles === undefined ? {} : { planProfiles: options.planProfiles }) });
       if ('refused' in plan) throw new ModelsEditRefused(plan.refused.code, plan.refused.message);
       const wrote = JSON.stringify(plan.document) !== JSON.stringify(document);
       result = { wrote, summaries: plan.summaries, ...(plan.model === undefined ? {} : { model: plan.model }) };

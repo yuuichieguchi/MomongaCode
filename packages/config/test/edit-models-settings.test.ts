@@ -532,3 +532,82 @@ describe('what the writer never does', () => {
     expect(await loads(home)).toEqual([DEVSTRAL_MODEL]);
   });
 });
+
+describe('a settings file that does not load can be edited, and only a result that does not load is refused', () => {
+  const DANGLING = { models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }], start: 'ollama/removed-by-hand:latest' } };
+  const START_SENTENCE = 'models.start: "ollama/removed-by-hand:latest" is not a configured model; configured models: devstral-small-2, qwen3.8:27b';
+
+  it('the file with a start model that was removed by hand does not load', async () => {
+    const home = homeWith(DANGLING);
+    await expect(loadUserSettings({ home: home.tree.home })).rejects.toThrow(START_SENTENCE);
+  });
+
+  it('setStart to a configured model repairs it, and so does clearing the start model', async () => {
+    const chosen = homeWith(DANGLING);
+    expect((await editModels(chosen, [op('setStart', { model: QWEN_MODEL })])).summaries).toEqual(['New sessions start with qwen3.8:27b.']);
+    expect(modelsOf(chosen).start).toBe(QWEN_MODEL);
+    expect(await loads(chosen)).toEqual([DEVSTRAL_MODEL, QWEN_MODEL]);
+    const cleared = homeWith(DANGLING);
+    await editModels(cleared, [op('setStart', { model: null })]);
+    expect(modelsOf(cleared).start).toBeUndefined();
+    expect(await loads(cleared)).toEqual([DEVSTRAL_MODEL, QWEN_MODEL]);
+  });
+
+  it('a removal and an addition go through in the write that also repairs the start model', async () => {
+    const removed = homeWith(DANGLING);
+    await editModels(removed, [op('removeModel', { model: DEVSTRAL_MODEL }), op('setStart', { model: QWEN_MODEL })]);
+    expect(await loads(removed)).toEqual([QWEN_MODEL]);
+    const added = homeWith(DANGLING);
+    const result = await editModels(added, [addModel(LMSTUDIO, { id: 'gemma-3-4b', capabilities: GEMMA_WINDOW }), op('setStart', { model: LMSTUDIO_GEMMA })]);
+    expect(result.summaries).toEqual(['Added gemma-3-4b. It is used from the next request.', 'New sessions start with gemma-3-4b.']);
+    expect(await loads(added)).toEqual([DEVSTRAL_MODEL, QWEN_MODEL, LMSTUDIO_GEMMA]);
+  });
+
+  it('an edit that leaves the start model as it is is refused with the key of the result, and the bytes of the file stay', async () => {
+    const home = homeWith(DANGLING);
+    const before = textOf(home);
+    const refused = await refusalOfEdit(editModels(home, [addModel(LMSTUDIO, { id: 'gemma-3-4b', capabilities: GEMMA_WINDOW })]));
+    expect(refused).toEqual({ code: 'would_not_load', message: `Not saved: ${START_SENTENCE}, gemma-3-4b` });
+    expect(textOf(home)).toBe(before);
+  });
+
+  it('a model entry the loader refuses is repaired by setting the fields it lacks', async () => {
+    const home = homeWith({ models: { connections: [{ ...OLLAMA, models: [{ id: 'llama3.2:latest' }] }] } });
+    await expect(loadUserSettings({ home: home.tree.home })).rejects.toThrow();
+    await editModels(home, [
+      op('setModelField', { model: 'ollama/llama3.2:latest', path: ['capabilities', 'contextWindow'], value: 8192 }),
+      op('setModelField', { model: 'ollama/llama3.2:latest', path: ['capabilities', 'maxOutputTokens'], value: 2048 }),
+    ]);
+    expect(await loads(home)).toEqual(['ollama/llama3.2:latest']);
+  });
+
+  it('a value outside the models section that does not load is named when a models edit leaves it', async () => {
+    const home = homeWith({ tui: { theme: 'bogus' }, models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }] } });
+    const refused = await refusalOfEdit(editModels(home, [op('setStart', { model: QWEN_MODEL })]));
+    expect(refused.code).toBe('invalid_value');
+    expect(refused.message).toContain('tui.theme must be one of');
+  });
+});
+
+describe('the plan is judged with the plan profiles of the loader (P-159)', () => {
+  const PLAN_CHOICE = addModel({ adapter: 'open-responses', plan: { profile: 'chatgpt' } }, { id: 'gpt-5.5' });
+  const editWith = (home: Home, planProfiles: unknown): Promise<unknown> =>
+    (config as unknown as { editModelsSettings(home: string, file: string, operations: readonly Operation[], options: { signal: AbortSignal; planProfiles: unknown }): Promise<unknown> }).editModelsSettings(home.tree.home, home.file, [PLAN_CHOICE], {
+      signal: new AbortController().signal,
+      planProfiles,
+    });
+
+  it('a plan connection the shipped profiles accept is refused when the profiles the loader was given do not hold its profile', async () => {
+    const home = homeWith();
+    const refused = await refusalOfEdit(editWith(home, {}));
+    expect(refused.code).toBe('would_not_load');
+    expect(refused.message).toContain('unknown plan profile "chatgpt"; the known profiles are none');
+    expect(fs.existsSync(home.file)).toBe(false);
+  });
+
+  it('and is written when those profiles hold it', async () => {
+    const home = homeWith();
+    await editWith(home, config.PLAN_PROFILES);
+    expect(documentOf(home)).toEqual({ models: { connections: [S3_PLAN] } });
+  });
+});
