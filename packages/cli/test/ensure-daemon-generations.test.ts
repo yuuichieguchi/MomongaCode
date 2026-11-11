@@ -3,12 +3,13 @@ import path from 'node:path';
 import { STARTUP_TIMEOUT_MS, ensureMomongaDirs, generationLayout, hostKernelLock, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, withTempDir, pollUntil } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { DaemonStartError, ensureDaemon, stopDaemon } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { DAEMON_POLL_INTERVAL_MS } from '../src/constants.ts';
+import { nodeClock } from '../src/node-ports.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
 import { createFakeWork, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
@@ -53,7 +54,26 @@ const holdLock = async (context: TestContext, lockPath: string): Promise<{ relea
   return { release: () => outcome.lock.release() };
 };
 
-const hostClock: CliClock = { now: () => Date.now(), sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)) };
+const countedClock = (): { clock: CliClock; sleeps(): number } => {
+  let sleeps = 0;
+  return {
+    clock: {
+      now: nodeClock.now,
+      sleep: (ms) => {
+        sleeps += 1;
+        return nodeClock.sleep(ms);
+      },
+    },
+    sleeps: () => sleeps,
+  };
+};
+
+const POLLS_SEEN = 4;
+
+const afterMorePolls = async (counted: { sleeps(): number }): Promise<void> => {
+  const from = counted.sleeps();
+  await pollUntil(() => counted.sleeps() >= from + POLLS_SEEN, { description: `${POLLS_SEEN} more polls of the start`, boundMs: STARTUP_TIMEOUT_MS });
+};
 
 const startRecordOf = (home: string, generation: number): unknown => JSON.parse(fs.readFileSync(generationLayout(home, generation).startRecord, 'utf8'));
 
@@ -83,11 +103,12 @@ describe('ensureDaemon starts a numbered generation (15.1, 15.3 S1, 15.9)', () =
     const { spawn, spawned } = recordingSpawn(startsAllocated((options) => start({ ...options, publishGate: gate })));
 
     let settled = false;
-    const pending = ensureDaemon({ ...portsWith(spawn), clock: hostClock }, paths, { bounds: { readyMs: STARTUP_TIMEOUT_MS, stopMs: STARTUP_TIMEOUT_MS } }).finally(() => {
+    const counted = countedClock();
+    const pending = ensureDaemon({ ...portsWith(spawn), clock: counted.clock }, paths, { bounds: { readyMs: STARTUP_TIMEOUT_MS, stopMs: STARTUP_TIMEOUT_MS } }).finally(() => {
       settled = true;
     });
-    while (!fs.existsSync(generationLayout(path.dirname(paths.root), 4).sockets.supervisor)) await hostClock.sleep(5);
-    await hostClock.sleep(4 * DAEMON_POLL_INTERVAL_MS);
+    await pollUntil(() => fs.existsSync(generationLayout(path.dirname(paths.root), 4).sockets.supervisor), { description: 'the socket of the started supervisor', boundMs: STARTUP_TIMEOUT_MS });
+    await afterMorePolls(counted);
     expect(settled).toBe(false);
     expect(fs.existsSync(paths.current)).toBe(false);
     release();
@@ -121,8 +142,8 @@ describe('ensureDaemon starts a numbered generation (15.1, 15.3 S1, 15.9)', () =
     const { spawn, spawned } = recordingSpawn(startsAllocated((options) => start({ ...options, publishGate: gate })));
 
     const waiting = { bounds: { readyMs: STARTUP_TIMEOUT_MS, stopMs: STARTUP_TIMEOUT_MS } };
-    const first = ensureDaemon({ ...portsWith(spawn), clock: hostClock }, paths, waiting);
-    const second = ensureDaemon({ ...portsWith(spawn), clock: hostClock }, paths, waiting);
+    const first = ensureDaemon({ ...portsWith(spawn), clock: nodeClock }, paths, waiting);
+    const second = ensureDaemon({ ...portsWith(spawn), clock: nodeClock }, paths, waiting);
     release();
     const outcomes = await Promise.all([first, second]);
 
@@ -279,14 +300,15 @@ describe('a start that does not happen says why (20.12, 20.14)', () => {
 
   it('says it stopped before it was ready, and where the reason is, when the supervisor claimed the generation and then ended', async (context) => {
     const { paths, start, portsWith } = await setup(context);
+    const counted = countedClock();
     const { spawn } = recordingSpawn(async (spec) => {
       const supervisor = await start({ version: VERSION, generation: Number(generationArgOf(spec)?.slice('--generation='.length)), publishes: false });
-      await hostClock.sleep(4 * DAEMON_POLL_INTERVAL_MS);
+      await afterMorePolls(counted);
       await supervisor.stop();
       return { code: 0, signal: null };
     });
 
-    const failure = await ensureDaemon({ ...portsWith(spawn), clock: hostClock }, paths, { bounds: { readyMs: STARTUP_TIMEOUT_MS, stopMs: STARTUP_TIMEOUT_MS } }).catch((error: unknown) => error);
+    const failure = await ensureDaemon({ ...portsWith(spawn), clock: counted.clock }, paths, { bounds: { readyMs: STARTUP_TIMEOUT_MS, stopMs: STARTUP_TIMEOUT_MS } }).catch((error: unknown) => error);
 
     expect((failure as Error).message).toBe(`The new daemon (v${VERSION}) did not start (it stopped before it was ready). The reason is in ${paths.logFiles.supervisor}.`);
   });

@@ -46,9 +46,10 @@ describe('momonga secret set against a secret store that does not answer', () =>
   it("the read-back shares the command's limit", async () => {
     useLimitTimers();
     const WRITE_ANSWERS_AFTER_MS = 100_000;
+    const writeAnswer = Promise.withResolvers<void>();
     const keychain = keychainFixture({
       beforeAnswer: async (command) => {
-        if (command === 'add-generic-password') await new Promise<void>((resolve) => void setTimeout(resolve, WRITE_ANSWERS_AFTER_MS));
+        if (command === 'add-generic-password') await writeAnswer.promise;
         if (command === 'find-generic-password') keychain.control.calls = 'hang';
       },
     });
@@ -57,6 +58,7 @@ describe('momonga secret set against a secret store that does not answer', () =>
     const attempt = outcomeOf(secretSet(ports, momongaLayout('/home/u'), 'k', interruptOf().signal));
     await keychain.arrived('add-generic-password');
     await vi.advanceTimersByTimeAsync(WRITE_ANSWERS_AFTER_MS);
+    writeAnswer.resolve();
     await keychain.arrived('find-generic-password');
     expect(keychain.items).toEqual({ k: 'v' });
     await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - WRITE_ANSWERS_AFTER_MS - 1);

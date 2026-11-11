@@ -294,11 +294,12 @@ describe('the credential phase of a check against a secret store that does not a
 
   it('readCredentials ends at the command limit for all secrets together', async () => {
     useLimitTimers();
+    const firstAnswer = Promise.withResolvers<void>();
     const keychain = keychainFixture({
       items: { a: 'key-a', b: 'key-b' },
       beforeAnswer: async (command, account) => {
         if (command !== 'find-generic-password') return;
-        if (account === 'a') await new Promise<void>((resolve) => void setTimeout(resolve, FIRST_ANSWERS_AFTER_MS));
+        if (account === 'a') await firstAnswer.promise;
         if (account === 'b') keychain.control.calls = 'hang';
       },
     });
@@ -312,6 +313,7 @@ describe('the credential phase of a check against a secret store that does not a
     try {
       await keychain.arrived('find-generic-password', 1);
       await vi.advanceTimersByTimeAsync(FIRST_ANSWERS_AFTER_MS);
+      firstAnswer.resolve();
       await keychain.arrived('find-generic-password', 2);
       await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - FIRST_ANSWERS_AFTER_MS - 1);
       await afterPendingIo();

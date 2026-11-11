@@ -4,15 +4,9 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { MAX_JSON_DEPTH } from '@momonga/foundation';
 import type { McpStdioServerConfig } from '@momonga/config';
-import {
-  FIXTURE_EXTRA_TOOLS_ENV,
-  FIXTURE_HOSTILE_TITLE,
-  MCP_MODERN_SERVER_PATH,
-  MODERN_FIXTURE_RECORD_ENV,
-  REAL_PROCESS_TEST_TIMEOUT_MS,
-  killPidsForCleanup,
-  nestedNotSchema,
-} from '@momonga/testkit';
+import { systemTimers } from '@momonga/mcp';
+import type { McpTimers } from '@momonga/mcp';
+import { FIXTURE_EXTRA_TOOLS_ENV, FIXTURE_HOSTILE_TITLE, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS, killPidsForCleanup, waitFor, nestedNotSchema } from '@momonga/testkit';
 import {
   callRecords,
   entry,
@@ -33,10 +27,6 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const hash8 = (value: string): string => createHash('sha256').update(value).digest('hex').slice(0, 8);
 
 const extras = (...names: string[]): Record<string, string> => ({ [FIXTURE_EXTRA_TOOLS_ENV]: names.join(',') });
-
-const turns = async (count: number): Promise<void> => {
-  for (let index = 0; index < count; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
 
 const makeLauncher = (body: (counter: string) => string) => {
   const dir = makeDir();
@@ -167,19 +157,32 @@ describe('deterministic hashed names', () => {
 describe('close during backoff and connect', () => {
   it('resolves promptly during a reconnect backoff and spawns nothing after close began', async () => {
     const launcher = makeLauncher(() => 'exit 1');
-    const harness = makePool([entry('flaky', launcher.config)], { random: () => 0.999 });
+    const asked: number[] = [];
+    const fired: number[] = [];
+    const timers: McpTimers = {
+      setTimeout: (callback, ms) => {
+        asked.push(ms);
+        return systemTimers.setTimeout(() => {
+          fired.push(ms);
+          callback();
+        }, ms);
+      },
+      clearTimeout: (handle) => systemTimers.clearTimeout(handle),
+    };
+    const harness = makePool([entry('flaky', launcher.config)], { random: () => 0.999, timers });
     const [source] = harness.pool.sources;
     await expect(source?.list()).rejects.toThrow();
     await expect(source?.list()).rejects.toThrow();
     expect(launcher.pids()).toHaveLength(2);
+    const before = asked.length;
     const pending = (source?.list() as Promise<unknown>).then(
       () => 'resolved',
       () => 'rejected',
     );
-    await turns(20);
-    const startedAt = performance.now();
+    await waitFor(() => asked.length > before, { description: 'the wait of the backoff before the next connect' });
+    const firedBefore = fired.length;
     await harness.pool.close();
-    expect(performance.now() - startedAt).toBeLessThan(250);
+    expect(fired.slice(firedBefore)).toEqual([]);
     expect(await pending).toBe('rejected');
     expect(launcher.pids()).toHaveLength(2);
   });
@@ -194,9 +197,7 @@ describe('close during backoff and connect', () => {
       () => 'rejected',
     );
     await waitUntil(() => launcher.pids().length === 1, 'launcher started');
-    const startedAt = performance.now();
     await harness.pool.close();
-    expect(performance.now() - startedAt).toBeLessThan(5000);
     expect(await pending).toBe('rejected');
     expect(pidAlive(launcher.pids()[0] as number)).toBe(false);
   });

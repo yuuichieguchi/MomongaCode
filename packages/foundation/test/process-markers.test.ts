@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming } from '@momonga/testkit';
-import { POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
+import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming, afterMicrotasks } from '@momonga/testkit';
+import { POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup, systemWaitTiming, waitUntil as foundationWaitUntil } from '@momonga/foundation';
 import type { ProbeResult, ProcessInspector, Timing } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -42,14 +42,8 @@ const alive = (target: number): boolean => {
   }
 };
 
-const waitUntil = async (condition: () => boolean, timeoutMs: number): Promise<boolean> => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (condition()) return true;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  return condition();
-};
+const waitUntil = async (condition: () => boolean, timeoutMs: number): Promise<boolean> =>
+  (await foundationWaitUntil(systemWaitTiming, async () => (condition() ? true : undefined), { intervalMs: POLL_INTERVAL_MS, deadline: systemWaitTiming.monotonicMs() + timeoutMs })).kind === 'found';
 
 const makeDir = (): string => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-pgrp-')));
@@ -419,7 +413,7 @@ describe('reconcileProcessGroup timing injection', () => {
       sleep: async (ms: number) => {
         sleeps.push(ms);
         current += ms;
-        await new Promise((resolve) => setImmediate(resolve));
+        await afterMicrotasks();
       },
     });
     const signals: Array<{ pid: number; signal: NodeJS.Signals | number; at: number }> = [];
@@ -468,7 +462,7 @@ describe('markerReapClockBoundMs', () => {
       now: () => current,
       sleep: async (ms: number) => {
         current += ms;
-        await new Promise((resolve) => setImmediate(resolve));
+        await afterMicrotasks();
       },
     });
     const scriptedHolders: ProbeResult<number[]>[] = [

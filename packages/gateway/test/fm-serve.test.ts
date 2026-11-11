@@ -805,11 +805,11 @@ describe('createManagedServer stop and health', () => {
     await children[0]?.replaceServerWithSilentOne();
     const caller = new AbortController();
     const checking = server.health(caller.signal);
-    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(manual.delays()).toEqual([]);
     const ended = new Error('the caller ended');
     caller.abort(ended);
     const answer = await checking.catch((error: unknown) => error);
+    expect(manual.delays()).toEqual([]);
     expect(answer === ended || (answer as { ok?: boolean }).ok === false).toBe(true);
   });
 });

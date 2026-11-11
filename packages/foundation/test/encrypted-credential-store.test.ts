@@ -310,7 +310,7 @@ describe('encrypted credential store: waits use the signal of the operation (N81
       settled = true;
     });
     attempt.catch(() => undefined);
-    for (let turn = 0; turn < 100_000 && ports.waitedMs() <= 3 * DEFAULT_LOCK_TIMEOUT_MS && !settled; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+    await waitFor(() => ports.waitedMs() > 3 * DEFAULT_LOCK_TIMEOUT_MS || settled, { description: 'the writer to wait past three lock timeouts or to end' });
     expect(settled).toBe(false);
     expect(ports.waitedMs()).toBeGreaterThan(3 * DEFAULT_LOCK_TIMEOUT_MS);
     expect(given.keys.writes).toEqual([]);

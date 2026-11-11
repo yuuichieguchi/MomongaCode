@@ -10,7 +10,7 @@ import { parseRule } from '@momonga/config';
 
 
 import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from '@momonga/config';
-import { createMcpPool, type McpPool } from '@momonga/mcp';
+import { createMcpPool, type McpPool, type McpTimers } from '@momonga/mcp';
 
 
 import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
@@ -110,7 +110,7 @@ export type PoolHarness = {
 
 export const makePool = (
   servers: McpServerEntry[],
-  options: { requestTimeoutMs?: number; toolIdleTimeoutMs?: number; resetAfterMs?: number; connectTimeoutMs?: number; random?: () => number; clock?: FakeClock; credentialNames?: readonly string[] } = {},
+  options: { requestTimeoutMs?: number; toolIdleTimeoutMs?: number; resetAfterMs?: number; connectTimeoutMs?: number; random?: () => number; clock?: FakeClock; timers?: McpTimers; credentialNames?: readonly string[] } = {},
 ): PoolHarness => {
   const clock = options.clock ?? createFakeClock(1_000_000);
   const projectDir = makeDir();
@@ -121,6 +121,7 @@ export const makePool = (
     baseEnv: BASE_ENV,
     clock,
     random: options.random ?? (() => 0),
+    ...(options.timers === undefined ? {} : { timers: options.timers }),
     ...(options.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: options.connectTimeoutMs }),
     ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
     ...(options.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs: options.toolIdleTimeoutMs }),

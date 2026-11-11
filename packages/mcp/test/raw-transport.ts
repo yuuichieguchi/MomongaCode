@@ -7,7 +7,7 @@ import type { McpStdioServerConfig } from '@momonga/config';
 import { groupAlive, groupTerminationBoundMs } from '@momonga/foundation';
 import { createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
-import { LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup, pollUntil } from '@momonga/testkit';
 import { closeGraceOf } from '../src/stdio-transport.ts';
 
 export const transportCloseBoundMs = (closeGraceMs: number): number => closeGraceMs + groupTerminationBoundMs(closeGraceMs) + closeGraceMs + 2 * closeGraceMs;
@@ -53,13 +53,9 @@ export const trackPid = (pid: number): void => {
   });
 };
 
-export const eventually = async (condition: () => boolean | Promise<boolean>, description: string): Promise<void> => {
-  for (let attempt = 0; attempt < 4000; attempt += 1) {
-    if (await condition()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  throw new Error(`condition not reached: ${description}`);
-};
+const CONDITION_BOUND_MS = 20_000;
+
+export const eventually = (condition: () => boolean | Promise<boolean>, description: string): Promise<void> => pollUntil(condition, { description, boundMs: CONDITION_BOUND_MS });
 
 export const descriptorPath = (pid: number, fd: number): Promise<string | undefined> =>
   new Promise((resolve, reject) => {

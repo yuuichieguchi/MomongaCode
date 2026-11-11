@@ -1,5 +1,5 @@
 import { momongaPaths } from '@momonga/foundation';
-import { withTempDir } from '@momonga/testkit';
+import { withTempDir, waitFor } from '@momonga/testkit';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import type { RunEventFrame, RuntimeClient } from '../../src/client/runtime-client.ts';
@@ -88,7 +88,7 @@ describe('the quiet point and the record of a stream client (16.5, 16.7, O4)', (
       },
     };
     const watching = watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format: 'stream-json', verbose: true, interrupt: new AbortController().signal, onInterrupt: 'cancel', move: { mover, kind: 'headless', recordFile: (session) => `/run/handover/${session}.json` } });
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitFor(() => quietAtCheck.length === 5, { description: 'the check made at each of the five frames' });
     expect(quietAtCheck).toEqual([true, true, true, false, true]);
     const surface = surfaces[0];
     expect(surface?.recordFile()).toBe('/run/handover/session-1.json');

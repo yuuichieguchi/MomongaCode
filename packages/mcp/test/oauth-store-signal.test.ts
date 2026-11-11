@@ -7,7 +7,7 @@ import { OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, crea
 import { DEFAULT_LOCK_TIMEOUT_MS } from '../../foundation/src/file-lock.ts';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, startLockHolder, sleepDrivenTiming, createFakeRandom, afterMicrotasks, waitFor } from '@momonga/testkit';
 import type { McpOAuthProvider } from '../src/mcp-oauth.ts';
 import { createMcpOAuthProvider, credentialKey } from '../src/mcp-oauth.ts';
 import type * as RemoteTransportModule from '../src/remote-transport.ts';
@@ -41,7 +41,7 @@ const steppedPorts = (): FileLockPorts & { waitedMs(): number } => {
       now: () => now,
       sleep: (ms) => {
         now += ms;
-        return new Promise((resolve) => setImmediate(resolve));
+        return afterMicrotasks();
       },
     }),
     random: { ...createFakeRandom(1), hex: () => 'cafe0001' },
@@ -76,7 +76,7 @@ describe('MCP OAuth provider store waits (N81)', () => {
       settled = true;
     });
     attempt.catch(() => undefined);
-    for (let turn = 0; turn < 100_000 && ports.waitedMs() <= 3 * DEFAULT_LOCK_TIMEOUT_MS && !settled; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+    await waitFor(() => ports.waitedMs() > 3 * DEFAULT_LOCK_TIMEOUT_MS || settled, { description: 'the writer to wait past three lock timeouts or to end' });
     expect(settled).toBe(false);
     expect(ports.waitedMs()).toBeGreaterThan(3 * DEFAULT_LOCK_TIMEOUT_MS);
     const reason = new Error('the authorization was cancelled');

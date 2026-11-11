@@ -81,7 +81,6 @@ describe('the screen-reader display', () => {
     await untilFrame(started.app, 'running Bash: npm test');
     expect(count(started, 'waiting for the model')).toBe(1);
     expect(count(started, 'running Bash: npm test')).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 2 * SPINNER_MS));
     const lines = allLines(started);
     expect(lines.filter((line) => GLYPHS.test(line))).toEqual([]);
     expect(lines.filter((line) => /to cancel/.test(line))).toEqual([]);
@@ -207,7 +206,6 @@ describe('reduced motion on the screen', () => {
     const started = await waitingRow({ settings: { reducedMotion: true } });
     const shown = await untilFrame(started.app, '• waiting for the model');
     expect(shown).toMatch(/• waiting for the model \d+s · esc to cancel/);
-    await new Promise((resolve) => setTimeout(resolve, 2 * SPINNER_MS));
     expect(allLines(started).filter((line) => GLYPHS.test(line))).toEqual([]);
     expect(started.delays).not.toContain(SPINNER_MS);
     started.app.unmount();

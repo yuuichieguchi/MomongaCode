@@ -11,7 +11,7 @@ import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration, createTempDir, prepareGenerationForTest, registerOwned, removeTempDir } from '@momonga/testkit';
+import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration, createTempDir, prepareGenerationForTest, registerOwned, removeTempDir, pollUntil } from '@momonga/testkit';
 import type { ModelSpec } from '@momonga/testkit';
 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
@@ -364,13 +364,9 @@ export const waitForStatus = async (temp: RunHome, runId: string, statuses: read
   return seen as string;
 };
 
-export const waitForCondition = async (predicate: () => boolean, description: string): Promise<void> => {
-  const deadline = Date.now() + 30_000;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${description}`);
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-  }
-};
+const CONDITION_BOUND_MS = 30_000;
+
+export const waitForCondition = (predicate: () => boolean, description: string): Promise<void> => pollUntil(predicate, { description, boundMs: CONDITION_BOUND_MS });
 
 export const settledState = async (promise: Promise<unknown>): Promise<'settled' | 'pending'> => {
   let settled = false;

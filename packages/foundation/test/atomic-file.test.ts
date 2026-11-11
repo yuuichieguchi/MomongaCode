@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { atomicWriteSteps, writeFileAtomically, writeFileAtomicallySync } from '@momonga/foundation';
 import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, AtomicWriteStep, ClaimOutcome, KernelLockMechanism, LockForm, Random } from '@momonga/foundation';
+import { afterMicrotasks } from '@momonga/testkit';
 
 const DIRECTORY = '/state';
 const TARGET = `${DIRECTORY}/record.json`;
@@ -115,7 +116,7 @@ const recordingFileSystem = (form: LockForm, initial: Readonly<Record<string, st
       },
     };
   };
-  const tick = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+  const tick = afterMicrotasks;
   const lock: KernelLockMechanism = {
     name: form === 'entry' ? 'file-lock' : 'sqlite-lock',
     claim: async (lockPath) => {

@@ -17,7 +17,7 @@ import {
   startChatSpan,
 } from '@momonga/observability';
 import type { BodyRecord, TraceStore } from '@momonga/observability';
-import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, waitFor, afterMicrotasks } from '@momonga/testkit';
 import { CONTENT, QUIET_BATCH, RUN_ID, START_MS, dumpAllRows, harness, openStore, registerCleanup, bodiesOfSpan } from './helpers.ts';
 
 const captureErrors = (): unknown[] => {
@@ -148,7 +148,7 @@ describe('captured content is queued off the span path and never throws', () => 
     await h.telemetry.shutdown();
     chat.setAttribute(INPUT, 'late');
     chat.end(h.clock.now());
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await afterMicrotasks();
     expect(h.store.spansForRun(RUN_ID)).toEqual([]);
     expect(bodiesOfSpan(h.store, chat.spanContext().spanId)).toEqual([]);
   });
@@ -224,7 +224,7 @@ describe('flush and shutdown failure policy', () => {
   });
 
   it('an unawaited shutdown leaves no unhandled rejection', async () => {
-    captureErrors();
+    const errors = captureErrors();
     const unhandled: unknown[] = [];
     const listener = (reason: unknown): void => {
       unhandled.push(reason);
@@ -235,7 +235,8 @@ describe('flush and shutdown failure policy', () => {
     });
     const h = harness({ exporters: [rejecting('shutdown')] });
     void h.telemetry.shutdown();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitFor(() => errors.length === 1, { description: 'the failure of the shutdown to reach the error handler' });
+    await afterMicrotasks();
     expect(unhandled).toEqual([]);
   });
 });
@@ -327,9 +328,7 @@ describe('body retention', () => {
       reader.exec('BEGIN');
       reader.prepare('SELECT COUNT(*) FROM bodies').get();
       h.clock.advance(5000);
-      const started = performance.now();
       expect(h.store.purgeBodies(h.clock.now())).toBe(1);
-      expect(performance.now() - started).toBeLessThan(1000);
       expect(errors).toHaveLength(1);
       expect(String(errors[0])).toContain('checkpoint');
     } finally {

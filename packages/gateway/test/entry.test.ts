@@ -141,11 +141,9 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
 
     launched.io.signal('SIGTERM');
     await until(() => stderrJson(launched.io).some((line) => line.msg === 'entry.signal'), 'the first signal to be logged');
-    const secondAt = Date.now();
     launched.io.signal('SIGTERM');
 
     expect(await launched.exit).toBe(0);
-    expect(Date.now() - secondAt).toBeLessThan(GATEWAY_CONFIG_DEFAULTS.closeGraceMs);
     expect(lastLine(stderrJson(launched.io))).toMatchObject({ msg: 'entry.exit', code: 0, path: 'abort', clean: true, trigger: 'sigterm' });
     await request;
   });

@@ -8,7 +8,7 @@ import type { Probing } from '@momonga/protocol';
 import type { KnownProbeKey } from '@momonga/config';
 import * as gatewayModule from '@momonga/gateway';
 import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import type { FakeClock, FakeFmConfig } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
@@ -435,16 +435,14 @@ const setupInstance = () => {
   return { probe, notices, pending, dir };
 };
 
-const settleRounds = async (): Promise<void> => {
-  for (let round = 0; round < 10; round += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
+const measurementEnded = (probe: { ensure(): Promise<{ kind: string }> }): Promise<void> => waitFor(async () => (await probe.ensure()).kind !== 'probing', { description: 'the measurement to end' });
 
 describe('P11 NoRecordUnderUnknown and P12 MemoryIsThisInstance: a probe key component that cannot be read (design-managed-servers section 17, item 10)', () => {
   it('P11 NoRecordUnderUnknown: reads and writes no record and takes no record lock in the probe directory, before or after the measurement', async () => {
     const { probe, pending, dir } = setupInstance();
     await probe.ensure();
     pending[0]?.resolve({ contextWindow: 4096 });
-    await settleRounds();
+    await measurementEnded(probe);
     await probe.ensure();
     expect(fs.readdirSync(dir)).toEqual([]);
   });
@@ -473,7 +471,7 @@ describe('P11 NoRecordUnderUnknown and P12 MemoryIsThisInstance: a probe key com
     const { probe, pending } = setupInstance();
     await probe.ensure();
     pending[0]?.resolve({ contextWindow: 4096 });
-    await settleRounds();
+    await measurementEnded(probe);
     expect(await probe.ensure()).toEqual({ kind: 'measured', report: { contextWindow: 4096 } });
     expect(pending).toHaveLength(1);
   });
@@ -482,7 +480,7 @@ describe('P11 NoRecordUnderUnknown and P12 MemoryIsThisInstance: a probe key com
     const { probe, pending, notices } = setupInstance();
     await probe.ensure();
     pending[0]?.resolve({ contextWindow: 4096 });
-    await settleRounds();
+    await measurementEnded(probe);
     probe.restarted();
     expect((await probe.ensure()).kind).toBe('probing');
     expect(pending).toHaveLength(2);

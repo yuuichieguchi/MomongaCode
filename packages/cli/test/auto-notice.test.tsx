@@ -70,8 +70,7 @@ describe('the auto notice in the TUI', () => {
     const line = notice({ view, surface: 'tui' });
     const { app } = await start({ session: { permissionMode: 'auto', ...({ autoClassifier: view } as object) }, autoModeAvailable: true } as never);
     await untilOutput(app, 'mode: auto');
-    const deadline = Date.now() + 10_000;
-    while (!flat(app.frames.join('\n')).includes(flat(line)) && Date.now() < deadline) await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    await untilOutput(app, (output) => flat(output).includes(flat(line)));
     expect(flat(app.frames.join('\n'))).toContain(flat(line));
     expect(flat(app.frames.join('\n'))).not.toContain('momonga auto-mode check');
     app.unmount();

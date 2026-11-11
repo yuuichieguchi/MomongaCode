@@ -4,7 +4,7 @@ import { withReplayedInitialize } from '../src/acp/handover.ts';
 import type { AgentConnection, AnyMessage } from '@agentclientprotocol/sdk';
 import type { MessageStream } from '../src/acp/handover.ts';
 import type { ModelViews, PublicRunEvent, SkillsResponse } from '@momonga/protocol';
-import { SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER } from '@momonga/testkit';
+import { SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, afterMicrotasks } from '@momonga/testkit';
 import { RunApiError } from '../src/client/runtime-client.ts';
 import type { CreatedSession, RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
 import type { ApprovalView, ElicitationView, RunView, SessionView } from '../src/client/views.ts';
@@ -218,7 +218,7 @@ export const fakeRuntime = (): FakeRuntime => {
     },
     skills: async (id) => {
       record(`skills ${id}`);
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await afterMicrotasks();
       return runtime.skillList;
     },
     setMcpServers: async (id, servers) => {

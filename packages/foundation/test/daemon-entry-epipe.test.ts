@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, withTempDir, pollUntil } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { TrackedChild } from '@momonga/testkit';
 
@@ -139,7 +139,7 @@ describe('daemon entry with a vanished supervisor', () => {
     });
     child.kill('SIGTERM');
     const ended = new Promise<void>((resolve) => stderrStream.once('end', () => resolve()));
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await pollUntil(() => stderrStream.readableLength >= stderrStream.readableHighWaterMark, { description: 'the stderr of the daemon to back up behind its paused reader', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS });
     stderrStream.resume();
     await ended;
     const code = await exitOf(child);

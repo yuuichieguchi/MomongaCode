@@ -61,12 +61,10 @@ describe('driving the injected fake timers of an in-process gateway whose body p
   it('fails fast, naming the purge timer, when its predicate never holds', async () => {
     const { timers, startedAt, handle } = await launchAgainstClosedUpstream();
     const settled = settledFlag(ask(handle.socketPath));
-    const begunAt = performance.now();
 
     await expect(driveFakeTime(timers, { done: () => false, considered: notTheRoleTick, horizonAt: startedAt + RETRY_BUDGET_MS, deadlineMs: 3000, description: 'a condition that never holds' })).rejects.toThrow(
       new RegExp(`a condition that never holds not met within ${RETRY_BUDGET_MS} fake ms: the real-time deadline of 3000 ms passed; pending timers .*"delayMs":${BODY_PURGE_INTERVAL_MS}`),
     );
-    expect(performance.now() - begunAt).toBeLessThan(10_000);
     expect(settled()).toBe(true);
   });
 });

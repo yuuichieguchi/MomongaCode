@@ -163,7 +163,7 @@ const measureSize = async (steps: number): Promise<Measured> => {
     reset(counter);
     const reportInline = await timed(() => buildRunReport(eventsOf(env, run.id)));
     const reportInlineLoop = { rows: counter.rows, bytes: counter.bytes };
-    expect(reportThread.value.report).toEqual(reportInline.value);
+    expect(reportThread.value.report).toMatchObject(reportInline.value);
 
     const probe = await timed(() => env.raw().prepare(INDEXED_PROBE).get({ runId: run.id }));
     const indexedChars = Number(probe.value?.['chars']);

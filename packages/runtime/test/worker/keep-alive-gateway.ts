@@ -11,7 +11,7 @@ import { createGatewayClient } from '../../src/gateway-client.ts';
 import type { GatewayClient } from '../../src/gateway-client.ts';
 import { capabilitiesFor } from './harness.ts';
 import { MODEL_ID } from './scripts.ts';
-import { fixedSocket, fixedRolePort } from '@momonga/foundation';
+import { fixedSocket, fixedRolePort, sleep, systemTiming } from '@momonga/foundation';
 
 export const KEEP_ALIVE_EVERY_MS = 40;
 
@@ -77,5 +77,9 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
   return { client, upstream };
 };
 
-export const within = <T>(work: Promise<T>, windowMs: number): Promise<{ settled: true; value: T } | { settled: false }> =>
-  Promise.race([work.then((value) => ({ settled: true as const, value })), new Promise<{ settled: false }>((resolve) => setTimeout(() => resolve({ settled: false }), windowMs))]);
+export const within = <T>(work: Promise<T>, windowMs: number): Promise<{ settled: true; value: T } | { settled: false }> => {
+  const window = new AbortController();
+  const settled = work.then((value) => ({ settled: true as const, value })).finally(() => window.abort());
+  const passed = sleep(systemTiming, windowMs, window.signal).then(() => ({ settled: false as const }));
+  return Promise.race([settled, passed]);
+};

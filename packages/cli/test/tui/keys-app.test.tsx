@@ -73,11 +73,11 @@ const startWith = async (options: FakeBackendOptions, extra: Partial<AppProps>, 
   return { backend, terminal, app };
 };
 
-const withFile = async (initial: ReturnType<typeof file> | undefined, options: FakeBackendOptions = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
+const withFile = async (initial: ReturnType<typeof file> | undefined, options: FakeBackendOptions = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}, extra: Partial<AppProps> = {}) => {
   const host = disk(initial === undefined ? undefined : JSON.stringify(initial));
   const keyBindings = createKeyBindings({ file: FILE, shownFile: SHOWN, files: host.files });
   await keyBindings.load();
-  const started = await startWith(options, { keyBindings }, screen);
+  const started = await startWith(options, { keyBindings, ...extra }, screen);
   return { ...started, ...host, keyBindings };
 };
 
@@ -214,13 +214,22 @@ describe('a rebound key on the screen', () => {
   });
 
   it('acts on a chord, holds its first key with no timer, and types nothing for it', async () => {
-    const started = await withFile(file(['chat', { 'ctrl+x enter': 'prompt.submit' }]));
+    const delays: number[] = [];
+    const recorded = settleAtOnce({
+      setTimeout: (run: () => void, ms: number) => {
+        delays.push(ms);
+        return systemTiming.setTimeout(run, ms);
+      },
+      clearTimeout: (handle: unknown) => systemTiming.clearTimeout(handle as ReturnType<typeof systemTiming.setTimeout>),
+    });
+    const started = await withFile(file(['chat', { 'ctrl+x enter': 'prompt.submit' }]), {}, {}, { timers: recorded });
     const { app, backend } = started;
     await untilFrame(app, 'mode: manual');
     app.stdin.write('hello');
     await untilFrame(app, '> hello');
+    const asked = delays.length;
     app.stdin.write('\u0018');
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(delays.slice(asked)).toEqual([]);
     expect(backend.started).toEqual([]);
     app.stdin.write(PRESS.enter);
     await backend.called('openSession');

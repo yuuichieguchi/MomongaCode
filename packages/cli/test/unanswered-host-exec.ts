@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
+import { waitFor } from '@momonga/testkit';
 
 export const LIMIT_TIMERS = ['setTimeout', 'clearTimeout'] as const;
 
@@ -24,7 +25,7 @@ export const homeWithAManagedModel = (): { home: string; binary: string; models:
 };
 
 export const untilTheExecIsAsked = async (calls: readonly string[], count: number): Promise<void> => {
-  while (calls.length < count) await new Promise((resolve) => setImmediate(resolve));
+  await waitFor(() => calls.length >= count, { description: `the host exec to be asked ${count} times` });
 };
 
 export const isSettled = async (outcome: Promise<unknown>): Promise<boolean> => {

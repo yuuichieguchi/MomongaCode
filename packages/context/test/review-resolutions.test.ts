@@ -151,13 +151,7 @@ describe('fs reader rejects non-regular files', () => {
     const { execFileSync } = await import('@momonga/testkit/child-process');
     execFileSync('mkfifo', [fifo]);
     const reader = createFsInstructionReader(NEVER_CANCELLED);
-    const started = performance.now();
-    const result = await Promise.race([
-      reader.read(fifo),
-      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 2000).unref()),
-    ]);
-    expect(result).toBeUndefined();
-    expect(performance.now() - started).toBeLessThan(2000);
+    expect(await reader.read(fifo)).toBeUndefined();
   });
 
   it('treats a unix socket named AGENTS.md as absent', async () => {

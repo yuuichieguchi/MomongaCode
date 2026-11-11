@@ -7,10 +7,6 @@ const bRegistered = Promise.withResolvers<void>();
 const aDrained = Promise.withResolvers<void>();
 const aBodyDone = Promise.withResolvers<void>();
 
-const settle = async (): Promise<void> => {
-  for (let turn = 0; turn < 20; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-};
-
 describe('registerCleanup under it.concurrent', () => {
   describe('two overlapping tests', () => {
     it.concurrent('test A drains only its own cleanups when it finishes first', async (context) => {
@@ -29,7 +25,7 @@ describe('registerCleanup under it.concurrent', () => {
       bRegistered.resolve();
       await aRegistered.promise;
       await aBodyDone.promise;
-      await Promise.race([aDrained.promise, settle()]);
+      await aDrained.promise;
       expect(cleanupLog).toEqual(['A2', 'A1']);
     });
   });
