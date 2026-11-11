@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { readTx } from '@momonga/foundation/sqlite';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR, TERMINAL_STATUSES, floorRatio } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR, TERMINAL_STATUSES, floorRatio, tokensForText } from '@momonga/protocol';
 import type { ContentPart, InheritedReferencePayload, InheritedViaLink, InputItem, PermissionMode, RunEvent, RunState, RunStatus, TerminalStatus } from '@momonga/protocol';
 import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
 import { createDerivedSnapshot } from './derived-repair.ts';
@@ -130,8 +130,12 @@ const charsOf = (item: InputItem): number => {
   }
 };
 
+const outputTextOf = (output: string | readonly ContentPart[]): string => (typeof output === 'string' ? output : output.map((part) => ('text' in part ? part.text : '')).join(''));
+
 export const lowerBoundTokens = (item: InputItem, floorTokens: number): number =>
-  item.type === 'function_call_output' ? Math.max(1, floorTokens) : Math.max(1, discountedFloor(Math.ceil(charsOf(item) / ESTIMATED_CHARACTERS_PER_TOKEN)));
+  item.type === 'function_call_output'
+    ? Math.max(1, Math.min(floorTokens, discountedFloor(tokensForText(outputTextOf(item.output)))))
+    : Math.max(1, discountedFloor(Math.ceil(charsOf(item) / ESTIMATED_CHARACTERS_PER_TOKEN)));
 
 const isStub = (entry: WindowEntry): entry is EvictedStub => !('item' in entry);
 
