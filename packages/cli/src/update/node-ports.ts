@@ -169,16 +169,14 @@ export const nodeUpdateLock = (paths: MomongaPaths, mechanism: KernelLockMechani
 export const nodeUpdateState = (paths: MomongaPaths, lock: KernelLockMechanism): UpdateStateStore => {
   const file = path.join(paths.state, UPDATE_STATE_FILE);
   return {
+    file,
     read: async () => {
-      let text: string;
       try {
-        text = await fs.readFile(file, 'utf8');
+        return await fs.readFile(file, 'utf8');
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
         throw error;
       }
-      const parsed: unknown = JSON.parse(text);
-      return parsed;
     },
     write: async (state) => {
       await writeFileAtomically(nodeFileSystem, systemRandom, file, JSON.stringify(state), { mode: UPDATE_STATE_MODE, lock });

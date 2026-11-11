@@ -30,6 +30,7 @@ fi`,
 : > "$last"`,
   xcrun: `printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"; i=0; while [ "$i" -lt "\${STUB_NOTARY_PADDING_LINES:-0}" ]; do echo 'padding line of a long notary log'; i=$((i + 1)); done`,
   spctl: `exit "\${STUB_SPCTL_EXIT:-0}"`,
+  zig: '',
   codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-PQQBSRKD72}" >&2; i=0; while [ "$i" -lt "\${STUB_DISPLAY_PADDING_LINES:-0}" ]; do echo 'padding line of a long codesign display' >&2; i=$((i + 1)); done; fi`,
   'ssh-keygen': `case " $* " in *" verify "*)
   signers=''
@@ -149,6 +150,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     fs.mkdirSync(path.join(work, 'scripts'), { recursive: true });
     fs.mkdirSync(path.join(work, 'packages/cli'), { recursive: true });
     fs.copyFileSync(`${repoRoot}scripts/release.sh`, path.join(work, 'scripts/release.sh'));
+    fs.copyFileSync(`${repoRoot}scripts/release-tools.sh`, path.join(work, 'scripts/release-tools.sh'));
     fs.copyFileSync(`${repoRoot}scripts/sea-entitlements.plist`, path.join(work, 'scripts/sea-entitlements.plist'));
     fs.copyFileSync(`${repoRoot}scripts/release-key.ts`, path.join(work, 'scripts/release-key.ts'));
     for (const script of ['embedded-ripgrep.ts', 'ripgrep-release.ts', 'node-runtime.ts', 'z3-assets.ts', 'bundle.ts']) fs.symlinkSync(`${repoRoot}scripts/${script}`, path.join(work, 'scripts', script));

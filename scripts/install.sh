@@ -24,6 +24,10 @@ case "$os/$machine" in
 esac
 readonly ASSET_NAME
 
+if [ "$os" = "Linux" ] && command -v ldd > /dev/null && [[ "$(ldd --version 2>&1)" == *musl* ]]; then
+  fail "this Linux uses the musl C library, and momonga is built only for Linux with the GNU C library (x86_64 and aarch64), macOS on Apple silicon and Windows x64; nothing was installed"
+fi
+
 prefix="${MOMONGA_INSTALL_PREFIX:-$HOME/.local}"
 
 if [ -n "${MOMONGA_RELEASE_BASE_URL:-}" ]; then

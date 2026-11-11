@@ -122,7 +122,7 @@ describe('the background check around user commands', () => {
 
     await run(program, 'daemon', 'status');
 
-    expect(harness.stderr.join('')).toContain('momonga: the background update check was not started: the update state file is not valid');
+    expect(harness.stderr.join('')).toContain(`momonga: the background update check was not started: the update state file ${harness.state.file} is not valid; remove it to reset the background update check`);
     expect(completed).toEqual([1]);
   });
 

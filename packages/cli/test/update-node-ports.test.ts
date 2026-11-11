@@ -82,11 +82,11 @@ describe('update state store', () => {
 
     await store.write({ checkedAt: 7, outcome: { kind: 'up_to_date' }, announced: true });
 
-    expect(await store.read()).toEqual({ checkedAt: 7, outcome: { kind: 'up_to_date' }, announced: true });
+    expect(JSON.parse(await store.read() ?? '')).toEqual({ checkedAt: 7, outcome: { kind: 'up_to_date' }, announced: true });
     expect(fs.readdirSync(path.join(home, '.momonga', 'state')).filter((entry) => entry.startsWith('update.json'))).toEqual(['update.json']);
   });
 
-  it('fails on a file that is not JSON', async (context) => {
+  it('hands the text of the file to the one parser, and names the file it reads', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
@@ -94,7 +94,8 @@ describe('update state store', () => {
     await store.write({});
     fs.writeFileSync(path.join(paths.state, 'update.json'), '{ nope');
 
-    await expect(store.read()).rejects.toThrow(SyntaxError);
+    expect(store.file).toBe(path.join(paths.state, 'update.json'));
+    expect(await store.read()).toBe('{ nope');
   });
 });
 

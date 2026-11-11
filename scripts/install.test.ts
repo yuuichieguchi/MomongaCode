@@ -230,6 +230,28 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(fs.readFileSync(target())).toEqual(GOOD_BINARY);
   });
 
+  it('refuses a musl Linux before it downloads anything, naming the platform and the supported builds', async () => {
+    const stubs = unameStub('Linux', 'x86_64');
+    fs.writeFileSync(path.join(stubs, 'ldd'), '#!/bin/sh\necho "musl libc (x86_64)" >&2\necho "Version 1.2.5" >&2\nexit 1\n', { mode: 0o755 });
+    const log = path.join(stubs, 'curl.log');
+    fs.writeFileSync(path.join(stubs, 'curl'), `#!/bin/sh\necho called >> "${log}"\nexit 22\n`, { mode: 0o755 });
+    const outcome = await runInstall({ ...baseEnv(), PATH: `${stubs}:${testHostPath('/usr/bin:/bin')}` });
+    expect(outcome).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: 'install.sh: this Linux uses the musl C library, and momonga is built only for Linux with the GNU C library (x86_64 and aarch64), macOS on Apple silicon and Windows x64; nothing was installed\n',
+    });
+    expect(fs.existsSync(log)).toBe(false);
+  });
+
+  it('installs on a Linux whose ldd reports the GNU C library', async () => {
+    const stubs = unameStub('Linux', 'x86_64');
+    fs.writeFileSync(path.join(stubs, 'ldd'), '#!/bin/sh\necho "ldd (GNU libc) 2.39"\n', { mode: 0o755 });
+    served = { ['/momonga-linux-x64']: GOOD_BINARY, ...signedSums(`${sha256(GOOD_BINARY)}  momonga-linux-x64\n`) };
+    const outcome = await runInstall({ ...baseEnv(), PATH: `${stubs}:${path.join(prefix, 'bin')}:${testHostPath('/usr/bin:/bin')}` });
+    expect(outcome.code).toBe(0);
+  });
+
   it('refuses an unsupported Linux architecture', async () => {
     const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', 'riscv64')}:${testHostPath('/usr/bin:/bin')}` });
     expect(outcome.code).toBe(1);
