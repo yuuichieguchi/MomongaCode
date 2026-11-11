@@ -151,7 +151,7 @@ export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';
 export type { FakeEntryIo, FakeEntryIoOptions, JsonLine } from './fake-entry-io.ts';
 export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLinesFile, startDaemonBin } from './daemon-bin.ts';
 export type { DaemonBin } from './daemon-bin.ts';
-export { APPLE_PROGRAMS, FAKE_LEASE, NEVER_CANCELLED, TEST_SEARCH_PATH, fakePolicyFilesystem, hostFilesystemOf, isWritableFor, protectedSetWith, testPaths, testProbes } from './fake-policy-filesystem.ts';
+export { APPLE_PROGRAMS, FAKE_LEASE, NEVER_CANCELLED, TEST_SEARCH_PATH, UndeclaredGlobError, fakePolicyFilesystem, hostFilesystemOf, isWritableFor, protectedSetWith, testPaths, testProbes } from './fake-policy-filesystem.ts';
 export { canonicalPathSync } from './canonical-path-sync.ts';
 export { UNBOUNDED_OUTPUT_FIT } from './fake-output-fit.ts';
 export type { FakeGlobDeadline, FakeGlobExpansion, FakePolicyFilesystem, FakePolicyFilesystemLayout, FakeProgramResolution, FakeResolveCall, HostOf, RecordingPolicyFilesystem } from './fake-policy-filesystem.ts';

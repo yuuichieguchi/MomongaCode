@@ -1,7 +1,6 @@
 import path from 'node:path';
 import type { FileSystem, FileSystemSync } from './node-file-system.ts';
 import type { Awaitable } from './path-resolution.ts';
-import { someAsync } from './sequential.ts';
 
 export type SearchEnv = Readonly<Record<string, string | undefined>>;
 
@@ -95,11 +94,10 @@ export const programOnSearchPath =
       if (landing !== undefined) {
         if (landing.apple) return landing.exact && !landing.unsafe ? { program: landing.program } : { none: true };
         if (!landing.unsafe) return { program: landing.program };
-        const appleBehind = await someAsync(entries.slice(index + 1), async (later) => {
-          const holder = await holderAt(later, true);
-          return holder !== undefined && holder.exact;
-        });
-        return appleBehind ? { none: true } : { program: landing.program };
+        for (const later of entries.slice(index + 1)) {
+          if ((await holderAt(later, true))?.exact === true) return { none: true };
+        }
+        return { program: landing.program };
       }
       unsafeBefore = unsafeBefore || !path.isAbsolute(entry) || (await isWritable(entry));
     }

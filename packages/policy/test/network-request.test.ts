@@ -7,7 +7,7 @@ import { decide, suggestAllowRule } from '@momonga/policy';
 
 import type { Decision, PermissionRule, PolicyTool } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, makeLayout, ruleIn } from './helpers.ts';
+import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn } from './helpers.ts';
 
 
 const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
@@ -29,7 +29,7 @@ const decideCall = async ({ command = 'npm install', network, mode = 'manual', s
     protectedSet: EMPTY_PROTECTED_SET,
     fs: fakeFs(),
     searchPath: TEST_SEARCH_PATH,
-    isWritable: () => true,
+    isWritable: isWritableFor([layout.project]),
     ...(setting === undefined ? {} : { sandboxNetwork: setting }),
   });
 };

@@ -13,9 +13,11 @@ const commandTool = (command: string, runs: string[]) =>
     },
   });
 
+const DECLARED_GLOBS = { 'a*': { matches: [] }, 'b*': { matches: [] } };
+
 const recordingFilesystem = () => {
   const deadlines: Array<() => number> = [];
-  const host = hostFilesystemOf(fakePolicyFilesystem());
+  const host = hostFilesystemOf(fakePolicyFilesystem({ globs: DECLARED_GLOBS }));
   const fs = {
     ...host,
     expandGlob: async (pattern: string, cwd: string, limit: number, deadline: { remainingMs: () => number }) => {
@@ -44,7 +46,7 @@ describe('the executor spends one glob budget per decision, derived from the lea
 
   it('shares one deadline between the words of one decision', async () => {
     const seen: unknown[] = [];
-    const host = hostFilesystemOf(fakePolicyFilesystem());
+    const host = hostFilesystemOf(fakePolicyFilesystem({ globs: DECLARED_GLOBS }));
     const fs = {
       ...host,
       expandGlob: async (pattern: string, cwd: string, limit: number, deadline: { remainingMs: () => number }) => {
@@ -59,7 +61,7 @@ describe('the executor spends one glob budget per decision, derived from the lea
   });
 
   it('asks when the expansion reaches its deadline, and runs nothing', async () => {
-    const host = hostFilesystemOf(fakePolicyFilesystem());
+    const host = hostFilesystemOf(fakePolicyFilesystem({ globs: DECLARED_GLOBS }));
     const fs = { ...host, expandGlob: async () => ({ unresolvable: { kind: 'dynamic' as const } }) };
     const harness = makeHarness({ executor: { fs } });
     const runs: string[] = [];
@@ -69,7 +71,7 @@ describe('the executor spends one glob budget per decision, derived from the lea
   });
 
   it('hands the batch signal to the expander, and a cancel during the expansion fails the call as cancelled and runs nothing', async () => {
-    const host = hostFilesystemOf(fakePolicyFilesystem());
+    const host = hostFilesystemOf(fakePolicyFilesystem({ globs: DECLARED_GLOBS }));
     const controller = new AbortController();
     let received: AbortSignal | undefined;
     const fs = {
@@ -92,7 +94,7 @@ describe('the executor spends one glob budget per decision, derived from the lea
 
   it('rethrows an error of the expander and runs nothing', async () => {
     const failure = Object.assign(new Error('EIO: injected'), { code: 'EIO' });
-    const host = hostFilesystemOf(fakePolicyFilesystem());
+    const host = hostFilesystemOf(fakePolicyFilesystem({ globs: DECLARED_GLOBS }));
     const fs = {
       ...host,
       expandGlob: async (): Promise<never> => {
