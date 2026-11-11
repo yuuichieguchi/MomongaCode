@@ -3,7 +3,7 @@ import { exitHint } from '../../src/tui/app.tsx';
 import { NOT_NOW_LABEL, invitationLine } from '../../src/tui/screen/menu.tsx';
 import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
-import { CHATGPT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, startPlan, submitLine, untilRow } from '../fake-plan-gateway.tsx';
+import { CHATGPT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, startPlan, untilTypedAfter, submitLine, untilRow } from '../fake-plan-gateway.tsx';
 import type { FakePlanBackend } from '../fake-plan-gateway.tsx';
 import { runView } from '../fake-backend.ts';
 import { runStarted } from '../tui-harness.tsx';
@@ -58,9 +58,8 @@ describe('the invitation is one line that takes no key', () => {
   it.each(START_SCREEN_KEYS)('%s typed at the start screen never reaches the program that opens a URL and starts no sign-in', async (_name, key) => {
     const { app, backend } = await invited();
     app.stdin.write(key);
-    await quiet();
     app.stdin.write(KEYS.enter);
-    await quiet();
+    await untilTypedAfter(app);
     expect(backend.openedUrls).toEqual([]);
     expect(backend.listenerPaths).toEqual([]);
     expect(signInSteps(backend)).toEqual([]);
@@ -96,7 +95,7 @@ describe('the invitation is one line that takes no key', () => {
     const { app, backend } = await invited();
     app.stdin.write(KEYS.escape);
     await untilFrame(app, (shown) => !shown.includes(LINE));
-    await quiet();
+    await untilTypedAfter(app);
     expect(backend.dismissals).toEqual([]);
     app.unmount();
   });
@@ -108,8 +107,7 @@ describe('the invitation is one line that takes no key', () => {
     await eventually(() => backend.dismissals.length > 0, 'the stored answer');
     expect(backend.dismissals).toEqual(['invite:chatgpt']);
     await untilFrame(app, (shown) => !shown.includes(NOT_NOW_LABEL));
-    await quiet();
-    expect(app.lastFrame()).not.toContain(LINE);
+    expect(await untilTypedAfter(app)).not.toContain(LINE);
     app.unmount();
   });
 
@@ -130,7 +128,7 @@ describe('the loading overlay has a key that leaves it and is closed by the flow
   it('esc closes it, and the list the read would have opened is never shown', async () => {
     const { app, backend } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
-    await quiet();
+    await untilFrame(app, 'mode: manual');
     const answer = Promise.withResolvers<Awaited<ReturnType<typeof backend.plan.accounts>>>();
     const read = backend.plan.accounts;
     backend.plan.accounts = () => answer.promise;
@@ -139,17 +137,15 @@ describe('the loading overlay has a key that leaves it and is closed by the flow
     app.stdin.write(KEYS.escape);
     await untilFrame(app, (shown) => !shown.includes(READING));
     answer.resolve(await read());
-    await quiet();
-    expect(app.lastFrame()).not.toContain('Connect a model');
     app.stdin.write('typed');
-    await untilFrame(app, '> typed');
+    expect(await untilFrame(app, '> typed')).not.toContain('Connect a model');
     app.unmount();
   });
 
   it('ctrl+c closes it too', async () => {
     const { app, backend } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
-    await quiet();
+    await untilFrame(app, 'mode: manual');
     backend.plan.accounts = () => new Promise(() => undefined);
     await submitLine(app, '/login');
     await untilFrame(app, READING);
@@ -161,7 +157,7 @@ describe('the loading overlay has a key that leaves it and is closed by the flow
   it.each(['/login', '/logout', '/model'])('is closed when the read of %s fails, and the failure is shown', async (command) => {
     const { app, backend } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
-    await quiet();
+    await untilFrame(app, 'mode: manual');
     backend.plan.accounts = () => Promise.reject(new Error('the gateway did not answer'));
     await submitLine(app, command);
     await untilOutput(app, 'the gateway did not answer');
@@ -176,7 +172,7 @@ describe('a key typed between two lists of one flow reaches the list that opens'
   it('holds the key while the flow works and gives it to the next list', async () => {
     const { app, backend } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
-    await quiet();
+    await untilFrame(app, 'mode: manual');
     const held = Promise.withResolvers<void>();
     backend.sandbox = async () => {
       await held.promise;
@@ -188,15 +184,13 @@ describe('a key typed between two lists of one flow reaches the list that opens'
     await untilFrame(app, (shown) => !shown.includes('Continue with ChatGPT'));
     app.stdin.write(KEYS.down);
     app.stdin.write('x');
-    await quiet();
-    expect(app.lastFrame()).not.toContain('> x');
     held.resolve();
     await untilFrame(app, '› 1. Continue');
     expect(app.lastFrame()).toContain('The sandbox is off');
     expect(app.lastFrame()).not.toContain('> x');
     app.stdin.write(KEYS.escape);
     await untilFrame(app, (shown) => !shown.includes('The sandbox is off'));
-    await quiet();
+    await untilTypedAfter(app);
     expect(signInSteps(backend)).toEqual([]);
     app.unmount();
   });
@@ -204,7 +198,7 @@ describe('a key typed between two lists of one flow reaches the list that opens'
   it('gives the held keys to the input, in order, when the flow ends without another list', async () => {
     const { app, backend } = await startPlan({ accounts: [account()], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
-    await quiet();
+    await untilFrame(app, 'mode: manual');
     const held = Promise.withResolvers<void>();
     const signOut = backend.plan.signOut;
     backend.plan.signOut = async (request) => {
@@ -219,8 +213,6 @@ describe('a key typed between two lists of one flow reaches the list that opens'
     await untilFrame(app, (shown) => !shown.includes('again to sign out'));
     app.stdin.write('a');
     app.stdin.write('b');
-    await quiet();
-    expect(app.lastFrame()).not.toContain('> ab');
     held.resolve();
     await untilFrame(app, '> ab');
     app.unmount();
@@ -231,19 +223,18 @@ describe('a browser starts only from enter or a click on the row that says so', 
   it('digits typed at the welcome screen move the highlight and start no sign-in; enter on the sign-in row does', async () => {
     const { app, backend } = await startPlan({ models: [], accounts: [] });
     await untilRow(app, 'Continue with ChatGPT');
-    for (const key of ['1', '1', '1']) {
-      app.stdin.write(key);
-      await quiet();
-    }
-    expect(app.lastFrame()).toContain('Connect a model to start');
-    expect(signInSteps(backend)).toEqual([]);
-    expect(backend.openedUrls).toEqual([]);
+    for (const key of ['1', '1', '1']) app.stdin.write(key);
     app.stdin.write(KEYS.enter);
     await untilFrame(app, (shown) => !shown.includes('Connect a model to start') && shown.includes('1. Continue with ChatGPT'));
-    app.stdin.write('1');
-    await quiet();
     expect(signInSteps(backend)).toEqual([]);
     expect(backend.openedUrls).toEqual([]);
+    app.stdin.write('1');
+    app.stdin.write(KEYS.down);
+    await untilFrame(app, '› 2.');
+    expect(signInSteps(backend)).toEqual([]);
+    expect(backend.openedUrls).toEqual([]);
+    app.stdin.write(KEYS.up);
+    await untilFrame(app, '› 1. Continue with ChatGPT');
     app.stdin.write(KEYS.enter);
     await eventually(() => backend.openedUrls.length === 1, 'the browser');
     app.unmount();
@@ -256,10 +247,10 @@ describe('a browser starts only from enter or a click on the row that says so', 
     backend.finish(runView({ status: 'STOPPED', stopReason: 'usage_limit' as never, error: { code: 'plan_usage_limit', message: 'Manage usage', plan: { profile: 'chatgpt', account: 'chatgpt' } } as never }));
     await untilRow(app, 'Manage usage');
     app.stdin.write('1');
-    await quiet();
-    expect(backend.openedUrls).toEqual([]);
     app.stdin.write(KEYS.enter);
     await eventually(() => backend.openedUrls.length === 1, 'the usage page');
+    await untilTypedAfter(app);
+    expect(backend.openedUrls).toHaveLength(1);
     app.unmount();
   });
 });

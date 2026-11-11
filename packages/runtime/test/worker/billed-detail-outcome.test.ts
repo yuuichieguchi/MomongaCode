@@ -27,6 +27,22 @@ describe('billedDetailOf moves the price outcome from a response to a record', (
   });
 });
 
+describe('a reply whose cost does not match the one ModelCost schema', () => {
+  it.each([
+    ['without units', { amount: 0.5, currency: 'USD', priceVersion: '2026-01-01' }],
+    ['with units that are not a whole number', { amount: 0.5, units: '1.5', currency: 'USD', priceVersion: '2026-01-01' }],
+    ['with a negative amount', { amount: -1, units: '5', currency: 'USD', priceVersion: '2026-01-01' }],
+  ])('is recorded as unpriced with its reason, %s, and journals no cost', (_shape, cost) => {
+    const extension = { cost } as unknown as MomongaResponseExtension;
+
+    const detail = billedDetailOf(USAGE, extension, TIMING, 'resp_3');
+
+    expect(detail).not.toHaveProperty('cost');
+    expect(detail.unpriced?.code).toBe('unpriceable_usage');
+    expect(detail.unpriced?.reason).toMatch(/^the server replied with a cost that is not a valid price: /);
+  });
+});
+
 describe('billedDetailOf is the one copier of the price outcome', () => {
   it.each(['model-step.ts', 'context-step.ts'])('%s calls billedDetailOf and copies no cost itself', (name) => {
     const source = sourceOf(name);

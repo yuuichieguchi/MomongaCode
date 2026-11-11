@@ -11,6 +11,7 @@ import { createFakeClock } from '@momonga/testkit';
 import { SNAPSHOT_STATE_VERSION } from '../src/codec.ts';
 import { MIGRATIONS } from '../src/schema.ts';
 import { DEADLINE_MS, START_MS, callEvent, cancel, enqueue, harness, makeStoreDir, mustClaim, mustRun, newSession, openStoreAt, payloadOf, rawDb } from './helpers.ts';
+import { encodedRunState, foldedRunState } from './run-state-codec.ts';
 import { OPTIONS } from './approval-fixture.ts';
 
 const FOUND = 'An earlier attempt of Write was interrupted before it reported a result. Its effect is unknown; inspect the current state before retrying.';
@@ -176,23 +177,21 @@ describe('an unknown ask that is not answered', () => {
 
 describe('the snapshot of a run with an unknown effect', () => {
   it('round-trips unknownEffects, and a snapshot of the version before is refolded from the journal', async () => {
-    const { store, dbPath, runId, claim } = await asked(['call_1'], 'running');
+    const { store, runId } = await asked(['call_1'], 'running');
     const state = stateOf(store, runId);
-    expect(store.writeSnapshot(claim, state.lastSeq, state)).toEqual({ kind: 'ok' });
-    expect(store.load(runId).snapshot?.state).toEqual(state);
-    expect(SNAPSHOT_STATE_VERSION).toBe(21);
-    rawDb(dbPath).prepare("UPDATE snapshots SET state_json = json_remove(json_set(state_json, '$.stateVersion', 17), '$.unknownEffects') WHERE run_id = ?").run(runId);
-    const loaded = store.load(runId);
-    expect(loaded.snapshot).toBeUndefined();
-    expect(loaded.tail.reduce(foldRunState, initialRunState({ runId, sessionId: state.sessionId }))).toEqual(state);
+    const encoded = encodedRunState(state);
+    expect(encoded.read()).toEqual(state);
+    expect(SNAPSHOT_STATE_VERSION).toBe(22);
+    encoded.mutate("json_remove(json_set(state_json, '$.stateVersion', 17), '$.unknownEffects')");
+    expect(encoded.read()).toBeUndefined();
+    expect(await foldedRunState(store, runId)).toEqual(state);
   });
 
   it('reports a snapshot whose unknownEffects is malformed as corrupt', async () => {
-    const { store, dbPath, runId, claim } = await asked(['call_1'], 'running');
-    const state = stateOf(store, runId);
-    store.writeSnapshot(claim, state.lastSeq, state);
-    rawDb(dbPath).prepare("UPDATE snapshots SET state_json = json_set(state_json, '$.unknownEffects.call_1.acknowledged', 'yes') WHERE run_id = ?").run(runId);
-    expect(() => store.load(runId)).toThrow(/RunState/);
+    const { store, runId } = await asked(['call_1'], 'running');
+    const encoded = encodedRunState(stateOf(store, runId));
+    encoded.mutate("json_set(state_json, '$.unknownEffects.call_1.acknowledged', 'yes')");
+    expect(() => encoded.read()).toThrow(/RunState/);
   });
 });
 
@@ -242,7 +241,7 @@ describe('migration 34: an approval may ask about an unknown effect, and a rule 
     expect(() => insert.run('unknown-2', 'call_10', START_MS + 1, START_MS, 'unknown_effect')).toThrow(/CHECK/);
     expect(() => insert.run('other-1', 'call_11', null, START_MS, 'something_else')).toThrow(/CHECK/);
     expect(() => insert.run('second-pending', 'call_9', null, START_MS, 'unknown_effect')).toThrow(/UNIQUE/);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 43 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 44 });
   });
 
   it('creates rule_verdicts keyed by the fingerprint', () => {

@@ -270,9 +270,9 @@ describe('startRuntimeProcess startup (system timers)', () => {
       await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
       const leftover = path.join(temp.root, '.mcp.json');
       const journal = createPlaceholderJournal(path.join(temp.paths.state, 'placeholders'));
-      journal.intend(leftover, Date.now());
+      await journal.intend(leftover, Date.now());
       fs.writeFileSync(leftover, '');
-      journal.complete(leftover, identityOf(leftover));
+      await journal.complete(leftover, await identityOf(leftover));
       return leftover;
     };
 

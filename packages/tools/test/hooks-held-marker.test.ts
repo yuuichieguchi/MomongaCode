@@ -8,7 +8,7 @@ import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testLocks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -41,7 +41,7 @@ const contextWith = (command: string, run: CommandRunner) => {
   const hooks: HooksSettings = { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command }] }] };
   const context = {
     hooks,
-    sandbox: createUnsandboxed({ killGraceMs: 200 }),
+    sandbox: createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 }),
     sandboxPolicy: { writableRoots: [dir], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET },
     env: { PATH: '/usr/bin:/bin' },
     shellHost: nodeShellHost(),

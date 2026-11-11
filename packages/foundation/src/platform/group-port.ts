@@ -100,7 +100,10 @@ export const createJobGroupPort = (kept: KeptGroupControl): ProcessGroupPort => 
   keeper: kept,
   ended: (pgid, options) => kept.ended(pgid, options),
   signal: (pgid, _signal, options) => kept.terminate(pgid, options),
-  alive: async (pgid, options) => (await kept.members(pgid, options)).length > 0,
+  alive: async (pgid, options) => {
+    const answer = await kept.members(pgid, options);
+    return answer.kind === 'members' && answer.pids.length > 0;
+  },
 });
 
 export const createProcessGroupPort = (platform: NodeJS.Platform, ports: GroupPortPorts): ProcessGroupPort => {

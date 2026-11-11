@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { TransientToolError } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
-import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
-import { waitFor } from '@momonga/testkit';
+import { ABORT_SETTLE_LIMIT_MS } from '@momonga/foundation';
+import { call, fakeTimedShellHost, makeHarness, makeTool, onFakeTime, toolSetOf } from './harness.ts';
+import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { keyFor } from './helpers.ts';
 
 const waitForAbort = (ctx: ToolContext): Promise<{ status: 'failed'; output: string }> =>
@@ -88,15 +89,14 @@ describe('timeouts', () => {
     expect(executions).toBe(1);
   });
 
-  it('stops waiting for a tool that ignores the abort after at most 2000 ms', async () => {
-    const harness = makeHarness();
+  it('stops waiting for a tool that ignores the abort once the abort settle limit has passed after its timeout', async () => {
+    const timers = createFakeTimers(createFakeClock(0));
+    const harness = makeHarness({ executor: { shellHost: fakeTimedShellHost(timers) } });
     const tool = makeTool('Read', { timeoutMs: 20, execute: () => new Promise(() => undefined) });
-    const started = Date.now();
-    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
-    const elapsed = Date.now() - started;
+    const batch = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const { value: outcomes, atMs } = await onFakeTime(timers, batch, 3 * ABORT_SETTLE_LIMIT_MS, 'the outcome of a call that ignores the abort');
     expect(outputOf(outcomes[0])).toBe('Read timed out after 20 ms');
-    expect(elapsed).toBeGreaterThanOrEqual(1900);
-    expect(elapsed).toBeLessThan(6000);
+    expect(atMs).toBe(20 + ABORT_SETTLE_LIMIT_MS);
   });
 });
 

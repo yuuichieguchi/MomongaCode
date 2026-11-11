@@ -337,12 +337,16 @@ const canonicalPath = (input: string): Asking<string> => canonicalWith(input, fo
 
 const canonicalThroughFiles = (value: string): Asking<string> => canonicalWith(value, throughFilesStep);
 
-const DENIED_ERRNO: ReadonlySet<string> = new Set(['EACCES', 'EPERM']);
+const DENIED_ERRNO: ReadonlyMap<string, string> = new Map([
+  ['EACCES', 'permission denied'],
+  ['EPERM', 'operation not permitted'],
+]);
 
 const deniedOrRethrown = (error: unknown): CanonicalDirectoryResult => {
   const code = errnoOf(error);
-  if (code === undefined || !DENIED_ERRNO.has(code)) throw error;
-  return { ok: false, code: 'unreadable', reason: `cannot be read: ${(error as Error).message}` };
+  const denial = code === undefined ? undefined : DENIED_ERRNO.get(code);
+  if (denial === undefined) throw error;
+  return { ok: false, code: 'unreadable', reason: `cannot be read: ${denial} (${code})` };
 };
 
 function* canonicalDirectory(input: string): Asking<CanonicalDirectoryResult> {

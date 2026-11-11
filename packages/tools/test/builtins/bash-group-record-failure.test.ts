@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup, systemRandom } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths, testLocks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createMarkerSettle, nodeShellHost } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
 import { bashTool } from '../../src/builtins/bash.ts';
@@ -55,7 +55,7 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
       random: systemRandom,
       session: { cwd: layout.project },
       paths: testPaths(),
-      sandbox: createUnsandboxed({ killGraceMs: 300 }),
+      sandbox: createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 300 }),
       sandboxPolicy: {},
       processMarker: marker,
       spawnMarker: async () => ({ file: marker, fd: handle.fd, settle }),

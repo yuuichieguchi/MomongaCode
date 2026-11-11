@@ -98,6 +98,8 @@ export type AdapterStop = { readonly managedServerStopGraceMs: number };
 
 export type ChainRoomFacts = { outputBounded: boolean; contextWindow: number | undefined; maxOutputTokens: number | undefined };
 
+export type CarryRefusal = { code: string; message: string; param: string | null };
+
 export type ProviderAdapter = {
   readonly kind: string;
   readonly sampling: AdapterSampling;
@@ -115,4 +117,5 @@ export type ProviderAdapter = {
   renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number, reasoningOrigin: ReasoningOrigin, capabilities: Capabilities): Record<string, unknown>;
   renderWire?(request: AdapterRequest, target: AdapterTarget, options: RenderWireOptions): Record<string, unknown>;
   toolChoiceWire(capabilities: Capabilities, target: AdapterTarget): ToolChoiceWire;
+  carryRefusalOf?(request: AdapterRequest, target: AdapterTarget, capabilities: Capabilities, reasoningOrigin: ReasoningOrigin): CarryRefusal | undefined;
 };

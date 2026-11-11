@@ -8,11 +8,11 @@ import { createUninspectableRegistry, systemRandom, nodeFileSystem, BUSY_WAIT_LI
 import type { MarkerState, ProcessGroupPort } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, sleepDrivenTiming, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, sleepDrivenTiming, testKernelLock, testProcessInspector, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
-import { virtualTiming } from '../../../foundation/test/support/probe-fakes.ts';
+import { virtualTiming, driveUntil } from '../../../foundation/test/support/probe-fakes.ts';
 import { jobGenerationOptions } from './job-fixture.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
@@ -79,7 +79,7 @@ const runJob = async (survives: boolean) => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const child = Object.assign(new EventEmitter(), { pid: GROUP, stdout, stderr, stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: '/bin/bash',
         args: [],
         cwd: '/',
@@ -105,7 +105,7 @@ const runJob = async (survives: boolean) => {
     () => (done = true),
     () => (done = true),
   );
-  for (let step = 1; !done && step <= 1000; step += 1) await timing.advanceTo(step * KILL_GRACE_MS);
+  await driveUntil(timing, () => done, 1000 * KILL_GRACE_MS, 'the stop to end');
   await finalized.catch(() => undefined);
   const read = await jobs.read(created.run.id, jobId, { call: 'read-1' });
   const idemKey = store.jobs.get(jobId)?.idemKey ?? '';

@@ -224,15 +224,10 @@ export type AppendResult = { kind: 'ok'; lastSeq: number } | LeaseLost;
 export type RunMutationResult = { kind: 'ok'; run: Run } | LeaseLost | Conflict;
 export type ServiceMutationResult = { kind: 'ok'; run: Run } | Conflict;
 export type RequestApprovalResult = { kind: 'ok'; approval: Approval } | LeaseLost;
-export type SnapshotResult = { kind: 'ok' } | LeaseLost | Conflict;
 export type InheritContextResult = { kind: 'inherited' } | { kind: 'already' } | { kind: 'none' } | LeaseLost | Conflict;
 
 export type StatusPatch = { stopReason?: StopReason; error?: RunError };
 
-export type LoadedRun = {
-  snapshot?: { seq: number; state: RunState };
-  tail: RunEvent[];
-};
 
 export type IdempotencyRecord = {
   key: string;
@@ -659,7 +654,8 @@ export type RuntimeStore = {
     patch?: StatusPatch,
   ): Promise<ServiceMutationResult>;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
-  readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
+  readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][], afterSeq?: number): RunEvent[];
+  latestSessionNotice(sessionId: string, code: string, key: string): RunEvent | undefined;
   readLatestRunEventBefore<T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number): Extract<RunEvent, { type: T }> | undefined;
   readModelCallEvents(runId: string): Promise<ModelCallRecord[]>;
   toolCallSeq(runId: string, callId: string): Promise<number | undefined>;
@@ -678,7 +674,7 @@ export type RuntimeStore = {
   readSessionEventStream(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent | OpaqueEvent)[];
   readModelChanges(sessionId: string, afterId: number): Extract<SessionEvent, { type: 'model.changed' }>[];
   sessionMaxEventId(sessionId: string): number;
-  load(runId: string): LoadedRun;
+  load(runId: string, signal: AbortSignal): Promise<RunStateReply>;
   requestApproval(
     claim: Claim,
     input: {
@@ -702,9 +698,9 @@ export type RuntimeStore = {
   deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];
   hasActiveRun(): boolean;
+  catchUpDerived(pages: number): Promise<boolean>;
   approvalView(approvalId: string): Promise<ApprovalView | undefined>;
   pendingApprovalViews(runId: string): Promise<ApprovalView[]>;
-  writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
   inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;
   dataVersion(): number;
   createChildRun(input: ChildRunInput): Promise<CreateChildRunResult>;
@@ -813,6 +809,10 @@ export type ReportRequest = { runId: string };
 
 export type ReportReply = { lastSeq: number; report: RunReport };
 
+export type RunStateRequest = { runId: string };
+
+export type RunStateReply = { lastSeq: number; state: RunState };
+
 export type JournalFacts = {
   inheritPlan(request: InheritPlanRequest, signal?: AbortSignal): Promise<InheritPlanReply>;
   inheritedWindow(request: InheritedWindowRequest, signal?: AbortSignal): Promise<InheritedWindowReply>;
@@ -821,6 +821,7 @@ export type JournalFacts = {
   reflectionInput(request: ReflectionInputRequest, signal?: AbortSignal): Promise<ReflectionInputReply>;
   fidelity(request: FidelityRequest, signal?: AbortSignal): Promise<FidelityReply>;
   report(request: ReportRequest, signal?: AbortSignal): Promise<ReportReply>;
+  runState(request: RunStateRequest, signal?: AbortSignal): Promise<RunStateReply>;
 };
 
 export type ContributionPreparer = JournalFacts & {

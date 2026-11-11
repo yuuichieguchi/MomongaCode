@@ -80,7 +80,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
 
 export const within = <T>(work: Promise<T>, windowMs: number): Promise<{ settled: true; value: T } | { settled: false }> => {
   const window = new AbortController();
-  const settled = work.then((value) => ({ settled: true as const, value })).finally(() => window.abort());
+  const settled = work.then((value) => ({ settled: true as const, value }));
   const passed = sleep(systemTiming, windowMs, window.signal).then(() => ({ settled: false as const }));
-  return Promise.race([settled, passed]);
+  return Promise.race([settled, passed]).finally(() => window.abort());
 };

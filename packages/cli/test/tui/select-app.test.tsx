@@ -4,7 +4,7 @@ import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import type { FakeBackend } from '../fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
-import { choose, quiet, startPlan, submitLine } from '../fake-plan-gateway.tsx';
+import { choose, startPlan, submitLine } from '../fake-plan-gateway.tsx';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
 import { SESSION } from '../fake-backend.ts';
 

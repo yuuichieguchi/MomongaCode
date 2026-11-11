@@ -1,13 +1,13 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createOwnedDirectorySync, fileRuleBlocks, hostPaths, mapAsync, procGroupMembers, settledOrAborted, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
-import type { Awaitable, FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectorySync, PlaceholderForm, KernelLockMechanism } from '@momonga/foundation';
+import { createOwnedDirectory, fileRuleBlocks, hostPaths, mapAsync, procGroupMembers, settledOrAborted, signalGroup, signalGroupExceptLeader, systemTiming } from '@momonga/foundation';
+import type { Awaitable, FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectory, PlaceholderForm, KernelLockMechanism, Timing } from '@momonga/foundation';
 import { SANDBOX_STOP_BOUND_MS, SOCKET_FILTER_SLOT, launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
 import { validateSandboxPolicy } from './profile.ts';
-import { EMPTY_FILE_FORM, identityOf, isStillThePlaceholder, removePlaceholderEntry } from './placeholder-journal.ts';
+import { EMPTY_FILE_FORM, identityOf, isStillThePlaceholder, recoverPlaceholders, removePlaceholderEntry } from './placeholder-journal.ts';
 import type { PlaceholderIdentity, PlaceholderJournal } from './placeholder-journal.ts';
 import { assertExistingDirectory } from './scratch.ts';
 import { socketFilter, socketFilterArchitectureOf } from './seccomp.ts';
@@ -21,58 +21,60 @@ export type EntryKind = 'file' | 'directory';
 
 export type Unreachable = 'unreachable';
 
+export type DirectoryEntry = { path: string; kind: EntryKind | 'other' };
+
 export type FilesystemPort = {
-  kindOf(target: string): EntryKind | undefined | Unreachable;
-  isSymbolicLink(target: string): boolean;
+  kindOf(target: string): Awaitable<EntryKind | undefined | Unreachable>;
+  isSymbolicLink(target: string): Awaitable<boolean>;
   realpath(target: string): Awaitable<string>;
-  children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }> | Unreachable;
-  createPlaceholder(target: string, form: PlaceholderForm): PlaceholderIdentity;
-  removePlaceholder(target: string, identity: PlaceholderIdentity, form: PlaceholderForm): void;
-  requireExecutable(file: string): void;
-  makeScratchDirectory(parent: string, prefix: string): OwnedDirectorySync;
+  children(directory: string): Awaitable<DirectoryEntry[] | Unreachable>;
+  createPlaceholder(target: string, form: PlaceholderForm): Awaitable<PlaceholderIdentity>;
+  removePlaceholder(target: string, identity: PlaceholderIdentity, form: PlaceholderForm): Awaitable<void>;
+  requireExecutable(file: string): Awaitable<void>;
+  makeScratchDirectory(parent: string, prefix: string): Awaitable<OwnedDirectory>;
 };
 
-const inspected = <T>(absent: T, read: () => T): T | Unreachable => {
+const ABSENT_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR']);
+
+const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ELOOP', 'EACCES']);
+
+const inspected = async <T>(absent: T, read: () => Promise<T>): Promise<T | Unreachable> => {
   try {
-    return read();
+    return await read();
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOTDIR') return absent;
-    if (code === 'ELOOP' || code === 'EACCES') return 'unreachable';
+    const code = (error as NodeJS.ErrnoException).code ?? '';
+    if (ABSENT_CODES.has(code)) return absent;
+    if (UNREACHABLE_CODES.has(code)) return 'unreachable';
     throw error;
   }
 };
 
+const writePlaceholderFile = async (target: string, bytes: string): Promise<void> => {
+  const handle = await fs.promises.open(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, PLACEHOLDER_MODE);
+  try {
+    await handle.writeFile(Buffer.from(bytes, 'latin1'));
+  } finally {
+    await handle.close();
+  }
+};
+
 export const nodeFilesystemPort = (lock: KernelLockMechanism): FilesystemPort => ({
-  requireExecutable: (file) => fs.accessSync(file, fs.constants.X_OK),
-  makeScratchDirectory: (parent, prefix) => createOwnedDirectorySync({ parent, prefix, lock }),
-  kindOf: (target) =>
-    inspected<EntryKind | undefined>(undefined, () => {
-      const stat = fs.statSync(target, { throwIfNoEntry: false });
-      if (stat === undefined) return undefined;
-      return stat.isDirectory() ? 'directory' : 'file';
-    }),
-  isSymbolicLink: (target) => inspected(false, () => fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink() ?? false) === true,
+  requireExecutable: (file) => fs.promises.access(file, fs.constants.X_OK),
+  makeScratchDirectory: (parent, prefix) => createOwnedDirectory({ parent, prefix, lock }),
+  kindOf: (target) => inspected<EntryKind | undefined>(undefined, async () => ((await fs.promises.stat(target)).isDirectory() ? 'directory' : 'file')),
+  isSymbolicLink: async (target) => (await inspected(false, async () => (await fs.promises.lstat(target)).isSymbolicLink())) === true,
   realpath: (target) => fs.promises.realpath(target),
-  createPlaceholder: (target, form) => {
-    if (form.kind === 'directory') {
-      fs.mkdirSync(target, { mode: PLACEHOLDER_DIRECTORY_MODE });
-    } else {
-      const descriptor = fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, PLACEHOLDER_MODE);
-      try {
-        fs.writeFileSync(descriptor, Buffer.from(form.bytes, 'latin1'));
-      } finally {
-        fs.closeSync(descriptor);
-      }
-    }
+  createPlaceholder: async (target, form) => {
+    if (form.kind === 'directory') await fs.promises.mkdir(target, { mode: PLACEHOLDER_DIRECTORY_MODE });
+    else await writePlaceholderFile(target, form.bytes);
     return identityOf(target);
   },
-  removePlaceholder: (target, identity, form) => {
-    if (isStillThePlaceholder(target, identity, form)) removePlaceholderEntry(target, form);
+  removePlaceholder: async (target, identity, form) => {
+    if (await isStillThePlaceholder(target, identity, form)) await removePlaceholderEntry(target, form);
   },
   children: (directory) =>
-    inspected<Array<{ path: string; kind: EntryKind | 'other' }>>([], () =>
-      fs.readdirSync(directory, { withFileTypes: true }).map((entry) => ({
+    inspected<DirectoryEntry[]>([], async () =>
+      (await fs.promises.readdir(directory, { withFileTypes: true })).map((entry) => ({
         path: path.join(directory, entry.name),
         kind: entry.isSymbolicLink() ? 'other' : entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
       })),
@@ -149,31 +151,36 @@ const directoriesOf = (entry: FileRuleEntry): Array<{ directory: string }> => [
 ];
 
 type Inspector = {
-  kindOf(target: string): EntryKind | undefined;
-  children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }>;
+  kindOf(target: string): Promise<EntryKind | undefined>;
+  children(directory: string): Promise<DirectoryEntry[]>;
 };
 
-const blockedPaths = (set: FileRuleSet, entry: FileRuleEntry, port: Inspector): string[] => {
+const blockedPaths = async (set: FileRuleSet, entry: FileRuleEntry, port: Inspector, signal: AbortSignal): Promise<string[]> => {
   const found: string[] = [];
-  const visit = (candidate: string, kind: EntryKind | 'other'): void => {
+  const visit = async (candidate: string, kind: EntryKind | 'other'): Promise<void> => {
+    signal.throwIfAborted();
     const blocked = fileRuleBlocks(set, entry, candidate, candidate);
     if (blocked) found.push(candidate);
     if (kind !== 'directory') return;
     const wholeDirectoryBlocked = blocked && (entry.exceptions.length === 0 || entry.blockedAsWhole);
     if (wholeDirectoryBlocked) return;
-    for (const child of port.children(candidate)) visit(child.path, child.kind);
+    for (const child of await port.children(candidate)) await visit(child.path, child.kind);
   };
   for (const { directory } of directoriesOf(entry)) {
-    const kind = port.kindOf(directory);
+    const kind = await port.kindOf(directory);
     if (kind !== 'directory') continue;
-    visit(directory, 'directory');
+    await visit(directory, 'directory');
   }
   return unique(found);
 };
 
 export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions, signal: AbortSignal, port: FilesystemPort): Promise<BubblewrapPlan> {
   const paths = hostPaths(signal);
-  const realpath = (target: string): Promise<string> => settledOrAborted((async () => port.realpath(target))(), signal);
+  const ask = <T>(question: () => Awaitable<T>): Promise<T> => {
+    signal.throwIfAborted();
+    return settledOrAborted((async () => question())(), signal);
+  };
+  const realpath = (target: string): Promise<string> => ask(() => port.realpath(target));
   await validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir }, paths);
   if (typeof policy.network === 'object') {
     throw new SandboxPolicyError('network_scope_unsupported', 'the bubblewrap sandbox cannot limit a command to one loopback port, so it cannot limit its network to named hosts');
@@ -194,7 +201,7 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   const placeholders: string[] = [];
 
   const base: string[] = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/run'];
-  if (policy.network === 'allow' && port.kindOf(SYSTEMD_RESOLVE_DIRECTORY) === 'directory') {
+  if (policy.network === 'allow' && (await ask(() => port.kindOf(SYSTEMD_RESOLVE_DIRECTORY))) === 'directory') {
     base.push('--ro-bind', SYSTEMD_RESOLVE_DIRECTORY, SYSTEMD_RESOLVE_DIRECTORY);
   }
 
@@ -203,7 +210,7 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   for (const entry of policy.fileRules.entries) {
     if (!entry.widening) continue;
     const closure = entry.subset.closure;
-    const closureKind = closure.kind === 'subpath' ? port.kindOf(closure.path) : undefined;
+    const closureKind = closure.kind === 'subpath' ? await ask(() => port.kindOf(closure.path)) : undefined;
     if (closure.kind === 'subpath' && (closureKind === 'directory' || closureKind === 'file')) {
       writableBinds.push('--bind', closure.path, closure.path);
       wideningAreas.push(closure.path);
@@ -222,14 +229,14 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   };
 
   const inspector: Inspector = {
-    kindOf: (target) => {
-      const kind = port.kindOf(target);
+    kindOf: async (target) => {
+      const kind = await ask(() => port.kindOf(target));
       if (kind !== 'unreachable') return kind;
       refuseUnreachable(target);
       return undefined;
     },
-    children: (directory) => {
-      const found = port.children(directory);
+    children: async (directory) => {
+      const found = await ask(() => port.children(directory));
       if (found !== 'unreachable') return found;
       refuseUnreachable(directory);
       return [];
@@ -237,10 +244,10 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   };
   const kindOf = inspector.kindOf;
 
-  const firstMissingComponent = (target: string): string | undefined => {
+  const firstMissingComponent = async (target: string): Promise<string | undefined> => {
     let missing = target;
     for (let parent = path.dirname(missing); parent !== missing; parent = path.dirname(missing)) {
-      const kind = kindOf(parent);
+      const kind = await kindOf(parent);
       if (kind === 'directory') return heldPlaceholders.has(parent) ? parent : missing;
       if (kind === 'file') return heldPlaceholders.has(parent) ? parent : undefined;
       missing = parent;
@@ -248,8 +255,8 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
     return undefined;
   };
 
-  const reserve = (target: string, mounts: Mount[]): void => {
-    const missing = firstMissingComponent(target);
+  const reserve = async (target: string, mounts: Mount[]): Promise<void> => {
+    const missing = await firstMissingComponent(target);
     if (missing === undefined || !insideRoots(missing) || placeholders.includes(missing)) return;
     placeholders.push(missing);
     mounts.push({ depth: depthOf(missing), args: ['--ro-bind', missing, missing] });
@@ -257,13 +264,17 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
 
   const mounted: string[] = [];
 
-  const protect = async (target: string, mounts: Mount[]): Promise<void> => {
-    if (insideRoots(target) && port.isSymbolicLink(target)) {
+  const refuseLinkName = async (target: string): Promise<void> => {
+    if (insideRoots(target) && (await ask(() => port.isSymbolicLink(target)))) {
       throw new SandboxPolicyError('protected_link_not_pinnable', `bubblewrap cannot pin the symbolic link ${target}: a mount cannot sit on a link name, so the link could be replaced from inside the sandbox`, { path: target });
     }
-    const kind = kindOf(target);
+  };
+
+  const protect = async (target: string, mounts: Mount[]): Promise<void> => {
+    await refuseLinkName(target);
+    const kind = await kindOf(target);
     if (kind === undefined) {
-      reserve(target, mounts);
+      await reserve(target, mounts);
       return;
     }
     const resolved = await realpath(target);
@@ -274,18 +285,19 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
 
   const writeMounts: Mount[] = [];
   const literals = unique([...policy.writeDeniedLiterals, ...policy.protectedSet.literals]);
+  for (const target of literals) await refuseLinkName(target);
   for (const target of [...writeDenied, ...literals]) await protect(target, writeMounts);
   const userDenies = [...policy.fileRules.entries, ...policy.protectedSet.patterns.entries].filter(isUserDeny);
   for (const entry of userDenies.filter((candidate) => candidate.access === 'write')) {
     const set = policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules;
-    for (const target of blockedPaths(set, entry, inspector)) await protect(target, writeMounts);
+    for (const target of await blockedPaths(set, entry, inspector, signal)) await protect(target, writeMounts);
   }
   const readOnlyDirectories = new Set<string>();
-  const isGitDirectory = (directory: string): boolean =>
-    kindOf(path.join(directory, 'HEAD')) === 'file' && kindOf(path.join(directory, 'objects')) === 'directory' && kindOf(path.join(directory, 'refs')) === 'directory';
+  const isGitDirectory = async (directory: string): Promise<boolean> =>
+    (await kindOf(path.join(directory, 'HEAD'))) === 'file' && (await kindOf(path.join(directory, 'objects'))) === 'directory' && (await kindOf(path.join(directory, 'refs'))) === 'directory';
   const anchorModules = async (anchor: string): Promise<void> => {
     if (!insideRoots(anchor)) return;
-    if (kindOf(anchor) !== 'directory') {
+    if ((await kindOf(anchor)) !== 'directory') {
       await protect(anchor, writeMounts);
       return;
     }
@@ -294,9 +306,9 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
     await walkModules(anchor);
   };
   const walkModules = async (directory: string): Promise<void> => {
-    for (const child of inspector.children(directory)) {
+    for (const child of await inspector.children(directory)) {
       if (child.kind !== 'directory') continue;
-      if (!isGitDirectory(child.path)) {
+      if (!(await isGitDirectory(child.path))) {
         readOnlyDirectories.add(child.path);
         await walkModules(child.path);
         continue;
@@ -308,8 +320,8 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
     }
   };
   const pinWorktrees = async (anchor: string): Promise<void> => {
-    if (!insideRoots(anchor) || kindOf(anchor) !== 'directory') return;
-    for (const child of inspector.children(anchor)) if (child.kind === 'directory') await protect(path.join(child.path, 'config.worktree'), writeMounts);
+    if (!insideRoots(anchor) || (await kindOf(anchor)) !== 'directory') return;
+    for (const child of await inspector.children(anchor)) if (child.kind === 'directory') await protect(path.join(child.path, 'config.worktree'), writeMounts);
   };
   for (const anchor of policy.protectedSet.moduleAnchors) await anchorModules(anchor);
   for (const anchor of policy.protectedSet.worktreeAnchors) await pinWorktrees(anchor);
@@ -320,7 +332,7 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
     for (let ancestor = path.dirname(target); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
       const inside = insideRoots(ancestor);
       if (!inside || pinnedAncestors.has(ancestor)) continue;
-      if (!writableAreas.includes(ancestor) && !readOnlyDirectories.has(ancestor) && kindOf(ancestor) === 'directory') {
+      if (!writableAreas.includes(ancestor) && !readOnlyDirectories.has(ancestor) && (await kindOf(ancestor)) === 'directory') {
         pinnedAncestors.add(ancestor);
         pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
       }
@@ -330,7 +342,7 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   const readMounts: Mount[] = [];
   const maskedDirectories: string[] = [];
   const mask = async (target: string): Promise<void> => {
-    const kind = kindOf(target);
+    const kind = await kindOf(target);
     if (kind === undefined) return;
     const resolved = await realpath(target);
     if (kind === 'directory') maskedDirectories.push(resolved);
@@ -339,9 +351,10 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   for (const target of readDenied) await mask(target);
   for (const entry of userDenies.filter((candidate) => candidate.access === 'read')) {
     const set = policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules;
-    for (const target of blockedPaths(set, entry, inspector)) await mask(target);
+    for (const target of await blockedPaths(set, entry, inspector, signal)) await mask(target);
   }
-  const reallow: string[] = readAllowed.flatMap((target) => (kindOf(target) === undefined ? [] : ['--ro-bind', target, target]));
+  const reallow: string[] = [];
+  for (const target of readAllowed) if ((await kindOf(target)) !== undefined) reallow.push('--ro-bind', target, target);
 
   const scratch: string[] = [...new Set([...(sessionTmpDir === undefined ? [] : [sessionTmpDir]), ...(scratchDir === undefined ? [] : [scratchDir])])].flatMap((dir) => [
     '--bind',
@@ -371,6 +384,14 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
     sockets: unixSocketAllow.length === 0 ? { kind: 'no-unix-sockets' } : { kind: 'named-unix-sockets', allowed: unixSocketAllow, denied: readDenied },
   };
 }
+
+export const planProtection = (denied: readonly string[], scratch: readonly string[]): string[] => [
+  '--bind',
+  '/',
+  '/',
+  ...denied.flatMap((area) => ['--tmpfs', area]),
+  ...scratch.flatMap((folder) => ['--bind', folder, folder]),
+];
 
 export const bwrapProbeArguments = (shell: string): string[] => [
   '--unshare-pid',
@@ -420,69 +441,78 @@ export interface BubblewrapSandboxOptions {
   killGraceMs: number;
   filesystem?: FilesystemPort;
   journal: PlaceholderJournal;
-  holders: () => ReadonlySet<string>;
+  holders: () => Awaitable<ReadonlySet<string>>;
   spawnProcess?: LaunchOptions['spawnProcess'];
   groupMembers?: GroupMembersReader;
   socketGuard?: () => Awaitable<string>;
   architecture?: string;
+  timing?: Timing;
 }
+
+type Step = () => Awaitable<void>;
+
+const attemptAll = async (steps: readonly Step[]): Promise<unknown[]> => {
+  const failures: unknown[] = [];
+  for (const step of steps) {
+    try {
+      await step();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  return failures;
+};
+
+const throwAll = (failures: readonly unknown[]): void => {
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, failures.map((failure) => (failure as Error).message).join('; '));
+};
 
 export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sandbox {
   const bwrapPath = options.bwrapPath ?? DEFAULT_BWRAP_PATH;
   const filesystem = options.filesystem ?? nodeFilesystemPort(options.lock);
   const groupMembers = options.groupMembers ?? procGroupMembers;
+  const timing = options.timing ?? systemTiming;
   const architecture = socketFilterArchitectureOf(options.architecture ?? process.arch);
   const signalSandboxTerm = async (pgid: number, stop: AbortSignal): Promise<void> => {
     if (signalGroupExceptLeader(pgid, 'SIGTERM', groupMembers) === 0) await signalGroup(pgid, 'SIGTERM', undefined, stop);
   };
-  filesystem.requireExecutable(bwrapPath);
-  const directories: DirectoryPort = { isDirectory: (target) => filesystem.kindOf(target) === 'directory' };
+  let executable: Promise<void> | undefined;
+  const requireBubblewrap = (signal: AbortSignal): Promise<void> => {
+    executable ??= (async () => filesystem.requireExecutable(bwrapPath))();
+    return settledOrAborted(executable, signal);
+  };
+  const directories: DirectoryPort = { isDirectory: async (target) => (await filesystem.kindOf(target)) === 'directory' };
   const held = new Map<string, number>();
   const { journal, holders } = options;
   const owned = new Map<string, Ownership>();
   const kept = new Map<string, Ownership>();
   const sweepFailures = new Map<string, string>();
 
-  const attemptAll = (steps: ReadonlyArray<() => void>): unknown[] => {
-    const failures: unknown[] = [];
-    for (const step of steps) {
-      try {
-        step();
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    return failures;
+  const remove = async (placeholder: string, ownership: Ownership): Promise<void> => {
+    if (ownership.identity !== undefined) await filesystem.removePlaceholder(placeholder, ownership.identity, ownership.form);
+    await journal.forget(placeholder);
   };
-  const throwAll = (failures: readonly unknown[]): void => {
-    if (failures.length === 1) throw failures[0];
-    if (failures.length > 1) throw new AggregateError(failures, failures.map((failure) => (failure as Error).message).join('; '));
-  };
-
-  const remove = (placeholder: string, ownership: Ownership): void => {
-    if (ownership.identity !== undefined) filesystem.removePlaceholder(placeholder, ownership.identity, ownership.form);
-    journal.forget(placeholder);
-  };
-  const discard = (placeholder: string): void => {
+  const discard = async (placeholder: string, stillHeld: ReadonlySet<string>): Promise<void> => {
     const ownership = owned.get(placeholder) as Ownership;
     owned.delete(placeholder);
-    if (holders().has(placeholder)) {
+    if (stillHeld.has(placeholder)) {
       kept.set(placeholder, ownership);
       return;
     }
-    remove(placeholder, ownership);
+    await remove(placeholder, ownership);
   };
-  const sweepKept = (): void => {
-    if (kept.size === 0) return;
-    const stillHeld = holders();
+  const sweepKept = async (stillHeld: ReadonlySet<string>): Promise<void> => {
     const releasable = [...kept].filter(([placeholder]) => !stillHeld.has(placeholder));
+    for (const [placeholder] of releasable) kept.delete(placeholder);
     const newFailures: unknown[] = [];
     for (const [placeholder, ownership] of releasable) {
+      if (held.has(placeholder) || owned.has(placeholder)) continue;
       try {
-        remove(placeholder, ownership);
-        kept.delete(placeholder);
+        await remove(placeholder, ownership);
         sweepFailures.delete(placeholder);
       } catch (error) {
+        kept.set(placeholder, ownership);
         const message = error instanceof Error ? error.message : String(error);
         if (sweepFailures.get(placeholder) !== message) {
           sweepFailures.set(placeholder, message);
@@ -492,7 +522,27 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     }
     throwAll(newFailures);
   };
-  const hold = (plan: BubblewrapPlan): void => {
+  let turn: Promise<void> = Promise.resolve();
+  const serially = async <T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    const earlier = turn;
+    let leave: () => void = () => undefined;
+    const own = new Promise<void>((resolve) => {
+      leave = resolve;
+    });
+    turn = earlier.then(() => own);
+    try {
+      await (signal === undefined ? earlier : settledOrAborted(earlier, signal));
+      return await work();
+    } finally {
+      leave();
+    }
+  };
+  const sweep = (): Promise<void> =>
+    serially(async () => {
+      if (kept.size === 0) return;
+      await sweepKept(await holders());
+    });
+  const hold = async (plan: BubblewrapPlan): Promise<void> => {
     const begun: string[] = [];
     const adopted: Array<[string, Ownership]> = [];
     try {
@@ -506,15 +556,15 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
           continue;
         }
         const form = plan.forms[placeholder] as PlaceholderForm;
-        journal.intend(placeholder, Date.now(), form);
+        await journal.intend(placeholder, timing.now(), form);
         begun.push(placeholder);
         owned.set(placeholder, { form });
-        const identity = filesystem.createPlaceholder(placeholder, form);
+        const identity = await filesystem.createPlaceholder(placeholder, form);
         owned.set(placeholder, { form, identity });
-        journal.complete(placeholder, identity);
+        await journal.complete(placeholder, identity);
       }
     } catch (error) {
-      const failures = attemptAll(begun.map((placeholder) => () => remove(placeholder, owned.get(placeholder) as Ownership)));
+      const failures = await attemptAll(begun.map((placeholder) => () => remove(placeholder, owned.get(placeholder) as Ownership)));
       for (const placeholder of begun) owned.delete(placeholder);
       for (const [placeholder, ownership] of adopted) {
         owned.delete(placeholder);
@@ -524,8 +574,8 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     }
     for (const placeholder of plan.placeholders) held.set(placeholder, (held.get(placeholder) ?? 0) + 1);
   };
-  const release = (plan: BubblewrapPlan): void => {
-    const steps: Array<() => void> = [];
+  const releaseNow = async (plan: BubblewrapPlan): Promise<void> => {
+    const ended: string[] = [];
     for (const placeholder of plan.placeholders) {
       const remaining = (held.get(placeholder) ?? 1) - 1;
       if (remaining > 0) {
@@ -533,19 +583,21 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         continue;
       }
       held.delete(placeholder);
-      steps.push(() => discard(placeholder));
+      ended.push(placeholder);
     }
-    steps.push(sweepKept);
-    throwAll(attemptAll(steps));
+    if (ended.length === 0 && kept.size === 0) return;
+    const stillHeld = await holders();
+    throwAll(await attemptAll([...ended.map((placeholder) => () => discard(placeholder, stillHeld)), () => sweepKept(stillHeld)]));
   };
-  const launchWith = async (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: () => void, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> => {
+  const launchWith = async (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: Step, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> => {
     const guard = plan.sockets.kind === 'no-unix-sockets' || options.socketGuard === undefined ? undefined : await settledOrAborted((async () => options.socketGuard?.())(), signal);
     const wrapped = bubblewrapCommandOf(bwrapPath, plan, command.argv, guard);
-    hold(plan);
+    await hold(plan);
     try {
       return launch({
         file: wrapped.file,
         args: wrapped.args,
+        protection: { kind: 'sandboxed', backend: 'bubblewrap' },
         socketFilter: socketFilter(architecture, wrapped.socketFilter),
         cwd: command.cwd,
         ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
@@ -556,51 +608,38 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         killGraceMs: options.killGraceMs,
         signalTerm: signalSandboxTerm,
         ...(options.spawnProcess === undefined ? {} : { spawnProcess: options.spawnProcess }),
-        afterExit: () => throwAll(attemptAll([() => release(plan), afterExit])),
+        afterExit: async () => throwAll(await attemptAll([() => serially(() => releaseNow(plan)), afterExit])),
       });
     } catch (error) {
-      throwAll([error, ...attemptAll([() => release(plan)])]);
+      throwAll([error, ...(await attemptAll([() => releaseNow(plan)]))]);
       throw error;
-    }
-  };
-
-  let turn: Promise<void> = Promise.resolve();
-  const oneAtATime = async <T>(signal: AbortSignal, plan: () => Promise<T>): Promise<T> => {
-    const earlier = turn;
-    let leave: () => void = () => undefined;
-    const own = new Promise<void>((resolve) => {
-      leave = resolve;
-    });
-    turn = earlier.then(() => own);
-    try {
-      await settledOrAborted(earlier, signal);
-      return await plan();
-    } finally {
-      leave();
     }
   };
 
   return {
     kind: 'bubblewrap',
-    sweep: sweepKept,
+    sweep,
+    recover: () =>
+      serially(() => recoverPlaceholders(journal, { holders: async () => new Set([...(await holders()), ...held.keys(), ...owned.keys(), ...kept.keys()]) })),
     spawn: (command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> =>
-      oneAtATime(signal, async () => {
-        for (const root of policy.writableRoots) assertExistingDirectory(root, directories);
+      serially(async () => {
+        await requireBubblewrap(signal);
+        for (const root of policy.writableRoots) await assertExistingDirectory(root, directories);
         const planned = { heldPlaceholders: new Set([...held.keys(), ...kept.keys()]), cwd: command.cwd };
         if (command.tmpDir !== undefined) {
-          assertExistingDirectory(command.tmpDir, directories);
+          await assertExistingDirectory(command.tmpDir, directories);
           return await launchWith(command, await planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, signal, filesystem), command.tmpDir, signal, () => undefined, descriptors);
         }
         const tmpRoot = await settledOrAborted((async () => filesystem.realpath(options.tmpRoot))(), signal);
-        const scratch = filesystem.makeScratchDirectory(tmpRoot, 'sandbox-');
+        const scratch = await filesystem.makeScratchDirectory(tmpRoot, 'sandbox-');
         try {
           const scratchDir = await hostPaths(signal).canonicalPath(scratch.path);
           const plan = await planBubblewrap(policy, { ...planned, scratchDir }, signal, filesystem);
           return await launchWith(command, plan, scratch.path, signal, () => scratch.dispose(), descriptors);
         } catch (error) {
-          scratch.dispose();
+          throwAll([error, ...(await attemptAll([() => scratch.dispose()]))]);
           throw error;
         }
-      }),
+      }, signal),
   };
 }

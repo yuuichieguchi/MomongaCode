@@ -7,10 +7,10 @@ import { ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/fou
 import * as foundation from '@momonga/foundation';
 import type { MarkerState, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox } from '@momonga/sandbox';
-import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { fakePolicyFilesystem, withTempDir, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
-import { virtualTiming } from '../../../foundation/test/support/probe-fakes.ts';
+import { virtualTiming, driveUntil } from '../../../foundation/test/support/probe-fakes.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import type { EvidenceRunnerOptions } from '../../src/process/evidence-run.ts';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -44,7 +44,7 @@ const scene = (survives: boolean) => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const child = Object.assign(new EventEmitter(), { pid: GROUP, stdout, stderr, stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: 'git',
         args: [],
         cwd: '/',
@@ -87,7 +87,7 @@ const runEvidence = async (context: Parameters<typeof withTempDir>[0], survives:
     () => (done = true),
     () => (done = true),
   );
-  for (let step = 1; !done && step <= 1000; step += 1) await timing.advanceTo(step * KILL_GRACE_MS);
+  await driveUntil(timing, () => done, 1000 * KILL_GRACE_MS, 'the stop to end');
   const result = await pending;
   return { result, markers: fs.readdirSync(paths.markers.tools), dir: paths.markers.tools };
 };

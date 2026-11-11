@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { OutboundConnectionError } from '@momonga/foundation';
 import type { NetworkConfig, OutboundNetwork } from '@momonga/foundation';
-import { McpRemotePolicyError, createGuardedFetch, isTransientRemoteFailure } from '@momonga/mcp';
+import { McpRemotePolicyError, createGuardedFetch, isTransientRemoteFailure, systemResolver } from '@momonga/mcp';
 import type { HostResolver } from '@momonga/mcp';
 import { onCleanup } from './mcp-harness.ts';
 import { makeRemoteConnection, startHttpFixture } from './remote-harness.ts';
@@ -112,7 +112,7 @@ describe('MCP over HTTP goes through the configured proxy', { timeout: TEST_TIME
 
   it('ends a CONNECT the proxy never answers with the MCP connect bound and names the proxy and its source', async () => {
     const proxy = await silentProxy();
-    const guarded = createGuardedFetch({ scope: 'user', network: viaProxy(proxy.port), connectTimeoutMs: 500 });
+    const guarded = createGuardedFetch({ resolver: systemResolver, scope: 'user', network: viaProxy(proxy.port), connectTimeoutMs: 500 });
     onCleanup(() => guarded.close());
 
     const failure = await rejectionOf(guarded.fetch('https://mcp.example.test/mcp', { method: 'POST', body: '{}' }));

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
-import { KILL_CONFIRM_MS, isProcessAlive } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, isProcessAlive, nodeFileSystem } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killPidsForCleanup, waitFor } from '@momonga/testkit';
 
@@ -50,7 +50,7 @@ describe('a connection closed during its handshake (R5, R6)', () => {
       }) as Timing['setTimeout'],
       clearTimeout: ((handle: unknown) => timers.clearTimeout(handle)) as Timing['clearTimeout'],
     };
-    const connection = createManagedConnection({
+    const connection = createManagedConnection({ files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 'stubborn',
       config: { command: process.execPath, args: [STUBBORN_SERVER, 'ignore-stdin', `--pid-file=${pidFile}`] },

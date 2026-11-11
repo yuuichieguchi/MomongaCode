@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { UNDER_HANDS_LINE } from '../../src/tui/screen/prompt-settle.ts';
 import { KEY_SETTLE_MS } from '../../src/tui/terminal/constants.ts';
 import type { FakeBackend } from '../fake-backend.ts';
-import { quiet } from '../fake-plan-gateway.tsx';
 import { KEYS, untilFrame } from '../ink-helpers.ts';
+import type { Instance } from '../ink-helpers.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
 
@@ -21,6 +21,14 @@ const ask = (backend: FakeBackend, callId = 'c1', approvalId = 'ap1'): void => {
 };
 
 const approvals = (backend: FakeBackend): string[] => backend.calls.filter((call) => call.startsWith('approve:'));
+
+let renders = 0;
+
+const renderedAfter = (app: Instance, backend: FakeBackend): Promise<string> => {
+  renders += 1;
+  backend.emit(frame({ type: 'usage.updated', inputTokens: renders, outputTokens: 0, totalTokens: renders }));
+  return untilFrame(app, `tokens: ${renders}`);
+};
 
 const working = async () => {
   const clock = manualClock();
@@ -40,11 +48,10 @@ describe('a prompt takes no key while its settle window is open', () => {
     app.stdin.write('1');
     app.stdin.write(KEYS.enter);
     app.stdin.write(KEYS.escape);
-    await quiet();
+    await renderedAfter(app, backend);
     expect(approvals(backend)).toEqual([]);
     clock.advance(KEY_SETTLE_MS - 1);
-    await quiet();
-    expect(app.lastFrame()).not.toContain('to choose');
+    expect(await renderedAfter(app, backend)).not.toContain('to choose');
     clock.advance(1);
     await untilFrame(app, HINT);
     expect(approvals(backend)).toEqual([]);
@@ -87,13 +94,13 @@ describe('a prompt that opened under the hands', () => {
     const settled = await untilFrame(app, DIGIT_ONLY_HINT);
     expect(settled).not.toContain(HINT);
     app.stdin.write(KEYS.enter);
-    await quiet();
+    await renderedAfter(app, backend);
     clock.advance(KEY_SETTLE_MS * 10);
     app.stdin.write(KEYS.enter);
-    await quiet();
+    await renderedAfter(app, backend);
     expect(approvals(backend)).toEqual([]);
     app.stdin.write('1');
-    await quiet();
+    await renderedAfter(app, backend);
     expect(approvals(backend)).toEqual([]);
     clock.advance(KEY_SETTLE_MS);
     app.stdin.write('1');
@@ -113,7 +120,7 @@ describe('a prompt that opened under the hands', () => {
     clock.advance(KEY_SETTLE_MS);
     await untilFrame(app, DIGIT_ONLY_HINT);
     app.stdin.write(KEYS.enter);
-    await quiet();
+    await renderedAfter(app, backend);
     expect(approvals(backend)).toEqual([]);
     clock.advance(KEY_SETTLE_MS);
     app.stdin.write('2');
@@ -135,7 +142,7 @@ describe('a prompt that opened under the hands', () => {
     app.stdin.write('1');
     clock.advance(KEY_SETTLE_MS);
     await untilFrame(app, DIGIT_ONLY_HINT);
-    await quiet();
+    await renderedAfter(app, backend);
     expect(approvals(backend)).toEqual(['approve:ap1:o1']);
     app.stdin.write('1');
     await backend.called('approve:ap2:o1');
@@ -155,7 +162,7 @@ describe('a held approval takes the keys only while the run waits for it', () =>
     app.stdin.write('1');
     await untilFrame(app, '> 1');
     app.stdin.write(KEYS.backspace);
-    await quiet();
+    await renderedAfter(app, backend);
     expect(approvals(backend)).toEqual([]);
     clock.advance(KEY_SETTLE_MS);
     backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'WAITING_HUMAN' }));
@@ -181,12 +188,11 @@ describe('the folder trust prompt at launch', () => {
     expect(app.lastFrame()).toContain('› 1. Yes, I trust this folder');
     expect(app.lastFrame()).not.toContain('to choose');
     app.stdin.write(KEYS.enter);
-    await quiet();
-    expect(backend.calls).toEqual(['boot']);
     clock.advance(KEY_SETTLE_MS);
     await untilFrame(app, 'enter to choose');
     app.stdin.write(KEYS.enter);
     await backend.called('trust:trusted');
+    expect(backend.calls.filter((call) => call.startsWith('trust:'))).toEqual(['trust:trusted']);
     app.unmount();
   });
 

@@ -1,5 +1,5 @@
-import { RECORDED_DATA_MARKER, recordedDataMessage, userMessageContent } from '@momonga/protocol';
-import type { HeldOutcome, InputItem, RunEventPayload } from '@momonga/protocol';
+import { RECORDED_DATA_MARKER, includedShellTexts, recordedDataMessage, userMessageContent } from '@momonga/protocol';
+import type { ContentPart, HeldOutcome, InputItem, RunEventPayload } from '@momonga/protocol';
 
 export const LATE_RESULT_TAG = 'late_tool_result';
 
@@ -40,7 +40,15 @@ const lateResultOf = (callId: string, outcome: LateOutcome, output: string, fact
 });
 
 const ITEM_PRODUCERS = {
-  'user.message': (event) => [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images, event) } }],
+  'user.message': (event) => [
+    {
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [...includedShellTexts(event.shell).map((text): ContentPart => ({ type: 'input_text', text })), ...userMessageContent(event.text, event.images, event)],
+      },
+    },
+  ],
   'model.responded': (event) => (event.response.output as InputItem[]).map((item) => ({ item })),
   'tool.completed': (event, facts) => [
     { ...(event.held === undefined ? outputOf(event.callId, event.output, facts) : lateResultOf(event.callId, 'executed', event.output, facts)), ...(event.handle === undefined ? {} : { handle: event.handle }) },

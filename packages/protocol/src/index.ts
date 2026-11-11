@@ -107,6 +107,7 @@ export type { ErrorShape } from './budget-constants.ts';
 export {
   ANTHROPIC_API_VERSIONS,
   DEFAULT_ANTHROPIC_API_VERSION,
+  DEFAULT_ANTHROPIC_BASE_URL,
   SAMPLING_FIELDS,
   anthropicVersionSamplingBound,
   DEFAULT_OUTPUT_BOUND_FIELD,
@@ -415,7 +416,7 @@ export type {
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES, SPAN_ATTRIBUTE_RENAMES } from './trace-attributes.ts';
 export { EVENT_PAYLOAD_RENAMES, withCurrentNames } from './stored-names.ts';
 export type { StoredRenames } from './stored-names.ts';
-export { COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, SESSION_SANDBOX_NETWORKS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
+export { COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, SESSION_SANDBOX_NETWORKS, base64ByteLength, runApiSchemaName, toPublicRunEvent, MODEL_COST_SCHEMA } from './run-api.ts';
 export type { DaemonCurrentFrame, StreamFailedFrame } from './run-api.ts';
 export { INBOX_WITHDRAW_OUTCOMES, MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, attachmentSummaryOf, modelKindOf } from './run-api.ts';
 export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest, CompactSessionRequest } from './run-api.ts';
@@ -548,7 +549,7 @@ export type {
 } from './governance.ts';
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
-export { attachedFileText, attachmentText, imageDataUrl, userMessageContent, userShellText } from './user-content.ts';
+export { attachedFileText, attachmentText, imageDataUrl, includedShellTexts, userMessageContent, userShellText } from './user-content.ts';
 export type { UserMessageExtras } from './user-content.ts';
 export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
@@ -780,6 +781,7 @@ export type {
   AdapterStop,
   ChainRoomFacts,
   ProviderAdapter,
+  CarryRefusal,
   ClientOperation,
   ReasoningOrigin,
   RenderWireOptions,

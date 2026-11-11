@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, nodeEntryIo, runDaemonEntry, hostPaths } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, EntryIo, EntrySignal, RotatingLogFile } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, testLocks } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, testLocks, waitFor } from '@momonga/testkit';
 
 const HOME = '/Users/alice';
 const LOG_PATH = path.join(HOME, '.momonga', 'logs', 'runtime.log');
@@ -11,10 +11,6 @@ const MAX_CLOSE_MS = 1000;
 const START_MS = 1_800_000_000_000;
 
 type Flags = typeof COMMON_ENTRY_FLAGS;
-
-const settle = async (): Promise<void> => {
-  for (let turn = 0; turn < 10; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-};
 
 type LogLine = Record<string, unknown> & { msg: string };
 
@@ -124,6 +120,7 @@ const scriptedDaemon = (overrides: Partial<DaemonDefinition<Flags>> = {}) => {
   const close = vi.fn(() => result.promise);
   const abort = vi.fn(() => result.promise);
   const handle: DaemonHandle = { close, abort, fatal: fatal.promise };
+  let starts = 0;
   const definition: DaemonDefinition<Flags> = {
     service: 'runtime',
     version: '1.0.0',
@@ -133,10 +130,19 @@ const scriptedDaemon = (overrides: Partial<DaemonDefinition<Flags>> = {}) => {
     ownLockPath: (home) => path.join(home, '.momonga', 'run', 'runtime.lock'),
     logPath: () => LOG_PATH,
     isConfigError: () => false,
-    start: () => start.promise,
+    start: () => {
+      starts += 1;
+      return start.promise;
+    },
     ...overrides,
   };
-  return { definition, start, result, fatal, handle, close, abort, run: () => start.resolve(handle) };
+  const begun = (): Promise<void> => waitFor(() => starts === 1, { description: 'the start of the daemon' });
+  const startEnded = async (): Promise<void> => {
+    await begun();
+    start.resolve(handle);
+    await start.promise;
+  };
+  return { definition, start, result, fatal, handle, close, abort, begun, startEnded };
 };
 
 const ARGV_FILE = [`--home=${HOME}`, '--log-target=file'];
@@ -150,9 +156,7 @@ describe('A1: lifecycle hold and disposal', () => {
     const fake = fakeIo(ARGV_FILE);
     const daemon = scriptedDaemon();
     const running = runDaemonEntry(fake.io, daemon.definition);
-    await settle();
-    daemon.run();
-    await settle();
+    await daemon.startEnded();
     fake.signal('SIGTERM');
     daemon.result.resolve({ clean: true });
     expect(await running).toBe(0);
@@ -176,7 +180,7 @@ describe('A1: lifecycle hold and disposal', () => {
     const fake = fakeIo(ARGV_FILE);
     const daemon = scriptedDaemon();
     const running = runDaemonEntry(fake.io, daemon.definition);
-    await settle();
+    await daemon.begun();
     daemon.start.reject(new Error('boom'));
     expect(await running).toBe(1);
     expect(fake.lifecycle.filter((event) => event === 'release')).toHaveLength(1);
@@ -187,9 +191,7 @@ describe('A1: lifecycle hold and disposal', () => {
     const fake = fakeIo([...ARGV_FILE, '--lifeline-fd=3']);
     const daemon = scriptedDaemon();
     const running = runDaemonEntry(fake.io, daemon.definition);
-    await settle();
-    daemon.run();
-    await settle();
+    await daemon.startEnded();
     fake.signal('SIGTERM');
     daemon.result.resolve({ clean: true });
     expect(await running).toBe(0);
@@ -266,9 +268,7 @@ describe('A1(c): nodeEntryIo', () => {
     const baselineRejection = host.listenerCount('unhandledRejection');
     const daemon = scriptedDaemon();
     const running = runDaemonEntry(io, daemon.definition);
-    await settle();
-    daemon.run();
-    await settle();
+    await daemon.startEnded();
     host.emit('SIGTERM');
     daemon.result.resolve({ clean: true });
     expect(await exited.promise).toBe(0);
@@ -287,16 +287,13 @@ describe('A2: uncaught suppression', () => {
     const fake = fakeIo(ARGV_FILE);
     const daemon = scriptedDaemon();
     const running = runDaemonEntry(fake.io, daemon.definition);
-    await settle();
-    daemon.run();
-    await settle();
+    await daemon.startEnded();
     return { fake, daemon, running };
   };
 
   it('1000 distinct uncaught events produce exactly one entry.uncaught and one entry.uncaught_suppressed line, abort once, exit 1, suppressedUncaught=999', async () => {
     const { fake, daemon, running } = await launch();
     for (let i = 0; i < 1000; i += 1) fake.uncaught(new Error(`distinct ${i}`));
-    await settle();
     daemon.result.resolve({ clean: true });
     expect(await running).toBe(1);
     const lines = fake.sinkLines();
@@ -326,13 +323,10 @@ describe('A3: fatal during aborting', () => {
     const fake = fakeIo(ARGV_FILE);
     const daemon = scriptedDaemon();
     const running = runDaemonEntry(fake.io, daemon.definition);
-    await settle();
-    daemon.run();
-    await settle();
+    await daemon.startEnded();
     fake.signal('SIGINT');
-    await settle();
+    await waitFor(() => daemon.abort.mock.calls.length === 1, { description: 'the abort' });
     daemon.fatal.resolve(new Error('fatal while aborting'));
-    await settle();
     daemon.result.resolve({ clean: true });
     expect(await running).toBe(1);
     expect(daemon.abort).toHaveBeenCalledTimes(1);
@@ -349,14 +343,22 @@ describe('A4: path bound to the settled method', () => {
     const abort = vi.fn(() => abortDeferred.promise);
     const fatal = deferred<Error>();
     const handle: DaemonHandle = { close, abort, fatal: fatal.promise };
-    const daemon = scriptedDaemon({ start: async () => handle });
+    const started = Promise.resolve(handle);
+    let starts = 0;
+    const daemon = scriptedDaemon({
+      start: () => {
+        starts += 1;
+        return started;
+      },
+    });
     const fake = fakeIo(ARGV_FILE);
     const running = runDaemonEntry(fake.io, daemon.definition);
-    await settle();
+    await waitFor(() => starts === 1, { description: 'the start of the daemon' });
+    await started;
     fake.signal('SIGTERM');
-    await settle();
+    await waitFor(() => close.mock.calls.length === 1, { description: 'the close' });
     fake.signal('SIGTERM');
-    await settle();
+    await waitFor(() => abort.mock.calls.length === 1, { description: 'the abort' });
     closeDeferred.resolve({ clean: true });
     expect(await running).toBe(0);
     const final = fake.sinkLines().at(-1);

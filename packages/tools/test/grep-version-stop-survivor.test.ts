@@ -1,4 +1,4 @@
-import { sleepDrivenTiming } from '@momonga/testkit';
+import { sleepDrivenTiming, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,7 +9,7 @@ import type { MarkerState, ProcessGroupPort, ProcessInspector } from '@momonga/f
 import type { Sandbox } from '@momonga/sandbox';
 import { launch } from '../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../sandbox/src/process.ts';
-import { virtualTiming } from '../../foundation/test/support/probe-fakes.ts';
+import { virtualTiming, driveUntil } from '../../foundation/test/support/probe-fakes.ts';
 import { grepTool } from '../src/builtins/grep.ts';
 import type { RipgrepLocator } from '../src/ripgrep-locator.ts';
 import { call, makeHarness, toolSetOf } from './harness.ts';
@@ -57,7 +57,7 @@ const scene = (survivor: Survivor) => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const child = Object.assign(new EventEmitter(), { pid: version ? VERSION_GROUP : SEARCH_GROUP, stdout, stderr, stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: '/fake/rg',
         args: [],
         cwd: '/',
@@ -89,7 +89,7 @@ const runGrep = async (survivor: Survivor) => {
   void batch.finally(() => {
     done = true;
   });
-  for (let step = 1; !done && step <= 1000; step += 1) await timing.advanceTo(step * KILL_GRACE_MS);
+  await driveUntil(timing, () => done, 1000 * KILL_GRACE_MS, 'the stop to end');
   const [outcome] = await batch;
   return { result: resultOf(outcome), markers, left: fs.readdirSync(harness.markerDir) };
 };

@@ -1,4 +1,5 @@
-import { orderVersions } from '@momonga/foundation';
+import { isRecord, orderVersions } from '@momonga/foundation';
+import type { HandoverRecordParties } from '@momonga/foundation';
 import type { KeptWork, Surface } from '@momonga/protocol';
 import type { HandoverTerminal } from '../tui/terminal/layer.ts';
 import { encodeRecord } from './record.ts';
@@ -21,7 +22,7 @@ export type MoveSurface = {
 
 export type MoverPorts = {
   version: string;
-  pid: number;
+  parties(): Promise<HandoverRecordParties>;
   write(file: string, text: string): void;
   remove(file: string): void;
   handOver(file: string): void;
@@ -38,6 +39,11 @@ export type Mover = {
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+const codeOf = (error: unknown): string => {
+  if (isRecord(error) && typeof error['code'] === 'string') return error['code'];
+  return error instanceof Error ? error.name : String(error);
+};
+
 export const createMover = (ports: MoverPorts): Mover => {
   let surface: MoveSurface | undefined;
   let wanted: string | undefined;
@@ -45,6 +51,7 @@ export const createMover = (ports: MoverPorts): Mover => {
   const tried = new Set<string>();
   const toldTooLarge = new Set<string>();
   const refusals = new Map<string, string>();
+  const toldWriteFailure = new Map<string, string>();
 
   const said = (on: MoveSurface, version: string, reason: string): void => {
     on.say(handoverFailedText(on.surface, { toVersion: version, fromVersion: ports.version, reason, kept: on.kept() }));
@@ -61,9 +68,10 @@ export const createMover = (ports: MoverPorts): Mover => {
     on.say(recordTooLargeText({ toVersion: version, fromVersion: ports.version }));
   };
 
-  const replaceWith = async (on: MoveSurface, file: string, version: string): Promise<void> => {
+  const replaceWith = async (on: MoveSurface, file: string, version: string, parties: HandoverRecordParties): Promise<void> => {
+    const record = on.snapshot(version);
     try {
-      const encoded = encodeRecord(on.snapshot(version), ports.pid);
+      const encoded = encodeRecord(record, parties);
       if (encoded.kind !== 'fits') {
         on.resume();
         tooLarge(on, version);
@@ -72,13 +80,19 @@ export const createMover = (ports: MoverPorts): Mover => {
       ports.write(file, encoded.text);
     } catch (error) {
       on.resume();
+      const code = codeOf(error);
+      if (toldWriteFailure.get(version) === code) return;
+      toldWriteFailure.set(version, code);
       said(on, version, reasonOf(error));
       return;
     }
     try {
       await ports.replace(ports.target(file, on.terminal()), {
-        release: () => {
-          on.release();
+        release: () => on.release(),
+        relayed: (childPid) => {
+          const named = encodeRecord(record, { ...parties, reader: childPid });
+          if (named.kind !== 'fits') throw new Error(`the record naming the relayed process ${childPid} is larger than 1 MiB`);
+          ports.write(file, named.text);
           ports.handOver(file);
         },
       });
@@ -90,7 +104,8 @@ export const createMover = (ports: MoverPorts): Mover => {
   };
 
   const attempt = async (on: MoveSurface, file: string, version: string): Promise<void> => {
-    if (encodeRecord(on.snapshot(version), ports.pid).kind !== 'fits') {
+    const parties = await ports.parties();
+    if (encodeRecord(on.snapshot(version), parties).kind !== 'fits') {
       tooLarge(on, version);
       return;
     }
@@ -100,7 +115,7 @@ export const createMover = (ports: MoverPorts): Mover => {
       return;
     }
     on.say(restartingText(version));
-    await replaceWith(on, file, version);
+    await replaceWith(on, file, version, parties);
   };
 
   const check = (): Promise<void> => {

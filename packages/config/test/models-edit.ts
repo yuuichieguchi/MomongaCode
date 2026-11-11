@@ -29,8 +29,8 @@ export const homeWith = (document?: unknown): Home => {
   return { tree, file };
 };
 
-export const editModels = (home: Home, operations: readonly Operation[], signal: AbortSignal = new AbortController().signal): Promise<EditResult> =>
-  exported<(home: string, file: string, operations: readonly Operation[], options: { lock: KernelLockMechanism; signal: AbortSignal }) => Promise<EditResult>>('editModelsSettings')(home.tree.home, home.file, operations, { lock: testKernelLock(), signal });
+export const editModels = (home: Home, operations: readonly Operation[], signal: AbortSignal = new AbortController().signal, lock: KernelLockMechanism = testKernelLock()): Promise<EditResult> =>
+  exported<(home: string, file: string, operations: readonly Operation[], options: { lock: KernelLockMechanism; signal: AbortSignal }) => Promise<EditResult>>('editModelsSettings')(home.tree.home, home.file, operations, { lock, signal });
 
 export const planModels = (document: unknown, operations: readonly Operation[]): Plan =>
   exported<(document: unknown, operations: readonly Operation[], ports: unknown) => Plan>('planModelsEdit')(document, operations, {

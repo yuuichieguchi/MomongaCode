@@ -1,16 +1,16 @@
-import { JsonDepthError, parseOutsideJson } from '@momonga/foundation';
 import { invalidRequest } from '../core/errors.ts';
+import { MalformedJsonError, parseExternalJson } from '../adapters/shared/json.ts';
 
 const payloadTooLarge = (maxBytes: number) =>
   invalidRequest('payload_too_large', `request body exceeds the limit of ${maxBytes} bytes`, null, 413);
 
 export const parseRequestJson = (text: string, subject: string): unknown => {
   try {
-    return parseOutsideJson(text);
+    return parseExternalJson(text);
   } catch (error) {
-    if (error instanceof JsonDepthError) throw invalidRequest('json_too_deep', `${subject} is too deeply nested: ${error.message}`);
-    if (error instanceof SyntaxError) throw invalidRequest('invalid_json', `${subject} is not valid JSON`);
-    throw error;
+    if (!(error instanceof MalformedJsonError)) throw error;
+    if (error.reason === 'depth') throw invalidRequest('json_too_deep', `${subject} is too deeply nested: ${error.message}`);
+    throw invalidRequest('invalid_json', `${subject} is not valid JSON`);
   }
 };
 

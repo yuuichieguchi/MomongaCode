@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import type { Dirent, Stats } from 'node:fs';
 import path from 'node:path';
 import type { SignalSender } from './process-alive.ts';
 import { groupPortOf, hostAsyncSignalSender } from './platform/group-port.ts';
@@ -6,7 +6,7 @@ import type { AsyncSignalSender, ProcessGroupPort } from './platform/group-port.
 import type { MarkerMode, MarkerState } from './marker-state.ts';
 import { commandMayStillRun } from './command-liveness.ts';
 import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
-import { noFollowFlag } from './platform/privacy.ts';
+import { OPEN_FLAGS, nodeFileSystem } from './node-file-system.ts';
 import { operationSignal } from './platform/probe-timing.ts';
 import type { ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
 import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
@@ -314,18 +314,26 @@ const couldNotCheckResult = (reason: string, signalled: boolean, stoppedHolders:
 
 const unlistedResult = ({ reason, signalled, stoppedHolders }: Extract<ReconcileEnd, { kind: 'unlisted' }>): MarkerReconcileResult => couldNotCheckResult(reason, signalled, stoppedHolders);
 
-export const recallMarkerGroup = async (group: ProcessGroupPort, marker: string, pgid: number): Promise<void> => {
-  if (group.names === undefined) return;
+export type RecalledGroup = 'named' | 'unknown';
+
+export const recallMarkerGroup = async (group: ProcessGroupPort, marker: string, pgid: number): Promise<RecalledGroup> => {
+  const { names } = group;
+  if (names === undefined) return 'named';
   let text: string;
   try {
     text = await nodeRecordFiles.read(marker);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return names.nameOf(pgid) === undefined ? 'unknown' : 'named';
     throw error;
   }
   const name = parseRecordedGroupName(text);
-  if (name !== undefined && parseRecordedGroup(text) === pgid) group.names.recall(pgid, name);
+  if (name === undefined || parseRecordedGroup(text) !== pgid) return names.nameOf(pgid) === undefined ? 'unknown' : 'named';
+  names.recall(pgid, name);
+  return 'named';
 };
+
+const unknownGroupResult = (pgid: number): MarkerReconcileResult =>
+  unknownResult([`The marker records no name for group ${pgid}, and this process did not start it, so its processes cannot be proved and none was signalled.`, ...findingNotes({ leftAloneGroup: pgid })].join(' '), false, { leftAloneGroup: pgid });
 
 export const reconcileProcessGroup = async (
   recorded: { pgid: number; marker: string },
@@ -334,7 +342,7 @@ export const reconcileProcessGroup = async (
   const operation = operationSignal(signal);
   try {
     const group = groupPortOf(groupPort, kill);
-    await recallMarkerGroup(group, recorded.marker, recorded.pgid);
+    if ((await recallMarkerGroup(group, recorded.marker, recorded.pgid)) === 'unknown') return unknownGroupResult(recorded.pgid);
     const end = await reconcileWithin(recorded, { killGraceMs, kill, group, timing, stop: operation.signal, inspector, unsettled, markerMode });
     return end.kind === 'listed' ? end.result : unlistedResult(end);
   } finally {
@@ -449,11 +457,11 @@ const MARKER_CONTENT = /^\d+\n?$/;
 export const MARKER_READ_MAX_BYTES = 64;
 
 const readRecordedGroup = async (marker: string): Promise<number | undefined> => {
-  const handle = await fs.promises.open(marker, fs.constants.O_RDONLY | noFollowFlag());
+  const handle = await nodeFileSystem.openRead(marker, OPEN_FLAGS.readOnly | OPEN_FLAGS.noFollow);
   let content: string;
   try {
     const buffer = Buffer.alloc(MARKER_READ_MAX_BYTES + 1);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    const bytesRead = await handle.read(buffer);
     content = bytesRead > MARKER_READ_MAX_BYTES ? '' : buffer.toString('utf8', 0, bytesRead);
   } finally {
     await handle.close();
@@ -461,9 +469,9 @@ const readRecordedGroup = async (marker: string): Promise<number | undefined> =>
   return MARKER_CONTENT.test(content) ? Number(content.trim()) : parseRecordedGroup(content);
 };
 
-const lstatIfPresent = async (target: string): Promise<fs.Stats | undefined> => {
+const lstatIfPresent = async (target: string): Promise<Stats | undefined> => {
   try {
-    return await fs.promises.lstat(target);
+    return await nodeFileSystem.lstat(target);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
@@ -535,13 +543,16 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
   const stat = await lstatIfPresent(marker);
   if (stat === undefined) return { removed: true, stopped: false, uninspectable: [] };
   if (!stat.isFile()) {
-    await fs.promises.unlink(marker);
+    await nodeFileSystem.rm(marker);
     onWarning(`${label} marker ${marker} was not a regular file, so it was removed without being followed`);
     return { removed: true, stopped: false, uninspectable: [] };
   }
   const recorded = pgid ?? (await readRecordedGroup(marker));
   const group = groupPortOf(options.groupPort, kill);
-  if (recorded !== undefined) await recallMarkerGroup(group, marker, recorded);
+  if (recorded !== undefined && (await recallMarkerGroup(group, marker, recorded)) === 'unknown') {
+    onWarning(`${label} marker ${marker} kept: it records no name for group ${recorded}, and this process did not start that group, so its processes cannot be proved`);
+    return ended(false, []);
+  }
   const ownGroup = (await holderGroups([process.pid], recorded === undefined ? [] : [recorded], { signal: stop, inspector }))[0];
   const unsettled = new Map<number, UninspectableProcess>();
   let stopped: boolean;
@@ -576,7 +587,7 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
   }
   if (unsettled.size > 0) return ended(stopped, [...unsettled.values()]);
   if ((await inspector.markerState(marker, { signal: stop, mode: markerMode })) !== 'free') return ended(stopped, []);
-  await fs.promises.rm(marker, { force: true });
+  await nodeFileSystem.rm(marker);
   return { removed: true, stopped, uninspectable: [] };
 };
 
@@ -642,9 +653,9 @@ export type ReapMarkerDirectoryResult = { reaped: number; kept: number; unreaped
 const unreapedNotice = (label: string, { marker, code, error }: UnreapedMarker): string => `${label} marker ${marker} could not be reaped (${code ?? 'no code'}): ${messageOf(error)}; the next start will retry`;
 
 const markerFilesUnder = async (dir: string): Promise<string[]> => {
-  let entries: fs.Dirent[];
+  let entries: Dirent[];
   try {
-    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    entries = await nodeFileSystem.readdirEntries(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;

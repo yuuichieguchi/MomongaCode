@@ -37,8 +37,8 @@ type Api = {
   cancelRun(runId: string): Promise<void>;
 };
 type Result = {
-  report: { kind: string; total: { completion: { k: number; n: number; undeclared: number }; intervention: { k: number; n: number } }; harness: { suite: { name: string }; codeDigest: string; answeredBy: unknown[]; unrecordedAnswers: number }; tasks?: { task: string; trials: number; met: number }[] };
-  invalidSetup: { taskId: string; trial: number }[];
+  report: { kind: string; total: { completion: { k: number; n: number; undeclared: number }; intervention: { k: number; n: number } }; harness: { suite: { name: string }; codeDigest: string; answeredBy: unknown[]; unrecordedAnswers: number }; tasks?: { task: string; trials: number; met: number }[]; population?: { notRun: { id: string; reason: string }[] } };
+  trialsRun: number;
 };
 type TrialHome = { cwd: string; api: Api; close(): Promise<void> };
 type RunBenchmark = (file: string, ports: { open(task: { id: string }, trial: number): Promise<TrialHome>; probe: WorkspaceProbe; files: WorkspaceFiles; model: string; codeDigest: string; groupBy: 'model' }) => Promise<Result>;
@@ -187,7 +187,7 @@ describe('momonga eval bench: the trials of a benchmark (3.3)', () => {
     const dir = await benchmarkDir([{ id: 'fix', reference: { 'src/add.js': ADD_FIXED } }]);
     const fake = fakeApi({ edit: fixTheBug });
     const at = scratch();
-    const { report, invalidSetup } = await runBenchmark(dir, fake.api, at);
+    const { report, trialsRun } = await runBenchmark(dir, fake.api, at);
 
     expect([...fake.sessions.values()].map((session) => [session.permissionMode, session.model])).toEqual(Array.from({ length: 3 }, () => ['acceptEdits', 'fake/system']));
     const workspaces = [...fake.sessions.values()].map((session) => session.cwd);
@@ -196,7 +196,8 @@ describe('momonga eval bench: the trials of a benchmark (3.3)', () => {
     expect([...fake.runs.values()].map((run) => [run.input, run.timeoutMs, run.limits])).toEqual(Array.from({ length: 3 }, () => ['Fix add.', 60000, { maxSteps: 10, maxTotalTokens: 100000 }]));
     expect(fs.readFileSync(path.join(dir, 'repos/fix/src/add.js'), 'utf8')).not.toBe(ADD_FIXED);
 
-    expect(invalidSetup).toEqual([]);
+    expect(trialsRun).toBe(3);
+    expect(report.population?.notRun).toEqual([]);
     expect(report.kind).toBe('benchmark');
     expect(report.harness).toMatchObject({ suite: { name: 'fixture' }, codeDigest: 'sha256:build', answeredBy: [{ target: 'fake/system', answers: 'script' }], unrecordedAnswers: 0 });
     expect(report.tasks).toEqual([expect.objectContaining({ task: 'fix', trials: 3, met: 3 })]);
@@ -291,15 +292,16 @@ describe('momonga eval bench: the trials of a benchmark (3.3)', () => {
     expect(report.tasks).toEqual([expect.objectContaining({ met: 3 })]);
   });
 
-  it('excludes and counts a trial whose setup fails, and never creates its run', async () => {
+  it('records a trial whose setup fails as not run, and never creates its run', async () => {
     const dir = await benchmarkDir([{ id: 'fix', reference: { 'src/add.js': ADD_FIXED } }]);
     const file = path.join(dir, 'benchmark.json');
     const benchmark = JSON.parse(fs.readFileSync(file, 'utf8')) as { tasks: { setup: unknown[]; runs: number }[] };
     (benchmark.tasks[0] as { setup: unknown[] }).setup = [{ run: 'exit 3', timeoutMs: 5000 }];
     fs.writeFileSync(file, JSON.stringify(benchmark));
     const fake = fakeApi({ edit: fixTheBug });
-    const { report, invalidSetup } = await runBenchmark(dir, fake.api, scratch());
-    expect(invalidSetup).toEqual([0, 1, 2].map((trial) => ({ taskId: 'fix', trial })));
+    const { report, trialsRun } = await runBenchmark(dir, fake.api, scratch());
+    expect(trialsRun).toBe(0);
+    expect(report.population?.notRun).toEqual([0, 1, 2].map((trial) => ({ id: `task fix trial ${trial}`, reason: 'its setup did not exit 0' })));
     expect(fake.runs.size).toBe(0);
     expect(report.tasks).toEqual([]);
   });

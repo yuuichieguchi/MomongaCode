@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { closeMarkerDescriptor, ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
 import { SandboxPolicyError, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, pollUntil, withTempDir, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, pollUntil, withTempDir, testProcessInspector, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import { fixedSandboxBindings } from '@momonga/runtime';
 
@@ -89,7 +89,7 @@ describe('the evidence runner', () => {
     const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
-    const real = createUnsandboxed({ killGraceMs: 200 });
+    const real = createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 });
     const pids: number[] = [];
     const sandbox: Sandbox = {
       kind: 'none',

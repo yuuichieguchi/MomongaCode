@@ -10,10 +10,11 @@ export const attachedFileText = (part: AttachedFilePart): string => `<attached_f
 
 export const attachmentText = (part: MessageAttachment): string => (part.type === 'attached_file' ? attachedFileText(part) : part.text);
 
-export type UserMessageExtras = { attachments?: readonly MessageAttachment[] | undefined; shell?: readonly UserShellRecord[] | undefined };
+export type UserMessageExtras = { attachments?: readonly MessageAttachment[] | undefined };
+
+export const includedShellTexts = (shell: readonly UserShellRecord[] | undefined): string[] => (shell ?? []).filter((record) => record.include).map(userShellText);
 
 export const userMessageContent = (text: string, images: readonly ImageAttachment[] | undefined, extras: UserMessageExtras = {}): ContentPart[] => [
-  ...(extras.shell ?? []).filter((record) => record.include).map((record): ContentPart => ({ type: 'input_text', text: userShellText(record) })),
   { type: 'input_text', text },
   ...(extras.attachments ?? []).map((part): ContentPart => ({ type: 'input_text', text: attachmentText(part) })),
   ...(images ?? []).map((image): ContentPart => ({ type: 'input_image', image_url: imageDataUrl(image) })),

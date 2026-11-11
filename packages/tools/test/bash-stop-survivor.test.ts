@@ -1,3 +1,4 @@
+import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import { PassThrough } from 'node:stream';
@@ -6,7 +7,7 @@ import type { ProcessGroupPort } from '@momonga/foundation';
 import type { Sandbox } from '@momonga/sandbox';
 import { launch } from '../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../sandbox/src/process.ts';
-import { virtualTiming } from '../../foundation/test/support/probe-fakes.ts';
+import { virtualTiming, driveUntil } from '../../foundation/test/support/probe-fakes.ts';
 import { bashTool } from '../src/builtins/bash.ts';
 import { call, toolSetOf } from './harness.ts';
 import { LEAVER_PGID, markerOf, resultOf, world } from './guard-world.ts';
@@ -23,7 +24,7 @@ const survivingSandbox = (timing: ReturnType<typeof virtualTiming>): Sandbox => 
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const child = Object.assign(new EventEmitter(), { pid: LEAVER_PGID, stdout, stderr, stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: '/bin/bash',
         args: [],
         cwd: '/',
@@ -56,7 +57,7 @@ describe('a command whose process group keeps a member that survives the stop', 
     void batch.finally(() => {
       done = true;
     });
-    for (let step = 1; !done && step <= 1000; step += 1) await timing.advanceTo(step * KILL_GRACE_MS);
+    await driveUntil(timing, () => done, 1000 * KILL_GRACE_MS, 'the stop to end');
     const [outcome] = await batch;
     const result = resultOf(outcome);
     expect(result.status).toBe('completed');

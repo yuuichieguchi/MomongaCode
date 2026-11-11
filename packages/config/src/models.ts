@@ -22,7 +22,7 @@ import { layoutOf } from './layout.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { ADAPTERS } from './adapters.ts';
 import type { AdapterKind, WireFacts } from './adapters.ts';
-import { addressProblem } from './probe-record-key.ts';
+import { addressProblem, withDefaultAddress } from './probe-record-key.ts';
 import type { PlanProfile } from './plan-profiles.ts';
 import { PROVIDER_NAME_RULE_TEXT, derivedNameProblem, isProviderName, providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
 import { registeredIds, registeredServer, requireOfferedEndpointForm } from './server-registry.ts';
@@ -561,7 +561,7 @@ const warnUnallowedBillingChanges = (changes: readonly BillingChange[], { models
 
 export const resolveModels = (models: ModelsSettings | undefined, { source, warnings, servers, planProfiles = PLAN_PROFILES, classifier, kinds = SERVER_KINDS }: ResolveModelsOptions): ResolvedModels => {
   const dialects = resolveDialects(models?.dialects, source);
-  const configured = resolveConnections(models?.connections ?? [], source, kinds, { warnings, servers, profiles: planProfiles });
+  const configured = resolveConnections((models?.connections ?? []).map(withDefaultAddress), source, kinds, { warnings, servers, profiles: planProfiles });
   const displays = displayMapOf(configured.views);
   const references = resolveReferences(models, classifier, configured.views, displays, source);
   checkModelDialects(models?.connections ?? [], dialects, source);

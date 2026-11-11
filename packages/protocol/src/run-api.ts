@@ -352,6 +352,8 @@ const modelCostProperties = { amount: { type: 'number', minimum: 0 }, currency: 
 
 const modelCost = closed({ ...modelCostProperties, units: costUnits }, ['amount', 'units', 'currency', 'priceVersion']);
 
+export const MODEL_COST_SCHEMA: JsonSchema = modelCost;
+
 const recordedModelCost = closed({ ...modelCostProperties, units: nullable(costUnits) }, ['amount', 'units', 'currency', 'priceVersion']);
 
 const unpricedOutcome = closed({ code: enumOf(UNPRICED_CODES), reason: string }, ['code', 'reason']);
@@ -1441,6 +1443,7 @@ export const RUN_API_SCHEMAS = {
         bypassAllowed: boolean,
         sandboxNetwork: enumOf(SESSION_SANDBOX_NETWORKS),
         mcpServers: sessionMcpServers,
+        terminalUi: boolean,
       },
       ['cwd', 'env'],
     ),

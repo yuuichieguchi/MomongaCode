@@ -32,154 +32,154 @@ const makeForm = (target: string, form: PlaceholderForm): void => {
   else fs.writeFileSync(target, form.bytes);
 };
 
-const journaled = (journal: PlaceholderJournal, target: string, form: PlaceholderForm): void => {
-  journal.intend(target, Date.now(), form);
+const journaled = async (journal: PlaceholderJournal, target: string, form: PlaceholderForm): Promise<void> => {
+  await journal.intend(target, Date.now(), form);
   makeForm(target, form);
-  journal.complete(target, identityOf(target));
+  await journal.complete(target, await identityOf(target));
 };
 
 describe('the journal record carries the form', () => {
-  it('keeps the form of an intent and of its completion across instances', () => {
+  it('keeps the form of an intent and of its completion across instances', async () => {
     const first = createPlaceholderJournal(journalDirectory);
-    first.intend('/w/.git', 100, DIRECTORY_FORM);
-    first.intend('/w/.git/commondir', 200, COMMONDIR_FORM);
-    first.complete('/w/.git', { device: '1', inode: '2', birthMs: 150 });
-    expect(createPlaceholderJournal(journalDirectory).records()).toEqual([
-      { path: '/w/.git', intentMs: 100, form: DIRECTORY_FORM, identity: { device: '1', inode: '2', birthMs: 150 } },
+    await first.intend('/w/.git', 100, DIRECTORY_FORM);
+    await first.intend('/w/.git/commondir', 200, COMMONDIR_FORM);
+    await first.complete('/w/.git', { device: '1', inode: '2', changed: '3' });
+    expect((await createPlaceholderJournal(journalDirectory).records())).toEqual([
+      { path: '/w/.git', intentMs: 100, form: DIRECTORY_FORM, identity: { device: '1', inode: '2', changed: '3' } },
       { path: '/w/.git/commondir', intentMs: 200, form: COMMONDIR_FORM, identity: null },
     ]);
   });
 
-  it('reads an intent written without a form as an empty file', () => {
-    createPlaceholderJournal(journalDirectory).intend('/w/.envrc', 300);
-    expect(createPlaceholderJournal(journalDirectory).records()).toEqual([{ path: '/w/.envrc', intentMs: 300, form: EMPTY_FILE, identity: null }]);
+  it('reads an intent written without a form as an empty file', async () => {
+    await createPlaceholderJournal(journalDirectory).intend('/w/.envrc', 300);
+    expect((await createPlaceholderJournal(journalDirectory).records())).toEqual([{ path: '/w/.envrc', intentMs: 300, form: EMPTY_FILE, identity: null }]);
   });
 
-  it('reads a record written before forms existed as an empty file', () => {
-    createPlaceholderJournal(journalDirectory);
+  it('reads a record written before forms existed as an empty file, and an identity without its change time as no identity', async () => {
+    await createPlaceholderJournal(journalDirectory).records();
     fs.writeFileSync(path.join(journalDirectory, 'legacy.json'), JSON.stringify({ path: '/w/.mcp.json', intentMs: 5, identity: { device: '7', inode: '8', birthMs: 9 } }));
-    expect(createPlaceholderJournal(journalDirectory).records()).toEqual([
-      { path: '/w/.mcp.json', intentMs: 5, form: EMPTY_FILE, identity: { device: '7', inode: '8', birthMs: 9 } },
+    expect((await createPlaceholderJournal(journalDirectory).records())).toEqual([
+      { path: '/w/.mcp.json', intentMs: 5, form: EMPTY_FILE, identity: null },
     ]);
   });
 
-  it('refuses a record whose form is malformed instead of guessing it', () => {
-    createPlaceholderJournal(journalDirectory);
+  it('refuses a record whose form is malformed instead of guessing it', async () => {
+    await createPlaceholderJournal(journalDirectory).records();
     fs.writeFileSync(path.join(journalDirectory, 'bad.json'), JSON.stringify({ path: '/w/.mcp.json', intentMs: 5, form: { kind: 'socket' }, identity: null }));
-    expect(() => createPlaceholderJournal(journalDirectory).records()).toThrow();
+    await expect(createPlaceholderJournal(journalDirectory).records()).rejects.toThrow();
   });
 });
 
 describe('isStillThePlaceholder judges by form and identity', () => {
-  it('accepts a file with exactly the bytes of its form and its recorded identity', () => {
+  it('accepts a file with exactly the bytes of its form and its recorded identity', async () => {
     const target = path.join(work, 'commondir');
     makeForm(target, COMMONDIR_FORM);
-    expect(isStillThePlaceholder(target, identityOf(target), COMMONDIR_FORM)).toBe(true);
+    expect(await isStillThePlaceholder(target, await identityOf(target), COMMONDIR_FORM)).toBe(true);
   });
 
-  it('accepts an empty directory with its recorded identity', () => {
+  it('accepts an empty directory with its recorded identity', async () => {
     const target = path.join(work, '.git');
     makeForm(target, DIRECTORY_FORM);
-    expect(isStillThePlaceholder(target, identityOf(target), DIRECTORY_FORM)).toBe(true);
+    expect(await isStillThePlaceholder(target, await identityOf(target), DIRECTORY_FORM)).toBe(true);
   });
 
-  it('treats a call without a form as an empty file', () => {
+  it('treats a call without a form as an empty file', async () => {
     const target = path.join(work, '.envrc');
     makeForm(target, EMPTY_FILE);
-    expect(isStillThePlaceholder(target, identityOf(target))).toBe(true);
-    expect(isStillThePlaceholder(target, identityOf(target), COMMONDIR_FORM)).toBe(false);
+    expect(await isStillThePlaceholder(target, await identityOf(target))).toBe(true);
+    expect(await isStillThePlaceholder(target, await identityOf(target), COMMONDIR_FORM)).toBe(false);
   });
 
-  it('refuses a file whose bytes changed, also when only emptied or extended', () => {
+  it('refuses a file whose bytes changed, also when only emptied or extended', async () => {
     const target = path.join(work, 'commondir');
     makeForm(target, COMMONDIR_FORM);
-    const identity = identityOf(target);
+    const identity = await identityOf(target);
     for (const bytes of ['', '.', '.\n\n', '../main\n', ',\n']) {
       fs.writeFileSync(target, bytes);
-      expect(isStillThePlaceholder(target, identity, COMMONDIR_FORM)).toBe(false);
+      expect(await isStillThePlaceholder(target, identity, COMMONDIR_FORM)).toBe(false);
     }
   });
 
-  it('refuses a directory that is no longer empty', () => {
+  it('refuses a directory that is no longer empty', async () => {
     const target = path.join(work, '.git');
     makeForm(target, DIRECTORY_FORM);
-    const identity = identityOf(target);
+    const identity = await identityOf(target);
     fs.writeFileSync(path.join(target, 'HEAD'), 'ref: refs/heads/main\n');
-    expect(isStillThePlaceholder(target, identity, DIRECTORY_FORM)).toBe(false);
+    expect(await isStillThePlaceholder(target, identity, DIRECTORY_FORM)).toBe(false);
   });
 
-  it('refuses a directory or a file that replaced the placeholder under another inode', () => {
+  it('refuses a directory or a file that replaced the placeholder under another inode', async () => {
     const directory = path.join(work, '.git');
     makeForm(directory, DIRECTORY_FORM);
-    const directoryIdentity = identityOf(directory);
+    const directoryIdentity = await identityOf(directory);
     fs.rmdirSync(directory);
     fs.mkdirSync(path.join(work, 'other'));
     fs.mkdirSync(directory);
-    expect(isStillThePlaceholder(directory, directoryIdentity, DIRECTORY_FORM)).toBe(false);
+    expect(await isStillThePlaceholder(directory, directoryIdentity, DIRECTORY_FORM)).toBe(false);
     const file = path.join(directory, 'commondir');
     makeForm(file, COMMONDIR_FORM);
-    const fileIdentity = identityOf(file);
+    const fileIdentity = await identityOf(file);
     fs.rmSync(file);
     fs.writeFileSync(path.join(work, 'other-file'), '');
     makeForm(file, COMMONDIR_FORM);
-    expect(isStillThePlaceholder(file, fileIdentity, COMMONDIR_FORM)).toBe(false);
+    expect(await isStillThePlaceholder(file, fileIdentity, COMMONDIR_FORM)).toBe(false);
   });
 
-  it('refuses a placeholder whose kind differs from its form', () => {
+  it('refuses a placeholder whose kind differs from its form', async () => {
     const directory = path.join(work, 'dir');
     makeForm(directory, DIRECTORY_FORM);
-    expect(isStillThePlaceholder(directory, identityOf(directory), EMPTY_FILE)).toBe(false);
+    expect(await isStillThePlaceholder(directory, await identityOf(directory), EMPTY_FILE)).toBe(false);
     const file = path.join(work, 'file');
     makeForm(file, EMPTY_FILE);
-    expect(isStillThePlaceholder(file, identityOf(file), DIRECTORY_FORM)).toBe(false);
+    expect(await isStillThePlaceholder(file, await identityOf(file), DIRECTORY_FORM)).toBe(false);
   });
 });
 
 describe('recovery at start removes a placeholder only in its form', () => {
-  it('removes an empty directory and a commondir with exactly its bytes, both with their identity, and forgets them', () => {
+  it('removes an empty directory and a commondir with exactly its bytes, both with their identity, and forgets them', async () => {
     const journal = createPlaceholderJournal(journalDirectory);
     const git = path.join(work, '.git');
     const commondir = path.join(work, 'sub-commondir');
-    journaled(journal, git, DIRECTORY_FORM);
-    journaled(journal, commondir, COMMONDIR_FORM);
-    expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [git, commondir].sort(), kept: [] });
+    await journaled(journal, git, DIRECTORY_FORM);
+    await journaled(journal, commondir, COMMONDIR_FORM);
+    expect(await recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [git, commondir].sort(), kept: [], unrecovered: [] });
     expect(fs.existsSync(git)).toBe(false);
     expect(fs.existsSync(commondir)).toBe(false);
-    expect(journal.records()).toEqual([]);
+    expect((await journal.records())).toEqual([]);
   });
 
-  it('leaves a directory placeholder while a live sandbox holds it, and keeps the record', () => {
+  it('leaves a directory placeholder while a live sandbox holds it, and keeps the record', async () => {
     const journal = createPlaceholderJournal(journalDirectory);
     const git = path.join(work, '.git');
-    journaled(journal, git, DIRECTORY_FORM);
-    expect(recoverPlaceholders(journal, { holders: () => new Set([git]) })).toEqual({ removed: [], kept: [git] });
+    await journaled(journal, git, DIRECTORY_FORM);
+    expect(await recoverPlaceholders(journal, { holders: () => new Set([git]) })).toEqual({ removed: [], kept: [git], unrecovered: [] });
     expect(fs.lstatSync(git).isDirectory()).toBe(true);
-    expect(journal.records()).toHaveLength(1);
+    expect((await journal.records())).toHaveLength(1);
   });
 
-  it('leaves a directory that is no longer empty and a commondir whose bytes changed, and forgets them', () => {
+  it('leaves a directory that is no longer empty and a commondir whose bytes changed, and forgets them', async () => {
     const journal = createPlaceholderJournal(journalDirectory);
     const git = path.join(work, '.git');
     const commondir = path.join(work, 'sub-commondir');
-    journaled(journal, git, DIRECTORY_FORM);
-    journaled(journal, commondir, COMMONDIR_FORM);
+    await journaled(journal, git, DIRECTORY_FORM);
+    await journaled(journal, commondir, COMMONDIR_FORM);
     fs.writeFileSync(path.join(git, 'HEAD'), 'ref: refs/heads/main\n');
     fs.writeFileSync(commondir, '../main\n');
-    expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [] });
+    expect(await recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [], unrecovered: [] });
     expect(fs.readdirSync(git)).toEqual(['HEAD']);
     expect(fs.readFileSync(commondir, 'utf8')).toBe('../main\n');
-    expect(journal.records()).toEqual([]);
+    expect((await journal.records())).toEqual([]);
   });
 
-  it('leaves an empty directory that replaced the placeholder under another inode', () => {
+  it('leaves an empty directory that replaced the placeholder under another inode', async () => {
     const journal = createPlaceholderJournal(journalDirectory);
     const git = path.join(work, '.git');
-    journaled(journal, git, DIRECTORY_FORM);
+    await journaled(journal, git, DIRECTORY_FORM);
     fs.rmdirSync(git);
     fs.mkdirSync(path.join(work, 'other'));
     fs.mkdirSync(git);
-    expect(recoverPlaceholders(journal, { holders: noHolders }).removed).toEqual([]);
+    expect((await recoverPlaceholders(journal, { holders: noHolders })).removed).toEqual([]);
     expect(fs.lstatSync(git).isDirectory()).toBe(true);
-    expect(journal.records()).toEqual([]);
+    expect((await journal.records())).toEqual([]);
   });
 });

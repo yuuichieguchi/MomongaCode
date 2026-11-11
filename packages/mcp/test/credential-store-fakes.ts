@@ -16,7 +16,7 @@ export type StoreMode = 'answer' | 'hang' | 'absent';
 
 const KEY_READ = { action: 'read', name: undefined, backend: KEYCHAIN_BACKEND } as const;
 
-export type StoreCallRecord = { operation: 'read' | 'withKey'; key: string; signal: AbortSignal; mode: StoreMode; observed: unknown; rejection: unknown };
+export type StoreCallRecord = { operation: 'read' | 'withKey'; key: string; signal: AbortSignal; mode: StoreMode; observed: unknown; rejection: unknown; left: Promise<unknown> };
 
 export type ControlledCredentialStore = {
   store: McpCredentialStore;
@@ -39,7 +39,8 @@ export const controlledCredentialStore = (): ControlledCredentialStore => {
   const countOf = (mode: StoreMode | undefined): number => controlled.calls.filter((call) => mode === undefined || call.mode === mode).length;
   const gate = async (operation: StoreCallRecord['operation'], key: string, signal: AbortSignal): Promise<void> => {
     const mode = typeof controlled.mode === 'function' ? controlled.mode() : controlled.mode;
-    const record: StoreCallRecord = { operation, key, signal, mode, observed: controlled.observe?.(), rejection: undefined };
+    const leaving = Promise.withResolvers<unknown>();
+    const record: StoreCallRecord = { operation, key, signal, mode, observed: controlled.observe?.(), rejection: undefined, left: leaving.promise };
     controlled.calls.push(record);
     for (const waiter of waiters.splice(0)) {
       if (countOf(waiter.mode) >= waiter.count) waiter.resolve();
@@ -52,6 +53,7 @@ export const controlledCredentialStore = (): ControlledCredentialStore => {
       await controlled.beforeAnswer?.();
     } catch (error) {
       record.rejection = error;
+      leaving.resolve(error);
       throw error;
     }
   };
@@ -110,13 +112,18 @@ export const outcomeOf = <T>(pending: Promise<T>): Outcome<T> => {
   return { state: () => state, value: () => value, error: () => error };
 };
 
-export const afterPendingIo = (): Promise<void> => new Promise<void>((resolve) => void setImmediate(resolve));
-
 export const useLimitTimers = (): void => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 };
 
 const SETTLE_WAIT = { timeout: 2_000 };
+
+const ARMED_WAIT = { ...SETTLE_WAIT, interval: 0 };
+
+export const limitArmed = (): Promise<void> =>
+  vi.waitFor(() => {
+    if (vi.getTimerCount() === 0) throw new Error('no limit timer is armed');
+  }, ARMED_WAIT);
 
 export const LIMIT_TEST = { timeout: 20_000 };
 
@@ -129,6 +136,5 @@ export const settledAfter = async <T>(outcome: Outcome<T>): Promise<Outcome<T>> 
 
 export const stillPendingAfter = async (outcome: Outcome<unknown>, ms: number): Promise<void> => {
   await vi.advanceTimersByTimeAsync(ms);
-  await afterPendingIo();
   if (outcome.state() !== 'pending') throw new Error(`the operation settled ${outcome.state()} before its limit: ${String(outcome.error() ?? outcome.value())}`);
 };

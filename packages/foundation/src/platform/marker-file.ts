@@ -49,10 +49,20 @@ const handleOf = (ops: FileLockOps, fd: number, mode: MarkerMode): MarkerHandle 
   return handle;
 };
 
+export class UnregisteredDescriptorError extends Error {
+  readonly fd: number;
+
+  constructor(fd: number) {
+    super(`the descriptor ${fd} is not a marker this process opened; it is left open`);
+    this.name = 'UnregisteredDescriptorError';
+    this.fd = fd;
+  }
+}
+
 export const closeMarkerDescriptor = (fd: number): void => {
   const handle = owned.get(fd);
-  if (handle === undefined) nodeFileSystemSync.closeSync(fd);
-  else handle.close();
+  if (handle === undefined) throw new UnregisteredDescriptorError(fd);
+  handle.close();
 };
 
 const writeEmptyRecord = (file: string): void => {

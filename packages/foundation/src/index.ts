@@ -96,13 +96,14 @@ export type {
 export { bsdFileLock, createFileLock, kernelLockNamed, nodeFileLockOps } from './platform/kernel-lock.ts';
 export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, claimNewEntry, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf } from './platform/lock-form.ts';
 export type { LockForm } from './platform/lock-form.ts';
-export { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_OWNER_FIELD, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverLeftovers, handoverRecordOwner } from './handover-leftovers.ts';
+export { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverLeftovers, handoverRecordFields, handoverRecordOwner } from './handover-leftovers.ts';
+export type { HandoverRecordParties } from './handover-leftovers.ts';
 export { sweepLeftovers } from './leftover-sweep.ts';
-export type { LeftoverDirectory, LeftoverFiles } from './leftover-sweep.ts';
+export type { LeftoverDirectory, LeftoverFiles, Retention } from './leftover-sweep.ts';
 export { createOwnedDirectory, createOwnedDirectorySync } from './owned-directory.ts';
 export { createLockedEntry } from './locked-entry.ts';
 export type { LockedEntry, LockedEntryFiles } from './locked-entry.ts';
-export type { OwnedDirectory, OwnedDirectorySync } from './owned-directory.ts';
+export type { OwnedDirectory } from './owned-directory.ts';
 export { createLockCapability, resolveLayoutLocks } from './platform/lock-capability.ts';
 export type { LayoutLocks, LockCapability, LockCapabilityProbe } from './platform/lock-capability.ts';
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
@@ -141,6 +142,8 @@ export {
   homeLayout,
   momongaLayout,
   momongaPaths,
+  canonicalHomeOf,
+  protectedAreasOf,
   refuseUnfitGenerationSocketsBeforeCreation,
   requireGenerationDirs,
   roleEndpoint,
@@ -308,7 +311,7 @@ export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirec
 export { createLiveIdentities } from './platform/live-identities.ts';
 export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry } from './uninspectable-registry.ts';
-export { isProcessAlive } from './process-alive.ts';
+export { isProcessAlive, pidNamespaceOf } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
 export type { ProcessPort } from './process-port.ts';
 export { HELPER_COMMAND, helperCommandLine } from './executable-helper.ts';
@@ -422,3 +425,5 @@ export type {
   KeptLaunch,
 } from './platform/windows-keeper.ts';
 export { createNodeKeeperHost, provideCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
+export { CONTROL_PLANE_LAUNCH } from './child-protection.ts';
+export type { ChildProtection, LaunchProtection } from './child-protection.ts';

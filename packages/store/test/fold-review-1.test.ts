@@ -3,6 +3,7 @@ import { sha256Hex } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { START_MS, enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { roundTripped } from './run-state-codec.ts';
 
 const IDS = { runId: 'run-1', sessionId: 'sess-1' };
 
@@ -81,18 +82,15 @@ describe('snapshot codec: steps and loadedInstructions', () => {
   const snapshotWith = async (patch: Record<string, unknown>) => {
     const { store } = harness();
     const run = await enqueue(store, newSession(store).id);
-    const claim = mustClaim(store, 'worker-1');
-    const appended = store.append(claim, [requested(1, 'auto'), { type: 'instructions.loaded', path: '/proj/AGENTS.md', content: 'v1' }]);
+    const appended = store.append(mustClaim(store, 'worker-1'), [requested(1, 'auto'), { type: 'instructions.loaded', path: '/proj/AGENTS.md', content: 'v1' }]);
     if (appended.kind !== 'ok') throw new Error('expected the append to succeed');
     const state = store.readRunEvents(run.id, 0, 100).reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    const written = store.writeSnapshot(claim, state.lastSeq, { ...state, ...patch } as RunState);
-    if (written.kind !== 'ok') throw new Error('expected the snapshot to be written');
-    return { store, runId: run.id, state };
+    return { read: () => roundTripped({ ...state, ...patch } as RunState), state };
   };
 
   it('round-trips the folded steps and loaded instructions', async () => {
-    const { store, runId, state } = await snapshotWith({});
-    const loaded = store.load(runId).snapshot?.state;
+    const { read, state } = await snapshotWith({});
+    const loaded = read();
     expect(loaded?.steps).toEqual({ 1: { toolChoice: 'auto', summary: false } });
     expect(loaded?.loadedInstructions).toEqual([{ path: '/proj/AGENTS.md', textSha256: sha256Hex('v1'), seq: 3, content: 'v1' }]);
     expect(loaded).toEqual(state);
@@ -106,7 +104,7 @@ describe('snapshot codec: steps and loadedInstructions', () => {
     ['a loaded instruction without a path', { loadedInstructions: [{ textSha256: sha256Hex('v1') }] }],
     ['a loaded instruction without a digest', { loadedInstructions: [{ path: '/proj/AGENTS.md' }] }],
   ])('rejects a snapshot holding %s', async (_label, patch) => {
-    const { store, runId } = await snapshotWith(patch);
-    expect(() => store.load(runId)).toThrow(/does not hold a RunState/);
+    const { read } = await snapshotWith(patch);
+    expect(() => read()).toThrow(/does not hold a RunState/);
   });
 });

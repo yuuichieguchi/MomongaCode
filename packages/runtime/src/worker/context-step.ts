@@ -23,7 +23,7 @@ import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/f
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { harnessOutputToolsOf } from '@momonga/tools';
-import { BUDGET_EXCEEDED_CODE, DETERMINISTIC_SUMMARY_TEXT, LOWEST_REASONING_EFFORT, marginFloorFor, outputTokensFor, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
+import { BUDGET_EXCEEDED_CODE, DETERMINISTIC_SUMMARY_TEXT, LOWEST_REASONING_EFFORT, marginFloorFor, outputTokensFor, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, includedShellTexts, userMessageContent } from '@momonga/protocol';
 import { billedDetailOf } from './model-stream.ts';
 import type { Capabilities, CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
@@ -67,10 +67,10 @@ const escalates = (error: unknown): error is GatewayRequestError =>
 
 const sessionOf = (ctx: ClaimContext): HeldSession => heldSessionOf(ctx.options.store, ctx.run.sessionId);
 
-export const taskOf = (ctx: ClaimContext): { content: ContentPart[]; text: string } => {
+export const taskOf = (ctx: ClaimContext): { content: ContentPart[]; text: string; shell: string[] } => {
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
   if (first === undefined || first.type !== 'user.message') throw new Error(`run ${ctx.run.id} does not start with a user message`);
-  return { content: userMessageContent(first.text, first.images, first), text: first.text };
+  return { content: userMessageContent(first.text, first.images, first), text: first.text, shell: includedShellTexts(first.shell) };
 };
 
 type GoverningScan = 'active' | 'live';
@@ -129,13 +129,7 @@ const offeredKeyOf = (tools: readonly FunctionTool[], companions: Companions): s
 const admittedFloors = new WeakMap<ClaimContext, AdmittedFloor>();
 
 const recordedReferencesOf = (ctx: ClaimContext): ReadonlySet<string> =>
-  ctx.token.outputFormatters.includes('identicalOutput')
-    ? new Set(
-        ctx.options.store
-          .readRunEventsOfTypes(ctx.run.id, ['context.truncated'])
-          .flatMap((event) => (event.type === 'context.truncated' && event.kind === 'reference' ? [event.callId] : [])),
-      )
-    : new Set<string>();
+  new Set(ctx.token.outputFormatters.includes('identicalOutput') ? (ctx.journal.state.referencedOutputs ?? []) : []);
 
 type OfferedInput = { input: BuildContextInput; offered: string; governing: string; kinds: string; joined: string[] };
 
@@ -180,6 +174,7 @@ const offeredInputOf = async (
       readers,
       task: { type: 'message', role: 'user', content: task.content },
       taskSeq: state.taskSeq,
+      ...(task.shell.length === 0 ? {} : { taskShell: task.shell }),
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
       ...(ctx.delegation === undefined ? {} : { mandate: ctx.delegation.notice }),
       activatedSkills: state.activatedSkills,
@@ -531,6 +526,7 @@ const unrecordedNoticePayloads = (ctx: ClaimContext, notices: readonly ContextNo
     const identity = identityOf(notice.message, notice.code, notice.reduction);
     if (known.has(identity)) continue;
     known.add(identity);
+    if (notice.key !== undefined && ctx.options.store.latestSessionNotice(ctx.run.sessionId, notice.code, notice.key) !== undefined) continue;
     payloads.push({
       type: 'notice',
       level: 'warning',
@@ -794,7 +790,7 @@ const nothingToCompactMessage = (ctx: ClaimContext, block: CompactionBlock | und
 };
 
 export const compactOnly = async (ctx: ClaimContext, focus: string | undefined): Promise<void> => {
-  if (ctx.options.store.readRunEventsOfTypes(ctx.run.id, ['context.compacted']).length > 0) {
+  if (ctx.journal.state.ownCompactionEventSeq !== undefined) {
     await ctx.terminals.finish('COMPLETED');
     return;
   }

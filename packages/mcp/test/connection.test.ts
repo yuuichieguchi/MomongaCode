@@ -1,9 +1,9 @@
 import net from 'node:net';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { CredentialStoreError } from '@momonga/foundation';
+import { CredentialStoreError, nodeFileSystem } from '@momonga/foundation';
 import { McpUnavailableError, McpUnknownToolError, connectMcpServer, createManagedConnection, type McpServerConnection } from '@momonga/mcp';
 import type { McpCallToolInput } from '../src/connection.ts';
-import { LIMIT_TEST, NO_STORE_REFUSAL, afterPendingIo, controlledCredentialStore, keyReadLimitSentence, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
+import { LIMIT_TEST, NO_STORE_REFUSAL, limitArmed, controlledCredentialStore, keyReadLimitSentence, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
 import { makeRemoteConnection, startHttpFixture } from './remote-harness.ts';
 import type { McpServerConfig } from '@momonga/config';
 import {
@@ -30,7 +30,7 @@ import {
 } from './mcp-harness.ts';
 
 const connect = async (name: string, config: McpServerConfig, requestTimeoutMs?: number): Promise<McpServerConnection> => {
-  const connection = await connectMcpServer({
+  const connection = await connectMcpServer({ files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name,
     config,
@@ -96,7 +96,7 @@ describe('connectMcpServer remote configs', () => {
     onCleanup(() => new Promise<void>((resolve) => server.close(() => resolve())));
     const { port } = server.address() as net.AddressInfo;
     await expect(
-      connectMcpServer({
+      connectMcpServer({ files: nodeFileSystem,
         clientVersion: '0.0.0-test',
         name: 'remote',
         config: { type: 'http', url: `http://127.0.0.1:${port}/mcp` },
@@ -239,7 +239,7 @@ describe('the connect of a server against the limit of the connect', () => {
   });
 
   it('a connect that hangs outside the store has the limit text', LIMIT_TEST, async () => {
-    const connection = createManagedConnection({
+    const connection = createManagedConnection({ files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 's',
       config: { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'] },
@@ -253,7 +253,7 @@ describe('the connect of a server against the limit of the connect', () => {
     useLimitTimers();
 
     const attempt = outcomeOf(connection.connect());
-    while (vi.getTimerCount() === 0) await afterPendingIo();
+    await limitArmed();
     await stillPendingAfter(attempt, 29_999);
     await vi.advanceTimersByTimeAsync(1);
     await settledAfter(attempt);

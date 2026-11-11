@@ -1,3 +1,4 @@
+import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,7 +9,7 @@ import { groupTerminationBoundMs } from '@momonga/foundation';
 import type { ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import { launch } from '../src/process.ts';
 import type { LaunchOptions } from '../src/process.ts';
-import { pendingOrSettled, virtualTiming } from '../../foundation/test/support/probe-fakes.ts';
+import { virtualTiming, settlementOf, driveUntilSettled } from '../../foundation/test/support/probe-fakes.ts';
 
 const FAKE_PID = 9_999_993;
 const KILL_GRACE_MS = 300;
@@ -22,7 +23,7 @@ describe('a group member that survives the stop after the leader exits is report
       alive: async () => true,
     };
     const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
-    const launched = launch({
+    const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
       file: '/bin/sh',
       args: [],
       cwd: '/',
@@ -34,11 +35,10 @@ describe('a group member that survives the stop after the leader exits is report
       groupPort,
       timing,
     } as LaunchOptions);
-    launched.exited.catch(() => undefined);
+    const exited = settlementOf(launched.exited);
     child.emit('exit', 0, null);
-    await timing.advanceTo(2 * groupTerminationBoundMs(KILL_GRACE_MS));
-    const settled = await pendingOrSettled(launched.exited);
-    expect(settled).toEqual({ state: 'resolved', value: { code: 0, signal: null, groupNotStopped: true } });
+    await driveUntilSettled(timing, exited, 2 * groupTerminationBoundMs(KILL_GRACE_MS));
+    expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null, groupNotStopped: true } });
     expect(signals[0]).toBe('SIGTERM');
     expect(signals).toContain('SIGKILL');
   });
@@ -53,7 +53,7 @@ describe('a group member that survives the stop after the leader exits is report
       alive: async () => alive,
     };
     const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
-    const launched = launch({
+    const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
       file: '/bin/sh',
       args: [],
       cwd: '/',
@@ -65,10 +65,10 @@ describe('a group member that survives the stop after the leader exits is report
       groupPort,
       timing,
     } as LaunchOptions);
-    launched.exited.catch(() => undefined);
+    const exited = settlementOf(launched.exited);
     child.emit('exit', 0, null);
-    await timing.advanceTo(10 * KILL_GRACE_MS);
-    expect(await pendingOrSettled(launched.exited)).toEqual({ state: 'resolved', value: { code: 0, signal: null } });
+    await driveUntilSettled(timing, exited, 10 * KILL_GRACE_MS);
+    expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null } });
   });
 
   it('with a marker whose holder left the group, exited carries no groupNotStopped once the group ended, and the stop asks no holder listing', async () => {
@@ -104,7 +104,7 @@ describe('a group member that survives the stop after the leader exits is report
     fs.writeFileSync(markerFile, `${FAKE_PID}\n`, { mode: 0o600 });
     try {
       const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
-      const launched = launch({
+      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
         file: '/bin/sh',
         args: [],
         cwd: '/',
@@ -118,10 +118,10 @@ describe('a group member that survives the stop after the leader exits is report
         timing,
         inspector,
       } as LaunchOptions);
-      launched.exited.catch(() => undefined);
+      const exited = settlementOf(launched.exited);
       child.emit('exit', 0, null);
-      await timing.advanceTo(10 * KILL_GRACE_MS);
-      expect(await pendingOrSettled(launched.exited)).toEqual({ state: 'resolved', value: { code: 0, signal: null } });
+      await driveUntilSettled(timing, exited, 10 * KILL_GRACE_MS);
+      expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null } });
       expect(asked).toEqual([]);
     } finally {
       fs.rmSync(markerDir, { recursive: true, force: true });

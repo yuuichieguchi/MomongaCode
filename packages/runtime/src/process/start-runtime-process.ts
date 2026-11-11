@@ -1,7 +1,7 @@
 import path from 'node:path';
-import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
-import { installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -35,11 +35,11 @@ import {
 import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, bubblewrapPresent, childProtectionFor, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { unaskedCommandsFor } from '@momonga/policy';
-import { FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
+import { DERIVED_CATCH_UP_PAGES, FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { createRuleVerifier, installedRuleSolver } from './rule-verifier.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
@@ -206,7 +206,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
   const startedAtMs = clock.now();
   const startedAt = new Date(startedAtMs).toISOString();
-  const canonicalHome = await hostPaths(startDeadlineSignal(signal)).canonicalPath(home);
+  const canonicalHome = await canonicalHomeOf(home, hostPaths(startDeadlineSignal(signal)));
   const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
   const onWarning = (message: string): void => logger.warn(message);
@@ -422,10 +422,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
+    const bubblewrap = platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
+    const noneProtection = childProtectionFor({ sandbox: 'none', home: canonicalHome, platform, env: process.env, bubblewrap });
     const sandboxOf = async (kind: SandboxKind, deriveSignal: AbortSignal): Promise<Sandbox> => {
       if (kind === 'none') {
-        const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS });
+        const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS, protection: noneProtection, platform });
         logger.warn('sandbox is none: Bash asks before every command');
+        if (noneProtection.kind === 'unprotected') logger.warn(noneProtection.reason);
         return unsandboxed;
       }
       const required = kind === 'seatbelt' ? 'darwin' : 'linux';
@@ -548,7 +551,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, clock, busyTimeoutMs: storeBusyWaitMs }));
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
-    const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
+    const contentRetentionMs = resolveRetentionSettings(settings.retention).days * DAY_MS;
     let bodyPurge: { stop(): void } | undefined;
     const applyBodyPurge = (role: GenerationRole): void => {
       if (role === 'serving') {
@@ -583,7 +586,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           store: traceStore,
           exporters: exportersFor(current.telemetry, outbound),
           captureMessageContent: resolved.captureMessageContent,
-          contentRetentionMs: resolved.contentRetentionDays * DAY_MS,
+          contentRetentionMs: resolveRetentionSettings(current.retention).days * DAY_MS,
         });
         return { telemetry, tracer: createTracerPort(telemetry) };
       },
@@ -769,7 +772,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           settings: settingsComposition.settings,
           clock,
           home: canonicalHome,
-          unsandboxed: createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS }),
+          unsandboxed: createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS, protection: noneProtection, platform }),
           files: nodeFileSystem,
         }),
         evidenceRun: evidenceRunFor,
@@ -981,6 +984,11 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             },
           },
           {
+            name: 'derived-catch-up',
+            intervalMs: IDEMPOTENCY_PURGE_MS,
+            run: async (): Promise<ServingTaskOutcome> => ((await store.catchUpDerived(DERIVED_CATCH_UP_PAGES)) ? 'done' : 'again'),
+          },
+          {
             name: 'fidelity-prune',
             intervalMs: IDEMPOTENCY_PURGE_MS,
             run: async (): Promise<ServingTaskOutcome> => {
@@ -996,7 +1004,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             run: async (): Promise<ServingTaskOutcome> => {
               const failures: unknown[] = [];
               try {
-                sandboxes.current().sandbox.sweep?.();
+                await sandboxes.current().sandbox.sweep?.();
               } catch (error) {
                 failures.push(error);
               }
@@ -1039,7 +1047,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             run: async (): Promise<ServingTaskOutcome> => {
               if (platform !== 'linux') return 'done';
               if (await otherRuntimeLive()) return 'again';
-              for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
+              const { sandbox } = sandboxes.current();
+              const recovered = await (sandbox.recover === undefined ? recoverPlaceholders(createPlaceholderJournal(journalDirectory)) : sandbox.recover());
+              for (const leftover of recovered.removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
+              for (const leftover of recovered.unrecovered) logger.warn(`left ${leftover} in place: a killed runtime may have created it as a placeholder before recording which file it was, so it is not removed; delete it yourself if you did not create it`);
               return 'done';
             },
           },

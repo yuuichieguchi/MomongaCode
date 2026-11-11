@@ -269,8 +269,9 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
             policy,
             lastCandidate: !movesOn,
           });
-          if (movesOn && (sends >= policy.maxAttempts || decision.kind === 'leave')) break;
-          if (decision.kind === 'leave') exhausted(index + 1);
+          const spent = sends >= policy.maxAttempts || decision.kind === 'leave';
+          if (spent && movesOn) break;
+          if (spent) exhausted(index + 1);
           const waitMs = decision.kind === 'wait' ? decision.ms : 0;
           if (deadlineAt !== undefined && policy.clock.now() + waitMs > deadlineAt) {
             throw deadlineExceededError(`the next retry of model "${target.display}" would start after the request deadline`);

@@ -1,3 +1,4 @@
+import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
@@ -7,7 +8,7 @@ import { launch } from '../src/process.ts';
 import type { LaunchOptions } from '../src/process.ts';
 import { answeringMembers, fakeKeeperHost, settle } from '../../foundation/test/support/fake-keeper.ts';
 import type { FakeKeeper, FakeKeeperHost } from '../../foundation/test/support/fake-keeper.ts';
-import { pendingOrSettled, virtualTiming } from '../../foundation/test/support/probe-fakes.ts';
+import { virtualTiming, settlementOf, driveUntil } from '../../foundation/test/support/probe-fakes.ts';
 import type { VirtualTiming } from '../../foundation/test/support/probe-fakes.ts';
 
 const KEEPER_PID = 9_999_991;
@@ -47,6 +48,7 @@ const worldOf = (script: (keeper: FakeKeeper, index: number) => void): World => 
         cwd: 'C:\\work',
         env: { SystemRoot: 'C:\\Windows' },
         signal: controller.signal,
+        protection: TEST_CHILD_UNPROTECTED,
         killGraceMs: KILL_GRACE_MS,
         afterExit: () => void (world.afterExit += 1),
         spawnProcess: ((file: string, args: readonly string[], options: Spawned['options']) => {
@@ -157,7 +159,8 @@ describe('an abort on a port with one signal', () => {
     const launched = world.start();
     await settle();
     world.controller.abort();
-    await world.timing.advanceTo(KILL_GRACE_MS + 1);
+    await driveUntil(world.timing, () => world.timing.pending().length > 0, 0, 'the kill grace to be armed');
+    await world.timing.advanceAsync(KILL_GRACE_MS + 1);
     const keeper = world.fake.keepers[0] as FakeKeeper;
     expect(keeper.written.filter((line) => line === 'terminate\n')).toHaveLength(1);
     members = [];
@@ -169,12 +172,14 @@ describe('an abort on a port with one signal', () => {
     const world = worldOf((keeper) => keeper.say(`started ${COMMAND_PID}\n`));
     const launched = world.start();
     const exited = launched.exited;
+    const stopped = settlementOf(exited);
     await settle();
     world.controller.abort();
     const bound = groupTerminationBoundMs(KILL_GRACE_MS);
-    await world.timing.advanceTo(bound - 1);
-    expect((await pendingOrSettled(exited)).state).toBe('pending');
-    await world.timing.advanceTo(bound);
-    expect((await pendingOrSettled(exited)).state).toBe('rejected');
+    await driveUntil(world.timing, () => world.timing.pending().some((timer) => timer.dueAt === bound), bound, 'the stop bound to be armed');
+    await world.timing.advanceAsync(bound - 1);
+    expect(stopped.current().state).toBe('pending');
+    await world.timing.advanceAsync(1);
+    await expect(exited).rejects.toBeDefined();
   });
 });

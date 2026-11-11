@@ -1,7 +1,7 @@
 import { UNCONFIGURED_NETWORK, createFakeClock, createFakeTimers, startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
 import type { FakeClock, FakeTimers, McpHttpFixture, McpHttpFixtureOptions, McpOauthFixture } from '@momonga/testkit';
-import { createManagedConnection } from '@momonga/mcp';
-import { createMemoryCredentialStore } from '@momonga/foundation';
+import { createManagedConnection, systemResolver } from '@momonga/mcp';
+import { createMemoryCredentialStore, nodeFileSystem } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import type { HostResolver, McpConnectionOptions, McpCredentialStore, McpRemotePorts, McpTimers } from '@momonga/mcp';
 import type { McpServerScope } from '@momonga/config';
@@ -74,9 +74,10 @@ export const makeRemoteConnection = (options: RemoteHarnessOptions) => {
       return `random-${tokenCounter}`;
     },
     openAuthorizationUrl: options.openAuthorizationUrl ?? (() => Promise.reject(new Error('no browser in this test'))),
-    ...(options.resolver === undefined ? {} : { resolver: options.resolver }),
+    resolver: options.resolver ?? systemResolver,
   };
   const connection = createManagedConnection({
+    files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 'remote',
     config: {

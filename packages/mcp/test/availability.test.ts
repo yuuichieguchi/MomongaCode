@@ -1,9 +1,10 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
 import { McpUnavailableError, createManagedConnection } from '@momonga/mcp';
 import type { McpServerConnection } from '@momonga/mcp';
 import { LEGACY_FIXTURE_PROTOCOL_VERSION, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
-import { afterPendingIo, outcomeOf, settledAfter } from './credential-store-fakes.ts';
+import { outcomeOf, settledAfter } from './credential-store-fakes.ts';
 import type { McpTimers } from '../src/timers.ts';
 import { BASE_ENV, makeDir, onCleanup, waitUntil } from './mcp-harness.ts';
 
@@ -68,7 +69,7 @@ type Fixture = { connection: McpServerConnection; held: HeldTimers; clock: FakeC
 const fixtureOf = (onList: 'silent' | 'exit', onInitialize: 'answer' | 'silent' = 'answer'): Fixture => {
   const held = timersHolding([REQUEST_LIMIT_MS, CONNECT_LIMIT_MS]);
   const clock = createFakeClock(1_000_000);
-  const connection = createManagedConnection({
+  const connection = createManagedConnection({ files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 's',
     config: { command: process.execPath, args: ['-e', serverScript(onList, onInitialize)] },
@@ -163,7 +164,7 @@ describe('every wait inside an MCP tool call takes the signal of that call', () 
     const call = outcomeOf(connection.callTool({ name: 'echo', arguments: {}, signal: controller.signal }));
     await waitUntil(() => held.armed(CONNECT_LIMIT_MS) >= 1, 'the connect to be pending under its limit');
     controller.abort(reason);
-    for (let turn = 0; turn < 20; turn += 1) await afterPendingIo();
+    await settledAfter(call);
 
     expect(call.state()).toBe('rejected');
     expect(call.error()).toBe(reason);

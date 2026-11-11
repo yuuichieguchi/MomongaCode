@@ -36,6 +36,35 @@ describe('standing completion conditions from verification.commands', () => {
   });
 });
 
+describe('completion conditions from the accepted project check', () => {
+  it('declares the accepted commands of the project when no layer sets verification.commands', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { projectChecks: { [tree.project]: { commands: ['npm test', 'make lint'] } } });
+    expect((await verificationOf(tree)).conditions).toEqual(['npm test', 'make lint']);
+  });
+
+  it('declares nothing for a declined answer', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { projectChecks: { [tree.project]: { declined: true } } });
+    expect((await verificationOf(tree)).conditions).toEqual([]);
+  });
+
+  it('declares nothing from the answer stored for another folder', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { projectChecks: { [tree.home]: { commands: ['npm test'] } } });
+    expect((await verificationOf(tree)).conditions).toEqual([]);
+  });
+
+  it('lets verification.commands of any layer stand over the accepted check, an empty list included', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { projectChecks: { [tree.project]: { commands: ['npm test'] } } });
+    writeJson(projectSettingsPath(tree), { verification: { commands: ['make check'] } });
+    expect((await verificationOf(tree)).conditions).toEqual(['make check']);
+    writeJson(projectSettingsPath(tree), { verification: { commands: [] } });
+    expect((await verificationOf(tree)).conditions).toEqual([]);
+  });
+});
+
 describe('verification.required', () => {
   it('is off by default', async () => {
     expect((await verificationOf(makeTree())).required).toBe(false);

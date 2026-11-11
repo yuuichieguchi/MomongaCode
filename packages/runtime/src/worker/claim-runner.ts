@@ -6,7 +6,7 @@ import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
-import { UnknownValueError, isFatalStoreError } from '@momonga/store';
+import { JournalThreadError, UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
@@ -37,7 +37,7 @@ import { deferredPinFor, tokenPinFor, tokenPolicyOf } from './token-pin.ts';
 import { completionPinFor } from './completion-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
-import { createTerminals } from './terminals.ts';
+import { createTerminals, releaseClaimLease } from './terminals.ts';
 import { extendToolSet, harnessOutputToolsOf, operationCatalogueFacts } from '@momonga/tools';
 import { createLoadToolsTool } from './load-tools-tool.ts';
 import { createToolLoading } from './tool-admission.ts';
@@ -144,8 +144,9 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
   let tracerLease: Lease<TracerPort> | undefined;
   let escaping = false;
   let fatal = false;
+  let leftToRecovery = false;
   try {
-    journal = openJournal({ store, claim, lost: control.lost });
+    journal = await openJournal({ store, claim, signal: control.recoverySignal, lost: control.lost });
     terminals = createTerminals({ store, claim, journal, control, clock: options.clock });
     tracerLease = await options.tracers.acquire(control.signal);
     agentSpan = tracerLease.value.startAgentSpan({ runId: claim.runId, sessionId: claim.sessionId, attempt: claim.attempt });
@@ -160,6 +161,14 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
       throw cause;
     }
     if (control.leaseLost() || cause instanceof LeaseLostError) return;
+    if (journal === undefined && cause instanceof ShutdownError) {
+      await releaseClaimLease(store, claim, options.clock);
+      return;
+    }
+    if (control.shuttingDown() && cause instanceof JournalThreadError) {
+      leftToRecovery = true;
+      return;
+    }
     if (journal === undefined || terminals === undefined) {
       escaping = true;
       throw cause;
@@ -199,7 +208,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
     tracerLease?.release();
     control.stop();
     detach();
-    if (!fatal) {
+    if (!fatal && !leftToRecovery) {
       try {
         if (memory.streak === 0 || store.getRun(claim.runId)?.status !== 'QUEUED') host.forget(claim.runId);
       } catch (lookupError) {

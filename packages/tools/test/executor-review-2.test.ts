@@ -1,11 +1,12 @@
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
-import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, createFakeClock, createFakeTimers, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
+import type { FakeTimers } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createToolExecutor, nodeShellHost } from '@momonga/tools';
 import type { CallOutcome } from '@momonga/tools';
-import { call, expectedDigestOf, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { call, expectedDigestOf, fakeTimedShellHost, makeHarness, makeTool, onFakeTime, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor, ruleFor } from './helpers.ts';
 import { momongaLayout } from '@momonga/foundation';
@@ -14,11 +15,11 @@ const KEY = keyFor('run-1', 1, 'c1');
 const CAP_MS = 20;
 const GRACE_MS = 20;
 
-const boundedExecutor = (harness: Harness) =>
+const boundedExecutor = (harness: Harness, timers?: FakeTimers) =>
   createToolExecutor({
     layout: momongaLayout(harness.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
-    shellHost: nodeShellHost(),
+    shellHost: timers === undefined ? nodeShellHost() : fakeTimedShellHost(timers),
     random: systemRandom,
     files: nodeFileSystem, outboundNetwork: unconfiguredNetworkOf, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: harness.idempotency.port,
@@ -31,18 +32,6 @@ const boundedExecutor = (harness: Harness) =>
     reconcileCapMs: CAP_MS,
     reconcileGraceMs: GRACE_MS,
   });
-
-const settledWithin = async <T>(promise: Promise<T>, ms: number): Promise<T | 'unsettled'> => {
-  let handle: NodeJS.Timeout | undefined;
-  const timeout = new Promise<'unsettled'>((resolve) => {
-    handle = setTimeout(() => resolve('unsettled'), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(handle);
-  }
-};
 
 describe('executor bounded reconcile', () => {
   it.each([
@@ -62,13 +51,16 @@ describe('executor bounded reconcile', () => {
       },
     });
 
-    const result = await settledWithin(
-      boundedExecutor(harness).runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Stall')], { mode: 'bypassPermissions', ...extra })),
-      2_000,
+    const timers = createFakeTimers(createFakeClock(0));
+    const { value: result, atMs } = await onFakeTime(
+      timers,
+      boundedExecutor(harness, timers).runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Stall')], { mode: 'bypassPermissions', ...extra })),
+      10 * (CAP_MS + GRACE_MS),
+      'the outcome of a reconcile that never settles',
     );
 
-    expect(result).not.toBe('unsettled');
-    const [outcome] = result as CallOutcome[];
+    expect(atMs).toBe(CAP_MS + GRACE_MS);
+    const [outcome]: CallOutcome[] = result;
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'unknown', result: { status: 'failed' } });
     expect(executed).toBe(0);
     expect(harness.idempotency.stateOf(KEY)).toBe('COMPLETED');

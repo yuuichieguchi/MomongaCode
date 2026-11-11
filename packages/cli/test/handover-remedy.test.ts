@@ -116,7 +116,7 @@ describe('a move that stays tells the remedy of the surface that stays', () => {
     const said: string[] = [];
     const mover = createMover({
       version: '1.2.3',
-      pid: 1,
+      parties: async () => ({ writer: 1, reader: 1, namespace: 'single' }),
       write: () => undefined,
       remove: () => undefined,
       handOver: () => undefined,

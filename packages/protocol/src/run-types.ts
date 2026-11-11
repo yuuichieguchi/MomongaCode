@@ -513,6 +513,7 @@ export type RunState = {
   summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
   workingFacts: WorkingFacts;
   evicted: string[];
+  referencedOutputs?: string[];
   pins?: Record<string, unknown>;
   pendingCalls: Record<
     string,

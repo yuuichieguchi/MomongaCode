@@ -15,6 +15,7 @@ import {
   registeredServer,
   requireOfferedEndpointForm,
   resolveNetwork,
+  resolveRetentionSettings,
   resolveTelemetrySettings,
   settingsInputsDigest,
   stopValuesOfSettings,
@@ -53,7 +54,9 @@ import {
   momongaPaths,
   createSecretKeyFile,
   sweepLeftovers,
+  isProcessAlive,
   leftoverDirectories,
+  pidNamespaceOf,
   requireGenerationDirs,
   generationLayout,
   createRolePort,
@@ -998,7 +1001,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       return outbound;
     };
     signal?.throwIfAborted();
-    await sweepLeftovers({ directories: leftoverDirectories(paths), lock: kernelLock, warn: (message) => logger.warn(message) });
+    await sweepLeftovers({ directories: leftoverDirectories(paths, { files: nodeFileSystem, namespace: await pidNamespaceOf(nodeFileSystem), alive: (pid) => isProcessAlive(pid) }), lock: kernelLock, warn: (message) => logger.warn(message) });
     const hmacKey = createSecretKeyFile(nodeFileSystemSync, systemRandom, kernelLock)(paths.gatewayKey, {
       mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
@@ -1014,7 +1017,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         store: traceStore,
         exporters: exportersFor(current.telemetry, outbound),
         captureMessageContent: resolved.captureMessageContent,
-        contentRetentionMs: resolved.contentRetentionDays * DAY_MS,
+        contentRetentionMs: resolveRetentionSettings(current.retention).days * DAY_MS,
       });
     };
     const telemetries = createPinnedDerivation<Telemetry>({
@@ -1030,7 +1033,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     cleanups.push(() => telemetries.retireAll());
     (await telemetries.admit(startSignal)).release();
-    const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
+    const contentRetentionMs = resolveRetentionSettings(settings.retention).days * DAY_MS;
     const bodyPurge = startBodyPurge({
       store: traceStore,
       timers,

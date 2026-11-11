@@ -140,7 +140,7 @@ describe('gateway stream liveness before the first upstream event', () => {
         { failure: { status: 429, message: 'slow down again', retryAfterMs: 4000 } },
       ],
     });
-    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { retry: { maxAttempts: 1, totalWaitMs: 6000, baseMs: 100, maxMs: 10_000 } } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { retry: { maxAttempts: 2, totalWaitMs: 6000, baseMs: 100, maxMs: 10_000 } } });
     const reading = postJson(harness.client, '/v1/responses', request, { [IDLE_HEADER]: '3000' }).then((response) => drain(response.body[Symbol.asyncIterator]()));
 
     await driveTimers(harness, [reading], (timer) => timer.delayMs === 1000);

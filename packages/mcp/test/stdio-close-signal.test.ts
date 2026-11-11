@@ -1,3 +1,4 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,7 +22,7 @@ describe('mcp close bounds terminateGroup by its close signal (G.1 call-site tab
     const projectDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-close-')));
     dirs.push(projectDir);
     const seen: Array<{ graceMs: number; signal?: AbortSignal }> = [];
-    const transport = createStdioTransport({
+    const transport = createStdioTransport({ files: nodeFileSystem,
       name: 'raw',
       config: { command: process.execPath, args: [MCP_RAW_STDIO_SERVER_PATH] },
       projectDir,

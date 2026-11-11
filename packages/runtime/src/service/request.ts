@@ -12,6 +12,7 @@ export type CreateSessionBody = {
   bypassAllowed?: boolean;
   sandboxNetwork?: SandboxNetworkSetting;
   mcpServers?: Record<string, Record<string, unknown>>;
+  terminalUi?: boolean;
 };
 
 export type PatchSessionBody = { permissionMode?: PermissionMode; model?: string; mcpServers?: Record<string, Record<string, unknown>> };

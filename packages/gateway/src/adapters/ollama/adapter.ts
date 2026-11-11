@@ -1,5 +1,6 @@
 import { summaryTokenCapFor } from '@momonga/protocol';
-import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, StreamEvent } from '@momonga/protocol';
+import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, Capabilities, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { carryRefusalOfRender } from '../../core/unsupported-input.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
@@ -36,12 +37,17 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
   let closing: Promise<void> | undefined;
   let closed = false;
 
+  const planOf = (request: AdapterRequest, target: AdapterTarget, capabilities: Capabilities, origin: ReasoningOrigin) => {
+    const ledger = new RenderLedger();
+    const jsonReply = jsonReplyPlanOf(request, capabilities);
+    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, target.display, OLLAMA_TOOL_CHOICE), capabilities, origin, { ledger, jsonReply, ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }) });
+    return { ledger, jsonReply, body };
+  };
+
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the ollama adapter is closed');
     const capabilities = ctx.capabilities;
-    const ledger = new RenderLedger();
-    const jsonReply = jsonReplyPlanOf(request, capabilities);
-    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.display, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin, { ledger, jsonReply, ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }) });
+    const { ledger, jsonReply, body } = planOf(request, ctx.target, capabilities, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     let watch: ContentWatch | undefined;
@@ -86,6 +92,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
     create,
     compact,
     toolChoiceWire: () => OLLAMA_TOOL_CHOICE,
+    carryRefusalOf: (request, target, capabilities, origin) => carryRefusalOfRender(() => planOf(request, target, capabilities, origin)),
     classify: createUpstreamClassifier(OLLAMA_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

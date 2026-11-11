@@ -7,5 +7,5 @@ export type McpRemotePorts = {
   network: OutboundNetwork;
   randomToken(): string;
   openAuthorizationUrl(url: URL, signal: AbortSignal): Promise<void>;
-  resolver?: HostResolver;
+  resolver: HostResolver;
 };

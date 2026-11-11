@@ -1,3 +1,4 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import { createFakeClock } from '@momonga/testkit';
@@ -7,7 +8,7 @@ const DECLARED = 'PROVIDER_ENDPOINT_ID';
 
 const constructionNotices = (credentialNames: readonly string[]): string[] => {
   const notices: string[] = [];
-  const connection = createManagedConnection({
+  const connection = createManagedConnection({ files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 'local',
     config: { command: process.execPath, args: [], env: { [DECLARED]: 'Zq7#vK2' } },

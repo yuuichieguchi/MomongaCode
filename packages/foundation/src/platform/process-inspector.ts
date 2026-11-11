@@ -18,7 +18,7 @@ export type InspectorPorts = {
   env: Readonly<Record<string, string | undefined>>;
   uid(): number;
   capability: LockCapabilityProbe;
-  jobs: Pick<KeptGroupControl, 'members'>;
+  jobs: Pick<KeptGroupControl, 'members' | 'leads'>;
   alive(pid: number): boolean;
 };
 

@@ -37,7 +37,8 @@ export { CLAIM_HOLDER_MAIN, LOCK_HOLDER_MAIN, startClaimHolder, startLockHolder 
 export { LSOF_PATH } from './lsof.ts';
 export { EMPTY_SYMLINK_SUPPORTED } from './empty-symlink.ts';
 export { createFakeKernelLock } from './fake-kernel-lock.ts';
-export { LOCK_PROOF_ENV, LOCK_PROOF_PREFIX, expectedKernelLockOn, fixedLockCapability, testKernelLock, testLocks, testProcessInspector } from './test-locks.ts';
+export { LOCK_PROOF_ENV, LOCK_PROOF_PREFIX, expectedKernelLockOn, fixedLockCapability, testKernelLock, testLocks, testProcessInspector, watchedKernelLock } from './test-locks.ts';
+export type { WatchedKernelLock } from './test-locks.ts';
 export type { FakeKernelLock, FakeKernelLockOptions } from './fake-kernel-lock.ts';
 export { createFakeClock } from './fake-clock.ts';
 export { createFakeRandom } from './fake-random.ts';
@@ -291,3 +292,4 @@ export { productTestEnv } from './product-spawn.ts';
 export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } from './model-settings.ts';
 export type { ModelSettings, ModelSettingsConnection, ModelSettingsSpec, ModelSpec } from './model-settings.ts';
 export { testSecretLocations } from './secret-locations.ts';
+export { TEST_CHILD_UNPROTECTED } from './child-protection.ts';

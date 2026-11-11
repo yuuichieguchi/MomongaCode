@@ -150,7 +150,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     };
   };
 
-  const { countTokens, countWire, compact, renderWire, renderCompactWire, health, roomFacts, close, servedAccount } = inner;
+  const { countTokens, countWire, compact, renderWire, renderCompactWire, carryRefusalOf, health, roomFacts, close, servedAccount } = inner;
 
   const guardedHealth = (check: NonNullable<ProviderAdapter['health']>) => async (target: AdapterTarget): Promise<HealthResult> => {
     try {
@@ -183,6 +183,14 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
       ? {}
       : { renderCompactWire: (request, target, cap, origin, capabilities) => convertingSync(() => renderCompactWire.call(inner, request, target, cap, origin, capabilities)) }),
     toolChoiceWire: (capabilities, target) => inner.toolChoiceWire(capabilities, target),
+    ...(carryRefusalOf === undefined
+      ? {}
+      : {
+          carryRefusalOf: (request, target, capabilities, origin) => {
+            const refused = convertingSync(() => carryRefusalOf.call(inner, request, target, capabilities, origin));
+            return refused === undefined ? undefined : { ...refused, message: redactor.text(refused.message) };
+          },
+        }),
     ...(health === undefined ? {} : { health: guardedHealth(health) }),
     ...(roomFacts === undefined ? {} : { roomFacts: (target) => converting(() => roomFacts.call(inner, target)) }),
     ...(servedAccount === undefined ? {} : { servedAccount: (target: AdapterTarget) => planAccountRefOf(servedAccount.call(inner, target)) }),

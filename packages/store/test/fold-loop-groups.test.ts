@@ -4,6 +4,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
+import { encodedRunState, foldedRunState, roundTripped } from './run-state-codec.ts';
 import { foldOf, inheritedEvent, responded, task, taskItem } from './inherit-fixtures.ts';
 
 const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
@@ -130,23 +131,22 @@ describe('loop groups through a snapshot', () => {
   ];
 
   const stored = async (split: number) => {
-    const { dbPath, store } = harness();
+    const { store } = harness();
     const run = await enqueue(store, newSession(store).id, 'loop');
     const claim = mustClaim(store, 'w1');
     expect(store.append(claim, payloads.slice(0, split)).kind).toBe('ok');
     const head: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
     const headState = head.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    expect(store.writeSnapshot(claim, head.at(-1)!.seq, headState)).toEqual({ kind: 'ok' });
     expect(store.append(claim, payloads.slice(split)).kind).toBe('ok');
     const all: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
     const full = all.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    return { store, run, full, dbPath };
+    return { store, run, full, headState, tail: all.slice(head.length) };
   };
 
-  it.for([5, 9, 12])('folds identically from a snapshot taken after %i payloads and from all events', async (split) => {
-    const { store, run, full } = await stored(split);
-    const loaded = store.load(run.id);
-    const resumed = loaded.tail.reduce(foldRunState, loaded.snapshot?.state as RunState);
+  it.for([5, 9, 12])('folds identically from an encoded state taken after %i payloads and from all events', async (split) => {
+    const { store, run, full, headState, tail } = await stored(split);
+    const resumed = tail.reduce(foldRunState, roundTripped(headState) as RunState);
+    expect(await foldedRunState(store, run.id)).toEqual(full);
     expect(full.loopGroups).toHaveLength(2);
     expect(resumed.loopGroups).toEqual(full.loopGroups);
     expect(resumed.loopOpen).toEqual(full.loopOpen);
@@ -164,16 +164,17 @@ describe('loop groups through a snapshot', () => {
     ['a loopOpen with more calls than callIds', "json_set(state_json, '$.loopOpen.callIds', json('[]'))"],
     ['a loopOpen output hash that is not 64 hex characters', "json_set(state_json, '$.loopOpen.outputs', json('{\"c1\":\"abc\"}'))"],
   ] as const)('reports a snapshot with %s as corrupt', async ([, expression]) => {
-    const { store, run, dbPath } = await stored(payloads.length);
-    const db = rawDb(dbPath);
-    db.prepare(`UPDATE snapshots SET state_json = ${expression} WHERE run_id = ?`).run(run.id);
-    expect(() => store.load(run.id)).toThrow(/corrupt/);
+    const { full } = await stored(payloads.length);
+    const encoded = encodedRunState(full);
+    encoded.mutate(expression);
+    expect(() => encoded.read()).toThrow(/corrupt/);
   });
 
   it('reports a snapshot with more than 32 loop groups as corrupt', async () => {
-    const { store, run, dbPath } = await stored(payloads.length);
+    const { full } = await stored(payloads.length);
     const groups = JSON.stringify(Array.from({ length: 33 }, () => ({ signature: 'a'.repeat(64) })));
-    rawDb(dbPath).prepare(`UPDATE snapshots SET state_json = json_set(state_json, '$.loopGroups', json(?)) WHERE run_id = ?`).run(groups, run.id);
-    expect(() => store.load(run.id)).toThrow(/corrupt/);
+    const encoded = encodedRunState(full);
+    encoded.mutate(`json_set(state_json, '$.loopGroups', json('${groups}'))`);
+    expect(() => encoded.read()).toThrow(/corrupt/);
   });
 });

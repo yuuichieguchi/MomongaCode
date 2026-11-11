@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/runtime';
 import type { ToolEnv } from '@momonga/runtime';
-import type { Session } from '@momonga/store';
+import type { RuntimeStore, Session } from '@momonga/store';
 import type { ResultOutcome } from '@momonga/tools';
 
 import { LEASE_MS, makeEnv } from './harness.ts';
@@ -257,19 +257,19 @@ describe('cancel recovery fallback', () => {
   it('a started call without an idemKey is reported unknown without abandon', async () => {
     const env = await makeEnv();
     const { run } = await seedStartedCalls(env, [REMOTE], { cancel: false });
-    env.clock.advance(1);
-    const claim = env.store.claim('snapshotter');
-    if (claim === null) throw new Error('expected to claim the run');
-    const state = env.fold(run.id);
-    const pending = state.pendingCalls[REMOTE.callId];
-    if (pending === undefined) throw new Error('expected a pending call');
-    const { idemKey: _dropped, ...withoutKey } = pending;
-    const written = env.store.writeSnapshot(claim, state.lastSeq, { ...state, pendingCalls: { ...state.pendingCalls, [REMOTE.callId]: withoutKey } });
-    expect(written).toEqual({ kind: 'ok' });
-    env.clock.advance(LEASE_MS + 1);
+    const store: RuntimeStore = {
+      ...env.store,
+      load: async (runId, signal) => {
+        const loaded = await env.store.load(runId, signal);
+        const pending = loaded.state.pendingCalls[REMOTE.callId];
+        if (pending === undefined) throw new Error('expected a pending call');
+        const { idemKey: _dropped, ...withoutKey } = pending;
+        return { ...loaded, state: { ...loaded.state, pendingCalls: { ...loaded.state.pendingCalls, [REMOTE.callId]: withoutKey } } };
+      },
+    };
     await env.cancel(run.id);
 
-    await env.settled(env.runOnce(env.worker('worker-1')), 'the cancel recovery');
+    await env.settled(env.runOnce(env.worker('worker-1', { store })), 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.portCalls.abandon.flatMap((call) => call.targets)).toEqual([]);
@@ -492,5 +492,20 @@ describe('cancel recovery fallback', () => {
     expect(env.batches.map((batch) => batch.signal)).toEqual([recoverySignal]);
     expect(env.toolbox.reconciles).toEqual([keys[MARK.callId]]);
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: MARK.callId, outcome: 'already_applied' })]);
+  });
+
+  it('an abandoned call carries the command and the written paths the executor recorded for it, and one without recorded facts carries none', async () => {
+    const env = await makeEnv();
+    const recorded = { callId: 'call_r_2', name: 'mcp__remote__run', args: { value: 'three' }, facts: { command: 'make deploy', files: [{ path: '/proj/out.txt', access: 'write' as const }] } };
+    const { run } = await seedStartedCalls(env, [recorded, REMOTE]);
+
+    await env.settled(env.runOnce(env.worker('worker-1')), 'the cancel recovery');
+
+    expect(env.run(run.id).status).toBe('CANCELLED');
+    const reconciled = env.ofType(run.id, 'tool.reconciled');
+    expect(reconciled.find((event) => event.callId === recorded.callId)).toMatchObject({ outcome: 'unknown', command: 'make deploy', files: [{ path: '/proj/out.txt', access: 'write' }] });
+    const bare = reconciled.find((event) => event.callId === REMOTE.callId);
+    expect(bare).not.toHaveProperty('command');
+    expect(bare).not.toHaveProperty('files');
   });
 });

@@ -3,6 +3,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { FIXTURE_RUN_ID, FIXTURE_SESSION_ID, fixtureSubjectDigest, materializeEvents } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
+import { encodedRunState } from './run-state-codec.ts';
 
 const start = () => initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID });
 const foldAll = (events: readonly RunEvent[], from: RunState = start()) => events.reduce(foldRunState, from);
@@ -133,19 +134,16 @@ describe('snapshot codec for pins and suggested rules', () => {
     expect(store.append(claim, payloads).kind).toBe('ok');
     const events = store.readRunEvents(run.id, 0, 1000);
     const state = foldAll(events, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    expect(store.writeSnapshot(claim, state.lastSeq, state)).toEqual({ kind: 'ok' });
-    const mutate = (expression: string): void => {
-      rawDb(dbPath).prepare(`UPDATE snapshots SET state_json = ${expression} WHERE run_id = ?`).run(run.id);
-    };
-    return { store, run, state, mutate };
+    const encoded = encodedRunState(state);
+    return { store, run, state, mutate: encoded.mutate, read: encoded.read };
   };
 
   it('round-trips pins and suggested rules through a snapshot', async () => {
-    const { store, run, state } = await stored();
+    const { state, read } = await stored();
     expect(state.pins).toEqual(FIRST_PINS);
     expect(state.pendingCalls['c1']?.suggestedRule).toBe(RULE);
     expect(state.pendingCalls['c2']?.resolution?.suggestedRule).toBe(RULE);
-    expect(store.load(run.id).snapshot?.state).toEqual(state);
+    expect(read()).toEqual(state);
   });
 
   it.each([
@@ -154,8 +152,8 @@ describe('snapshot codec for pins and suggested rules', () => {
     ['a non-string suggested rule on a pending call', "json_set(state_json, '$.pendingCalls.c1.suggestedRule', 7)"],
     ['a non-string suggested rule in a resolution', "json_set(state_json, '$.pendingCalls.c2.resolution.suggestedRule', 7)"],
   ])('reports a snapshot with %s as corrupt', async (_label, expression) => {
-    const { store, run, mutate } = await stored();
+    const { mutate, read } = await stored();
     mutate(expression);
-    expect(() => store.load(run.id)).toThrow(/corrupt/);
+    expect(() => read()).toThrow(/corrupt/);
   });
 });

@@ -86,8 +86,8 @@ describe('the runtime process owns a trace store and starts the body purge', () 
     expect(control.purges[0]?.legacyRetentionMs).toBe(30 * DAY_MS);
   });
 
-  it('hands the configured telemetry.contentRetentionDays to the legacy move', async () => {
-    const stack = await startStack({}, { telemetry: { contentRetentionDays: 7 } });
+  it('hands the configured retention.days to the legacy move', async () => {
+    const stack = await startStack({}, { retention: { days: 7 } });
     control.purges = [];
     await launchRuntime(stack.temp);
     expect(control.purges).toHaveLength(1);
