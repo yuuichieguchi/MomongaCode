@@ -19,7 +19,7 @@ import { serverRegistryOf } from './server-registry.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
 import { localSettingsFile, pathExists, worktreeRootOf } from './local-settings.ts';
 import type { RuleOrigin } from './rule.ts';
-import { assertSettings, KNOWN_SETTINGS_KEYS } from './settings.ts';
+import { assertSettings, checkIssueWatch, KNOWN_SETTINGS_KEYS } from './settings.ts';
 import type { Settings } from './settings.ts';
 
 export type TrustOracle = { isTrusted: (directory: string, signal: AbortSignal) => boolean | Promise<boolean> };
@@ -139,7 +139,7 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.network;
   }
 
-  for (const key of ['limits', 'ceilings', 'mandates'] as const) {
+  for (const key of ['limits', 'ceilings', 'mandates', 'issues'] as const) {
     if (settings[key] === undefined) continue;
     warnings.push(`${source}: ${key} is only honored in user settings; discarded`);
     delete restricted[key];
@@ -229,7 +229,9 @@ const buildLayer = (
   for (const key of Object.keys(settings)) {
     if (!KNOWN_SETTINGS_KEYS.includes(key)) warnings.push(`${file}: unknown setting ${JSON.stringify(key)} ignored`);
   }
-  return { origin, source: file, root, ruleRoot, settings: restricted ? restrictToUserTrustLevel(settings, file, warnings) : settings };
+  const kept = restricted ? restrictToUserTrustLevel(settings, file, warnings) : settings;
+  checkIssueWatch(kept, file, warnings);
+  return { origin, source: file, root, ruleRoot, settings: kept };
 };
 
 const readLayer = async (

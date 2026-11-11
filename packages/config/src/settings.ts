@@ -9,7 +9,7 @@ import { MCP_EXPANSION_PATTERN, mcpServerNameProblem, mcpServerUrlProblem } from
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { connectionAddressProblem } from './probe-record-key.ts';
 import { describeSchemaErrors, invalidSettingsMessage, schemaProblemOf } from './schema-errors.ts';
-import { MCP_SERVERS_FILE_SCHEMA, apiKeyChoiceProblem, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
+import { ISSUE_AUTHOR_ASSOCIATIONS, MCP_SERVERS_FILE_SCHEMA, apiKeyChoiceProblem, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
 
 export type PermissionsSettings = {
   defaultMode?: PermissionMode;
@@ -317,6 +317,10 @@ export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platfo
 
 export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
 
+export type IssueWatchEntry = { repository: string; labels?: string[]; authorAssociation?: (typeof ISSUE_AUTHOR_ASSOCIATIONS)[number][]; mandate: string };
+
+export type IssuesSettings = { watch?: IssueWatchEntry[] };
+
 export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean };
 
 export type ResolvedTelemetrySettings = { captureMessageContent: boolean };
@@ -440,6 +444,7 @@ export type Settings = {
   limits?: LimitsSettings;
   ceilings?: CeilingsSettings;
   mandates?: Record<string, MandateProfileSettings>;
+  issues?: IssuesSettings;
   forges?: ForgeInstanceSettings[];
   operations?: OperationsSettings;
   memory?: MemorySettings;
@@ -632,6 +637,20 @@ export const assertMcpServer = (value: unknown, source: string, name: string): M
   if (verdict.valid) return verdict.value;
   const { pointer, reason } = schemaProblemOf(verdict.errors);
   throw new ConfigError(invalidSettingsMessage(source, `/mcpServers/${escapePointerSegment(name)}${pointer === '/' ? '' : pointer}`, reason));
+};
+
+const watchMandateProblem = (mandate: string, declared: readonly string[]): string | undefined =>
+  declared.includes(mandate) ? undefined : `${JSON.stringify(mandate)} is not a mandate declared under mandates; the mandates are ${declared.length === 0 ? 'none' : declared.join(', ')}`;
+
+export const checkIssueWatch = (settings: Settings, source: string, warnings: string[]): void => {
+  const declared = Object.keys(settings.mandates ?? {});
+  (settings.issues?.watch ?? []).forEach((entry, index) => {
+    const problem = watchMandateProblem(entry.mandate, declared);
+    if (problem !== undefined) throw new ConfigError(invalidSettingsMessage(source, `/issues/watch/${index}/mandate`, problem));
+    if (entry.labels === undefined && entry.authorAssociation === undefined) {
+      warnings.push(`${source}: issues.watch[${index}] for ${entry.repository} has no labels and no authorAssociation, so it takes no issue; add a filter`);
+    }
+  });
 };
 
 export const KNOWN_SETTINGS_KEYS: readonly string[] = Object.keys(SETTINGS_SCHEMA.properties);

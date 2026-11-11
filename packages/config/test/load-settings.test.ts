@@ -23,6 +23,7 @@ describe('SETTINGS_SCHEMA', () => {
         'forges',
         'gateway',
         'hooks',
+        'issues',
         'limits',
         'mandates',
         'mcp',

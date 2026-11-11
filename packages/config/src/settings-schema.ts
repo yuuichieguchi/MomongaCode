@@ -8,6 +8,8 @@ export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const sat
 export const TUI_THEMES = ['auto', 'dark', 'light', 'dark-colorblind', 'light-colorblind'] as const;
 export const TUI_NOTIFY_MODES = ['off', 'bell'] as const;
 export const TUI_SCREEN_MODES = ['fullscreen', 'scrollback'] as const;
+export const ISSUE_AUTHOR_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'] as const;
+
 export const TUI_SETTING_VALUES = { theme: TUI_THEMES, notify: TUI_NOTIFY_MODES, screen: TUI_SCREEN_MODES } as const;
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
@@ -606,6 +608,26 @@ export const SETTINGS_SCHEMA = {
         costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
         tokens: { type: 'integer', minimum: 1, maximum: 100_000_000 },
         timeMs: { type: 'integer', minimum: 1000, maximum: 604_800_000 },
+      },
+      additionalProperties: false,
+    },
+    issues: {
+      type: 'object',
+      properties: {
+        watch: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              repository: { type: 'string', pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' },
+              labels: NON_EMPTY_STRING_ARRAY,
+              authorAssociation: { type: 'array', items: { enum: [...ISSUE_AUTHOR_ASSOCIATIONS] } },
+              mandate: { type: 'string', minLength: 1 },
+            },
+            required: ['repository', 'mandate'],
+            additionalProperties: false,
+          },
+        },
       },
       additionalProperties: false,
     },

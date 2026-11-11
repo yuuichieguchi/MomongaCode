@@ -148,6 +148,8 @@ export type {
   ForgeInstanceSettings,
   LimitsSettings,
   MandateProfileSettings,
+  IssueWatchEntry,
+  IssuesSettings,
   OperationApprovalClass,
   OperationsSettings,
   ResolvedRetentionSettings,

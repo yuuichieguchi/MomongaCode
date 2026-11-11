@@ -30,7 +30,7 @@ import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_NOT_ENFORCED, NETWORK_RULE_SU
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { escapePointerSegment } from './json-file.ts';
 import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
-import type { HookGroups, McpServerApproval, ProjectApprovalsSettings, ProjectChecksSettings, RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, OperationsSettings } from './settings.ts';
+import type { HookGroups, McpServerApproval, ProjectApprovalsSettings, ProjectChecksSettings, RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, IssuesSettings, OperationsSettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -72,6 +72,7 @@ export type ResolvedSettings = {
   limits?: LimitsSettings;
   ceilings?: CeilingsSettings;
   mandates?: Record<string, MandateProfileSettings>;
+  issues?: IssuesSettings;
   forges?: ForgeInstanceSettings[];
   operations?: OperationsSettings;
   memory: ResolvedMemorySettings;
@@ -291,6 +292,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
       limits,
       ceilings,
       mandates,
+      issues,
       forges,
       operations,
       memory,
@@ -350,6 +352,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (limits !== undefined) merged.limits = limits;
     if (ceilings !== undefined) merged.ceilings = ceilings;
     if (mandates !== undefined) merged.mandates = readableMandates(mandates, layer.source, warnings);
+    if (issues !== undefined) merged.issues = issues;
     if (forges !== undefined) merged.forges = forges;
     if (operations !== undefined) merged.operations = operations;
   }
