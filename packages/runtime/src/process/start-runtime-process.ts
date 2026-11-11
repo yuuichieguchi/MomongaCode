@@ -947,6 +947,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
               } catch (error) {
                 failures.push(error);
               }
+              const tickStop = new AbortController();
+              const tickBound = timers.setTimeout(() => tickStop.abort(new Error(`the tool marker sweep did not end within ${TOOL_MARKER_SWEEP_MS} ms`)), TOOL_MARKER_SWEEP_MS);
               try {
                 await reapToolMarkers({
                   dir: paths.markers.tools,
@@ -954,12 +956,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                   killGraceMs: MARKER_REAP_KILL_GRACE_MS,
                   onWarning,
                   timing: reapTiming,
-                  signal: sweepStop.signal,
+                  signal: AbortSignal.any([sweepStop.signal, tickStop.signal]),
                   event: 'sweep',
                   owners: toolRuntime.owners,
                 });
               } catch (error) {
                 failures.push(error);
+              } finally {
+                timers.clearTimeout(tickBound);
               }
               if (failures.length === 1) throw failures[0];
               if (failures.length > 1) throw new AggregateError(failures, 'the sandbox sweep and the tool marker sweep both failed');

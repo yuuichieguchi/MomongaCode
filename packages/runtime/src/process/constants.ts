@@ -25,3 +25,4 @@ export const JOB_KILL_OWNER_WAKE_MS = 1000;
 export const JOB_STREAM_DRAIN_MS = 1000;
 export const JOB_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const JOB_ID_HEX_CHARS = 12;
+export const JOB_END_PROBE_MS = 120_000;

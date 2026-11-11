@@ -9,6 +9,7 @@ import type { Run, RuntimeStore } from '@momonga/store';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import type { BackgroundJobRegistry } from '@momonga/runtime';
+import { JOB_END_PROBE_MS } from '../../src/process/constants.ts';
 import { createJobOutput } from '../../src/process/job-output.ts';
 import { createMarkerOwners, unsettledKeys } from '@momonga/tools';
 import { jobGenerationOptions } from './job-fixture.ts';
@@ -463,6 +464,55 @@ describe('the output file of a job follows its row', () => {
 
     expect(fs.readFileSync(named, 'utf8')).toBe('bytes of another job\n');
     expect(t.spawned).toEqual([]);
+  });
+});
+
+describe('the check of the processes at the end of a job has its own bound', () => {
+  it('a listing that never answers is ended at the bound: the job ends as unknown with its exit code and output, the marker is kept and nothing is reported as an error', async () => {
+    let asked: () => void = () => undefined;
+    const listingAsked = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    const probeSignals: AbortSignal[] = [];
+    const t = setup({
+      findHolders: (_marker, { signal }) => {
+        probeSignals.push(signal);
+        asked();
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+      },
+    });
+    const { jobId } = await t.start('call-1');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    await t.spawned[0]?.stdoutStream.write('some output\n');
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await listingAsked;
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running' });
+
+    t.timers.advance(JOB_END_PROBE_MS - 1);
+    expect(probeSignals[0]?.aborted).toBe(false);
+    t.timers.advance(1);
+    await t.settled(jobId);
+
+    expect(probeSignals[0]?.aborted).toBe(true);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'unknown', exitCode: 0 });
+    const read = await t.jobs.read(t.run.id, jobId, { call: 'read-1' });
+    expect(read.output).toContain('some output');
+    expect(read.output).toContain(`the check of the processes of this job did not end within ${JOB_END_PROBE_MS} ms, so whether one still runs is unknown`);
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(true);
+    expect(t.reports).toEqual([]);
+    expect(t.jobs.liveCount()).toBe(0);
+  });
+
+  it('the bound is the decided 120 s and no timer of it stays after a job that ended in time', async () => {
+    expect(JOB_END_PROBE_MS).toBe(120_000);
+    const t = setup();
+    const { jobId } = await t.start('call-1');
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited' });
+    expect(t.timers.pending().filter((timer) => timer.delayMs === JOB_END_PROBE_MS)).toEqual([]);
   });
 });
 
