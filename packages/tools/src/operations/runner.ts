@@ -7,8 +7,9 @@ import type { ToolIdempotencyRecord } from '../ports.ts';
 import type { ForgeAccess } from '../forge/instances.ts';
 import { parseRemoteUrl } from '../forge/remote.ts';
 import { gitEnvironment, isHttpDestination } from '../read-only-call.ts';
-import { createGitReader, repositoryTrustKeys, resolveDestinations, resolveRepository, sameList } from './git-read.ts';
-import type { Destinations, GitReadOptions, GitReader } from './git-read.ts';
+import { createGitReader, repositoryOwnKeys, resolveDestinations, resolveRepository, sameList } from './git-read.ts';
+import type { Destinations, GitReadOptions, GitReader, RepositoryKey } from './git-read.ts';
+import { UNKNOWN_KEY_REASON, repositoryKeyRuleOf } from '../git-config-table.ts';
 import type { ArgvRunner, RenderedNetwork } from './argv.ts';
 import type { GitOriginCredential } from './git-credential.ts';
 import { OPERATION_SPECS } from './catalogue.ts';
@@ -63,7 +64,7 @@ const renderNetwork = (network: Network | undefined, scope: Scope): RenderedNetw
 };
 
 const credentialsFor = async (runtime: Runtime, network: RenderedNetwork, signal: AbortSignal): Promise<GitOriginCredential[]> => {
-  if (network === 'none') return [];
+  if (network === 'none' || !network.destinations.every(isHttpDestination)) return [];
   const found = new Map<string, GitOriginCredential>();
   for (const destination of network.destinations) {
     const credential = await runtime.deps.forge.gitCredential(destination, signal);
@@ -95,11 +96,30 @@ type Runtime = { spec: OperationSpec; deps: OperationDeps; readGit: GitReader };
 
 const readAt = (cwd: string, call: GateCall): GitReadOptions => ({ cwd, env: call.env, signal: call.signal, context: call.context });
 
-const refuseRepositoryTrustKeys = async (runtime: Runtime, repoRoot: string, call: GateCall): Promise<void> => {
-  const [key] = await repositoryTrustKeys(runtime.readGit, readAt(repoRoot, call));
-  if (key === undefined) return;
+type RefusedKey = RepositoryKey & { why: string };
+
+const refusedKeyOf = (found: RepositoryKey): RefusedKey | undefined => {
+  const rule = repositoryKeyRuleOf(found.key);
+  if (rule === undefined) return { ...found, why: UNKNOWN_KEY_REASON };
+  return rule.verdict === 'refused' ? { ...found, why: rule.why } : undefined;
+};
+
+const refuseRepositoryKeys = async (runtime: Runtime, repoRoot: string, call: GateCall): Promise<void> => {
+  const refused = (await repositoryOwnKeys(runtime.readGit, readAt(repoRoot, call))).map(refusedKeyOf).filter((found): found is RefusedKey => found !== undefined);
+  const [first, ...others] = refused;
+  if (first === undefined) return;
+  const alsoSet = others.length === 0 ? '' : ` The repository also sets ${others.map((other) => other.key).join(', ')}, to which the same applies.`;
   throw new ToolExecutionError(
-    `${runtime.spec.name} was not run: the configuration of this repository sets ${key}, which changes who vouches for the remote and cannot be set aside for one command. Remove it from the repository (git config --local --unset ${key}), or, if the setting is yours, keep it in your own configuration (git config --global ${key} <value>).`,
+    `${runtime.spec.name} was not run: the configuration of this repository sets ${first.key}, which ${first.why}. Remove it from the repository (git config --${first.scope} --unset ${first.key}), or, if the setting is yours, keep it in your own configuration (git config --global ${first.key} <value>).${alsoSet}`,
+  );
+};
+
+const refuseMixedDestinations = (runtime: Runtime, remote: string, reached: readonly string[]): void => {
+  const onNetwork = reached.filter(isHttpDestination);
+  const offNetwork = reached.filter((destination) => !isHttpDestination(destination));
+  if (onNetwork.length === 0 || offNetwork.length === 0) return;
+  throw new ToolExecutionError(
+    `${runtime.spec.name} was not run: the remote ${remote} has ${placesOf(runtime)} reached over HTTP or HTTPS (${onNetwork.join(', ')}) and others (${offNetwork.join(', ')}), and one git process would serve both while it holds the credential of the forge. Give each its own remote (git remote add <name> <url>).`,
   );
 };
 
@@ -200,7 +220,8 @@ const gateFactsOf = async (runtime: Runtime, input: Record<string, unknown>, ctx
   if (remote === undefined) return located;
   const destinations = await resolveDestinations(runtime.readGit, remote, readAt(repoRoot, call));
   const reached = reachedOf(runtime, destinations);
-  if (reached.some(isHttpDestination)) await refuseRepositoryTrustKeys(runtime, repoRoot, call);
+  refuseMixedDestinations(runtime, remote, reached);
+  await refuseRepositoryKeys(runtime, repoRoot, call);
   return { ...located, [GATE_PUSH]: reached, [GATE_FETCH]: destinations.fetch };
 };
 
@@ -374,6 +395,7 @@ const reconcileOperation = async (runtime: Runtime, input: Record<string, unknow
   const { spec } = runtime;
   if (record.authorisedAt === undefined) return { outcome: 'not_applied', output: '' };
   const { before, recorded } = readPrepared(spec.name, record);
+  if (remoteNameOf(runtime, input) !== undefined) await refuseRepositoryKeys(runtime, recorded.repoRoot, { signal: ctx.signal, env: ctx.env, context: ctx });
   const after = await observe(runtime, ctx, input, before, recorded);
   const scope = scopeOf(ctx, input, before, after, recorded);
   const effectOf = (outcome: OperationEffect['outcome']): OperationEffect => ({ operation: spec.name, target: targetOf(runtime, scope), outcome });

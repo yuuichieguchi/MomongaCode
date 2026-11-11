@@ -3,6 +3,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { assertUnixSocketPathFits, createRedactor, helperCommandLine, parseOutsideJson } from '@momonga/foundation';
 import type { FileSystem, HelperSelf, Random } from '@momonga/foundation';
+import { overrideOf } from '../git-config-table.ts';
 import { appendGitConfig } from '../read-only-call.ts';
 import { GIT_ASKPASS_HELPER, GIT_CREDENTIAL_NONCE_ENV, GIT_CREDENTIAL_SOCKET_ENV } from './askpass-client.ts';
 
@@ -15,6 +16,7 @@ export type GitCredentialChannel = {
   close(): Promise<void>;
 };
 
+const CHANNEL_CONFIG = [overrideOf('credential.helper'), overrideOf('credential.usehttppath')];
 const MAX_ASK_BYTES = 4096;
 const NONCE_BYTES = 32;
 const ASKPASS_MODE = 0o700;
@@ -125,10 +127,7 @@ export const openGitCredentialChannel = async (credentials: readonly GitOriginCr
   return {
     directory,
     environment: (env) => ({
-      ...appendGitConfig(env, [
-        ['credential.helper', ''],
-        ['credential.useHttpPath', 'true'],
-      ]),
+      ...appendGitConfig(env, CHANNEL_CONFIG),
       GIT_ASKPASS: askpassPath,
       GIT_TERMINAL_PROMPT: '0',
       [GIT_CREDENTIAL_SOCKET_ENV]: socketPath,
