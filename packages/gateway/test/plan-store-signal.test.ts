@@ -94,7 +94,6 @@ describe('every plan store call takes the signal of the operation that asked (de
     await signedIn(h, 'work');
     const source = h.sessions.authSource(WORK);
     await h.sessions.load(WORK, NEVER_ENDED);
-    await h.sessions.serve([WORK], NEVER_ENDED);
     await h.sessions.registration(WORK, NEVER_ENDED);
     await h.sessions.known(NEVER_ENDED);
     await h.sessions.selectActive(WORK, NEVER_ENDED);

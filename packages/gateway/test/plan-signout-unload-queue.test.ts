@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CONDITION_WAIT, PAUSE_CODE, PROFILE_ID, errno, holdingOneWrite, planError, readRecord, signedIn, startHarness } from './plan-support.ts';
+import { CONDITION_WAIT, PAUSE_CODE, PROFILE_ID, errno, holdingOneWrite, planError, readRecord, signedIn, startHarness, writeSigningOut } from './plan-support.ts';
 import type { Harness, HeldWrite, RecordedPlanEvent } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -63,5 +63,19 @@ describe('a request that waited for the record lock behind a sign-out that ended
     expect((await first).code).toBe('plan_store_unwritable');
     await expect(paused).resolves.toBeUndefined();
     expect(named(h, 'plan.pause')).toEqual([{ profile: PROFILE_ID, account: 'work', code: PAUSE_CODE, saved: true }]);
+  });
+});
+
+describe('register starts with the load every operation starts with (F16)', () => {
+  it('register on an account that is not loaded and whose record is signing_out loads it, and its sign-out is resumed', { timeout: 60_000 }, async () => {
+    const h = await harness();
+    const signIn = await signedIn(h, 'work');
+    await writeSigningOut(h, 'work');
+    await h.reopen();
+    expect(h.fetchUrls).not.toContain(h.auth.revokeUrl);
+    expect(await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, signal())).toEqual({ outcome: 'registered' });
+    await vi.waitFor(async () => expect((await readRecord(h, 'work'))?.['state']).toBe('registered'), CONDITION_WAIT);
+    expect(h.fetchUrls).toContain(h.auth.revokeUrl);
+    expect(named(h, 'plan.sign_out')).toEqual([{ profile: PROFILE_ID, account: 'work', resumed: true, end: 'cleared', revocation: 'confirmed' }]);
   });
 });
