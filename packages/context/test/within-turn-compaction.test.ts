@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ContextOverflowError, buildContext } from '@momonga/context';
+import { summaryInputCeilingFor } from '../src/budget.ts';
+import { SUMMARY_PROMPT_TOKENS, summaryPromptTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { CompactionInputItem, InputItem, MessageInputItem } from '@momonga/protocol';
 import {
   READ_TOOL,
@@ -20,6 +22,7 @@ import {
   sourcesWith,
   stepsOf,
   tokensOfItem,
+  tokensOfItems,
   truncatedMarker,
   user,
 } from './helpers.ts';
@@ -41,7 +44,7 @@ describe('proactive compaction inside one turn', () => {
     const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(built.inputTokens).toBe(2378);
-    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2378, replaced: expect.any(Number), workingStateGrowth: 0 } });
+    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2378, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } });
   });
 
   it('gives no hint when the region is below twice the summary item', async () => {
@@ -112,7 +115,7 @@ describe('forced compaction inside one turn', () => {
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(error.inputTokens).toBe(2946);
-    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2946, replaced: expect.any(Number), workingStateGrowth: 0 } });
+    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2946, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } });
   });
 
   it('takes the latest cut before the last step at the last level', async () => {
@@ -278,5 +281,69 @@ describe('wrap-up build where the normal build overflows', () => {
     expect(wrapUp.tools).toEqual([]);
     expect(wrapUp.inputTokens).toBe(2074);
     expect(wrapUp.input.at(-1)).toEqual(instruction);
+  });
+});
+
+describe('a compaction planned for the model that receives the request', () => {
+  const session = capabilitiesFor(40_000);
+  const history = stepsOf([8000, 8000, 8000, 8000, 8000, 8000, 8000, 8000]);
+  const planFor = async (target: ReturnType<typeof capabilitiesFor> | undefined, focus?: string) => {
+    const ports = harness(session).ports;
+    const built = await buildContext(
+      inputFor(session, { sources: sourcesWith({ history }), level: 0, compactNow: true, ...(focus === undefined ? {} : { compactionFocus: focus }) }),
+      target === undefined ? ports : { ...ports, compactionTarget: async () => target },
+    );
+    return built.compaction;
+  };
+
+  it('caps the summary at the largest summary the receiving model accepts', async () => {
+    const target = capabilitiesFor(40_000, { maxOutputTokens: 100 });
+
+    expect((await planFor(undefined))?.summaryTokenCap).toBe(summaryTokenCapFor(session));
+    expect((await planFor(target))?.summaryTokenCap).toBe(100);
+  });
+
+  it('caps the summary at the output the session model itself can write when no other model receives the request', async () => {
+    const small = capabilitiesFor(40_000, { maxOutputTokens: 100 });
+    const built = await buildContext(inputFor(small, { sources: sourcesWith({ history }), level: 0, compactNow: true }), harness(small).ports);
+
+    expect(built.compaction?.summaryTokenCap).toBe(100);
+  });
+
+  it('cuts where the region fits the input ceiling of the receiving model, not of the session model', async () => {
+    const target = capabilitiesFor(8000);
+    const forSession = await planFor(undefined);
+    const forTarget = await planFor(target);
+
+    expect(forSession?.throughSeq).toBeGreaterThan(forTarget?.throughSeq ?? Number.POSITIVE_INFINITY);
+    expect((forTarget?.tokens.request ?? Number.NaN) + (forTarget?.summaryTokenCap ?? Number.NaN)).toBeLessThanOrEqual(summaryInputCeilingFor(target));
+    expect(forTarget?.summaryTokenCap).toBe(summaryTokenCapFor(target));
+  });
+
+  it('sizes the request by the region sent and the prompt, not by the whole input', async () => {
+    const plan = await planFor(undefined);
+
+    expect(plan?.tokens.request).toBe(tokensOfItems(plan?.input ?? []) + SUMMARY_PROMPT_TOKENS);
+    expect(plan?.tokens.request).toBeLessThan(plan?.tokens.input ?? 0);
+  });
+
+  it('counts the focus text in the request and carries it on the plan', async () => {
+    const focus = 'keep every decision about the parser '.repeat(40);
+    const plain = await planFor(undefined);
+    const focused = await planFor(undefined, focus);
+
+    expect(plain).not.toHaveProperty('focus');
+    expect(focused?.focus).toBe(focus);
+    expect((focused?.tokens.request ?? 0) - (plain?.tokens.request ?? 0)).toBe(summaryPromptTokensFor(focus) - SUMMARY_PROMPT_TOKENS);
+    expect(summaryPromptTokensFor(focus) - SUMMARY_PROMPT_TOKENS).toBeGreaterThan(300);
+  });
+
+  it('plans an earlier cut when the focus text takes the room the latest region needs', async () => {
+    const target = capabilitiesFor(8000);
+    const plain = await planFor(target);
+    const focused = await planFor(target, 'x'.repeat(8000));
+
+    expect(focused?.throughSeq ?? 0).toBeLessThan(plain?.throughSeq ?? 0);
+    expect((focused?.tokens.request ?? Number.NaN) + (focused?.summaryTokenCap ?? Number.NaN)).toBeLessThanOrEqual(summaryInputCeilingFor(target));
   });
 });

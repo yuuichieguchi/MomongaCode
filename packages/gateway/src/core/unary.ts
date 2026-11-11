@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor, wireUsageOf } from '@momonga/protocol';
+import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, largestSummaryCapFor, outputTokensFor, summaryInputLimitFor, wireUsageOf } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   Capabilities,
@@ -265,7 +265,7 @@ const compactOnce = async (
     error: invalidRequest('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target', 'input'),
   };
   const capFor = (capabilities: Capabilities): number =>
-    request.momonga?.max_summary_tokens ?? Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
+    request.momonga?.max_summary_tokens ?? largestSummaryCapFor(capabilities);
   const wireFor = (target: TargetRuntime, capabilities: Capabilities, cap: number): Record<string, unknown> | undefined => {
     const renderCompactWire = target.adapter.renderCompactWire;
     if (renderCompactWire === undefined) return undefined;
@@ -447,7 +447,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
     const request = validator.parseCompact(rawBody);
     const unknownFields = validator.unknownCompactFields(rawBody);
     const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
-    const digest = sha256Hex(canonicalJson(request));
+    const digest = sha256Hex(canonicalJson(request.momonga === undefined ? request : { ...request, momonga: withoutCeiling(request.momonga) }));
     const running = inflight.get(key);
     if (running !== undefined) {
       if (running.digest !== digest) throw reusedError(key);

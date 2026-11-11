@@ -83,6 +83,7 @@ export {
   RUN_ID_CHARS,
   SUMMARY_ACCEPT_RATIO,
   SUMMARY_ITEM_OVERHEAD,
+  SUMMARY_FOCUS_LABEL,
   SUMMARY_PROMPT_TOKENS,
   SUMMARY_ROOM_RATIO,
   SUMMARY_WINDOW_RATIO,
@@ -95,7 +96,10 @@ export {
   outputReserveFor,
   sizingFractionFor,
   sizingRatioFor,
+  largestSummaryCapFor,
+  summaryFocusBlockOf,
   summaryInputLimitFor,
+  summaryPromptTokensFor,
   summaryItemTokensFor,
   summaryTokenCapFor,
 } from './budget-constants.ts';
