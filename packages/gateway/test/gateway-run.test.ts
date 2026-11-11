@@ -50,6 +50,7 @@ describe('buffered run backpressure', () => {
       readerStallMs: 5000,
       detachedMaxMs: DETACHED_MAX_MS,
       onAborted: () => undefined,
+      onSubscribers: () => undefined,
       timers,
     });
     run.subscribe(never);
@@ -69,6 +70,7 @@ describe('buffered run backpressure', () => {
       readerStallMs: 5000,
       detachedMaxMs: DETACHED_MAX_MS,
       onAborted: () => undefined,
+      onSubscribers: () => undefined,
       timers,
     });
     const stalled = run.subscribe(never);
@@ -95,6 +97,7 @@ describe('buffered run backpressure', () => {
       readerStallMs: 5000,
       detachedMaxMs: DETACHED_MAX_MS,
       onAborted: () => undefined,
+      onSubscribers: () => undefined,
       timers,
     });
     const reader = run.subscribe(never);
@@ -121,6 +124,7 @@ describe('buffered run detach', () => {
       onAborted: () => {
         aborted.count += 1;
       },
+      onSubscribers: () => undefined,
       timers,
     });
     return { run, timers, produced, aborted, open: () => open() };
@@ -184,7 +188,7 @@ describe('sseResponse on shutdown', () => {
       next: () => new Promise(() => undefined),
       return: async () => ({ done: true, value: undefined }),
     };
-    const response = sseResponse(events[0] as StreamEvent, rest, { timers, keepAliveMs: 1000, readerStallMs: 30_000, signal: closing.signal, onEnd: () => undefined, onError: () => undefined });
+    const response = sseResponse(events[0] as StreamEvent, rest, { timers, keepAliveMs: 1000, readerStallMs: 30_000, signal: closing.signal, onError: () => undefined });
     closing.abort(gatewayClosedError());
     await expect(response.text()).rejects.toMatchObject({ body: { code: 'gateway_closed' } });
   });

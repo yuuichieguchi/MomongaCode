@@ -2,6 +2,7 @@ import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { OutboundNetwork } from '@momonga/foundation';
+import { hostTimers } from '@momonga/testkit';
 import { createProbeClient } from '../src/probe/client.ts';
 import { createEndpointPool } from '../src/adapters/shared/http-client.ts';
 
@@ -48,7 +49,7 @@ describe('a probe of a TCP endpoint behind a proxy that never answers CONNECT', 
 describe('a model call to a TCP endpoint behind a proxy that never answers CONNECT', { timeout: 30_000 }, () => {
   it('ends at the model headers bound and names the proxy hop', async () => {
     const proxy = await silentProxy();
-    const pool = createEndpointPool({ label: 'chat-completions', unixPath: '/v1/chat/completions', urlSuffix: '/chat/completions' }, { headersTimeoutMs: 300, idleTimeoutMs: 300 });
+    const pool = createEndpointPool({ label: 'chat-completions', unixPath: '/v1/chat/completions', urlSuffix: '/chat/completions' }, { headersTimeoutMs: 300, idleTimeoutMs: 300, timers: hostTimers });
     closers.push(() => pool.close());
 
     const pending = pool.clientFor({ kind: 'tcp', baseUrl: 'https://model.example.test/v1', network: throughProxy(proxy.port) }).post({ headers: {}, body: '{}', signal: new AbortController().signal });

@@ -267,7 +267,7 @@ describe('settings at every spawn', () => {
   it('a respawn with a throwing snapshot backs off', async (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
-    harness.port.last().exit(75);
+    harness.port.last().exit(77);
     await waitFor(() => harness.manager.state() === 'waiting-lock');
     harness.settings.script = () => {
       throw errnoError('EMFILE', 'EMFILE: too many open files');

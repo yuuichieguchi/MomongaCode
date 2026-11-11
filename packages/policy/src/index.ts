@@ -7,7 +7,7 @@ export { matchPathlessRule, matchRule, ruleCoversSubject, wildcardMatches } from
 export type { RuleResolution } from './match-rule.ts';
 export { supersededFormOf, supersededVerdictOf } from './superseded.ts';
 export type { CoveredProgram, SupersededForm, SupersededVerdict } from './superseded.ts';
-export { commandPatternOf } from './command-match.ts';
+export { commandPatternOf, comparesByAdjacency } from './command-match.ts';
 export { inertPrinterSet } from './command-specs.ts';
 export type { CommandPattern } from './command-match.ts';
 export { RESERVED_WORDS, allWriteTargets, analyzeCommand, programNameOf, readPathsOfCommand } from './shell.ts';
@@ -24,6 +24,8 @@ export { suggestAllowRule } from './suggest-allow-rule.ts';
 export { absoluteFrom } from './path-match.ts';
 export { MAX_APPROVABLE_COMMAND_CHARS, MAX_GLOB_MATCHES } from './approval.ts';
 export { commandSpecsFor, systemProgramDirectories, userlandOf } from './platform-specs.ts';
+export { unaskedCommandsFor } from './unasked-commands.ts';
+export type { UnaskedCommands } from './unasked-commands.ts';
 export type { CommandSpecs } from './command-specs.ts';
 export type { ConfigPrograms, GitlinkRead } from '@momonga/foundation';
 export { askedBy, createDecisionResolver } from './filesystem.ts';

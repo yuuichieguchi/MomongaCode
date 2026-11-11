@@ -6,7 +6,7 @@ import type { EditorState } from '../editor.ts';
 import { currentA11y } from './a11y.ts';
 import { INPUT_BOX_FRAME_ROWS } from './constants.ts';
 import { borderOf } from './theme.ts';
-import { displayWidth, segmentsOf } from './wrap.ts';
+import { displayWidth, inertText, segmentsOf } from './wrap.ts';
 
 const FIRST_PREFIX = '> ';
 const REST_PREFIX = '  ';
@@ -15,25 +15,36 @@ const BOX_LEFT_COLUMNS = BOX_CHROME_COLUMNS / 2;
 const BOX_TOP_ROWS = INPUT_BOX_FRAME_ROWS / 2;
 const CURSOR_COLUMNS = 1;
 
-export type InputRow = { start: number; end: number; text: string };
+export type InputRow = { start: number; end: number; text: string; drawn: string };
 
 export type InputLayout = { rows: readonly InputRow[]; caretRow: number; caretCol: number };
 
 const textColumns = (columns: number): number => Math.max(1, columns - BOX_CHROME_COLUMNS - FIRST_PREFIX.length - CURSOR_COLUMNS);
 
+type DrawnCell = { index: number; drawn: string; width: number };
+
+const drawnCellsOf = (line: string): DrawnCell[] =>
+  segmentsOf(line).map(({ segment, index }) => {
+    const drawn = inertText(segment);
+    return { index, drawn, width: displayWidth(drawn) };
+  });
+
 const rowsOfLine = (line: string, offset: number, width: number): InputRow[] => {
   const rows: InputRow[] = [];
   let start = 0;
   let used = 0;
-  for (const { index, width: cells } of segmentsOf(line)) {
-    if (used + cells > width && index > start) {
-      rows.push({ start: offset + start, end: offset + index, text: line.slice(start, index) });
-      start = index;
+  let drawn = '';
+  for (const cell of drawnCellsOf(line)) {
+    if (used + cell.width > width && cell.index > start) {
+      rows.push({ start: offset + start, end: offset + cell.index, text: line.slice(start, cell.index), drawn });
+      start = cell.index;
       used = 0;
+      drawn = '';
     }
-    used += cells;
+    used += cell.width;
+    drawn += cell.drawn;
   }
-  rows.push({ start: offset + start, end: offset + line.length, text: line.slice(start) });
+  rows.push({ start: offset + start, end: offset + line.length, text: line.slice(start), drawn });
   return rows;
 };
 
@@ -47,7 +58,7 @@ export const layoutInput = (text: string, cursor: number, columns: number): Inpu
   }
   const caretRow = rows.findLastIndex((row) => row.start <= cursor && cursor <= row.end);
   const row = rows[caretRow];
-  return { rows, caretRow, caretCol: row === undefined ? 0 : displayWidth(text.slice(row.start, cursor)) };
+  return { rows, caretRow, caretCol: row === undefined ? 0 : displayWidth(inertText(text.slice(row.start, cursor))) };
 };
 
 export const inputRowsOf = (editor: EditorState, columns: number): number => layoutInput(editor.text, editor.cursor, columns).rows.length;
@@ -64,35 +75,39 @@ export const inputOffsetAt = (editor: EditorState, columns: number, visible: num
   if (row === undefined) return undefined;
   const wanted = screenCol - 1 - BOX_LEFT_COLUMNS - FIRST_PREFIX.length;
   let cells = 0;
-  for (const { index, width } of segmentsOf(row.text)) {
+  for (const { index, width } of drawnCellsOf(row.text)) {
     if (cells + width > wanted) return row.start + index;
     cells += width;
   }
   return row.end;
 };
 
-const CARET_OPEN = '\u0000';
-const CARET_CLOSE = '\u0001';
+type PanelLine = { line: string; start: number };
+
+const panelLinesOf = (text: string): PanelLine[] => {
+  let offset = 0;
+  return text.split('\n').map((line) => {
+    const start = offset;
+    offset += line.length + 1;
+    return { line, start };
+  });
+};
 
 export function PanelInputBox({ editor }: { editor: EditorState }) {
-  const before = editor.text.slice(0, editor.cursor);
   const atCaret = editor.text.slice(editor.cursor, characterEndAfter(editor.text, editor.cursor));
   const blank = atCaret === '' || atCaret === '\n';
-  const after = editor.text.slice(editor.cursor + (blank ? 0 : atCaret.length));
-  const lines = `${before}${CARET_OPEN}${blank ? ' ' : atCaret}${CARET_CLOSE}${after}`.split('\n');
   return (
     <Box flexDirection="column" {...(currentA11y().screenReader ? {} : { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 })}>
-      {lines.map((line, index) => {
-        const open = line.indexOf(CARET_OPEN);
-        const close = line.indexOf(CARET_CLOSE);
+      {panelLinesOf(editor.text).map(({ line, start }, index) => {
         const prefix = index === 0 ? FIRST_PREFIX : REST_PREFIX;
-        if (open < 0 || close < 0) return <Text key={index}>{`${prefix}${line}`}</Text>;
+        const caret = editor.cursor - start;
+        if (caret < 0 || caret > line.length) return <Text key={index}>{`${prefix}${inertText(line)}`}</Text>;
         return (
           <Text key={index}>
             {prefix}
-            {line.slice(0, open)}
-            <Text inverse>{line.slice(open + 1, close)}</Text>
-            {line.slice(close + 1)}
+            {inertText(line.slice(0, caret))}
+            <Text inverse>{blank ? ' ' : inertText(atCaret)}</Text>
+            {inertText(line.slice(caret + (blank ? 0 : atCaret.length)))}
           </Text>
         );
       })}
@@ -115,7 +130,7 @@ export function InputBox({ editor, columns, rows, top, framed, mark }: InputBoxP
   return (
     <Box ref={box} flexDirection="column" {...(framed ? { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 } : {})}>
       {layout.rows.slice(first, first + visible).map((row, index) => (
-        <Text key={first + index} wrap="truncate">{`${first + index === 0 ? `${mark} ` : REST_PREFIX}${row.text}`}</Text>
+        <Text key={first + index} wrap="truncate">{`${first + index === 0 ? `${mark} ` : REST_PREFIX}${row.drawn}`}</Text>
       ))}
     </Box>
   );

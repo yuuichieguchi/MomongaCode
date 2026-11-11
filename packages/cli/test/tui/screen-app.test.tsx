@@ -14,7 +14,7 @@ import { runView } from '../fake-backend.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
 
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', name, ...plain, ...mods });
 const typed = (text: string, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', text, ...plain, ...mods });
 const mouse = (kind: 'press' | 'release' | 'move', col: number, row: number): TerminalEvent => ({ type: 'mouse', kind, button: 'left', col, row, ...plain });
@@ -261,6 +261,20 @@ describe('selection and copy on the screen', () => {
     terminal.emit(mouse('release', 8, 2));
     await vi.waitFor(() => expect(backend.openedUrls).toEqual(['https://example.test/page']));
     expect(backend.calls.filter((call) => call.startsWith('copy:'))).toEqual([]);
+    app.unmount();
+  });
+
+  it('makes no link of text that starts like a URL and does not parse, and a click on it opens nothing and throws nothing', async () => {
+    const { app, terminal, backend } = await startWith({ columns: 60, rows: 12 }, 'see http://[ and https://example.test/page now');
+    expect(app.lastFrame()).toContain('see http://[ and ');
+    expect(app.lastFrame()).not.toContain('\u001b]8;;http://[');
+    expect(() => {
+      terminal.emit(mouse('press', 8, 2));
+      terminal.emit(mouse('release', 8, 2));
+    }).not.toThrow();
+    terminal.emit(mouse('press', 20, 2));
+    terminal.emit(mouse('release', 20, 2));
+    await vi.waitFor(() => expect(backend.openedUrls).toEqual(['https://example.test/page']));
     app.unmount();
   });
 });

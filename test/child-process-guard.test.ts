@@ -396,7 +396,14 @@ describe('the modules every worker loads before its test file', () => {
 });
 
 const IMPORT_OF_CHILD_PROCESS = /(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"](?:node:)?child_process['"]|['"]node-pty['"]/;
-const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set(['packages/testkit/src/child-process.ts', 'test/support/child-process-guard.ts', 'test/child-process-guard.test.ts', 'test/fake-programs.test.ts']);
+const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set([
+  'packages/cli/test/port-scan.test.ts',
+  'packages/testkit/src/child-process.ts',
+  'test/child-process-guard.test.ts',
+  'test/fake-programs.test.ts',
+  'test/ports-bypass.test.ts',
+  'test/support/child-process-guard.ts',
+]);
 
 const testSources = (): string[] => {
   const walk = (dir: string): string[] =>

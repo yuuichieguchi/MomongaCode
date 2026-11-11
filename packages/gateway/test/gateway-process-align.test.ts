@@ -323,6 +323,7 @@ describe('gateway fatal (§4.2, §4.3)', () => {
       dbPath: path.join(dir, 'gateway.db'),
       hmacKey: HMAC_KEY,
       socketPath: path.join(dir, 'w.sock'),
+      pid: process.pid,
       version: TEST_VERSION,
       onFatal: (error) => void seen.push(error),
     });

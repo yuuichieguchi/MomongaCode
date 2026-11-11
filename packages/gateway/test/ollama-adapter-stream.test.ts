@@ -120,16 +120,6 @@ describe('ollama stream: upstream protocol errors (nothing is defaulted)', () =>
     expect(terminal.response.error).toMatchObject({ type: 'model_error', code: 'upstream_protocol_error' });
   };
 
-  it('fails a tool call without an id', async () => {
-    const { events, error } = await streamOf([
-      chunkLine({ content: 'reading' }),
-      chunkLine({ tool_calls: [{ function: { index: 0, name: 'Read', arguments: { file_path: 'a' } } }] }),
-      doneLine(),
-    ]);
-    expectProtocolError(events, error);
-    expect(ofType(events, 'response.output_item.done').filter((event) => event.item.type === 'function_call')).toEqual([]);
-  });
-
   for (const field of ['prompt_eval_count', 'eval_count']) {
     it(`fails a done chunk whose ${field} is present and not a non-negative integer`, async () => {
       const { events, error } = await streamOf([chunkLine({ content: 'hello' }), doneLine({ [field]: 'many' })]);

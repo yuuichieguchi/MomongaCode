@@ -2,7 +2,7 @@ import { REASONS, TEXT_CONTEXTS, withAllDefaults, withBinding, withDefaultsOf, w
 import type { BindingEntry, BindingReport } from '../keys/bindings.ts';
 import { captureTitle } from '../keys/capture.ts';
 import type { KeyBindings, KeyEdit } from '../keys/store.ts';
-import { isPlainKey, KEYS, KEY_CONTEXTS, keyReported, needsReport, neverReported, shownKey } from '../keys/table.ts';
+import { isPlainKey, KEYS, KEY_CONTEXTS, keyReported, needsReport, shownKey } from '../keys/table.ts';
 import type { ActionRow, KeySpec } from '../keys/table.ts';
 import type { OverlayPorts, PickRow } from '../picker.tsx';
 import type { SlashCommand, SlashContext } from '../slash.ts';
@@ -19,7 +19,6 @@ export const SAVING_KEYS = 'saving the key bindings';
 export const NO_KEY = 'no key';
 export const CHANGED_MARK = '(changed)';
 export const MAY_NOT_REPORT = '(this terminal may not report it)';
-export const NEVER_REPORTED = '(unreachable: no terminal reports cmd to this program)';
 export const REJECTED_HEADING = 'entries of the file that were ignored';
 
 export const replaceQuestion = (key: KeySpec, action: string): string => `${shownKey(key)} is used by ${action}. Replace it?`;
@@ -34,7 +33,7 @@ export const actionRowLabel = (row: ActionRow, negotiation: NegotiationState): s
   const keys = row.default.length === 0 ? NO_KEY : row.default.map(shownKey).join(', ');
   const marks = [
     ...(sameKeys(row.default, defaultsOf(row)) ? [] : [CHANGED_MARK]),
-    ...(row.default.some(neverReported) ? [NEVER_REPORTED] : row.default.some((key) => needsReport(key) && !keyReported(key, negotiation)) ? [MAY_NOT_REPORT] : []),
+    ...(row.default.some((key) => needsReport(key) && !keyReported(key, negotiation)) ? [MAY_NOT_REPORT] : []),
   ];
   return [`${row.id}  ${keys}  ${row.description}`, ...marks].join(' ');
 };

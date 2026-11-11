@@ -30,6 +30,10 @@ export const SUMMARY_ITEM_OVERHEAD = Math.max(
   tokensForText(String(compactionSummaryMessage('', 'code').content)),
 );
 export const SUMMARY_PROMPT_TOKENS = 426;
+export const SUMMARY_FOCUS_LABEL = 'The user asked for this focus in the note. Give it the most room; the rules above still hold.';
+export const summaryFocusBlockOf = (focus: string): string => `\n\n${SUMMARY_FOCUS_LABEL}\n${focus}`;
+export const summaryPromptTokensFor = (focus: string | undefined): number =>
+  focus === undefined ? SUMMARY_PROMPT_TOKENS : SUMMARY_PROMPT_TOKENS + tokensForText(summaryFocusBlockOf(focus));
 export const COMPACTION_INSTRUCTIONS_VERSION = 3;
 export { ESTIMATED_CHARACTERS_PER_TOKEN };
 export const MAX_COMPACTION_GUIDELINE_CHARS = ESTIMATED_CHARACTERS_PER_TOKEN * MIN_SUMMARY_TOKENS;
@@ -82,6 +86,9 @@ export const summaryTokenCapFor = (capabilities: Pick<Capabilities, 'contextWind
   );
   return room === undefined ? base : Math.max(MIN_SUMMARY_TOKENS, Math.min(base, floorRatio(SUMMARY_ROOM, room)));
 };
+
+export const largestSummaryCapFor = (capabilities: Pick<Capabilities, 'contextWindow' | 'maxOutputTokens'>): number =>
+  Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
 
 export const summaryItemTokensFor = (cap: number): number => ceilRatio(SUMMARY_ACCEPT, cap) + SUMMARY_ITEM_OVERHEAD;
 

@@ -5,8 +5,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import type { SpanExporter } from '@opentelemetry/sdk-trace';
-import { GENAI_CONTENT_SEMCONV, createTelemetry, openTraceStore } from '@momonga/observability';
-import type { Telemetry, TraceStore } from '@momonga/observability';
+import { GENAI_CONTENT_SEMCONV, createTelemetry, describeMoney, moneyTallyOf, openTraceStore } from '@momonga/observability';
+import type { BilledCall, BodyRecord, CallPrice, PriceTable, Telemetry, TraceStore } from '@momonga/observability';
+import { billedCallOf, isBilledChat } from '../src/billed-calls.ts';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 
@@ -90,3 +91,20 @@ export const dumpAllRows = (file: string): string => {
 export const CONTENT = GENAI_CONTENT_SEMCONV;
 
 export const CONTENT_KEYS = Object.values(GENAI_CONTENT_SEMCONV) as string[];
+
+const EVERY_BODY = Number.MAX_SAFE_INTEGER;
+
+export const billedCallsOfRun = (store: TraceStore, runId: string, table: PriceTable): BilledCall[] =>
+  store
+    .spansForRun(runId)
+    .filter(isBilledChat)
+    .toSorted((left, right) => left.startMs - right.startMs || (left.spanId < right.spanId ? -1 : 1))
+    .map((span) => billedCallOf(runId, span, table));
+
+export const moneyLine = (outcomes: readonly CallPrice[]): string => describeMoney(moneyTallyOf(outcomes));
+
+export const bodiesOfSpan = (store: TraceStore, spanId: string, runId: string = RUN_ID): BodyRecord[] =>
+  store
+    .bodiesOfRunAfter(runId, 0, EVERY_BODY)
+    .map((stored) => stored.body)
+    .filter((body) => body.spanId === spanId);

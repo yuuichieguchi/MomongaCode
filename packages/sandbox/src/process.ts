@@ -1,6 +1,6 @@
 import type { spawn } from 'node:child_process';
-import { SANDBOX_KILL_GRACE_MS, closeMarkerDescriptor, deadlineSignal, groupSignalsOf, groupTerminationBoundMs, hostProbeTiming, hostProcessGroupPort, launchGroupLeader, signalGroup, terminateGroup } from '@momonga/foundation';
-import type { GroupLaunch, GroupLaunchMarker, ProbeTiming, ProcessGroupPort, TerminateOutcome } from '@momonga/foundation';
+import { SANDBOX_KILL_GRACE_MS, closeMarkerDescriptor, deadlineSignal, groupSignalsOf, groupTerminationBoundMs, hostProbeTiming, hostProcessGroupPort, launchGroupLeader, realGroupTiming, signalGroup, terminateGroup } from '@momonga/foundation';
+import type { GroupLaunch, GroupLaunchMarker, ProbeTiming, ProcessGroupPort, TerminateOutcome, Timing } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
 export { SANDBOX_KILL_GRACE_MS };
@@ -8,6 +8,8 @@ export { SANDBOX_KILL_GRACE_MS };
 const MARKER_SLOT = 3;
 
 export const SANDBOX_STOP_BOUND_MS = groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS);
+
+const HOST_TIMING: ProbeTiming & Timing = { ...realGroupTiming, ...hostProbeTiming };
 
 export interface LaunchOptions {
   file: string;
@@ -23,13 +25,13 @@ export interface LaunchOptions {
   spawnProcess?: typeof spawn;
   signalTerm?: (pgid: number, stop: AbortSignal) => Promise<void> | void;
   groupPort?: ProcessGroupPort;
-  timing?: ProbeTiming;
+  timing?: ProbeTiming & Timing;
 }
 
 export function launch(options: LaunchOptions): SandboxedProcess {
   const stdinMode = options.stdin === undefined ? 'ignore' : 'pipe';
   const { signal, killGraceMs } = options;
-  const timing = options.timing ?? hostProbeTiming;
+  const timing = options.timing ?? HOST_TIMING;
   const groupPort = options.groupPort ?? hostProcessGroupPort();
   const [firstSignal, ...laterSignals] = groupSignalsOf(groupPort);
   const lastSignal = laterSignals[laterSignals.length - 1];
@@ -91,7 +93,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
   const onAbort = (): void => {
     if (killedBy !== undefined) return;
     killedBy = 'abort';
-    termDeadline = timing.now() + killGraceMs;
+    termDeadline = timing.monotonicMs() + killGraceMs;
     const bound = deadlineSignal(timing, groupTerminationBoundMs(killGraceMs));
     stopBound = bound;
     bound.addEventListener(

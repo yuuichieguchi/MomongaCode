@@ -1,8 +1,7 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
 import { createBinaryHashCache, createHostExec, createOwnedDirectory, ensureMomongaDirs, hostKernelLock, isProcessAlive, refuseUnfitGenerationSocketsBeforeCreation, shortTempBase } from '@momonga/foundation';
-import type { KernelLockMechanism, OwnedDirectory } from '@momonga/foundation';
+import type { KernelLockMechanism, OwnedDirectory, ProcessPort } from '@momonga/foundation';
 import { loadUserModels, registeredServer } from '@momonga/config';
 import type { ServerRegistry } from '@momonga/config';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
@@ -15,21 +14,21 @@ import { OWNER_FILE, ROOT_PREFIX, caseEnvironment, isLegacyOwnerMarker, parseEva
 import type { ContextHostEffects, EvalOwner, ManagedRecordSource } from './context-host.ts';
 import type { YieldHostEffects } from './yield-host.ts';
 
-export const MAX_TIMER_MS = 2_147_483_647;
-
 const isMissingProcess = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ESRCH';
 
-const signalProcess = (pid: number, signal: NodeJS.Signals, group: boolean): void => {
-  try {
-    process.kill(group ? -pid : pid, signal);
-  } catch (error) {
-    if (!isMissingProcess(error)) throw error;
-  }
-};
+const signalThrough =
+  (host: ProcessPort) =>
+  (pid: number, signal: NodeJS.Signals, group: boolean): void => {
+    try {
+      host.kill(group ? -pid : pid, signal);
+    } catch (error) {
+      if (!isMissingProcess(error)) throw error;
+    }
+  };
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
-export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>, from: string, to: string, source: ManagedRecordSource, servers: ServerRegistry, platform: NodeJS.Platform, signal: AbortSignal): Promise<boolean> => {
+export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText' | 'mkdir'>, from: string, to: string, source: ManagedRecordSource, servers: ServerRegistry, platform: NodeJS.Platform, signal: AbortSignal): Promise<boolean> => {
   const { managedKeyReader, managedRecordPath } = await import('@momonga/gateway');
   const description = registeredServer(servers, source.server);
   if (description === undefined) throw new Error(`the model ${source.model} names the server ${source.server}, which the loaded settings do not declare`);
@@ -38,13 +37,13 @@ export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIf
   if (key.kind === 'unknown') return false;
   const text = await files.readTextIfPresent(managedRecordPath(from, key));
   if (text === undefined) return false;
-  await fs.mkdir(to, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  await files.mkdir(to, PRIVATE_DIRECTORY_MODE);
   await files.writeText(managedRecordPath(to, key), text);
   return true;
 };
 
 export const copyEndpointProbeRecord = async (
-  files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>,
+  files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText' | 'mkdir'>,
   from: string,
   to: string,
   key: { endpoint: string; model: string },
@@ -53,7 +52,7 @@ export const copyEndpointProbeRecord = async (
   const name = endpointRecordFileName(key);
   const text = await files.readTextIfPresent(path.join(from, name));
   if (text === undefined) return false;
-  await fs.mkdir(to, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  await files.mkdir(to, PRIVATE_DIRECTORY_MODE);
   await files.writeText(path.join(to, name), text);
   return true;
 };
@@ -73,13 +72,13 @@ export const readEvalOwner = async (files: Pick<CliPorts['files'], 'readTextIfPr
   }
 };
 
-export const listEvalRoots = async (base: string, uid: number | undefined): Promise<string[]> => {
+export const listEvalRoots = async (files: Pick<CliPorts['files'], 'readdir' | 'lstat'>, base: string, uid: number | undefined): Promise<string[]> => {
   const roots: string[] = [];
-  for (const name of await fs.readdir(base)) {
+  for (const name of await files.readdir(base)) {
     if (!name.startsWith(ROOT_PREFIX)) continue;
     const entry = path.join(base, name);
     try {
-      const stat = await fs.lstat(entry);
+      const stat = await files.lstat(entry);
       if (stat.isDirectory() && (uid === undefined || stat.uid === uid)) roots.push(entry);
     } catch (error) {
       if (!VANISHED_CODES.has((error as NodeJS.ErrnoException).code)) throw error;
@@ -113,7 +112,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
     lock,
     platform: ports.platform,
     env: ports.env,
-    ownerPid: process.pid,
+    ownerPid: ports.process.pid,
     ownerHome: ports.home,
     readSecret: (name, signal) => ports.secretStore().read(name, signal),
     copyEndpointProbeRecord: async (probe, paths) => {
@@ -123,7 +122,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
       const from = (await pathsOf(ports)).probe;
       await withinCommandLimit(command, (signal) => copyProbeRecord(ports.files, from, paths.probe, source, loadUserModels({ home: ports.home }).resolved.servers, ports.platform, signal));
     },
-    listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
+    listRoots: () => listEvalRoots(ports.files, shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : ports.process.uid()),
     readOwner: (root) => readEvalOwner(ports.files, root),
     sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),
     makeRoot: () => roots.make(),
@@ -133,37 +132,22 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
       await ports.files.writeText(file, text);
     },
     makeDirectory: (directory) => ports.files.mkdir(directory),
-    canonical: (directory) => fs.realpath(directory),
+    canonical: (directory) => ports.files.realpath(directory),
     refuseUnfitSockets: refuseUnfitGenerationSocketsBeforeCreation,
     startDaemon: async (root, paths, env) => {
       await ensureCurrentDaemon({ ...ports, home: root, env }, paths, { lifeline: true });
     },
-    terminate: (paths) => stopAllGenerations({ clock: ports.clock, isAlive: isProcessAlive, signal: signalProcess }, paths),
+    terminate: (paths) => stopAllGenerations({ clock: ports.clock, isAlive: (pid) => isProcessAlive(pid, ports.process.kill), signal: signalThrough(ports.process) }, paths, { lock }),
     remove: (directory) => roots.remove(directory),
-    connect: (paths) => connectRuntime(paths),
-    applyStep: (cwd, step) => applyWorkspaceStep(cwd, step),
+    connect: (paths) => connectRuntime(ports, paths),
+    applyStep: (cwd, step) => applyWorkspaceStep(ports.files, cwd, step),
     now: () => ports.clock.now(),
-    after: (milliseconds, signal) =>
-      new Promise<void>((resolve, reject) => {
-        signal.throwIfAborted();
-        const onAbort = (): void => {
-          clearTimeout(timer);
-          reject(signal.reason);
-        };
-        const timer =
-          milliseconds > MAX_TIMER_MS
-            ? undefined
-            : setTimeout(() => {
-                signal.removeEventListener('abort', onAbort);
-                resolve();
-              }, milliseconds);
-        signal.addEventListener('abort', onAbort, { once: true });
-      }),
+    after: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
   };
 };
 
 export const nodeYieldEffects = (ports: CliPorts, lock: KernelLockMechanism = hostKernelLock()): YieldHostEffects => ({
   ...nodeContextEffects(ports, lock),
-  connect: (paths) => connectRuntime(paths),
-  copyWorkspace: (from, to) => fs.cp(from, to, { recursive: true, verbatimSymlinks: true }),
+  connect: (paths) => connectRuntime(ports, paths),
+  copyWorkspace: (from, to) => ports.files.copyTreeVerbatim(from, to),
 });

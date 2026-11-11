@@ -64,7 +64,7 @@ describe('the rule verifier with the installed solver, in the thread of the prod
   const verifierIn = (root: string) => createRuleVerifier({ host: installedRuleSolver(import.meta.url), fs: createPolicyFilesystem(), paths: { root: `${root}/home/.momonga`, keychains: `${root}/home/keys` } as never, timers: systemTimers });
   const ruleIn = (root: string, text: string, effect: 'allow' | 'deny') => parseRule(text, { effect, origin: 'user', source: `${root}/home/.momonga/settings.json`, settingsRoot: `${root}/home`, home: `${root}/home`, cwd: `${root}/work` } as never);
 
-  it('proves a rule set without a hole and refutes an allow that slips past a deny', async (context) => {
+  it('proves a rule set without a hole, an allow narrowed by a deny included, and refutes an allow that opens a secret location', async (context) => {
     const root = fs.realpathSync(withTempDir(context));
     fs.mkdirSync(`${root}/work`);
     fs.mkdirSync(`${root}/home`);
@@ -73,8 +73,10 @@ describe('the rule verifier with the installed solver, in the thread of the prod
     const proved = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Read(//etc/**)', 'deny')] }, NEVER_CANCELLED), new AbortController().signal);
     expect(proved).toMatchObject({ verdict: 'proved', solver: expect.stringMatching(/^z3-solver /), refuted: [], unknown: [] });
     expect(proved.notProved.length).toBeGreaterThan(0);
-    const refuted = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Bash', 'allow'), ruleIn(root, 'Bash(git push:*)', 'deny')] }, NEVER_CANCELLED), new AbortController().signal);
-    expect(refuted).toMatchObject({ verdict: 'refuted', refuted: expect.arrayContaining([expect.objectContaining({ property: 'bash-admission' })]) });
+    const narrowed = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Bash', 'allow'), ruleIn(root, 'Bash(git push:*)', 'deny')] }, NEVER_CANCELLED), new AbortController().signal);
+    expect(narrowed).toMatchObject({ verdict: 'proved', refuted: [], unknown: [] });
+    const refuted = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Read(~/**)', 'allow')] }, NEVER_CANCELLED), new AbortController().signal);
+    expect(refuted).toMatchObject({ verdict: 'refuted', refuted: expect.arrayContaining([expect.objectContaining({ property: 'secret-reach' })]) });
   });
 
   const homeIn = (context: Parameters<typeof withTempDir>[0]): { root: string; facts: { roots: string[]; home: string; cwd: string; enforcement: 'exact-paths' } } => {

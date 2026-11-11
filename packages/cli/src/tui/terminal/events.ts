@@ -4,7 +4,9 @@ export type KeyName = (typeof KEY_NAMES)[number];
 
 export type Modifiers = { ctrl: boolean; alt: boolean; shift: boolean };
 
-export type KeyEvent = ({ type: 'key'; name: KeyName } | { type: 'key'; text: string }) & Modifiers;
+export type KeyModifiers = Modifiers & { super: boolean; hyper: boolean; meta: boolean };
+
+export type KeyEvent = ({ type: 'key'; name: KeyName } | { type: 'key'; text: string }) & KeyModifiers;
 
 export type PasteEvent = { type: 'paste'; text: string; overflow: boolean };
 
@@ -27,3 +29,5 @@ export type FocusEvent = { type: 'focus'; direction: 'in' | 'out' };
 export type TerminalEvent = KeyEvent | PasteEvent | MouseEvent | ReportEvent | FocusEvent;
 
 export const NO_MODIFIERS: Modifiers = { ctrl: false, alt: false, shift: false };
+
+export const NO_KEY_MODIFIERS: KeyModifiers = { ...NO_MODIFIERS, super: false, hyper: false, meta: false };

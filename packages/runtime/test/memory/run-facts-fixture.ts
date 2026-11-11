@@ -10,6 +10,7 @@ import type { JournalThreadClient } from '../../src/memory/journal-thread-client
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { START_MS, enqueue, makeStoreDir, newSession, registerCleanup } from '../../../store/test/helpers.ts';
 import { finishClaimed } from './reflection-fixture.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 export const SHA = 'a'.repeat(64);
 
@@ -70,7 +71,7 @@ export const factsStore = (override: ThreadOverride = {}) => {
   const clock = createFakeClock(START_MS);
   const decoded = { rows: 0, bytes: 0 };
   const thread = lazyThread(() => dbPath, override);
-  const store: RuntimeStore = openRuntimeStore({
+  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: dir,
     clock,

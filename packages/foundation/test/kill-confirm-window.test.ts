@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { KILL_CONFIRM_MS, groupTerminationBoundMs, terminateGroup } from '@momonga/foundation';
-import type { GroupTiming, ProcessGroupPort } from '@momonga/foundation';
-import { createFakeClock } from '@momonga/testkit';
+import type { ProcessGroupPort, Timing } from '@momonga/foundation';
+import { createFakeClock, createSteppingTiming } from '@momonga/testkit';
 
 const PGID = 1_999_999_101;
 const POLL_MS = 10;
 
-type Scripted = { port: ProcessGroupPort; timing: GroupTiming; now(): number; killedAt(): number | undefined; termAt(): number | undefined };
+type Scripted = { port: ProcessGroupPort; timing: Timing; now(): number; killedAt(): number | undefined; termAt(): number | undefined };
 
 const ignoresTerm = (goneAfterKillMs: number | undefined): Scripted => {
   const clock = createFakeClock(0);
@@ -20,13 +20,7 @@ const ignoresTerm = (goneAfterKillMs: number | undefined): Scripted => {
     },
     alive: async () => killedAt === undefined || goneAfterKillMs === undefined || clock.now() < killedAt + goneAfterKillMs,
   };
-  const timing: GroupTiming = {
-    now: () => clock.now(),
-    sleep: async (ms) => {
-      clock.advance(ms);
-    },
-  };
-  return { port, timing, now: () => clock.now(), killedAt: () => killedAt, termAt: () => termAt };
+  return { port, timing: createSteppingTiming(clock), now: () => clock.now(), killedAt: () => killedAt, termAt: () => termAt };
 };
 
 const GRACES = [0, 1000, 30_000];

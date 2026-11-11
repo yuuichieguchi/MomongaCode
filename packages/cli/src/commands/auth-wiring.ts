@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { currentSocketResolver, systemTiming } from '@momonga/foundation';
+import { currentSocketResolver } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { GatewayClient } from '../client/gateway-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
@@ -48,11 +48,11 @@ export const runAuthLogin = (ports: CliPorts, paths: MomongaPaths, options: Auth
         plan: gateway.plan,
         ...loginTerminalPorts(ports, interrupt),
         signal: interrupt,
-        timers: systemTiming,
-        startListener: loopbackSignInListener(interrupt),
+        timers: ports.timers,
+        startListener: loopbackSignInListener(ports.timers, interrupt),
         openUrl: ports.openUrl,
         sandbox: async () => {
-          const runtime = connectRuntime(paths);
+          const runtime = connectRuntime(ports, paths);
           try {
             return (await runtime.health()).sandbox;
           } finally {

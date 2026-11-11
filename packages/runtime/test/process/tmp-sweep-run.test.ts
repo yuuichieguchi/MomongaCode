@@ -7,6 +7,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit'
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import { launchRuntime, scopedPaths, sessionEnvFor, startStack, stepsLogged } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -18,7 +19,7 @@ type Seeded = { idle: string; recent: string; active: string; activeSymlink: str
 const seedSessions = async (temp: RunHome): Promise<Seeded> => {
   await ensureMomongaDirs(temp.paths);
   const clock = createFakeClock(START_MS);
-  const store = openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
   const session = () => store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'manual', model: 'default' }).id;
   try {
     const idle = session();

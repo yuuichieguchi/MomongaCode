@@ -10,6 +10,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock }
 import { START_MS, trackGroup } from './helpers.ts';
 import { eventTypes, launchRuntime, readDb, sessionEnvFor, startStack, waitForStatus, prepareGeneration, scopedPaths } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -66,7 +67,7 @@ type SeedCall = { callId: string; name: string; args: Record<string, unknown>; k
 
 const openSeedStore = async (temp: RunHome) => {
   await prepareGeneration(temp);
-  return openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  return openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
 };
 
 const seedCancellingRun = async (temp: RunHome, call: SeedCall, holderScript?: string) => {

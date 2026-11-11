@@ -92,18 +92,18 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(lastLine(lines)).toMatchObject({ msg: 'entry.exit', service: 'runtime', code: 78, path: 'start-failed', clean: false });
   });
 
-  it('runtime: a held runtime lock (live pid that started before the lock) gives 75', async (context) => {
+  it('runtime: a held runtime lock (live pid that started before the lock) gives 77', async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, firstGeneration(paths).locks.runtime);
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
-    expect(await exit).toBe(75);
+    expect(await exit).toBe(77);
     expect(io.stdoutText()).toBe('');
-    expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', code: 75, path: 'start-failed', clean: false });
+    expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', code: 77, path: 'start-failed', clean: false });
   });
 
-  it('runtime: a held runtime.sock.lock gives 1, not 75', async (context) => {
+  it('runtime: a held runtime.sock.lock gives 1, not 77', async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, `${firstGeneration(paths).sockets.runtime}.lock`);
@@ -126,7 +126,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(await launched.exit).toBe(0);
   });
 
-  it('runtime: a home given through a symlink still gives 75 (canonical lock path equality)', async (context) => {
+  it('runtime: a home given through a symlink still gives 77 (canonical lock path equality)', async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, firstGeneration(paths).locks.runtime);
@@ -134,7 +134,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     fs.symlinkSync(home, link);
     const { exit } = launch(context, link, [`--home=${link}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr'], link);
 
-    expect(await exit).toBe(75);
+    expect(await exit).toBe(77);
   });
 
   it('runtime: a clean close gives 0, one stdout line, no lock left, and entry.exit close/sigterm in the role log', async (context) => {

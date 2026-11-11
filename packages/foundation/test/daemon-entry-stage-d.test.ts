@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, nodeEntryIo, runDaemonEntry } from '@momonga/foundation';
+import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, nodeEntryIo, runDaemonEntry, hostPaths } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, EntryIo, EntrySignal, RotatingLogFile } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 
@@ -52,6 +52,7 @@ const fakeIo = (argv: readonly string[]) => {
     argv,
     env: { HOME },
     home: HOME,
+    paths: hostPaths,
     stdout: { write: (chunk) => (stdoutChunks.push(chunk), true) },
     stderr: { write: (chunk) => (stderrChunks.push(chunk), true) },
     clock,

@@ -72,15 +72,16 @@ describe('momonga models, cost and memory', () => {
     const escape = await prepareProduct({ settings: { permissions: { allow: ['Bash(git:*)', 'Read(~/**)'], deny: ['Bash(git push:*)'] } } });
     const refuted = await verifyPolicy(escape.home);
     expect(refuted.code).toBe(1);
-    expect(refuted.stdout).toContain('[REFUTED] a Bash allow rule does not admit a denied program or subcommand');
+    expect(refuted.stdout).toContain('[PROVED ] a Bash allow rule does not admit a denied program or subcommand');
     expect(refuted.stdout).toContain('[REFUTED] the rules leave no route to secrets');
     expect(refuted.stdout).toContain('the decision code agrees (allow)');
     const refutedJson = jsonOf((await verifyPolicy(escape.home, '--json')).stdout) as Report;
     expect(refutedJson.mismatches).toEqual([]);
     expect(refutedJson.exitCode).toBe(1);
-    const bash = refutedJson.results.find((result) => result.id === 'bash-admission');
-    expect(bash?.verdict.status).toBe('refuted');
-    expect(bash?.verdict.findings?.[0]?.counterexample?.replay.agrees).toBe(true);
+    expect(refutedJson.results.find((result) => result.id === 'bash-admission')?.verdict.status).toBe('proved');
+    const reach = refutedJson.results.find((result) => result.id === 'secret-reach');
+    expect(reach?.verdict.status).toBe('refuted');
+    expect(reach?.verdict.findings?.[0]?.counterexample?.replay.agrees).toBe(true);
   });
 
   it(titleOf('cli-cost'),{ timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {

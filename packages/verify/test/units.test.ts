@@ -61,6 +61,7 @@ describe('reporting', () => {
 
   it('exits zero only when every property is proved and nothing disagrees with the decision code', () => {
     expect(exitCodeOf([result('proved')], [])).toBe(0);
+    expect(exitCodeOf([result('proved'), { ...result('proved'), id: 'rule-consistency', verdict: { status: 'noted', ruleNotes: [], notes: ['a note'] } }], [])).toBe(0);
     expect(exitCodeOf([result('proved'), result('unknown')], [])).toBe(1);
     expect(exitCodeOf([result('refuted')], [])).toBe(1);
     const counterexample = { witness: { kind: 'command' as const, command: 'ls', defaultAllow: false }, predicted: 'allow' as const, cause: 'x', replay: { crashed: 'boom' } };

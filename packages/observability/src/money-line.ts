@@ -60,4 +60,3 @@ export const describeMoney = (tally: MoneyTally): string => {
   return `${amount} at price version ${tally.meteredPriceVersions.join(',')}`;
 };
 
-export const moneyLine = (outcomes: readonly CallPrice[]): string => describeMoney(moneyTallyOf(outcomes));

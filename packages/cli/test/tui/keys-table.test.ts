@@ -4,7 +4,7 @@ import { createKeyTable, DEFAULT_KEY_TABLE, KEYS, KEY_CONTEXTS, keySpecOf, RESER
 import type { KeyEvent, KeyName } from '../../src/tui/terminal/events.ts';
 import { MENU_ACTIONS } from '../../src/tui/screen/menu.tsx';
 
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', name, ...plain, ...mods });
 const text = (value: string, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', text: value, ...plain, ...mods });
 
@@ -17,6 +17,35 @@ describe('the key table', () => {
     expect(keySpecOf(text('_', { ctrl: true }))).toBe('ctrl+_');
     expect(keySpecOf(text('a'))).toBeUndefined();
     expect(keySpecOf(text(' '))).toBeUndefined();
+  });
+
+  it('names every modifier a terminal reports, cmd first', () => {
+    expect(keySpecOf(text('z', { super: true }))).toBe('cmd+z');
+    expect(keySpecOf(text('Z', { super: true, shift: true }))).toBe('cmd+shift+z');
+    expect(keySpecOf(text('k', { hyper: true }))).toBe('hyper+k');
+    expect(keySpecOf(text('k', { meta: true }))).toBe('meta+k');
+    expect(keySpecOf(named('enter', { super: true, hyper: true, meta: true, ctrl: true, alt: true, shift: true }))).toBe('cmd+hyper+meta+ctrl+alt+shift+enter');
+    expect(keySpecOf(named('enter', { ctrl: true }))).toBe('ctrl+enter');
+  });
+
+  it('never types a key pressed with cmd, hyper or meta, and gives it no action when no row binds it', () => {
+    for (const modifier of ['super', 'hyper', 'meta'] as const) {
+      const pressed = text('z', { [modifier]: true });
+      expect(DEFAULT_KEY_TABLE.typedOf(pressed)).toBeUndefined();
+      for (const context of KEY_CONTEXTS) {
+        expect(DEFAULT_KEY_TABLE.actionOf([context], pressed)).toBeUndefined();
+        expect(DEFAULT_KEY_TABLE.chordStep([context], undefined, pressed)).toEqual({ kind: 'none' });
+      }
+    }
+    expect(DEFAULT_KEY_TABLE.typedOf(text('z'))).toBe('z');
+    expect(DEFAULT_KEY_TABLE.typedOf(text('Z', { shift: true }))).toBe('Z');
+  });
+
+  it('gives a key pressed with cmd the action of the row that binds it', () => {
+    const table = createKeyTable(KEYS.map((row) => (row.id === 'selection.copy' ? { ...row, default: ['cmd+c'] } : row)));
+    expect(table.actionOf(['viewport'], text('c', { super: true }))).toBe('selection.copy');
+    expect(table.actionOf(['viewport'], text('c'))).toBeUndefined();
+    expect(table.actionOf(['viewport'], text('c', { ctrl: true, shift: true }))).toBeUndefined();
   });
 
   it.each<[KeyEvent, string]>([

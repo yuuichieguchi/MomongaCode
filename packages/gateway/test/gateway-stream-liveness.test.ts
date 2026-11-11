@@ -259,7 +259,7 @@ describe('compaction liveness', () => {
 });
 
 describe('sseResponse before the first event', () => {
-  const quietOptions = { readerStallMs: 30_000, signal: new AbortController().signal, onEnd: () => undefined };
+  const quietOptions = { readerStallMs: 30_000, signal: new AbortController().signal };
 
   it('answers an error that is not a GatewayError with a 500 error event and reports it', async () => {
     const timers = createFakeTimers(createFakeClock(START_MS));

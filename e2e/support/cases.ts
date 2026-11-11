@@ -76,7 +76,7 @@ export const E2E_CASES = [
   { id: 's5', file: 'supervisor.test.ts', title: 'S5 exit 78 holds, a settings fix starts', needsBash: false },
   { id: 's5b', file: 'supervisor.test.ts', title: 'S5b held-config recovers from an environmental cause', needsBash: true },
   { id: 's6', file: 'supervisor.test.ts', title: 'S6 invalid settings at start: nothing is spawned', needsBash: false },
-  { id: 's7', file: 'supervisor.test.ts', title: 'S7 exit 75 is not a loop', needsBash: false },
+  { id: 's7', file: 'supervisor.test.ts', title: 'S7 exit 77 is not a loop', needsBash: false },
   { id: 's8', file: 'supervisor.test.ts', title: 'S8 ghost lock is taken over', needsBash: false },
   { id: 's9', file: 'supervisor.test.ts', title: 'S9 graceful shutdown order', needsBash: false },
   { id: 'v-kill-during-check', file: 'verification-kill.test.ts', title: 'v: after a runtime SIGKILL during a completion check, recovery reaps the check, runs it once more, and completes on that second result', needsBash: true },

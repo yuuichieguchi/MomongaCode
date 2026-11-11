@@ -2,7 +2,11 @@ import path from 'node:path';
 import { defineProductSchema, mcpConnectTimeoutProblem, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator, SandboxNetworkSetting, StopValueName } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
+import { priceTableProblem } from '@momonga/protocol';
+import { escapePointerSegment } from './json-file.ts';
+import { MCP_EXPANSION_PATTERN, mcpServerNameProblem, mcpServerUrlProblem } from './mcp-server-rules.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
+import { connectionAddressProblem } from './probe-record-key.ts';
 import { describeSchemaErrors } from './schema-errors.ts';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
 
@@ -551,6 +555,20 @@ export const assertSettings = (value: unknown, source: string): Settings => {
     const references = [forge.credentialEnv, forge.credentialSecret].filter((reference) => reference !== undefined).length;
     if (references !== 1) throw new Error(`${source}: invalid settings at /forges/${index}: exactly one of credentialEnv and credentialSecret must name the token`);
   });
+  for (const [name, server] of Object.entries(settings.mcpServers ?? {})) {
+    const pointer = `/mcpServers/${escapePointerSegment(name)}`;
+    const nameProblem = mcpServerNameProblem(name);
+    if (nameProblem !== undefined) throw new Error(`${source}: invalid settings at ${pointer}: ${nameProblem}`);
+    if (!('url' in server) || MCP_EXPANSION_PATTERN.test(server.url)) continue;
+    const urlProblem = mcpServerUrlProblem(server.url, 'user');
+    if (urlProblem !== undefined) throw new Error(`${source}: invalid settings at ${pointer}/url: ${urlProblem.message}`);
+  }
+  (settings.models?.connections ?? []).forEach((connection, index) => {
+    const problem = connectionAddressProblem(connection);
+    if (problem !== undefined) throw new Error(`${source}: invalid settings at /models/connections/${index}: ${problem}`);
+  });
+  const price = priceTableProblem(settings.pricing ?? []);
+  if (price !== undefined) throw new Error(`${source}: invalid settings at /pricing/${price.index}${price.field === undefined ? '' : `/${price.field}`}: ${price.reason}`);
   const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {
     const problem = transportUrlProblem(endpoint);

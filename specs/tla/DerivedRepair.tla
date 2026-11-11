@@ -41,17 +41,17 @@
 (*                  writes nothing (ReadRule tail)                         *)
 (*                                                                         *)
 (* Abstractions                                                            *)
-(*   - the indexing of a terminal run reads the rows of derivation 36      *)
-(*     current, inside a writable read (WRead), and deletes each row it    *)
-(*     has written into search_docs; the deletion is not modelled: it      *)
-(*     moves no watermark and no reader reads a row after it               *)
+(*   - the indexing of a terminal run reads the drafts of derivation 36    *)
+(*     inside a writable read and then deletes them (IndexDrop); the       *)
+(*     deletion moves no watermark, and RepairNeverReadsDeleted holds      *)
+(*     once nothing of the run is pending                                  *)
 (*   - the state checks and writes of a store operation other than its     *)
 (*     derived reads and appends are not modelled: they touch no           *)
 (*     derived record and no watermark (RunRecovery.tla models them)       *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
-CONSTANTS Derivs, DsUnit, DsKind, MaxEvents, Pre, PageSize, ReadRule, Repair, Reps
+CONSTANTS Derivs, DsUnit, DsKind, MaxEvents, Pre, PageSize, ReadRule, Repair, Reps, Drop
 
 Runs == {"r1", "r2"}
 Gens == {"O", "N"}
@@ -63,13 +63,14 @@ ASSUME DsKind \in {"seq", "set"}
 ASSUME ReadRule \in {"today", "tail", "separate"}
 ASSUME Repair \in {"pageTx", "staleMark", "advanceAtEnd"}
 ASSUME Pre \in 0..MaxEvents /\ PageSize \in 1..MaxEvents
+ASSUME Drop \in {"caughtUp", "early"}
 
 ValScope(d) == IF d = "dn" THEN "run" ELSE "session"
 WmUnit(d) == IF d = "dn" THEN "run" ELSE DsUnit
 
-VARIABLES log, owner, done, wm, val, readBad, cap, rd
+VARIABLES log, owner, done, wm, val, readBad, cap, rd, dropped
 
-vars == <<log, owner, done, wm, val, readBad, cap, rd>>
+vars == <<log, owner, done, wm, val, readBad, cap, rd, dropped>>
 
 Min(a, b) == IF a < b THEN a ELSE b
 Max(a, b) == IF a > b THEN a ELSE b
@@ -129,6 +130,7 @@ Init ==
     /\ readBad = FALSE
     /\ cap = [p \in Reps |-> NoCap]
     /\ rd = [p \in Reps |-> NoRd]
+    /\ dropped = [r \in Runs |-> FALSE]
 
 CountOf(r) == Cardinality({i \in 1..Len(log) : log[i].run = r})
 
@@ -137,7 +139,7 @@ NewEvent(r) == [run |-> r, seq |-> CountOf(r) + 1]
 AppendO(r) ==
     /\ owner[r] = "O" /\ ~done[r] /\ Len(log) < MaxEvents
     /\ log' = Append(log, NewEvent(r))
-    /\ UNCHANGED <<owner, done, wm, val, readBad, cap, rd>>
+    /\ UNCHANGED <<owner, done, wm, val, readBad, cap, rd, dropped>>
 
 AppendN(r) ==
     /\ ~done[r] /\ Len(log) < MaxEvents
@@ -147,22 +149,23 @@ AppendN(r) ==
        IN /\ log' = L2
           /\ wm' = [d \in Derivs |-> IF ok THEN [wm[d] EXCEPT ![KeyOf(L2, d, i)] = PosOf(L2, d, i)] ELSE wm[d]]
           /\ val' = [d \in Derivs |-> IF ok THEN ApplyAll(L2, d, val[d], <<i>>) ELSE val[d]]
-    /\ UNCHANGED <<owner, done, readBad, cap, rd>>
+    /\ UNCHANGED <<owner, done, readBad, cap, rd, dropped>>
 
 Finish(r) ==
     /\ ~done[r]
     /\ done' = [done EXCEPT ![r] = TRUE]
-    /\ UNCHANGED <<log, owner, wm, val, readBad, cap, rd>>
+    /\ UNCHANGED <<log, owner, wm, val, readBad, cap, rd, dropped>>
 
 CatchUpRun(r) ==
     LET upd(d) == NewD(log, d, KeysFor(d, r), wm[d][KeysFor(d, r)], Big, Big)
     IN /\ wm' = [d \in Derivs |-> [wm[d] EXCEPT ![KeysFor(d, r)] = upd(d).w]]
        /\ val' = [d \in Derivs |-> upd(d).v]
+       /\ UNCHANGED dropped
 
 Claim(r) ==
     /\ owner[r] = "O" /\ ~done[r]
     /\ owner' = [owner EXCEPT ![r] = "N"]
-    /\ UNCHANGED <<log, done, wm, val, readBad, cap, rd>>
+    /\ UNCHANGED <<log, done, wm, val, readBad, cap, rd, dropped>>
 
 MergeTail(v, d, vk) ==
     IF d = "ds" /\ DsKind = "set"
@@ -181,14 +184,14 @@ ReadStream(r, d) ==
     /\ ReadRule = "today" /\ d \in Derivs /\ ValScope(d) = "run"
     /\ IF ReadRule = "today"
           THEN CatchUpRun(r)
-          ELSE UNCHANGED <<wm, val>>
+          ELSE UNCHANGED <<wm, val, dropped>>
     /\ readBad' = (readBad \/ ReadResult(val', d, r) # Truth(d, r))
-    /\ UNCHANGED <<log, owner, done, cap, rd>>
+    /\ UNCHANGED <<log, owner, done, cap, rd, dropped>>
 
 ReadOther(d, vk) ==
     /\ ReadRule # "separate" /\ d \in Derivs /\ vk \in ValKeysOf(d)
     /\ readBad' = (readBad \/ ReadResult(val, d, vk) # Truth(d, vk))
-    /\ UNCHANGED <<log, owner, done, wm, val, cap, rd>>
+    /\ UNCHANGED <<log, owner, done, wm, val, cap, rd, dropped>>
 
 WRead(d, vk) ==
     /\ ReadRule = "tail" /\ Repair = "pageTx"
@@ -202,19 +205,19 @@ WRead(d, vk) ==
            IN /\ wm' = w2
               /\ val' = v2
               /\ readBad' = (readBad \/ (clear2 /\ v2[d][vk] # Truth(d, vk)))
-    /\ UNCHANGED <<log, owner, done, cap, rd>>
+    /\ UNCHANGED <<log, owner, done, cap, rd, dropped>>
 
 Sep1(p, d, vk) ==
     /\ ReadRule = "separate" /\ ~rd[p].on
     /\ d \in Derivs /\ vk \in ValKeysOf(d) /\ Clear(d, vk)
     /\ rd' = [rd EXCEPT ![p] = [on |-> TRUE, d |-> d, vk |-> vk]]
-    /\ UNCHANGED <<log, owner, done, wm, val, readBad, cap>>
+    /\ UNCHANGED <<log, owner, done, wm, val, readBad, cap, dropped>>
 
 Sep2(p) ==
     /\ rd[p].on
     /\ readBad' = (readBad \/ val[rd[p].d][rd[p].vk] # Truth(rd[p].d, rd[p].vk))
     /\ rd' = [rd EXCEPT ![p] = NoRd]
-    /\ UNCHANGED <<log, owner, done, wm, val, cap>>
+    /\ UNCHANGED <<log, owner, done, wm, val, cap, dropped>>
 
 RepairPage(d, k) ==
     /\ Repair = "pageTx"
@@ -222,13 +225,13 @@ RepairPage(d, k) ==
     /\ LET u == NewD(log, d, k, wm[d][k], Big, PageSize)
        IN /\ wm' = [wm EXCEPT ![d][k] = u.w]
           /\ val' = [val EXCEPT ![d] = u.v]
-    /\ UNCHANGED <<log, owner, done, readBad, cap, rd>>
+    /\ UNCHANGED <<log, owner, done, readBad, cap, rd, dropped>>
 
 RepStart(p, d, k) ==
     /\ Repair # "pageTx"
     /\ ~cap[p].on /\ d \in Derivs /\ k \in WmKeys
     /\ cap' = [cap EXCEPT ![p] = [on |-> TRUE, d |-> d, k |-> k, at |-> wm[d][k]]]
-    /\ UNCHANGED <<log, owner, done, wm, val, readBad, rd>>
+    /\ UNCHANGED <<log, owner, done, wm, val, readBad, rd, dropped>>
 
 RepStep(p) ==
     /\ cap[p].on
@@ -241,15 +244,23 @@ RepStep(p) ==
        IN /\ val' = [val EXCEPT ![c.d] = ApplyAll(log, c.d, val[c.d], ids)]
           /\ wm' = [wm EXCEPT ![c.d][c.k] = IF ids = <<>> THEN wm[c.d][c.k] ELSE newW]
           /\ cap' = [cap EXCEPT ![p] = IF ids = <<>> THEN NoCap ELSE [c EXCEPT !.at = nat]]
-    /\ UNCHANGED <<log, owner, done, readBad, rd>>
+    /\ UNCHANGED <<log, owner, done, readBad, rd, dropped>>
 
 RepCrash(p) ==
     /\ cap[p].on
     /\ cap' = [cap EXCEPT ![p] = NoCap]
-    /\ UNCHANGED <<log, owner, done, wm, val, readBad, rd>>
+    /\ UNCHANGED <<log, owner, done, wm, val, readBad, rd, dropped>>
+
+IndexDrop(r) ==
+    /\ "dn" \in Derivs
+    /\ done[r] /\ ~dropped[r]
+    /\ Drop = "early" \/ PendingSet(log, "dn", r, wm["dn"][r], Big) = {}
+    /\ readBad' = (readBad \/ val["dn"][r] # Truth("dn", r))
+    /\ dropped' = [dropped EXCEPT ![r] = TRUE]
+    /\ UNCHANGED <<log, owner, done, wm, val, cap, rd>>
 
 Next ==
-    \/ \E r \in Runs : AppendO(r) \/ AppendN(r) \/ Finish(r) \/ Claim(r)
+    \/ \E r \in Runs : AppendO(r) \/ AppendN(r) \/ Finish(r) \/ Claim(r) \/ IndexDrop(r)
     \/ \E r \in Runs, d \in Derivs : ReadStream(r, d)
     \/ \E d \in Derivs, vk \in WmKeys : ReadOther(d, vk) \/ WRead(d, vk)
     \/ \E p \in Reps : Sep2(p)
@@ -263,6 +274,7 @@ Spec == Init /\ [][Next]_vars
 TypeOK ==
     /\ Len(log) <= MaxEvents
     /\ owner \in [Runs -> Gens]
+    /\ dropped \in [Runs -> BOOLEAN]
     /\ done \in [Runs -> BOOLEAN]
     /\ readBad \in BOOLEAN
 
@@ -276,6 +288,8 @@ MarkBound ==
                        ELSE (IF k = "s" THEN Len(log) ELSE 0)
 
 NoBadRead == ~readBad
+
+RepairNeverReadsDeleted == \A r \in Runs : dropped[r] => PendingSet(log, "dn", r, wm["dn"][r], Big) = {}
 
 MarkMonotone ==
     [][\A d \in Derivs, k \in WmKeys : wm'[d][k] >= wm[d][k]]_vars

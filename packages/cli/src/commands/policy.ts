@@ -41,7 +41,7 @@ const secretPathOf = (home: string, text: string): string => {
 
 export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: PolicyVerifyHost, options: PolicyVerifyOptions): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const runtime = connectRuntime(paths);
+  const runtime = connectRuntime(ports, paths);
   let trusted: boolean;
   let governance: PolicyGovernanceResponse;
   try {
@@ -109,7 +109,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   if (loaded.warnings.length > 0) ports.stderr.write(policyWarningsText(loaded.warnings));
   if (mandate !== undefined) return report.exitCode;
   const solverVersion = await host.solverVersion(verifier);
-  const verdicts = connectRuntime(paths);
+  const verdicts = connectRuntime(ports, paths);
   try {
     await verdicts.putRuleVerdict(ruleFingerprint({ input: verifier.ruleVerifyInputOf(request), solverVersion }), verifier.verdictOfReport(report, solverVersion));
   } finally {

@@ -7,7 +7,7 @@ const FILE = '/state/plan-active.json';
 
 const PROFILE_KEY = 'zz-profile-key';
 
-const holding = (content: unknown): FileSystem => ({ ...nodeFileSystem, readTextFile: async () => JSON.stringify(content) });
+const holding = (content: unknown): FileSystem => ({ ...nodeFileSystem, readOwnerOnlyTextFile: async () => JSON.stringify(content) });
 
 const refusal = async (content: unknown): Promise<string> => {
   try {
@@ -45,6 +45,17 @@ describe('the active pointer reader shapes every account it reads and quotes not
 
   it('a refused account among valid ones refuses the whole file', async () => {
     expect(await refusal({ first: 'work', [PROFILE_KEY]: 'leaked/label' })).toBe(`the active plan account file ${FILE} names an account that does not match ${SECRET_NAME_PATTERN}`);
+  });
+
+  it.for(['__proto__', 'chat/gpt', '', 'pro file'])('a profile key outside the label rule, %j, refuses the whole file', async (profile) => {
+    const message = await refusal(Object.fromEntries([['chatgpt', 'work'], [profile, 'home']]));
+    expect(message).toBe(`the active plan account file ${FILE} names a profile that does not match ${SECRET_NAME_PATTERN}`);
+  });
+
+  it('a profile named like an inherited member is an entry of its own, and no other inherited name is read as one', async () => {
+    const pointer = await readActivePointer(holding({ constructor: 'work', toString: 'home' }), FILE);
+    expect(Object.entries(pointer)).toEqual([['constructor', 'work'], ['toString', 'home']]);
+    expect(Object.hasOwn(await readActivePointer(holding({ chatgpt: 'work' }), FILE), 'constructor')).toBe(false);
   });
 
   it('accounts that match the pattern are read unchanged', async () => {

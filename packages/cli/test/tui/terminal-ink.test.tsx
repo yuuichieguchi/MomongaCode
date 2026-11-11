@@ -11,7 +11,7 @@ import type { FrameLayer } from '../../src/tui/terminal/frame.tsx';
 import { createInkStdin } from '../../src/tui/terminal/ink-stdin.ts';
 import type { ScreenRequest, TerminalState } from '../../src/tui/terminal/layer.ts';
 
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', name, ...plain, ...mods });
 const text = (value: string, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', text: value, ...plain, ...mods });
 

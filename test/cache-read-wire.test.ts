@@ -1,9 +1,9 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
-import { billedCallsOfRun, buildCostBreakdown, buildCostReport, summarizeRun } from '@momonga/observability';
+import { buildCostBreakdown, buildCostReport, summarizeRun } from '@momonga/observability';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import { harness } from '../packages/observability/test/helpers.ts';
+import { harness, billedCallsOfRun } from '../packages/observability/test/helpers.ts';
 import { TABLE, asBreakdownCall, recordCalls } from '../packages/observability/test/cache-read-fixtures.ts';
 import type { CallSpec } from '../packages/observability/test/cache-read-fixtures.ts';
 
@@ -96,7 +96,7 @@ describe('the closed wire schemas', () => {
   });
 
   it('accepts a null cached input in the run summary', () => {
-    const summary = { steps: 1, chatCalls: 1, toolCalls: 0, inputTokens: 100, outputTokens: 2, cachedInputTokens: null, cacheReadNotReportedCalls: 1, errorCount: 0, durationMs: 1, chatResults: [] };
+    const summary = { steps: 1, chatCalls: 1, sideCalls: 0, toolCalls: 0, inputTokens: 100, outputTokens: 2, cachedInputTokens: null, cacheReadNotReportedCalls: 1, errorCount: 0, durationMs: 1, chatResults: [] };
 
     expect(acceptsTrace({ runId: 'run-a', summary, spans: [] }), errorsOf(acceptsTrace)).toBe(true);
   });

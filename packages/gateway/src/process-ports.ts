@@ -16,14 +16,55 @@ export type ProcessPorts = {
   timers: GatewayTimers;
   random: () => number;
   files: ProcessFilePorts;
+  platform: NodeJS.Platform;
+  pid: number;
+};
+
+export type HostTimers = {
+  setTimeout(callback: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+  release(handle: unknown): void;
 };
 
 const GROUP_AND_OTHER_BITS = 0o077;
 
-export const realTimers: GatewayTimers = {
+const HOST_TIMER_LIMIT_MS = 2_147_483_647;
+
+const TIMEOUT_REASON = 'The operation was aborted due to timeout';
+
+class ChainedTimer {
+  link: unknown;
+}
+
+export const createGatewayTimers = (host: HostTimers): GatewayTimers => {
+  const start = (callback: () => void, ms: number, held: boolean): ChainedTimer => {
+    const timer = new ChainedTimer();
+    const arm = (remainingMs: number): void => {
+      const stepMs = Math.min(remainingMs, HOST_TIMER_LIMIT_MS);
+      timer.link = host.setTimeout(() => (remainingMs > stepMs ? arm(remainingMs - stepMs) : callback()), stepMs);
+      if (!held) host.release(timer.link);
+    };
+    arm(ms);
+    return timer;
+  };
+  return {
+    setTimeout: (callback, ms) => start(callback, ms, true),
+    clearTimeout: (handle) => {
+      if (handle instanceof ChainedTimer) host.clearTimeout(handle.link);
+    },
+    timeoutSignal: (ms) => {
+      const controller = new AbortController();
+      start(() => controller.abort(new DOMException(TIMEOUT_REASON, 'TimeoutError')), ms, false);
+      return controller.signal;
+    },
+  };
+};
+
+export const realTimers: GatewayTimers = createGatewayTimers({
   setTimeout: (callback, ms) => setTimeout(callback, ms),
   clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
-};
+  release: (handle) => void (handle as NodeJS.Timeout).unref(),
+});
 
 export const systemProcessFiles: ProcessFilePorts = {
   readTextFile: nodeFileSystem.readTextFile,
@@ -53,4 +94,6 @@ export const systemProcessPorts: ProcessPorts = {
   timers: realTimers,
   random: Math.random,
   files: systemProcessFiles,
+  platform: process.platform,
+  pid: process.pid,
 };

@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { escapeTerminalBlock, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import { unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
 import { currentField, currentRequest } from '../../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../../elicit/flow.ts';
 import { diffOfToolInput } from '../diff.ts';
@@ -12,8 +12,7 @@ import { HELD_PANEL_LINE } from '../transcript.ts';
 import type { PendingApproval, PendingElicitation, ToolEntry } from '../transcript.ts';
 import { currentA11y } from './a11y.ts';
 import { PanelInputBox } from './input-box.tsx';
-
-const shown = (text: string): string => escapeTerminalBlock(text.replaceAll('\r\n', '\n'));
+import { inertText } from './wrap.ts';
 
 export const TRUST_CHOICES = [
   { decision: 'trusted', label: 'Yes, I trust this folder' },
@@ -119,19 +118,19 @@ export function ElicitationFields({ elicitation, title, editor, waiting, keys }:
   return (
     <Box flexDirection="column">
       <Box flexDirection="column" {...(currentA11y().screenReader ? {} : { borderStyle: 'round' as const, paddingX: 1 })}>
-        <Text bold>{shown(elicitationTitle(elicitation, title, waiting))}</Text>
-        <Text>{shown(request.message)}</Text>
-        {request.mode === 'url' ? <Text>{shown(`URL: ${request.url}`)}</Text> : null}
+        <Text bold>{inertText(elicitationTitle(elicitation, title, waiting))}</Text>
+        <Text>{inertText(request.message)}</Text>
+        {request.mode === 'url' ? <Text>{inertText(`URL: ${request.url}`)}</Text> : null}
         {field === undefined ? null : (
           <Box flexDirection="column">
-            <Text bold>{shown(`${field.title} (${field.name}, ${field.kind}${field.required ? ', required' : ', optional: leave empty to skip'})`)}</Text>
-            {field.description === undefined ? null : <Text dimColor>{shown(field.description)}</Text>}
+            <Text bold>{inertText(`${field.title} (${field.name}, ${field.kind}${field.required ? ', required' : ', optional: leave empty to skip'})`)}</Text>
+            {field.description === undefined ? null : <Text dimColor>{inertText(field.description)}</Text>}
             {field.options.map((option, index) => (
-              <Text key={option.value}>{shown(`  ${index + 1}. ${option.label}`)}</Text>
+              <Text key={option.value}>{inertText(`  ${index + 1}. ${option.label}`)}</Text>
             ))}
           </Box>
         )}
-        {flow.error === undefined ? null : <Text color="red">{shown(flow.error)}</Text>}
+        {flow.error === undefined ? null : <Text color="red">{inertText(flow.error)}</Text>}
         <Text dimColor>{fieldHint(keys)}</Text>
       </Box>
       <PanelInputBox editor={editor} />

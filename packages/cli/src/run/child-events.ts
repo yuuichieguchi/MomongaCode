@@ -1,5 +1,7 @@
 import type { PublicRunEvent } from '@momonga/protocol';
 
+export const noEventTypeLeft = (_event: never): undefined => undefined;
+
 const qualified = (runId: string, callId: string): string => `${runId}/${callId}`;
 
 export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEvent | undefined => {
@@ -26,7 +28,52 @@ export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEve
     case 'tool.elicitation.cancelled':
     case 'mcp.authorization.required':
       return event;
-    default:
+    case 'user.message':
+    case 'run.started':
+    case 'attempt.failed':
+    case 'attempt.lost':
+    case 'run.status':
+    case 'model.requested':
+    case 'model.responded':
+    case 'agent.message.delta':
+    case 'agent.thought.delta':
+    case 'model.stream.restarted':
+    case 'tool.permission.classifying':
+    case 'hook.started':
+    case 'verification.started':
+    case 'verification.completed':
+    case 'tool.loaded':
+    case 'tool.offered':
+    case 'loop.warned':
+    case 'budget.exhausted':
+    case 'tool.held':
+    case 'tool.held.resolved':
+    case 'run.quiescent':
+    case 'model.rejected':
+    case 'meter.observed':
+    case 'tool.waiting':
+    case 'job.finished':
+    case 'plan.updated':
+    case 'mode.changed':
+    case 'model.changed':
+    case 'inbox.changed':
+    case 'user_shell':
+    case 'usage.updated':
+    case 'usage.charged':
+    case 'context.compacted':
+    case 'context.governing_loaded':
+    case 'context.memories_loaded':
+    case 'context.contribution':
+    case 'context.compacting':
+    case 'context.compaction_rejected':
+    case 'context.inherited':
+    case 'context.truncated':
+    case 'instructions.loaded':
+    case 'skill.activated':
+    case 'approval.rule.persisted':
+    case 'notice':
       return undefined;
+    default:
+      return noEventTypeLeft(event);
   }
 };

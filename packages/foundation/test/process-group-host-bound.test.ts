@@ -1,17 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { GROUP_POLL_INTERVAL_MS, KILL_CONFIRM_MS, terminateGroup } from '@momonga/foundation';
-import type { GroupTiming, ProcessGroupPort } from '@momonga/foundation';
+import type { ProcessGroupPort, Timing } from '@momonga/foundation';
+import { createSteppingTiming } from '@momonga/testkit';
 
 interface FakeClock {
   ms: number;
 }
 
-const fakeTiming = (clock: FakeClock): GroupTiming => ({
-  now: () => clock.ms,
-  sleep: async (ms) => {
-    clock.ms += ms;
-  },
-});
+const fakeTiming = (clock: FakeClock): Timing =>
+  createSteppingTiming({
+    now: () => clock.ms,
+    advance: (ms) => {
+      clock.ms += ms;
+    },
+    set: (ms) => {
+      clock.ms = ms;
+    },
+  });
 
 const groupThatSurvivesSigkillFor = (survivalMs: number, clock: FakeClock): ProcessGroupPort & { sent: NodeJS.Signals[] } => {
   let killedAt: number | undefined;

@@ -1,3 +1,4 @@
+import { systemTiming } from '@momonga/foundation';
 import { spawnSync } from '@momonga/testkit/child-process';
 import { hostReplace, replaceProcess } from '../../../src/handover/replace-process.ts';
 import { handoverTarget, takeHandoverStart } from '../../../src/handover/start.ts';
@@ -17,7 +18,7 @@ const script = process.argv[1];
 if (script === undefined) throw new Error('the fixture needs its own path');
 const lose = process.argv.includes('lose-value');
 const taken = takeHandoverStart(process.argv.slice(2), process.env, () => '{}');
-const layer = createTerminalLayer({ input: process.stdin, output: hostTerminalOutput(process.stdout), process: hostProcess, screen: 'fullscreen', screenSetByUser: true, mouse: true, onEvents: () => undefined });
+const layer = createTerminalLayer({ input: process.stdin, output: hostTerminalOutput(process.stdout), process: hostProcess, timers: systemTiming, screen: 'fullscreen', screenSetByUser: true, mouse: true, onEvents: () => undefined });
 
 if (taken.started === undefined) {
   layer.start();

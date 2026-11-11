@@ -1,8 +1,9 @@
 import { someAsync } from '@momonga/foundation';
-import { matchPathlessRule, supersededFormOf } from '@momonga/policy';
+import { comparesByAdjacency, matchPathlessRule, supersededFormOf } from '@momonga/policy';
 import type { PermissionRule, SupersededForm } from '@momonga/policy';
+import type { RuleNote, RuleNoteRule } from '@momonga/protocol';
 import type { Bool } from 'z3-solver';
-import { SUBJECT_TOOLS, ruleEffectCases } from './decision-model.ts';
+import { ASKING_MODES, SUBJECT_TOOLS, ruleEffectCases } from './decision-model.ts';
 import type { RuleTerms, SubjectModel, SubjectTool } from './decision-model.ts';
 import { outcomeFor, probe, termsOf } from './queries.ts';
 import type { Probe, QueryContext } from './queries.ts';
@@ -55,7 +56,6 @@ const subjectOf = (context: QueryContext, tool: SubjectTool): SubjectModel => co
 
 export const checkDenyPrecedence = async (context: QueryContext): Promise<PropertyResult> => {
   const { models } = context;
-  const ctx = models.smt.ctx;
   const tally = newTally();
   for (const [index, rule] of models.rules.entries()) {
     if (rule.effect !== 'allow') continue;
@@ -70,15 +70,6 @@ export const checkDenyPrecedence = async (context: QueryContext): Promise<Proper
         message: `${describeWitness(counterexample.witness)} is allowed although a deny rule matches it`,
         counterexample,
       }));
-      if (escape.status !== 'none') continue;
-      for (const deny of denies) {
-        const overlap = await probe(context, 'deny-precedence', `${rule.text} overlapping ${deny.rule.text} (${tool})`, tool, [allowTerm.strict, ctx.Or(deny.position, deny.incidental)]);
-        if (overlap.status === 'found') {
-          tally.notes.push(`${ruleLabel(rule)} overlaps ${ruleLabel(deny.rule)}, for example at ${describeWitness(overlap.counterexample.witness)}; the outcome there is ${overlap.counterexample.predicted}`);
-        } else if (overlap.status === 'unknown') {
-          tally.unknowns.push(overlap.reason);
-        }
-      }
     }
   }
   return {
@@ -144,96 +135,139 @@ export const checkSecretReach = async (context: QueryContext, locations: readonl
   };
 };
 
+const RULES_ALONE_MODE = 'manual';
+
+const noteRuleOf = (rule: PermissionRule): RuleNoteRule => ({ text: rule.text, origin: rule.origin, source: rule.source });
+
+const noteOf = (kind: RuleNote['kind'], rules: readonly PermissionRule[], message: string, modes: readonly string[] = []): RuleNote => ({ kind, rules: rules.map(noteRuleOf), modes: [...modes], message });
+
+const undecidedNote = (rule: PermissionRule, reason: string): RuleNote => noteOf('undecided', [rule], `whether ${ruleLabel(rule)} can take effect was not decided: ${reason}`);
+
+const DECIDED_BEFORE: Readonly<Record<PermissionRule['effect'], readonly PermissionRule['effect'][]>> = { deny: ['deny'], ask: ['deny', 'ask'], allow: ['deny', 'ask', 'allow'] };
+
+const matchOf = (context: QueryContext, term: RuleTerms): Bool => (term.rule.effect === 'allow' ? term.strict : context.models.smt.ctx.Or(term.position, term.incidental));
+
+const sameWriting = (left: PermissionRule, right: PermissionRule): boolean =>
+  left.effect === right.effect && left.text === right.text && left.settingsRoot === right.settingsRoot && left.home === right.home && left.cwd === right.cwd;
+
+type Decided<T> = { decided: true; value: T } | { decided: false; reason: string };
+
+const coverOf = async (context: QueryContext, rule: PermissionRule, index: number, tools: readonly SubjectTool[]): Promise<Decided<PermissionRule | undefined>> => {
+  const ctx = context.models.smt.ctx;
+  for (const [otherIndex, other] of context.models.rules.entries()) {
+    if (otherIndex === index || !DECIDED_BEFORE[rule.effect].includes(other.effect)) continue;
+    if (!tools.every((tool) => termsOf(context, tool).some((term) => term.index === otherIndex))) continue;
+    let covers = true;
+    for (const tool of tools) {
+      const outside = await probe(context, 'rule-consistency', `${rule.text} outside ${other.text} (${tool})`, tool, [matchOf(context, termOf(context, tool, index)), ctx.Not(matchOf(context, termOf(context, tool, otherIndex)))]);
+      if (outside.status === 'unknown') return { decided: false, reason: outside.reason };
+      if (outside.status === 'found') {
+        covers = false;
+        break;
+      }
+    }
+    if (covers) return { decided: true, value: other };
+  }
+  return { decided: true, value: undefined };
+};
+
+const impliedModes = async (context: QueryContext, rule: PermissionRule, index: number, tools: readonly SubjectTool[]): Promise<Decided<readonly string[]>> => {
+  const ctx = context.models.smt.ctx;
+  let modes: readonly string[] = ASKING_MODES;
+  for (const tool of tools) {
+    const subject = subjectOf(context, tool);
+    const { cases } = ruleEffectCases(context.models, subject, termOf(context, tool, index));
+    const impliedHere: string[] = [];
+    for (const modeDefault of subject.askingModeDefaults) {
+      const needed = await probe(context, 'rule-consistency', `${rule.text} beyond the default of ${modeDefault.modes.join(', ')} (${tool})`, tool, [anyOf(context, cases), ctx.Not(modeDefault.allow)]);
+      if (needed.status === 'unknown') return { decided: false, reason: needed.reason };
+      if (needed.status === 'none') impliedHere.push(...modeDefault.modes);
+    }
+    modes = modes.filter((mode) => impliedHere.includes(mode));
+  }
+  return { decided: true, value: modes };
+};
+
+const noteForUnmodelled = async (context: QueryContext, rule: PermissionRule): Promise<RuleNote | undefined> => {
+  const { commands } = context.models;
+  if (!commands.wrapperDeny(rule)) {
+    const why =
+      rule.effect === 'deny'
+        ? 'it uses a word outside the modelled command alphabet'
+        : rule.effect === 'ask'
+          ? 'it is an ask rule that the model cannot follow (a deny rule can reach the command through the wrapper or the word is outside the modelled alphabet)'
+          : 'it is an allow rule that the model cannot follow (a word outside the modelled alphabet, or a wrapper, shell or eval program)';
+    return undecidedNote(rule, why);
+  }
+  const rulesAlone = { ...context.env, mode: RULES_ALONE_MODE } as const;
+  const candidates = commands.candidates(rule);
+  const effective = await someAsync(candidates, async (candidate) => (await commandDecisionWithout(rulesAlone, candidate, undefined)) !== (await commandDecisionWithout(rulesAlone, candidate, rule)));
+  return effective
+    ? undefined
+    : undecidedNote(rule, `it is a deny rule for a wrapper, shell or eval program; none of the commands tried (${candidates.join(' | ')}) shows it changing a decision, and other commands through the wrapper are not modelled`);
+};
+
+const noteForRule = async (context: QueryContext, rule: PermissionRule, index: number): Promise<RuleNote | undefined> => {
+  const { models } = context;
+  const tools = toolsOf(context, rule, index);
+  if (tools.length === 0) return undefined;
+  if (rule.tool === 'Bash' && models.commands.unmodelled(rule)) return noteForUnmodelled(context, rule);
+  for (const tool of tools) {
+    const effect = ruleEffectCases(models, subjectOf(context, tool), termOf(context, tool, index));
+    const change = await probe(context, 'rule-consistency', `${rule.text} (${tool})`, tool, [anyOf(context, effect.cases)]);
+    if (change.status === 'unknown') return undecidedNote(rule, change.reason);
+    if (change.status === 'none') continue;
+    if (!effect.unlessDefaultAllows) return undefined;
+    const implied = await impliedModes(context, rule, index, tools);
+    if (!implied.decided) return undecidedNote(rule, implied.reason);
+    return implied.value.length === 0
+      ? undefined
+      : noteOf('implied-by-mode', [rule], `${ruleLabel(rule)} changes no decision in ${implied.value.join(', ')} mode: the mode already allows everything the rule allows`, implied.value);
+  }
+  for (const tool of tools) {
+    const reach = await probe(context, 'rule-consistency', `${rule.text} reach (${tool})`, tool, [matchOf(context, termOf(context, tool, index))]);
+    if (reach.status === 'unknown') return undecidedNote(rule, reach.reason);
+    if (reach.status === 'none') continue;
+    const twins = [...models.rules.entries()].filter(([otherIndex, other]) => otherIndex !== index && sameWriting(rule, other));
+    if (twins.length > 0) {
+      if (twins.some(([otherIndex]) => otherIndex < index)) return undefined;
+      const group = [rule, ...twins.map(([, other]) => other)];
+      return noteOf('duplicate', group, `${group.map(ruleLabel).join(' and ')} are one rule written ${group.length} times; one is enough`);
+    }
+    const cover = await coverOf(context, rule, index, tools);
+    if (!cover.decided) return undecidedNote(rule, cover.reason);
+    if (cover.value === undefined) return noteOf('no-effect', [rule], `${ruleLabel(rule)} changes no decision: for every input it matches the other rules decide the same without it`);
+    const order = cover.value.effect === rule.effect ? '' : `, and ${cover.value.effect} is decided before ${rule.effect}`;
+    return noteOf('no-effect', [rule, cover.value], `${ruleLabel(rule)} changes no decision: ${ruleLabel(cover.value)} matches every input it matches${order}`);
+  }
+  return noteOf('never-matches', [rule], `${ruleLabel(rule)} matches no input, so it can never take effect`);
+};
+
 export const checkRuleConsistency = async (context: QueryContext): Promise<PropertyResult> => {
   const { models } = context;
-  const ctx = models.smt.ctx;
-  const tally = newTally();
+  const ruleNotes: RuleNote[] = [];
   for (const [index, rule] of models.rules.entries()) {
-    const tools = toolsOf(context, rule, index);
-    if (tools.length === 0) continue;
-    if (rule.tool === 'Bash' && models.commands.unmodelled(rule)) {
-      if (models.commands.wrapperDeny(rule)) {
-        const candidates = models.commands.candidates(rule);
-        const effective = await someAsync(candidates, async (candidate) => (await commandDecisionWithout(context.env, candidate, undefined)) !== (await commandDecisionWithout(context.env, candidate, rule)));
-        if (!effective) tally.unknowns.push(`${ruleLabel(rule)} is a deny rule for a wrapper, shell or eval program; none of the commands tried (${candidates.join(' | ')}) shows it changing a decision, and other commands through the wrapper are not modelled`);
-      } else {
-        tally.unknowns.push(`${ruleLabel(rule)} ${rule.effect === 'deny' ? 'uses a word outside the modelled command alphabet' : rule.effect === 'ask' ? 'is an ask rule that the model cannot follow (a deny rule can reach the command through the wrapper or the word is outside the modelled alphabet)' : 'is an allow rule that the model cannot follow (a word outside the modelled alphabet, or a wrapper, shell or eval program)'}, so whether it can take effect was not decided`);
-      }
-      continue;
-    }
-    let effective = false;
-    let undecided: string | undefined;
-    let example: Counterexample | undefined;
-    for (const tool of tools) {
-      const term = termOf(context, tool, index);
-      for (const effectCase of ruleEffectCases(models, subjectOf(context, tool), term)) {
-        const change = await probe(context, 'rule-consistency', `${rule.text} (${tool})`, tool, [effectCase]);
-        if (change.status === 'found') effective = true;
-        else if (change.status === 'unknown') undecided = change.reason;
-        if (effective) break;
-      }
-      if (effective) break;
-      if (example === undefined) {
-        const reach = await probe(context, 'rule-consistency', `${rule.text} reach (${tool})`, tool, [ctx.Or(term.position, term.incidental, term.strict)], new Set([index]));
-        if (reach.status === 'found') example = reach.counterexample;
-        else if (reach.status === 'unknown') undecided = reach.reason;
-      }
-    }
-    if (effective) continue;
-    if (undecided !== undefined) {
-      tally.unknowns.push(undecided);
-      continue;
-    }
-    tally.findings.push({
-      subject: ruleLabel(rule),
-      message:
-        example === undefined
-          ? 'this rule matches no input of the modelled domain, so it can never take effect'
-          : `this rule can never take effect: for every input it matches the decision is the same without it; for example ${describeWitness(example.witness)} is ${example.predicted} regardless (${example.cause})`,
-      ...(example === undefined ? {} : { counterexample: example }),
-    });
-  }
-  const allows = [...models.rules.entries()].filter(([, rule]) => rule.effect === 'allow');
-  const denies = [...models.rules.entries()].filter(([, rule]) => rule.effect === 'deny');
-  for (const [allowIndex, allow] of allows) {
-    for (const [denyIndex, deny] of denies) {
-      for (const tool of toolsOf(context, allow, allowIndex).filter((candidate) => termsOf(context, candidate).some((term) => term.index === denyIndex))) {
-        const allowTerm = termOf(context, tool, allowIndex);
-        const denyTerm = termOf(context, tool, denyIndex);
-        const reach = await probe(context, 'rule-consistency', `${allow.text} reach (${tool})`, tool, [allowTerm.strict]);
-        if (reach.status === 'unknown') tally.unknowns.push(reach.reason);
-        if (reach.status !== 'found') continue;
-        const outside = await probe(context, 'rule-consistency', `${allow.text} outside ${deny.text} (${tool})`, tool, [allowTerm.strict, ctx.Not(denyTerm.position), ctx.Not(denyTerm.incidental)]);
-        if (outside.status === 'none') {
-          tally.findings.push({
-            subject: `${ruleLabel(allow)} and ${ruleLabel(deny)}`,
-            message: `every input the allow rule matches is also matched by the deny rule, so the allow rule contradicts the deny rule and has no effect (${tool})`,
-          });
-        } else if (outside.status === 'unknown') {
-          tally.unknowns.push(outside.reason);
-        }
-      }
-    }
+    const note = await noteForRule(context, rule, index);
+    if (note !== undefined) ruleNotes.push(note);
   }
   return {
     id: 'rule-consistency',
-    title: 'every rule can take effect and no pair of rules contradicts',
+    title: 'notes on rules that change no decision',
     subject: `${models.rules.length} rule(s)`,
-    proves: 'removing any single rule on a modelled tool changes the decision for at least one modelled input, and no allow rule lies entirely inside a deny rule; a Bash deny rule for a wrapper, shell or eval program is shown effective on concrete commands only, and any other Bash rule outside the modelled command alphabet makes the result unknown instead',
+    proves:
+      'nothing is refused by this check: a rule gets a note when removing it changes the decision for no modelled input (it matches nothing, another rule covers it, it is written twice, or a mode already allows what it allows); the notes are computed from the rules alone and are the same in every mode; a Bash deny rule for a wrapper, shell or eval program is tried on concrete commands only, and any other Bash rule outside the modelled command alphabet gets a note that it was not decided',
     doesNotProve: ['that the rules that remain express the intent of their author', 'effects on inputs outside the modelled input domain', READ_ONLY_LIMITS.ruleConsistency],
-    verdict: verdictOf(tally),
-    byModeDefault: tally.byModeDefault,
+    verdict: ruleNotes.length === 0 ? { status: 'proved', notes: [] } : { status: 'noted', ruleNotes, notes: ruleNotes.map((note) => note.message) },
+    byModeDefault: [],
   };
 };
 
-export const checkBashAdmission = async (context: QueryContext): Promise<PropertyResult> => {
+export const checkBashAdmission = (context: QueryContext): PropertyResult => {
   const { models } = context;
-  const ctx = models.smt.ctx;
   const tally = newTally();
   const bash = termsOf(context, 'Bash');
   const allows = bash.filter((term) => term.rule.effect === 'allow');
   const denies = bash.filter((term) => term.rule.effect === 'deny' && term.rule.specifier !== undefined);
-  const command = subjectOf(context, 'Bash').commandTerm as NonNullable<SubjectModel['commandTerm']>;
   const bashRules = models.rules.filter((rule) => rule.tool === 'Bash' && rule.specifier !== undefined);
   const hasDeny = bashRules.some((rule) => rule.effect === 'deny');
   for (const rule of bashRules) {
@@ -242,34 +276,17 @@ export const checkBashAdmission = async (context: QueryContext): Promise<Propert
     const matters = rule.effect === 'allow' ? hasDeny : allows.length > 0 && !singleWordWrapperDeny;
     if (matters) tally.unknowns.push(`${ruleLabel(rule)} is outside what the model can follow, so whether ${rule.effect === 'allow' ? 'it admits a denied command' : 'an allow rule gets around it'} was not decided`);
   }
-  for (const allow of allows) {
-    for (const deny of denies) {
-      const admits = await probe(context, 'bash-admission', `${allow.rule.text} admitting ${deny.rule.text}`, 'Bash', [allow.strict, ctx.Or(deny.position, deny.incidental)]);
-      if (admits.status === 'found') {
-        tally.notes.push(`${ruleLabel(allow.rule)} admits commands that ${ruleLabel(deny.rule)} names, for example ${describeWitness(admits.counterexample.witness)}; the outcome there is ${admits.counterexample.predicted}`);
-      } else if (admits.status === 'unknown') {
-        tally.unknowns.push(admits.reason);
-      }
-      const escape = await probe(context, 'bash-admission', `${allow.rule.text} against ${deny.rule.text}`, 'Bash', [
-        allow.strict,
-        models.commands.broad(command, deny.rule),
-        outcomeFor(context, 'Bash').allow,
-      ]);
-      absorb(tally, escape, (counterexample) => ({
-        subject: `${ruleLabel(allow.rule)} and ${ruleLabel(deny.rule)}`,
-        message: `${describeWitness(counterexample.witness)} names the program and subcommand that the deny rule forbids, with option words between them, and is allowed because the deny rule matches only adjacent words`,
-        counterexample,
-      }));
-    }
+  for (const rule of bashRules) {
+    if (comparesByAdjacency(rule)) tally.notes.push(`${ruleLabel(rule)} is compared by adjacent words only, because its program has no option table: a command with an option between the words of the rule is not matched by it`);
   }
   return {
     id: 'bash-admission',
     title: 'a Bash allow rule does not admit a denied program or subcommand',
     subject: `${allows.length} Bash allow rule(s) against ${denies.length} Bash deny rule(s)`,
     proves:
-      'for every Bash allow rule and every Bash deny rule of two or more words that the model can follow, no plain command is allowed that has the denied words in order with only option words between them; a Bash allow rule outside the modelled command alphabet, a deny or ask rule outside it, and a deny rule of several words for a wrapper, shell or eval program make the result unknown instead',
+      'a Bash deny or ask rule is compared with a command after the options that the option table of its program declares are removed, so an allow rule on the program does not admit the denied words with options between them; a deny or ask rule whose program has no option table is compared by adjacent words and is noted; a Bash allow rule outside the modelled command alphabet, a deny or ask rule outside it, and a deny rule of several words for a wrapper, shell or eval program make the result unknown instead',
     doesNotProve: [
-      'that the option words skipped here are the only ones that can separate a program from its subcommand',
+      'commands with option words between the words of a deny or ask rule: the product decides them by the option table of the program, which the model does not follow, so they are left out of every modelled query',
       'commands that reach a denied program through a wrapper, a shell payload or a script',
       READ_ONLY_LIMITS.bashAdmission,
     ],
