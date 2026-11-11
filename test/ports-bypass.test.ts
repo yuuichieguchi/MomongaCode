@@ -63,7 +63,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/rotating-log.ts': { 'node:fs': 8 },
   'packages/foundation/src/short-temp-base.ts': { 'node:os': 1 },
   'packages/foundation/src/socket-path.ts': { 'node:net': 1 },
-  'packages/foundation/src/stop-record.ts': { 'node:fs': 2 },
   'packages/foundation/src/uds.ts': { 'node:fs': 4, 'node:net': 1 },
   'packages/gateway/src/adapters/replay-adapter.ts': { 'node:fs': 10 },
   'packages/gateway/src/managed/fm-processes.ts': { 'node:fs': 4, 'randomUUID': 1 },

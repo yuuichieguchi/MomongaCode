@@ -77,10 +77,14 @@ const pushedEnd = async (pgid: number, deadline: number, port: ProcessGroupPort,
   const leave = (): void => wait.abort(stop?.reason);
   stop?.addEventListener('abort', leave, { once: true });
   try {
-    await Promise.race([
-      ended.call(port, pgid, { signal: wait.signal }).catch(() => undefined),
-      sleep(timing, Math.max(0, deadline - timing.monotonicMs()), wait.signal),
-    ]);
+    const pushed = ended.call(port, pgid, { signal: wait.signal }).then(
+      () => undefined,
+      (error: unknown) => {
+        if (wait.signal.aborted) return undefined;
+        throw error;
+      },
+    );
+    await Promise.race([pushed, sleep(timing, Math.max(0, deadline - timing.monotonicMs()), wait.signal)]);
   } finally {
     stop?.removeEventListener('abort', leave);
     wait.abort();
