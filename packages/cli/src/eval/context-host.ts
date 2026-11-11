@@ -13,7 +13,7 @@ import {
   typedModelText,
 } from '@momonga/protocol';
 import type { Capabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
-import { planModelsEdit, probeRecordKeyOf, registeredServer } from '@momonga/config';
+import { ADAPTERS, planModelsEdit, probeRecordKeyOf, registeredServer } from '@momonga/config';
 import type { ConnectionDraft, EndpointProbeKey, ModelEntry, ModelsOperation, ModelsOperations, ModelsSettings, OpenResponsesTarget, ResolvedModel, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
@@ -214,8 +214,8 @@ const declaredCapabilitiesOf = (member: ResolvedModel): Json | undefined => {
 const entryOf = (member: ResolvedModel, capabilities: Json | undefined): Json => ({
   id: member.ownName,
   ...(capabilities === undefined ? {} : { capabilities }),
-  ...(member.adapter === 'anthropic' || member.adapter === 'ollama' ? {} : { toolCalling: member.toolCalling }),
-  ...(member.adapter === 'managed' && member.outputBoundField !== undefined ? { outputBoundField: member.outputBoundField } : {}),
+  ...('toolCalling' in member && ADAPTERS[member.adapter].toolCallingSetting ? { toolCalling: member.toolCalling } : {}),
+  ...('outputBoundField' in member && member.outputBoundField !== undefined ? { outputBoundField: member.outputBoundField } : {}),
   maxConcurrency: member.maxConcurrency,
   admissionTimeoutMs: member.admissionTimeoutMs,
 });
@@ -259,7 +259,7 @@ export const liveSettingsFor = (user: UserModels, models: readonly string[], rel
       operations.push(addOperation({ adapter: 'open-responses', socketPath: relay.planRelaySocket, ...sharedOf(member) }, entryOf(member, relayedCapabilitiesOf(displayOf(member.canon), member, relay))));
       return;
     }
-    if (member.adapter === 'managed') {
+    if ('server' in member) {
       managedTargets.push({ model: member.canon, server: member.server, binary: member.binary, upstream: member.model });
       const program = declared.has(member.server) ? undefined : declaredProgramOf(resolved, member.server);
       declared.add(member.server);
@@ -270,7 +270,7 @@ export const liveSettingsFor = (user: UserModels, models: readonly string[], rel
     const recordKey = probeRecordKeyOf(member.canon, member);
     if (recordKey?.kind === 'endpoint') endpointProbes.push(recordKey.key);
     const address = member.socketPath === undefined ? { baseUrl: member.baseUrl } : { socketPath: member.socketPath };
-    const apiVersion = member.adapter === 'anthropic' ? { apiVersion: member.apiVersion } : {};
+    const apiVersion = 'apiVersion' in member ? { apiVersion: member.apiVersion } : {};
     operations.push(addOperation({ adapter: member.adapter, ...address, ...keyOf(member), ...apiVersion, ...sharedOf(member) }, entryOf(member, declaredCapabilitiesOf(member))));
   };
   for (const model of models) for (const member of chainMembersOf(resolved, model)) copyMember(member);

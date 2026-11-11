@@ -1,5 +1,5 @@
-import { loadUserSettings, probeRecordKeyOf, registeredServer, upstreamEndpointOf } from '@momonga/config';
-import type { EndpointProbeKey, ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
+import { isProbeable, isProbedBy, loadUserSettings, recordKeyOf, registeredServer, upstreamEndpointOf } from '@momonga/config';
+import type { EndpointProbeKey, Probeable, ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
 import { createBinaryHashCache, managedInstancePaths, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { ManagedInstancePaths, MomongaPaths, OutboundNetwork } from '@momonga/foundation';
 import { displayMapOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
@@ -18,7 +18,7 @@ type ManagedModel = Extract<ResolvedModel, { adapter: 'managed' }>;
 
 type ChatCompletionsModel = Extract<ResolvedModel, { adapter: 'chat-completions' }>;
 
-type ProbeableModel = OllamaModel | ManagedModel | ChatCompletionsModel;
+type ProbeableModel = Probeable<ResolvedModel>;
 
 export class NotAProbeableModel extends Error {
   constructor(display: string, configured: readonly string[]) {
@@ -30,8 +30,6 @@ export class NotAProbeableModel extends Error {
 export type ProbeOptions = { samples?: number; interrupt: AbortSignal };
 
 export type ProbeSubject = { canon: string; display: string; model: ProbeableModel };
-
-const isProbeable = (model: ResolvedModel): model is ProbeableModel => model.adapter === 'managed' || model.adapter === 'chat-completions' || model.adapter === 'ollama';
 
 export const probeSubjectOf = (models: ResolvedModels, text: string): ProbeSubject => {
   const resolution = resolveTypedModelRef(typedModelText(text), models.views);
@@ -60,8 +58,8 @@ export const probeModel = async (ports: CliPorts, paths: MomongaPaths, text: str
   announcePlainHttp(ports, settings.models.plainHttp);
   const subject = probeSubjectOf(settings.models, text);
   const { model } = subject;
-  if (model.adapter === 'managed') return probeManaged(ports, paths, subject, model, settings, options);
-  if (model.adapter === 'chat-completions') return withOutboundNetwork(ports, options.interrupt, (network) => probeChatCompletions(ports, paths, subject, model, options, settings.models.dialects, network));
+  if (isProbedBy(model, 'managed-process')) return probeManaged(ports, paths, subject, model, settings, options);
+  if (isProbedBy(model, 'chat-completions-wire')) return withOutboundNetwork(ports, options.interrupt, (network) => probeChatCompletions(ports, paths, subject, model, options, settings.models.dialects, network));
   return withOutboundNetwork(ports, options.interrupt, (network) => probeOllama(ports, paths, subject, model, options, settings.models.dialects, network));
 };
 
@@ -130,7 +128,7 @@ export const probeFmText = (target: string, recordPath: string, report: Endpoint
   ])}\n`;
 
 const endpointRecordKeyOf = (subject: ProbeSubject, target: OllamaModel | ChatCompletionsModel): EndpointProbeKey => {
-  const key = probeRecordKeyOf(subject.canon, target.adapter === 'chat-completions' ? { ...target, toolCalling: 'auto' } : target);
+  const key = recordKeyOf(subject.canon, target);
   if (key?.kind !== 'endpoint') throw new Error(`the model ${subject.display} has no endpoint probe record key`);
   return key.key;
 };
