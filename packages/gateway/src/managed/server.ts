@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, startSharedCall } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, settledOrAborted, startSharedCall } from '@momonga/foundation';
 import type { GenerationRole, ProcessLock, SharedCall, UdsClient, ProcessInspector, KernelLockMechanism } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER, WORDS, messageOf } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
@@ -143,6 +143,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
   let startFlight: SharedCall<ManagedEndpoint> | undefined;
   let endStart: AbortController | undefined;
   let restartRun: Promise<void> | undefined;
+  let restartEnded = Promise.withResolvers<void>();
   let restartTimer: unknown;
   let totalRestarts = 0;
   let consecutiveFailures = 0;
@@ -371,16 +372,21 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     }
     const delay = description.restart.backoffMs * 2 ** consecutiveFailures;
     const scheduledGeneration = generation;
+    const ended = restartEnded;
     restartTimer = timers.setTimeout(() => {
       restartTimer = undefined;
       if (restartsOnlyForCalls()) {
         if (generation === scheduledGeneration) state = 'idle';
+        restartEnded = Promise.withResolvers<void>();
+        ended.resolve();
         return;
       }
       const run = runRestart(scheduledGeneration);
       restartRun = run;
       void run.then(() => {
         if (restartRun === run) restartRun = undefined;
+        restartEnded = Promise.withResolvers<void>();
+        ended.resolve();
       });
     }, delay);
   };
@@ -536,8 +542,12 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
 
     start,
 
-    ensureRunning(signal?: AbortSignal): Promise<ManagedEndpoint> {
-      if (state === 'running' || state === 'restarting') return Promise.resolve(endpoint);
+    async ensureRunning(signal?: AbortSignal): Promise<ManagedEndpoint> {
+      if (state === 'restarting') {
+        await settledOrAborted(restartEnded.promise, signal ?? NEVER_ENDED);
+        return this.ensureRunning(signal);
+      }
+      if (state === 'running') return endpoint;
       if (state === 'stopped') return Promise.reject(new ManagedServerError('not_running', said('the server was stopped'), undefined));
       return start(signal);
     },
@@ -552,6 +562,9 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
         timers.clearTimeout(restartTimer);
         restartTimer = undefined;
       }
+      const unblocked = restartEnded;
+      restartEnded = Promise.withResolvers<void>();
+      unblocked.resolve();
       const stopping = current;
       const closing = client;
       if (stopping !== undefined) await terminate(stopping, stop?.stopGraceMs);
