@@ -1,11 +1,13 @@
-import { limitEndOf } from '@momonga/foundation';
+import { LockWaitTimeoutError, isTransientErrno, limitEndOf } from '@momonga/foundation';
 import type { CredentialEntry, CredentialStore } from '@momonga/foundation';
 import { PLAN_STORE_UNREADABLE_CODE, PLAN_STORE_UNWRITABLE_CODE } from '@momonga/protocol';
 import { describeError } from '../core/describe-error.ts';
 import { PlanCredentialError } from './auth-source.ts';
 
+export const isTransientStoreFailure = (cause: unknown): boolean => cause instanceof LockWaitTimeoutError || isTransientErrno(cause);
+
 export const storeWriteFailure = (what: string, cause: unknown): PlanCredentialError =>
-  new PlanCredentialError(PLAN_STORE_UNWRITABLE_CODE, `${what} could not be written: ${describeError(cause)}`, false, { cause });
+  new PlanCredentialError(PLAN_STORE_UNWRITABLE_CODE, `${what} could not be written: ${describeError(cause)}`, cause instanceof LockWaitTimeoutError, { cause });
 
 export const storeReadFailure = (message: string, cause: unknown): PlanCredentialError => new PlanCredentialError(PLAN_STORE_UNREADABLE_CODE, message, false, { cause });
 

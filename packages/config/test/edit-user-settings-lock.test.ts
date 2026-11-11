@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { appendPermissionRule, editUserSettings, systemFileLockPorts } from '@momonga/config';
-import { momongaLayout } from '@momonga/foundation';
+import { DEFAULT_LOCK_TIMEOUT_MS, LockWaitTimeoutError, momongaLayout } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, testPaths } from '@momonga/testkit';
 import { settingsLockPath } from '../src/file-lock.ts';
 import { localSettingsPath, makeDir, makeTree, writeJson } from './helpers.ts';
@@ -39,6 +39,41 @@ describe('editUserSettings is the one writer of a settings file and takes the se
     const holder = await startLockHolder(context, await settingsLockPath(tree.home, file, testPaths()));
     const recorded = recordingEdit();
     await expect(editUserSettings(tree.home, file, recorded.edit, { signal: new AbortController().signal, lockTimeoutMs: 50 })).rejects.toThrow(`held by process ${holder.pid}`);
+    expect(recorded.calls).toEqual([]);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(ORIGINAL);
+  });
+
+  it('a held lock with a lock timeout rejects with LockWaitTimeoutError and leaves the file as it was (A5, R9)', async (context) => {
+    const tree = makeTree();
+    const file = userSettingsOf(tree);
+    lockRunDirectoryOf(tree);
+    await startLockHolder(context, await settingsLockPath(tree.home, file, testPaths()));
+    const recorded = recordingEdit();
+    await expect(editUserSettings(tree.home, file, recorded.edit, { signal: new AbortController().signal, lockTimeoutMs: 50 })).rejects.toBeInstanceOf(LockWaitTimeoutError);
+    expect(recorded.calls).toEqual([]);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(ORIGINAL);
+  });
+
+  it('with no lock timeout the wait has no fixed 10 s: it lasts until the operation\'s signal ends it, with that signal\'s reason', async (context) => {
+    const tree = makeTree();
+    const file = userSettingsOf(tree);
+    lockRunDirectoryOf(tree);
+    await startLockHolder(context, await settingsLockPath(tree.home, file, testPaths()));
+    const operation = new AbortController();
+    const reason = new Error('the operation limit ended');
+    let now = 1_000_000;
+    const started = now;
+    const ports = {
+      ...systemFileLockPorts,
+      clock: { now: () => now },
+      sleep: async (ms: number): Promise<void> => {
+        now += ms;
+        if (now - started > 3 * DEFAULT_LOCK_TIMEOUT_MS) operation.abort(reason);
+      },
+    };
+    const recorded = recordingEdit();
+    await expect(editUserSettings(tree.home, file, recorded.edit, { signal: operation.signal, ports })).rejects.toBe(reason);
+    expect(now - started).toBeGreaterThan(3 * DEFAULT_LOCK_TIMEOUT_MS);
     expect(recorded.calls).toEqual([]);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(ORIGINAL);
   });

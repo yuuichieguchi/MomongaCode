@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
-import { HOST_READ_BOUND_MS, hostKernelLock, isAtomicWriteTemporary, isRecord, isTransientErrno, operationLimit, sweepLeftovers, systemRandom } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, hostKernelLock, isAtomicWriteTemporary, isRecord, operationLimit, sweepLeftovers, systemRandom } from '@momonga/foundation';
 import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES, PLAN_DISABLED_STATE, PLAN_LABEL_PATTERN, PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, PLAN_SIGN_IN_FAILURE, PLAN_STORE_STATES, SIGNED_IN_OUTCOME, isPlanLabel } from '@momonga/protocol';
 import type { NamedPlanAccountRef, PlanAccountRef, PlanAccountState, PlanListProblem, PlanRevocation, PlanRevocationAnswer, PlanStoreState } from '@momonga/protocol';
@@ -30,7 +30,7 @@ import type { PlanOutbound } from './outbound.ts';
 import { ownEntry } from './own-entry.ts';
 import { parsePlanJson } from './plan-json.ts';
 import { planProfileNamed } from './profiles.ts';
-import { endedByOperation, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
+import { endedByOperation, isTransientStoreFailure, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
 import { grantsScope, lazyRefreshMarginMs, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, RefreshEnd, RefreshTokens } from './refresh.ts';
 import { revokeRefreshToken } from './revoke.ts';
@@ -566,7 +566,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const markWriteFailure = (account: Account, failure: unknown, signal: AbortSignal): void => {
     account.dirty = true;
     const cause = causeOf(failure);
-    if (endedByOperation(failure, signal) || isTransientErrno(cause)) {
+    if (endedByOperation(failure, signal) || isTransientStoreFailure(cause)) {
       schedulePersistRetry(account);
       return;
     }
@@ -598,7 +598,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
           } catch (error) {
             if (endedByOperation(error, limit.signal)) throw error;
             const cause = causeOf(error);
-            if (!isTransientErrno(cause)) account.unwritable = describeError(cause);
+            if (!isTransientStoreFailure(cause)) account.unwritable = describeError(cause);
           }
         }),
       );
