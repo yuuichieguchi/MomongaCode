@@ -18,9 +18,9 @@ describe('the approval panel shows what will run', () => {
     );
     expect(lines).toEqual([
       'shell commands require approval',
-      { text: '@@ -1 +1 @@', color: 'cyan', first: '' },
-      { text: 'old line', color: 'red', first: '- ' },
-      { text: 'new line', color: 'green', first: '+ ' },
+      { text: '@@ -1 +1 @@', token: 'accent', first: '' },
+      { text: 'old line', token: 'diff.removed', first: '- ' },
+      { text: 'new line', token: 'diff.added', first: '+ ' },
       { text: 'kept', first: '  ' },
     ]);
   });

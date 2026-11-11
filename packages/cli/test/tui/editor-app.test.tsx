@@ -395,6 +395,7 @@ describe('the external editor key', () => {
           drafts.push(draft);
           return outcome;
         },
+        open: () => Promise.reject(new Error('no file is opened in this test')),
       },
     };
   };

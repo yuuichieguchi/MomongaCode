@@ -4,7 +4,7 @@ import { account, startPlan, submitLine } from './fake-plan-gateway.tsx';
 import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import { start } from './tui-harness.tsx';
 
-const config: StartupConfig = { version: '1.2.3', home: '/Users/ada', color: false };
+const config: StartupConfig = { version: '1.2.3', home: '/Users/ada' };
 
 const DEVSTRAL = 'ollama/devstral-small-2:latest';
 const GEMMA = 'ollama/gemma-3-4b:latest';

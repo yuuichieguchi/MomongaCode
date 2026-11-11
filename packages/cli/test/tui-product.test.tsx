@@ -176,7 +176,7 @@ describe('skills in the TUI', () => {
   });
 
   it('reports the warnings of the skill scan and lists the skill in /help', async () => {
-    const { app } = await start({ skills: [PDF], skillWarnings: ['Project skills were skipped because the folder is not trusted'] }, { startup: { version: '1.0.0', home: '/home/none', color: false } });
+    const { app } = await start({ skills: [PDF], skillWarnings: ['Project skills were skipped because the folder is not trusted'] }, { startup: { version: '1.0.0', home: '/home/none' } });
     await untilOutput(app, 'Project skills were skipped because the folder is not trusted');
     await type(app, '/help', '> /help');
     app.stdin.write(KEYS.enter);

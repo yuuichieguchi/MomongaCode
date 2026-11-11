@@ -146,6 +146,7 @@ describe('the notification switch', () => {
   it('when on, rings once for a prompt that needs the user and once for the end of the run, and for nothing else', async () => {
     const started = await ready({}, { notify: 'bell' });
     expect(started.terminal.state().enabled).toContain('focus');
+    started.terminal.emit(focus('out'));
     await run(started);
     ask(started);
     await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
@@ -160,6 +161,7 @@ describe('the notification switch', () => {
 
   it('when on, rings for a run that failed and not for one the user cancelled', async () => {
     const started = await ready({}, { notify: 'bell' });
+    started.terminal.emit(focus('out'));
     await run(started);
     started.backend.finish(runView({ status: 'FAILED', error: { code: 'provider_error', message: 'the provider failed' } }));
     await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
@@ -167,6 +169,27 @@ describe('the notification switch', () => {
     started.backend.finish(runView({ status: 'CANCELLED' }));
     await until(() => started.terminal.titles.at(-1) === TITLE('ready'), 'ready');
     expect(started.terminal.bells).toEqual([TITLE('error')]);
+    started.app.unmount();
+  });
+
+  it('when on and the terminal has reported no focus yet, waits: it rings when the terminal reports that it lost the focus', async () => {
+    const started = await ready({}, { notify: 'bell' });
+    await run(started);
+    started.backend.finish(runView());
+    await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
+    expect(started.terminal.bells).toEqual([]);
+    started.terminal.emit(focus('out'));
+    await until(() => started.terminal.bells.length === 1, 'the bell after the focus report');
+    expect(started.terminal.bells).toEqual([TITLE('done')]);
+    started.app.unmount();
+  });
+
+  it('when on and the terminal never reports the focus, rings once the wait for a report has ended', async () => {
+    const started = await ready({}, { notify: 'bell' });
+    await run(started);
+    started.backend.finish(runView());
+    await until(() => started.terminal.bells.length === 1, 'the bell after the wait for a focus report');
+    expect(started.terminal.bells).toEqual([TITLE('done')]);
     started.app.unmount();
   });
 
@@ -193,6 +216,7 @@ describe('the notification switch', () => {
     await untilOutput(started.app, 'notify: bell');
     expect(started.saved).toEqual([{ name: 'notify', value: 'bell', aborted: false }]);
     await until(() => started.terminal.state().enabled.includes('focus'), 'focus reporting is on');
+    started.terminal.emit(focus('out'));
     await run(started);
     started.backend.finish(runView());
     await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');

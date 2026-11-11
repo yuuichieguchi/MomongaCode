@@ -343,6 +343,8 @@ export type { GuardedStandardStreams } from './standard-streams.ts';
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
 export { everyAsync, filterAsync, findAsync, mapAsync, someAsync } from './sequential.ts';
+export { SYSTEM_PROGRAM_DIRECTORIES, programOnSearchPath, systemProgramDirectories } from './program-search.ts';
+export type { ProgramResolution, WritableCheck } from './program-search.ts';
 export { displayToolPath, resolveToolPath } from './tool-path.ts';
 export type { Awaitable, PathProbes, PathResolution, UnresolvableErrno, UnresolvableReason, Unresolved } from './path-resolution.ts';
 export { gitlinksOfIndex } from './git-index.ts';

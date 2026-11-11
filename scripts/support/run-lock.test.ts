@@ -205,6 +205,48 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
     expect(RUN_LOCK_DEFAULT_WAIT_SECONDS).toBeGreaterThan(0);
   });
 
+  it('a heavy run that waits for a light holder keeps a new light run out, and starts when the first light run releases', async () => {
+    const first = await hold({ runClass: 'light', pid: 222, command: 'cmd2' });
+    let clock = 0;
+    let sleeps = 0;
+    const lateLights: Outcome[] = [];
+
+    const outcome = await acquireRunLock(
+      request({
+        pid: 999,
+        command: 'cmd9',
+        waitSeconds: 10,
+        monotonic: () => clock,
+        sleep: async () => {
+          sleeps += 1;
+          clock += 1000;
+          if (sleeps === 1) lateLights.push(await acquireRunLock(request({ runClass: 'light', pid: 333, command: 'cmd3' })));
+          if (sleeps === 2) await first.release();
+        },
+      }),
+    );
+    if (outcome.kind === 'acquired') releases.push(() => outcome.release());
+
+    expect(lateLights).toEqual([
+      { kind: 'refused', message: `run-lock: light run refused: held by waiting heavy pid 999 started ${STARTED} in /w: cmd9${TO_WAIT}` },
+    ]);
+    expect(outcome.kind).toBe('acquired');
+    expect(entries().filter((name) => name.startsWith('heavy-waiting'))).toEqual([]);
+  });
+
+  it('a heavy waiter whose process died does not keep a light run out, and its files are removed', async () => {
+    const hex = 'dddddddddddddddd';
+    const lock = await claimRaw(`heavy-waiting.${hex}`, hex);
+    fs.writeFileSync(path.join(dir, `heavy-waiting.${hex}.info`), descriptionOf(222, 'cmd2', hex, 'heavy'));
+    lock.release();
+
+    const outcome = await acquireRunLock(request({ runClass: 'light' }));
+    if (outcome.kind === 'acquired') releases.push(() => outcome.release());
+
+    expect(outcome.kind).toBe('acquired');
+    expect(entries().filter((name) => name.startsWith('heavy-waiting'))).toEqual([]);
+  });
+
   it('TB11 gives up when the limit passes with the holder still there, after exactly two sleeps', async () => {
     await hold();
     let clock = 0;
