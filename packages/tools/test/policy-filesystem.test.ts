@@ -462,7 +462,7 @@ describe('pointer files and link targets keep the bytes (review item 10)', () =>
 });
 
 describe('canonicalise', () => {
-  it('behaves as syncPaths.resolveCanonicalPath for a missing tail', async () => {
+  it('behaves as resolveCanonicalPath for a missing tail', async () => {
     const dir = makeDir();
     expect(await createPolicyFilesystem().canonicalise(path.join(dir, 'a', 'b'), NEVER_CANCELLED)).toEqual({ ok: true, path: path.join(dir, 'a', 'b') });
   });

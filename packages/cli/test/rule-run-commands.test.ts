@@ -1,3 +1,4 @@
+import { protectedSetOf } from '@momonga/verify';
 import fs from 'node:fs';
 import http from 'node:http';
 import { ensureMomongaDirs, momongaPaths, ruleFingerprint } from '@momonga/foundation';
@@ -201,6 +202,7 @@ describe('momonga policy verify', () => {
     const host = {
       loadVerifier: async () => ({
         secretLocationsOf: () => [],
+        protectedSetOf,
         verifyPermissions: async (_api: unknown, request: { rules: { text: string; effect: string; layer?: string }[] }) => {
           requests.push(request);
           return { exitCode, status };

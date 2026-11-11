@@ -32,7 +32,7 @@ const recordingEdit = () => {
 };
 
 describe('editUserSettings is the one writer of a settings file and takes the settings lock under the home', () => {
-  it('takes the lock at await settingsLockPath(home, file, testPaths())', async (context) => {
+  it('takes the lock at settingsLockPath(home, file)', async (context) => {
     const tree = makeTree();
     const file = userSettingsOf(tree);
     lockRunDirectoryOf(tree);
