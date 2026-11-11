@@ -133,7 +133,7 @@ describe('start', () => {
     const t = fakes();
     t.layer.start();
     expect(t.log).toEqual(['raw:true', `write:${FULLSCREEN_START}`]);
-    expect(t.layer.state()).toMatchObject({ screen: 'fullscreen', negotiation: 'unknown', newlineHint: 'ctrl+j', enabled: ['alt-screen', 'bracketed-paste', 'kitty-keys'], synchronizedOutput: false, backgroundColor: undefined });
+    expect(t.layer.state()).toMatchObject({ screen: 'fullscreen', negotiation: 'unknown', enabled: ['alt-screen', 'bracketed-paste', 'kitty-keys'], synchronizedOutput: false, backgroundColor: undefined });
   });
 
   it('does not enter the alternate screen in scrollback', () => {
@@ -163,7 +163,7 @@ describe('negotiation', () => {
     const t = fakes();
     t.layer.start();
     t.feed(KITTY_REPLY);
-    expect(t.layer.state()).toMatchObject({ negotiation: 'kitty', newlineHint: 'shift+enter' });
+    expect(t.layer.state()).toMatchObject({ negotiation: 'kitty' });
     t.feed(DA1_REPLY);
     expect(t.layer.state().negotiation).toBe('kitty');
     expect(t.writes).toEqual([FULLSCREEN_START]);
@@ -174,10 +174,10 @@ describe('negotiation', () => {
     t.layer.start();
     t.feed(DA1_REPLY);
     expect(t.writes).toEqual([FULLSCREEN_START, ENTER_MODIFY_OTHER_KEYS]);
-    expect(t.layer.state()).toMatchObject({ negotiation: 'modify-other-keys', newlineHint: 'ctrl+j' });
+    expect(t.layer.state()).toMatchObject({ negotiation: 'modify-other-keys' });
     expect(t.layer.state().enabled).toContain('modify-other-keys');
     t.feed(`${ESC}[27;2;13~`);
-    expect(t.layer.state()).toMatchObject({ negotiation: 'proven', newlineHint: 'shift+enter' });
+    expect(t.layer.state()).toMatchObject({ negotiation: 'proven' });
     expect(t.delivered).toContainEqual({ type: 'key', name: 'enter', ctrl: false, alt: false, shift: true, super: false, hyper: false, meta: false });
   });
 
@@ -185,9 +185,9 @@ describe('negotiation', () => {
     const t = fakes();
     t.layer.start();
     t.feed('x');
-    expect(t.layer.state()).toMatchObject({ negotiation: 'unknown', newlineHint: 'ctrl+j' });
+    expect(t.layer.state()).toMatchObject({ negotiation: 'unknown' });
     t.feed(`${ESC}[13;2u`);
-    expect(t.layer.state()).toMatchObject({ negotiation: 'proven', newlineHint: 'shift+enter' });
+    expect(t.layer.state()).toMatchObject({ negotiation: 'proven' });
   });
 
   it('does not move back when a kitty reply arrives late', () => {
@@ -494,7 +494,7 @@ describe('the handover', () => {
     expect(startFromHandover(t.layer, env, 'kitty')).toBe('adopted');
     expect(env).toEqual({ OTHER: 'kept' });
     expect(t.log).toEqual(['raw:true']);
-    expect(t.layer.state()).toMatchObject({ screen: 'fullscreen', negotiation: 'kitty', newlineHint: 'shift+enter', enabled: ['alt-screen', 'mouse', 'bracketed-paste', 'kitty-keys'] });
+    expect(t.layer.state()).toMatchObject({ screen: 'fullscreen', negotiation: 'kitty', enabled: ['alt-screen', 'mouse', 'bracketed-paste', 'kitty-keys'] });
     t.feed('a');
     expect(t.delivered).toEqual([{ type: 'key', text: 'a', ...plain }]);
     t.layer.setScreen('scrollback');
@@ -507,9 +507,9 @@ describe('the handover', () => {
   it('keeps the adopted hint until a received Shift+Enter proves more', () => {
     const t = fakes();
     startFromHandover(t.layer, { [HANDOVER_TERMINAL_ENV]: VALUE }, 'modify-other-keys');
-    expect(t.layer.state().newlineHint).toBe('ctrl+j');
+    expect(NEWLINE_HINT[t.layer.state().negotiation]).toBe('ctrl+j');
     t.feed(`${ESC}[27;2;13~`);
-    expect(t.layer.state().newlineHint).toBe('shift+enter');
+    expect(NEWLINE_HINT[t.layer.state().negotiation]).toBe('shift+enter');
   });
 
   it.each([

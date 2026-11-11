@@ -6,7 +6,6 @@ import type { TranscriptState, TranscriptStore } from '../../src/tui/screen/stor
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import type { ScreenRequest, TerminalState } from '../../src/tui/terminal/layer.ts';
 import type { ScreenMode } from '../../src/tui/terminal/modes.ts';
-import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
 import type { NegotiationState } from '../../src/tui/terminal/negotiation.ts';
 import { foldChildEvent, foldEvent } from '../../src/tui/transcript.ts';
 import type { Entry } from '../../src/tui/transcript.ts';
@@ -85,7 +84,6 @@ export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: numbe
   let state: TerminalState = {
     screen: given.screen ?? 'fullscreen',
     negotiation: 'unknown',
-    newlineHint: 'ctrl+j',
     enabled: [],
     size: { columns: given.columns ?? 160, rows: given.rows ?? 100 },
     tooSmall: false,
@@ -144,7 +142,7 @@ export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: numbe
     },
     resize: (columns, rows) => publish({ ...state, size: { columns, rows } }),
     shrink: (tooSmall) => publish({ ...state, tooSmall }),
-    negotiate: (negotiation) => publish({ ...state, negotiation, newlineHint: NEWLINE_HINT[negotiation] }),
+    negotiate: (negotiation) => publish({ ...state, negotiation }),
     request: (request) => {
       for (const listener of [...screenListeners]) listener(request);
     },

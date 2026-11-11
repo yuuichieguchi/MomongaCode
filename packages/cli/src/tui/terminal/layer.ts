@@ -3,8 +3,8 @@ import { KEY_SETTLE_MS, MIN_COLUMNS, MIN_ROWS, NO_FULLSCREEN_NOTICE, PASTE_TOO_L
 import type { TerminalEvent } from './events.ts';
 import { BACKGROUND_QUERY, enterSequenceOf, inTableOrder, LEAVE_EVERY_MODE, leaveSequenceOf, QUERY_BATCH } from './modes.ts';
 import type { ScreenMode, TerminalModeName } from './modes.ts';
-import { advance, fullscreenRefused, modifyOtherKeysSent, modifyOtherKeysWanted, mouseReported, negotiationFrom, NEWLINE_HINT, synchronizedOutputReported } from './negotiation.ts';
-import type { NegotiationState, NewlineHint } from './negotiation.ts';
+import { advance, fullscreenRefused, modifyOtherKeysSent, modifyOtherKeysWanted, mouseReported, negotiationFrom, synchronizedOutputReported } from './negotiation.ts';
+import type { NegotiationState } from './negotiation.ts';
 import { createInputParser } from './parser.ts';
 import { BEL, titleSequence } from './title.ts';
 
@@ -43,7 +43,6 @@ export type HandoverTerminal = { screen: ScreenMode; modes: TerminalModeName[] }
 export type TerminalState = {
   screen: ScreenMode;
   negotiation: NegotiationState;
-  newlineHint: NewlineHint;
   enabled: readonly TerminalModeName[];
   size: TerminalSize;
   tooSmall: boolean;
@@ -105,7 +104,6 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   const snapshotOf = (): TerminalState => ({
     screen,
     negotiation: negotiation.state,
-    newlineHint: NEWLINE_HINT[negotiation.state],
     enabled: inTableOrder(enabled),
     size,
     tooSmall: isTooSmall(size),

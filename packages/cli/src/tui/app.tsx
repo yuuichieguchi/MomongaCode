@@ -66,6 +66,7 @@ import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './sla
 import { KEY_SETTLE_MS } from './terminal/constants.ts';
 import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
+import { NEWLINE_HINT } from './terminal/negotiation.ts';
 import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
 import type { NotifyMode, TuiSettingsPort } from './screen/notify.ts';
 import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } from './screen/theme.ts';
@@ -282,7 +283,7 @@ export function App(props: AppProps) {
         session: opened.id,
         lastSeq: origins.applied(),
         neg: state.negotiation,
-        hint: state.newlineHint,
+        hint: NEWLINE_HINT[state.negotiation],
         size: state.size,
         ...(state.screen === 'fullscreen' ? { view: viewOf(facts.current.position, origins), toggles: togglesOf(store) } : { printed: feedRef.current.handed() }),
         input: { text: current.text, cursor: current.cursor, historyIndex: current.historyIndex ?? null, draft: current.draft, pastes: current.pastes.map((paste) => ({ ...paste })), pasteCount: current.pasteCount },
