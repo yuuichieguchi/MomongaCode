@@ -46,7 +46,7 @@ import {
 import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
 import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
-import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
+import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, pageLimitOf, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
 import { compactInputOf, compactPinOf } from '../worker/compact-pin.ts';
 import type { AddInboxBody, CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
@@ -283,8 +283,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const sessionReadSettingsOf = (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => settingsThrough(() => deps.sessionReadSettings(cwd, signal));
 
+  const listedSessionOf = (id: string): ListedSession => {
+    const listed = store.getListedSession(id);
+    if (listed === undefined) throw notFound(`session ${id} does not exist`);
+    return listed;
+  };
+
   const sessionViewOf = async (session: Session, signal: AbortSignal, loaded?: SessionCreateSettings) => {
-    const view = toSessionView(store, session);
+    const view = toSessionView(store, listedSessionOf(session.id));
     if (session.permissionMode !== 'auto') return view;
     const settings = loaded ?? (await sessionReadSettingsOf(session.cwd, signal));
     if (settings.autoModeClassifier === undefined || settings.autoModeKey === undefined) return view;
@@ -339,9 +345,20 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return sessions;
   };
 
+  const sessionPageOf = (context: Context, filter: { cwd?: string }): Response => {
+    const limit = pageLimitOf(context.req.query('limit'), SESSION_PAGE_ROWS);
+    try {
+      const page = store.listSessions({ ...filter, limit, cursor: context.req.query('cursor') ?? null });
+      return json({ sessions: page.sessions.map((session) => toSessionView(store, session)), next: page.next });
+    } catch (error) {
+      if (error instanceof RangeError) throw invalidRequest(error.message, 'cursor');
+      throw error;
+    }
+  };
+
   const listSessions: Handler = async (context) => {
     const requested = context.req.query('cwd');
-    if (requested === undefined) return json({ sessions: everySession({}).map((session) => toSessionView(store, session)) });
+    if (requested === undefined) return sessionPageOf(context, {});
     requireAbsolute(requested, 'cwd');
     let cwd: string;
     try {
@@ -350,7 +367,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       if (isTransientErrno(error)) throw error;
       throw invalidRequest(`cwd ${requested} cannot be resolved: ${(error as Error).message}`, 'cwd');
     }
-    return json({ sessions: everySession({ cwd }).map((session) => toSessionView(store, session)) });
+    return sessionPageOf(context, { cwd });
   };
 
   const getSession: Handler = async (context) => json({ session: await sessionViewOf(requireSession(context.req.param('id') ?? ''), context.req.raw.signal) });
@@ -459,7 +476,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return terms;
   };
 
-  const reportedView = async (run: Run, signal: AbortSignal) => ({ ...toRunView(run), report: (await store.journalFacts.report({ runId: run.id }, signal)).report });
+  const reportedView = async (runId: string, signal: AbortSignal) => {
+    const { report } = await store.journalFacts.report({ runId }, signal);
+    return { ...toRunView(requireRun(runId)), report };
+  };
 
   const createRun: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
@@ -472,7 +492,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       const found = idempotency === undefined ? undefined : store.findRunByIdempotencyKey(session.id, idempotency.idempotencyKey);
       if (idempotency === undefined || found === undefined) return undefined;
       if (!sameRunRequest(found, idempotency.requestDigest)) throw idempotencyKeyReused();
-      return json({ run: await reportedView(found.run, context.req.raw.signal) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
+      return json({ run: await reportedView(found.run.id, context.req.raw.signal) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
     };
     const replayOf = async (refusal: ApiError): Promise<Response> => {
       const replayed = await replay();
@@ -512,7 +532,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();
-    return json({ run: await reportedView(result.run, context.req.raw.signal) }, 202, {
+    return json({ run: await reportedView(result.run.id, context.req.raw.signal) }, 202, {
       location: `/v1/runs/${result.run.id}`,
       ...(result.kind === 'existing' ? { 'idempotent-replayed': 'true' } : {}),
     });
@@ -598,7 +618,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const runAnsweredBy: Handler = async (context) => json({ answeredBy: await answeredByOf(store, requireRun(context.req.param('id') ?? '').id) });
 
-  const getRun: Handler = async (context) => json({ run: await reportedView(requireRun(context.req.param('id') ?? ''), context.req.raw.signal) });
+  const getRun: Handler = async (context) => json({ run: await reportedView(requireRun(context.req.param('id') ?? '').id, context.req.raw.signal) });
 
   const cancelRun: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
@@ -606,7 +626,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (result.kind === 'not_found') throw notFound(`run ${id} does not exist`);
     if (result.kind === 'status_unknown') throw conflict('value_unknown', `run ${id} has a status this build does not know, so it is not cancelled by this build`);
     const settled = isTerminalStatus(result.run.status) && !result.changed;
-    return json({ run: await reportedView(result.run, context.req.raw.signal) }, settled ? 200 : 202);
+    return json({ run: await reportedView(result.run.id, context.req.raw.signal) }, settled ? 200 : 202);
   };
 
   const runTrace: Handler = async (context) => {

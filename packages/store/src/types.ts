@@ -627,6 +627,7 @@ export type GuidelineStore = {
 export type RuntimeStore = {
   createSession(input: CreateSessionInput): Session;
   getSession(id: string): Session | undefined;
+  getListedSession(id: string): ListedSession | undefined;
   listSessions(request: SessionPageRequest): SessionPage;
   createRunAndEnqueue(sessionId: string, input: CreateRunInput): Promise<CreateRunResult>;
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;

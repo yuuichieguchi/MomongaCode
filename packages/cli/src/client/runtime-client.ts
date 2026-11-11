@@ -397,8 +397,17 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
 
   const listSessions = async (cwd?: string): Promise<SessionView[]> => {
     const description = 'GET /v1/sessions';
-    const { body } = await send('GET', cwd === undefined ? '/v1/sessions' : `/v1/sessions?cwd=${encodeURIComponent(cwd)}`, [200]);
-    return listOf(body, 'sessions', description).map((entry) => checkSession(entry, description));
+    const sessions: SessionView[] = [];
+    let cursor: string | null = null;
+    do {
+      const query = new URLSearchParams({ ...(cwd === undefined ? {} : { cwd }), ...(cursor === null ? {} : { cursor }) }).toString();
+      const { body } = await send('GET', query === '' ? '/v1/sessions' : `/v1/sessions?${query}`, [200]);
+      sessions.push(...listOf(body, 'sessions', description).map((entry) => checkSession(entry, description)));
+      const next = fieldOf(body, 'next', description);
+      if (next !== null && typeof next !== 'string') throw new ContractViolation(description, 'next is neither a cursor nor null');
+      cursor = next;
+    } while (cursor !== null);
+    return sessions;
   };
 
   const setPermissionMode = async (sessionId: string, mode: PermissionMode): Promise<SessionView> => {

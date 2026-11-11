@@ -114,7 +114,7 @@ describe('session cwd validation', () => {
     await env.createSession();
     const response = await env.http('GET', `/v1/sessions?cwd=${encodeURIComponent(path.join(env.layout.root, 'gone'))}`);
     expect(response.status).toBe(200);
-    expect(response.json).toEqual({ sessions: [] });
+    expect(response.json).toEqual({ sessions: [], next: null });
   });
 });
 
