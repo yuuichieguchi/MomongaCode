@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -27,7 +28,7 @@ describe('the socket guard asset of the single executable for Linux', () => {
 
   const read = (target: string, name: string): Uint8Array => fs.readFileSync((built.get(target) as Record<string, string>)[name] as string);
   const extractInto = (cache: string, asset: (name: string) => Uint8Array): Promise<string> =>
-    ensureBundledLinuxSocketGuard({ asset, executablesRoot: path.join(root, cache), random: { hex: () => 'abcdef0123456789' }, files: nodeFileSystem });
+    ensureBundledLinuxSocketGuard({ asset, executablesRoot: path.join(root, cache), random: { hex: () => 'abcdef0123456789' }, files: nodeFileSystem, lock: testKernelLock() });
 
   beforeAll(async () => {
     root = fs.realpathSync(createTempRoot());

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -5,7 +6,6 @@ import { createFakeKernelLock, createTempDir, removeTempDir, testKernelLock } fr
 import {
   createUdsClient,
   currentSocketResolver,
-  ensureGenerationDirs,
   ensureMomongaDirs,
   generationLayout,
   momongaPaths,
@@ -130,7 +130,7 @@ const closingServer = (socket: string, onRequest: () => void): Promise<http.Serv
 describe('createUdsClient with a resolver', () => {
   it('resolves the socket again for every connection it dials', async () => {
     await withHome(async (home, paths) => {
-      await ensureGenerationDirs(paths, 1);
+      fs.mkdirSync(generationLayout(home, 1).dir, { mode: 0o700 });
       const socket = generationLayout(home, 1).sockets.runtime;
       let served = 0;
       const server = await closingServer(socket, () => {

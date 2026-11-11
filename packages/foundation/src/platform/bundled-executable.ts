@@ -1,7 +1,10 @@
 import path from 'node:path';
 import { sha256Hex } from '../canonical-json.ts';
+import { sweepLeftovers } from '../leftover-sweep.ts';
+import { createLockedEntry } from '../locked-entry.ts';
 import type { FileSystem } from '../node-file-system.ts';
 import type { Random } from '../random.ts';
+import type { KernelLockMechanism } from './kernel-lock.ts';
 
 export type BundledExecutableManifest = {
   target: string;
@@ -12,7 +15,6 @@ export type BundledExecutableKind = {
   what: string;
   manifestAsset: string;
   folder: string;
-  mode: number | undefined;
   failure(message: string): Error;
 };
 
@@ -20,10 +22,9 @@ export type BundledExecutablePorts = {
   asset(name: string): Uint8Array;
   executablesRoot: string;
   random: Pick<Random, 'hex'>;
-  files: Pick<FileSystem, 'mkdirPrivate' | 'readFile' | 'open' | 'rename' | 'rm'>;
+  files: Pick<FileSystem, 'mkdirPrivate' | 'readFile' | 'open' | 'rename' | 'rm' | 'readdir'>;
+  lock: KernelLockMechanism;
 };
-
-const EXCLUSIVE_CREATE = 'wx';
 
 export const BUNDLED_EXECUTABLE_STAGED_INFIX = '.partial-';
 export const BUNDLED_EXECUTABLE_STAGED_NAME_BYTES = 8;
@@ -61,32 +62,48 @@ const matches = async (files: BundledExecutablePorts['files'], file: string, sha
   return sha256Hex(bytes) === sha256;
 };
 
-const writeStaged = async (kind: BundledExecutableKind, files: BundledExecutablePorts['files'], staged: string, binary: Uint8Array): Promise<void> => {
-  const handle = await files.open(staged, EXCLUSIVE_CREATE, kind.mode);
-  try {
-    await handle.writeFile(binary);
-  } finally {
-    await handle.close();
-  }
+const BUNDLED_EXECUTABLE_MODE = 0o700;
+
+const stagedPrefixOf = (name: string): string => `${name}${BUNDLED_EXECUTABLE_STAGED_INFIX}`;
+
+const sweepStaged = async ({ files, lock }: BundledExecutablePorts, directory: string, name: string): Promise<void> => {
+  await sweepLeftovers({
+    directories: [{ directory, isLeftover: (entry) => entry.startsWith(stagedPrefixOf(name)) }],
+    lock,
+    files: { readdir: (entries) => files.readdir(entries), rm: (entry) => files.rm(entry, { recursive: true }) },
+  });
 };
 
-export const ensureBundledExecutable = async (kind: BundledExecutableKind, { asset, executablesRoot, random, files }: BundledExecutablePorts): Promise<string> => {
+const placeStaged = async (kind: BundledExecutableKind, { files, lock, random }: BundledExecutablePorts, final: string, binary: Uint8Array): Promise<void> => {
+  const file = path.join(path.dirname(final), `${stagedPrefixOf(path.basename(final))}${random.hex(BUNDLED_EXECUTABLE_STAGED_NAME_BYTES)}`);
+  const staged = await createLockedEntry(files, lock, file, BUNDLED_EXECUTABLE_MODE);
+  try {
+    try {
+      await staged.handle.writeFile(binary);
+    } finally {
+      await staged.handle.close();
+    }
+    staged.assertStillNamed();
+    await files.rename(staged.path, final);
+  } catch (error) {
+    await staged.remove();
+    throw error;
+  }
+  staged.finish();
+};
+
+export const ensureBundledExecutable = async (kind: BundledExecutableKind, ports: BundledExecutablePorts): Promise<string> => {
+  const { asset, executablesRoot, files } = ports;
   const manifest = parseBundledExecutableManifest(kind, new TextDecoder().decode(asset(kind.manifestAsset)));
   const { sha256, size, name } = manifest.binary;
   const directory = path.join(executablesRoot, `${kind.folder}-${sha256.slice(0, 16)}`);
   const final = path.join(directory, name);
   await files.mkdirPrivate(directory);
+  await sweepStaged(ports, directory, name);
   if (await matches(files, final, sha256)) return final;
   const binary = asset(manifest.binary.asset);
   if (binary.length !== size || sha256Hex(binary) !== sha256) throw kind.failure(`the embedded ${kind.what} ${manifest.binary.asset} does not match the checksum in its manifest`);
-  const staged = `${final}${BUNDLED_EXECUTABLE_STAGED_INFIX}${random.hex(BUNDLED_EXECUTABLE_STAGED_NAME_BYTES)}`;
-  try {
-    await writeStaged(kind, files, staged, binary);
-    await files.rename(staged, final);
-  } catch (error) {
-    await files.rm(staged);
-    throw error;
-  }
+  await placeStaged(kind, ports, final, binary);
   if (!(await matches(files, final, sha256))) throw kind.failure(`${final} changed after it was extracted and does not match the embedded ${kind.what}`);
   return final;
 };

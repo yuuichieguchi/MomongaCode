@@ -68,12 +68,14 @@ const DESCRIPTION_FORMAT = 'momonga-run-lock/1';
 const COMMAND_MAX_CHARACTERS = 300;
 const HEAVY_NAME = 'heavy';
 const LIGHT_NAME = /^light\.[0-9a-f]{16}$/;
+const HEAVY_WAITER_NAME = /^heavy-waiting\.[0-9a-f]{16}$/;
 const TOKEN = /^(heavy|light)\.([0-9a-f]{16})$/;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
 const heavyPathOf = (dir: string): string => path.join(dir, HEAVY_NAME);
 const lightPathOf = (dir: string, hex: string): string => path.join(dir, `light.${hex}`);
+const heavyWaiterPathOf = (dir: string, hex: string): string => path.join(dir, `heavy-waiting.${hex}`);
 const infoPathOf = (lockPath: string): string => `${lockPath}.info`;
 
 const describedBy = (parsed: unknown, token: string, runClass: RunClass): HolderDescription | undefined => {
@@ -223,10 +225,29 @@ const claimOwn = async ({ request, mechanism, now }: AttemptContext): Promise<Cl
   return { lock, lockPath, hex, startedAt: now().toISOString() };
 };
 
+const liveHolderClause = async (mechanism: KernelLockMechanism, lockPath: string, describe: () => Promise<string>): Promise<string | undefined> => {
+  if (await mechanism.isHeld(lockPath)) return describe();
+  const leftover = await mechanism.claim(lockPath);
+  if (leftover.kind === 'held') return describe();
+  leftover.lock.dispose();
+  await fs.promises.rm(infoPathOf(lockPath), { force: true });
+  return undefined;
+};
+
+const waitingHeavyClause = async (mechanism: KernelLockMechanism, waiterPath: string): Promise<string> =>
+  `waiting ${await clauseOfHeld(waiterPath, 'heavy', mechanism)}`;
+
 const checkHeavy = async ({ request, mechanism }: AttemptContext): Promise<Busy | undefined> => {
   const heavyPath = heavyPathOf(request.dir);
-  if (!(await mechanism.isHeld(heavyPath))) return undefined;
-  return { kind: 'busy', clauses: [await clauseOfHeld(heavyPath, 'heavy', mechanism)] };
+  if (await mechanism.isHeld(heavyPath)) return { kind: 'busy', clauses: [await clauseOfHeld(heavyPath, 'heavy', mechanism)] };
+  const waiterNames = (await fs.promises.readdir(request.dir)).filter((name) => HEAVY_WAITER_NAME.test(name)).sort();
+  const waiters: string[] = [];
+  for (const name of waiterNames) {
+    const waiterPath = path.join(request.dir, name);
+    const clause = await liveHolderClause(mechanism, waiterPath, () => waitingHeavyClause(mechanism, waiterPath));
+    if (clause !== undefined) waiters.push(clause);
+  }
+  return waiters.length === 0 ? undefined : { kind: 'busy', clauses: waiters };
 };
 
 const lightAttempt = async (context: AttemptContext): Promise<Attempt> => {
@@ -248,14 +269,8 @@ const claimHeavy = async ({ request, mechanism, now }: AttemptContext): Promise<
   return { lock, lockPath, hex, startedAt: now().toISOString() };
 };
 
-const scanOne = async ({ mechanism }: AttemptContext, lightPath: string): Promise<string | undefined> => {
-  if (await mechanism.isHeld(lightPath)) return clauseOfHeld(lightPath, 'light', mechanism);
-  const leftover = await mechanism.claim(lightPath);
-  if (leftover.kind === 'held') return clauseOfHeld(lightPath, 'light', mechanism);
-  leftover.lock.dispose();
-  await fs.promises.rm(infoPathOf(lightPath), { force: true });
-  return undefined;
-};
+const scanOne = ({ mechanism }: AttemptContext, lightPath: string): Promise<string | undefined> =>
+  liveHolderClause(mechanism, lightPath, () => clauseOfHeld(lightPath, 'light', mechanism));
 
 const decide = async (context: AttemptContext, heavy: Claimed, lightHolders: readonly string[]): Promise<Attempt> => {
   if (lightHolders.length === 0) return describedHolding(context, heavy);
@@ -307,15 +322,36 @@ const acquiredFrom = ({ request, mechanism }: AttemptContext, holding: Holding):
   };
 };
 
+type HeavyWaiter = { readonly release: () => Promise<void> };
+
+const recordHeavyWaiter = async (context: AttemptContext): Promise<HeavyWaiter> => {
+  const hex = newTokenHex();
+  const waiterPath = heavyWaiterPathOf(context.request.dir, hex);
+  const lock = await claimNamed(context.mechanism, waiterPath, hex);
+  if (lock === undefined) throw new Error(`the heavy waiter lock ${waiterPath} is held by another run`);
+  try {
+    await writeDescription(context, waiterPath, hex, context.now().toISOString());
+  } catch (error) {
+    lock.dispose();
+    throw error;
+  }
+  return {
+    release: async () => {
+      try {
+        await fs.promises.rm(infoPathOf(waiterPath), { force: true });
+      } finally {
+        lock.dispose();
+      }
+    },
+  };
+};
+
 const defaultSleep = async (ms: number, signal: AbortSignal): Promise<void> => {
   await delay(ms, undefined, { signal });
 };
 
 const acquireOrWait = async (request: RunLockRequest): Promise<RunLockOutcome> => {
   const { runClass, waitSeconds, signal, say } = request;
-  const monotonic = request.monotonic ?? ((): number => performance.now());
-  const sleep = request.sleep ?? defaultSleep;
-  const pollMs = request.pollMs ?? RUN_LOCK_POLL_MS;
   const context: AttemptContext = { request, mechanism: await lockWork(() => mechanismFor(request)), now: request.now ?? ((): Date => new Date()) };
 
   const inherited = await lockWork(() => liveTokenClass(context));
@@ -330,9 +366,24 @@ const acquireOrWait = async (request: RunLockRequest): Promise<RunLockOutcome> =
   }
 
   say(`run-lock: ${runClass} run waits up to ${waitSeconds} s for ${first.clauses.join('; ')}`);
+  if (runClass === 'light') return waitForLock(context, first.clauses);
+  const waiter = await lockWork(() => recordHeavyWaiter(context));
+  try {
+    return await waitForLock(context, first.clauses);
+  } finally {
+    await waiter.release();
+  }
+};
+
+const waitForLock = async (context: AttemptContext, firstClauses: readonly string[]): Promise<RunLockOutcome> => {
+  const { request } = context;
+  const { runClass, waitSeconds, signal, say } = request;
+  const monotonic = request.monotonic ?? ((): number => performance.now());
+  const sleep = request.sleep ?? defaultSleep;
+  const pollMs = request.pollMs ?? RUN_LOCK_POLL_MS;
   const waitStart = monotonic();
   const limitMs = waitSeconds * 1000;
-  let holders = first.clauses;
+  let holders = firstClauses;
   for (;;) {
     const remainingMs = limitMs - (monotonic() - waitStart);
     if (remainingMs <= 0) return { kind: 'waited-out', message: `run-lock: ${runClass} run gave up after ${waitSeconds} s: still held by ${holders.join('; ')}` };
