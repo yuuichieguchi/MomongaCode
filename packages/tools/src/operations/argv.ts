@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { canonicalJson, groupRecordOutcome, sha256Hex } from '@momonga/foundation';
-import type { NetworkScope, OutboundNetwork, ProcessInspector } from '@momonga/foundation';
+import type { HelperSelf, NetworkScope, OutboundNetwork, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openGrantedNetwork } from '../builtins/network-egress.ts';
 import type { GrantedNetwork } from '../builtins/network-egress.ts';
@@ -13,7 +13,7 @@ import { ToolExecutionError } from '../types.ts';
 import { gitProxyEnvironment } from '../read-only-call.ts';
 import type { ProbeContext, ToolContext } from '../types.ts';
 import { openGitCredentialChannel } from './git-credential.ts';
-import type { GitCredentialChannel, GitHostCredential } from './git-credential.ts';
+import type { GitCredentialChannel, GitOriginCredential } from './git-credential.ts';
 
 export type ArgvResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -26,7 +26,7 @@ export type ArgvOptions = {
   network: RenderedNetwork;
   context: ProbeContext | ToolContext;
   effect: boolean;
-  credentials?: readonly GitHostCredential[];
+  credentials?: readonly GitOriginCredential[];
   stdin?: string;
 };
 
@@ -40,6 +40,7 @@ export type SandboxedRunnerPorts = {
   outboundNetwork: OutboundNetwork;
   markerDir: string;
   credentialRoot: string;
+  credentialHelper?: HelperSelf;
   owners?: MarkerOwners;
   inspector?: ProcessInspector;
 };
@@ -66,7 +67,10 @@ type Supplied = { env: Readonly<Record<string, string>>; sandboxPolicy: SandboxP
 const supplyCredentials = async (ports: SandboxedRunnerPorts, options: ArgvOptions, granted: { env: Readonly<Record<string, string>>; sandboxPolicy: SandboxPolicy }): Promise<Supplied> => {
   const credentials = options.credentials ?? [];
   if (credentials.length === 0) return { ...granted, redact: (text) => text, close: async () => undefined };
-  const channel: GitCredentialChannel = await openGitCredentialChannel(credentials, { root: ports.credentialRoot, random: options.context.random, files: options.context.files });
+  if (ports.credentialHelper === undefined) {
+    throw new ToolExecutionError('git was not run: this process was started without the executable that answers the credential prompt of git, so the credential of the forge cannot be given. Start momonga through its own command.');
+  }
+  const channel: GitCredentialChannel = await openGitCredentialChannel(credentials, { root: ports.credentialRoot, random: options.context.random, files: options.context.files, helper: ports.credentialHelper });
   return {
     env: channel.environment(granted.env),
     sandboxPolicy: { ...granted.sandboxPolicy, unixSocketAllow: [...(granted.sandboxPolicy.unixSocketAllow ?? []), channel.directory] },

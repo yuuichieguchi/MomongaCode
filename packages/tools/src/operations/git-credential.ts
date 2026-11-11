@@ -1,12 +1,12 @@
 import { timingSafeEqual } from 'node:crypto';
 import net from 'node:net';
 import path from 'node:path';
-import { parseOutsideJson } from '@momonga/foundation';
-import type { FileSystem, Random } from '@momonga/foundation';
+import { assertUnixSocketPathFits, createRedactor, helperCommandLine, parseOutsideJson } from '@momonga/foundation';
+import type { FileSystem, HelperSelf, Random } from '@momonga/foundation';
 import { appendGitConfig } from '../read-only-call.ts';
-import { ASKPASS_CLIENT_SOURCE, GIT_CREDENTIAL_NONCE_ENV, GIT_CREDENTIAL_SOCKET_ENV } from './askpass-client.ts';
+import { GIT_ASKPASS_HELPER, GIT_CREDENTIAL_NONCE_ENV, GIT_CREDENTIAL_SOCKET_ENV } from './askpass-client.ts';
 
-export type GitHostCredential = { readonly host: string; readonly username: string; readonly password: string };
+export type GitOriginCredential = { readonly origin: string; readonly username: string; readonly password: string };
 
 export type GitCredentialChannel = {
   readonly directory: string;
@@ -17,10 +17,8 @@ export type GitCredentialChannel = {
 
 const MAX_ASK_BYTES = 4096;
 const NONCE_BYTES = 32;
-const CLIENT_MODE = 0o600;
 const ASKPASS_MODE = 0o700;
-const REDACTED = '[redacted]';
-const PROMPT = /^(Username|Password) for '([a-z][a-z0-9+.-]*):\/\/(?:[^@/']*@)?([^/']+)[^']*': $/i;
+const PROMPT = /^(Username|Password) for '([a-z][a-z0-9+.-]*):\/\/(?:[^@/']*@)?([^/']+)([^']*)': $/i;
 
 const shellQuoted = (value: string): string => `'${value.split("'").join(`'\\''`)}'`;
 
@@ -28,6 +26,17 @@ const sameText = (left: string, right: string): boolean => {
   const first = Buffer.from(left, 'utf8');
   const second = Buffer.from(right, 'utf8');
   return first.length === second.length && timingSafeEqual(first, second);
+};
+
+type Asked = { kind: 'username' | 'password'; origin: string; path: string };
+
+const askedOf = (prompt: string): Asked | undefined => {
+  const match = PROMPT.exec(prompt);
+  if (match === null) return undefined;
+  const [, kind, scheme, authority, rest] = match;
+  if (kind === undefined || scheme === undefined || authority === undefined || rest === undefined) return undefined;
+  if (!URL.canParse(`${scheme}://${authority}`)) return undefined;
+  return { kind: kind.toLowerCase() === 'username' ? 'username' : 'password', origin: new URL(`${scheme}://${authority}`).origin, path: rest };
 };
 
 type Ask = { nonce: string; prompt: string };
@@ -44,7 +53,7 @@ const parseAsk = (line: string): Ask | undefined => {
   return typeof nonce === 'string' && typeof prompt === 'string' ? { nonce, prompt } : undefined;
 };
 
-export type GitCredentialChannelOptions = { root: string; random: Pick<Random, 'hex'>; files: Pick<FileSystem, 'mkdtemp' | 'mkdirPrivate' | 'open' | 'rm'> };
+export type GitCredentialChannelOptions = { root: string; random: Pick<Random, 'hex'>; files: Pick<FileSystem, 'mkdtemp' | 'mkdirPrivate' | 'open' | 'rm'>; helper: HelperSelf };
 
 const writeNew = async (files: Pick<FileSystem, 'open'>, file: string, text: string, mode: number): Promise<void> => {
   const handle = await files.open(file, 'wx', mode);
@@ -55,28 +64,28 @@ const writeNew = async (files: Pick<FileSystem, 'open'>, file: string, text: str
   }
 };
 
-export const openGitCredentialChannel = async (credentials: readonly GitHostCredential[], { root, random, files }: GitCredentialChannelOptions): Promise<GitCredentialChannel> => {
+export const openGitCredentialChannel = async (credentials: readonly GitOriginCredential[], { root, random, files, helper }: GitCredentialChannelOptions): Promise<GitCredentialChannel> => {
   const directory = await files.mkdtemp(path.join(root, 'mmc-'));
   await files.mkdirPrivate(directory);
   const socketPath = path.join(directory, 's');
-  const clientPath = path.join(directory, 'askpass.mjs');
   const askpassPath = path.join(directory, 'askpass');
   const nonce = random.hex(NONCE_BYTES);
   const answered = new Set<string>();
   const sockets = new Set<net.Socket>();
 
+  const redactor = createRedactor({ credentials: credentials.map((credential) => credential.password) });
+  const askpassProgram = helperCommandLine(helper, GIT_ASKPASS_HELPER, []).map(shellQuoted).join(' ');
+
   const answerOf = (ask: Ask): string | undefined => {
     if (!sameText(ask.nonce, nonce)) return undefined;
-    const match = PROMPT.exec(ask.prompt);
-    if (match === null) return undefined;
-    const kind = (match[1] as string).toLowerCase();
-    const host = match[3] as string;
-    const credential = credentials.find((candidate) => candidate.host === host);
+    const asked = askedOf(ask.prompt);
+    if (asked === undefined) return undefined;
+    const credential = credentials.find((candidate) => candidate.origin === asked.origin);
     if (credential === undefined) return undefined;
-    const key = `${kind} ${host}`;
+    const key = `${asked.kind} ${asked.origin}${asked.path}`;
     if (answered.has(key)) return undefined;
     answered.add(key);
-    return kind === 'username' ? credential.username : credential.password;
+    return asked.kind === 'username' ? credential.username : credential.password;
   };
 
   const server = net.createServer((socket) => {
@@ -102,8 +111,8 @@ export const openGitCredentialChannel = async (credentials: readonly GitHostCred
   const remove = (): Promise<void> => files.rm(directory, { recursive: true });
 
   try {
-    await writeNew(files, clientPath, ASKPASS_CLIENT_SOURCE, CLIENT_MODE);
-    await writeNew(files, askpassPath, `#!/bin/sh\nexec ${shellQuoted(process.execPath)} ${shellQuoted(clientPath)} "$1"\n`, ASKPASS_MODE);
+    await assertUnixSocketPathFits(socketPath);
+    await writeNew(files, askpassPath, `#!/bin/sh\nexec ${askpassProgram} "$1"\n`, ASKPASS_MODE);
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(socketPath, resolve);
@@ -116,13 +125,16 @@ export const openGitCredentialChannel = async (credentials: readonly GitHostCred
   return {
     directory,
     environment: (env) => ({
-      ...appendGitConfig(env, [['credential.helper', '']]),
+      ...appendGitConfig(env, [
+        ['credential.helper', ''],
+        ['credential.useHttpPath', 'true'],
+      ]),
       GIT_ASKPASS: askpassPath,
       GIT_TERMINAL_PROMPT: '0',
       [GIT_CREDENTIAL_SOCKET_ENV]: socketPath,
       [GIT_CREDENTIAL_NONCE_ENV]: nonce,
     }),
-    redact: (text) => credentials.reduce((clean, credential) => clean.split(credential.password).join(REDACTED), text),
+    redact: (text) => redactor.whole(text),
     close: async () => {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));

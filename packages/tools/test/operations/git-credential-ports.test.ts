@@ -10,6 +10,7 @@ import { openGitCredentialChannel } from '@momonga/tools';
 const NONCE_ENV = 'MOMONGA_GIT_CREDENTIAL_NONCE';
 const SOCKET_ENV = 'MOMONGA_GIT_CREDENTIAL_SOCKET';
 const FIXED_NONCE = 'ab'.repeat(32);
+const HELPER = { execPath: process.execPath, script: path.resolve(import.meta.dirname, '..', '..', '..', 'cli', 'src', 'main.ts') };
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -47,7 +48,7 @@ const ask = (socketPath: string, nonce: string, prompt: string): Promise<string>
 describe('the git credential channel reaches randomness and the file system through its ports', () => {
   it('the nonce is the value of the injected random, and only an ask that carries it is answered', async () => {
     const asked: number[] = [];
-    const channel = await openGitCredentialChannel([{ host: 'forge.test', username: 'x-access-token', password: 'a-fake-token-for-tests' }], { root: rootOf(), random: fixedRandom(asked), files: nodeFileSystem });
+    const channel = await openGitCredentialChannel([{ origin: 'https://forge.test', username: 'x-access-token', password: 'a-fake-token-for-tests' }], { root: rootOf(), random: fixedRandom(asked), files: nodeFileSystem, helper: HELPER });
     cleanups.push(() => channel.close());
     const env = channel.environment({});
     expect(asked).toEqual([32]);
@@ -72,15 +73,11 @@ describe('the git credential channel reaches randomness and the file system thro
         return nodeFileSystem.open(file, flags, mode);
       },
     };
-    const channel = await openGitCredentialChannel([{ host: 'forge.test', username: 'u', password: 'a-fake-token-for-tests' }], { root: rootOf(), random: systemRandom, files });
+    const channel = await openGitCredentialChannel([{ origin: 'https://forge.test', username: 'u', password: 'a-fake-token-for-tests' }], { root: rootOf(), random: systemRandom, files, helper: HELPER });
     cleanups.push(() => channel.close());
     expect(made).toEqual([channel.directory]);
     expect(fs.statSync(channel.directory).mode & 0o777).toBe(0o700);
-    expect(opened.map((entry) => [path.basename(entry.file), entry.mode])).toEqual([
-      ['askpass.mjs', 0o600],
-      ['askpass', 0o700],
-    ]);
+    expect(opened.map((entry) => [path.basename(entry.file), entry.mode])).toEqual([['askpass', 0o700]]);
     expect(fs.statSync(path.join(channel.directory, 'askpass')).mode & 0o777).toBe(0o700);
-    expect(fs.statSync(path.join(channel.directory, 'askpass.mjs')).mode & 0o777).toBe(0o600);
   });
 });

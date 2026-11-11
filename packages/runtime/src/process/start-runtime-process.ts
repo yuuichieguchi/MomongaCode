@@ -36,7 +36,7 @@ import {
   nodeFileSystemSync,
   runtimeTeardownBudgetMs,
 } from '@momonga/foundation';
-import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream } from '@momonga/foundation';
+import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
@@ -142,6 +142,7 @@ export type StartRuntimeProcessOptions = {
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
+  helperSelf?: HelperSelf;
   ruleSolver?: RuleSolverSource;
   role?: RolePort;
   requestShutdown?: () => void;
@@ -612,6 +613,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         leaseMs,
         heartbeatMs: heartbeatMsFor(leaseMs),
         ...(options.bundledRipgrep === undefined ? {} : { bundledRipgrep: options.bundledRipgrep(paths) }),
+        ...(options.helperSelf === undefined ? {} : { helperSelf: options.helperSelf }),
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({

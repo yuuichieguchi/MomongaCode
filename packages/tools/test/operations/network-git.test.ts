@@ -121,7 +121,7 @@ describe('a network probe that carries the credential, in a repository that conf
     world.git(world.work, 'config', `http.${server.origin}/.extraHeader`, 'X-Planted: url');
     world.write('a.txt', 'one\n');
     world.commitAll('first');
-    const forge: ForgeAccess = { request: async () => Promise.reject(new Error('no forge request is expected')), gitCredential: async () => ({ username: 'x-access-token', password: 'fake-git-credential-for-tests' }) };
+    const forge: ForgeAccess = { request: async () => Promise.reject(new Error('no forge request is expected')), gitCredential: async () => ({ origin: server.origin, username: 'x-access-token', password: 'fake-git-credential-for-tests' }) };
     const runner = countingRunner();
     await settle(async () => {
       await partsOf(operationTool('GitPush', { runArgv: runner.run, forge }), PUSH, contextFor(world.work, world.env)).prepare();

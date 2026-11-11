@@ -10,7 +10,7 @@ import { gitEnvironment, isHttpDestination } from '../read-only-call.ts';
 import { createGitReader, repositoryTrustKeys, resolveDestinations, resolveRepository, sameList } from './git-read.ts';
 import type { Destinations, GitReadOptions, GitReader } from './git-read.ts';
 import type { ArgvRunner, RenderedNetwork } from './argv.ts';
-import type { GitHostCredential } from './git-credential.ts';
+import type { GitOriginCredential } from './git-credential.ts';
 import { OPERATION_SPECS } from './catalogue.ts';
 import { FORGE_REMOTE_INPUT, asksForge, describeClause, evaluateClauses, failedClauses } from './spec.ts';
 import type { ArgvCall, ArgvItem, ForgeCall, Network, OperationSpec, PrePushHook, Probe } from './spec.ts';
@@ -62,18 +62,12 @@ const renderNetwork = (network: Network | undefined, scope: Scope): RenderedNetw
   return { destinations: destination === undefined ? [] : [destination] };
 };
 
-const CREDENTIAL_SCHEMES: readonly string[] = ['http:', 'https:'];
-const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
-
-const credentialsFor = async (runtime: Runtime, network: RenderedNetwork, signal: AbortSignal): Promise<GitHostCredential[]> => {
+const credentialsFor = async (runtime: Runtime, network: RenderedNetwork, signal: AbortSignal): Promise<GitOriginCredential[]> => {
   if (network === 'none') return [];
-  const found = new Map<string, GitHostCredential>();
+  const found = new Map<string, GitOriginCredential>();
   for (const destination of network.destinations) {
-    if (!URL_SCHEME.test(destination)) continue;
-    const url = new URL(destination);
-    if (!CREDENTIAL_SCHEMES.includes(url.protocol) || found.has(url.host)) continue;
     const credential = await runtime.deps.forge.gitCredential(destination, signal);
-    if (credential !== undefined) found.set(url.host, { host: url.host, ...credential });
+    if (credential !== undefined) found.set(credential.origin, credential);
   }
   return [...found.values()];
 };
