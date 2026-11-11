@@ -60,13 +60,25 @@ const protocolEntries = (destinations: readonly string[]): ConfigEntry[] => {
   });
 };
 
-const networkConfig = (destinations: readonly string[]): ConfigEntry[] => [
+export type UrlRewrite = { readonly from: string; readonly to: string };
+
+const REWRITE_KINDS: readonly string[] = ['insteadOf', 'pushInsteadOf'];
+
+const rewriteEntries = (rewrites: readonly UrlRewrite[]): ConfigEntry[] => rewrites.flatMap(({ from, to }) => REWRITE_KINDS.map((kind): ConfigEntry => [`url.${to}.${kind}`, from]));
+
+const keptAsWritten = (destinations: readonly string[]): UrlRewrite[] => httpDestinationsOf(destinations).map((destination) => ({ from: destination, to: destination }));
+
+const networkConfig = (destinations: readonly string[], rewrites: readonly UrlRewrite[]): ConfigEntry[] => [
   ...PROGRAM_KEYS,
   ...protocolEntries(destinations),
   ...forEachDestination(overridesOf(['transport', 'recursion', 'credential']), destinations),
+  ...rewriteEntries([...keptAsWritten(destinations), ...rewrites]),
 ];
 
-export type GitEnvironmentRequest = { readonly mode: 'read' } | { readonly mode: 'local' } | { readonly mode: 'network'; readonly destinations: readonly string[] };
+export type GitEnvironmentRequest =
+  | { readonly mode: 'read' }
+  | { readonly mode: 'local' }
+  | { readonly mode: 'network'; readonly destinations: readonly string[]; readonly rewrites: readonly UrlRewrite[] };
 
 const QUIET = { GIT_TERMINAL_PROMPT: '0' } as const;
 const NO_PAGER = { GIT_PAGER: 'cat', PAGER: 'cat' } as const;
@@ -76,7 +88,7 @@ const variablesOf = (request: GitEnvironmentRequest): Record<string, string> => 
 
 const configOf = (request: GitEnvironmentRequest): readonly ConfigEntry[] => {
   if (request.mode === 'read') return READ_ONLY_GIT_CONFIG;
-  return request.mode === 'network' ? networkConfig(request.destinations) : [];
+  return request.mode === 'network' ? networkConfig(request.destinations, request.rewrites) : [];
 };
 
 export const appendGitConfig = (env: Readonly<Record<string, string>>, entries: readonly ConfigEntry[]): Record<string, string> => {

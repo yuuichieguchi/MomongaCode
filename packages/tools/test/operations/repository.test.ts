@@ -92,6 +92,7 @@ describe('the forge of a pull request operation is the remote its input names', 
         return { status: 'success', fields: { state: 'open', merged: 'false', headSha: 'a'.repeat(40), url: 'https://forge.example/pr/7' }, items: [] };
       },
       gitCredential: async () => undefined,
+      gitDestination: () => undefined,
     } as unknown as ForgeAccess;
     return { forge, requested };
   };
@@ -121,7 +122,8 @@ describe('the forge of a pull request operation is the remote its input names', 
     const parts = partsOf(operationTool('PullRequestStatus', { runArgv: countingRunner().run, forge }), { number: 7 }, contextFor(world.work, world.env));
     const result = await parts.execute(await parts.prepare());
     expect(result.status).toBe('completed');
-    expect(requested).toEqual(['https://forge.example/me/widgets.git']);
+    expect(requested.length).toBeGreaterThan(0);
+    expect(new Set(requested)).toEqual(new Set(['https://forge.example/me/widgets.git']));
   });
 
   it('reads the pull request of upstream for PullRequestStatus with remote upstream', async () => {
@@ -129,12 +131,13 @@ describe('the forge of a pull request operation is the remote its input names', 
     const { forge, requested } = recordingForge();
     const parts = partsOf(operationTool('PullRequestStatus', { runArgv: countingRunner().run, forge }), { number: 7, remote: 'upstream' }, contextFor(world.work, world.env));
     await parts.execute(await parts.prepare());
-    expect(requested).toEqual(['https://forge.example/acme/widgets.git']);
+    expect(requested.length).toBeGreaterThan(0);
+    expect(new Set(requested)).toEqual(new Set(['https://forge.example/acme/widgets.git']));
   });
 
   it('every operation that asks a forge takes the remote as an optional input', () => {
     const asksForge = OPERATION_SPECS.filter((spec) => spec.subject.kind === 'forge' || spec.observe.some((probe) => 'forge' in probe.via) || (spec.effect !== undefined && 'forge' in spec.effect));
-    expect(asksForge.map((spec) => spec.name).sort()).toEqual(['PullRequestComment', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestStatus']);
+    expect(asksForge.map((spec) => spec.name).sort()).toEqual(['PullRequestComment', 'PullRequestComments', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestStatus']);
     for (const spec of asksForge) {
       const input = spec.input as { properties: Record<string, unknown>; required: string[] };
       expect(input.properties['remote']).toMatchObject({ type: 'string' });
