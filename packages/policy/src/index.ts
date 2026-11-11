@@ -3,7 +3,8 @@ export type { ParseRuleOptions, PermissionRule, RuleEffect, RuleOrigin } from '@
 export { decide, decidePrimary, denyingRuleFor, isGoverningRule } from './decide.ts';
 export type { DecideInput, Decision } from './decide.ts';
 export { foldedKey } from './fold.ts';
-export { matchRule, ruleCoversSubject, wildcardMatches } from './match-rule.ts';
+export { matchPathlessRule, matchRule, ruleCoversSubject, wildcardMatches } from './match-rule.ts';
+export type { RuleResolution } from './match-rule.ts';
 export { supersededFormOf, supersededVerdictOf } from './superseded.ts';
 export type { CoveredProgram, SupersededForm, SupersededVerdict } from './superseded.ts';
 export { commandPatternOf } from './command-match.ts';
@@ -20,12 +21,13 @@ export type { DecisionKind, OperationApproval, PermissionSubject, PolicyTool } f
 export { modelVisibleTools } from './visible-tools.ts';
 export type { VisibleToolsOptions } from './visible-tools.ts';
 export { suggestAllowRule } from './suggest-allow-rule.ts';
-export { absoluteFrom, volumeIsCaseInsensitive } from './path-match.ts';
+export { absoluteFrom } from './path-match.ts';
 export { MAX_APPROVABLE_COMMAND_CHARS, MAX_GLOB_MATCHES } from './approval.ts';
 export { commandSpecsFor, systemProgramDirectories, userlandOf } from './platform-specs.ts';
 export type { CommandSpecs } from './command-specs.ts';
 export type { ConfigPrograms, GitlinkRead } from '@momonga/foundation';
-export type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyFilesystem, PolicyHostFilesystem, PolicyPorts, ProgramResolution } from './filesystem.ts';
+export { askedBy, createDecisionResolver } from './filesystem.ts';
+export type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyFilesystem, PolicyHostFilesystem, PolicyHostPorts, PolicyPorts, ProgramResolution, WritableCheck } from './filesystem.ts';
 export { EMPTY_GLOB_TABLE, createGlobDeadline, globBudgetMs, settleGlobs } from './glob-expansion.ts';
 export type { GlobTable } from './glob-expansion.ts';
 export { prepareGlobs } from './glob-preparation.ts';

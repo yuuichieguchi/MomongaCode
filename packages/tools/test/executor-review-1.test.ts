@@ -59,7 +59,7 @@ describe('executor lease loss', () => {
     });
 
     await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Shell')], { signal: controller.signal, leaseLost: () => lost }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Shell')], { signal: controller.signal, leaseLost: () => lost }),
     );
 
     expect(opsFor(harness, KEY)).toEqual(['begin']);
@@ -84,7 +84,7 @@ describe('executor lease loss', () => {
     });
 
     await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Shell')], { signal: controller.signal, leaseLost: () => lost }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Shell')], { signal: controller.signal, leaseLost: () => lost }),
     );
 
     expect(signals.map((signal) => signal.aborted)).toEqual([true]);
@@ -109,7 +109,7 @@ describe('executor lease loss', () => {
     });
 
     await expect(
-      harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Shell')], { signal: controller.signal, leaseLost: () => lost })),
+      harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Shell')], { signal: controller.signal, leaseLost: () => lost })),
     ).resolves.toBeDefined();
 
     expect(opsFor(harness, KEY)).toEqual(['begin']);
@@ -129,7 +129,7 @@ describe('executor recoverOnly', () => {
     };
     const { tool, seen } = reconcilingTool('not_applied');
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
 
     expect(seen.executed).toBe(0);
     expect(harness.started).toEqual([]);
@@ -142,7 +142,7 @@ describe('executor recoverOnly', () => {
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Mark' });
     const { tool, seen } = reconcilingTool('not_applied');
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
 
     expect(seen.reconciled).toBe(1);
     expect(seen.executed).toBe(0);
@@ -156,7 +156,7 @@ describe('executor recoverOnly', () => {
     const { tool, seen } = reconcilingTool('already_applied');
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true, deadlineAt: harness.clock.now() - 1 }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true, deadlineAt: harness.clock.now() - 1 }),
     );
 
     expect(seen.reconciled).toBe(1);
@@ -192,7 +192,7 @@ describe('executor admission of a call with an existing record', () => {
     });
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { mode: 'manual' }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { mode: 'manual' }),
     );
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'not_applied', result: { status: 'completed', output: 'edited' } });
@@ -219,7 +219,7 @@ describe('executor admission of a call with an existing record', () => {
       },
     });
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit')], { mode: 'manual' }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit')], { mode: 'manual' }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval', decision: { kind: 'ask' } });
     expect((outcome as { subjectDigest?: string }).subjectDigest).toMatch(/^[0-9a-f]{64}$/);
@@ -235,7 +235,7 @@ describe('executor onOutcome', () => {
     const tool = makeTool('Mark', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' });
 
     await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Mark'), call('c2', 'Mark')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Mark'), call('c2', 'Mark')], {
         mode: 'bypassPermissions',
         onStarted: (callId) => {
           order.push(`started:${callId}`);
@@ -255,7 +255,7 @@ describe('executor onOutcome', () => {
     const tool = makeTool('Look');
 
     await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Look'), call('c2', 'Look')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Look'), call('c2', 'Look')], {
         onStarted: (callId) => {
           order.push(`started:${callId}`);
         },
@@ -281,7 +281,7 @@ describe('executor onOutcome', () => {
 
     await expect(
       harness.executor.runBatch(
-        harness.input(await toolSetOf(tool), [call('c1', name)], {
+        await harness.input(await toolSetOf(tool), [call('c1', name)], {
           mode: 'bypassPermissions',
           onOutcome: () => {
             throw failure;

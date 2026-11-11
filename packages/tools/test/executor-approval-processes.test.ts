@@ -38,7 +38,7 @@ describe('a batch that stops for an approval leaves no tool process running', ()
     const rule = ruleFor(harness.layout);
 
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(processTool('Probe', pids), makeTool('UpdatePlan')), [call('cP', 'Probe'), call('cA', 'UpdatePlan')], {
+      await harness.input(await toolSetOf(processTool('Probe', pids), makeTool('UpdatePlan')), [call('cP', 'Probe'), call('cA', 'UpdatePlan')], {
         mode: 'manual',
         rules: [rule('ask', 'UpdatePlan')],
       }),
@@ -58,7 +58,7 @@ describe('a batch that stops for an approval leaves no tool process running', ()
     const write = makeTool('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'path', inputSchema: PATH_SCHEMA, subject: writeSubject });
 
     const outcomes = await harness.executor.runBatch(
-      harness.input(
+      await harness.input(
         await toolSetOf(processTool('Probe', pids), processTool('Later', pids), write),
         [call('cP', 'Probe'), call('cW', 'Write', { file_path: path.join(harness.layout.outside, 'w.txt') }), call('cL', 'Later')],
         { mode: 'manual' },

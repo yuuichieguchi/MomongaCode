@@ -36,7 +36,7 @@ describe('sandbox none forces approval for every Bash command (4.6, 5.11)', () =
         fs.mkdirSync(path.join(harness.layout.project, 'src'));
         const runs: string[] = [];
         const [outcome] = await harness.executor.runBatch(
-          harness.input(await toolSetOf(commandTool(command, runs)), [call('c1', 'Bash')], { mode, rules: rules(harness), sandbox: noneSandbox }),
+          await harness.input(await toolSetOf(commandTool(command, runs)), [call('c1', 'Bash')], { mode, rules: rules(harness), sandbox: noneSandbox }),
         );
         expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval' });
         expect(runs).toEqual([]);
@@ -48,7 +48,7 @@ describe('sandbox none forces approval for every Bash command (4.6, 5.11)', () =
     const harness = makeHarness();
     fs.mkdirSync(path.join(harness.layout.project, 'src'));
     const runs: string[] = [];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool('ls src', runs)), [call('c1', 'Bash')], { mode: 'manual', sandbox: fakeSandbox, env: { PATH: '/usr/bin:/bin' } }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool('ls src', runs)), [call('c1', 'Bash')], { mode: 'manual', sandbox: fakeSandbox, env: { PATH: '/usr/bin:/bin' } }));
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed' } });
     expect(runs).toEqual(['ls src']);
   });
@@ -60,7 +60,7 @@ describe('the harness batch keeps the R1a fingerprint with the protected set add
     const rules = [ruleFor(harness.layout)('deny', 'Read(.env)')];
     const batch = harness.input(await toolSetOf(), [], { rules });
     const roots = [harness.layout.project];
-    expect(batch.sandboxPolicy.protectedSet).toEqual(EMPTY_PROTECTED_SET);
-    expect(batch.sandboxPolicy.fileRules.fingerprint).toBe(fileRuleFingerprint(fileRuleSpecsOf(rules, roots), roots, null));
+    expect((await batch).sandboxPolicy.protectedSet).toEqual(EMPTY_PROTECTED_SET);
+    expect((await batch).sandboxPolicy.fileRules.fingerprint).toBe(fileRuleFingerprint(fileRuleSpecsOf(rules, roots), roots, null));
   });
 });

@@ -92,7 +92,7 @@ describe('T17 (g) decision 50 A: the recovery reap is the first attempt of an in
     fs.writeFileSync(markerOf(h, 'first'), 'r00000\n');
     h.harness.idempotency.seed(key, 'PENDING', { tool: 'Leaver' });
     const recoverable = makeTool('Leaver', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', reconcile: async () => ({ outcome: 'unknown', output: 'unknown' }) });
-    await h.harness.executor.runBatch(h.harness.input(await toolSetOf(recoverable, writer), [call('first', 'Leaver', {}, 'allow_once')])).catch(() => undefined);
+    await h.harness.executor.runBatch(await h.harness.input(await toolSetOf(recoverable, writer), [call('first', 'Leaver', {}, 'allow_once')])).catch(() => undefined);
     expect(h.listed.length).toBeGreaterThan(0);
     expect(fs.existsSync(markerOf(h, 'first'))).toBe(true);
     expect(fs.readFileSync(markerOf(h, 'first'), 'utf8')).toBe('r00000\n');

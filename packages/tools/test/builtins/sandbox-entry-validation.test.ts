@@ -7,10 +7,11 @@ import { buildSandboxPolicy } from '@momonga/tools';
 import { createReadAccessMatcher } from '../../src/read-access.ts';
 import { SandboxPolicyError, validateSandboxPolicy } from '@momonga/sandbox';
 import { makeBuiltins } from './fixtures.ts';
+import { testProbes, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
 
-const codeOf = (action: () => unknown): string | undefined => {
+const codeOf = async (action: () => unknown): Promise<string | undefined> => {
   try {
-    action();
+    await action();
   } catch (error) {
     expect(error).toBeInstanceOf(SandboxPolicyError);
     return (error as SandboxPolicyError).code;
@@ -50,22 +51,22 @@ describe('relative sandbox policy entries', () => {
 
   it('make buildSandboxPolicy throw for a relative extraReadDenied entry', async () => {
     const tools = await makeBuiltins();
-    expect(() => buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), extraReadDenied: ['relative-denied'] })).toThrow(/absolute/);
+    await expect(buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), extraReadDenied: ['relative-denied'] }, NEVER_CANCELLED)).rejects.toThrow(/absolute/);
   });
 
   it('make buildSandboxPolicy throw for a relative readAllowed entry', async () => {
     const tools = await makeBuiltins();
-    expect(() => buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), readAllowed: ['sessions/s/inner'] })).toThrow(/absolute/);
+    await expect(buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), readAllowed: ['sessions/s/inner'] }, NEVER_CANCELLED)).rejects.toThrow(/absolute/);
   });
 
   it('make buildSandboxPolicy throw for a relative extraWritable entry', async () => {
     const tools = await makeBuiltins();
-    expect(() => buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), extraWritable: ['relative-writable'] })).toThrow(/absolute/);
+    await expect(buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), extraWritable: ['relative-writable'] }, NEVER_CANCELLED)).rejects.toThrow(/absolute/);
   });
 
   it('make buildSandboxPolicy throw for a relative root', async () => {
     const tools = await makeBuiltins();
-    expect(() => buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), roots: ['relative-root'] })).toThrow(/absolute/);
+    await expect(buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), roots: ['relative-root'] }, NEVER_CANCELLED)).rejects.toThrow(/absolute/);
   });
 
   it.each([
@@ -76,7 +77,7 @@ describe('relative sandbox policy entries', () => {
   ] as const)('make validateSandboxPolicy, the one validation point, throw for a relative %s entry', async (field, code) => {
     const tools = await makeBuiltins();
     const sandboxPolicy = { ...tools.sandboxPolicy, [field]: [...(tools.sandboxPolicy[field] ?? []), 'relative-entry'] };
-    expect(codeOf(() => validateSandboxPolicy(sandboxPolicy, { tmpDir: tools.tmpDir }))).toBe(code);
+    expect(await codeOf(() => validateSandboxPolicy(sandboxPolicy, { tmpDir: tools.tmpDir }, testPaths()))).toBe(code);
   });
 });
 
@@ -87,8 +88,8 @@ describe('the executor and the read-access matcher trust the validated policy', 
     const elsewhere = path.join(tools.layout.root, 'elsewhere');
     fs.mkdirSync(denied);
     fs.mkdirSync(elsewhere);
-    const matcher = createReadAccessMatcher({ fileRules: EMPTY_FILE_RULES, readDenied: [denied], readAllowed: [elsewhere] });
-    expect(matcher.blocksResolved(path.join(denied, 'x'))).toBe(true);
+    const matcher = await createReadAccessMatcher({ fileRules: EMPTY_FILE_RULES, readDenied: [denied], readAllowed: [elsewhere] }, testPaths());
+    expect(await matcher.blocksResolved(path.join(denied, 'x'))).toBe(true);
   });
 
   it('runBatch runs a batch whose tmpDir is not one of readAllowed', async () => {
@@ -96,7 +97,7 @@ describe('the executor and the read-access matcher trust the validated policy', 
     const stray = path.join(tools.layout.root, 'stray-tmp');
     fs.mkdirSync(stray, { mode: 0o700 });
     const target = path.join(tools.layout.project, 'out.txt');
-    const outcome = await tools.run('Write', { file_path: target, content: 'x' }, { mode: 'acceptEdits', tmpDir: stray, sandboxPolicy: { ...tools.sandboxPolicy, fileRules: computeFileRules([], [tools.layout.project], stray, ruleEnforcementOf('none')) } });
+    const outcome = await tools.run('Write', { file_path: target, content: 'x' }, { mode: 'acceptEdits', tmpDir: stray, sandboxPolicy: { ...tools.sandboxPolicy, fileRules: await computeFileRules([], [tools.layout.project], stray, ruleEnforcementOf('none'), testProbes()) } });
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });

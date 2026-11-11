@@ -2,13 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS } from '@momonga/mcp';
 import type { ToolSet } from '@momonga/tools';
-import {
-  MODERN_FIXTURE_AUDIO_BYTES,
-  MODERN_FIXTURE_BLOB_BYTES,
-  MODERN_FIXTURE_HOSTILE_DESCRIPTION,
-  MODERN_FIXTURE_IMAGE_BYTES,
-  MODERN_FIXTURE_LONG_TOOL_NAME,
-} from '@momonga/testkit';
+import { MODERN_FIXTURE_AUDIO_BYTES, MODERN_FIXTURE_BLOB_BYTES, MODERN_FIXTURE_HOSTILE_DESCRIPTION, MODERN_FIXTURE_IMAGE_BYTES, MODERN_FIXTURE_LONG_TOOL_NAME, testPaths } from '@momonga/testkit';
 import { callRecords, entry, legacyConfig, makeExecutor, makePool, makeRecordFile, modernConfig, readRecords, waitForRecord } from './mcp-harness.ts';
 
 const TRACEPARENT = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
@@ -167,7 +161,7 @@ describe('MCP tool definitions', () => {
   it('uses an mcp subject with the normalized tool part, the stdio idle window and the overall limit, not the request timeout', async () => {
     const { set } = await modernSet({ requestTimeoutMs: 45_000 });
     const tool = set.get(DOTTED);
-    expect(tool?.subject({}, { cwd: '/', workingDirectory: '/', home: '/', roots: [] })).toEqual({ kind: 'mcp', server: 'modern', tool: DOTTED_PART });
+    expect(tool?.subject({}, { paths: testPaths(), cwd: '/', workingDirectory: '/', home: '/', roots: [] })).toEqual({ kind: 'mcp', server: 'modern', tool: DOTTED_PART });
     expect(tool?.idleTimeoutMs).toBe(MCP_TOOL_IDLE_TIMEOUT_MS.stdio);
     expect(tool?.timeoutMs).toBe(MCP_TOOL_TOTAL_TIMEOUT_MS);
     expect(tool?.prepare).toBeUndefined();

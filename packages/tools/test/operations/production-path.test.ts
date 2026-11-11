@@ -50,7 +50,7 @@ const setup = async (options: { realSandbox: boolean; origin?: string }) => {
   const markerDir = path.join(world.base, 'markers');
   fs.mkdirSync(markerDir);
   const tools = createOperationTools({
-    runArgv: createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
+    runArgv: createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
     readGit: hostGitReader,
     forge: NO_FORGE,
     settings: { protectedRefs: ['release/*'] },
@@ -59,12 +59,12 @@ const setup = async (options: { realSandbox: boolean; origin?: string }) => {
   const rule = ruleFor(layout);
   const run = async (name: string, args: unknown, extra: { rules?: Array<ReturnType<typeof rule>>; mode?: 'manual' | 'bypassPermissions' } = {}): Promise<CallOutcome | undefined> => {
     const rules = extra.rules ?? [];
-    const sandboxPolicy = policyFor({ layout, tmpDir, rules });
+    const sandboxPolicy = await policyFor({ layout, tmpDir, rules });
     const [outcome] = await harness.executor.runBatch(
-      harness.input(toolSet, [call('c1', name, args)], {
+      await harness.input(toolSet, [call('c1', name, args)], {
         env: world.env,
         sandbox,
-        sandboxPolicy,
+        sandboxPolicy: await sandboxPolicy,
         tmpDir,
         roots: [world.work],
         home: world.home,
@@ -136,7 +136,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no 
     const sandboxTmp = path.join(world.base, 'sandbox-tmp');
     fs.mkdirSync(sandboxTmp);
     const spawns: Spawn[] = [];
-    const reconcilePolicy = policyFor({ layout, tmpDir });
+    const reconcilePolicy = await policyFor({ layout, tmpDir });
     const sandbox = recordingSandbox(createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 }), spawns);
     const markerDir = path.join(world.base, 'markers');
     fs.mkdirSync(markerDir);
@@ -182,7 +182,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the credential of a git child inside the rea
     fs.mkdirSync(markerDir);
     const credentialRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cred-')));
     onCleanup(() => fs.rmSync(credentialRoot, { recursive: true, force: true }));
-    const runArgv = createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot });
+    const runArgv = createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot });
     const ctx = contextFor(world.work, world.env);
     const ask = `"$GIT_ASKPASS" "Password for 'https://x-access-token@forge.example': "`;
     const options = { cwd: world.work, env: world.env, signal: ctx.signal, network: 'none' as const, context: ctx, effect: false };
@@ -241,7 +241,7 @@ describe('the network a child of an operation gets', () => {
     });
   });
 
-  it.each(['git@forge.example:acme/widgets.git', 'ssh://git@forge.example/acme/widgets.git', 'git://forge.example/acme/widgets.git', 'ext::sh -c x'])('refuses %s, which the sandbox network does not carry', (destination) => {
-    expect(() => networkScopeOfDestinations([destination], 'git push')).toThrow('is not reached over HTTP or HTTPS');
+  it.each(['git@forge.example:acme/widgets.git', 'ssh://git@forge.example/acme/widgets.git', 'git://forge.example/acme/widgets.git', 'ext::sh -c x'])('refuses %s, which the sandbox network does not carry', async (destination) => {
+    await expect((async () => networkScopeOfDestinations([destination], 'git push'))()).rejects.toThrow('is not reached over HTTP or HTTPS');
   });
 });

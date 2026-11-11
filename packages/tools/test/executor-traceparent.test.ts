@@ -16,7 +16,7 @@ describe('executor trace context plumbing', () => {
     });
     const requested: string[] = [];
     await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Traced'), call('c2', 'Traced'), call('c3', 'Traced')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Traced'), call('c2', 'Traced'), call('c3', 'Traced')], {
         traceparentFor: (callId: string) => {
           requested.push(callId);
           if (callId === 'c1') return { traceparent: TRACEPARENT, tracestate: 'vendor=one' };
@@ -40,7 +40,7 @@ describe('executor trace context plumbing', () => {
         return { status: 'completed', output: 'ok' };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Untraced')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Untraced')]));
     expect(ctxSeen).toBeDefined();
     expect('traceparent' in (ctxSeen as ToolContext)).toBe(false);
     expect('tracestate' in (ctxSeen as ToolContext)).toBe(false);

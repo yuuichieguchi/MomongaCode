@@ -93,9 +93,9 @@ describe('the evidence runner', () => {
     const pids: number[] = [];
     const sandbox: Sandbox = {
       kind: 'none',
-      spawn: (command, policy, signal) => {
+      spawn: async (command, policy, signal) => {
         const child = real.spawn(command, policy, signal);
-        pids.push(child.pid);
+        pids.push((await child).pid);
         return child;
       },
     };

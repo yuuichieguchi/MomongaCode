@@ -25,7 +25,7 @@ describe('batch failure propagation', () => {
     }
     const tool = makeTool('Read', { execute: async (_input, ctx) => ({ status: 'completed', output: ctx.callId === 'c1' ? 'x'.repeat(30_001) : 'small' }) });
     const set = await toolSetOf(tool);
-    await expect(harness.executor.runBatch(harness.input(set, [call('c1', 'Read'), call('c2', 'Read')]))).rejects.toBe(failure);
+    await expect(harness.executor.runBatch(await harness.input(set, [call('c1', 'Read'), call('c2', 'Read')]))).rejects.toBe(failure);
     for (let round = 0; round < 5; round += 1) await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(unhandled).toEqual([]);
   });
@@ -51,7 +51,7 @@ describe('blob handle contract', () => {
     const harness = makeHarness({ outputLimitChars: 300 });
     harness.blobs.port.put = async (data) => ({ handle, sha256: 'a'.repeat(64), byteLength: String(data).length, lineCount: 1 });
     const set = await toolSetOf(makeTool('Read', { execute: async () => ({ status: 'completed', output: 'z'.repeat(1000) }) }));
-    const outcome = harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
+    const outcome = harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')]));
     await expect(outcome).rejects.toThrow(/handle/i);
     await expect(outcome).rejects.toThrow(/64/);
     for (let round = 0; round < 5; round += 1) await new Promise<void>((resolve) => setTimeout(resolve, 0));

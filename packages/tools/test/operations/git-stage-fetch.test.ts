@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { contextFor, countingRunner, makeGitWorld, operationTool, partsOf, settle } from './support.ts';
 import type { GitWorld } from './support.ts';
+import { testPaths } from '@momonga/testkit';
 
 const baseWorld = (): GitWorld => {
   const world = makeGitWorld();
@@ -143,7 +144,7 @@ describe('GitFetch', () => {
     const tool = operationTool('GitFetch', { runArgv: countingRunner().run });
     const ctx = contextFor(world.work, world.env);
     const facts = await tool.gateFacts?.({ remote: 'origin', branch: 'main' }, ctx, { signal: ctx.signal, env: ctx.env });
-    const subject = tool.subject({ remote: 'origin', branch: 'main' }, { cwd: world.work, workingDirectory: world.work, home: world.home, roots: [world.work] }, facts);
+    const subject = tool.subject({ remote: 'origin', branch: 'main' }, { paths: testPaths(), cwd: world.work, workingDirectory: world.work, home: world.home, roots: [world.work] }, facts);
     expect(subject).toMatchObject({ kind: 'repo', operation: 'GitFetch', remote: 'origin', refs: ['main'], destinations: [world.bare], destinationsMatchFetch: true });
   });
 });

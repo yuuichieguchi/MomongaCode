@@ -26,11 +26,11 @@ const runAsUser = async (tools: Builtins, command: string, rules: PermissionRule
     cwd: tools.layout.project,
     env: BASE_ENV,
     signal,
-    refusal: (asked) => tools.executor.userRefusal({ tool: 'Bash', command: asked }, facts),
-    spawn: (spawned, spawnSignal) => {
-      const child = unsandboxed.spawn(spawned, facts.sandboxPolicy, spawnSignal);
-      groups.push(child.pgid);
-      trackGroup(child.pgid);
+    refusal: async (asked) => tools.executor.userRefusal({ tool: 'Bash', command: asked }, await facts),
+    spawn: async (spawned, spawnSignal) => {
+      const child = await unsandboxed.spawn(spawned, (await facts).sandboxPolicy, spawnSignal);
+      groups.push((await child).pgid);
+      trackGroup((await child).pgid);
       return child;
     },
     onOutput: (text) => {
@@ -99,7 +99,7 @@ describe('the floors of a file the person names', () => {
     const secret = tools.write('.env', 'SECRET=1');
     const open = tools.write('notes.txt', 'n');
     const facts = tools.batch('Read', { file_path: secret }, { rules: [denyOf(tools, 'Read(.env)')] });
-    expect(await tools.executor.userRefusal({ tool: 'Read', path: secret }, facts)).toContain('Read(.env)');
-    expect(await tools.executor.userRefusal({ tool: 'Read', path: open }, facts)).toBeUndefined();
+    expect(await tools.executor.userRefusal({ tool: 'Read', path: secret }, await facts)).toContain('Read(.env)');
+    expect(await tools.executor.userRefusal({ tool: 'Read', path: open }, await facts)).toBeUndefined();
   });
 });

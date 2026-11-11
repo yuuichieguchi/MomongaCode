@@ -3,12 +3,12 @@ import type { StopValuesReader } from '@momonga/config';
 import {
   COMMON_ENTRY_FLAGS,
   EntryUsageError,
-  canonicalPath,
   withLogData,
   generationLayout,
   momongaPaths,
   runDaemonEntry,
   supervisorMaxCloseMs,
+  syncPaths,
 } from '@momonga/foundation';
 import type { EntryIo, JsonLogger } from '@momonga/foundation';
 import { SUPERVISOR_SERVICE } from './constants.ts';
@@ -33,12 +33,12 @@ export const generationOfFlag = (value: string | undefined): number => {
   return generation;
 };
 
-const pathsOf = (home: string): ReturnType<typeof momongaPaths> => momongaPaths(canonicalPath(home), process.platform, {});
+const pathsOf = (home: string): ReturnType<typeof momongaPaths> => momongaPaths(syncPaths.canonicalPath(home), process.platform, {});
 
 export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Promise<number> => {
   let stopValues: StopValuesReader | undefined;
   const stopValuesOf = (home: string, logger: JsonLogger): StopValuesReader => {
-    stopValues ??= createStopValuesReader({ load: () => readUserStopValues(canonicalPath(home)), onNotice: (message) => logger.warn(message) });
+    stopValues ??= createStopValuesReader({ load: () => readUserStopValues(syncPaths.canonicalPath(home)), onNotice: (message) => logger.warn(message) });
     return stopValues;
   };
   return runDaemonEntry(io, {
@@ -47,7 +47,7 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
     flags: SUPERVISE_ENTRY_FLAGS,
     maxCloseMs: (_flags, values) => supervisorMaxCloseMs(values),
     readStopValues: ({ home, logger }) => stopValuesOf(home, logger).read(),
-    ownLockPath: (home, flags) => generationLayout(canonicalPath(home), generationOfFlag(flags.generation)).locks.supervisor,
+    ownLockPath: (home, flags) => generationLayout(syncPaths.canonicalPath(home), generationOfFlag(flags.generation)).locks.supervisor,
     logPath: (home) => pathsOf(home).logFiles.supervisor,
     isConfigError: () => false,
     start: async (context) => {
@@ -56,10 +56,10 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
       const logger = withLogData(context.logger, { generation: generationOfFlag(context.flags.generation) });
       const supervisor = await startSupervisor({
         ...deps,
-        reaperPass: deps.reaperPass ?? entryReaperPass(deps, { home: canonicalPath(context.home), clock, timers, logger, stopValues: stopValuesOf(context.home, context.logger) }),
+        reaperPass: deps.reaperPass ?? entryReaperPass(deps, { home: syncPaths.canonicalPath(context.home), clock, timers, logger, stopValues: stopValuesOf(context.home, context.logger) }),
         clock,
         timers,
-        home: canonicalPath(context.home),
+        home: syncPaths.canonicalPath(context.home),
         version: context.version,
         generation: generationOfFlag(context.flags.generation),
         env: context.env,

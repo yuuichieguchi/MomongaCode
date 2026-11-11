@@ -49,8 +49,8 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
     network: 'deny',
   });
 
-  const sh = (script: string): SandboxedProcess => {
-    const proc = sandbox.spawn(
+  const sh = async (script: string): Promise<SandboxedProcess> => {
+    const proc = await sandbox.spawn(
       { argv: ['/bin/sh', '-c', `touch '${marker}' || exit 99\n${script}`], cwd: work, env: BASE_ENV, tmpDir: mine },
       policy(),
       new AbortController().signal,
@@ -73,7 +73,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
   });
 
   it('sets TMPDIR to the command tmpDir and lets the command write there although its parent is write-denied', async () => {
-    const result = await run(sh(`printf '%s\\n' "$TMPDIR"; printf session-data > "$TMPDIR/f"`));
+    const result = await run(await sh(`printf '%s\\n' "$TMPDIR"; printf session-data > "$TMPDIR/f"`));
     expect(fs.existsSync(marker)).toBe(true);
     expect(result.code).toBe(0);
     expect(result.stdout.trim()).toBe(mine);
@@ -81,7 +81,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
   });
 
   it('creates no per-spawn temp dir when tmpDir is set', async () => {
-    const result = await run(sh(`ls -A '${spawnTmpRoot}' | wc -l | tr -d ' '`));
+    const result = await run(await sh(`ls -A '${spawnTmpRoot}' | wc -l | tr -d ' '`));
     expect(fs.existsSync(marker)).toBe(true);
     expect(result.code).toBe(0);
     expect(result.stdout.trim()).toBe('0');
@@ -89,7 +89,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
 
   it("denies writing into another session's tmp dir", async () => {
     const target = path.join(other, 'f');
-    const result = await run(sh(`printf x > '${target}'`));
+    const result = await run(await sh(`printf x > '${target}'`));
     expect(fs.existsSync(marker)).toBe(true);
     expect(result.code).not.toBe(0);
     expect(fs.existsSync(target)).toBe(false);
@@ -97,14 +97,14 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
 
   it('denies writing directly into the sessions root', async () => {
     const target = path.join(sessions, 'stray');
-    const result = await run(sh(`printf x > '${target}'`));
+    const result = await run(await sh(`printf x > '${target}'`));
     expect(fs.existsSync(marker)).toBe(true);
     expect(result.code).not.toBe(0);
     expect(fs.existsSync(target)).toBe(false);
   });
 
   it('lets /bin/realpath resolve TMPDIR', async () => {
-    const result = await run(sh('/bin/realpath "$TMPDIR"'));
+    const result = await run(await sh('/bin/realpath "$TMPDIR"'));
     expect(fs.existsSync(marker)).toBe(true);
     expect(result.code).toBe(0);
     expect(result.stdout.trim()).toBe(mine);
@@ -112,7 +112,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
 
   it('lets node realpathSync resolve os.tmpdir()', async () => {
     const script = "process.stdout.write(require('fs').realpathSync(require('os').tmpdir()))";
-    const result = await run(sh(`'${process.execPath}' -e "${script}"`));
+    const result = await run(await sh(`'${process.execPath}' -e "${script}"`));
     expect(fs.existsSync(marker)).toBe(true);
     expect(result.stderr).toBe('');
     expect(result.code).toBe(0);
@@ -120,14 +120,14 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
   });
 
   it('denies listing the sessions root', async () => {
-    const result = await run(sh(`ls '${sessions}'`));
+    const result = await run(await sh(`ls '${sessions}'`));
     expect(fs.existsSync(marker)).toBe(true);
     expect(result.code).not.toBe(0);
     expect(result.stdout).not.toContain('session-2');
   });
 
   it("denies reading another session's file", async () => {
-    const result = await run(sh(`cat '${path.join(other, 'secret')}'`));
+    const result = await run(await sh(`cat '${path.join(other, 'secret')}'`));
     expect(fs.existsSync(marker)).toBe(true);
     expect(result.code).not.toBe(0);
     expect(result.stdout).not.toContain('other-session-secret');
@@ -160,13 +160,13 @@ describe.runIf(HAS_SEATBELT)('seatbelt rejects an invalid command tmpDir (real s
     it(`rejects a tmpDir of ${label} without running the command`, async () => {
       const fx = fixture();
       const attempt = async (): Promise<void> => {
-        const proc = fx.sandbox.spawn(
+        const proc = await fx.sandbox.spawn(
           { argv: ['/bin/sh', '-c', `touch '${fx.marker}'`], cwd: fx.work, env: BASE_ENV, tmpDir: tmpDirOf(fx) },
           fx.policy,
           new AbortController().signal,
         );
         spawned.push(proc);
-        await run(proc);
+        await run(await proc);
       };
       await expect(attempt()).rejects.toThrow();
       expect(fs.existsSync(fx.marker)).toBe(false);
@@ -184,8 +184,8 @@ describe('unsandboxed session tmp dir', () => {
       policy,
       new AbortController().signal,
     );
-    spawned.push(proc);
-    const result = await run(proc);
+    spawned.push(await proc);
+    const result = await run(await proc);
     expect(result.code).toBe(0);
     expect(result.stdout).toBe(tmpDir);
   });
@@ -197,8 +197,8 @@ describe('unsandboxed session tmp dir', () => {
       policy,
       new AbortController().signal,
     );
-    spawned.push(proc);
-    const result = await run(proc);
+    spawned.push(await proc);
+    const result = await run(await proc);
     expect(result.stdout).toBe('/elsewhere');
   });
 });

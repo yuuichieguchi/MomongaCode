@@ -45,9 +45,9 @@ describe('executor: readDenied path subjects', () => {
         const target = path.join(vault, 'secret.txt');
         const runs: string[] = [];
         const [outcome] = await harness.executor.runBatch(
-          harness.input(await toolSetOf(pathTool(access, target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+          await harness.input(await toolSetOf(pathTool(access, target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
             mode,
-            sandboxPolicy: deniedPolicy(harness, vault),
+            sandboxPolicy: await deniedPolicy(harness, vault),
           }),
         );
         expect(outcome).toEqual({ callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Permission denied: vault/secret.txt is blocked by the sandbox policy', denial: { source: 'sandbox', reason: 'vault/secret.txt is blocked by the sandbox policy' } } });
@@ -62,7 +62,7 @@ describe('executor: readDenied path subjects', () => {
     fs.mkdirSync(vault);
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('read', vault, runs)), [call('c1', 'PathTool')], { sandboxPolicy: deniedPolicy(harness, vault) }),
+      await harness.input(await toolSetOf(pathTool('read', vault, runs)), [call('c1', 'PathTool')], { sandboxPolicy: await deniedPolicy(harness, vault) }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed', output: 'Permission denied: vault is blocked by the sandbox policy' } });
   });
@@ -73,7 +73,7 @@ describe('executor: readDenied path subjects', () => {
     const sibling = path.join(harness.layout.project, 'vault-public', 'a.txt');
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('read', sibling, runs)), [call('c1', 'PathTool')], { sandboxPolicy: deniedPolicy(harness, vault) }),
+      await harness.input(await toolSetOf(pathTool('read', sibling, runs)), [call('c1', 'PathTool')], { sandboxPolicy: await deniedPolicy(harness, vault) }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(runs).toEqual([sibling]);
@@ -88,9 +88,9 @@ describe('executor: readDenied path subjects', () => {
     fs.symlinkSync(vault, link);
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('read', path.join(link, 'token'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+      await harness.input(await toolSetOf(pathTool('read', path.join(link, 'token'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: deniedPolicy(harness, vault),
+        sandboxPolicy: await deniedPolicy(harness, vault),
       }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
@@ -102,9 +102,9 @@ describe('executor: readDenied path subjects', () => {
     const harness = makeHarness();
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], {
+      await harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: deniedPolicy(harness, harness.layout.project),
+        sandboxPolicy: await deniedPolicy(harness, harness.layout.project),
       }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
@@ -116,7 +116,7 @@ describe('executor: sandbox kind none', () => {
     const harness = makeHarness();
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], { mode: 'bypassPermissions', sandbox: noneSandbox }),
+      await harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], { mode: 'bypassPermissions', sandbox: noneSandbox }),
     );
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval', decision: { kind: 'ask' }, title: 'Bash title', toolKind: 'execute' });
     expect(outcome !== undefined && 'suggestedRule' in outcome).toBe(false);
@@ -128,7 +128,7 @@ describe('executor: sandbox kind none', () => {
     const runs: string[] = [];
     const rule = ruleFor(harness.layout)('allow', 'Bash(echo:*)');
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], { rules: [rule], sandbox: noneSandbox }),
+      await harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], { rules: [rule], sandbox: noneSandbox }),
     );
     expect(outcome).toMatchObject({ kind: 'needs_approval', decision: { kind: 'ask' } });
     expect(outcome !== undefined && 'suggestedRule' in outcome).toBe(false);
@@ -139,7 +139,7 @@ describe('executor: sandbox kind none', () => {
     const runs: string[] = [];
     const rule = ruleFor(harness.layout)('deny', 'Bash(echo:*)');
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], { mode: 'bypassPermissions', rules: [rule], sandbox: noneSandbox }),
+      await harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], { mode: 'bypassPermissions', rules: [rule], sandbox: noneSandbox }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect((outcome as { result: { output: string } }).result.output).toMatch(/^Permission denied: /);
@@ -150,7 +150,7 @@ describe('executor: sandbox kind none', () => {
     const harness = makeHarness();
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash', {}, 'allow_once')], { mode: 'bypassPermissions', sandbox: noneSandbox }),
+      await harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash', {}, 'allow_once')], { mode: 'bypassPermissions', sandbox: noneSandbox }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'ran' } });
     expect(runs).toEqual(['ran']);
@@ -160,7 +160,7 @@ describe('executor: sandbox kind none', () => {
     const harness = makeHarness();
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(execTool(runs, 'read_only')), [call('c1', 'Bash')], { mode: 'bypassPermissions', sandbox: noneSandbox }),
+      await harness.input(await toolSetOf(execTool(runs, 'read_only')), [call('c1', 'Bash')], { mode: 'bypassPermissions', sandbox: noneSandbox }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
   });
@@ -168,7 +168,7 @@ describe('executor: sandbox kind none', () => {
   it('lets an allowed exec call run under a seatbelt sandbox', async () => {
     const harness = makeHarness();
     const runs: string[] = [];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], { mode: 'bypassPermissions' }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(execTool(runs)), [call('c1', 'Bash')], { mode: 'bypassPermissions' }));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(runs).toEqual(['ran']);
   });

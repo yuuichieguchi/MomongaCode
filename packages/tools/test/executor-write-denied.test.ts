@@ -26,9 +26,9 @@ describe('executor: writeDenied path subjects', () => {
     const target = path.join(sessions, 'other', 'f');
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('write', target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+      await harness.input(await toolSetOf(pathTool('write', target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [sessions] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [sessions] },
       }),
     );
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed' } });
@@ -44,9 +44,9 @@ describe('executor: writeDenied path subjects', () => {
     fs.symlinkSync(keychains, link);
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('write', path.join(link, 'x'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+      await harness.input(await toolSetOf(pathTool('write', path.join(link, 'x'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [keychains] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [keychains] },
       }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
@@ -62,9 +62,9 @@ describe('executor: writeDenied path subjects', () => {
     fs.symlinkSync(keychains, link);
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('write', path.join(link, 'x'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+      await harness.input(await toolSetOf(pathTool('write', path.join(link, 'x'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [keychains] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [keychains] },
       }),
     );
     const reason = `${path.join(fs.realpathSync.native(keychains), 'x')} is write-protected by the sandbox policy`;
@@ -78,9 +78,9 @@ describe('executor: writeDenied path subjects', () => {
     fs.mkdirSync(path.join(sessions, 'other'), { recursive: true });
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('write', path.join(sessions, 'other', 'f'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+      await harness.input(await toolSetOf(pathTool('write', path.join(sessions, 'other', 'f'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [sessions] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [sessions] },
       }),
     );
     expect((outcome as { result: { output: string } }).result.output).toBe(`Permission denied: ${path.join('sessions', 'other', 'f')} is write-protected by the sandbox policy`);
@@ -93,9 +93,9 @@ describe('executor: writeDenied path subjects', () => {
     const deniedBelow = path.join(placeholder, 'inner', 'secret');
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('write', path.join(deniedBelow, 'f'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+      await harness.input(await toolSetOf(pathTool('write', path.join(deniedBelow, 'f'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [deniedBelow] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [deniedBelow] },
       }),
     );
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed' } });
@@ -110,9 +110,9 @@ describe('executor: writeDenied path subjects', () => {
     const target = path.join(sessions, 'f');
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('read', target, runs)), [call('c1', 'PathTool')], {
+      await harness.input(await toolSetOf(pathTool('read', target, runs)), [call('c1', 'PathTool')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [sessions] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [sessions] },
       }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
@@ -140,9 +140,9 @@ describe('executor write guard while a placeholder changes during the batch (HIG
     const runs: string[] = [];
     const tools = await toolSetOf(flippingTool(() => flip(placeholder)), pathTool('write', path.join(deniedBelow, 'pre-commit'), runs));
     const outcomes = await harness.executor.runBatch(
-      harness.input(tools, [call('c1', 'Flip', {}, 'allow_once'), call('c2', 'PathTool', {}, 'allow_once')], {
+      await harness.input(tools, [call('c1', 'Flip', {}, 'allow_once'), call('c2', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [deniedBelow] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [deniedBelow] },
       }),
     );
     return { outcomes, runs };
@@ -177,9 +177,9 @@ describe('executor write guard while a placeholder changes during the batch (HIG
     const runs: string[] = [];
     const tools = await toolSetOf(flippingTool(() => fs.unlinkSync(placeholder)), pathTool('write', link, runs));
     const outcomes = await harness.executor.runBatch(
-      harness.input(tools, [call('c1', 'Flip', {}, 'allow_once'), call('c2', 'PathTool', {}, 'allow_once')], {
+      await harness.input(tools, [call('c1', 'Flip', {}, 'allow_once'), call('c2', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [path.join(placeholder, 'hooks')] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [path.join(placeholder, 'hooks')] },
       }),
     );
     expect((outcomes[1] as { result: { output: string } }).result.output).toMatch(/^Permission denied: /);
@@ -194,9 +194,9 @@ describe('executor write guard while a placeholder changes during the batch (HIG
     const sibling = path.join(harness.layout.project, 'free.txt');
     const tools = await toolSetOf(flippingTool(() => fs.unlinkSync(placeholder)), pathTool('write', sibling, runs));
     await harness.executor.runBatch(
-      harness.input(tools, [call('c1', 'Flip', {}, 'allow_once'), call('c2', 'PathTool', {}, 'allow_once')], {
+      await harness.input(tools, [call('c1', 'Flip', {}, 'allow_once'), call('c2', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [path.join(placeholder, 'hooks')] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), writeDenied: [path.join(placeholder, 'hooks')] },
       }),
     );
     expect(runs).toEqual([sibling]);
@@ -212,7 +212,7 @@ describe('executor write guard and the protected set (V15)', () => {
     const runs: string[] = [];
     const policy = { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [keychains], protectedSet: protectedSetWith([harness.layout.project], [keychains]) };
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('write', target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], { mode: 'bypassPermissions', sandboxPolicy: policy }),
+      await harness.input(await toolSetOf(pathTool('write', target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], { mode: 'bypassPermissions', sandboxPolicy: await policy }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(runs).toEqual([]);
@@ -226,7 +226,7 @@ describe('executor write guard and the protected set (V15)', () => {
     const runs: string[] = [];
     const policy = { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [entry], protectedSet: protectedSetWith([harness.layout.project], [entry]) };
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(pathTool('write', path.join(harness.layout.project, 'a.txt'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], { mode: 'acceptEdits', sandboxPolicy: policy }),
+      await harness.input(await toolSetOf(pathTool('write', path.join(harness.layout.project, 'a.txt'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], { mode: 'acceptEdits', sandboxPolicy: await policy }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
   });

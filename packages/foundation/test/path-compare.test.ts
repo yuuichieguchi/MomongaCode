@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { canonicalPath } from '@momonga/foundation';
+import { syncPaths } from '../src/index.ts';
 
 const tempDirs: string[] = [];
 
@@ -28,12 +28,12 @@ describe('canonicalPath with a dangling relative symlink', () => {
 
   it('resolves the link against its real parent directory', () => {
     const p = fixture();
-    expect(canonicalPath(path.join(p, 'real', 'sub', 'link'))).toBe(path.join(p, 'real', 'target', 'f'));
+    expect(syncPaths.canonicalPath(path.join(p, 'real', 'sub', 'link'))).toBe(path.join(p, 'real', 'target', 'f'));
   });
 
   it('gives the same result when the link is reached through a directory symlink', () => {
     const p = fixture();
-    expect(canonicalPath(path.join(p, 'alias', 'link'))).toBe(path.join(p, 'real', 'target', 'f'));
-    expect(canonicalPath(path.join(p, 'alias', 'link'))).toBe(canonicalPath(path.join(p, 'real', 'sub', 'link')));
+    expect(syncPaths.canonicalPath(path.join(p, 'alias', 'link'))).toBe(path.join(p, 'real', 'target', 'f'));
+    expect(syncPaths.canonicalPath(path.join(p, 'alias', 'link'))).toBe(syncPaths.canonicalPath(path.join(p, 'real', 'sub', 'link')));
   });
 });

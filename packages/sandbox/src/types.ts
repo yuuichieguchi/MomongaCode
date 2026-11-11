@@ -45,7 +45,7 @@ export interface SandboxedProcess {
 export interface Sandbox {
   kind: 'seatbelt' | 'bubblewrap' | 'none';
   sweep?(): void;
-  spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess;
+  spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess | Promise<SandboxedProcess>;
 }
 
 export const SANDBOX_NETWORK_SCOPES: Readonly<Record<Sandbox['kind'], readonly NetworkScopeKind[]>> = {

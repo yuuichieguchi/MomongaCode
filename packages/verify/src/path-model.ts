@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { testFileMatcher } from '@momonga/foundation';
-import type { FileMatcher, FileRuleEntry, FileRuleSet, PathResolution, ProtectedSet } from '@momonga/foundation';
+import type { FileMatcher, FileRuleEntry, FileRuleSet, PathProbes, PathResolution, ProtectedSet } from '@momonga/foundation';
 import type { Bool, Re, Seq } from 'z3-solver';
 import { singleton, subtractSets } from './char-set.ts';
 import { literalNode, parseRegexSource } from './regex-source.ts';
@@ -9,10 +9,7 @@ import type { Smt } from './smt.ts';
 
 const SLASH = 0x2f;
 
-export type PathProbes = {
-  canonicalise: (absolute: string) => PathResolution;
-  volumeProbe: (directory: string) => boolean;
-};
+export type { PathProbes };
 
 export type PathModelContext = {
   smt: Smt;
@@ -29,14 +26,14 @@ export type PathModel = {
   ruleMatches(variables: PathVariables, ruleIndex: number): Bool;
   protectedWrite(resolved: Seq): Bool;
   inside(resolved: Seq): Bool;
-  under(resolved: Seq, directory: string): Bool;
-  canonicalDirectory(directory: string): PathResolution;
+  under(resolved: Seq, directory: string): Promise<Bool>;
+  canonicalDirectory(directory: string): Promise<PathResolution>;
   aliases: ReadonlyArray<{ lexical: string; canonical: string }>;
 };
 
 const dialectOf = (smt: Smt, ignoreCase: boolean): RegexDialect => ({ alphabet: smt.alphabet, ignoreCase });
 
-export const createPathModel = (context: PathModelContext): PathModel => {
+export const createPathModel = async (context: PathModelContext): Promise<PathModel> => {
   const { smt, fileRules, protectedSet, roots, probes } = context;
   const rest = smt.concat(smt.chars(singleton(SLASH)), smt.anyString);
   const slash = smt.chars(singleton(SLASH));
@@ -108,18 +105,25 @@ export const createPathModel = (context: PathModelContext): PathModel => {
     return blocks.length === 0 ? ctx.Bool.val(false) : ctx.Or(...blocks);
   };
 
-  const foldOf = (probePath: string): boolean => probes.volumeProbe(probePath);
+  const foldOf = async (probePath: string): Promise<boolean> => probes.volumeProbe(probePath);
 
-  const under = (resolved: Seq, directory: string): Bool => smt.member(resolved, subtree(directory, foldOf(directory)));
+  const underFolded = (resolved: Seq, directory: string, fold: boolean): Bool => smt.member(resolved, subtree(directory, fold));
 
-  const canonicalRoots = roots.flatMap((root) => {
-    const resolution = probes.canonicalise(root);
-    return resolution.ok ? [resolution.path] : [];
-  });
+  const under = async (resolved: Seq, directory: string): Promise<Bool> => underFolded(resolved, directory, await foldOf(directory));
+
+  type Folded = { directory: string; fold: boolean };
+
+  const folded = async (directory: string): Promise<Folded> => ({ directory, fold: await foldOf(directory) });
+
+  const canonicalRoots: Folded[] = [];
+  for (const root of roots) {
+    const resolution = await probes.canonicalise(root);
+    if (resolution.ok) canonicalRoots.push(await folded(resolution.path));
+  }
 
   const inside = (resolved: Seq): Bool => {
     const ctx = smt.ctx;
-    return canonicalRoots.length === 0 ? ctx.Bool.val(false) : ctx.Or(...canonicalRoots.map((root) => under(resolved, root)));
+    return canonicalRoots.length === 0 ? ctx.Bool.val(false) : ctx.Or(...canonicalRoots.map((root) => underFolded(resolved, root.directory, root.fold)));
   };
 
   const isEmptyProtected =
@@ -129,26 +133,44 @@ export const createPathModel = (context: PathModelContext): PathModel => {
     protectedSet.names.length === 0 &&
     protectedSet.patterns.entries.length === 0;
 
-  const parentCanonicalForm = (entry: string): string => {
-    const parent = probes.canonicalise(path.dirname(entry));
+  const parentCanonicalForm = async (entry: string): Promise<string> => {
+    const parent = await probes.canonicalise(path.dirname(entry));
     return parent.ok ? path.join(parent.path, path.basename(entry)) : entry;
   };
+
+  type ProtectedFacts = {
+    paths: Folded[];
+    lexicalPaths: Folded[];
+    literals: Array<{ entry: string; parentForm: string; fold: boolean }>;
+    roots: Folded[];
+  };
+
+  const protectedFacts = async (): Promise<ProtectedFacts> => {
+    const facts: ProtectedFacts = { paths: [], lexicalPaths: [], literals: [], roots: [] };
+    if (isEmptyProtected) return facts;
+    for (const entry of protectedSet.paths) {
+      const resolution = await probes.canonicalise(entry);
+      facts.paths.push(await folded(resolution.ok ? resolution.path : entry));
+    }
+    for (const entry of protectedSet.lexicalPaths) facts.lexicalPaths.push(await folded(entry));
+    for (const entry of protectedSet.literals) {
+      const fold = await foldOf(entry);
+      facts.literals.push({ entry, parentForm: await parentCanonicalForm(entry), fold });
+    }
+    for (const root of protectedSet.roots) facts.roots.push(await folded(root));
+    return facts;
+  };
+
+  const facts = await protectedFacts();
 
   const protectedWrite = (resolved: Seq): Bool => {
     const ctx = smt.ctx;
     if (isEmptyProtected) return ctx.Bool.val(false);
     const clauses: Bool[] = [];
-    for (const entry of protectedSet.paths) {
-      const resolution = probes.canonicalise(entry);
-      clauses.push(under(resolved, resolution.ok ? resolution.path : entry));
-    }
-    for (const entry of protectedSet.lexicalPaths) clauses.push(under(resolved, entry));
-    for (const entry of protectedSet.literals) {
-      const fold = foldOf(entry);
-      clauses.push(smt.member(resolved, smt.union(textIn(entry, fold), textIn(parentCanonicalForm(entry), fold))));
-    }
-    for (const root of protectedSet.roots) {
-      const fold = foldOf(root);
+    for (const { directory, fold } of facts.paths) clauses.push(underFolded(resolved, directory, fold));
+    for (const { directory, fold } of facts.lexicalPaths) clauses.push(underFolded(resolved, directory, fold));
+    for (const { entry, parentForm, fold } of facts.literals) clauses.push(smt.member(resolved, smt.union(textIn(entry, fold), textIn(parentForm, fold))));
+    for (const { directory: root, fold } of facts.roots) {
       const prefix = root === '/' ? smt.emptyString : textIn(root, fold);
       const names = smt.union(...protectedSet.names.map((name) => textIn(name, fold)));
       const nested = smt.concat(prefix, smt.star(smt.concat(slash, segment)), slash, names, smt.optional(rest));
@@ -158,5 +180,5 @@ export const createPathModel = (context: PathModelContext): PathModel => {
     return clauses.length === 0 ? ctx.Bool.val(false) : ctx.Or(...clauses);
   };
 
-  return { variables, ruleMatches, protectedWrite, inside, under, canonicalDirectory: probes.canonicalise, aliases };
+  return { variables, ruleMatches, protectedWrite, inside, under, canonicalDirectory: async (directory) => probes.canonicalise(directory), aliases };
 };

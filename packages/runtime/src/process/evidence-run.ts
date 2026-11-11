@@ -1,8 +1,8 @@
 import path from 'node:path';
-import { UNMEASURED_CAPABILITY, canonicalDirectory, createMarker, defaultProcessInspector, nodeFileSystem, groupRecordOutcome, protectedSetFor, recordMarkerGroup, uuidv7 } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, createMarker, hostPaths, defaultProcessInspector, nodeFileSystem, groupRecordOutcome, protectedSetFor, recordMarkerGroup, uuidv7 } from '@momonga/foundation';
 import type { MarkerHandle, MomongaPaths } from '@momonga/foundation';
-import { computeFileRules } from '@momonga/policy';
-import type { PolicyPorts } from '@momonga/policy';
+import { askedBy, computeFileRules } from '@momonga/policy';
+import type { PolicyHostPorts } from '@momonga/policy';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import { buildSandboxPolicy, createMarkerSettle, readOnlyEnvironment, readOnlySandboxPolicy, settleFinishedCommand } from '@momonga/tools';
 import type { MarkerOwners, MarkerSettle, MarkerSettleOptions } from '@momonga/tools';
@@ -15,7 +15,7 @@ export type EvidenceReap = Pick<MarkerSettleOptions, 'inspector' | 'killGraceMs'
 export type EvidenceRunnerOptions = {
   paths: MomongaPaths;
   home: string;
-  fs: PolicyPorts;
+  fs: PolicyHostPorts;
   sandboxes: SandboxBindings;
   env: Readonly<Record<string, string>>;
   reap?: EvidenceReap;
@@ -37,7 +37,7 @@ export const createEvidenceRunner =
   ({ paths, home, fs, sandboxes, env, reap = {}, owners, onWarning = raiseWarning }: EvidenceRunnerOptions) =>
   (project: string): EvidenceRun =>
   async (command, signal) => {
-    const root = canonicalDirectory(project);
+    const root = await hostPaths(signal).canonicalDirectory(project);
     if (!root.ok) return { exitCode: null, notStarted: `${project} is not a folder` };
     const roots = [root.path];
     const inspector = reap.inspector ?? defaultProcessInspector();
@@ -56,17 +56,21 @@ export const createEvidenceRunner =
         handle = await createMarker(marker, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
         owners?.remember(name, handle.mode);
         settle = createMarkerSettle({ ...reap, marker, mode: handle.mode, inspector, onWarning });
+        const ports = askedBy(fs, signal);
         const policy = readOnlySandboxPolicy(
-          buildSandboxPolicy({
-            roots: [],
-            home,
-            sessionsTmpRoot: paths.tmp.sessions,
-            fileRules: computeFileRules([], roots, null, held.ruleEnforcement),
-            protectedSet: protectedSetFor(roots, fs),
-            network: command.network,
-          }),
+          await buildSandboxPolicy(
+            {
+              roots: [],
+              home,
+              sessionsTmpRoot: paths.tmp.sessions,
+              fileRules: await computeFileRules([], roots, null, held.ruleEnforcement, ports),
+              protectedSet: await protectedSetFor(roots, ports),
+              network: command.network,
+            },
+            signal,
+          ),
         );
-        child = held.sandbox.spawn({ argv: command.argv, cwd: command.cwd, env: readOnlyEnvironment({ ...env, ...command.env }), markerFile: marker }, policy, signal, { markerFd: handle.fd });
+        child = await held.sandbox.spawn({ argv: command.argv, cwd: command.cwd, env: readOnlyEnvironment({ ...env, ...command.env }), markerFile: marker }, policy, signal, { markerFd: handle.fd });
       } catch (error) {
         return { exitCode: null, notStarted: error instanceof Error ? error.message : String(error) };
       }

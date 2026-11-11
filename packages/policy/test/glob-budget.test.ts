@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { fakePolicyFilesystem, NEVER_CANCELLED } from '@momonga/testkit';
 import type { GlobExpander, GlobExpansion } from '../src/filesystem.ts';
 import { MAX_GLOB_MATCHES, createGlobDeadline, expandGlobWord, globBudgetMs, settleGlobs } from '../src/glob-expansion.ts';
 import type { GlobDeadline } from '../src/glob-expansion.ts';
@@ -76,9 +76,9 @@ describe('prepareGlobs spends one deadline across all the glob operands of a dec
     const { expand } = recordingExpander({ matches: ['a.ts'] });
     const table = await prepareGlobs({ expand, platform: 'darwin', subject: commandSubject('cat a*'), deadline: fixedDeadline(700), ...PREPARING });
     const host = { ...fakePolicyFilesystem(), expandGlob: expand };
-    const settled = settleGlobs(host, table);
+    const settled = settleGlobs(host, table, NEVER_CANCELLED);
     expect(settled.expandGlob('a*', CONTEXT.cwd, MAX_GLOB_MATCHES)).toEqual({ matches: ['a.ts'] });
-    expect(() => settled.expandGlob('b*', CONTEXT.cwd, MAX_GLOB_MATCHES)).toThrow('was not expanded before the decision');
+    await expect((async () => settled.expandGlob('b*', CONTEXT.cwd, MAX_GLOB_MATCHES))()).rejects.toThrow('was not expanded before the decision');
   });
 
   it('rethrows an error of the expander', async () => {

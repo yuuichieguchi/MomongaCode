@@ -5,7 +5,7 @@ import { containsByComponents, walkPath } from './path-compare.ts';
 import { flavourOf, patternPathOf } from './path-flavour.ts';
 import type { PathFlavour } from './path-flavour.ts';
 import type { StepReader, WalkResult } from './path-compare.ts';
-import type { PathResolution, Unresolved, UnresolvableReason } from './path-resolution.ts';
+import type { Awaitable, PathProbes, Unresolved, UnresolvableReason } from './path-resolution.ts';
 
 export const MAX_POINTER_FILE_BYTES = 1033;
 
@@ -35,13 +35,13 @@ export type EntryRead =
   | { kind: 'oversize' }
   | Unresolved;
 
-export type GitEntryReader = (absolutePath: string) => EntryRead;
+export type GitEntryReader = (absolutePath: string) => Awaitable<EntryRead>;
 
 export type ProtectedSetPorts = {
   readEntry: GitEntryReader;
   readNoFollow: StepReader;
-  canonicalise: (absolute: string) => PathResolution;
-  volumeProbe: (directory: string) => boolean;
+  canonicalise: PathProbes['canonicalise'];
+  volumeProbe: PathProbes['volumeProbe'];
   platform: NodeJS.Platform;
 };
 
@@ -126,17 +126,17 @@ const declareEntries = (collected: Collected, directory: string, names: readonly
   }
 };
 
-const parentCanonicalForm = (entry: string, canonicalise: (absolute: string) => PathResolution): string => {
-  const parent = canonicalise(path.dirname(entry));
+const parentCanonicalForm = async (entry: string, canonicalise: PathProbes['canonicalise']): Promise<string> => {
+  const parent = await canonicalise(path.dirname(entry));
   return parent.ok ? path.join(parent.path, path.basename(entry)) : entry;
 };
 
-const obstaclesOf = (target: string, ports: ProtectedSetPorts): string[] => {
+const obstaclesOf = async (target: string, ports: ProtectedSetPorts): Promise<string[]> => {
   const links: string[] = [];
-  const result: WalkResult<Unresolved> = walkPath(
+  const result: WalkResult<Unresolved> = await walkPath(
     target,
-    (absolute) => {
-      const read = ports.readNoFollow(absolute);
+    async (absolute) => {
+      const read = await ports.readNoFollow(absolute);
       return 'unresolvable' in read ? { stepFailure: read } : read;
     },
     (name) => links.push(name),
@@ -147,41 +147,41 @@ const obstaclesOf = (target: string, ports: ProtectedSetPorts): string[] => {
   return reason.kind === 'errno' && reason.code === 'EACCES' ? [...links, result.prefix] : links;
 };
 
-const pinObstacles = (roots: readonly string[], ports: ProtectedSetPorts, collected: Collected, target: string): void => {
-  for (const obstacle of obstaclesOf(target, ports)) {
+const pinObstacles = async (roots: readonly string[], ports: ProtectedSetPorts, collected: Collected, target: string): Promise<void> => {
+  for (const obstacle of await obstaclesOf(target, ports)) {
     if (!roots.some((root) => lexicallyWithin(obstacle, root))) continue;
     collected.literals.add(obstacle);
-    collected.literals.add(parentCanonicalForm(obstacle, ports.canonicalise));
+    collected.literals.add(await parentCanonicalForm(obstacle, ports.canonicalise));
   }
 };
 
-const protectUnresolvable = (
+const protectUnresolvable = async (
   roots: readonly string[],
   ports: ProtectedSetPorts,
   collected: Collected,
   issue: { root: string; file: string },
   target: string,
   reason: UnresolvableReason,
-): void => {
+): Promise<void> => {
   collected.lexicalPaths.add(target);
   collected.issues.push({ ...issue, problem: 'unresolvable', reason });
-  pinObstacles(roots, ports, collected, target);
+  await pinObstacles(roots, ports, collected, target);
 };
 
 const escapeGlob = (value: string): string => value.replace(GLOB_CHARACTERS, '\\$&');
 
-const registerCommonDirectory = (
+const registerCommonDirectory = async (
   roots: readonly string[],
   ports: ProtectedSetPorts,
   collected: Collected,
   issue: { root: string; file: string },
   commonDir: string,
-): void => {
+): Promise<void> => {
   for (const anchor of new Set(NESTED_GIT_DIRECTORY_PATTERNS.map((entry) => entry.anchor))) {
     const directory = path.join(commonDir, anchor);
-    const resolution = ports.canonicalise(directory);
+    const resolution = await ports.canonicalise(directory);
     if (!resolution.ok) {
-      protectUnresolvable(roots, ports, collected, issue, directory, resolution.reason);
+      await protectUnresolvable(roots, ports, collected, issue, directory, resolution.reason);
       continue;
     }
     (anchor === 'modules' ? collected.moduleAnchors : collected.worktreeAnchors).add(resolution.path);
@@ -198,10 +198,10 @@ type PointerContext = {
   root: string;
 };
 
-const readCommonDirectory = (context: PointerContext, gitDir: string): string | undefined => {
+const readCommonDirectory = async (context: PointerContext, gitDir: string): Promise<string | undefined> => {
   const { roots, ports, collected, root } = context;
   const commonFile = path.join(gitDir, COMMONDIR_NAME);
-  const read = ports.readEntry(commonFile);
+  const read = await ports.readEntry(commonFile);
   if ('unresolvable' in read) {
     collected.issues.push({ root, file: commonFile, problem: 'unresolvable', reason: read.unresolvable });
     collected.paths.add(gitDir);
@@ -226,12 +226,12 @@ const readCommonDirectory = (context: PointerContext, gitDir: string): string | 
         return undefined;
       }
       const target = path.resolve(gitDir, text);
-      const resolution = ports.canonicalise(target);
+      const resolution = await ports.canonicalise(target);
       if (!resolution.ok) {
-        protectUnresolvable(roots, ports, collected, { root, file: commonFile }, target, resolution.reason);
+        await protectUnresolvable(roots, ports, collected, { root, file: commonFile }, target, resolution.reason);
         return undefined;
       }
-      const commonRead = ports.readEntry(resolution.path);
+      const commonRead = await ports.readEntry(resolution.path);
       if ('unresolvable' in commonRead) {
         collected.issues.push({ root, file: commonFile, problem: 'unresolvable', reason: commonRead.unresolvable });
         collected.paths.add(resolution.path);
@@ -247,15 +247,15 @@ const readCommonDirectory = (context: PointerContext, gitDir: string): string | 
   }
 };
 
-const followGitFile = (context: PointerContext, pointer: string, text: string): void => {
+const followGitFile = async (context: PointerContext, pointer: string, text: string): Promise<void> => {
   const { roots, ports, collected, root } = context;
   const target = path.resolve(path.dirname(pointer), text);
-  const resolution = ports.canonicalise(target);
+  const resolution = await ports.canonicalise(target);
   if (!resolution.ok) {
-    protectUnresolvable(roots, ports, collected, { root, file: pointer }, target, resolution.reason);
+    await protectUnresolvable(roots, ports, collected, { root, file: pointer }, target, resolution.reason);
     return;
   }
-  const read = ports.readEntry(resolution.path);
+  const read = await ports.readEntry(resolution.path);
   if ('unresolvable' in read) {
     collected.issues.push({ root, file: pointer, problem: 'unresolvable', reason: read.unresolvable });
     collected.paths.add(resolution.path);
@@ -268,30 +268,30 @@ const followGitFile = (context: PointerContext, pointer: string, text: string): 
   }
   const gitDir = read.canonical;
   declareEntries(collected, gitDir, ['config.worktree', COMMONDIR_NAME, 'gitdir']);
-  const commonDir = readCommonDirectory(context, gitDir);
+  const commonDir = await readCommonDirectory(context, gitDir);
   if (commonDir === undefined) return;
   declareEntries(collected, commonDir, ['hooks', 'config']);
-  registerCommonDirectory(roots, ports, collected, { root, file: pointer }, commonDir);
+  await registerCommonDirectory(roots, ports, collected, { root, file: pointer }, commonDir);
 };
 
-const collectRoot = (roots: readonly string[], ports: ProtectedSetPorts, collected: Collected, root: string): void => {
+const collectRoot = async (roots: readonly string[], ports: ProtectedSetPorts, collected: Collected, root: string): Promise<void> => {
   const pointer = path.join(root, GIT_NAME);
   declareEntries(collected, root, WORKSPACE_CONTROL_NAMES);
-  const read = ports.readEntry(pointer);
+  const read = await ports.readEntry(pointer);
   if ('unresolvable' in read) {
-    protectUnresolvable(roots, ports, collected, { root, file: pointer }, pointer, read.unresolvable);
+    await protectUnresolvable(roots, ports, collected, { root, file: pointer }, pointer, read.unresolvable);
     collected.literals.add(pointer);
-    collected.literals.add(parentCanonicalForm(pointer, ports.canonicalise));
+    collected.literals.add(await parentCanonicalForm(pointer, ports.canonicalise));
     return;
   }
   switch (read.kind) {
     case 'absent':
     case 'directory': {
       const gitDir = read.kind === 'directory' ? read.canonical : pointer;
-      if (read.kind === 'directory') pinObstacles(roots, ports, collected, pointer);
+      if (read.kind === 'directory') await pinObstacles(roots, ports, collected, pointer);
       declareEntries(collected, gitDir, GIT_DIRECTORY_ENTRIES);
       collected.forms.set(pointer, DIRECTORY_FORM);
-      registerCommonDirectory(roots, ports, collected, { root, file: pointer }, gitDir);
+      await registerCommonDirectory(roots, ports, collected, { root, file: pointer }, gitDir);
       return;
     }
     case 'oversize':
@@ -302,7 +302,7 @@ const collectRoot = (roots: readonly string[], ports: ProtectedSetPorts, collect
       collected.paths.add(pointer);
       const text = gitFileTarget(read.text);
       if (text === undefined) collected.issues.push({ root, file: pointer, problem: 'malformed' });
-      else followGitFile({ roots, ports, collected, root }, pointer, text);
+      else await followGitFile({ roots, ports, collected, root }, pointer, text);
       return;
     }
   }
@@ -320,7 +320,7 @@ const patternSpecsOf = (specifiers: readonly string[], roots: readonly string[])
     provenance: PATTERN_PROVENANCE,
   }));
 
-export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPorts, gitConfigFiles: readonly string[] = []): ProtectedSet => {
+export const protectedSetFor = async (roots: readonly string[], ports: ProtectedSetPorts, gitConfigFiles: readonly string[] = []): Promise<ProtectedSet> => {
   const collected: Collected = {
     forms: new Map(),
     paths: new Set(),
@@ -331,13 +331,13 @@ export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPor
     patternSpecifiers: new Set(),
     issues: [],
   };
-  for (const root of roots) collectRoot(roots, ports, collected, root);
+  for (const root of roots) await collectRoot(roots, ports, collected, root);
   for (const file of gitConfigFiles) collected.paths.add(file);
   for (const root of roots) {
     const rootPattern = escapeGlob(patternPathOf(flavourOf(ports.platform), root).slice(1));
     for (const name of PROTECTED_NAMES) for (const entry of GIT_DIRECTORY_ENTRIES) collected.patternSpecifiers.add(`//${rootPattern}/**/${escapeGlob(name)}/${entry}`);
   }
-  const patterns = compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe, flavourOf(ports.platform), PATTERN_ENFORCEMENT);
+  const patterns = await compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe, flavourOf(ports.platform), PATTERN_ENFORCEMENT);
   const forms: Record<string, PlaceholderForm> = Object.fromEntries([...[...collected.paths].map((entry): [string, PlaceholderForm] => [entry, EMPTY_FILE_FORM]), ...collected.forms]);
   return {
     forms,
@@ -353,22 +353,19 @@ export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPor
   };
 };
 
-type Probes = { canonicalise: (absolute: string) => PathResolution; volumeProbe: (directory: string) => boolean };
-
 const foldedEqual = (left: string, right: string, fold: boolean): boolean => (fold ? left.toLowerCase() === right.toLowerCase() : left === right);
 
-export const isProtectedWrite = (set: ProtectedSet, canonicalTarget: string, probes: Probes): boolean => {
+export const isProtectedWrite = async (set: ProtectedSet, canonicalTarget: string, probes: PathProbes): Promise<boolean> => {
   const flavour = set.patterns.flavour;
-  const fold = flavour === 'win32' || probes.volumeProbe(canonicalTarget);
-  const coveredByPath = (entry: string): boolean => {
-    const resolution = probes.canonicalise(entry);
-    return lexicallyContains(resolution.ok ? resolution.path : entry, canonicalTarget, fold, flavour);
-  };
-  if (set.paths.some(coveredByPath)) return true;
+  const fold = flavour === 'win32' || (await probes.volumeProbe(canonicalTarget));
+  for (const entry of set.paths) {
+    const resolution = await probes.canonicalise(entry);
+    if (lexicallyContains(resolution.ok ? resolution.path : entry, canonicalTarget, fold, flavour)) return true;
+  }
   if (set.lexicalPaths.some((entry) => lexicallyContains(entry, canonicalTarget, fold, flavour))) return true;
-  const literalMatches = (entry: string): boolean =>
-    foldedEqual(entry, canonicalTarget, fold) || foldedEqual(parentCanonicalForm(entry, probes.canonicalise), canonicalTarget, fold);
-  if (set.literals.some(literalMatches)) return true;
+  for (const entry of set.literals) {
+    if (foldedEqual(entry, canonicalTarget, fold) || foldedEqual(await parentCanonicalForm(entry, probes.canonicalise), canonicalTarget, fold)) return true;
+  }
   const names = set.names.map((name) => (fold ? name.toLowerCase() : name));
   const underNamedComponent = set.roots.some((root) => {
     if (!lexicallyContains(root, canonicalTarget, fold, flavour)) return false;

@@ -18,24 +18,24 @@ const makeDir = (): string => {
 };
 
 describe('fakePolicyFilesystem unreadable entries (V13)', () => {
-  it('types a mode 000 file from readEntry', () => {
+  it('types a mode 000 file from readEntry', async () => {
     const file = path.join(makeDir(), '.git');
     fs.writeFileSync(file, 'x', { mode: 0o000 });
-    expect(fakePolicyFilesystem().readEntry(file)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
+    expect(await fakePolicyFilesystem().readEntry(file)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
   });
 
-  it('types a failing readlink from readNoFollow', () => {
+  it('types a failing readlink from readNoFollow', async () => {
     const link = path.join(makeDir(), 'l');
     fs.symlinkSync('x', link);
     vi.spyOn(fs, 'readlinkSync').mockImplementation((() => {
       throw Object.assign(new Error('EACCES: injected'), { code: 'EACCES' });
     }) as typeof fs.readlinkSync);
-    expect(fakePolicyFilesystem().readNoFollow(link)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
+    expect(await fakePolicyFilesystem().readNoFollow(link)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
   });
 });
 
 describe('fakePolicyFilesystem readNoFollow consults entries', () => {
-  it('maps directory, file, oversize, absent and unresolved entries', () => {
+  it('maps directory, file, oversize, absent and unresolved entries', async () => {
     const unresolvable = { unresolvable: { kind: 'errno', code: 'EACCES' } } as const;
     const fake = fakePolicyFilesystem({
       entries: {
@@ -46,10 +46,10 @@ describe('fakePolicyFilesystem readNoFollow consults entries', () => {
         '/fake/unresolved': unresolvable,
       },
     });
-    expect(fake.readNoFollow('/fake/dir')).toEqual({ kind: 'directory' });
-    expect(fake.readNoFollow('/fake/file')).toEqual({ kind: 'other' });
-    expect(fake.readNoFollow('/fake/big')).toEqual({ kind: 'other' });
-    expect(fake.readNoFollow('/fake/absent')).toEqual({ kind: 'missing' });
-    expect(fake.readNoFollow('/fake/unresolved')).toEqual(unresolvable);
+    expect(await fake.readNoFollow('/fake/dir')).toEqual({ kind: 'directory' });
+    expect(await fake.readNoFollow('/fake/file')).toEqual({ kind: 'other' });
+    expect(await fake.readNoFollow('/fake/big')).toEqual({ kind: 'other' });
+    expect(await fake.readNoFollow('/fake/absent')).toEqual({ kind: 'missing' });
+    expect(await fake.readNoFollow('/fake/unresolved')).toEqual(unresolvable);
   });
 });

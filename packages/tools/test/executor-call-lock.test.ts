@@ -98,7 +98,7 @@ describe('the per-call lock of the executor', () => {
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
 
-    const batch = harness.executor.runBatch(harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')]));
+    const batch = harness.executor.runBatch(await harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')]));
     await Promise.race([waiting.polled, trace.firstEvent]);
     expect(trace.events).toEqual([]);
     expect(harness.idempotency.authorised).toEqual([]);
@@ -118,7 +118,7 @@ describe('the per-call lock of the executor', () => {
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
 
-    await expect(harness.executor.runBatch(harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')]))).rejects.toMatchObject({
+    await expect(harness.executor.runBatch(await harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')]))).rejects.toMatchObject({
       name: 'EarlierAttemptNotStoppedError',
       code: 'earlier_attempt_not_stopped',
       reason: 'lock_held',
@@ -135,7 +135,7 @@ describe('the per-call lock of the executor', () => {
     const trace = makeTrace();
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
 
-    const batch = harness.executor.runBatch(harness.input(await toolSetOf(reconcilingTool('Write', 'write', trace)), [call('c1', 'Write', {}, 'allow_once')]));
+    const batch = harness.executor.runBatch(await harness.input(await toolSetOf(reconcilingTool('Write', 'write', trace)), [call('c1', 'Write', {}, 'allow_once')]));
     await Promise.race([waiting.polled, trace.firstEvent]);
     expect(trace.events).toEqual([]);
 
@@ -151,7 +151,7 @@ describe('the per-call lock of the executor', () => {
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
     const tool = makeTool('Read', { sideEffect: 'read_only', subjectKind: 'none', execute: async () => ({ status: 'completed', output: 'read' }) });
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
 
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'read' } });
   });
@@ -160,7 +160,7 @@ describe('the per-call lock of the executor', () => {
     const harness = makeHarness();
     const tool = reconcilingTool('Write', 'write', makeTrace());
 
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write', {}, 'allow_once')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write', {}, 'allow_once')]));
 
     expect(harness.kernelLock.isHeldBy(lockPathOf(harness))).toBeUndefined();
     expect(fs.readdirSync(harness.callLockDir)).toEqual([]);
@@ -198,7 +198,7 @@ describe('the per-call lock of the executor', () => {
     const controller = new AbortController();
 
     const batch = harness.executor.runBatch(
-      harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')], { signal: controller.signal }),
+      await harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')], { signal: controller.signal }),
     );
     await Promise.race([waiting.polled, trace.firstEvent]);
     controller.abort();
@@ -257,7 +257,7 @@ describe('the per-call lock of the executor', () => {
     fs.writeFileSync(path.join(otherGeneration, KEY), '');
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')]));
 
     expect(outcome).toMatchObject({ kind: 'result', reconciled: 'already_applied' });
     expect(lockStates).toEqual(['claim']);
@@ -294,10 +294,10 @@ describe('the per-call lock of the executor', () => {
       },
     });
     const toolSet = await toolSetOf(tool);
-    const older =harness.executor.runBatch(harness.input(toolSet, [call('c1', name, {}, 'allow_once')], { leaseLost: () => olderLeaseLost }));
+    const older =harness.executor.runBatch(await harness.input(toolSet, [call('c1', name, {}, 'allow_once')], { leaseLost: () => olderLeaseLost }));
     await effectRunning.promise;
 
-    const newer = harness.executor.runBatch(harness.input(toolSet, [call('c1', name, {}, 'allow_once')]));
+    const newer = harness.executor.runBatch(await harness.input(toolSet, [call('c1', name, {}, 'allow_once')]));
     await Promise.race([waiting.polled, reconcileRan.promise]);
     expect(trace.events).toEqual(['effect-start']);
 
@@ -319,7 +319,7 @@ describe('the per-call lock of the executor', () => {
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     const holder = await startLockHolder(context, lockPathOf(harness));
 
-    const batch = harness.executor.runBatch(harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')]));
+    const batch = harness.executor.runBatch(await harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')]));
     await Promise.race([polling.polled, trace.firstEvent]);
     expect(trace.events).toEqual([]);
     expect(harness.idempotency.authorised).toEqual([]);

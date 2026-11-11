@@ -1,19 +1,19 @@
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { decide, volumeIsCaseInsensitive } from '@momonga/policy';
+import { decide } from '@momonga/policy';
 import type { PolicyTool } from '@momonga/policy';
-import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, syncPaths } from '@momonga/foundation';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout } from './helpers.ts';
 
 const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 
-describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensitively on a case-insensitive volume', () => {
-  it('allows a differently cased target under a root that does not exist yet in acceptEdits', () => {
+describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensitively on a case-insensitive volume', () => {
+  it('allows a differently cased target under a root that does not exist yet in acceptEdits', async () => {
     const layout = makeLayout();
     const root = path.join(layout.project, 'newdir');
     const target = path.join(layout.project, 'NEWDIR', 'f');
-    const decision = decide({
+    const decision = await decide({
       tool: WRITE,
       subject: { kind: 'path', tool: 'Write', paths: [target], access: 'write' },
       mode: 'acceptEdits',
@@ -21,16 +21,16 @@ describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensi
       roots: [root],
       home: layout.home,
       cwd: layout.project,
-      protectedSet: EMPTY_PROTECTED_SET, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([root]), fileRules: fileRulesFor([], [root]),
+      protectedSet: EMPTY_PROTECTED_SET, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([root]), fileRules: await fileRulesFor([], [root]),
     });
     expect(decision.kind).toBe('allow');
   });
 
-  it('still asks for a target outside a missing root whatever its case', () => {
+  it('still asks for a target outside a missing root whatever its case', async () => {
     const layout = makeLayout();
     const root = path.join(layout.project, 'newdir');
     const target = path.join(layout.project, 'OTHER', 'f');
-    const decision = decide({
+    const decision = await decide({
       tool: WRITE,
       subject: { kind: 'path', tool: 'Write', paths: [target], access: 'write' },
       mode: 'acceptEdits',
@@ -38,7 +38,7 @@ describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensi
       roots: [root],
       home: layout.home,
       cwd: layout.project,
-      protectedSet: EMPTY_PROTECTED_SET, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([root]), fileRules: fileRulesFor([], [root]),
+      protectedSet: EMPTY_PROTECTED_SET, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([root]), fileRules: await fileRulesFor([], [root]),
     });
     expect(decision.kind).toBe('ask');
   });

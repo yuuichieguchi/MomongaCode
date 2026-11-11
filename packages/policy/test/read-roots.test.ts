@@ -11,19 +11,20 @@ import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, rule
 const READ = { name: 'Read', kind: 'read', sideEffect: 'read_only' } as const;
 const EDIT = { name: 'Edit', kind: 'edit', sideEffect: 'write', subjectKind: 'path' } as const;
 
-const setup = () => {
+const setup = async () => {
   const layout = makeLayout();
   const skill = path.join(layout.outside, 'skills', 'pdf');
   fs.mkdirSync(path.join(skill, 'scripts'), { recursive: true });
   fs.writeFileSync(path.join(skill, 'scripts', 'run.py'), 'print(1)\n');
   fs.writeFileSync(path.join(layout.outside, 'other.txt'), 'x\n');
+  const fileRules = await fileRulesFor([], [layout.project]);
   const base = (mode: PermissionMode): Omit<DecideInput, 'tool' | 'subject'> => ({
     mode,
     rules: [],
     roots: [layout.project],
     home: layout.home,
     cwd: layout.project,
-    fileRules: fileRulesFor([], [layout.project]),
+    fileRules,
     fs: fakeFs(),
     searchPath: TEST_SEARCH_PATH,
     isWritable: isWritableFor([layout.project]),
@@ -35,26 +36,26 @@ const setup = () => {
 const readOf = (target: string) => ({ kind: 'path', tool: 'Read', paths: [target], access: 'read' }) as const;
 
 describe('readRoots', () => {
-  it('allows a read under a read root without asking', () => {
-    const { skill, base } = setup();
-    const decision: Decision = decide({ ...base('manual'), readRoots: [skill], tool: READ, subject: readOf(path.join(skill, 'scripts', 'run.py')) });
+  it('allows a read under a read root without asking', async () => {
+    const { skill, base } = await setup();
+    const decision: Decision = await decide({ ...base('manual'), readRoots: [skill], tool: READ, subject: readOf(path.join(skill, 'scripts', 'run.py')) });
     expect(decision).toMatchObject({ kind: 'allow', source: 'mode' });
   });
 
-  it('still asks for a read outside every root', () => {
-    const { layout, skill, base } = setup();
-    const decision = decide({ ...base('manual'), readRoots: [skill], tool: READ, subject: readOf(path.join(layout.outside, 'other.txt')) });
+  it('still asks for a read outside every root', async () => {
+    const { layout, skill, base } = await setup();
+    const decision = await decide({ ...base('manual'), readRoots: [skill], tool: READ, subject: readOf(path.join(layout.outside, 'other.txt')) });
     expect(decision.kind).toBe('ask');
   });
 
-  it('asks without read roots', () => {
-    const { skill, base } = setup();
-    expect(decide({ ...base('manual'), tool: READ, subject: readOf(path.join(skill, 'scripts', 'run.py')) }).kind).toBe('ask');
+  it('asks without read roots', async () => {
+    const { skill, base } = await setup();
+    expect((await decide({ ...base('manual'), tool: READ, subject: readOf(path.join(skill, 'scripts', 'run.py')) })).kind).toBe('ask');
   });
 
-  it('does not make the read root writable', () => {
-    const { skill, base } = setup();
-    const decision = decide({
+  it('does not make the read root writable', async () => {
+    const { skill, base } = await setup();
+    const decision = await decide({
       ...base('acceptEdits'),
       readRoots: [skill],
       tool: EDIT,
@@ -63,22 +64,22 @@ describe('readRoots', () => {
     expect(decision.kind).toBe('ask');
   });
 
-  it('applies to the read targets of a read-only command', () => {
-    const { skill, base } = setup();
+  it('applies to the read targets of a read-only command', async () => {
+    const { skill, base } = await setup();
     const target = path.join(skill, 'scripts', 'run.py');
-    const withRoot = decide({ ...base('manual'), readRoots: [skill], tool: BASH, subject: { kind: 'command', tool: 'Bash', command: `cat ${target}` } });
-    const without = decide({ ...base('manual'), tool: BASH, subject: { kind: 'command', tool: 'Bash', command: `cat ${target}` } });
+    const withRoot = await decide({ ...base('manual'), readRoots: [skill], tool: BASH, subject: { kind: 'command', tool: 'Bash', command: `cat ${target}` } });
+    const without = await decide({ ...base('manual'), tool: BASH, subject: { kind: 'command', tool: 'Bash', command: `cat ${target}` } });
     expect(withRoot.kind).toBe('allow');
     expect(without.kind).toBe('ask');
   });
 
-  it('keeps a deny rule stronger than a read root', () => {
-    const { layout, skill, base } = setup();
+  it('keeps a deny rule stronger than a read root', async () => {
+    const { layout, skill, base } = await setup();
     const rule = ruleIn(layout)('deny', `Read(/${skill}/**)`);
-    const decision = decide({
+    const decision = await decide({
       ...base('manual'),
       rules: [rule],
-      fileRules: fileRulesFor([rule], [layout.project]),
+      fileRules: await fileRulesFor([rule], [layout.project]),
       readRoots: [skill],
       tool: READ,
       subject: readOf(path.join(skill, 'scripts', 'run.py')),

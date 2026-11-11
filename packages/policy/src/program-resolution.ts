@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { walkPath } from '@momonga/foundation';
-import type { PolicyFilesystem, ProgramResolution } from './filesystem.ts';
+import type { PolicyFilesystem, ProgramResolution, WritableCheck } from './filesystem.ts';
 import type { Segment } from './shell.ts';
 import type { WrapperUse } from './wrappers.ts';
 
@@ -10,37 +10,39 @@ export type ResolutionContext = {
   fs: Pick<PolicyFilesystem, 'resolveProgram' | 'readNoFollow'>;
   cwd: string;
   searchPath: string | undefined;
-  isWritable: (absolute: string) => boolean;
+  isWritable: WritableCheck;
 };
 
 const PATH_ASSIGNMENT = /^PATH\+?=/;
 
 const unresolved: ProgramResolution = { none: true };
 
-const walkedProgram = (absolute: string, context: ResolutionContext): ProgramResolution => {
+const walkedProgram = async (absolute: string, context: ResolutionContext): Promise<ProgramResolution> => {
   const entries: string[] = [];
-  const result = walkPath(
+  const result = await walkPath(
     absolute,
-    (candidate) => {
+    async (candidate) => {
       entries.push(candidate);
-      const read = context.fs.readNoFollow(candidate);
+      const read = await context.fs.readNoFollow(candidate);
       return 'unresolvable' in read ? { stepFailure: read } : read;
     },
     () => undefined,
   );
   if (!result.ok) return unresolved;
-  if (entries.some((entry) => context.isWritable(entry) || context.isWritable(path.dirname(entry)))) return unresolved;
+  for (const entry of entries) {
+    if ((await context.isWritable(entry)) || (await context.isWritable(path.dirname(entry)))) return unresolved;
+  }
   return { program: path.join(result.prefix, ...result.tail) };
 };
 
-const resolveSlashWord = (word: string, context: ResolutionContext): ProgramResolution => (path.isAbsolute(word) ? walkedProgram(word, context) : unresolved);
+const resolveSlashWord = async (word: string, context: ResolutionContext): Promise<ProgramResolution> => (path.isAbsolute(word) ? walkedProgram(word, context) : unresolved);
 
-const resolveBareWord = (word: string, searchPath: string | undefined, context: ResolutionContext, outsideWritable: boolean): ProgramResolution => {
-  const found = context.fs.resolveProgram(word, context.cwd, searchPath, context.isWritable);
+const resolveBareWord = async (word: string, searchPath: string | undefined, context: ResolutionContext, outsideWritable: boolean): Promise<ProgramResolution> => {
+  const found = await context.fs.resolveProgram(word, context.cwd, searchPath, context.isWritable);
   return outsideWritable && 'program' in found ? walkedProgram(found.program, context) : found;
 };
 
-const resolveWord = (word: string, searchPath: string | undefined, context: ResolutionContext, outsideWritable: boolean): ProgramResolution =>
+const resolveWord = (word: string, searchPath: string | undefined, context: ResolutionContext, outsideWritable: boolean): Promise<ProgramResolution> =>
   word.includes('/') ? resolveSlashWord(word, context) : resolveBareWord(word, searchPath, context, outsideWritable);
 
 const usesDefaultPath = (wrapper: WrapperUse): boolean =>
@@ -50,7 +52,7 @@ const runsProgram = (wrapper: WrapperUse): boolean => wrapper.spec.wrapper?.prog
 
 export const executedByWrapper = (segment: Segment): boolean => segment.wrappers.some(runsProgram);
 
-export const resolveSegmentProgram = (segment: Segment, context: ResolutionContext): ProgramResolution => {
+export const resolveSegmentProgram = async (segment: Segment, context: ResolutionContext): Promise<ProgramResolution> => {
   const word = segment.words[segment.effectiveIndex];
   if (word === undefined || !word.literal) return unresolved;
   if (segment.words.slice(0, segment.effectiveIndex).some((entry) => PATH_ASSIGNMENT.test(entry.value))) return unresolved;
@@ -61,7 +63,7 @@ export const resolveSegmentProgram = (segment: Segment, context: ResolutionConte
     if (keeps !== undefined) {
       if (wrapper.options.some((option) => keeps.exceptWith.includes(option.option))) return unresolved;
     } else if (!wrapper.stripped) return unresolved;
-    if ((executed || runsProgram(wrapper) || wrapper.word.value.includes('/')) && !('program' in resolveWord(wrapper.word.value, lookupPath, context, true))) return unresolved;
+    if ((executed || runsProgram(wrapper) || wrapper.word.value.includes('/')) && !('program' in (await resolveWord(wrapper.word.value, lookupPath, context, true)))) return unresolved;
     executed = executed || runsProgram(wrapper);
     lookupPath = usesDefaultPath(wrapper) ? DEFAULT_COMMAND_PATH : context.searchPath;
   }

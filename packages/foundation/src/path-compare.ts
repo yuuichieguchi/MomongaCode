@@ -1,143 +1,43 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import type { Unresolved } from './path-resolution.ts';
+import type { DirectoryReader, FileSystem } from './node-file-system.ts';
+import { nodeFileSystem } from './node-file-system.ts';
+import { settledOrAborted } from './operation-limit.ts';
+import { unresolvableReasonOf } from './path-resolution.ts';
+import type { PathResolution, Unresolved } from './path-resolution.ts';
 import { isTransientErrno } from './transient-errno.ts';
 import { unmeasuredBecause } from './capability-probe.ts';
 import type { CapabilityResult } from './capability-probe.ts';
 
-export type CaseSensitivityProbe = (existingDirectory: string) => boolean | undefined;
+export type PathFileSystem = Pick<FileSystem, 'stat' | 'lstat' | 'readlink' | 'realpath' | 'openDirectory' | 'access'>;
+
+type FileStats = Awaited<ReturnType<PathFileSystem['stat']>>;
+
+export type CaseSensitivityProbe = (existingDirectory: string) => boolean | undefined | Promise<boolean | undefined>;
 
 const flipCase = (value: string): string =>
   [...value].map((char) => (char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase())).join('');
 
 const hasLetter = (value: string): boolean => value.toLowerCase() !== value.toUpperCase();
 
-const statIfPresent = (target: string): fs.Stats | undefined => {
-  try {
-    return fs.statSync(target);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'EACCES' || code === 'ELOOP') return undefined;
-    throw error;
-  }
-};
-
-const compareEntryWithFlippedCase = (entry: string, device: number): boolean | undefined => {
-  const original = statIfPresent(entry);
-  if (original === undefined || original.dev !== device) return undefined;
-  const flipped = path.join(path.dirname(entry), flipCase(path.basename(entry)));
-  const variant = statIfPresent(flipped);
-  if (variant === undefined) return false;
-  return variant.dev === original.dev && variant.ino === original.ino;
-};
-
-const probeCaseFolding = (directory: string): boolean | undefined => {
-  const device = fs.statSync(directory).dev;
-  let current = directory;
-  while (current !== path.dirname(current)) {
-    const parent = path.dirname(current);
-    if (hasLetter(path.basename(current)) && statIfPresent(parent)?.dev === device) {
-      const verdict = compareEntryWithFlippedCase(current, device);
-      if (verdict !== undefined) return verdict;
-    }
-    current = parent;
-  }
-  let names: string[];
-  try {
-    names = fs.readdirSync(directory);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EACCES') return undefined;
-    throw error;
-  }
-  for (const name of names) {
-    if (!hasLetter(name)) continue;
-    const verdict = compareEntryWithFlippedCase(path.join(directory, name), device);
-    if (verdict !== undefined) return verdict;
-  }
-  return undefined;
-};
-
-let caseSensitivityProbe: CaseSensitivityProbe = probeCaseFolding;
+let caseSensitivityOverride: CaseSensitivityProbe | undefined;
 type VolumeVerdict = { rootPath: string; rootIno: number; result: CapabilityResult<boolean> };
 
 const caseFoldingByDevice = new Map<number, VolumeVerdict>();
 
 export const setCaseSensitivityProbe = (probe: CaseSensitivityProbe | undefined): void => {
-  caseSensitivityProbe = probe ?? probeCaseFolding;
+  caseSensitivityOverride = probe;
   caseFoldingByDevice.clear();
 };
 
-const deepestExistingDirectory = (target: string): { directory: string; device: number } => {
-  let current = target;
-  for (;;) {
-    const stat = statIfPresent(current);
-    if (stat?.isDirectory()) return { directory: current, device: stat.dev };
-    const parent = path.dirname(current);
-    if (parent === current) throw new Error(`no existing directory found for ${target}`);
-    current = parent;
-  }
-};
-
-const mountRootOf = (directory: string, device: number): string => {
-  let mountRoot = directory;
-  for (;;) {
-    const parent = path.dirname(mountRoot);
-    if (parent === mountRoot || statIfPresent(parent)?.dev !== device) return mountRoot;
-    mountRoot = parent;
-  }
-};
-
 const UNDETERMINED = 'case sensitivity of this volume could not be determined';
-
-const measureCaseSensitivity = (directory: string): CapabilityResult<boolean> => {
-  let verdict: boolean | undefined;
-  try {
-    verdict = caseSensitivityProbe(directory);
-  } catch (error) {
-    const reason = unmeasuredBecause(error).evidence;
-    return { kind: 'unmeasured', evidence: `${UNDETERMINED}: ${reason} (${directory})` };
-  }
-  if (verdict === undefined) {
-    return { kind: 'unsupported', evidence: `${UNDETERMINED}: no entry on the volume could be compared in a different case (${directory})` };
-  }
-  return { kind: 'supported', value: verdict, evidence: `measured on the volume of ${directory}` };
-};
-
-const resultForDirectory = (directory: string, device: number): CapabilityResult<boolean> => {
-  const cached = caseFoldingByDevice.get(device);
-  if (cached !== undefined) {
-    const root = statIfPresent(cached.rootPath);
-    if (root !== undefined && root.dev === device && root.ino === cached.rootIno) return cached.result;
-  }
-  const rootPath = mountRootOf(directory, device);
-  const rootIno = statIfPresent(rootPath)?.ino as number;
-  const result = measureCaseSensitivity(directory);
-  if (result.kind === 'unmeasured') caseFoldingByDevice.delete(device);
-  else caseFoldingByDevice.set(device, { rootPath, rootIno, result });
-  return result;
-};
-
-const verdictForDirectory = (directory: string, device: number): boolean => {
-  const result = resultForDirectory(directory, device);
-  if (result.kind !== 'supported') throw new Error(result.evidence);
-  return result.value;
-};
-
-export const caseSensitivityOf = (target: string): CapabilityResult<boolean> => {
-  const { directory, device } = deepestExistingDirectory(target);
-  return resultForDirectory(directory, device);
-};
-
-export const volumeIsCaseInsensitive = (target: string): boolean => {
-  const { directory, device } = deepestExistingDirectory(target);
-  return verdictForDirectory(directory, device);
-};
 
 export const MAX_SYMLINK_HOPS = 40;
 
 export type WalkEntry = { kind: 'missing' } | { kind: 'symlink'; target: string } | { kind: 'directory' } | { kind: 'other' };
 
-export type WalkStep<F> = (absolutePath: string) => WalkEntry | { stepFailure: F };
+export type WalkStepResult<F> = WalkEntry | { stepFailure: F };
+
+export type WalkStep<F> = (absolutePath: string) => WalkStepResult<F> | Promise<WalkStepResult<F>>;
 
 export type WalkFailureDetail = 'parent-reference' | 'trailing-slash' | 'empty-link';
 
@@ -152,7 +52,7 @@ export type WalkResult<F> =
 
 export type StepRead = WalkEntry | Unresolved;
 
-export type StepReader = (absolutePath: string) => StepRead;
+export type StepReader = (absolutePath: string) => StepRead | Promise<StepRead>;
 
 const DIRECTORY_REQUIRED = '/';
 
@@ -170,7 +70,7 @@ const errnoFailure = (code: 'ELOOP' | 'ENOENT' | 'ENOTDIR', candidate: string, p
   failure: { reason: { kind: 'errno', code }, candidate, prefix, ...(detail === undefined ? {} : { detail }) },
 });
 
-export const walkPath = <F>(input: string, step: WalkStep<F>, onLink: (name: string) => void, flavor: path.PlatformPath = path): WalkResult<F> => {
+function* walkSteps<F>(input: string, onLink: (name: string) => void, flavor: path.PlatformPath): Generator<string, WalkResult<F>, WalkStepResult<F>> {
   if (!flavor.isAbsolute(input)) throw new Error(`path must be absolute: ${input}`);
   const inputRoot = flavor.parse(input).root;
   const pending = componentsOf(input.slice(inputRoot.length), flavor).reverse();
@@ -184,7 +84,7 @@ export const walkPath = <F>(input: string, step: WalkStep<F>, onLink: (name: str
       continue;
     }
     const candidate = flavor.join(prefix, component);
-    const entry = step(candidate);
+    const entry = yield candidate;
     if ('stepFailure' in entry) return { ok: false, stepFailure: entry.stepFailure, candidate, prefix };
     if (entry.kind === 'missing') {
       const tail = [component, ...pending.reverse()];
@@ -206,18 +106,13 @@ export const walkPath = <F>(input: string, step: WalkStep<F>, onLink: (name: str
     prefix = candidate;
   }
   return { ok: true, prefix, tail: [] };
-};
+}
 
-const nodeStep = (candidate: string): WalkEntry => {
-  let stat: fs.Stats;
-  try {
-    stat = fs.lstatSync(candidate);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' };
-    throw error;
-  }
-  if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(candidate) };
-  return stat.isDirectory() ? { kind: 'directory' } : { kind: 'other' };
+export const walkPath = async <F>(input: string, step: WalkStep<F>, onLink: (name: string) => void, flavor: path.PlatformPath = path): Promise<WalkResult<F>> => {
+  const steps = walkSteps<F>(input, onLink, flavor);
+  let next = steps.next();
+  while (next.done !== true) next = steps.next(await step(next.value));
+  return next.value;
 };
 
 const codedError = (message: string, code: 'ELOOP' | 'ENOENT' | 'ENOTDIR'): NodeJS.ErrnoException => Object.assign(new Error(message), { code });
@@ -231,18 +126,6 @@ const walkFailureError = (input: string, failure: WalkFailure): NodeJS.ErrnoExce
   return codedError(`not a directory: ${failure.candidate}`, code);
 };
 
-export const canonicalPath = (input: string): string => {
-  const result = walkPath<never>(input, nodeStep, () => undefined);
-  if (!result.ok) {
-    if ('stepFailure' in result) {
-      const unhandled: never = result.stepFailure;
-      throw new Error(`canonicalPath: unexpected step failure ${String(unhandled)}`);
-    }
-    throw walkFailureError(input, result.failure);
-  }
-  return path.join(fs.realpathSync.native(result.prefix), ...result.tail);
-};
-
 export type CanonicalDirectoryFailureCode = 'not_absolute' | 'unresolvable' | 'missing' | 'not_directory' | 'unreadable';
 
 export type CanonicalDirectoryResult =
@@ -250,37 +133,6 @@ export type CanonicalDirectoryResult =
   | { ok: false; code: CanonicalDirectoryFailureCode; reason: string };
 
 const UNRESOLVABLE_ERRNO = new Set(['ENOTDIR', 'ELOOP', 'ENAMETOOLONG']);
-
-export const canonicalDirectory = (input: string): CanonicalDirectoryResult => {
-  if (!path.isAbsolute(input)) return { ok: false, code: 'not_absolute', reason: 'must be an absolute path' };
-  let canonical: string;
-  try {
-    canonical = canonicalPath(input);
-  } catch (error) {
-    if (isTransientErrno(error)) throw error;
-    return { ok: false, code: 'unresolvable', reason: `cannot be resolved: ${(error as Error).message}` };
-  }
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(canonical);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (isTransientErrno(error)) throw error;
-    if (code === 'ENOENT') return { ok: false, code: 'missing', reason: 'does not exist' };
-    if (code !== undefined && UNRESOLVABLE_ERRNO.has(code)) {
-      return { ok: false, code: 'unresolvable', reason: `cannot be resolved: ${(error as Error).message}` };
-    }
-    return { ok: false, code: 'unreadable', reason: 'cannot be read' };
-  }
-  if (!stat.isDirectory()) return { ok: false, code: 'not_directory', reason: 'is not a directory' };
-  try {
-    fs.accessSync(canonical, fs.constants.R_OK | fs.constants.X_OK);
-  } catch (error) {
-    if (isTransientErrno(error)) throw error;
-    return { ok: false, code: 'unreadable', reason: 'cannot be read' };
-  }
-  return { ok: true, path: canonical };
-};
 
 export type PathParts = { existing: string; tail: readonly string[] };
 
@@ -302,62 +154,424 @@ export const containsByComponents = (base: PathParts, candidate: PathParts, fold
   });
 };
 
-export type LocatedParts = { parts: PathParts; caseInsensitive: boolean };
-
-const throughFilesStep = (candidate: string): WalkEntry => {
-  let stat: fs.Stats;
-  try {
-    stat = fs.lstatSync(candidate);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ENOTDIR') return { kind: 'missing' };
-    throw error;
-  }
-  if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(candidate) };
-  return { kind: 'directory' };
-};
-
-const canonicalThroughFiles = (value: string): string => {
-  const result = walkPath<never>(value, throughFilesStep, () => undefined);
-  if (!result.ok) {
-    if ('stepFailure' in result) {
-      const unhandled: never = result.stepFailure;
-      throw new Error(`canonicalThroughFiles: unexpected step failure ${String(unhandled)}`);
-    }
-    throw walkFailureError(value, result.failure);
-  }
-  return path.join(fs.realpathSync.native(result.prefix), ...result.tail);
-};
-
-const locateWith = (value: string, canonicalise: (input: string) => string): LocatedParts => {
-  if (!path.isAbsolute(value)) throw new Error(`path must be absolute: ${value}`);
-  let resolved: string | undefined;
-  try {
-    resolved = canonicalise(value);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EACCES') throw error;
-  }
-  const { directory, device } = deepestExistingDirectory(resolved ?? value);
-  const existing = resolved === undefined ? fs.realpathSync.native(directory) : directory;
-  return {
-    parts: { existing, tail: componentsOfPath(path.relative(directory, resolved ?? value)) },
-    caseInsensitive: verdictForDirectory(directory, device),
-  };
-};
-
-const locate = (value: string): LocatedParts => locateWith(value, canonicalPath);
-
-export const locateThroughFiles = (value: string): LocatedParts => locateWith(value, canonicalThroughFiles);
-
 export const comparableFromParts = (parts: PathParts, foldTail: boolean): string =>
   path.join(parts.existing, ...(foldTail ? parts.tail.map((component) => component.toLowerCase()) : parts.tail));
 
-export const comparablePath = (input: string): string => {
-  const { parts, caseInsensitive } = locate(input);
+export type LocatedParts = { parts: PathParts; caseInsensitive: boolean };
+
+const errnoOf = (error: unknown): string | undefined => (error as NodeJS.ErrnoException).code;
+
+type DirectoryHandle = { readonly directory: string };
+
+type Ask =
+  | { op: 'stat' | 'lstat' | 'readlink' | 'realpath' | 'list' | 'open'; target: string }
+  | { op: 'read' | 'close'; handle: DirectoryHandle }
+  | { op: 'probe'; probe: CaseSensitivityProbe; directory: string }
+  | { op: 'cancelled' };
+
+type Asking<T> = Generator<Ask, T, unknown>;
+
+function* ask<T>(question: Ask): Asking<T> {
+  return (yield question) as T;
+}
+
+const statOf = (target: string): Asking<FileStats> => ask({ op: 'stat', target });
+
+function* statIfPresent(target: string): Asking<FileStats | undefined> {
+  try {
+    return yield* statOf(target);
+  } catch (error) {
+    const code = errnoOf(error);
+    if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'EACCES' || code === 'ELOOP') return undefined;
+    throw error;
+  }
+}
+
+function* compareEntryWithFlippedCase(entry: string, device: number): Asking<boolean | undefined> {
+  const original = yield* statIfPresent(entry);
+  if (original === undefined || original.dev !== device) return undefined;
+  const flipped = path.join(path.dirname(entry), flipCase(path.basename(entry)));
+  const variant = yield* statIfPresent(flipped);
+  if (variant === undefined) return false;
+  return variant.dev === original.dev && variant.ino === original.ino;
+}
+
+function* firstVerdictAmong(handle: DirectoryHandle, directory: string, device: number): Asking<boolean | undefined> {
+  try {
+    for (;;) {
+      const name = yield* ask<string | null>({ op: 'read', handle });
+      if (name === null) return undefined;
+      if (!hasLetter(name)) continue;
+      const verdict = yield* compareEntryWithFlippedCase(path.join(directory, name), device);
+      if (verdict !== undefined) return verdict;
+    }
+  } finally {
+    yield* ask<void>({ op: 'close', handle });
+  }
+}
+
+function* probeCaseFolding(directory: string): Asking<boolean | undefined> {
+  const device = (yield* statOf(directory)).dev;
+  let current = directory;
+  while (current !== path.dirname(current)) {
+    const parent = path.dirname(current);
+    if (hasLetter(path.basename(current)) && (yield* statIfPresent(parent))?.dev === device) {
+      const verdict = yield* compareEntryWithFlippedCase(current, device);
+      if (verdict !== undefined) return verdict;
+    }
+    current = parent;
+  }
+  let handle: DirectoryHandle;
+  try {
+    handle = yield* ask<DirectoryHandle>({ op: 'open', target: directory });
+  } catch (error) {
+    if (errnoOf(error) === 'EACCES') return undefined;
+    throw error;
+  }
+  return yield* firstVerdictAmong(handle, directory, device);
+}
+
+function* deepestExistingDirectory(target: string): Asking<{ directory: string; device: number }> {
+  let current = target;
+  for (;;) {
+    const stat = yield* statIfPresent(current);
+    if (stat?.isDirectory()) return { directory: current, device: stat.dev };
+    const parent = path.dirname(current);
+    if (parent === current) throw new Error(`no existing directory found for ${target}`);
+    current = parent;
+  }
+}
+
+function* mountRootOf(directory: string, device: number): Asking<string> {
+  let mountRoot = directory;
+  for (;;) {
+    const parent = path.dirname(mountRoot);
+    if (parent === mountRoot || (yield* statIfPresent(parent))?.dev !== device) return mountRoot;
+    mountRoot = parent;
+  }
+}
+
+function* rethrowIfCancelled(): Asking<void> {
+  yield* ask<void>({ op: 'cancelled' });
+}
+
+function* measureCaseSensitivity(directory: string): Asking<CapabilityResult<boolean>> {
+  let verdict: boolean | undefined;
+  try {
+    verdict = caseSensitivityOverride === undefined ? yield* probeCaseFolding(directory) : yield* ask<boolean | undefined>({ op: 'probe', probe: caseSensitivityOverride, directory });
+  } catch (error) {
+    yield* rethrowIfCancelled();
+    const reason = unmeasuredBecause(error).evidence;
+    return { kind: 'unmeasured', evidence: `${UNDETERMINED}: ${reason} (${directory})` };
+  }
+  if (verdict === undefined) {
+    return { kind: 'unsupported', evidence: `${UNDETERMINED}: no entry on the volume could be compared in a different case (${directory})` };
+  }
+  return { kind: 'supported', value: verdict, evidence: `measured on the volume of ${directory}` };
+}
+
+function* resultForDirectory(directory: string, device: number): Asking<CapabilityResult<boolean>> {
+  const cached = caseFoldingByDevice.get(device);
+  if (cached !== undefined) {
+    const root = yield* statIfPresent(cached.rootPath);
+    if (root !== undefined && root.dev === device && root.ino === cached.rootIno) return cached.result;
+  }
+  const rootPath = yield* mountRootOf(directory, device);
+  const rootIno = (yield* statIfPresent(rootPath))?.ino as number;
+  const result = yield* measureCaseSensitivity(directory);
+  if (result.kind === 'unmeasured') caseFoldingByDevice.delete(device);
+  else caseFoldingByDevice.set(device, { rootPath, rootIno, result });
+  return result;
+}
+
+function* verdictForDirectory(directory: string, device: number): Asking<boolean> {
+  const result = yield* resultForDirectory(directory, device);
+  if (result.kind !== 'supported') throw new Error(result.evidence);
+  return result.value;
+}
+
+function* caseSensitivityOf(target: string): Asking<CapabilityResult<boolean>> {
+  const { directory, device } = yield* deepestExistingDirectory(target);
+  return yield* resultForDirectory(directory, device);
+}
+
+function* volumeIsCaseInsensitive(target: string): Asking<boolean> {
+  const { directory, device } = yield* deepestExistingDirectory(target);
+  return yield* verdictForDirectory(directory, device);
+}
+
+type Step = (candidate: string) => Asking<WalkEntry>;
+
+const stepMissingOn = (missing: ReadonlySet<string>, kindOf: (stat: FileStats) => WalkEntry): Step =>
+  function* (candidate) {
+    let stat: FileStats;
+    try {
+      stat = yield* ask<FileStats>({ op: 'lstat', target: candidate });
+    } catch (error) {
+      if (missing.has(errnoOf(error) ?? '')) return { kind: 'missing' };
+      throw error;
+    }
+    return stat.isSymbolicLink() ? { kind: 'symlink', target: yield* ask<string>({ op: 'readlink', target: candidate }) } : kindOf(stat);
+  };
+
+const followingStep = stepMissingOn(new Set(['ENOENT']), (stat) => (stat.isDirectory() ? { kind: 'directory' } : { kind: 'other' }));
+
+const throughFilesStep = stepMissingOn(new Set(['ENOENT', 'ENOTDIR']), () => ({ kind: 'directory' }));
+
+function* canonicalWith(input: string, step: Step): Asking<string> {
+  const steps = walkSteps<never>(input, () => undefined, path);
+  let next = steps.next();
+  while (next.done !== true) next = steps.next(yield* step(next.value));
+  const result = next.value;
+  if (!result.ok) {
+    if ('stepFailure' in result) {
+      const unhandled: never = result.stepFailure;
+      throw new Error(`canonical path: unexpected step failure ${String(unhandled)}`);
+    }
+    throw walkFailureError(input, result.failure);
+  }
+  return path.join(yield* ask<string>({ op: 'realpath', target: result.prefix }), ...result.tail);
+}
+
+const canonicalPath = (input: string): Asking<string> => canonicalWith(input, followingStep);
+
+const canonicalThroughFiles = (value: string): Asking<string> => canonicalWith(value, throughFilesStep);
+
+function* canonicalDirectory(input: string): Asking<CanonicalDirectoryResult> {
+  if (!path.isAbsolute(input)) return { ok: false, code: 'not_absolute', reason: 'must be an absolute path' };
+  let canonical: string;
+  try {
+    canonical = yield* canonicalPath(input);
+  } catch (error) {
+    yield* rethrowIfCancelled();
+    if (isTransientErrno(error)) throw error;
+    return { ok: false, code: 'unresolvable', reason: `cannot be resolved: ${(error as Error).message}` };
+  }
+  let stat: FileStats;
+  try {
+    stat = yield* statOf(canonical);
+  } catch (error) {
+    yield* rethrowIfCancelled();
+    const code = errnoOf(error);
+    if (isTransientErrno(error)) throw error;
+    if (code === 'ENOENT') return { ok: false, code: 'missing', reason: 'does not exist' };
+    if (code !== undefined && UNRESOLVABLE_ERRNO.has(code)) {
+      return { ok: false, code: 'unresolvable', reason: `cannot be resolved: ${(error as Error).message}` };
+    }
+    return { ok: false, code: 'unreadable', reason: 'cannot be read' };
+  }
+  if (!stat.isDirectory()) return { ok: false, code: 'not_directory', reason: 'is not a directory' };
+  try {
+    yield* ask<void>({ op: 'list', target: canonical });
+  } catch (error) {
+    yield* rethrowIfCancelled();
+    if (isTransientErrno(error)) throw error;
+    return { ok: false, code: 'unreadable', reason: 'cannot be read' };
+  }
+  return { ok: true, path: canonical };
+}
+
+function* resolved(absolute: string): Asking<PathResolution> {
+  try {
+    return { ok: true, path: yield* canonicalPath(absolute) };
+  } catch (error) {
+    const reason = unresolvableReasonOf(error);
+    if (reason === undefined) throw error;
+    return { ok: false, reason };
+  }
+}
+
+function* locateWith(value: string, canonicalise: (input: string) => Asking<string>): Asking<LocatedParts> {
+  if (!path.isAbsolute(value)) throw new Error(`path must be absolute: ${value}`);
+  let canonical: string | undefined;
+  try {
+    canonical = yield* canonicalise(value);
+  } catch (error) {
+    if (errnoOf(error) !== 'EACCES') throw error;
+  }
+  const { directory, device } = yield* deepestExistingDirectory(canonical ?? value);
+  const existing = canonical === undefined ? yield* ask<string>({ op: 'realpath', target: directory }) : directory;
+  return {
+    parts: { existing, tail: componentsOfPath(path.relative(directory, canonical ?? value)) },
+    caseInsensitive: yield* verdictForDirectory(directory, device),
+  };
+}
+
+const locate = (value: string): Asking<LocatedParts> => locateWith(value, canonicalPath);
+
+const locateThroughFiles = (value: string): Asking<LocatedParts> => locateWith(value, canonicalThroughFiles);
+
+function* comparablePath(input: string): Asking<string> {
+  const { parts, caseInsensitive } = yield* locate(input);
   return comparableFromParts(parts, caseInsensitive);
+}
+
+function* comparableContains(directory: string, candidate: string): Asking<boolean> {
+  const located = yield* locate(candidate);
+  return containsByComponents((yield* locate(directory)).parts, located.parts, located.caseInsensitive);
+}
+
+function* realPath(target: string): Asking<string> {
+  return yield* ask<string>({ op: 'realpath', target });
+}
+
+type Questions = {
+  canonicalPath: typeof canonicalPath;
+  canonicalDirectory: typeof canonicalDirectory;
+  resolveCanonicalPath: typeof resolved;
+  locate: typeof locate;
+  locateThroughFiles: typeof locateThroughFiles;
+  comparablePath: typeof comparablePath;
+  comparableContains: typeof comparableContains;
+  volumeIsCaseInsensitive: typeof volumeIsCaseInsensitive;
+  caseSensitivityOf: typeof caseSensitivityOf;
+  realPath: typeof realPath;
 };
 
-export const comparableContains = (directory: string, candidate: string): boolean => {
-  const located = locate(candidate);
-  return containsByComponents(locate(directory).parts, located.parts, located.caseInsensitive);
+type Answered<Wrapped extends 'now' | 'later'> = {
+  [Name in keyof Questions]: Questions[Name] extends (...args: infer Args) => Asking<infer Answer> ? (...args: Args) => Wrapped extends 'now' ? Answer : Promise<Answer> : never;
+};
+
+export type PathResolver = Answered<'later'>;
+
+export type SyncPathResolver = Answered<'now'>;
+
+type Turn = { done: false; value: Ask } | { done: true; value: unknown };
+
+const turnOf = (advance: () => IteratorResult<Ask, unknown>): Turn => {
+  const next = advance();
+  return next.done === true ? { done: true, value: next.value } : { done: false, value: next.value };
+};
+
+export const createPathResolver = (files: PathFileSystem, signal: AbortSignal): PathResolver => {
+  const readers = new WeakMap<DirectoryHandle, DirectoryReader>();
+  const readerOf = (handle: DirectoryHandle): DirectoryReader => {
+    const reader = readers.get(handle);
+    if (reader === undefined) throw new Error(`the directory ${handle.directory} is not open`);
+    return reader;
+  };
+  const answer = async (question: Ask): Promise<unknown> => {
+    switch (question.op) {
+      case 'stat':
+        return files.stat(question.target);
+      case 'lstat':
+        return files.lstat(question.target);
+      case 'readlink':
+        return files.readlink(question.target);
+      case 'realpath':
+        return files.realpath(question.target);
+      case 'list':
+        return files.access(question.target, 'list');
+      case 'open': {
+        const handle: DirectoryHandle = { directory: question.target };
+        readers.set(handle, await files.openDirectory(question.target));
+        return handle;
+      }
+      case 'read':
+        return readerOf(question.handle).read();
+      case 'close':
+        return readerOf(question.handle).close();
+      case 'probe':
+        return question.probe(question.directory);
+      case 'cancelled':
+        return signal.throwIfAborted();
+    }
+  };
+  const answered = async <T>(questions: Asking<T>): Promise<T> => {
+    let turn = turnOf(() => questions.next());
+    while (!turn.done) {
+      let reply: { value: unknown } | { error: unknown };
+      try {
+        reply = { value: await settledOrAborted(answer(turn.value), signal) };
+      } catch (error) {
+        reply = { error };
+      }
+      const given = reply;
+      turn = turnOf(() => ('error' in given ? questions.throw(given.error) : questions.next(given.value)));
+    }
+    return turn.value as T;
+  };
+  return {
+    canonicalPath: (input) => answered(canonicalPath(input)),
+    canonicalDirectory: (input) => answered(canonicalDirectory(input)),
+    resolveCanonicalPath: (absolute) => answered(resolved(absolute)),
+    locate: (value) => answered(locate(value)),
+    locateThroughFiles: (value) => answered(locateThroughFiles(value)),
+    comparablePath: (input) => answered(comparablePath(input)),
+    comparableContains: (directory, candidate) => answered(comparableContains(directory, candidate)),
+    volumeIsCaseInsensitive: (target) => answered(volumeIsCaseInsensitive(target)),
+    caseSensitivityOf: (target) => answered(caseSensitivityOf(target)),
+    realPath: (target) => answered(realPath(target)),
+  };
+};
+
+export const hostPaths = (signal: AbortSignal): PathResolver => createPathResolver(nodeFileSystem, signal);
+
+export type SyncPathFileSystem = {
+  stat(target: string): FileStats;
+  lstat(target: string): FileStats;
+  readlink(target: string): string;
+  realpath(target: string): string;
+  list(target: string): void;
+  names(directory: string): string[];
+};
+
+export const createSyncPathResolver = (files: SyncPathFileSystem): SyncPathResolver => {
+  const listings = new WeakMap<DirectoryHandle, string[]>();
+  const answer = (question: Ask): unknown => {
+    switch (question.op) {
+      case 'stat':
+        return files.stat(question.target);
+      case 'lstat':
+        return files.lstat(question.target);
+      case 'readlink':
+        return files.readlink(question.target);
+      case 'realpath':
+        return files.realpath(question.target);
+      case 'list':
+        return files.list(question.target);
+      case 'open': {
+        const handle: DirectoryHandle = { directory: question.target };
+        listings.set(handle, files.names(question.target).reverse());
+        return handle;
+      }
+      case 'read':
+        return listings.get(question.handle)?.pop() ?? null;
+      case 'close':
+        return undefined;
+      case 'probe': {
+        const verdict = question.probe(question.directory);
+        if (verdict instanceof Promise) throw new Error('a synchronous path resolution cannot wait for an asynchronous case-sensitivity probe');
+        return verdict;
+      }
+      case 'cancelled':
+        return undefined;
+    }
+  };
+  const answered = <T>(questions: Asking<T>): T => {
+    let turn = turnOf(() => questions.next());
+    while (!turn.done) {
+      let reply: { value: unknown } | { error: unknown };
+      try {
+        reply = { value: answer(turn.value) };
+      } catch (error) {
+        reply = { error };
+      }
+      const given = reply;
+      turn = turnOf(() => ('error' in given ? questions.throw(given.error) : questions.next(given.value)));
+    }
+    return turn.value as T;
+  };
+  return {
+    canonicalPath: (input) => answered(canonicalPath(input)),
+    canonicalDirectory: (input) => answered(canonicalDirectory(input)),
+    resolveCanonicalPath: (absolute) => answered(resolved(absolute)),
+    locate: (value) => answered(locate(value)),
+    locateThroughFiles: (value) => answered(locateThroughFiles(value)),
+    comparablePath: (input) => answered(comparablePath(input)),
+    comparableContains: (directory, candidate) => answered(comparableContains(directory, candidate)),
+    volumeIsCaseInsensitive: (target) => answered(volumeIsCaseInsensitive(target)),
+    caseSensitivityOf: (target) => answered(caseSensitivityOf(target)),
+    realPath: (target) => answered(realPath(target)),
+  };
 };

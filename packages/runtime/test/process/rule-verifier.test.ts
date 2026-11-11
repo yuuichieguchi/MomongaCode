@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, withTempDir, NEVER_CANCELLED } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 import { parseRule } from '@momonga/config';
 import { createRuleVerifier, installedRuleSolver } from '../../src/process/rule-verifier.ts';
@@ -22,7 +22,7 @@ describe('the rule verifier of the runtime process', () => {
       threadCode: `throw new Error('no thread is expected')`,
     };
     const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers });
-    expect(await verifier.inputOf(request)).toMatchObject({ ...request, secretLocations: [{ directory: '/home/u/.ssh' }], protectedSet: expect.any(Object) });
+    expect(await verifier.inputOf(request, NEVER_CANCELLED)).toMatchObject({ ...request, secretLocations: [{ directory: '/home/u/.ssh' }], protectedSet: expect.any(Object) });
   });
 
   it('verifies in a thread that runs the code of its host, under the budget of the design and with the version of the solver', async () => {
@@ -34,14 +34,14 @@ describe('the rule verifier of the runtime process', () => {
       paths,
       timers: { setTimeout: (callback, ms) => (waits.push(ms), timers.setTimeout(callback, ms)), clearTimeout: timers.clearTimeout },
     });
-    expect(await verifier.verify(await verifier.inputOf(request), new AbortController().signal)).toEqual({ verdict: 'proved', solver: FAKE_SOLVER_VERSION, refuted: [], unknown: [], notProved: [] });
+    expect(await verifier.verify(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).toEqual({ verdict: 'proved', solver: FAKE_SOLVER_VERSION, refuted: [], unknown: [], notProved: [] });
     expect(waits).toEqual([RULE_VERIFY_BUDGET_MS]);
   });
 
   it('gives verdict unknown with the reason when its thread fails', async () => {
     const host: RuleSolverHost = { ...provedRuleSolver({ executables: '/x' }), threadCode: `throw new Error('the solver is broken')` };
     const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers });
-    expect(await verifier.verify(await verifier.inputOf(request), new AbortController().signal)).toMatchObject({
+    expect(await verifier.verify(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).toMatchObject({
       verdict: 'unknown',
       unknown: [{ property: 'verification', reason: 'the verification thread failed: the solver is broken' }],
     });
@@ -69,10 +69,10 @@ describe('the rule verifier with the installed solver, in the thread of the prod
     fs.mkdirSync(`${root}/home`);
     const facts = { roots: [`${root}/work`], mode: 'manual', home: `${root}/home`, cwd: `${root}/work`, enforcement: 'exact-paths' } as const;
     const verifier = verifierIn(root);
-    const proved = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Read(//etc/**)', 'deny')] }), new AbortController().signal);
+    const proved = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Read(//etc/**)', 'deny')] }, NEVER_CANCELLED), new AbortController().signal);
     expect(proved).toMatchObject({ verdict: 'proved', solver: expect.stringMatching(/^z3-solver /), refuted: [], unknown: [] });
     expect(proved.notProved.length).toBeGreaterThan(0);
-    const refuted = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Bash', 'allow'), ruleIn(root, 'Bash(git push:*)', 'deny')] }), new AbortController().signal);
+    const refuted = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Bash', 'allow'), ruleIn(root, 'Bash(git push:*)', 'deny')] }, NEVER_CANCELLED), new AbortController().signal);
     expect(refuted).toMatchObject({ verdict: 'refuted', refuted: expect.arrayContaining([expect.objectContaining({ property: 'bash-admission' })]) });
   });
 });

@@ -1,5 +1,3 @@
-import { canonicalPath } from './path-compare.ts';
-
 export const UNRESOLVABLE_ERRNO_CODES = ['EACCES', 'ELOOP', 'ENAMETOOLONG', 'ENOTDIR', 'ENOENT'] as const;
 
 export type UnresolvableErrno = (typeof UNRESOLVABLE_ERRNO_CODES)[number];
@@ -18,6 +16,13 @@ export type Unresolved = { unresolvable: UnresolvableReason };
 
 export type PathResolution = { ok: true; path: string } | { ok: false; reason: UnresolvableReason };
 
+export type Awaitable<T> = T | Promise<T>;
+
+export type PathProbes = {
+  canonicalise: (absolute: string) => Awaitable<PathResolution>;
+  volumeProbe: (directory: string) => Awaitable<boolean>;
+};
+
 const isUnresolvableErrno = (code: unknown): code is UnresolvableErrno => UNRESOLVABLE_ERRNO_CODES.some((candidate) => candidate === code);
 
 export const unresolvableReasonOf = (error: unknown): UnresolvableReason | undefined => {
@@ -25,9 +30,9 @@ export const unresolvableReasonOf = (error: unknown): UnresolvableReason | undef
   return isUnresolvableErrno(code) ? { kind: 'errno', code } : undefined;
 };
 
-export const resolveCanonicalPath = (absolute: string, canonicalise: (absolute: string) => string = canonicalPath): PathResolution => {
+export const resolveCanonicalPath = async (absolute: string, canonicalise: (absolute: string) => Promise<string>): Promise<PathResolution> => {
   try {
-    return { ok: true, path: canonicalise(absolute) };
+    return { ok: true, path: await canonicalise(absolute) };
   } catch (error) {
     const reason = unresolvableReasonOf(error);
     if (reason === undefined) throw error;

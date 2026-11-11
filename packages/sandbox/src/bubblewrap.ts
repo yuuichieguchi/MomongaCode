@@ -1,9 +1,8 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createOwnedDirectorySync, fileRuleBlocks, procGroupMembers, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
-import type { FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectorySync, PlaceholderForm } from '@momonga/foundation';
-import { canonicalizePath } from './canonical-path.ts';
+import { createOwnedDirectorySync, fileRuleBlocks, hostPaths, mapAsync, procGroupMembers, settledOrAborted, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
+import type { Awaitable, FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectorySync, PlaceholderForm } from '@momonga/foundation';
 import { SANDBOX_STOP_BOUND_MS, launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
@@ -23,7 +22,7 @@ export type Unreachable = 'unreachable';
 export type FilesystemPort = {
   kindOf(target: string): EntryKind | undefined | Unreachable;
   isSymbolicLink(target: string): boolean;
-  realpath(target: string): string;
+  realpath(target: string): Awaitable<string>;
   children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }> | Unreachable;
   createPlaceholder(target: string, form: PlaceholderForm): PlaceholderIdentity;
   removePlaceholder(target: string, identity: PlaceholderIdentity, form: PlaceholderForm): void;
@@ -52,7 +51,7 @@ export const nodeFilesystemPort: FilesystemPort = {
       return stat.isDirectory() ? 'directory' : 'file';
     }),
   isSymbolicLink: (target) => inspected(false, () => fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink() ?? false) === true,
-  realpath: (target) => fs.realpathSync(target),
+  realpath: (target) => fs.promises.realpath(target),
   createPlaceholder: (target, form) => {
     if (form.kind === 'directory') {
       fs.mkdirSync(target, { mode: PLACEHOLDER_DIRECTORY_MODE });
@@ -131,23 +130,25 @@ const blockedPaths = (set: FileRuleSet, entry: FileRuleEntry, port: Inspector): 
   return unique(found);
 };
 
-export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions, port: FilesystemPort = nodeFilesystemPort): BubblewrapPlan {
-  validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir });
+export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions, signal: AbortSignal, port: FilesystemPort = nodeFilesystemPort): Promise<BubblewrapPlan> {
+  const paths = hostPaths(signal);
+  const realpath = (target: string): Promise<string> => settledOrAborted((async () => port.realpath(target))(), signal);
+  await validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir }, paths);
   if (typeof policy.network === 'object') {
     throw new SandboxPolicyError('network_scope_unsupported', 'the bubblewrap sandbox cannot limit a command to one loopback port, so it cannot limit its network to named hosts');
   }
   const heldPlaceholders = options.heldPlaceholders ?? new Set<string>();
-  const canonicalize = (target: string): string => {
+  const canonicalize = async (target: string): Promise<string> => {
     const placeholder = [...heldPlaceholders].find((held) => target.startsWith(`${held}/`));
-    if (placeholder === undefined) return canonicalizePath(target);
-    return path.join(canonicalizePath(path.dirname(placeholder)), path.basename(placeholder), path.relative(placeholder, target));
+    if (placeholder === undefined) return paths.canonicalPath(target);
+    return path.join(await paths.canonicalPath(path.dirname(placeholder)), path.basename(placeholder), path.relative(placeholder, target));
   };
-  const roots = unique(policy.writableRoots.map(canonicalizePath));
-  const writeDenied = unique(policy.writeDenied.map(canonicalize));
-  const readDenied = unique(policy.readDenied.map(canonicalize));
-  const readAllowed = unique((policy.readAllowed ?? []).map(canonicalize));
-  const sessionTmpDir = options.tmpDir === undefined ? undefined : canonicalizePath(options.tmpDir);
-  const scratchDir = options.scratchDir === undefined ? undefined : canonicalizePath(options.scratchDir);
+  const roots = unique(await mapAsync(policy.writableRoots, paths.canonicalPath));
+  const writeDenied = unique(await mapAsync(policy.writeDenied, canonicalize));
+  const readDenied = unique(await mapAsync(policy.readDenied, canonicalize));
+  const readAllowed = unique(await mapAsync(policy.readAllowed ?? [], canonicalize));
+  const sessionTmpDir = options.tmpDir === undefined ? undefined : await paths.canonicalPath(options.tmpDir);
+  const scratchDir = options.scratchDir === undefined ? undefined : await paths.canonicalPath(options.scratchDir);
   const placeholders: string[] = [];
 
   const base: string[] = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/run'];
@@ -214,7 +215,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
 
   const mounted: string[] = [];
 
-  const protect = (target: string, mounts: Mount[]): void => {
+  const protect = async (target: string, mounts: Mount[]): Promise<void> => {
     if (insideRoots(target) && port.isSymbolicLink(target)) {
       throw new SandboxPolicyError('protected_link_not_pinnable', `bubblewrap cannot pin the symbolic link ${target}: a mount cannot sit on a link name, so the link could be replaced from inside the sandbox`, { path: target });
     }
@@ -223,7 +224,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
       reserve(target, mounts);
       return;
     }
-    const resolved = port.realpath(target);
+    const resolved = await realpath(target);
     if (heldPlaceholders.has(resolved) && !placeholders.includes(resolved)) placeholders.push(resolved);
     mounted.push(resolved);
     mounts.push({ depth: depthOf(resolved), args: ['--ro-bind', resolved, resolved] });
@@ -231,45 +232,45 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
 
   const writeMounts: Mount[] = [];
   const literals = unique([...policy.writeDeniedLiterals, ...policy.protectedSet.literals]);
-  for (const target of [...writeDenied, ...literals]) protect(target, writeMounts);
+  for (const target of [...writeDenied, ...literals]) await protect(target, writeMounts);
   const userDenies = [...policy.fileRules.entries, ...policy.protectedSet.patterns.entries].filter(isUserDeny);
   for (const entry of userDenies.filter((candidate) => candidate.access === 'write')) {
     const set = policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules;
-    for (const target of blockedPaths(set, entry, inspector)) protect(target, writeMounts);
+    for (const target of blockedPaths(set, entry, inspector)) await protect(target, writeMounts);
   }
   const readOnlyDirectories = new Set<string>();
   const isGitDirectory = (directory: string): boolean =>
     kindOf(path.join(directory, 'HEAD')) === 'file' && kindOf(path.join(directory, 'objects')) === 'directory' && kindOf(path.join(directory, 'refs')) === 'directory';
-  const anchorModules = (anchor: string): void => {
+  const anchorModules = async (anchor: string): Promise<void> => {
     if (!insideRoots(anchor)) return;
     if (kindOf(anchor) !== 'directory') {
-      protect(anchor, writeMounts);
+      await protect(anchor, writeMounts);
       return;
     }
     readOnlyDirectories.add(anchor);
     writeMounts.push({ depth: depthOf(anchor), args: ['--ro-bind', anchor, anchor] });
-    walkModules(anchor);
+    await walkModules(anchor);
   };
-  const walkModules = (directory: string): void => {
+  const walkModules = async (directory: string): Promise<void> => {
     for (const child of inspector.children(directory)) {
       if (child.kind !== 'directory') continue;
       if (!isGitDirectory(child.path)) {
         readOnlyDirectories.add(child.path);
-        walkModules(child.path);
+        await walkModules(child.path);
         continue;
       }
       writeMounts.push({ depth: depthOf(child.path), args: ['--bind', child.path, child.path] });
-      for (const name of MODULE_PINNED_ENTRIES) protect(path.join(child.path, name), writeMounts);
-      anchorModules(path.join(child.path, 'modules'));
-      pinWorktrees(path.join(child.path, 'worktrees'));
+      for (const name of MODULE_PINNED_ENTRIES) await protect(path.join(child.path, name), writeMounts);
+      await anchorModules(path.join(child.path, 'modules'));
+      await pinWorktrees(path.join(child.path, 'worktrees'));
     }
   };
-  const pinWorktrees = (anchor: string): void => {
+  const pinWorktrees = async (anchor: string): Promise<void> => {
     if (!insideRoots(anchor) || kindOf(anchor) !== 'directory') return;
-    for (const child of inspector.children(anchor)) if (child.kind === 'directory') protect(path.join(child.path, 'config.worktree'), writeMounts);
+    for (const child of inspector.children(anchor)) if (child.kind === 'directory') await protect(path.join(child.path, 'config.worktree'), writeMounts);
   };
-  for (const anchor of policy.protectedSet.moduleAnchors) anchorModules(anchor);
-  for (const anchor of policy.protectedSet.worktreeAnchors) pinWorktrees(anchor);
+  for (const anchor of policy.protectedSet.moduleAnchors) await anchorModules(anchor);
+  for (const anchor of policy.protectedSet.worktreeAnchors) await pinWorktrees(anchor);
   const pinMounts: Mount[] = [];
   const pinned = [...unique(mounted), ...unique(placeholders)];
   const pinnedAncestors = new Set<string>();
@@ -286,17 +287,17 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
 
   const readMounts: Mount[] = [];
   const maskedDirectories: string[] = [];
-  const mask = (target: string): void => {
+  const mask = async (target: string): Promise<void> => {
     const kind = kindOf(target);
     if (kind === undefined) return;
-    const resolved = port.realpath(target);
+    const resolved = await realpath(target);
     if (kind === 'directory') maskedDirectories.push(resolved);
     readMounts.push({ depth: depthOf(resolved), args: kind === 'directory' ? ['--tmpfs', resolved] : ['--ro-bind', '/dev/null', resolved] });
   };
-  for (const target of readDenied) mask(target);
+  for (const target of readDenied) await mask(target);
   for (const entry of userDenies.filter((candidate) => candidate.access === 'read')) {
     const set = policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules;
-    for (const target of blockedPaths(set, entry, inspector)) mask(target);
+    for (const target of blockedPaths(set, entry, inspector)) await mask(target);
   }
   const reallow: string[] = readAllowed.flatMap((target) => (kindOf(target) === undefined ? [] : ['--ro-bind', target, target]));
 
@@ -385,7 +386,6 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     if (signalGroupExceptLeader(pgid, 'SIGTERM', groupMembers) === 0) await signalGroup(pgid, 'SIGTERM', undefined, stop);
   };
   filesystem.requireExecutable(bwrapPath);
-  const tmpRoot = filesystem.realpath(options.tmpRoot);
   const directories: DirectoryPort = { isDirectory: (target) => filesystem.kindOf(target) === 'directory' };
   const held = new Map<string, number>();
   const { journal, holders } = options;
@@ -511,25 +511,43 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     }
   };
 
+  let turn: Promise<void> = Promise.resolve();
+  const oneAtATime = async <T>(signal: AbortSignal, plan: () => Promise<T>): Promise<T> => {
+    const earlier = turn;
+    let leave: () => void = () => undefined;
+    const own = new Promise<void>((resolve) => {
+      leave = resolve;
+    });
+    turn = earlier.then(() => own);
+    try {
+      await settledOrAborted(earlier, signal);
+      return await plan();
+    } finally {
+      leave();
+    }
+  };
+
   return {
     kind: 'bubblewrap',
     sweep: sweepKept,
-    spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess {
-      for (const root of policy.writableRoots) assertExistingDirectory(root, directories);
-      const planned = { heldPlaceholders: new Set([...held.keys(), ...kept.keys()]), cwd: command.cwd };
-      if (command.tmpDir !== undefined) {
-        assertExistingDirectory(command.tmpDir, directories);
-        return launchWith(command, planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, filesystem), command.tmpDir, signal, () => undefined, descriptors);
-      }
-      const scratch = filesystem.makeScratchDirectory(tmpRoot, 'sandbox-');
-      try {
-        const scratchDir = canonicalizePath(scratch.path);
-        const plan = planBubblewrap(policy, { ...planned, scratchDir }, filesystem);
-        return launchWith(command, plan, scratch.path, signal, () => scratch.dispose(), descriptors);
-      } catch (error) {
-        scratch.dispose();
-        throw error;
-      }
-    },
+    spawn: (command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> =>
+      oneAtATime(signal, async () => {
+        for (const root of policy.writableRoots) assertExistingDirectory(root, directories);
+        const planned = { heldPlaceholders: new Set([...held.keys(), ...kept.keys()]), cwd: command.cwd };
+        if (command.tmpDir !== undefined) {
+          assertExistingDirectory(command.tmpDir, directories);
+          return launchWith(command, await planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, signal, filesystem), command.tmpDir, signal, () => undefined, descriptors);
+        }
+        const tmpRoot = await settledOrAborted((async () => filesystem.realpath(options.tmpRoot))(), signal);
+        const scratch = filesystem.makeScratchDirectory(tmpRoot, 'sandbox-');
+        try {
+          const scratchDir = await hostPaths(signal).canonicalPath(scratch.path);
+          const plan = await planBubblewrap(policy, { ...planned, scratchDir }, signal, filesystem);
+          return launchWith(command, plan, scratch.path, signal, () => scratch.dispose(), descriptors);
+        } catch (error) {
+          scratch.dispose();
+          throw error;
+        }
+      }),
   };
 }

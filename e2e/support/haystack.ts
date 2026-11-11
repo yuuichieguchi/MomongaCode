@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { displayToolPath, sha256Hex } from '@momonga/foundation';
+import { displayToolPathSync, sha256Hex } from '@momonga/foundation';
 
 export const HAYSTACK_FILE_NAME = 'haystack.txt';
 export const HAYSTACK_TARGET_CHARS = 20_000;
@@ -35,7 +35,7 @@ export const readBackOutputOf = (haystack: Haystack, lineNumber: number): string
 
 export const writeHaystack = (project: string): Haystack => {
   const file = path.join(project, HAYSTACK_FILE_NAME);
-  const shown = displayToolPath(project, file);
+  const shown = displayToolPathSync(project, file);
   const grepLines = grepLinesFor(shown);
   const grepOutput = grepLines.join('\n');
   fs.writeFileSync(file, `${grepLines.map((line, index) => fileLineOf(line, shown, index + 1)).join('\n')}\n`);

@@ -29,7 +29,7 @@ describe('blobs handed to a tool', () => {
         return { status: 'completed', output: 'line\n'.repeat(200) };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Scoped', {})]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Scoped', {})]));
     expect(reads).toEqual([{ runId: 'run-1' }]);
     expect(puts.map((entry) => entry.runId)).toEqual(['run-1', 'run-1']);
   });

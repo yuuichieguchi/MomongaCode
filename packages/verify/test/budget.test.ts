@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
-import { hostFilesystemOf } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
 import { verifyPermissions } from '../src/index.ts';
 import type { VerifyRequest } from '../src/index.ts';
 import { caseSensitiveFs, makeLayout, rulesOf, sshLocation, useZ3 } from './harness.ts';
@@ -21,8 +21,8 @@ describe('the overall budget of a verification', () => {
       mode: 'manual',
       home: layout.home,
       cwd: layout.project,
-      protectedSet: protectedSetFor(roots, fileSystem),
-      fs: hostFilesystemOf(fileSystem),
+      protectedSet: await protectedSetFor(roots, fileSystem),
+      fs: hostFilesystemOf(fileSystem), signal: NEVER_CANCELLED,
       secretLocations: [sshLocation(layout)],
       exemptDirectory: null,
       enforcement: ruleEnforcementOf('none'),

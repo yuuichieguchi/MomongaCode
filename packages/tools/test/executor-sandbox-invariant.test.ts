@@ -10,6 +10,7 @@ import type { BatchInput, CallOutcome } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { ApprovalSpec, Harness } from './harness.ts';
 import { keyFor, minimalPolicyFor } from './helpers.ts';
+import { testProbes } from '@momonga/testkit';
 
 const stream = (): AsyncIterable<Uint8Array> => ({
   async *[Symbol.asyncIterator]() {},
@@ -34,8 +35,8 @@ const bashLike = () =>
     inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false },
     subject: (input) => ({ kind: 'command', tool: 'Bash', command: String(input['command']) }),
     execute: async (input, ctx) => {
-      const child = ctx.sandbox.spawn({ argv: ['/bin/bash', '-c', String(input['command'])], cwd: ctx.session.cwd, env: {} }, ctx.sandboxPolicy, ctx.signal);
-      const exit = await child.exited;
+      const child = await ctx.sandbox.spawn({ argv: ['/bin/bash', '-c', String(input['command'])], cwd: ctx.session.cwd, env: {} }, ctx.sandboxPolicy, ctx.signal);
+      const exit = await (await child).exited;
       return { status: exit.code === 0 ? 'completed' : 'failed', output: 'ran' };
     },
   });
@@ -63,7 +64,7 @@ const batchOf = async ({ harness, sandbox, mode, rules, fileRules, roots, comman
     rules,
     sandbox,
     roots: roots ?? [harness.layout.project],
-    sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), fileRules } as SandboxPolicy,
+    sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), fileRules } as SandboxPolicy,
   });
 
 const runScenario = async (scenario: Scenario): Promise<CallOutcome | undefined> => {
@@ -83,7 +84,7 @@ describe('sandbox none keeps human approval for every command (pins)', () => {
   it('asks in bypassPermissions without rules and names the missing sandbox', async () => {
     const harness = makeHarness();
     const { sandbox, policies } = recordingSandbox('none');
-    const outcome = await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules: [], fileRules: computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none')), command: PERL });
+    const outcome = await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules: [], fileRules: await computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()), command: PERL });
     expect(outcome).toMatchObject({ kind: 'needs_approval', decision: { kind: 'ask', source: 'mode' } });
     expect((outcome as { decision: { reason: string } }).decision.reason).toContain('no sandbox is available');
     expect(outcome).not.toHaveProperty('suggestedRule');
@@ -93,7 +94,7 @@ describe('sandbox none keeps human approval for every command (pins)', () => {
   it('asks in bypassPermissions even with a matching Bash allow rule', async () => {
     const harness = makeHarness();
     const { sandbox, policies } = recordingSandbox('none');
-    const outcome = await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules: [ruleOf(harness, 'allow', 'Bash(perl:*)')], fileRules: computeFileRules([ruleOf(harness, 'allow', 'Bash(perl:*)')], [harness.layout.project], null, ruleEnforcementOf('none')), command: PERL });
+    const outcome = await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules: [ruleOf(harness, 'allow', 'Bash(perl:*)')], fileRules: await computeFileRules([ruleOf(harness, 'allow', 'Bash(perl:*)')], [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()), command: PERL });
     expect(outcome?.kind).toBe('needs_approval');
     expect(policies).toEqual([]);
   });
@@ -101,10 +102,10 @@ describe('sandbox none keeps human approval for every command (pins)', () => {
   it('asks again in manual mode after an earlier allow_always', async () => {
     const harness = makeHarness();
     const { sandbox, policies } = recordingSandbox('none');
-    const first = await runScenario({ harness, sandbox, mode: 'manual', rules: [], fileRules: computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none')), command: PERL, approval: 'allow_always', callId: 'c1' });
+    const first = await runScenario({ harness, sandbox, mode: 'manual', rules: [], fileRules: await computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()), command: PERL, approval: 'allow_always', callId: 'c1' });
     expect(first).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(policies).toHaveLength(1);
-    const again = await runScenario({ harness, sandbox, mode: 'manual', rules: [ruleOf(harness, 'allow', 'Bash(perl:*)')], fileRules: computeFileRules([ruleOf(harness, 'allow', 'Bash(perl:*)')], [harness.layout.project], null, ruleEnforcementOf('none')), command: PERL, callId: 'c2' });
+    const again = await runScenario({ harness, sandbox, mode: 'manual', rules: [ruleOf(harness, 'allow', 'Bash(perl:*)')], fileRules: await computeFileRules([ruleOf(harness, 'allow', 'Bash(perl:*)')], [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()), command: PERL, callId: 'c2' });
     expect(again?.kind).toBe('needs_approval');
     expect(policies).toHaveLength(1);
   });
@@ -113,7 +114,7 @@ describe('sandbox none keeps human approval for every command (pins)', () => {
     const harness = makeHarness();
     const { sandbox, policies } = recordingSandbox('none');
     const rules = [ruleOf(harness, 'deny', 'Write(.env)')];
-    const outcome = await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules, fileRules: computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none')), command: 'echo x > .env' });
+    const outcome = await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules, fileRules: await computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()), command: 'echo x > .env' });
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect((outcome as { result: { output: string } }).result.output.startsWith('Permission denied')).toBe(true);
     expect(policies).toEqual([]);
@@ -123,7 +124,7 @@ describe('sandbox none keeps human approval for every command (pins)', () => {
     const harness = makeHarness();
     const { sandbox, policies } = recordingSandbox('none');
     const rules = [ruleOf(harness, 'deny', 'Write(.env)')];
-    const outcome = await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules, fileRules: computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none')), command: PERL, approval: 'allow_once' });
+    const outcome = await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules, fileRules: await computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()), command: PERL, approval: 'allow_once' });
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(policies).toHaveLength(1);
   });
@@ -135,7 +136,7 @@ describe('seatbelt batches carry the file rules of their own rules', () => {
     const { sandbox, policies } = recordingSandbox('seatbelt');
     const rules = [ruleOf(harness, 'deny', 'Write(.env)')];
     const roots = [harness.layout.project];
-    await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules, fileRules: computeFileRules(rules, roots, null, ruleEnforcementOf('none')), command: PERL });
+    await runScenario({ harness, sandbox, mode: 'bypassPermissions', rules, fileRules: await computeFileRules(rules, roots, null, ruleEnforcementOf('none'), testProbes()), command: PERL });
     expect(policies).toHaveLength(1);
     const entries = (policies[0] as SandboxPolicy & { fileRules: FileRuleSet }).fileRules.entries;
     expect(entries).toEqual([expect.objectContaining({ ruleIndex: 0, tool: 'Edit', access: 'write', effect: 'deny' })]);
@@ -155,26 +156,26 @@ describe('seatbelt batches carry the file rules of their own rules', () => {
     expect(harness.idempotency.log).toEqual([]);
   });
 
-  const variants: Array<[string, (harness: Harness) => { rules: PermissionRule[]; built: FileRuleSet }]> = [
+  const variants: Array<[string, (harness: Harness) => Promise<{ rules: PermissionRule[]; built: FileRuleSet }>]> = [
     [
       'one deny rule',
-      (harness) => ({
+      async (harness) => ({
         rules: [ruleOf(harness, 'deny', 'Write(.env)')],
-        built: computeFileRules([ruleOf(harness, 'deny', 'Write(.envrc)')], [harness.layout.project], null, ruleEnforcementOf('none')),
+        built: await computeFileRules([ruleOf(harness, 'deny', 'Write(.envrc)')], [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()),
       }),
     ],
     [
       'one exception',
-      (harness) => ({
+      async (harness) => ({
         rules: [ruleOf(harness, 'deny', 'Read(*.env)')],
-        built: computeFileRules([{ ...ruleOf(harness, 'deny', 'Read(*.env)'), exceptions: ['sample.env'] } as PermissionRule], [harness.layout.project], null, ruleEnforcementOf('none')),
+        built: await computeFileRules([{ ...ruleOf(harness, 'deny', 'Read(*.env)'), exceptions: ['sample.env'] } as PermissionRule], [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()),
       }),
     ],
     [
       'one root',
-      (harness) => ({
+      async (harness) => ({
         rules: [ruleOf(harness, 'deny', 'Write(.env)')],
-        built: computeFileRules([ruleOf(harness, 'deny', 'Write(.env)')], [harness.layout.project, harness.layout.outside], null, ruleEnforcementOf('none')),
+        built: await computeFileRules([ruleOf(harness, 'deny', 'Write(.env)')], [harness.layout.project, harness.layout.outside], null, ruleEnforcementOf('none'), testProbes()),
       }),
     ],
   ];
@@ -182,7 +183,7 @@ describe('seatbelt batches carry the file rules of their own rules', () => {
   it.each(variants)('throws file_rules_stale when the policy was built from rules that differ in %s', async (_label, make) => {
     const harness = makeHarness();
     const { sandbox, policies } = recordingSandbox('seatbelt');
-    const { rules, built } = make(harness);
+    const { rules, built } =await  await make(harness);
     const error = await rejectionOf(harness.executor.runBatch(await batchOf({ harness, sandbox, mode: 'manual', rules, fileRules: built, command: PERL, approval: 'allow_once' })));
     expect(error).toBeInstanceOf(SandboxPolicyError);
     expect((error as SandboxPolicyError).code).toBe('file_rules_stale');
@@ -193,7 +194,7 @@ describe('seatbelt batches carry the file rules of their own rules', () => {
     const harness = makeHarness();
     const { sandbox, policies } = recordingSandbox('seatbelt');
     const rules = [ruleOf(harness, 'deny', 'Write(.env)'), { ...ruleOf(harness, 'deny', 'Read(*.env)'), exceptions: ['sample.env'] } as PermissionRule];
-    const built = computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none'));
+    const built = await computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none'), testProbes());
     const outcome = await runScenario({ harness, sandbox, mode: 'manual', rules, fileRules: built, command: PERL, approval: 'allow_once' });
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(policies).toHaveLength(1);
@@ -215,7 +216,7 @@ describe('recovery batches', () => {
         return { outcome: 'already_applied', output: 'reconciled' };
       },
     });
-    const { sandbox: _sandbox, sandboxPolicy: _policy, ...recovery } = harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { recoverOnly: true, rules: [] });
+    const { sandbox: _sandbox, sandboxPolicy: _policy, ...recovery } =await  await harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { recoverOnly: true, rules: [] });
     const [outcome] = await harness.executor.runBatch(recovery as BatchInput);
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'already_applied', result: { status: 'completed', output: 'reconciled' } });
     expect(reconciled).toEqual([key]);

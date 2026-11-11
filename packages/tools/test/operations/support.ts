@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, expect } from 'vitest';
 import { createOperationTools, hostGitReader, openGitCredentialChannel } from '@momonga/tools';
 import type { AnyTool, ArgvRunner, ForgeAccess, ForgeFetch, OperationSettings, ReconcileContext, ReconcileResult, ToolContext, ToolIdempotencyRecord, ToolResult } from '@momonga/tools';
+import { testPaths } from '@momonga/testkit';
 
 const cleanups: Array<() => void | Promise<void>> = [];
 
@@ -173,7 +174,7 @@ export const gateFactsFor = (tool: AnyTool, input: unknown, ctx: CallContext): P
 
 export const subjectFor = async (tool: AnyTool, input: unknown, world: GitWorld): Promise<ReturnType<AnyTool['subject']>> => {
   const ctx = contextFor(world.work, world.env);
-  return tool.subject(input, { cwd: world.work, workingDirectory: world.work, home: world.home, roots: [world.work] }, await gateFactsFor(tool, input, ctx));
+  return tool.subject(input, { paths: testPaths(), cwd: world.work, workingDirectory: world.work, home: world.home, roots: [world.work] }, await gateFactsFor(tool, input, ctx));
 };
 
 export type CallParts = {

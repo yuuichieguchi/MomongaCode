@@ -23,7 +23,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
   let tmpRoot = '';
   let sandbox: Sandbox;
 
-  function tempDir(): string {
+  async function tempDir(): Promise<string> {
     const dir = makeTempDir();
     created.push(dir);
     return dir;
@@ -33,14 +33,14 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
     return { writableRoots: [root], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny', ...overrides };
   }
 
-  function sh(
+  async function sh(
     script: string,
     overrides: Partial<SandboxPolicy> = {},
     options: { env?: Record<string, string>; using?: Sandbox; signal?: AbortSignal } = {},
-  ): SandboxedProcess {
+  ): Promise<SandboxedProcess> {
     const controller = new AbortController();
     controllers.push(controller);
-    const proc = (options.using ?? sandbox).spawn(
+    const proc = await (options.using ?? sandbox).spawn(
       { argv: ['/bin/sh', '-c', script], cwd: root, env: options.env ?? BASE_ENV },
       policy(overrides),
       options.signal ?? controller.signal,
@@ -49,10 +49,10 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
     return proc;
   }
 
-  beforeEach(() => {
-    root = tempDir();
-    outside = tempDir();
-    tmpRoot = tempDir();
+  beforeEach(async () => {
+    root = await tempDir();
+    outside = await tempDir();
+    tmpRoot = await tempDir();
     sandbox = createSeatbeltSandbox({ tmpRoot, killGraceMs: KILL_GRACE_MS });
   });
 
@@ -76,12 +76,12 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
 
   it('allows writes inside the writable root and denies writes to another directory', async () => {
     const inside = path.join(root, 'inside.txt');
-    const ok = await run(sh(`printf hello > '${inside}'`));
+    const ok = await run(await sh(`printf hello > '${inside}'`));
     expect(ok.code).toBe(0);
     expect(fs.readFileSync(inside, 'utf8')).toBe('hello');
 
     const target = path.join(outside, 'escaped.txt');
-    const denied = await run(sh(`printf nope > '${target}'`));
+    const denied = await run(await sh(`printf nope > '${target}'`));
     expect(denied.code).not.toBe(0);
     expect(denied.stderr).toMatch(/Operation not permitted/);
     expect(fs.existsSync(target)).toBe(false);
@@ -93,27 +93,27 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
     fs.writeFileSync(path.join(root, '.git', 'hooks', 'pre-commit'), 'original-hook');
     const overrides = { writeDenied: [path.join(root, '.git', 'hooks'), path.join(root, '.mcp.json')] };
 
-    const hook = await run(sh(`printf evil > .git/hooks/pre-commit`, overrides));
+    const hook = await run(await sh(`printf evil > .git/hooks/pre-commit`, overrides));
     expect(hook.code).not.toBe(0);
     expect(hook.stderr).toMatch(/Operation not permitted/);
     expect(fs.readFileSync(path.join(root, '.git', 'hooks', 'pre-commit'), 'utf8')).toBe('original-hook');
 
-    const newHook = await run(sh(`printf evil > .git/hooks/post-checkout`, overrides));
+    const newHook = await run(await sh(`printf evil > .git/hooks/post-checkout`, overrides));
     expect(newHook.code).not.toBe(0);
     expect(fs.existsSync(path.join(root, '.git', 'hooks', 'post-checkout'))).toBe(false);
 
-    const mcp = await run(sh(`printf evil > .mcp.json`, overrides));
+    const mcp = await run(await sh(`printf evil > .mcp.json`, overrides));
     expect(mcp.code).not.toBe(0);
     expect(fs.readFileSync(path.join(root, '.mcp.json'), 'utf8')).toBe('{"original":true}');
 
-    const read = await run(sh(`cat .mcp.json; cat .git/hooks/pre-commit`, overrides));
+    const read = await run(await sh(`cat .mcp.json; cat .git/hooks/pre-commit`, overrides));
     expect(read.code).toBe(0);
     expect(read.stdout).toBe('{"original":true}original-hook');
   });
 
   it('denies writes to defaultProtectedPaths-style entries that do not exist yet', async () => {
     const overrides = { writeDenied: [path.join(root, '.envrc')] };
-    const result = await run(sh(`printf evil > .envrc`, overrides));
+    const result = await run(await sh(`printf evil > .envrc`, overrides));
     expect(result.code).not.toBe(0);
     expect(fs.existsSync(path.join(root, '.envrc'))).toBe(false);
   });
@@ -124,37 +124,37 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
     fs.writeFileSync(path.join(secretDir, 'token'), 'top-secret');
     fs.writeFileSync(path.join(outside, 'public'), 'visible');
 
-    const denied = await run(sh(`cat '${path.join(secretDir, 'token')}'`, { readDenied: [secretDir] }));
+    const denied = await run(await sh(`cat '${path.join(secretDir, 'token')}'`, { readDenied: [secretDir] }));
     expect(denied.code).not.toBe(0);
     expect(denied.stdout).not.toContain('top-secret');
     expect(denied.stderr).toMatch(/Operation not permitted/);
 
-    const allowed = await run(sh(`cat '${path.join(outside, 'public')}'`, { readDenied: [secretDir] }));
+    const allowed = await run(await sh(`cat '${path.join(outside, 'public')}'`, { readDenied: [secretDir] }));
     expect(allowed.code).toBe(0);
     expect(allowed.stdout).toBe('visible');
   });
 
   it('works with a root containing quote, paren, semicolon, newline and non-ASCII characters without rule injection', async () => {
-    root = path.join(tempDir(), 'a"b)c;d\n(allow default)-日本');
+    root = path.join(await tempDir(), 'a"b)c;d\n(allow default)-日本');
     fs.mkdirSync(root);
-    const inside = await run(sh(`printf ok > ./inside.txt`));
+    const inside = await run(await sh(`printf ok > ./inside.txt`));
     expect(inside.code).toBe(0);
     expect(fs.readFileSync(path.join(root, 'inside.txt'), 'utf8')).toBe('ok');
 
     const target = path.join(outside, 'escaped.txt');
-    const escaped = await run(sh(`printf nope > '${target}'`));
+    const escaped = await run(await sh(`printf nope > '${target}'`));
     expect(escaped.code).not.toBe(0);
     expect(fs.existsSync(target)).toBe(false);
   });
 
   it('gives each spawn a private writable TMPDIR under tmpRoot and removes it after exit', async () => {
-    const result = await run(sh(`printf %s "$TMPDIR"; printf data > "$TMPDIR/scratch"`));
+    const result = await run(await sh(`printf %s "$TMPDIR"; printf data > "$TMPDIR/scratch"`));
     expect(result.code).toBe(0);
     const tmpdir = result.stdout;
     expect(tmpdir.startsWith(fs.realpathSync(tmpRoot) + path.sep)).toBe(true);
     expect(fs.existsSync(tmpdir)).toBe(false);
 
-    const second = await run(sh(`printf %s "$TMPDIR"`));
+    const second = await run(await sh(`printf %s "$TMPDIR"`));
     expect(second.stdout).not.toBe(tmpdir);
   });
 
@@ -168,50 +168,50 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const port = (server.address() as net.AddressInfo).port;
 
-    const denied = await run(sh(`/usr/bin/nc -z -w 2 127.0.0.1 ${port}`, { network: 'deny' }));
+    const denied = await run(await sh(`/usr/bin/nc -z -w 2 127.0.0.1 ${port}`, { network: 'deny' }));
     expect(denied.code).not.toBe(0);
     expect(connections).toBe(0);
 
-    const allowed = await run(sh(`/usr/bin/nc -z -w 2 127.0.0.1 ${port}`, { network: 'allow' }));
+    const allowed = await run(await sh(`/usr/bin/nc -z -w 2 127.0.0.1 ${port}`, { network: 'allow' }));
     expect(allowed.code).toBe(0);
     await expect.poll(() => connections).toBe(1);
   });
 
   it('kills the whole process group on abort', async () => {
     const controller = new AbortController();
-    const proc = sh(`sleep 30 & printf '%s\\n' "$!"; sleep 30`, {}, { signal: controller.signal });
-    expect(proc.pgid).toBe(proc.pid);
-    const iterator = proc.stdout[Symbol.asyncIterator]();
+    const proc = await sh(`sleep 30 & printf '%s\\n' "$!"; sleep 30`, {}, { signal: controller.signal });
+    expect((await proc).pgid).toBe((await proc).pid);
+    const iterator = (await proc).stdout[Symbol.asyncIterator]();
     const first = await iterator.next();
     const grandchild = Number(Buffer.from(first.value ?? new Uint8Array()).toString('utf8').trim());
     expect(Number.isInteger(grandchild) && grandchild > 0).toBe(true);
     expect(isAlive(grandchild)).toBe(true);
 
     controller.abort();
-    const exit = await proc.exited;
-    expect(exit.killedBy).toBe('abort');
-    expect(await waitUntilDead([proc.pid, grandchild], KILL_GRACE_MS + 1000)).toBe(true);
+    const exit = (await proc).exited;
+    expect((await exit).killedBy).toBe('abort');
+    expect(await waitUntilDead([(await proc).pid, grandchild], KILL_GRACE_MS + 1000)).toBe(true);
   });
 
   it('SIGKILLs a group that ignores SIGTERM after killGraceMs', async () => {
     const controller = new AbortController();
-    const proc = sh(`trap '' TERM; printf 'ready\\n'; sleep 30`, {}, { signal: controller.signal });
-    const iterator = proc.stdout[Symbol.asyncIterator]();
+    const proc = await sh(`trap '' TERM; printf 'ready\\n'; sleep 30`, {}, { signal: controller.signal });
+    const iterator = (await proc).stdout[Symbol.asyncIterator]();
     await iterator.next();
     const started = Date.now();
     controller.abort();
-    const exit = await proc.exited;
+    const exit = (await proc).exited;
     const elapsed = Date.now() - started;
-    expect(exit.killedBy).toBe('grace-kill');
-    expect(exit.signal).toBe('SIGKILL');
+    expect((await exit).killedBy).toBe('grace-kill');
+    expect((await exit).signal).toBe('SIGKILL');
     expect(elapsed).toBeGreaterThanOrEqual(KILL_GRACE_MS - 20);
     expect(elapsed).toBeLessThan(KILL_GRACE_MS + 2000);
-    expect(await waitUntilDead([proc.pid], 1000)).toBe(true);
+    expect(await waitUntilDead([(await proc).pid], 1000)).toBe(true);
   });
 
   it('streams stdout and stderr including more than 1 MiB without deadlock', async () => {
     const bytes = 3 * 1024 * 1024;
-    const result = await run(sh(`head -c ${bytes} /dev/zero | tr '\\0' 'a'; printf 'to-stderr' >&2`));
+    const result = await run(await sh(`head -c ${bytes} /dev/zero | tr '\\0' 'a'; printf 'to-stderr' >&2`));
     expect(result.code).toBe(0);
     expect(result.stdout.length).toBe(bytes);
     expect(result.stdout).toMatch(/^a+$/);
@@ -220,19 +220,19 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
 
   it('streams large stderr concurrently with stdout', async () => {
     const bytes = 2 * 1024 * 1024;
-    const result = await run(sh(`head -c ${bytes} /dev/zero >&2; printf done`));
+    const result = await run(await sh(`head -c ${bytes} /dev/zero >&2; printf done`));
     expect(result.code).toBe(0);
     expect(result.stderr.length).toBe(bytes);
     expect(result.stdout).toBe('done');
   });
 
   it('reports exit codes and terminating signals', async () => {
-    const coded = await run(sh(`exit 7`));
+    const coded = await run(await sh(`exit 7`));
     expect(coded.code).toBe(7);
     expect(coded.signal).toBeNull();
     expect(coded.killedBy).toBeUndefined();
 
-    const signalled = await run(sh(`kill -TERM $$`));
+    const signalled = await run(await sh(`kill -TERM $$`));
     expect(signalled.code).toBeNull();
     expect(signalled.signal).toBe('SIGTERM');
     expect(signalled.killedBy).toBeUndefined();
@@ -242,7 +242,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
     const previous = process.env['MM_SANDBOX_PARENT_ONLY'];
     process.env['MM_SANDBOX_PARENT_ONLY'] = 'leaked';
     try {
-      const result = await run(sh(`/usr/bin/env`, {}, { env: { ...BASE_ENV, MM_GIVEN: 'given-value' } }));
+      const result = await run(await sh(`/usr/bin/env`, {}, { env: { ...BASE_ENV, MM_GIVEN: 'given-value' } }));
       expect(result.code).toBe(0);
       const names = result.stdout
         .split('\n')
@@ -263,35 +263,35 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
     const unsandboxed = createUnsandboxed();
     expect(unsandboxed.kind).toBe('none');
     const target = path.join(outside, 'written.txt');
-    const result = await run(sh(`printf free > '${target}'`, {}, { using: unsandboxed }));
+    const result = await run(await sh(`printf free > '${target}'`, {}, { using: unsandboxed }));
     expect(result.code).toBe(0);
     expect(fs.readFileSync(target, 'utf8')).toBe('free');
   });
 
-  it('throws naming a missing sandbox-exec path', () => {
+  it('throws naming a missing sandbox-exec path', async () => {
     const missing = path.join(outside, 'no-such-sandbox-exec');
-    expect(() => createSeatbeltSandbox({ sandboxExecPath: missing, tmpRoot, killGraceMs: KILL_GRACE_MS })).toThrow(
+    await expect((async () => createSeatbeltSandbox({ sandboxExecPath: missing, tmpRoot, killGraceMs: KILL_GRACE_MS }))()).rejects.toThrow(
       missing,
     );
   });
 
-  it('throws naming a writable root that does not exist', () => {
+  it('throws naming a writable root that does not exist', async () => {
     const missingRoot = path.join(outside, 'missing-root');
-    expect(() => sh('true', { writableRoots: [missingRoot] })).toThrow(missingRoot);
+    await expect(sh('true', { writableRoots: [missingRoot] })).rejects.toThrow(missingRoot);
   });
 
-  it('throws naming a relative writable root', () => {
-    expect(() => sh('true', { writableRoots: ['relative/root'] })).toThrow('relative/root');
+  it('throws naming a relative writable root', async () => {
+    await expect(sh('true', { writableRoots: ['relative/root'] })).rejects.toThrow('relative/root');
   });
 
   it('streams stdout before the process exits', async () => {
     const controller = new AbortController();
-    const proc = sh(`printf early; sleep 30`, {}, { signal: controller.signal });
-    const iterator = proc.stdout[Symbol.asyncIterator]();
+    const proc = await sh(`printf early; sleep 30`, {}, { signal: controller.signal });
+    const iterator = (await proc).stdout[Symbol.asyncIterator]();
     const first = await iterator.next();
     expect(Buffer.from(first.value ?? new Uint8Array()).toString('utf8')).toBe('early');
     controller.abort();
-    await proc.exited;
+    (await proc).exited;
     await collect({ [Symbol.asyncIterator]: () => iterator });
   });
 });

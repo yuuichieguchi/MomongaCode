@@ -6,6 +6,7 @@ import { ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { createReadAccessMatcher } from '../src/read-access.ts';
+import { testProbes, testPaths } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -22,9 +23,9 @@ const makeProject = (): string => {
 
 const errnoError = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: injected`), { code });
 
-const thrownBy = (action: () => unknown): unknown => {
+const thrownBy = async (action: () => unknown): Promise<unknown> => {
   try {
-    action();
+    await action();
   } catch (error) {
     return error;
   }
@@ -34,9 +35,9 @@ const thrownBy = (action: () => unknown): unknown => {
 const denyRule = (cwd: string, text: string): PermissionRule =>
   parseRule(text, { effect: 'deny', origin: 'user', source: 'user-settings', settingsRoot: cwd, home: cwd, cwd });
 
-const matcherFor = (cwd: string, texts: readonly string[]) => {
+const matcherFor = async (cwd: string, texts: readonly string[]) => {
   const rules = texts.map((text) => denyRule(cwd, text));
-  return createReadAccessMatcher({ readDenied: [], readAllowed: [], fileRules: computeFileRules(rules, [cwd], null, ruleEnforcementOf('none')) });
+  return createReadAccessMatcher({ readDenied: [], readAllowed: [], fileRules: await computeFileRules(rules, [cwd], null, ruleEnforcementOf('none'), testProbes()) }, testPaths());
 };
 
 const loopProject = (): string => {
@@ -47,23 +48,23 @@ const loopProject = (): string => {
 };
 
 describe('read access candidate forms and an unresolvable path', () => {
-  it('blockedBy checks the requested form of an ELOOP path as a deny', () => {
+  it('blockedBy checks the requested form of an ELOOP path as a deny', async () => {
     const cwd = loopProject();
-    const matcher = matcherFor(cwd, ['Read(loop/**)']);
-    expect(matcher.blockedBy('loop/x', cwd)?.ruleText).toBe('Read(loop/**)');
-    expect(matcher.blockedBy(path.join(cwd, 'loop', 'x'), cwd)?.ruleText).toBe('Read(loop/**)');
+    const matcher = await matcherFor(cwd, ['Read(loop/**)']);
+    expect((await (await matcher).blockedBy('loop/x', cwd))?.ruleText).toBe('Read(loop/**)');
+    expect((await (await matcher).blockedBy(path.join(cwd, 'loop', 'x'), cwd))?.ruleText).toBe('Read(loop/**)');
   });
 
-  it('blockedBy does not block an ELOOP path whose requested form no deny covers', () => {
+  it('blockedBy does not block an ELOOP path whose requested form no deny covers', async () => {
     const cwd = loopProject();
-    expect(matcherFor(cwd, ['Read(other/**)']).blockedBy('loop/x', cwd)).toBeUndefined();
+    expect((await matcherFor(cwd, ['Read(other/**)'])).blockedBy('loop/x', cwd)).toBeUndefined();
   });
 
-  it('writeBlockedBy checks the requested form of an ELOOP path as a deny', () => {
+  it('writeBlockedBy checks the requested form of an ELOOP path as a deny', async () => {
     const cwd = loopProject();
-    const matcher = matcherFor(cwd, ['Edit(loop/**)', 'Edit(other/**)']);
-    expect(matcher.writeBlockedBy('loop/x', cwd)?.ruleText).toBe('Edit(loop/**)');
-    expect(matcherFor(cwd, ['Edit(other/**)']).writeBlockedBy('loop/x', cwd)).toBeUndefined();
+    const matcher = await matcherFor(cwd, ['Edit(loop/**)', 'Edit(other/**)']);
+    expect((await (await matcher).writeBlockedBy('loop/x', cwd))?.ruleText).toBe('Edit(loop/**)');
+    expect((await matcherFor(cwd, ['Edit(other/**)'])).writeBlockedBy('loop/x', cwd)).toBeUndefined();
   });
 });
 
@@ -76,23 +77,23 @@ describe('read access candidate forms and a canonicaliser error outside the unre
     }) as typeof fs.lstatSync);
   };
 
-  it.each(['EMFILE', 'EIO'])('blockedBy rethrows an injected %s unchanged', (code) => {
+  it.each(['EMFILE', 'EIO'])('blockedBy rethrows an injected %s unchanged', async (code) => {
     const cwd = makeProject();
-    const matcher = matcherFor(cwd, ['Read(secret/**)']);
+    const matcher = await matcherFor(cwd, ['Read(secret/**)']);
     const target = path.join(cwd, 'plain');
     fs.writeFileSync(target, 'x');
     const injected = errnoError(code);
     injectAt(target, injected);
-    expect(thrownBy(() => matcher.blockedBy('plain', cwd))).toBe(injected);
+    expect(await thrownBy(async () => (await matcher).blockedBy('plain', cwd))).toBe(injected);
   });
 
-  it.each(['EMFILE', 'EIO'])('writeBlockedBy rethrows an injected %s unchanged', (code) => {
+  it.each(['EMFILE', 'EIO'])('writeBlockedBy rethrows an injected %s unchanged', async (code) => {
     const cwd = makeProject();
-    const matcher = matcherFor(cwd, ['Edit(secret/**)']);
+    const matcher = await matcherFor(cwd, ['Edit(secret/**)']);
     const target = path.join(cwd, 'plain');
     fs.writeFileSync(target, 'x');
     const injected = errnoError(code);
     injectAt(target, injected);
-    expect(thrownBy(() => matcher.writeBlockedBy('plain', cwd))).toBe(injected);
+    expect(await thrownBy(async () => (await matcher).writeBlockedBy('plain', cwd))).toBe(injected);
   });
 });

@@ -90,20 +90,20 @@ export const makeBuiltins = async (options: { outputLimitChars?: number; realSan
   const sandboxTmpRoot = path.join(layout.root, 'sandbox-tmp');
   fs.mkdirSync(sandboxTmpRoot);
   const toolSet: ToolSet = await toolSetOf(...createBuiltinTools());
-  const sandboxPolicy: SandboxPolicy = policyFor({ layout, tmpDir });
+  const sandboxPolicy: SandboxPolicy = await policyFor({ layout, tmpDir });
   const sandbox: Sandbox | undefined = options.sandbox ?? (options.realSandbox === true ? createHostSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 }) : undefined);
   let counter = 0;
   const nextCallId = (): string => {
     counter += 1;
     return `call-${counter}`;
   };
-  const batch = (name: string, args: unknown, extra: RunExtra = {}, approval?: ApprovalSpec, callId = nextCallId()): ExecutionBatchInput =>
+  const batch = async (name: string, args: unknown, extra: RunExtra = {}, approval?: ApprovalSpec, callId = nextCallId()): Promise<ExecutionBatchInput> =>
     harness.input(toolSet, [call(callId, name, args, approval)], {
       env: BASE_ENV,
       tmpDir,
       ...(sandbox === undefined ? {} : { sandbox }),
       ...extra,
-      sandboxPolicy: extra.sandboxPolicy ?? policyFor({ layout, tmpDir: extra.tmpDir ?? tmpDir, ...(extra.rules === undefined ? {} : { rules: extra.rules }), ...(extra.roots === undefined ? {} : { roots: extra.roots }) }),
+      sandboxPolicy: extra.sandboxPolicy ?? await policyFor({ layout, tmpDir: extra.tmpDir ?? tmpDir, ...(extra.rules === undefined ? {} : { rules: extra.rules }), ...(extra.roots === undefined ? {} : { roots: extra.roots }) }),
     });
   const run = async (
     name: string,
@@ -112,7 +112,7 @@ export const makeBuiltins = async (options: { outputLimitChars?: number; realSan
     approval?: ApprovalSpec,
     callId?: string,
   ): Promise<CallOutcome | undefined> => {
-    const [outcome] = await harness.executor.runBatch(batch(name, args, extra, approval, callId));
+    const [outcome] = await harness.executor.runBatch(await batch(name, args, extra, approval, callId));
     for (const entry of harness.idempotency.log) if (entry.op === 'attachProcess') trackGroup(entry.pgid);
     return outcome;
   };

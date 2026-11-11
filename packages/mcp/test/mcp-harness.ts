@@ -1,14 +1,25 @@
 import fs from 'node:fs';
-import { HOST_FLAVOUR, groupAlive, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
+import { HOST_FLAVOUR, groupAlive, compileFileRuleSet, EMPTY_PROTECTED_SET, ruleEnforcementOf, syncPaths } from '@momonga/foundation';
+
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
+
+
 import { parseRule } from '@momonga/config';
+
+
 import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from '@momonga/config';
 import { createMcpPool, type McpPool } from '@momonga/mcp';
+
+
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
+
+
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
 import { UNCONFIGURED_NETWORK, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
+
+
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -218,7 +229,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
   const rule = (effect: RuleEffect, text: string): PermissionRule =>
     parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project });
   const journalCodes = new Map<string, Set<string>>();
-  const input = (toolSet: ToolSet, calls: ToolCall[], extra: Partial<ExecutionBatchInput> = {}): ExecutionBatchInput => {
+  const input = async (toolSet: ToolSet, calls: ToolCall[], extra: Partial<ExecutionBatchInput> = {}): Promise<ExecutionBatchInput> => {
     runCounter += 1;
     const runId = extra.runId ?? `run-${runCounter}`;
     const codes = journalCodes.get(runId) ?? new Set<string>();
@@ -239,7 +250,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
       session: { cwd: project, workingDirectory: project, readLedger: new Map() },
       sandbox: unusedSandbox,
       ripgrep: { locate: () => Promise.reject(new Error('the MCP harness runs no Grep')) },
-      sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive, HOST_FLAVOUR, ruleEnforcementOf('none')), readDenied: [], network: 'deny' },
+      sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: await compileFileRuleSet([], [project], null, syncPaths.resolveCanonicalPath, syncPaths.volumeIsCaseInsensitive, HOST_FLAVOUR, ruleEnforcementOf('none')), readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,
       outputFit: UNBOUNDED_OUTPUT_FIT,
       reconcileFit: UNBOUNDED_OUTPUT_FIT,
@@ -249,7 +260,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
   };
   const run = async (toolSet: ToolSet, name: string, args: unknown, extra: Partial<ExecutionBatchInput> = {}) => {
     const rules = extra.rules ?? [rule('allow', name)];
-    const [outcome] = await executor.runBatch(input(toolSet, [{ callId: 'call-1', name, arguments: args }], { ...extra, rules }));
+    const [outcome] = await executor.runBatch(await input(toolSet, [{ callId: 'call-1', name, arguments: args }], { ...extra, rules }));
     return outcome;
   };
   const resultOf = async (toolSet: ToolSet, name: string, args: unknown, extra: Partial<ExecutionBatchInput> = {}) => {

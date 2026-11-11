@@ -1,5 +1,6 @@
 import type { UnresolvableReason } from '@momonga/foundation';
 import { expandBraces } from './brace-expansion.ts';
+import { askedBy } from './filesystem.ts';
 import type { GlobDeadline, GlobExpander, GlobExpansion, PolicyFilesystem, PolicyHostFilesystem } from './filesystem.ts';
 import { GLOB_CHARACTERS, escapeForGlob, firstUnescaped, unescapeGlob } from './glob-pattern.ts';
 import { absoluteFrom } from './path-match.ts';
@@ -60,8 +61,8 @@ const globKey = (cwd: string, pattern: string): string => `${cwd}\0${pattern}`;
 
 export const EMPTY_GLOB_TABLE: GlobTable = new Map();
 
-export const settleGlobs = (host: PolicyHostFilesystem, table: GlobTable): PolicyFilesystem => ({
-  ...host,
+export const settleGlobs = (host: PolicyHostFilesystem, table: GlobTable, signal: AbortSignal): PolicyFilesystem => ({
+  ...askedBy(host, signal),
   expandGlob: (pattern, cwd) => {
     const expansion = table.get(globKey(cwd, pattern));
     if (expansion === undefined) throw new Error(`the glob ${pattern} in ${cwd} was not expanded before the decision`);

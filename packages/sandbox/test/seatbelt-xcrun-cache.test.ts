@@ -29,10 +29,10 @@ describe.runIf(process.platform === 'darwin')('seatbelt keeps the xcrun cache un
 
   const policy = (): SandboxPolicy => ({ writableRoots: [root], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny' });
 
-  const sh = (using: Sandbox, script: string, env: Record<string, string>): SandboxedProcess => {
+  const sh = async (using: Sandbox, script: string, env: Record<string, string>): Promise<SandboxedProcess> => {
     const proc = using.spawn({ argv: ['/bin/sh', '-c', script], cwd: root, env }, policy(), new AbortController().signal);
-    spawned.push(proc);
-    return proc;
+    spawned.push(await proc);
+    return await proc;
   };
 
   beforeEach(() => {
@@ -54,8 +54,8 @@ describe.runIf(process.platform === 'darwin')('seatbelt keeps the xcrun cache un
 
   it('a tool run through the shim on a forced cache miss ends as it does unsandboxed and differs only by the refused cache write', async () => {
     const env = { ...BASE_ENV, SDKROOT: path.join(root, `no-sdk-${crypto.randomUUID()}`) };
-    const confined = await run(sh(sandbox, '/usr/bin/xcrun --find ls', env));
-    const plain = await run(sh(unsandboxed, '/usr/bin/xcrun --find ls', env));
+    const confined = await run(await sh(sandbox, '/usr/bin/xcrun --find ls', env));
+    const plain = await run(await sh(unsandboxed, '/usr/bin/xcrun --find ls', env));
     expect(confined.code).toBe(plain.code);
     expect(confined.stdout).toBe(plain.stdout);
     const plainLines = plain.stderr.split('\n');
@@ -70,11 +70,11 @@ describe.runIf(process.platform === 'darwin')('seatbelt keeps the xcrun cache un
     const darwinTemp = outputOf('/usr/bin/getconf', ['DARWIN_USER_TEMP_DIR']);
     const target = path.join(darwinTemp, `xcrun_db-${crypto.randomBytes(6).toString('hex')}`);
     try {
-      const confined = await run(sh(sandbox, `: > '${target}'`, BASE_ENV));
+      const confined = await run(await sh(sandbox, `: > '${target}'`, BASE_ENV));
       expect(confined.code).not.toBe(0);
       expect(confined.stderr).toContain('Operation not permitted');
       expect(fs.existsSync(target)).toBe(false);
-      const plain = await run(sh(unsandboxed, `: > '${target}'`, BASE_ENV));
+      const plain = await run(await sh(unsandboxed, `: > '${target}'`, BASE_ENV));
       expect(plain.code).toBe(0);
       expect(fs.existsSync(target)).toBe(true);
     } finally {

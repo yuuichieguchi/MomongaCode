@@ -16,7 +16,7 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, testProbes, testPaths } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -114,6 +114,7 @@ export const createFakeInstructions = (): FakeInstructions => {
   return {
     files,
     reads,
+    contains: (directory, candidate) => testPaths().comparableContains(directory, candidate),
     read: async (filePath) => {
       reads.push(filePath);
       const text = files.get(filePath);
@@ -327,7 +328,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     policyFor: async (target: Session, policyOptions: { env: ToolEnv; rules: readonly PermissionRule[] }) => {
       portCalls.policyFor.push({ sessionId: target.id, env: policyOptions?.env });
       const roots = [target.cwd, EXTRA_ROOT];
-      const fileRules = computeFileRules(policyOptions.rules, roots, sessionTmpDir, HOST_RULE_ENFORCEMENT);
+      const fileRules = await computeFileRules(policyOptions.rules, roots, sessionTmpDir, HOST_RULE_ENFORCEMENT, testProbes());
       return { roots, sandboxPolicy: { ...sandboxPolicy, fileRules }, tmpDir: sessionTmpDir, env: policyOptions?.env ?? target.env };
     },
     recoveryContextFor: async (target: Session, recoveryOptions: { env: ToolEnv }) => ({ roots: [target.cwd, EXTRA_ROOT], tmpDir: sessionTmpDir, env: recoveryOptions.env }),

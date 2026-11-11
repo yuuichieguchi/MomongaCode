@@ -39,7 +39,7 @@ describe('a live timeout settles through the reconcile of the tool', () => {
   it('reports a Bash-like call without its own result as reconciled unknown, interrupted by timeout, keeping the timeout sentence', async () => {
     const harness = makeHarness();
     const tool = makeTool('Bash', { sideEffect: 'exec', subjectKind: 'none', kind: 'execute', timeoutMs: 30, execute: (_input, ctx) => waitForAbort(ctx) });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')]));
     const settled = resultOf(outcomes[0]);
     expect(settled.reconciled).toBe('unknown');
     expect(settled.interrupted).toBe('timeout');
@@ -50,7 +50,7 @@ describe('a live timeout settles through the reconcile of the tool', () => {
   it('reports an Edit-like tool that wrote before its deadline as already_applied', async () => {
     const harness = makeHarness();
     const { tool, file } = editLike(true);
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
     expect(file.written).toBe(true);
     const settled = resultOf(outcomes[0]);
     expect(settled.reconciled).toBe('already_applied');
@@ -61,7 +61,7 @@ describe('a live timeout settles through the reconcile of the tool', () => {
   it('reports an Edit-like tool that had not written at its deadline as not_applied', async () => {
     const harness = makeHarness();
     const { tool, file } = editLike(false);
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
     expect(file.written).toBe(false);
     const settled = resultOf(outcomes[0]);
     expect(settled.reconciled).toBe('not_applied');
@@ -71,7 +71,7 @@ describe('a live timeout settles through the reconcile of the tool', () => {
   it('reports a read-only tool timeout as not_applied, interrupted by timeout, with the plain timeout text', async () => {
     const harness = makeHarness();
     const tool = makeTool('Read', { timeoutMs: 30, execute: (_input, ctx) => waitForAbort(ctx) });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     const settled = resultOf(outcomes[0]);
     expect(settled.reconciled).toBe('not_applied');
     expect(settled.interrupted).toBe('timeout');
@@ -91,7 +91,7 @@ describe('a live timeout settles through the reconcile of the tool', () => {
         return waitForAbort(ctx);
       },
     });
-    const pending = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')], { signal: controller.signal }));
+    const pending = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')], { signal: controller.signal }));
     await waitFor(() => running, { description: '() => running' });
     controller.abort();
     const settled = resultOf((await pending)[0]);
@@ -114,8 +114,8 @@ describe('a live timeout settles through the reconcile of the tool', () => {
       },
     });
     const set = await toolSetOf(tool);
-    const first = await harness.executor.runBatch(harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
-    const second = await harness.executor.runBatch(harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
+    const first = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
+    const second = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
     expect(resultOf(first[0]).reconciled).toBe('unknown');
     expect(resultOf(second[0]).reconciled).toBe('unknown');
     expect(executions).toBe(1);

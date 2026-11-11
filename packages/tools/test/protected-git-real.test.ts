@@ -5,9 +5,9 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { isProtectedWrite, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
-import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs } from '@momonga/policy';
+import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs, askedBy } from '@momonga/policy';
 import type { SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { HOST_SANDBOX_KIND, createHostSandbox } from './helpers.ts';
 
@@ -33,11 +33,11 @@ const gitPath = (cwd: string, key: string): string => canonicalOf(path.resolve(c
 
 const policyFilesystem = () => createPolicyFilesystem();
 
-const setFor = (repositoryRoot: string): ProtectedSet => protectedSetFor([repositoryRoot], policyFilesystem());
+const setFor = async (repositoryRoot: string): Promise<ProtectedSet> => protectedSetFor([repositoryRoot], askedBy(policyFilesystem(), NEVER_CANCELLED));
 
 const probes = () => {
   const filesystem = policyFilesystem();
-  return { canonicalise: filesystem.canonicalise, volumeProbe: filesystem.volumeProbe };
+  return askedBy(filesystem, NEVER_CANCELLED);
 };
 
 const hook = (file: string, marker: string): void => {
@@ -99,30 +99,30 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
     if (root !== '') fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it.each(['worktree', 'submodule'] as const)('protects the hooks, config and config.worktree paths git reports for the %s', (which) => {
+  it.each(['worktree', 'submodule'] as const)('protects the hooks, config and config.worktree paths git reports for the %s', async (which) => {
     const repositoryRoot = which === 'worktree' ? worktree : submodule;
-    const set = setFor(repositoryRoot);
-    expect(set.issues).toEqual([]);
+    const set = await setFor(repositoryRoot);
+    expect((await set).issues).toEqual([]);
     for (const key of ['hooks', 'config', 'config.worktree']) {
-      expect(set.paths).toContain(gitPath(repositoryRoot, key));
+      expect((await set).paths).toContain(gitPath(repositoryRoot, key));
     }
-    expect(set.paths).toContain(path.join(repositoryRoot, '.git'));
+    expect((await set).paths).toContain(path.join(repositoryRoot, '.git'));
   });
 
-  it.each(['worktree', 'submodule'] as const)('reads the %s pointer as git does', (which) => {
+  it.each(['worktree', 'submodule'] as const)('reads the %s pointer as git does', async (which) => {
     const repositoryRoot = which === 'worktree' ? worktree : submodule;
-    const entry = policyFilesystem().readEntry(path.join(repositoryRoot, '.git'));
+    const entry = policyFilesystem().readEntry(path.join(repositoryRoot, '.git'), NEVER_CANCELLED);
     if (!('kind' in entry) || entry.kind !== 'file') throw new Error('expected a file entry');
     const text = entry.text.replace(/\r?\n$/, '');
     expect(text.startsWith('gitdir: ')).toBe(true);
     const gitDir = fs.realpathSync.native(path.resolve(repositoryRoot, text.slice('gitdir: '.length)));
     expect(gitDir).toBe(fs.realpathSync.native(path.resolve(repositoryRoot, gitOk(repositoryRoot, 'rev-parse', '--git-dir'))));
     const commonDir = fs.realpathSync.native(path.resolve(repositoryRoot, gitOk(repositoryRoot, 'rev-parse', '--git-common-dir')));
-    const set = setFor(repositoryRoot);
-    expect(set.paths).toEqual(expect.arrayContaining([path.join(commonDir, 'hooks'), path.join(commonDir, 'config'), path.join(gitDir, 'config.worktree')]));
+    const set = await setFor(repositoryRoot);
+    expect((await set).paths).toEqual(expect.arrayContaining([path.join(commonDir, 'hooks'), path.join(commonDir, 'config'), path.join(gitDir, 'config.worktree')]));
   });
 
-  it('runs a hook in the protected hooks path on commit in the worktree and not one in the worktree git dir', () => {
+  it('runs a hook in the protected hooks path on commit in the worktree and not one in the worktree git dir', async () => {
     const commonHooks = gitPath(worktree, 'hooks');
     const gitDir = fs.realpathSync.native(path.resolve(worktree, gitOk(worktree, 'rev-parse', '--git-dir')));
     const ran = path.join(root, 'common-hook-ran');
@@ -133,21 +133,21 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       commitIn(worktree, 'w.txt');
       expect(fs.existsSync(ran)).toBe(true);
       expect(fs.existsSync(notRan)).toBe(false);
-      expect(setFor(worktree).paths).toContain(commonHooks);
-      expect(setFor(worktree).paths).not.toContain(path.join(gitDir, 'hooks'));
+      expect((await setFor(worktree)).paths).toContain(commonHooks);
+      expect((await setFor(worktree)).paths).not.toContain(path.join(gitDir, 'hooks'));
     } finally {
       fs.rmSync(path.join(commonHooks, 'pre-commit'), { force: true });
     }
   });
 
-  it('runs a hook in the protected hooks path of the submodule on commit', () => {
+  it('runs a hook in the protected hooks path of the submodule on commit', async () => {
     const hooks = gitPath(submodule, 'hooks');
     const ran = path.join(root, 'submodule-hook-ran');
     hook(path.join(hooks, 'pre-commit'), ran);
     try {
       commitIn(submodule, 'm.txt');
       expect(fs.existsSync(ran)).toBe(true);
-      expect(setFor(submodule).paths).toContain(hooks);
+      expect((await setFor(submodule)).paths).toContain(hooks);
     } finally {
       fs.rmSync(path.join(hooks, 'pre-commit'), { force: true });
     }
@@ -157,18 +157,18 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
     ['trailing spaces', '../..  \n', false],
     ['a second line', '../..\nsecond\n', false],
     ['CRLF', '../..\r\n', true],
-  ] as const)('treats a commondir with %s as git does', (_label, text, gitWorks) => {
+  ] as const)('treats a commondir with %s as git does', async (_label, text, gitWorks) => {
     const gitDir = fs.realpathSync.native(path.resolve(worktree, gitOk(worktree, 'rev-parse', '--git-dir')));
     const commondir = path.join(gitDir, 'commondir');
     const original = fs.readFileSync(commondir, 'utf8');
     fs.writeFileSync(commondir, text);
     try {
       expect(git(worktree, 'status', '--porcelain').status === 0).toBe(gitWorks);
-      const set = setFor(worktree);
+      const set = await setFor(worktree);
       if (gitWorks) {
-        expect(set.issues).toEqual([]);
+        expect((await set).issues).toEqual([]);
       } else {
-        expect(set.issues).toEqual([{ root: worktree, file: commondir, problem: 'missing-target' }]);
+        expect((await set).issues).toEqual([{ root: worktree, file: commondir, problem: 'missing-target' }]);
       }
     } finally {
       fs.writeFileSync(commondir, original);
@@ -185,17 +185,17 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       fs.writeFileSync(path.join(repositoryRoot, '.git'), 'gitdir: inner\n');
     });
 
-    it('fails git status with 128 and reports missing-target', () => {
+    it('fails git status with 128 and reports missing-target', async () => {
       expect(git(repositoryRoot, 'status').status).toBe(128);
-      set = setFor(repositoryRoot);
+      set = await setFor(repositoryRoot);
       expect(set.issues).toEqual([{ root: repositoryRoot, file: path.join(repositoryRoot, '.git'), problem: 'missing-target' }]);
     });
 
     it('protects inner/config before inner exists, for approval and in the kernel', async () => {
-      set = setFor(repositoryRoot);
+      set = await setFor(repositoryRoot);
       const innerConfig = path.join(repositoryRoot, 'inner', 'config');
-      expect(isProtectedWrite(set, innerConfig, probes())).toBe(true);
-      const decision = decide({
+      expect(await isProtectedWrite(set, innerConfig, probes())).toBe(true);
+      const decision = await decide({
         tool: { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
         subject: { kind: 'path', tool: 'Write', paths: [innerConfig], access: 'write' },
         mode: 'manual',
@@ -203,8 +203,8 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         roots: [repositoryRoot],
         home: path.join(root, 'home'),
         cwd: repositoryRoot,
-        fileRules: computeFileRules([], [repositoryRoot], null, ruleEnforcementOf(HOST_SANDBOX_KIND)),
-        fs: settleGlobs(policyFilesystem(), EMPTY_GLOB_TABLE), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([repositoryRoot]),
+        fileRules: await computeFileRules([], [repositoryRoot], null, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
+        fs: settleGlobs(policyFilesystem(), EMPTY_GLOB_TABLE, NEVER_CANCELLED), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([repositoryRoot]),
         protectedSet: set,
       });
       expect(decision).toMatchObject({ kind: 'ask', source: 'protected' });
@@ -214,17 +214,17 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       fs.mkdirSync(tmpDir, { recursive: true });
       const sandboxTmp = path.join(root, 'sandbox-tmp');
       fs.mkdirSync(sandboxTmp, { recursive: true });
-      const policy = buildSandboxPolicy({
+      const policy = await buildSandboxPolicy({
         roots: [repositoryRoot],
         home: path.join(root, 'home'),
         tmpDir,
         sessionsTmpRoot: sessions,
-        fileRules: computeFileRules([], [repositoryRoot], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)),
+        fileRules: await computeFileRules([], [repositoryRoot], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
         protectedSet: set,
-      });
+      }, NEVER_CANCELLED);
       const sandbox = createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
       const result = await finish(
-        sandbox.spawn(
+        await sandbox.spawn(
           { argv: ['/bin/sh', '-c', 'mkdir -p inner && printf "[core]\\n\\tfsmonitor = touch MARKER\\n" > inner/config'], cwd: repositoryRoot, env: { PATH: SEARCH_PATH } },
           policy,
           new AbortController().signal,
@@ -253,16 +253,16 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       fs.mkdirSync(tmpDir, { recursive: true });
       const sandboxTmp = path.join(root, `sandbox-${path.basename(repositoryRoot)}`);
       fs.mkdirSync(sandboxTmp, { recursive: true });
-      const policy = buildSandboxPolicy({
+      const policy = await buildSandboxPolicy({
         roots: [repositoryRoot],
         home: path.join(root, 'home'),
         tmpDir,
         sessionsTmpRoot: sessions,
-        fileRules: computeFileRules([], [repositoryRoot], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)),
-        protectedSet: setFor(repositoryRoot),
-      });
+        fileRules: await computeFileRules([], [repositoryRoot], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
+        protectedSet: await setFor(repositoryRoot),
+      }, NEVER_CANCELLED);
       const sandbox = createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
-      return finish(sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: repositoryRoot, env: { PATH: SEARCH_PATH } }, policy, new AbortController().signal));
+      return finish(await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: repositoryRoot, env: { PATH: SEARCH_PATH } }, policy, new AbortController().signal));
     };
 
     const refusedByKernel = async (repositoryRoot: string, script: string): Promise<void> => {
@@ -302,9 +302,9 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       fs.writeFileSync(pointer, 'gitdir: elsewhere\n');
       fs.chmodSync(pointer, 0o000);
       try {
-        const set = setFor(repositoryRoot);
-        expect(set.issues).toMatchObject([{ root: repositoryRoot, file: pointer, problem: 'unresolvable' }]);
-        expect(isProtectedWrite(set, pointer, probes())).toBe(true);
+        const set = await setFor(repositoryRoot);
+        expect((await set).issues).toMatchObject([{ root: repositoryRoot, file: pointer, problem: 'unresolvable' }]);
+        expect(await isProtectedWrite(await set, pointer, probes())).toBe(true);
         expect((await sandboxed(repositoryRoot, 'rm .git')).code).not.toBe(0);
         expect(fs.existsSync(pointer)).toBe(true);
       } finally {

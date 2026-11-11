@@ -6,6 +6,7 @@ import { computeFileRules, fileRuleSpecsOf, parseRule } from '@momonga/policy';
 import type { PermissionRule, RuleEffect, RuleOrigin } from '@momonga/policy';
 import { makeLayout } from './helpers.ts';
 import type { Layout } from './helpers.ts';
+import { testProbes } from '@momonga/testkit';
 
 const extraOf = (layout: Layout): string => {
   const extra = path.join(layout.root, 'extra');
@@ -18,8 +19,8 @@ const ruleOf = (layout: Layout, origin: RuleOrigin, effect: RuleEffect, text: st
   return exceptions === undefined ? rule : ({ ...rule, exceptions } as PermissionRule);
 };
 
-const summary = (rules: readonly PermissionRule[], roots: readonly string[]) =>
-  computeFileRules(rules, roots, null, ruleEnforcementOf('none')).entries.map((entry) => ({
+const summary = async (rules: readonly PermissionRule[], roots: readonly string[]) =>
+  await (await computeFileRules(rules, roots, null, ruleEnforcementOf('none'), testProbes())).entries.map((entry) => ({
     ruleIndex: entry.ruleIndex,
     tool: entry.tool,
     access: entry.access,
@@ -28,17 +29,17 @@ const summary = (rules: readonly PermissionRule[], roots: readonly string[]) =>
   }));
 
 describe('computeFileRules mapping', () => {
-  it('maps Read deny to a read entry and Write and Edit deny to write entries of the Edit family', () => {
+  it('maps Read deny to a read entry and Write and Edit deny to write entries of the Edit family', async () => {
     const layout = makeLayout();
     const rules = [ruleOf(layout, 'user', 'deny', 'Read(.env)'), ruleOf(layout, 'user', 'deny', 'Write(*.pem)'), ruleOf(layout, 'user', 'deny', 'Edit(*.key)')];
-    expect(summary(rules, [layout.project])).toEqual([
+    expect(await summary(rules, [layout.project])).toEqual([
       { ruleIndex: 0, tool: 'Read', access: 'read', effect: 'deny', anchorDirectory: layout.project },
       { ruleIndex: 1, tool: 'Edit', access: 'write', effect: 'deny', anchorDirectory: layout.project },
       { ruleIndex: 2, tool: 'Edit', access: 'write', effect: 'deny', anchorDirectory: layout.project },
     ]);
   });
 
-  it('makes an entry for every path rule of every effect and tool, and none for bare tools or Bash', () => {
+  it('makes an entry for every path rule of every effect and tool, and none for bare tools or Bash', async () => {
     const layout = makeLayout();
     const rules = [
       ruleOf(layout, 'user', 'ask', 'Read(*.log)'),
@@ -49,7 +50,7 @@ describe('computeFileRules mapping', () => {
       ruleOf(layout, 'user', 'deny', 'Bash(rm:*)'),
       ruleOf(layout, 'user', 'allow', 'Read(docs/**)'),
     ];
-    expect(summary(rules, [layout.project])).toEqual([
+    expect(await summary(rules, [layout.project])).toEqual([
       { ruleIndex: 0, tool: 'Read', access: 'read', effect: 'ask', anchorDirectory: layout.project },
       { ruleIndex: 1, tool: 'Edit', access: 'write', effect: 'allow', anchorDirectory: path.join(layout.project, 'src') },
       { ruleIndex: 2, tool: 'Glob', access: 'read', effect: 'deny', anchorDirectory: layout.project },
@@ -58,11 +59,11 @@ describe('computeFileRules mapping', () => {
     ]);
   });
 
-  it('expands deny and ask relative rules once per root and anchors allow rules at the cwd', () => {
+  it('expands deny and ask relative rules once per root and anchors allow rules at the cwd', async () => {
     const layout = makeLayout();
     const extra = extraOf(layout);
     const rules = [ruleOf(layout, 'user', 'deny', 'Read(.env)'), ruleOf(layout, 'user', 'ask', 'Read(*.log)'), ruleOf(layout, 'user', 'allow', 'Read(.env)')];
-    expect(summary(rules, [layout.project, extra])).toEqual([
+    expect(await summary(rules, [layout.project, extra])).toEqual([
       { ruleIndex: 0, tool: 'Read', access: 'read', effect: 'deny', anchorDirectory: layout.project },
       { ruleIndex: 0, tool: 'Read', access: 'read', effect: 'deny', anchorDirectory: extra },
       { ruleIndex: 1, tool: 'Read', access: 'read', effect: 'ask', anchorDirectory: layout.project },
@@ -71,7 +72,7 @@ describe('computeFileRules mapping', () => {
     ]);
   });
 
-  it('anchors //, ~/ and / forms once', () => {
+  it('anchors //, ~/ and / forms once', async () => {
     const layout = makeLayout();
     const extra = extraOf(layout);
     const rules = [
@@ -79,14 +80,14 @@ describe('computeFileRules mapping', () => {
       ruleOf(layout, 'user', 'deny', 'Read(~/.ssh/**)'),
       ruleOf(layout, 'project', 'deny', 'Read(/docs/**)'),
     ];
-    expect(summary(rules, [layout.project, extra]).map((entry) => entry.anchorDirectory)).toEqual([
+    expect((await summary(rules, [layout.project, extra])).map((entry) => entry.anchorDirectory)).toEqual([
       layout.outside,
       path.join(layout.home, '.ssh'),
       path.join(layout.project, 'docs'),
     ]);
   });
 
-  it('carries exceptions and provenance', () => {
+  it('carries exceptions and provenance', async () => {
     const layout = makeLayout();
     const rules = [ruleOf(layout, 'project', 'deny', 'Read(*.env)', ['sample.env'])];
     const specs = fileRuleSpecsOf(rules, [layout.project]);
@@ -101,7 +102,7 @@ describe('computeFileRules mapping', () => {
       context: { roots: [layout.project], home: layout.home, settingsRoot: layout.project, effect: 'deny' },
       provenance: { ruleText: 'Read(*.env)', layer: 'project', source: 'project-settings' },
     });
-    const [entry] = computeFileRules(rules, [layout.project], null, ruleEnforcementOf('none')).entries;
+    const [entry] = await (await computeFileRules(rules, [layout.project], null, ruleEnforcementOf('none'), testProbes())).entries;
     expect(entry?.provenance).toEqual({ ruleText: 'Read(*.env)', layer: 'project', source: 'project-settings' });
     expect(entry?.exceptions).toHaveLength(1);
   });
@@ -141,10 +142,10 @@ const WIDENING_TABLE: WideningRow[] = [
 ];
 
 describe('widening by layer', () => {
-  it.each(WIDENING_TABLE)('%s from the %s layer has widening %s', (_label, origin, widening, text) => {
+  it.each(WIDENING_TABLE)('%s from the %s layer has widening %s', async (_label, origin, widening, text) => {
     const layout = makeLayout();
     for (const dir of [path.join(layout.home, 'n'), path.join(layout.project, 'x'), path.join(layout.project, 'src')]) fs.mkdirSync(dir, { mode: 0o700 });
-    const entries = computeFileRules([ruleOf(layout, origin, 'allow', text(layout))], [layout.project], null, ruleEnforcementOf('none')).entries;
+    const entries = await (await computeFileRules([ruleOf(layout, origin, 'allow', text(layout))], [layout.project], null, ruleEnforcementOf('none'), testProbes())).entries;
     expect(entries).toHaveLength(1);
     expect(entries[0]?.widening).toBe(widening);
   });

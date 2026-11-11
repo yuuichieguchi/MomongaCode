@@ -24,7 +24,7 @@ describe('history content whose origin this build does not know (11.4, safety fl
   it('is marked untrusted in a read', () => {
     const { output } = renderRead({
       page: { runId: 'run-a', project: '/work/other', origin: 'unknown', events: [], callPaths: {}, nextSeq: null },
-      denied: () => false,
+      deniedCalls: new Set<string>(),
       redact: (text) => text,
       ownRun: false,
       offset: 0,

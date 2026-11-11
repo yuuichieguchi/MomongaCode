@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import picomatch from 'picomatch';
+import { mapAsync } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { statIfExists } from './files.ts';
 import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
@@ -46,8 +47,8 @@ export const globTool = defineTool<GlobInput>({
     access: 'read',
   }),
   execute: async (input, ctx) => {
-    const root = canonicalPathOf(ctx, 'path', input.path ?? '.');
-    const shown = shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
+    const root = await canonicalPathOf(ctx, 'path', input.path ?? '.');
+    const shown = await shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
     const stat = await statIfExists(root);
     if (stat === undefined) throw new ToolExecutionError(`Directory does not exist: ${shown}`);
     if (!stat.isDirectory()) throw new ToolExecutionError(`${shown} is not a directory`);
@@ -68,7 +69,7 @@ export const globTool = defineTool<GlobInput>({
     }
     if (matches.length === 0) return { status: 'completed', output: 'No files found' };
     const sorted = await sortByMtimeThenPath(matches);
-    const listed = sorted.slice(0, MAX_GLOB_RESULTS).map((file) => shownPath(ctx, file));
+    const listed = await mapAsync(sorted.slice(0, MAX_GLOB_RESULTS), (file) => shownPath(ctx, file));
     return { status: 'completed', output: [...listed, ...(sorted.length > MAX_GLOB_RESULTS ? [TRUNCATION_NOTICE] : [])].join('\n') };
   },
 });

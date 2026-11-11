@@ -68,7 +68,7 @@ export const writer = makeTool('Writer', { sideEffect: 'write', subjectKind: 'no
 export const reader = makeTool('Reader', { execute: async () => ({ status: 'completed', output: 'read' }) });
 
 export const runOne = async (h: ReturnType<typeof world>, name: string, callId: string, extraTools: AnyTool[] = [], extra: Parameters<ReturnType<typeof world>['harness']['input']>[2] = {}): Promise<CallOutcome | undefined> => {
-  const [outcome] = await h.harness.executor.runBatch(h.harness.input(await toolSetOf(leaver, writer, reader, ...extraTools), [call(callId, name, {}, 'allow_once')], extra));
+  const [outcome] = await h.harness.executor.runBatch(await h.harness.input(await toolSetOf(leaver, writer, reader, ...extraTools), [call(callId, name, {}, 'allow_once')], extra));
   return outcome;
 };
 

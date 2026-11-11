@@ -52,7 +52,7 @@ describe('executor defers later calls after a post-reconcile needs_approval', ()
     });
 
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(read, mark), [call('c1', 'Read'), call('c2', 'Mark')], { mode: 'manual' }),
+      await harness.input(await toolSetOf(read, mark), [call('c1', 'Read'), call('c2', 'Mark')], { mode: 'manual' }),
     );
 
     expect(outcomes.map((outcome) => [outcome.callId, outcome.kind])).toEqual([
@@ -82,7 +82,7 @@ describe('executor distrusts a reconcile that settled after the cap', () => {
     });
 
     const [outcome] = await boundedExecutor(harness, 20, 1_000).runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { mode: 'bypassPermissions' }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { mode: 'bypassPermissions' }),
     );
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'unknown', result: { status: 'failed' } });
@@ -107,7 +107,7 @@ describe('executor closes the tool context of an abandoned reconcile', () => {
     });
 
     const [outcome] = await boundedExecutor(harness, 20, 20).runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Mark')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], {
         mode: 'bypassPermissions',
         onUpdate: (callId) => {
           updates.push(callId);
@@ -143,9 +143,9 @@ describe('executor post-reconcile gate applies readDenied', () => {
     });
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Edit')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Edit')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), readDenied: [secret] },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), readDenied: [secret] },
       }),
     );
 

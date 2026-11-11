@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { nodeFileSystem, parseOutsideJson, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { RuleVerifierPort } from '../ports.ts';
@@ -57,11 +58,11 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers }
   };
   return {
     solverVersion: host.solverVersion,
-    inputOf: async (request) => {
+    inputOf: async (request, signal) => {
       const verifier = await host.loadVerifier();
       const input = verifier.ruleVerifyInputOf({
         ...request,
-        protectedSet: protectedSetFor(request.roots, policyFilesystem),
+        protectedSet: await protectedSetFor(request.roots, askedBy(policyFilesystem, signal)),
         secretLocations: verifier.secretLocationsOf(request.home, paths, []),
       });
       prepared.add(input);

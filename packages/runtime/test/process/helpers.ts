@@ -11,7 +11,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -325,9 +325,9 @@ export const runSandboxed = async (
   policy: SandboxPolicy,
   command: { script: string; cwd: string; env: Readonly<Record<string, string>>; tmpDir: string },
 ): Promise<{ code: number | null; stdout: string; stderr: string }> => {
-  const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', command.script], cwd: command.cwd, env: command.env, tmpDir: command.tmpDir }, policy, new AbortController().signal);
-  trackGroup(proc.pgid);
-  const [stdout, stderr, exit] = await Promise.all([collect(proc.stdout), collect(proc.stderr), proc.exited]);
+  const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', command.script], cwd: command.cwd, env: command.env, tmpDir: command.tmpDir }, policy, new AbortController().signal);
+  trackGroup((await proc).pgid);
+  const [stdout, stderr, exit] = await Promise.all([collect((await proc).stdout), collect((await proc).stderr), (await proc).exited]);
   return { code: exit.code, stdout, stderr };
 };
 
@@ -343,7 +343,7 @@ export const runBashThroughPort = async (
   const signal = signalNever();
   const env = port.envFor(session);
   const binding = (await port.sandboxes.acquire(signal)).value;
-  const policy = await port.policyFor(session, { env, rules: [], ruleEnforcement: binding.ruleEnforcement });
+  const policy = await port.policyFor(session, { signal: NEVER_CANCELLED, env, rules: [], ruleEnforcement: binding.ruleEnforcement });
   const toolSet = await port.toolSet(runId, { signal, env });
   const outcomes = await port.executor.runBatch({
     calls: [{ callId: options.callId ?? `call-${Math.random().toString(16).slice(2)}`, name: 'Bash', arguments: JSON.stringify({ command }) }],

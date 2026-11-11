@@ -6,7 +6,7 @@ const OFFER = { tools: ['Read'], catalog: ['Grep'] } as const;
 const failedOutputOf = async (name: string, offered: { tools: readonly string[]; catalog: readonly string[] } | 'none' = OFFER): Promise<string> => {
   const harness = makeHarness();
   const set = await toolSetOf(makeTool('Read'), makeTool('Grep'), makeTool('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' }));
-  const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', name)], offered === 'none' ? {} : { offered }));
+  const [outcome] = await harness.executor.runBatch(await harness.input(set, [call('c1', name)], offered === 'none' ? {} : { offered }));
   expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed' } });
   expect(harness.started).toEqual([]);
   return (outcome as { result: { output: string } }).result.output;

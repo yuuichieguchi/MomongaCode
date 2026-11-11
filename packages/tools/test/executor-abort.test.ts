@@ -25,7 +25,7 @@ describe('timeouts', () => {
   it('fails a read-only tool that exceeds its timeout', async () => {
     const harness = makeHarness();
     const tool = makeTool('Read', { timeoutMs: 30, execute: (_input, ctx) => waitForAbort(ctx) });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(outcomes[0]).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Read timed out after 30 ms' } });
   });
 
@@ -36,7 +36,7 @@ describe('timeouts', () => {
       timeoutMs: (input) => Number(input['ms']),
       execute: (_input, ctx) => waitForAbort(ctx),
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read', { ms: 25 })]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read', { ms: 25 })]));
     expect(outputOf(outcomes[0])).toBe('Read timed out after 25 ms');
   });
 
@@ -46,7 +46,7 @@ describe('timeouts', () => {
   ] as const)('warns that side effects of a timed out %s are unknown', async (name, sideEffect) => {
     const harness = makeHarness();
     const tool = makeTool(name, { sideEffect, subjectKind: 'none', kind: 'edit', timeoutMs: 30, execute: (_input, ctx) => waitForAbort(ctx) });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
     const output = outputOf(outcomes[0]);
     expect(output.startsWith(`${name} timed out after 30 ms`)).toBe(true);
     expectUnknownEffects(output);
@@ -55,7 +55,7 @@ describe('timeouts', () => {
   it('does not add the unknown-effects warning for read-only tools', async () => {
     const harness = makeHarness();
     const tool = makeTool('Read', { timeoutMs: 30, execute: (_input, ctx) => waitForAbort(ctx) });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(outputOf(outcomes[0])).not.toMatch(/inspect/i);
   });
 
@@ -64,7 +64,7 @@ describe('timeouts', () => {
     const tool = makeTool('Read', { timeoutMs: 60_000, execute: (_input, ctx) => waitForAbort(ctx) });
     const started = Date.now();
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Read')], { deadlineAt: harness.clock.now() + 40 }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Read')], { deadlineAt: harness.clock.now() + 40 }),
     );
     expect(Date.now() - started).toBeLessThan(10_000);
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'failed' } });
@@ -83,9 +83,9 @@ describe('timeouts', () => {
       },
     });
     const set = await toolSetOf(tool);
-    const first = await harness.executor.runBatch(harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
+    const first = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
     expect(harness.idempotency.stateOf(keyFor('run-1', 1, 'c1'))).toBe('COMPLETED');
-    const second = await harness.executor.runBatch(harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
+    const second = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
     expect(second).toEqual(first);
     expect(executions).toBe(1);
   });
@@ -94,7 +94,7 @@ describe('timeouts', () => {
     const harness = makeHarness();
     const tool = makeTool('Read', { timeoutMs: 20, execute: () => new Promise(() => undefined) });
     const started = Date.now();
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     const elapsed = Date.now() - started;
     expect(outputOf(outcomes[0])).toBe('Read timed out after 20 ms');
     expect(elapsed).toBeGreaterThanOrEqual(1900);
@@ -113,7 +113,7 @@ describe('cancellation', () => {
         return waitForAbort(ctx);
       },
     });
-    const pending = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')], { signal: controller.signal }));
+    const pending = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')], { signal: controller.signal }));
     await waitFor(() => running, { description: '() => running' });
     controller.abort();
     const outcomes = await pending;
@@ -134,7 +134,7 @@ describe('cancellation', () => {
       },
     });
     const pending = harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Write'), call('c2', 'Write')], { signal: controller.signal }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Write'), call('c2', 'Write')], { signal: controller.signal }),
     );
     await waitFor(() => executions.length === 1, { description: '() => executions.length === 1' });
     controller.abort();
@@ -159,7 +159,7 @@ describe('cancellation', () => {
       },
     });
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Read'), call('c2', 'Read')], { signal: controller.signal }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Read'), call('c2', 'Read')], { signal: controller.signal }),
     );
     expect(outcomes).toEqual([
       { callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Read was cancelled' } },
@@ -181,7 +181,7 @@ describe('transient retry', () => {
         return { status: 'completed', output: 'third time' };
       },
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(attempts).toBe(3);
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'third time' } });
   });
@@ -195,7 +195,7 @@ describe('transient retry', () => {
         throw new TransientToolError('still busy');
       },
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(attempts).toBe(3);
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'failed' } });
   });
@@ -215,7 +215,7 @@ describe('transient retry', () => {
         throw new TransientToolError('flaky');
       },
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
     expect(attempts).toBe(1);
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'failed' } });
   });
@@ -231,7 +231,7 @@ describe('transient retry', () => {
       },
     });
     const deadlineAt = harness.clock.now() + 500;
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')], { deadlineAt }));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')], { deadlineAt }));
     expect(attempts).toBe(1);
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'failed' } });
   });

@@ -9,7 +9,7 @@ const HISTORY_SEARCH: PolicyTool = { name: 'HistorySearch', kind: 'search', side
 
 const SUBJECT = { kind: 'history', tool: 'HistorySearch', project: '/work/other' } as PermissionSubject;
 
-const decideHistory = (mode: PermissionMode, rules: PermissionRule[] = [], subject: PermissionSubject = SUBJECT) => {
+const decideHistory = async (mode: PermissionMode, rules: PermissionRule[] = [], subject: PermissionSubject = SUBJECT) => {
   const layout = makeLayout();
   return decide({
     tool: HISTORY_SEARCH,
@@ -19,7 +19,7 @@ const decideHistory = (mode: PermissionMode, rules: PermissionRule[] = [], subje
     roots: [layout.project],
     home: layout.home,
     cwd: layout.project,
-    fileRules: fileRulesFor(rules, [layout.project]),
+    fileRules: await fileRulesFor(rules, [layout.project]),
     protectedSet: EMPTY_PROTECTED_SET,
     fs: fakeFs(),
     searchPath: TEST_SEARCH_PATH,
@@ -28,30 +28,30 @@ const decideHistory = (mode: PermissionMode, rules: PermissionRule[] = [], subje
 };
 
 describe('history subjects', () => {
-  it.each(['manual', 'acceptEdits', 'plan'] as const)('asks before reaching another project in %s mode', (mode) => {
-    const decision = decideHistory(mode);
-    expect(decision.kind).toBe('ask');
-    expect(decision.source).toBe('mode');
-    expect(decision.reason).toContain('/work/other');
+  it.each(['manual', 'acceptEdits', 'plan'] as const)('asks before reaching another project in %s mode', async (mode) => {
+    const decision = await decideHistory(mode);
+    expect((await decision).kind).toBe('ask');
+    expect((await decision).source).toBe('mode');
+    expect((await decision).reason).toContain('/work/other');
   });
 
-  it('lets bypassPermissions through, as for every subject not explicitly denied', () => {
-    expect(decideHistory('bypassPermissions').kind).toBe('allow');
+  it('lets bypassPermissions through, as for every subject not explicitly denied', async () => {
+    expect((await decideHistory('bypassPermissions')).kind).toBe('allow');
   });
 
-  it('honours a deny rule on the tool in every mode', () => {
+  it('honours a deny rule on the tool in every mode', async () => {
     const rule = ruleIn(makeLayout())('deny', 'HistorySearch');
-    expect(decideHistory('bypassPermissions', [rule]).kind).toBe('deny');
+    expect((await decideHistory('bypassPermissions', [rule])).kind).toBe('deny');
   });
 
-  it('asks nothing for a search within the project', () => {
-    expect(decideHistory('manual', [], { kind: 'none', tool: 'HistorySearch' }).kind).toBe('allow');
+  it('asks nothing for a search within the project', async () => {
+    expect((await decideHistory('manual', [], { kind: 'none', tool: 'HistorySearch' })).kind).toBe('allow');
   });
 
-  it('suggests no allow rule, because a bare tool rule would open every project', () => {
+  it('suggests no allow rule, because a bare tool rule would open every project', async () => {
     const canonicalise = () => {
       throw new Error('a history subject names no path');
     };
-    expect(suggestAllowRule(HISTORY_SEARCH, SUBJECT, '/work', canonicalise)).toBeUndefined();
+    expect(await suggestAllowRule(HISTORY_SEARCH, SUBJECT, '/work', canonicalise)).toBeUndefined();
   });
 });

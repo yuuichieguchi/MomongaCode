@@ -397,7 +397,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
       },
     });
 
-    await expect(harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({ name: 'EarlierAttemptNotStoppedError', code: 'earlier_attempt_not_stopped', reason: 'survived' });
+    await expect(harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({ name: 'EarlierAttemptNotStoppedError', code: 'earlier_attempt_not_stopped', reason: 'survived' });
     expect(reconciled).toEqual([]);
     expect(pidAlive(stubborn)).toBe(true);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('PENDING');
@@ -433,7 +433,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
       },
     });
 
-    await expect(harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({
+    await expect(harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({
       name: 'EarlierAttemptNotStoppedError',
       reason: 'unverifiable',
     });
@@ -506,7 +506,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     const reconciled: unknown[] = [];
     const tool = makeTool('Bash', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', reconcile: async (_input, _record, ctx) => { reconciled.push(ctx.earlierAttempt); return { outcome: 'unknown', output: 'unknown' }; } });
     const controller = new AbortController();
-    const running = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')], { signal: controller.signal }));
+    const running = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')], { signal: controller.signal }));
     await settlesAfterAbort(running, seen, () => controller.abort());
     expect(reconciled).toEqual([]);
     expect(fs.existsSync(marker)).toBe(true);

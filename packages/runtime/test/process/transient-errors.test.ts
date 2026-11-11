@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { waitFor } from '@momonga/testkit';
+import { waitFor, NEVER_CANCELLED } from '@momonga/testkit';
 import { createRun, createSession, errnoError, makeRuntimeFixture, signalNever, writeJson, writeProjectSettings, writeUserSettings } from './helpers.ts';
 
 afterEach(() => {
@@ -88,7 +88,7 @@ describe('transient errno and abort rules of the runtime composition (system tim
       return (original as (...args: unknown[]) => unknown)(target, ...rest);
     }) as typeof fs.statSync);
 
-    const error = await rejectionOf(f.toolRuntime.port.policyFor(session, { env: Object.freeze({ PATH: '/usr/bin:/bin' }), rules: [], ruleEnforcement: 'exact-paths' }));
+    const error = await rejectionOf(f.toolRuntime.port.policyFor(session, { signal: NEVER_CANCELLED, env: Object.freeze({ PATH: '/usr/bin:/bin' }), rules: [], ruleEnforcement: 'exact-paths' }));
 
     expect(error).toBe(failure);
     expect(error).not.toBeInstanceOf(ConfigError);

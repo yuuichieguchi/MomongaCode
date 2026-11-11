@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { fakePolicyFilesystem, NEVER_CANCELLED } from '@momonga/testkit';
 import * as runtime from '@momonga/runtime';
 import { createSession, makeLogger, makeTempHome, openStore } from './helpers.ts';
 
@@ -20,7 +20,7 @@ const setup = async () => {
 describe('createPolicyFor and the Unix socket allow list', () => {
   it('builds a policy without any allowed socket when no list is given', async () => {
     const { temp, store, policyFor } = await setup();
-    const policy = await policyFor(createSession(store, temp.project), { env: {}, rules: [] });
+    const policy = await policyFor(createSession(store, temp.project), { signal: NEVER_CANCELLED, env: {}, rules: [] });
     expect(policy.sandboxPolicy.unixSocketAllow).toEqual([]);
     expect(policy.sandboxPolicy.network).toBe('deny');
   });
@@ -28,8 +28,8 @@ describe('createPolicyFor and the Unix socket allow list', () => {
   it('carries the list the caller read from the user settings, call by call', async () => {
     const { temp, store, policyFor } = await setup();
     const session = createSession(store, temp.project);
-    expect((await policyFor(session, { env: {}, rules: [], unixSocketAllow: ['/var/run/agent'] })).sandboxPolicy.unixSocketAllow).toEqual(['/var/run/agent']);
-    const later = await policyFor(session, { env: {}, rules: [], unixSocketAllow: [] });
+    expect((await policyFor(session, { signal: NEVER_CANCELLED, env: {}, rules: [], unixSocketAllow: ['/var/run/agent'] })).sandboxPolicy.unixSocketAllow).toEqual(['/var/run/agent']);
+    const later = await policyFor(session, { signal: NEVER_CANCELLED, env: {}, rules: [], unixSocketAllow: [] });
     expect(later.sandboxPolicy.unixSocketAllow).toEqual([]);
     expect(later.sandboxPolicy.network).toBe('deny');
   });

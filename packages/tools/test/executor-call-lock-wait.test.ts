@@ -45,7 +45,7 @@ describe('the wait for a held call lock', () => {
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
 
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(reconcilingEdit()), [call('c1', 'Edit', {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(reconcilingEdit()), [call('c1', 'Edit', {}, 'allow_once')]));
 
     expect(outcomes).toHaveLength(1);
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed' } });
@@ -56,7 +56,7 @@ describe('the wait for a held call lock', () => {
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
 
-    const failure: unknown = await harness.executor.runBatch(harness.input(await toolSetOf(reconcilingEdit()), [call('c1', 'Edit', {}, 'allow_once')])).catch((error: unknown) => error);
+    const failure: unknown = await harness.executor.runBatch(await harness.input(await toolSetOf(reconcilingEdit()), [call('c1', 'Edit', {}, 'allow_once')])).catch((error: unknown) => error);
 
     expect(failure).toMatchObject({ code: 'earlier_attempt_not_stopped' });
     const waited = Number(/after (\d+) ms/.exec((failure as Error).message)?.[1]);

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, NEVER_CANCELLED } from '@momonga/testkit';
 import {
   DECLARED_CREDENTIAL,
   HAS_SEATBELT,
@@ -123,7 +123,7 @@ describe('tool env at use time (system timers)', () => {
     const runId = createRun(f.store, session.id);
 
     const env = f.toolRuntime.port.envFor(session);
-    const policy = await f.toolRuntime.port.policyFor(session, { env, rules: [], ruleEnforcement: 'exact-paths' });
+    const policy = await f.toolRuntime.port.policyFor(session, { signal: NEVER_CANCELLED, env, rules: [], ruleEnforcement: 'exact-paths' });
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env });
 
     expect(Object.isFrozen(env)).toBe(true);

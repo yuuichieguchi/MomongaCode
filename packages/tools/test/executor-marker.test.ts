@@ -38,7 +38,7 @@ describe('process marker', () => {
   it('creates an empty 0600 marker named after the key for exec tools and removes it after completion', async () => {
     const harness = makeHarness();
     const seen: Seen[] = [];
-    await harness.executor.runBatch(harness.input(await toolSetOf(execTool(seen)), [call('c1', 'Bash')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(execTool(seen)), [call('c1', 'Bash')]));
     const expected = path.join(harness.markerDir, KEY);
     expect(seen).toEqual([{ marker: expected, exists: true, mode: 0o600 }]);
     expect(fs.existsSync(expected)).toBe(false);
@@ -51,7 +51,7 @@ describe('process marker', () => {
     const tool = execTool(seen, async () => {
       throw new ToolExecutionError('exit 1');
     });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
     expect(outcome).toMatchObject({ result: { status: 'failed', output: 'exit 1' } });
     expect(seen[0]?.exists).toBe(true);
     expect(fs.readdirSync(harness.markerDir)).toEqual([]);
@@ -69,7 +69,7 @@ describe('process marker', () => {
         return new Promise((resolve) => ctx.signal.addEventListener('abort', () => resolve({ status: 'failed', output: 'aborted' }), { once: true }));
       },
     });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
     expect(outcome).toMatchObject({ result: { status: 'failed' } });
     expect(seen[0]?.exists).toBe(true);
     expect(fs.readdirSync(harness.markerDir)).toEqual([]);
@@ -94,7 +94,7 @@ describe('process marker', () => {
         return { outcome: 'unknown', output: 'stopped the interrupted command' };
       },
     });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
     expect(outcome).toMatchObject({ reconciled: 'unknown' });
     expect(reconcileMarkers).toEqual([marker]);
     expect(executions).toBe(0);
@@ -117,7 +117,7 @@ describe('process marker', () => {
         return { status: 'completed', output: 'ok' };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Tool')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Tool')]));
     expect(seen).toEqual([undefined]);
     expect(fs.readdirSync(harness.markerDir)).toEqual([]);
   });

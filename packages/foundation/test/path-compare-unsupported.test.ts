@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { caseSensitivityOf, setCaseSensitivityProbe, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { setCaseSensitivityProbe } from '@momonga/foundation';
+import { syncPaths } from '../src/index.ts';
 
 const UNDETERMINED = 'case sensitivity of this volume could not be determined';
 
@@ -25,7 +26,7 @@ describe('case sensitivity when the probe cannot decide (B10)', () => {
       throw new Error('EIO reading the directory');
     });
     const root = makeDir();
-    const result = caseSensitivityOf(path.join(root, 'Target'));
+    const result = syncPaths.caseSensitivityOf(path.join(root, 'Target'));
     expect(result.kind).toBe('unmeasured');
     expect(result.evidence).toContain(UNDETERMINED);
     expect(result.evidence).toContain('EIO reading the directory');
@@ -40,15 +41,15 @@ describe('case sensitivity when the probe cannot decide (B10)', () => {
       return true;
     });
     const root = makeDir();
-    expect(caseSensitivityOf(path.join(root, 'Target')).kind).toBe('unmeasured');
-    expect(caseSensitivityOf(path.join(root, 'Target'))).toMatchObject({ kind: 'supported', value: true });
+    expect(syncPaths.caseSensitivityOf(path.join(root, 'Target')).kind).toBe('unmeasured');
+    expect(syncPaths.caseSensitivityOf(path.join(root, 'Target'))).toMatchObject({ kind: 'supported', value: true });
     expect(calls).toBe(2);
   });
 
   it('answers unsupported when the probe finds no entry to compare', () => {
     setCaseSensitivityProbe(() => undefined);
     const root = makeDir();
-    const result = caseSensitivityOf(path.join(root, 'Target'));
+    const result = syncPaths.caseSensitivityOf(path.join(root, 'Target'));
     expect(result.kind).toBe('unsupported');
     expect(result.evidence).toContain(UNDETERMINED);
     expect(result.evidence).toContain(root);
@@ -61,26 +62,26 @@ describe('case sensitivity when the probe cannot decide (B10)', () => {
       return calls === 1 ? undefined : true;
     });
     const root = makeDir();
-    expect(caseSensitivityOf(path.join(root, 'Target')).kind).toBe('unsupported');
-    const second = caseSensitivityOf(path.join(root, 'Target'));
+    expect(syncPaths.caseSensitivityOf(path.join(root, 'Target')).kind).toBe('unsupported');
+    const second = syncPaths.caseSensitivityOf(path.join(root, 'Target'));
     expect(second.kind).toBe('unsupported');
     expect(second.evidence).toContain(UNDETERMINED);
     expect(calls).toBe(1);
   });
 
-  it('never returns a boolean guessed from the platform name', () => {
+  it('never returns a boolean guessed from the platform name', async () => {
     setCaseSensitivityProbe(() => {
       throw new Error('probe failed');
     });
     const root = makeDir();
-    expect(() => volumeIsCaseInsensitive(path.join(root, 'Target'))).toThrow(UNDETERMINED);
+    await expect((async () => syncPaths.volumeIsCaseInsensitive(path.join(root, 'Target')))()).rejects.toThrow(UNDETERMINED);
   });
 
   it('answers supported with the measured verdict when the probe decides', () => {
     setCaseSensitivityProbe(() => true);
     const root = makeDir();
-    expect(caseSensitivityOf(path.join(root, 'Target'))).toMatchObject({ kind: 'supported', value: true });
+    expect(syncPaths.caseSensitivityOf(path.join(root, 'Target'))).toMatchObject({ kind: 'supported', value: true });
     setCaseSensitivityProbe(() => false);
-    expect(caseSensitivityOf(path.join(root, 'Target'))).toMatchObject({ kind: 'supported', value: false });
+    expect(syncPaths.caseSensitivityOf(path.join(root, 'Target'))).toMatchObject({ kind: 'supported', value: false });
   });
 });

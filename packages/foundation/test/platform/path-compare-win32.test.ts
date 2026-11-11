@@ -19,28 +19,28 @@ describe('walkPath with windows paths', () => {
     'c:\\work\\file.txt': { kind: 'other' },
   });
 
-  it('walks drive-rooted paths with either separator', () => {
-    expect(walkPath('C:\\work\\src\\a.ts', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'C:\\work\\src', tail: ['a.ts'] });
-    expect(walkPath('C:/work/src', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'C:\\work\\src', tail: [] });
+  it('walks drive-rooted paths with either separator', async () => {
+    expect(await walkPath('C:\\work\\src\\a.ts', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'C:\\work\\src', tail: ['a.ts'] });
+    expect(await walkPath('C:/work/src', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'C:\\work\\src', tail: [] });
   });
 
-  it('follows a relative link and an absolute link onto another drive', () => {
-    expect(walkPath('C:\\work\\link\\new.ts', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'C:\\work\\src', tail: ['new.ts'] });
-    expect(walkPath('C:\\work\\abs\\y', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'D:\\data\\x', tail: ['y'] });
+  it('follows a relative link and an absolute link onto another drive', async () => {
+    expect(await walkPath('C:\\work\\link\\new.ts', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'C:\\work\\src', tail: ['new.ts'] });
+    expect(await walkPath('C:\\work\\abs\\y', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'D:\\data\\x', tail: ['y'] });
   });
 
-  it('resolves .. and reports a file used as a directory', () => {
-    expect(walkPath('C:\\work\\src\\..\\src', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'C:\\work\\src', tail: [] });
-    expect(walkPath('C:\\work\\file.txt\\x', step, onLink, path.win32)).toMatchObject({ ok: false, failure: { reason: { code: 'ENOTDIR' } } });
+  it('resolves .. and reports a file used as a directory', async () => {
+    expect(await walkPath('C:\\work\\src\\..\\src', step, onLink, path.win32)).toEqual({ ok: true, prefix: 'C:\\work\\src', tail: [] });
+    expect(await walkPath('C:\\work\\file.txt\\x', step, onLink, path.win32)).toMatchObject({ ok: false, failure: { reason: { code: 'ENOTDIR' } } });
   });
 
-  it('walks UNC roots', () => {
+  it('walks UNC roots', async () => {
     const unc = tree({ '\\\\server\\share\\a': { kind: 'directory' } });
-    expect(walkPath('\\\\server\\share\\a\\b', unc, onLink, path.win32)).toEqual({ ok: true, prefix: '\\\\server\\share\\a', tail: ['b'] });
+    expect(await walkPath('\\\\server\\share\\a\\b', unc, onLink, path.win32)).toEqual({ ok: true, prefix: '\\\\server\\share\\a', tail: ['b'] });
   });
 
-  it('rejects relative paths', () => {
-    expect(() => walkPath('work\\src', step, onLink, path.win32)).toThrow('absolute');
+  it('rejects relative paths', async () => {
+    await expect(walkPath('work\\src', step, onLink, path.win32)).rejects.toThrow('absolute');
   });
 });
 

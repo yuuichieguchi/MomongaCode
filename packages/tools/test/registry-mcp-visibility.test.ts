@@ -43,7 +43,7 @@ describe('registry visibility of MCP tools under deny rules', () => {
     const rule = ruleFor(harness.layout);
     const set = await snapshot();
     const [outcome] = await harness.executor.runBatch(
-      harness.input(set, [call('c1', 'mcp__srv__echo', {}, 'allow_once')], { rules: [rule('deny', text)] }),
+      await harness.input(set, [call('c1', 'mcp__srv__echo', {}, 'allow_once')], { rules: [rule('deny', text)] }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(outcome?.kind === 'result' ? outcome.result.output.startsWith('Permission denied') : false).toBe(true);

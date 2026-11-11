@@ -49,7 +49,7 @@ describe.runIf(process.platform === 'darwin')('T13 every path out of a call that
     const harness = makeHarness();
     const controller = new AbortController();
     const tool = makeTool('Slow', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', execute: () => new Promise(() => undefined) });
-    const running = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('slow', 'Slow', {}, 'allow_once')], { signal: controller.signal }));
+    const running = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('slow', 'Slow', {}, 'allow_once')], { signal: controller.signal }));
     const key = keyFor('run-1', 1, 'slow');
     for (let turn = 0; turn < 2000 && !fs.existsSync(path.join(harness.markerDir, key)); turn += 1) await new Promise((resolve) => setImmediate(resolve));
     controller.abort();
@@ -69,7 +69,7 @@ describe.runIf(process.platform === 'darwin')('T13 every path out of a call that
     };
     const harness = makeHarness();
     const tool = makeTool('Slow', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', execute: async () => ({ status: 'completed', output: 'ran' }) });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('hooked', 'Slow', {}, 'allow_once')], { hooks })).catch(() => undefined);
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('hooked', 'Slow', {}, 'allow_once')], { hooks })).catch(() => undefined);
     markerFileGoneAndReleased(harness.markerDir, keyFor('run-1', 1, 'hooked'));
   });
 });

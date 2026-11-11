@@ -33,14 +33,14 @@ describe('executor: begin stores runId in meta (§8)', () => {
       if (lookup?.s === 'PENDING') seenMeta.push(lookup.rec.meta);
       return { status: 'completed', output: 'ran' };
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
     expect(seenMeta).toEqual([{ tool: 'Bash', runId: 'run-1' }]);
   });
 
   it('runId in meta comes from the batch, not from a constant', async () => {
     const harness = makeHarness();
     const tool = execTool(async () => ({ status: 'completed', output: 'ran' }));
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { runId: 'run-other' }));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { runId: 'run-other' }));
     const begin = harness.idempotency.log.find((entry) => entry.op === 'begin');
     expect(begin).toMatchObject({ op: 'begin', key: keyFor('run-other', 1, 'c1'), meta: { tool: 'Bash', runId: 'run-other' } });
   });
@@ -57,7 +57,7 @@ describe('executor: inFlightKeys (§8)', () => {
       return { status: 'completed', output: 'ran' };
     });
     expect([...harness.executor.inFlightKeys()]).toEqual([]);
-    const batch = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
+    const batch = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
     await running.opened;
     expect([...harness.executor.inFlightKeys()]).toEqual([KEY]);
     release.open();
@@ -74,7 +74,7 @@ describe('executor: inFlightKeys (§8)', () => {
       await release.opened;
       throw new ToolExecutionError('exit 1');
     });
-    const batch = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
+    const batch = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
     await running.opened;
     expect(harness.executor.inFlightKeys().has(KEY)).toBe(true);
     release.open();
@@ -92,7 +92,7 @@ describe('executor: inFlightKeys (§8)', () => {
       return { status: 'completed', output: 'stopped' };
     });
     const controller = new AbortController();
-    const batch = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { signal: controller.signal }));
+    const batch = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { signal: controller.signal }));
     await running.opened;
     expect(harness.executor.inFlightKeys().has(KEY)).toBe(true);
     controller.abort();
@@ -109,7 +109,7 @@ describe('executor: inFlightKeys (§8)', () => {
       await release.opened;
       return { status: 'completed', output: 'ran' };
     });
-    const batch = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
+    const batch = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
     await running.opened;
     const snapshot = harness.executor.inFlightKeys();
     release.open();
@@ -140,11 +140,11 @@ describe('executor: inFlightKeys (§8)', () => {
       },
     });
     const toolSet = await toolSetOf(tool);
-    const zombie = harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Edit', {}, 'allow_once')], { leaseLost: () => zombieLeaseLost }));
+    const zombie = harness.executor.runBatch(await harness.input(toolSet, [call('c1', 'Edit', {}, 'allow_once')], { leaseLost: () => zombieLeaseLost }));
     await zombieRunning.opened;
     expect(harness.idempotency.stateOf(KEY)).toBe('PENDING');
 
-    const replay = harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Edit', {}, 'allow_once')]));
+    const replay = harness.executor.runBatch(await harness.input(toolSet, [call('c1', 'Edit', {}, 'allow_once')]));
     expect(harness.executor.inFlightKeys().has(KEY)).toBe(true);
 
     zombieLeaseLost = true;

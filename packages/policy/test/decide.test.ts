@@ -56,24 +56,24 @@ const expectedWithRule = (effect: 'allow' | 'ask' | 'deny', mode: (typeof MODES)
   return effect;
 };
 
-const run = (layout: Layout, c: Case, mode: PermissionMode, effects: Array<'allow' | 'ask' | 'deny'>) =>
-  decide({
+const run = async (layout: Layout, c: Case, mode: PermissionMode, effects: Array<'allow' | 'ask' | 'deny'>) =>
+  await decide({
     tool: c.tool,
     subject: c.subject(layout),
     mode,
     rules: effects.map((effect) => ruleIn(layout)(effect, c.ruleText)),
     roots: [layout.project],
     home: layout.home,
-    cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor(effects.map((effect) => ruleIn(layout)(effect, c.ruleText)), [layout.project]),
+    cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: await fileRulesFor(effects.map((effect) => ruleIn(layout)(effect, c.ruleText)), [layout.project]),
   });
 
 describe('decide mode defaults', () => {
   for (const c of CASES) {
     for (const mode of MODES) {
-      it(`${c.label} in ${mode} -> ${c.defaults[mode]}`, () => {
-        const decision = run(makeLayout(), c, mode, []);
-        expect(decision.kind).toBe(c.defaults[mode]);
-        expect(decision.source).toBe('mode');
+      it(`${c.label} in ${mode} -> ${c.defaults[mode]}`, async () => {
+        const decision = await run(makeLayout(), c, mode, []);
+        expect((await decision).kind).toBe(c.defaults[mode]);
+        expect((await decision).source).toBe('mode');
       });
     }
   }
@@ -83,9 +83,9 @@ describe('decide rule effects', () => {
   for (const c of CASES) {
     for (const mode of MODES) {
       for (const effect of ['allow', 'ask', 'deny'] as const) {
-        it(`${c.label} in ${mode} with ${effect} rule`, () => {
+        it(`${c.label} in ${mode} with ${effect} rule`, async () => {
           const layout = makeLayout();
-          expect(run(layout, c, mode, [effect]).kind).toBe(expectedWithRule(effect, mode, c, layout));
+          expect((await run(layout, c, mode, [effect])).kind).toBe(expectedWithRule(effect, mode, c, layout));
         });
       }
     }
@@ -93,73 +93,73 @@ describe('decide rule effects', () => {
 });
 
 describe('decide plan-mode refusal', () => {
-  it('follows the declaration of the tool, the same one the offering reads, whatever subject a call computes', () => {
+  it('follows the declaration of the tool, the same one the offering reads, whatever subject a call computes', async () => {
     const layout = makeLayout();
     const declaredNone: Case = { label: 'declared none', tool: KILL_BASH, subject: () => ({ kind: 'command', tool: 'KillBash', command: 'echo' }), ruleText: 'KillBash' };
-    expect(run(layout, declaredNone, 'plan', []).kind).toBe('deny');
+    expect((await run(layout, declaredNone, 'plan', [])).kind).toBe('deny');
     const declaredCommand: Case = { label: 'declared command', tool: BASH, subject: () => ({ kind: 'none', tool: 'Bash' }), ruleText: 'Bash' };
-    expect(run(layout, declaredCommand, 'plan', []).kind).toBe('allow');
+    expect((await run(layout, declaredCommand, 'plan', [])).kind).toBe('allow');
   });
 });
 
 describe('decide precedence', () => {
-  it('deny beats ask beats allow regardless of order and origin', () => {
+  it('deny beats ask beats allow regardless of order and origin', async () => {
     const layout = makeLayout();
     const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command: 'make build' };
     const base = { tool: BASH, subject, mode: 'manual' as const, roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET };
     const allowCli = ruleIn(layout, 'cli')('allow', 'Bash(make build)');
     const askLocal = ruleIn(layout, 'local')('ask', 'Bash(make:*)');
     const denyProject = ruleIn(layout, 'project')('deny', 'Bash(make:*)');
-    expect(decide({ ...base, rules: [allowCli, askLocal], fileRules: fileRulesFor([allowCli, askLocal], base.roots) }).kind).toBe('ask');
-    const denied = decide({ ...base, rules: [allowCli, askLocal, denyProject], fileRules: fileRulesFor([allowCli, askLocal, denyProject], base.roots) });
+    expect((await decide({ ...base, rules: [allowCli, askLocal], fileRules: await fileRulesFor([allowCli, askLocal], base.roots) })).kind).toBe('ask');
+    const denied = await decide({ ...base, rules: [allowCli, askLocal, denyProject], fileRules: await fileRulesFor([allowCli, askLocal, denyProject], base.roots) });
     expect(denied).toMatchObject({ kind: 'deny', source: 'rule', rule: denyProject });
     expect(denied.reason).toContain('Bash(make:*)');
-    expect(decide({ ...base, rules: [allowCli], fileRules: fileRulesFor([allowCli], base.roots) })).toMatchObject({ kind: 'allow', source: 'rule', rule: allowCli });
+    expect(await decide({ ...base, rules: [allowCli], fileRules: await fileRulesFor([allowCli], base.roots) })).toMatchObject({ kind: 'allow', source: 'rule', rule: allowCli });
   });
 
-  it('plan mode denial explains plan mode', () => {
+  it('plan mode denial explains plan mode', async () => {
     const layout = makeLayout();
-    const decision = run(layout, CASES[3]!, 'plan', []);
-    expect(decision.kind).toBe('deny');
-    expect(decision.reason).toMatch(/plan mode/i);
+    const decision = await run(layout, CASES[3]!, 'plan', []);
+    expect((await decision).kind).toBe('deny');
+    expect((await decision).reason).toMatch(/plan mode/i);
   });
 
-  it('treats additional roots as inside', () => {
+  it('treats additional roots as inside', async () => {
     const layout = makeLayout();
     const file = touch(path.join(layout.outside, 'g.txt'));
-    const decision = decide({
+    const decision = await decide({
       tool: EDIT,
       subject: { kind: 'path', tool: 'Edit', paths: [file], access: 'write' },
       mode: 'acceptEdits',
       rules: [],
       roots: [layout.project, layout.outside],
       home: layout.home,
-      cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project, layout.outside]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor([], [layout.project, layout.outside]),
+      cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project, layout.outside]), protectedSet: EMPTY_PROTECTED_SET, fileRules: await fileRulesFor([], [layout.project, layout.outside]),
     });
     expect(decision.kind).toBe('allow');
   });
 
-  it('keeps a deny rule in force in auto mode', () => {
+  it('keeps a deny rule in force in auto mode', async () => {
     const layout = makeLayout();
-    expect(run(layout, CASES[3]!, 'auto', ['deny'])).toMatchObject({ kind: 'deny', source: 'rule' });
+    expect(await run(layout, CASES[3]!, 'auto', ['deny'])).toMatchObject({ kind: 'deny', source: 'rule' });
   });
 });
 
 describe('decide adversarial Bash', () => {
   const ALLOW = ['Bash(git status)', 'Bash(npm run test:*)', 'Bash(ls:*)', 'Bash(echo:*)', 'Bash(cat:*)'];
 
-  const bash = (command: string, extra: { mode?: PermissionMode; deny?: string[] } = {}) => {
+  const bash = async (command: string, extra: { mode?: PermissionMode; deny?: string[] } = {}) => {
     const layout = makeLayout();
     const make = ruleIn(layout);
-    return decide({
+    return (await decide({
       tool: BASH,
       subject: { kind: 'command', tool: 'Bash', command },
       mode: extra.mode ?? 'manual',
       rules: [...ALLOW.map((t) => make('allow', t)), ...(extra.deny ?? []).map((t) => make('deny', t))],
       roots: [layout.project],
       home: layout.home,
-      cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor([...ALLOW.map((t) => make('allow', t)), ...(extra.deny ?? []).map((t) => make('deny', t))], [layout.project]),
-    }).kind;
+      cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: await fileRulesFor([...ALLOW.map((t) => make('allow', t)), ...(extra.deny ?? []).map((t) => make('deny', t))], [layout.project]),
+    })).kind;
   };
 
   it.each([
@@ -185,21 +185,21 @@ describe('decide adversarial Bash', () => {
     ["bash -c 'npm run test'", 'ask'],
     ['FOO=1 npm run test', 'ask'],
     ['npm run testing', 'ask'],
-  ] as const)('%j -> %s', (command, expected) => {
-    expect(bash(command)).toBe(expected);
+  ] as const)('%j -> %s', async (command, expected) => {
+    expect(await bash(command)).toBe(expected);
   });
 
-  it.each(['git status; rm -rf ~', 'ls && rm -rf ~', 'ls | rm x', 'rm -rf ~'])('deny on any subcommand of %j even in bypass', (command) => {
-    expect(bash(command, { deny: ['Bash(rm:*)'] })).toBe('deny');
-    expect(bash(command, { deny: ['Bash(rm:*)'], mode: 'bypassPermissions' })).toBe('deny');
+  it.each(['git status; rm -rf ~', 'ls && rm -rf ~', 'ls | rm x', 'rm -rf ~'])('deny on any subcommand of %j even in bypass', async (command) => {
+    expect(await bash(command, { deny: ['Bash(rm:*)'] })).toBe('deny');
+    expect(await bash(command, { deny: ['Bash(rm:*)'], mode: 'bypassPermissions' })).toBe('deny');
   });
 
-  it('treats redirections as write subjects outside the workspace', () => {
-    expect(bash('ls > /etc/passwd')).toBe('ask');
-    expect(bash('echo x > ~/.ssh/config')).toBe('ask');
-    expect(bash('echo x >> ~/.ssh/config')).toBe('ask');
-    expect(bash('ls > /etc/passwd', { deny: ['Write(//etc/**)'] })).toBe('deny');
-    expect(bash('ls > /etc/passwd', { deny: ['Write(//etc/**)'], mode: 'bypassPermissions' })).toBe('deny');
-    expect(bash('echo x > ~/.ssh/config', { deny: ['Edit(~/.ssh/**)'] })).toBe('deny');
+  it('treats redirections as write subjects outside the workspace', async () => {
+    expect(await bash('ls > /etc/passwd')).toBe('ask');
+    expect(await bash('echo x > ~/.ssh/config')).toBe('ask');
+    expect(await bash('echo x >> ~/.ssh/config')).toBe('ask');
+    expect(await bash('ls > /etc/passwd', { deny: ['Write(//etc/**)'] })).toBe('deny');
+    expect(await bash('ls > /etc/passwd', { deny: ['Write(//etc/**)'], mode: 'bypassPermissions' })).toBe('deny');
+    expect(await bash('echo x > ~/.ssh/config', { deny: ['Edit(~/.ssh/**)'] })).toBe('deny');
   });
 });

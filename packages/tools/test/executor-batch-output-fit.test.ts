@@ -20,7 +20,7 @@ describe('per-batch output fit', () => {
     const ports: CallOutputFit[] = [];
     const set = await toolSetOf(recordingTool(ports));
     const tight = askingFit(charFit(200));
-    const [outcome] = await harness.executor.runBatch({ ...harness.input(set, [call('c1', 'Read')]), outputFit: tight.port });
+    const [outcome] = await harness.executor.runBatch({ ...(await harness.input(set, [call('c1', 'Read')])), outputFit: tight.port });
     if (outcome?.kind !== 'result') throw new Error('expected result');
     expect(outcome.result.truncated).toBe(true);
     expect(outcome.result.handle).toBe(blobHandle(1));
@@ -34,7 +34,7 @@ describe('per-batch output fit', () => {
     const ports: CallOutputFit[] = [];
     const set = await toolSetOf(recordingTool(ports));
     const loose = askingFit(charFit(1000));
-    const [outcome] = await harness.executor.runBatch({ ...harness.input(set, [call('c1', 'Read')]), outputFit: loose.port });
+    const [outcome] = await harness.executor.runBatch({ ...(await harness.input(set, [call('c1', 'Read')])), outputFit: loose.port });
     expect(outcome).toEqual({ callId: 'c1', kind: 'result', result: { status: 'completed', output: FULL }, idemKey: expect.any(String) });
     expect(harness.blobs.puts).toEqual([]);
     expect(ports).toHaveLength(1);
@@ -45,7 +45,7 @@ describe('per-batch output fit', () => {
     const harness = makeHarness({ outputLimitChars: 1000 });
     const ports: CallOutputFit[] = [];
     const set = await toolSetOf(recordingTool(ports));
-    const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')]));
     if (outcome?.kind !== 'result') throw new Error('expected result');
     expect(outcome.result.output).toBe(FULL);
     expect(ports).toHaveLength(1);

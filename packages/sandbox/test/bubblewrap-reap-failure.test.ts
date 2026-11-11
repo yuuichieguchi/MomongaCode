@@ -56,8 +56,8 @@ describe('a process group that cannot be reaped', () => {
     const hooks = path.join(work, '.git', 'hooks');
     const sandbox = createBubblewrapSandbox({ bwrapPath: path.join(base, 'bwrap'), tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: createPlaceholderJournal(path.join(base, 'journal')), holders: () => new Set() });
     reaper.failure = new Error('the group could not be terminated');
-    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
-    await expect(run(proc)).rejects.toBe(reaper.failure);
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
+    await expect(run(await proc)).rejects.toBe(reaper.failure);
     expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
     expect(fs.readdirSync(path.join(base, 'tmp'))).toEqual([]);
   });
@@ -80,8 +80,8 @@ describe('a process group that cannot be reaped', () => {
         },
       },
     });
-    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
-    const failure = await run(proc).then(
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
+    const failure = await run(await proc).then(
       () => undefined,
       (error: unknown) => error,
     );

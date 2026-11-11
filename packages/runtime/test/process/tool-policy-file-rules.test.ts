@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 import { ConfigError, loadSettings, parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { FileRuleError } from '@momonga/foundation';
@@ -39,17 +39,17 @@ describe('createPolicyFor builds the file rules of the batch', () => {
     const { temp, store, policyFor } = await setup();
     const session = createSession(store, temp.project);
     const rules = [ruleOf(temp.project, temp.home, 'Read(.env)'), ruleOf(temp.project, temp.home, 'Write(*.pem)')];
-    const policy = (await policyFor(session, { env: env(), rules } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
-    expect(policy.sandboxPolicy.fileRules).toEqual(computeFileRules(rules, policy.roots, policy.tmpDir, 'exact-paths'));
-    expect(policy.sandboxPolicy.fileRules.entries.length).toBeGreaterThan(0);
+    const policy = (await policyFor(session, { signal: NEVER_CANCELLED, env: env(), rules } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
+    expect(policy.sandboxPolicy.fileRules).toEqual(await computeFileRules(rules, policy.roots, policy.tmpDir, 'exact-paths', testProbes()));
+    expect((await policy.sandboxPolicy.fileRules).entries.length).toBeGreaterThan(0);
   });
 
   it('builds a different set for different rules on every call', async () => {
     const { temp, store, policyFor } = await setup();
     const session = createSession(store, temp.project);
-    const first = (await policyFor(session, { env: env(), rules: [ruleOf(temp.project, temp.home, 'Read(.env)')] } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
-    const second = (await policyFor(session, { env: env(), rules: [ruleOf(temp.project, temp.home, 'Read(.envrc)')] } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
-    expect(second.sandboxPolicy.fileRules.fingerprint).not.toBe(first.sandboxPolicy.fileRules.fingerprint);
+    const first = (await policyFor(session, { signal: NEVER_CANCELLED, env: env(), rules: [ruleOf(temp.project, temp.home, 'Read(.env)')] } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
+    const second = (await policyFor(session, { signal: NEVER_CANCELLED, env: env(), rules: [ruleOf(temp.project, temp.home, 'Read(.envrc)')] } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
+    expect((await second.sandboxPolicy.fileRules).fingerprint).not.toBe((await first.sandboxPolicy.fileRules).fingerprint);
   });
 
   it.skipIf(RUNNING_AS_ROOT)('rejects an unresolvable deny prefix with a ConfigError caused by a FileRuleError', async () => {
@@ -58,7 +58,7 @@ describe('createPolicyFor builds the file rules of the batch', () => {
     const locked = path.join(temp.root, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
-    const error = await rejectionOf(policyFor(session, { env: env(), rules: [ruleOf(temp.project, temp.home, `Read(/${locked}/x/**)`)] } as Parameters<typeof policyFor>[1]));
+    const error = await rejectionOf(policyFor(session, { signal: NEVER_CANCELLED, env: env(), rules: [ruleOf(temp.project, temp.home, `Read(/${locked}/x/**)`)] } as Parameters<typeof policyFor>[1]));
     fs.chmodSync(locked, 0o700);
     expect(error).toBeInstanceOf(ConfigError);
     expect((error as Error).cause).toBeInstanceOf(FileRuleError);
@@ -74,8 +74,8 @@ describe('createPolicyFor builds the file rules of the batch', () => {
     fs.writeFileSync(path.join(temp.project, '.momonga', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(.env)'] } }));
     const loaded = await loadSettings({ home: temp.home, projectDir: temp.project, cli: {}, trust: { isTrusted: () => trusted } });
     const session = createSession(store, temp.project);
-    const policy = (await policyFor(session, { env: env(), rules: loaded.rules } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
-    const projectEntries = policy.sandboxPolicy.fileRules.entries.filter((entry) => entry.provenance.layer === 'project');
+    const policy = (await policyFor(session, { signal: NEVER_CANCELLED, env: env(), rules: loaded.rules } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
+    const projectEntries = (await policy.sandboxPolicy.fileRules).entries.filter((entry) => entry.provenance.layer === 'project');
     expect(projectEntries.length > 0).toBe(trusted);
   });
 });

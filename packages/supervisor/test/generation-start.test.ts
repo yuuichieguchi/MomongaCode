@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, canonicalPath, generationLayout, hostKernelLock, inspectProcessLock } from '@momonga/foundation';
+import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, generationLayout, hostKernelLock, inspectProcessLock, syncPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, prepareGenerationForTest } from '@momonga/testkit';
 import { TEST_VERSION, pump, pumpUntil, quiesce, settledFlag, startHarness } from './fixtures/p3-harness.ts';
@@ -11,7 +11,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FOLD_VERSION = 1;
 
-const layoutOf = (home: string, generation: number) => generationLayout(canonicalPath(home), generation);
+const layoutOf = (home: string, generation: number) => generationLayout(syncPaths.canonicalPath(home), generation);
 
 const currentOf = (paths: MomongaPaths): unknown => JSON.parse(fs.readFileSync(paths.current, 'utf8'));
 

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 import { momongaLayout, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
@@ -23,7 +23,7 @@ const fixture = async () => {
   const extra: RunExtra = {
     roots: [project],
     tmpDir,
-    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [project], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
+    sandboxPolicy: await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([], [project], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }, NEVER_CANCELLED),
   };
   return { tools, sessions, tmpDir, sibling, marker, extra };
 };

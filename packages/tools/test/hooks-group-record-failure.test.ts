@@ -46,13 +46,13 @@ const waitUntil = async (condition: () => boolean, attempts = 2000): Promise<boo
 
 const markerCorruptingSandbox = (inner: Sandbox, corrupted: string[]): Sandbox => ({
   kind: inner.kind,
-  spawn: (command, policy, signal, descriptors) => {
+  spawn: async (command, policy, signal, descriptors) => {
     if (command.markerFile !== undefined) {
       fs.writeFileSync(command.markerFile, NOT_AN_ATTEMPT_RECORD);
       corrupted.push(command.markerFile);
     }
     const child = inner.spawn(command, policy, signal, descriptors);
-    spawnedGroups.push(child.pgid);
+    spawnedGroups.push((await child).pgid);
     return child;
   },
 });

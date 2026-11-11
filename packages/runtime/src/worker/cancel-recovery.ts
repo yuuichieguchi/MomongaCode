@@ -97,7 +97,7 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
     });
     const recoverable = started.filter((call) => toolSet.get(call.name) !== undefined);
     if (recoverable.length > 0) {
-      const context = await tools.recoveryContextFor(session, { env });
+      const context = await tools.recoveryContextFor(session, { env, signal: control.recoverySignal });
       const recorded = journal.state.pins;
       if (recorded === undefined) throw new Error(`run ${run.id} has started calls but no recorded pins`);
       const reconcileFit = reconcileOutputFit(readPins(recorded).capabilities);

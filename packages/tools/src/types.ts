@@ -1,5 +1,5 @@
 import type { CallStop } from './call-stop.ts';
-import type { Clock, NetworkScope, OutboundNetwork } from '@momonga/foundation';
+import type { Awaitable, Clock, NetworkScope, OutboundNetwork, PathResolver } from '@momonga/foundation';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
 import { OPERATION_EFFECT_OUTCOMES } from '@momonga/protocol';
@@ -59,9 +59,10 @@ export type SubjectContext = {
   workingDirectory: string;
   home: string;
   roots: readonly string[];
+  paths: PathResolver;
 };
 
-export type DisplayContext = Pick<SubjectContext, 'cwd' | 'workingDirectory'>;
+export type DisplayContext = Pick<SubjectContext, 'cwd' | 'workingDirectory' | 'paths'>;
 
 export type ToolResume = {
   checkpoint: Record<string, unknown> | undefined;
@@ -178,7 +179,7 @@ export type ToolBody<Input> = {
   idleTimeoutMs?: number;
   startsProcesses?: true;
   stopText?(stop: ToolStop): Promise<string>;
-  title(input: Input, ctx: DisplayContext): string;
+  title(input: Input, ctx: DisplayContext): Awaitable<string>;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
   gateFacts?(input: Input, ctx: SubjectContext, call: GateCall): Promise<GateFacts>;
   prepare?(input: Input, ctx: ToolContext, gateFacts?: GateFacts): Promise<Record<string, unknown>>;

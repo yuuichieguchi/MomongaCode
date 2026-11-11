@@ -52,6 +52,7 @@ const countingReader = () => {
   return {
     probed,
     reader: {
+      contains: async () => true,
       read: async () => undefined,
       exists: async (target: string) => {
         probed.push(target);

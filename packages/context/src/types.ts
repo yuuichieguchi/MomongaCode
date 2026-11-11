@@ -71,6 +71,7 @@ export type InstructionReader = {
   read(path: string): Promise<{ realPath: string; text: string } | undefined>;
   exists(path: string): Promise<boolean>;
   realpath(path: string): Promise<string | undefined>;
+  contains(directory: string, candidate: string): Promise<boolean>;
 };
 
 export type TouchedPath = { path: string; kind: 'file' | 'directory' };

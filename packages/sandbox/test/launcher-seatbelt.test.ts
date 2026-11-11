@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 import { alwaysWriteDenied, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, registerCleanup, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, registerCleanup, withTempDir, NEVER_CANCELLED } from '@momonga/testkit';
 import { run } from './helpers.ts';
 import { createLauncherFixture, recordLauncherLinks } from './launcher-fixture.ts';
 import type { LauncherFixture, LauncherLayout } from './launcher-fixture.ts';
@@ -17,8 +17,8 @@ const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
 type Scenario = { fixture: LauncherFixture; sh: (script: string) => Promise<{ code: number | null; stdout: string; stderr: string }> };
 
-const policyFor = (fixture: LauncherFixture): SandboxPolicy => {
-  const denied = alwaysWriteDenied(fixture.home);
+const policyFor = async (fixture: LauncherFixture): Promise<SandboxPolicy> => {
+  const denied = await alwaysWriteDenied(fixture.home, NEVER_CANCELLED);
   return {
     writableRoots: [fixture.home],
     writeDenied: [...denied.subtrees],
@@ -36,13 +36,13 @@ const scenario = (context: TestContext, layout: LauncherLayout): Scenario => {
   fs.writeFileSync(path.join(home, 'other'), 'other');
   const sandbox = createSeatbeltSandbox({ tmpRoot: withTempDir(context), killGraceMs: 300 });
   const sh = async (script: string) => {
-    const proc = sandbox.spawn(
+    const proc = await sandbox.spawn(
       { argv: ['/bin/sh', '-c', script], cwd: home, env: { PATH: BASE_PATH, HOME: home } },
-      policyFor(fixture),
+      await policyFor(fixture),
       new AbortController().signal,
     );
-    registerCleanup(context, () => killGroupsForCleanup([proc.pgid]));
-    return run(proc);
+    registerCleanup(context, async () => killGroupsForCleanup([(await proc).pgid]));
+    return run(await proc);
   };
   return { fixture, sh };
 };
@@ -162,7 +162,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt protects the launcher li
     recordLauncherLinks(fixture.home, `${planned}\n`);
     const result = await sh(`ln -s ${q(path.join(fixture.home, 'evil'))} ${q(planned)} 2>/dev/null`);
     expect(result.code).not.toBe(0);
-    expect(() => fs.lstatSync(planned)).toThrow();
+    await expect((async () => fs.lstatSync(planned))()).rejects.toThrow();
   });
 
   describe('missing ancestors of a protected link', () => {
@@ -173,13 +173,13 @@ describe.runIf(process.platform === 'darwin')('seatbelt protects the launcher li
       const sandbox = createSeatbeltSandbox({ tmpRoot: withTempDir(context), killGraceMs: 300 });
       const fixture: LauncherFixture = { home, launcher: path.join(home, '.local', 'bin', 'momonga'), target: '/bin/ls', targetContent: '' };
       const sh = async (script: string) => {
-        const proc = sandbox.spawn(
+        const proc = await sandbox.spawn(
           { argv: ['/bin/sh', '-c', script], cwd: home, env: { PATH: BASE_PATH, HOME: home } },
-          policyFor(fixture),
+          await policyFor(fixture),
           new AbortController().signal,
         );
-        registerCleanup(context, () => killGroupsForCleanup([proc.pgid]));
-        return run(proc);
+        registerCleanup(context, async () => killGroupsForCleanup([(await proc).pgid]));
+        return run(await proc);
       };
       return { fixture, sh, home };
     };
@@ -199,7 +199,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt protects the launcher li
       );
       expect(result.code).not.toBe(0);
       expect(resolvesTo(path.join(home, '.local', 'bin', 'momonga'), '/bin/ls')).toBe(false);
-      expect(() => fs.lstatSync(path.join(home, '.local'))).toThrow();
+      await expect((async () => fs.lstatSync(path.join(home, '.local')))()).rejects.toThrow();
     });
 
     it('refuses planting a symlink at a missing ancestor of a recorded link', async (context) => {
@@ -209,7 +209,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt protects the launcher li
       const result = await sh(`mkdir -p ev2/dir && ln -s /bin/ls ev2/dir/mm2 && ln -s ev2 later 2>/dev/null`);
       expect(result.code).not.toBe(0);
       expect(resolvesTo(recorded, '/bin/ls')).toBe(false);
-      expect(() => fs.lstatSync(path.join(home, 'later'))).toThrow();
+      await expect((async () => fs.lstatSync(path.join(home, 'later')))()).rejects.toThrow();
     });
 
     it('refuses renaming a pre-made symlink onto a missing ~/.local', async (context) => {
@@ -219,7 +219,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt protects the launcher li
       );
       expect(result.code).not.toBe(0);
       expect(resolvesTo(path.join(home, '.local', 'bin', 'momonga'), '/bin/ls')).toBe(false);
-      expect(() => fs.lstatSync(path.join(home, '.local'))).toThrow();
+      await expect((async () => fs.lstatSync(path.join(home, '.local')))()).rejects.toThrow();
     });
 
     it('still allows mkdir -p ~/.local/bin', async (context) => {

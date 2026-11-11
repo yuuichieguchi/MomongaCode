@@ -19,7 +19,7 @@ export type RuleSetFacts = { rules: readonly PermissionRule[]; roots: readonly s
 
 export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, session: HeldSession, facts: RuleSetFacts): Promise<PinnedRuleVerdict> => {
   const verifier: RuleVerifierPort = options.ruleVerifier;
-  const input = await verifier.inputOf({ rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, enforcement: facts.enforcement });
+  const input = await verifier.inputOf({ rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, enforcement: facts.enforcement }, control.signal);
   const fingerprint = ruleFingerprint({ input, solverVersion: await verifier.solverVersion() });
   const stored = options.store.ruleVerdicts.get(fingerprint);
   if (stored !== undefined) return { fingerprint, ...stored.verdict };
@@ -39,7 +39,7 @@ export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: 
   const held = await holdSandbox(options.tools.sandboxes, control.signal);
   try {
     const rules = await permissionRulesFor(options, session);
-    const policy = await options.tools.policyFor(session, { env: sources.env, rules, readableDirectories: sources.readableDirectories, ruleEnforcement: held.ruleEnforcement });
+    const policy = await options.tools.policyFor(session, { env: sources.env, rules, readableDirectories: sources.readableDirectories, ruleEnforcement: held.ruleEnforcement, signal: control.signal });
     return await ruleVerdictFor(sources, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
   } finally {
     held.done();

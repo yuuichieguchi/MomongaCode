@@ -14,12 +14,12 @@ const portsWith = (overrides: Record<string, unknown>): RepositoryPorts =>
 const VALID_HEAD = { kind: 'text', text: 'ref: refs/heads/main\n' };
 
 describe('a missing entry means no repository', () => {
-  it('control: every entry missing is no repository', () => {
-    expect(discoverRepository('/w', portsWith({}))).toEqual({ found: false });
+  it('control: every entry missing is no repository', async () => {
+    expect(await discoverRepository('/w', portsWith({}))).toEqual({ found: false });
   });
 
-  it('an invalid HEAD passes over the layout', () => {
-    expect(discoverRepository('/w', portsWith({ readHead: () => ({ kind: 'invalid' }), isSearchable: () => true }))).toEqual({ found: false });
+  it('an invalid HEAD passes over the layout', async () => {
+    expect(await discoverRepository('/w', portsWith({ readHead: () => ({ kind: 'invalid' }), isSearchable: () => true }))).toEqual({ found: false });
   });
 });
 
@@ -29,23 +29,23 @@ describe('a NUL byte in a pointer file ends the text, as git does', () => {
     return { ok: true, path: absolute };
   };
 
-  it('in commondir', () => {
+  it('in commondir', async () => {
     const ports = portsWith({
       canonicalise: pathChecked,
       readHead: () => VALID_HEAD,
       isSearchable: () => true,
       readEntry: (absolute: string) => (absolute === '/w/commondir' ? { kind: 'file', text: '../real\0x\n' } : { kind: 'absent' }),
     });
-    expect(discoverRepository('/w', ports)).toEqual({ found: true, hit: { directory: '/w', entry: 'bare', gitDirectories: ['/w', '/real'] } });
+    expect(await discoverRepository('/w', ports)).toEqual({ found: true, hit: { directory: '/w', entry: 'bare', gitDirectories: ['/w', '/real'] } });
   });
 
-  it('in a .git file', () => {
+  it('in a .git file', async () => {
     const ports = portsWith({
       canonicalise: pathChecked,
       readHead: () => VALID_HEAD,
       isSearchable: () => true,
       readEntry: (absolute: string) => (absolute === '/w/.git' ? { kind: 'file', text: 'gitdir: ../real\0x\n' } : { kind: 'absent' }),
     });
-    expect(discoverRepository('/w', ports)).toEqual({ found: true, hit: { directory: '/w', entry: 'dotgit', gitDirectories: ['/real'] } });
+    expect(await discoverRepository('/w', ports)).toEqual({ found: true, hit: { directory: '/w', entry: 'dotgit', gitDirectories: ['/real'] } });
   });
 });

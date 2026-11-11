@@ -25,7 +25,7 @@ describe('the executor cuts a tool output through the output fit port', () => {
     const harness = makeHarness();
     const { port } = fitPort();
     const tool = makeTool('Probe', { execute: async () => ({ status: 'completed', output: FULL }) });
-    const [outcome] = await harness.executor.runBatch({ ...harness.input(await toolSetOf(tool), [call('c1', 'Probe')]), outputFit: port });
+    const [outcome] = await harness.executor.runBatch({ ...(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')])), outputFit: port });
     if (outcome?.kind !== 'result') throw new Error('expected a result');
     const handle = outcome.result.handle as string;
     expect(handle).toMatch(/^[0-9a-f]{64}$/);
@@ -39,7 +39,7 @@ describe('the executor cuts a tool output through the output fit port', () => {
     const long = Array.from({ length: 4000 }, (_unused, index) => `row ${index} of a wide listing`).join('\n');
     const port = { fits: async (): Promise<boolean> => true, fit: async (text: string): Promise<string> => text };
     const tool = makeTool('Probe', { execute: async () => ({ status: 'completed', output: long }) });
-    const [outcome] = await harness.executor.runBatch({ ...harness.input(await toolSetOf(tool), [call('c1', 'Probe')]), outputFit: port });
+    const [outcome] = await harness.executor.runBatch({ ...(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')])), outputFit: port });
     expect(long.length).toBeGreaterThan(100_000);
     expect(outcome).toEqual({ callId: 'c1', kind: 'result', idemKey: expect.any(String), result: { status: 'completed', output: long } });
     expect(harness.blobs.puts).toEqual([]);
@@ -55,7 +55,7 @@ describe('the executor cuts a tool output through the output fit port', () => {
         return { status: 'completed', output: 'ok' };
       },
     });
-    await harness.executor.runBatch({ ...harness.input(await toolSetOf(tool), [call('c1', 'Probe')]), outputFit: asked.port });
+    await harness.executor.runBatch({ ...(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')])), outputFit: asked.port });
     expect(seen).toHaveLength(1);
     expect(await callAnsweredBy(seen[0] as CallOutputFit, asked)).toEqual({ callId: 'c1', tool: 'Probe' });
   });
@@ -63,7 +63,7 @@ describe('the executor cuts a tool output through the output fit port', () => {
   it('refuses to run an output-producing tool without a fit port instead of falling back to a default length', async () => {
     const harness = makeHarness();
     const tool = makeTool('Probe', { execute: async () => ({ status: 'completed', output: FULL }) });
-    const { outputFit: _none, ...bare } = harness.input(await toolSetOf(tool), [call('c1', 'Probe')]) as ExecutionBatchInput & { outputFit?: unknown };
+    const { outputFit: _none, ...bare } = (await harness.input(await toolSetOf(tool), [call('c1', 'Probe')])) as ExecutionBatchInput & { outputFit?: unknown };
     await expect(harness.executor.runBatch(bare as ExecutionBatchInput)).rejects.toThrow(/outputFit/);
   });
 });

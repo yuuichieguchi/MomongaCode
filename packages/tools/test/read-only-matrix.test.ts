@@ -4,9 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
-import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs } from '@momonga/policy';
+import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { Sandbox } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { collect } from './read-only-collect.ts';
@@ -51,9 +51,9 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
       roots,
       home,
       cwd: project,
-      fileRules: computeFileRules([], roots, null, ruleEnforcementOf(HOST_SANDBOX_KIND)),
-      protectedSet: protectedSetFor(roots, filesystem),
-      fs: settleGlobs(filesystem, globs ?? EMPTY_GLOB_TABLE),
+      fileRules: await computeFileRules([], roots, null, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
+      protectedSet: await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED)),
+      fs: settleGlobs(filesystem, globs ?? EMPTY_GLOB_TABLE, NEVER_CANCELLED),
       searchPath: TEST_SEARCH_PATH,
       isWritable: isWritableFor(roots),
     });
@@ -67,7 +67,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
   const sandboxed = async (command: string) => {
     const { markerFile: _spentMarker, ...replayed } = spawned.command;
     const child = inner.spawn({ ...replayed, argv: ['/bin/bash', '-c', command], cwd: project }, spawned.policy, new AbortController().signal);
-    const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
+    const [stdout, stderr, exit] = await Promise.all([collect((await child).stdout), collect((await child).stderr), (await child).exited]);
     return {
       stdout,
       stderr: withoutRefusedXcrunCacheWrite(stderr, process.platform),
@@ -97,7 +97,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     const recorded = recordingSandbox(inner);
     const built = await makeBuiltins({ sandbox: recorded.sandbox });
     const roots = [project];
-    const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(base, 'sessions'), fileRules: computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)), protectedSet: protectedSetFor(roots, filesystem), network: 'deny' });
+    const sandboxPolicy = await buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(base, 'sessions'), fileRules: await computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()), protectedSet: await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED)), network: 'deny' }, NEVER_CANCELLED);
     resultOf(await built.run('Bash', { command: 'pwd' }, { env: plainEnv as Record<string, string>, roots, home, tmpDir, sandboxPolicy, session: { cwd: project, workingDirectory: project, readLedger: new Map() } }));
     spawned = recorded.spawns[0] as RecordedSpawn;
   });

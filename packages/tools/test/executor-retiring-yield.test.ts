@@ -15,7 +15,7 @@ describe('a tool that raises RetiringYield (20.50)', () => {
       },
     });
 
-    await expect(harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]))).rejects.toBeInstanceOf(RetiringYield);
+    await expect(harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]))).rejects.toBeInstanceOf(RetiringYield);
 
     expect(harness.idempotency.stateOf(keyFor('run-1', 1, 'c1'))).toBe('PENDING');
   });

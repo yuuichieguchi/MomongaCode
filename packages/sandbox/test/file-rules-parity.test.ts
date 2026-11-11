@@ -34,7 +34,7 @@ describe.runIf(process.platform === 'darwin')('kernel parity with the exact matc
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(target, 'C');
     });
-    const fileRules = fileRulesOf([fileSpec(specifier, { roots, home: path.join(base, 'home') })], roots);
+    const fileRules = await fileRulesOf([fileSpec(specifier, { roots, home: path.join(base, 'home') })], roots);
     const targets = PARITY_CANDIDATES.map((candidate, index) => path.join(roots[index] as string, candidate));
     const exact = targets.map((target) => fileRules.entries.some((entry) => fileRuleBlocks(fileRules, entry, target, target)));
     const tmpRoot = path.join(base, 'spawn-tmp');
@@ -49,8 +49,8 @@ describe.runIf(process.platform === 'darwin')('kernel parity with the exact matc
       policy,
       new AbortController().signal,
     );
-    spawned.push(proc);
-    const result = await run(proc);
+    spawned.push(await proc);
+    const result = await run(await proc);
     const kernel = result.stdout.trim().split('\n').map((verdict) => verdict === 'D');
     expect(Object.fromEntries(PARITY_CANDIDATES.map((candidate, index) => [candidate, kernel[index]]))).toEqual(
       Object.fromEntries(PARITY_CANDIDATES.map((candidate, index) => [candidate, exact[index]])),
@@ -67,7 +67,7 @@ describe.runIf(process.platform === 'darwin')('kernel parity with the exact matc
     const targets = candidates.map((candidate) => path.join(root, candidate));
     for (const target of targets) fs.writeFileSync(target, 'C');
     expect(fs.readdirSync(root).sort()).toEqual([...candidates].sort());
-    const fileRules = fileRulesOf([fileSpec('a[à-ÿ]b', { roots: [root], home: path.join(base, 'home') })], [root]);
+    const fileRules = await fileRulesOf([fileSpec('a[à-ÿ]b', { roots: [root], home: path.join(base, 'home') })], [root]);
     const exact = targets.map((target) => fileRules.entries.some((entry) => fileRuleBlocks(fileRules, entry, target, target)));
     expect(exact).toEqual([false, true, true]);
     const tmpRoot = path.join(base, 'spawn-tmp');
@@ -82,8 +82,8 @@ describe.runIf(process.platform === 'darwin')('kernel parity with the exact matc
       policy,
       new AbortController().signal,
     );
-    spawned.push(proc);
-    const result = await run(proc);
+    spawned.push(await proc);
+    const result = await run(await proc);
     expect(result.stdout.trim().split('\n')).toEqual(['R', 'D', 'D']);
   });
 });

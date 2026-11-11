@@ -32,7 +32,7 @@ const sandbox = createBubblewrapSandbox({
   },
 });
 
-sandbox.spawn(
+await sandbox.spawn(
   { argv: ['/bin/sh', '-c', 'sleep 5'], cwd: work, env: { PATH: '/usr/bin:/bin' } },
   {
     writableRoots: [work],

@@ -3,10 +3,10 @@ import type { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
-import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, programKeysOfConfig, resolveCanonicalPath, unresolvableReasonOf, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, hostPaths, programKeysOfConfig, someAsync, unresolvableReasonOf } from '@momonga/foundation';
 import type { ConfigPrograms, EntryRead, GitlinkRead, StepRead, Unresolved } from '@momonga/foundation';
 import { systemProgramDirectories } from '@momonga/policy';
-import type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyHostFilesystem, ProgramResolution } from '@momonga/policy';
+import type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyHostFilesystem, ProgramResolution, WritableCheck } from '@momonga/policy';
 import { ShellNotFoundError, nodeShellPorts, resolveBashPath } from './builtins/shell.ts';
 import type { ShellPorts } from './builtins/shell.ts';
 
@@ -27,11 +27,11 @@ const SKIPPED_ERRNO: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR', 'EACCES
 
 type Holder = { apple: boolean; exact: boolean; unsafe: boolean; program: string };
 
-const holdsProgram = (directory: string, name: string): boolean => {
+const holdsProgram = async (directory: string, name: string): Promise<boolean> => {
   const file = path.join(directory, name);
   try {
-    if (!fs.statSync(file).isFile()) return false;
-    fs.accessSync(file, fs.constants.X_OK);
+    if (!(await fs.promises.stat(file)).isFile()) return false;
+    await fs.promises.access(file, fs.constants.X_OK);
     return true;
   } catch (error) {
     if (SKIPPED_ERRNO.has(codeOf(error) ?? '')) return false;
@@ -39,56 +39,56 @@ const holdsProgram = (directory: string, name: string): boolean => {
   }
 };
 
-const holderAt = (system: readonly string[], entry: string, cwd: string, name: string, isWritable: (absolute: string) => boolean, unsafeBefore: boolean): Holder | undefined => {
+const holderAt = async (system: readonly string[], entry: string, cwd: string, name: string, isWritable: WritableCheck, unsafeBefore: boolean): Promise<Holder | undefined> => {
   const directory = path.resolve(cwd, entry);
-  if (!holdsProgram(directory, name)) return undefined;
+  if (!(await holdsProgram(directory, name))) return undefined;
   const absolute = path.isAbsolute(entry);
   return {
     apple: system.includes(directory),
     exact: absolute && system.includes(entry),
-    unsafe: unsafeBefore || !absolute || isWritable(entry),
+    unsafe: unsafeBefore || !absolute || (await isWritable(entry)),
     program: path.join(directory, name),
   };
 };
 
-const resolveProgram = (platform: NodeJS.Platform) => (name: string, cwd: string, searchPath: string | undefined, isWritable: (absolute: string) => boolean): ProgramResolution => {
+const resolveProgram = (platform: NodeJS.Platform) => async (name: string, cwd: string, searchPath: string | undefined, isWritable: WritableCheck): Promise<ProgramResolution> => {
   if (searchPath === undefined) return { none: true };
   const system = systemProgramDirectories(platform);
   const entries = searchPath.split(':');
   let unsafeBefore = false;
   for (const [index, entry] of entries.entries()) {
-    const landing = holderAt(system, entry, cwd, name, isWritable, unsafeBefore);
+    const landing = await holderAt(system, entry, cwd, name, isWritable, unsafeBefore);
     if (landing !== undefined) {
       if (landing.apple) return landing.exact && !landing.unsafe ? { program: landing.program } : { none: true };
       if (!landing.unsafe) return { program: landing.program };
-      const appleBehind = entries.slice(index + 1).some((later) => {
-        const holder = holderAt(system, later, cwd, name, isWritable, true);
+      const appleBehind = await someAsync(entries.slice(index + 1), async (later) => {
+        const holder = await holderAt(system, later, cwd, name, isWritable, true);
         return holder !== undefined && holder.exact;
       });
       return appleBehind ? { none: true } : { program: landing.program };
     }
-    unsafeBefore = unsafeBefore || !path.isAbsolute(entry) || isWritable(entry);
+    unsafeBefore = unsafeBefore || !path.isAbsolute(entry) || (await isWritable(entry));
   }
   return { none: true };
 };
 
-const typedRead = <T>(read: () => T, notThere: ReadonlySet<string>, absent: T): T | Unresolved => {
+const typedRead = async <T>(read: () => Promise<T>, notThere: ReadonlySet<string>, absent: T): Promise<T | Unresolved> => {
   try {
-    return read();
+    return await read();
   } catch (error) {
     if (notThere.has(codeOf(error) ?? '')) return absent;
     return unresolvedOf(error);
   }
 };
 
-const readEntry = (absolute: string): EntryRead =>
+const readEntry = (absolute: string): Promise<EntryRead> =>
   typedRead<EntryRead>(
-    () => {
-      const stat = fs.statSync(absolute);
-      if (stat.isDirectory()) return { kind: 'directory', canonical: fs.realpathSync.native(absolute) };
+    async () => {
+      const stat = await fs.promises.stat(absolute);
+      if (stat.isDirectory()) return { kind: 'directory', canonical: await fs.promises.realpath(absolute) };
       if (!stat.isFile()) return { kind: 'file', text: '' };
       if (stat.size > MAX_POINTER_FILE_BYTES) return { kind: 'oversize' };
-      const raw = fs.readFileSync(absolute);
+      const raw = await fs.promises.readFile(absolute);
       const text = raw.toString('utf8');
       return Buffer.from(text, 'utf8').equals(raw) ? { kind: 'file', text } : { unresolvable: { kind: 'dynamic' } };
     },
@@ -96,12 +96,12 @@ const readEntry = (absolute: string): EntryRead =>
     { kind: 'absent' },
   );
 
-const readNoFollow = (absolute: string): StepRead =>
+const readNoFollow = (absolute: string): Promise<StepRead> =>
   typedRead<StepRead>(
-    () => {
-      const stat = fs.lstatSync(absolute);
+    async () => {
+      const stat = await fs.promises.lstat(absolute);
       if (stat.isSymbolicLink()) {
-        const raw = fs.readlinkSync(absolute, 'buffer');
+        const raw = await fs.promises.readlink(absolute, 'buffer');
         const target = raw.toString('utf8');
         return Buffer.from(target, 'utf8').equals(raw) ? { kind: 'symlink', target } : { unresolvable: { kind: 'dynamic' } };
       }
@@ -114,49 +114,53 @@ const readNoFollow = (absolute: string): StepRead =>
 const GIT_HEADREF_BUFFER_BYTES = 256;
 const HEAD_BYTES = GIT_HEADREF_BUFFER_BYTES - 1;
 
-const rejectedByGit = <T>(read: () => T, rejected: T): T => {
+const rejectedByGit = async <T>(read: () => Promise<T>, rejected: T): Promise<T> => {
   try {
-    return read();
+    return await read();
   } catch (error) {
     if (SKIPPED_ERRNO.has(codeOf(error) ?? '')) return rejected;
     throw error;
   }
 };
 
-const readHead = (absolute: string): HeadRead =>
+const readHead = (absolute: string): Promise<HeadRead> =>
   rejectedByGit<HeadRead>(
-    () => {
-      const stat = fs.lstatSync(absolute);
-      if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(absolute, 'buffer').toString('latin1') };
+    async () => {
+      const stat = await fs.promises.lstat(absolute);
+      if (stat.isSymbolicLink()) return { kind: 'symlink', target: (await fs.promises.readlink(absolute, 'buffer')).toString('latin1') };
       if (!stat.isFile()) return { kind: 'invalid' };
-      const descriptor = fs.openSync(absolute, 'r');
+      const handle = await fs.promises.open(absolute, 'r');
       try {
         const buffer = Buffer.alloc(HEAD_BYTES);
-        const length = fs.readSync(descriptor, buffer, 0, HEAD_BYTES, 0);
-        return { kind: 'text', text: buffer.toString('latin1', 0, length) };
+        const { bytesRead } = await handle.read(buffer, 0, HEAD_BYTES, 0);
+        return { kind: 'text', text: buffer.toString('latin1', 0, bytesRead) };
       } finally {
-        fs.closeSync(descriptor);
+        await handle.close();
       }
     },
     { kind: 'invalid' },
   );
 
-const isSearchable = (absolute: string): boolean =>
-  rejectedByGit(() => {
-    fs.lstatSync(absolute);
-    fs.accessSync(absolute, fs.constants.X_OK);
+const isSearchable = (absolute: string): Promise<boolean> =>
+  rejectedByGit(async () => {
+    await fs.promises.lstat(absolute);
+    await fs.promises.access(absolute, fs.constants.X_OK);
     return true;
   }, false);
 
-const readGitlinks = (gitDirectory: string): GitlinkRead | Unresolved =>
-  typedRead<GitlinkRead | Unresolved>(() => gitlinksOfIndex(fs.readFileSync(path.join(gitDirectory, 'index'))), NOT_THERE, { paths: [] });
+const readGitlinks = (gitDirectory: string): Promise<GitlinkRead | Unresolved> =>
+  typedRead<GitlinkRead | Unresolved>(async () => gitlinksOfIndex(await fs.promises.readFile(path.join(gitDirectory, 'index'))), NOT_THERE, { paths: [] });
 
-const readConfigPrograms = (gitDirectory: string): ConfigPrograms | Unresolved =>
-  typedRead<ConfigPrograms | Unresolved>(() => ({ keys: [...programKeysOfConfig(fs.readFileSync(path.join(gitDirectory, 'config'), 'utf8')), ...configWorktreeKeys(gitDirectory)] }), NOT_THERE, { keys: [] });
+const readConfigPrograms = (gitDirectory: string): Promise<ConfigPrograms | Unresolved> =>
+  typedRead<ConfigPrograms | Unresolved>(
+    async () => ({ keys: [...programKeysOfConfig(await fs.promises.readFile(path.join(gitDirectory, 'config'), 'utf8')), ...(await configWorktreeKeys(gitDirectory))] }),
+    NOT_THERE,
+    { keys: [] },
+  );
 
-const configWorktreeKeys = (gitDirectory: string): string[] => {
+const configWorktreeKeys = async (gitDirectory: string): Promise<string[]> => {
   try {
-    return programKeysOfConfig(fs.readFileSync(path.join(gitDirectory, 'config.worktree'), 'utf8'));
+    return programKeysOfConfig(await fs.promises.readFile(path.join(gitDirectory, 'config.worktree'), 'utf8'));
   } catch (error) {
     if (isNotThere(error)) return [];
     throw error;
@@ -316,8 +320,9 @@ export const createPolicyFilesystem = (
   globPorts: GlobPorts = nodeGlobPorts(),
 ): PolicyHostFilesystem => ({
   platform,
-  canonicalise: (absolute) => resolveCanonicalPath(absolute),
-  volumeProbe: (directory) => volumeIsCaseInsensitive(directory),
+  canonicalise: (absolute, signal) => hostPaths(signal).resolveCanonicalPath(absolute),
+  volumeProbe: (directory, signal) => hostPaths(signal).volumeIsCaseInsensitive(directory),
+  locate: (absolute, signal) => hostPaths(signal).locate(absolute),
   resolveProgram: resolveProgram(platform),
   expandGlob: createGlobExpander(platform, shellPorts, globPorts),
   readEntry,

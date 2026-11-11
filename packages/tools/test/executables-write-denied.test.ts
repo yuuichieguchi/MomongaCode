@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import { buildSandboxPolicy } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, NEVER_CANCELLED } from '@momonga/testkit';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { trackGroup } from './builtins/fixtures.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, makeLayout } from './helpers.ts';
@@ -17,14 +17,14 @@ const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
 };
 
 const runScript = async (sandbox: Sandbox, policy: SandboxPolicy, cwd: string, tmpDir: string, script: string) => {
-  const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, tmpDir }, policy, new AbortController().signal);
-  trackGroup(proc.pgid);
-  const [stdout, stderr, exit] = await Promise.all([collect(proc.stdout), collect(proc.stderr), proc.exited]);
+  const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, tmpDir }, policy, new AbortController().signal);
+  trackGroup((await proc).pgid);
+  const [stdout, stderr, exit] = await Promise.all([collect((await proc).stdout), collect((await proc).stderr), (await proc).exited]);
   return { code: exit.code, stdout, stderr };
 };
 
 describe.runIf(HAS_REAL_SANDBOX)('the executables area under the cache base, on the real OS sandbox of this host', () => {
-  const setup = () => {
+  const setup = async () => {
     const layout = makeLayout();
     const paths = momongaLayout(layout.home);
     const area = path.join(paths.cacheBase, 'executables');
@@ -36,13 +36,13 @@ describe.runIf(HAS_REAL_SANDBOX)('the executables area under the cache base, on 
     fs.mkdirSync(sandboxTmpRoot);
     const tmpDir = path.join(paths.tmp.sessions, 'own-session');
     fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
-    const policy = buildSandboxPolicy({ roots: [layout.home], home: layout.home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET, network: 'deny' });
+    const policy = await buildSandboxPolicy({ roots: [layout.home], home: layout.home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET, network: 'deny' }, NEVER_CANCELLED);
     const sandbox = createHostSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 });
     return { layout, paths, area, extracted, rg, policy, sandbox, tmpDir };
   };
 
   it('refuses a write into the area even when a session root contains the whole cache base', async () => {
-    const { layout, rg, extracted, policy, sandbox, tmpDir } = setup();
+    const { layout, rg, extracted, policy, sandbox, tmpDir } = await setup();
     const before = fs.readFileSync(rg, 'utf8');
     const overwrite = await runScript(sandbox, policy, layout.project, tmpDir, `printf evil > '${rg}'`);
     const create = await runScript(sandbox, policy, layout.project, tmpDir, `printf evil > '${path.join(extracted, 'rg.partial-x')}'`);
@@ -57,7 +57,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the executables area under the cache base, on 
   });
 
   it('keeps the area readable and executable inside the sandbox, because Grep runs rg there', async () => {
-    const { layout, rg, policy, sandbox, tmpDir } = setup();
+    const { layout, rg, policy, sandbox, tmpDir } = await setup();
     const read = await runScript(sandbox, policy, layout.project, tmpDir, `cat '${rg}'`);
     const exec = await runScript(sandbox, policy, layout.project, tmpDir, `'${rg}'`);
     expect(read.code).toBe(0);
@@ -66,7 +66,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the executables area under the cache base, on 
   });
 
   it('keeps the tmp area under the cache base writable', async () => {
-    const { layout, policy, sandbox, tmpDir } = setup();
+    const { layout, policy, sandbox, tmpDir } = await setup();
     const own = await runScript(sandbox, policy, layout.project, tmpDir, `printf ok > '${path.join(tmpDir, 'note')}' && cat '${path.join(tmpDir, 'note')}'`);
     expect(own).toMatchObject({ code: 0, stdout: 'ok' });
   });

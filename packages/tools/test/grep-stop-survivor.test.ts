@@ -58,7 +58,7 @@ const runGrep = async (survives: boolean) => {
   const timing = virtualTiming();
   const h = survives ? world('held', {}, new Set([LEAVER_PGID])) : world('free', {}, new Set());
   const batch = h.harness.executor.runBatch(
-    h.harness.input(await toolSetOf(grepTool), [call('search', 'Grep', { pattern: 'needle' }, 'allow_once')], { sandbox: ripgrepSandbox(timing, survives), ripgrep: fakeRipgrep }),
+    await h.harness.input(await toolSetOf(grepTool), [call('search', 'Grep', { pattern: 'needle' }, 'allow_once')], { sandbox: ripgrepSandbox(timing, survives), ripgrep: fakeRipgrep }),
   );
   let done = false;
   void batch.finally(() => {

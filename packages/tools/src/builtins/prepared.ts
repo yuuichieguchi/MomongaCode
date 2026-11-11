@@ -16,7 +16,7 @@ export const parsePreparedWrite = (value: unknown): PreparedWrite => {
 
 export const reconcileWrite = async (record: ToolIdempotencyRecord, label: string, ctx: ReconcileContext, requested: string): Promise<ReconcileResult> => {
   const prepared = parsePreparedWrite(record.meta['prepared']);
-  const shown = shownPath(ctx, requested);
+  const shown = await shownPath(ctx, requested);
   const current = await hashOfFileIfExists(prepared.path);
   if (current === prepared.postHash) return { outcome: 'already_applied', output: `${label} to ${shown} had already been applied` };
   if (current === prepared.preHash) return { outcome: 'not_applied', output: '' };

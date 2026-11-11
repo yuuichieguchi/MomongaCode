@@ -55,8 +55,8 @@ const setup = async () => {
   const rule = ruleFor(harness.layout);
   const inside = (name: string): string => path.join(harness.layout.project, name);
   const rules = [rule('ask', `Write(/${inside('held.txt')})`), rule('allow', 'Write'), rule('allow', 'Read'), rule('allow', 'Bash(cat:*)')];
-  const run = (calls: ReturnType<typeof call>[], extra: { hold?: { blockers: Array<{ callId: string; footprint: { reads: string[]; writes: string[] } }> }; held?: boolean } = {}): Promise<CallOutcome[]> =>
-    harness.executor.runBatch(harness.input(toolSet, calls, { rules, ...(extra.held === false ? {} : { mandate: MANDATE, hold: extra.hold ?? { blockers: [] } }) }));
+  const run = async (calls: ReturnType<typeof call>[], extra: { hold?: { blockers: Array<{ callId: string; footprint: { reads: string[]; writes: string[] } }> }; held?: boolean } = {}): Promise<CallOutcome[]> =>
+    harness.executor.runBatch(await harness.input(toolSet, calls, { rules, ...(extra.held === false ? {} : { mandate: MANDATE, hold: extra.hold ?? { blockers: [] } }) }));
   return { harness, executed, inside, run };
 };
 

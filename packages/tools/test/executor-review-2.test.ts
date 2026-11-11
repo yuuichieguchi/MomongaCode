@@ -56,7 +56,7 @@ describe('executor bounded reconcile', () => {
     });
 
     const result = await settledWithin(
-      boundedExecutor(harness).runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Stall')], { mode: 'bypassPermissions', ...extra })),
+      boundedExecutor(harness).runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Stall')], { mode: 'bypassPermissions', ...extra })),
       2_000,
     );
 
@@ -95,7 +95,7 @@ describe('executor admission of a call with an existing record', () => {
     });
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, { kind: 'allow_once', subjectDigest: approvedDigest })], { mode: 'manual' }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, { kind: 'allow_once', subjectDigest: await approvedDigest })], { mode: 'manual' }),
     );
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval' });
@@ -117,7 +117,7 @@ describe('executor admission of a call with an existing record', () => {
     });
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('deny', 'Write')] }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('deny', 'Write')] }),
     );
 
     expect(reconciled).toBe(1);
@@ -139,7 +139,7 @@ describe('executor admission of a call with an existing record', () => {
     });
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('deny', 'Write')] }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('deny', 'Write')] }),
     );
 
     expect(executed).toBe(0);

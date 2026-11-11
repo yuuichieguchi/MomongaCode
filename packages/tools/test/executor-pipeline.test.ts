@@ -1,13 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROTECTED_SET, canonicalJson, resolveCanonicalPath, sha256Hex, ruleEnforcementOf } from '@momonga/foundation';
-import { TEST_SEARCH_PATH, afterMicrotasks, fakePolicyFilesystem, isWritableFor, protectedSetWith } from '@momonga/testkit';
+
+import { EMPTY_PROTECTED_SET, canonicalJson, sha256Hex, ruleEnforcementOf, syncPaths } from '@momonga/foundation';
+import { TEST_SEARCH_PATH, afterMicrotasks, fakePolicyFilesystem, isWritableFor, protectedSetWith, testProbes } from '@momonga/testkit';
+
 import { computeFileRules, decide, suggestAllowRule } from '@momonga/policy';
+
 import { ToolExecutionError, ToolInputError } from '@momonga/tools';
+
 import type { ToolContext } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
+
 import { keyFor, minimalPolicyFor, ruleFor } from './helpers.ts';
+
 
 const counting = () => {
   const calls: string[] = [];
@@ -26,7 +32,7 @@ describe('executor pipeline early exits', () => {
   it('fails an unknown tool listing available tools, without a record', async () => {
     const harness = makeHarness();
     const set = await toolSetOf(makeTool('Read'), makeTool('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' }));
-    const outcomes = await harness.executor.runBatch(harness.input(set, [call('c1', 'Nope')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Nope')]));
     expect(outcomes).toEqual([
       { callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Unknown tool "Nope". Available tools: Read, Write' } },
     ]);
@@ -45,7 +51,7 @@ describe('executor pipeline early exits', () => {
       },
       execute: probe.execute,
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(outcomes).toEqual([{ callId: 'c1', kind: 'result', result: { status: 'failed', output: 'file_path cannot be resolved to a real location' } }]);
     expect(probe.calls).toEqual([]);
     expect(harness.idempotency.records.size).toBe(0);
@@ -57,14 +63,14 @@ describe('executor pipeline early exits', () => {
     const subject = { kind: 'command' as const, tool: 'Bash', command: 'make build' };
     const tool = makeTool('Bash', { ...BASH, subject: () => subject, execute: probe.execute });
     const rules = [ruleFor(harness.layout)('deny', 'Bash')];
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { rules }));
-    const expected = decide({
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { rules }));
+    const expected = await decide({
       tool: { name: 'Bash', ...BASH },
       subject,
       mode: 'manual',
       rules,
       roots: [harness.layout.project],
-      fileRules: computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none')),
+      fileRules: await computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()),
       home: harness.layout.home,
       cwd: harness.layout.project,
       fs: fakePolicyFilesystem(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([harness.layout.project]),
@@ -87,14 +93,14 @@ describe('executor pipeline early exits', () => {
       locations: () => [{ path: '/work/Makefile', line: 3 }],
       execute: probe.execute,
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash', { value: 'make' })]));
-    const decision = decide({
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash', { value: 'make' })]));
+    const decision = await decide({
       tool: { name: 'Bash', ...BASH },
       subject,
       mode: 'manual',
       rules: [],
       roots: [harness.layout.project],
-      fileRules: computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none')),
+      fileRules: await computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none'), testProbes()),
       home: harness.layout.home,
       cwd: harness.layout.project,
       fs: fakePolicyFilesystem(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([harness.layout.project]),
@@ -113,7 +119,7 @@ describe('executor pipeline early exits', () => {
         footprint: { reads: ['local:*'], writes: ['local:*'] },
       },
     ]);
-    expect(suggestAllowRule({ name: 'Bash', ...BASH }, subject, harness.layout.project, resolveCanonicalPath)).toBe('Bash(make build)');
+    expect(await suggestAllowRule({ name: 'Bash', ...BASH }, subject, harness.layout.project, syncPaths.resolveCanonicalPath)).toBe('Bash(make build)');
     expect(probe.calls).toEqual([]);
     expect(harness.idempotency.records.size).toBe(0);
   });
@@ -128,11 +134,11 @@ describe('executor pipeline early exits', () => {
     const tool = makeTool('Bash', { ...BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'rm -r tmp' }), execute: probe.execute });
     const toolSet = await toolSetOf(tool);
     harness.session.cwd = dirA;
-    const [first] = await harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Bash')]));
+    const [first] = await harness.executor.runBatch(await harness.input(toolSet, [call('c1', 'Bash')]));
     if (first?.kind !== 'needs_approval') throw new Error('expected needs_approval');
     harness.session.cwd = dirB;
     const [again] = await harness.executor.runBatch(
-      harness.input(toolSet, [call('c1', 'Bash', {}, { kind: 'allow_once', subjectDigest: first.subjectDigest })]),
+      await harness.input(toolSet, [call('c1', 'Bash', {}, { kind: 'allow_once', subjectDigest: first.subjectDigest })]),
     );
     expect(again?.kind).toBe('needs_approval');
     if (again?.kind !== 'needs_approval') throw new Error('expected needs_approval');
@@ -165,7 +171,7 @@ describe('executor pipeline early exits', () => {
     harness.session.cwd = cwd;
     fs.chmodSync(locked, 0o000);
     try {
-      const outcomes = await harness.executor.runBatch(harness.input(toolSet, [call('r1', 'Read'), call('b1', 'Bash')]));
+      const outcomes = await harness.executor.runBatch(await harness.input(toolSet, [call('r1', 'Read'), call('b1', 'Bash')]));
       expect(outcomes.map((outcome) => outcome.callId)).toEqual(['r1', 'b1']);
       expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'read ok' } });
       expect(outcomes[1]?.kind).toBe('result');
@@ -185,7 +191,7 @@ describe('executor pipeline early exits', () => {
       const bash = makeTool('Bash', { ...BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), execute: probe.execute });
       harness.session.cwd = cwd;
       const [outcome] = await harness.executor.runBatch(
-        harness.input(await toolSetOf(bash), [call('b1', 'Bash')], { rules: [ruleFor(harness.layout)('allow', 'Bash(make build)')] }),
+        await harness.input(await toolSetOf(bash), [call('b1', 'Bash')], { rules: [ruleFor(harness.layout)('allow', 'Bash(make build)')] }),
       );
       expect(outcome).toMatchObject({ callId: 'b1', kind: 'result', result: { status: 'completed', output: 'done' } });
       expect(probe.calls).toEqual(['execute']);
@@ -202,9 +208,9 @@ describe('executor pipeline early exits', () => {
       subject: () => ({ kind: 'path', tool: 'Write', paths: [target], access: 'write' }),
     });
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Write')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Write')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), protectedSet: protectedSetWith([harness.layout.project], [path.join(harness.layout.project, '.git')]) },
+        sandboxPolicy: { ...(await minimalPolicyFor({ layout: harness.layout })), protectedSet: protectedSetWith([harness.layout.project], [path.join(harness.layout.project, '.git')]) },
       }),
     );
     expect(outcome?.kind).toBe('needs_approval');
@@ -218,11 +224,11 @@ describe('executor pipeline early exits', () => {
     const subject = { kind: 'command' as const, tool: 'Bash', command: 'make build' };
     const tool = makeTool('Bash', { ...BASH, subject: () => subject });
     const governing = { ...ruleFor(harness.layout)('ask', 'Bash(make build)'), layer: 'governance' as const };
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { rules: [governing] }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { rules: [governing] }));
     if (outcome?.kind !== 'needs_approval') throw new Error('expected needs_approval');
     expect(outcome.decision).toMatchObject({ kind: 'ask', source: 'rule', humanOnly: true });
     expect(outcome).not.toHaveProperty('suggestedRule');
-    const settings = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c2', 'Bash')], { rules: [ruleFor(harness.layout)('ask', 'Bash(make build)')] }));
+    const settings = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c2', 'Bash')], { rules: [ruleFor(harness.layout)('ask', 'Bash(make build)')] }));
     expect(settings[0]).toMatchObject({ kind: 'needs_approval', suggestedRule: 'Bash(make build)' });
   });
 
@@ -230,7 +236,7 @@ describe('executor pipeline early exits', () => {
     const harness = makeHarness();
     const probe = counting();
     const tool = makeTool('Bash', { ...BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), execute: probe.execute });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')]));
     expect(outcomes[0]).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed', output: 'done' } });
     expect(probe.calls).toEqual(['execute']);
   });
@@ -240,7 +246,7 @@ describe('executor pipeline early exits', () => {
     const probe = counting();
     const tool = makeTool('Bash', { ...BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), execute: probe.execute });
     const rules = [ruleFor(harness.layout)('deny', 'Bash')];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_always')], { rules }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_always')], { rules }));
     if (outcome?.kind !== 'result') throw new Error('expected result');
     expect(outcome.result.output.startsWith('Permission denied: ')).toBe(true);
     expect(probe.calls).toEqual([]);
@@ -250,7 +256,7 @@ describe('executor pipeline early exits', () => {
     const harness = makeHarness();
     const probe = counting();
     const set = await toolSetOf(makeTool('Read', { execute: probe.execute }));
-    const outcomes = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')], { deadlineAt: harness.clock.now() + offset }));
+    const outcomes = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')], { deadlineAt: harness.clock.now() + offset }));
     expect(outcomes).toEqual([
       { callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Run deadline exceeded before Read could start' } },
     ]);
@@ -273,7 +279,7 @@ describe('executor pipeline early exits', () => {
       },
       execute: probe.execute,
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit')]));
     expect(outcomes).toEqual([{ callId: 'c1', kind: 'result', result: { status: 'failed', output: error.message } }]);
     expect(probe.calls).toEqual([]);
     expect(harness.idempotency.records.size).toBe(0);
@@ -293,10 +299,10 @@ describe('executor pipeline early exits', () => {
     });
     const set = await toolSetOf(tool);
     const deadlineAt = harness.clock.now();
-    const [invalid] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Bash', {})], { deadlineAt }));
+    const [invalid] = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Bash', {})], { deadlineAt }));
     expect(invalid).toMatchObject({ kind: 'result', result: { status: 'failed', output: 'Invalid input for Bash:\n- value: required property is missing' } });
     expect(subjects).toEqual([]);
-    const [asked] = await harness.executor.runBatch(harness.input(set, [call('c2', 'Bash', { value: 'x' })], { deadlineAt }));
+    const [asked] = await harness.executor.runBatch(await harness.input(set, [call('c2', 'Bash', { value: 'x' })], { deadlineAt }));
     expect(asked?.kind).toBe('needs_approval');
   });
 });
@@ -314,7 +320,7 @@ describe('executor execution', () => {
         return { status: 'completed', output: 'edited' };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit')]));
     expect(seen).toEqual([{ before: 'abc' }]);
     const begin = harness.idempotency.log.find((entry) => entry.op === 'begin');
     expect(begin).toEqual({
@@ -341,7 +347,7 @@ describe('executor execution', () => {
         return { status: 'completed', output: 'edited' };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c9', 'Edit')], { runId: 'run-k', step: 3 }));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c9', 'Edit')], { runId: 'run-k', step: 3 }));
     const expected = sha256Hex(canonicalJson(['run-k', 3, 'c9']));
     const begin = harness.idempotency.log.find((entry) => entry.op === 'begin');
     expect(begin?.key).toBe(expected);
@@ -353,7 +359,7 @@ describe('executor execution', () => {
 
   it('defaults the idempotency TTL to seven days', async () => {
     const harness = makeHarness();
-    await harness.executor.runBatch(harness.input(await toolSetOf(makeTool('Read')), [call('c1', 'Read')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(makeTool('Read')), [call('c1', 'Read')]));
     const begin = harness.idempotency.log.find((entry) => entry.op === 'begin');
     expect(begin?.op === 'begin' ? begin.expiresAt : undefined).toBe(harness.clock.now() + 7 * 24 * 60 * 60 * 1000);
   });
@@ -368,7 +374,7 @@ describe('executor execution', () => {
       },
     });
     const batch = harness.input(await toolSetOf(tool), [call('c7', 'Read')], { step: 4 });
-    await harness.executor.runBatch(batch);
+    await harness.executor.runBatch(await batch);
     const ctx = contexts[0];
     expect(ctx).toBeDefined();
     if (ctx === undefined) return;
@@ -379,10 +385,10 @@ describe('executor execution', () => {
     expect(ctx.home).toBe(harness.layout.home);
     expect(ctx.roots).toEqual([harness.layout.project]);
     expect(ctx.env).toEqual({ LANG: 'C' });
-    expect(ctx.deadlineAt).toBe(batch.deadlineAt);
+    expect(ctx.deadlineAt).toBe((await batch).deadlineAt);
     expect(ctx.session).toBe(harness.session);
-    expect(ctx.sandbox).toBe(batch.sandbox);
-    expect(ctx.sandboxPolicy).toBe(batch.sandboxPolicy);
+    expect(ctx.sandbox).toBe((await batch).sandbox);
+    expect(ctx.sandboxPolicy).toBe((await batch).sandboxPolicy);
     const stored = await ctx.blobs.put('kept', { mediaType: 'text/plain' });
     expect((await ctx.blobs.read(stored.handle, { lineStart: 1, lineEnd: 1 })).text).toBe('kept');
     expect(ctx.clock.now()).toBe(harness.clock.now());
@@ -392,7 +398,7 @@ describe('executor execution', () => {
   it('records the result and returns completed output', async () => {
     const harness = makeHarness();
     const set = await toolSetOf(makeTool('Read', { execute: async () => ({ status: 'completed', output: 'contents', plan: [] }) }));
-    const outcomes = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')]));
     const key = keyFor('run-1', 1, 'c1');
     expect(outcomes).toEqual([{ callId: 'c1', kind: 'result', result: { status: 'completed', output: 'contents', plan: [] }, idemKey: key }]);
     expect(harness.idempotency.stateOf(key)).toBe('COMPLETED');
@@ -414,7 +420,7 @@ describe('executor execution', () => {
       },
     });
     const running = harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Write')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Write')], {
         onStarted: async (callId, key) => {
           order.push(`started:${callId}:${key}`);
           await gate;
@@ -439,7 +445,7 @@ describe('executor execution', () => {
         throw makeError();
       },
     });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed', output: message } });
     expect(harness.idempotency.stateOf(keyFor('run-1', 1, 'c1'))).toBe('COMPLETED');
   });
@@ -451,7 +457,7 @@ describe('executor execution', () => {
         throw new TypeError('boom happened');
       },
     });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed', output: 'Internal error in Read: boom happened' } });
   });
 
@@ -465,7 +471,7 @@ describe('executor execution', () => {
         return { status: 'completed', output: 'ran' };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')]));
     expect(harness.idempotency.log.filter((entry) => entry.op === 'attachProcess')).toEqual([
       { op: 'attachProcess', key: keyFor('run-1', 1, 'c1'), pgid: 4242, startedAt: 1_234_567 },
     ]);
@@ -482,7 +488,7 @@ describe('executor execution', () => {
       },
     });
     await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c3', 'Read')], { onUpdate: (callId, update) => void updates.push([callId, update]) }),
+      await harness.input(await toolSetOf(tool), [call('c3', 'Read')], { onUpdate: (callId, update) => void updates.push([callId, update]) }),
     );
     expect(updates).toEqual([['c3', content]]);
   });

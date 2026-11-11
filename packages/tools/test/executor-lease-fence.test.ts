@@ -68,7 +68,7 @@ describe('a superseded worker starts no external effect', () => {
     const lostNotices: number[] = [];
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { onLeaseLost: () => void lostNotices.push(1) }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { onLeaseLost: () => void lostNotices.push(1) }),
     );
 
     expect(outcome).toEqual({ callId: 'c1', kind: 'deferred' });
@@ -83,7 +83,7 @@ describe('a superseded worker starts no external effect', () => {
     const lostNotices: number[] = [];
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], {
         onStarted: () => {
           harness.idempotency.lease.held = false;
         },
@@ -101,7 +101,7 @@ describe('a superseded worker starts no external effect', () => {
     const harness = makeHarness();
     const { tool, seen } = effectTool();
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
 
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'executed' } });
     expect(seen.executions).toBe(1);
@@ -115,7 +115,7 @@ describe('a superseded worker starts no external effect', () => {
     harness.idempotency.lease.held = false;
     const { tool, seen } = effectTool();
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
 
     expect(outcome).toEqual({ callId: 'c1', kind: 'deferred' });
     expect(seen.reconciles).toBe(0);
@@ -140,7 +140,7 @@ describe('a superseded worker starts no external effect', () => {
       },
     });
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
 
     expect(outcome).toEqual({ callId: 'c1', kind: 'deferred' });
     expect(executions).toBe(0);
@@ -160,7 +160,7 @@ describe('a superseded worker starts no external effect', () => {
     });
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { onLeaseLost: () => void lostNotices.push(1) }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { onLeaseLost: () => void lostNotices.push(1) }),
     );
 
     expect(outcome).toEqual({ callId: 'c1', kind: 'deferred' });
@@ -176,7 +176,7 @@ describe('a taken-over call reaps the earlier attempt before it reconciles', () 
     const { tool, seen, watch } = effectTool('already_applied');
     watch(pgid);
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
 
     expect(outcome).toMatchObject({ kind: 'result', reconciled: 'already_applied' });
     expect(seen.groupAliveAtReconcile).toEqual([false]);
@@ -189,7 +189,7 @@ describe('a taken-over call reaps the earlier attempt before it reconciles', () 
     harness.idempotency.lease.held = false;
     const { tool } = effectTool();
 
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
 
     expect(await groupExists(pgid)).toBe(true);
   });

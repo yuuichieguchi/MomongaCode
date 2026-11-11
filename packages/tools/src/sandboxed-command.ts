@@ -65,7 +65,7 @@ export const runSandboxedCommand = async (request: SandboxedCommandRequest): Pro
     settle = createMarkerSettle({ marker: markerFile, mode: handle.mode, inspector, ...(request.groupPort === undefined ? {} : { groupPort: request.groupPort }), onWarning: () => undefined });
     let child: ReturnType<Sandbox['spawn']>;
     try {
-      child = sandbox.spawn(
+      child = await sandbox.spawn(
         {
           argv: 'argv' in request ? [...request.argv] : [resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env }), '-c', request.command],
           cwd,

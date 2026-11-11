@@ -9,7 +9,7 @@ import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createHistory
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
-import { usageOf } from '@momonga/testkit';
+import { usageOf, NEVER_CANCELLED } from '@momonga/testkit';
 import { createBuiltinTools, harnessOutputToolsOf } from '@momonga/tools';
 import { budgetFor, capacityFor, inputCeilingFor, itemCapFor } from '../../packages/context/src/budget.ts';
 import { errorBoundFor } from '../../packages/gateway/src/core/estimate.ts';
@@ -455,7 +455,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       gateway,
       systemPrompt: buildSystemPrompt,
       home: plan.home.home,
-      instructionReader: createFsInstructionReader(),
+      instructionReader: createFsInstructionReader(NEVER_CANCELLED),
       defaults: RUNTIME_DEFAULTS.limits,
       toolList: () => createBuiltinTools(),
       memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),

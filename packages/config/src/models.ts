@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { FIRST_GENERATION, canonicalPath, comparableContains, endpointFormsOfSocket, generationLayout, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
+import { FIRST_GENERATION, endpointFormsOfSocket, generationLayout, redactedUrl, transportUrlMessage, transportUrlProblem, syncPaths } from '@momonga/foundation';
 import {
   DEFAULT_ANTHROPIC_API_VERSION,
   SERVER_KINDS,
@@ -139,7 +139,7 @@ const checkBaseUrl = (baseUrl: string, where: string, carriesCredential: boolean
 const checkSocketPath = (socketPath: string, home: string | undefined, where: string): void => {
   if (!path.isAbsolute(socketPath)) throw new Error(`${where}: socketPath ${JSON.stringify(socketPath)} must be an absolute path`);
   if (home === undefined) return;
-  if (comparableContains(canonicalPath(layoutOf(home).run), canonicalPath(socketPath))) {
+  if (syncPaths.comparableContains(syncPaths.canonicalPath(layoutOf(home).run), syncPaths.canonicalPath(socketPath))) {
     throw new Error(`${where}: socketPath ${socketPath} must not be inside ${layoutOf(home).run}`);
   }
 };

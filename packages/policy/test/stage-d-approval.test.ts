@@ -23,12 +23,12 @@ const bareAt = (directory: string, head: string | { link: string } | 'dir' = 're
 
 const gitAt = (directory: string): void => bareAt(path.join(directory, '.git'));
 
-const asks = (command: string, extra: Extra = {}): void => {
-  expect(kindIn(commandRow(command, extra), 'manual')).toBe('ask');
+const asks = async (command: string, extra: Extra = {}): Promise<void> => {
+  expect(await kindIn(commandRow(command, extra), 'manual')).toBe('ask');
 };
 
-const allows = (command: string, extra: Extra = {}): void => {
-  expect(kindIn(commandRow(command, extra), 'manual')).toBe('allow');
+const allows = async (command: string, extra: Extra = {}): Promise<void> => {
+  expect(await kindIn(commandRow(command, extra), 'manual')).toBe('allow');
 };
 
 const withPrograms = (programs: Record<string, string>): Record<string, string> => ({ ls: '/bin/ls', ...programs });
@@ -63,53 +63,53 @@ describe('cd in the current shell (V9)', () => {
     expect(writes(command)).toContainEqual({ literal: 'y' });
   });
 
-  it('source leaves the cwd unknown', () => {
-    expect(kindIn(commandRow('source ./f; tee y', { rules: [['allow', 'Bash(source:*)'], ['allow', 'Bash(tee:*)']] }), 'acceptEdits')).toBe('ask');
+  it('source leaves the cwd unknown', async () => {
+    expect(await kindIn(commandRow('source ./f; tee y', { rules: [['allow', 'Bash(source:*)'], ['allow', 'Bash(tee:*)']] }), 'acceptEdits')).toBe('ask');
     expect(writes('source ./f; tee y')).toContainEqual({ unresolvable: { kind: 'cwd-changed' } });
   });
 });
 
 describe('slash words and builtins (V2, P2-1)', () => {
-  it.each(['./echo hi', '/tmp/evil/echo hi', './cd src', './pwd'])('%s asks', (command) => {
-    asks(command, { prepare: (layout) => void ['echo', 'cd', 'pwd', 'ls'].map((name) => touch(P(layout, name))) });
+  it.each(['./echo hi', '/tmp/evil/echo hi', './cd src', './pwd'])('%s asks', async (command) => {
+    await asks(command, { prepare: (layout) => void ['echo', 'cd', 'pwd', 'ls'].map((name) => touch(P(layout, name))) });
   });
 
-  it('allows echo hi and /usr/bin/../bin/ls', () => {
-    allows('echo hi');
-    allows('/usr/bin/../bin/ls');
+  it('allows echo hi and /usr/bin/../bin/ls', async () => {
+    await allows('echo hi');
+    await allows('/usr/bin/../bin/ls');
   });
 
   const toSlash = (layout: Layout): string => '../'.repeat(layout.project.split('/').length - 1);
 
   const on = (layout: Layout, extra: Extra = {}): Extra => ({ roots: () => [layout.project], cwd: () => layout.project, ...extra });
 
-  it('asks for a relative word through l -> a/b that normalises lexically to /usr/bin/ls', () => {
+  it('asks for a relative word through l -> a/b that normalises lexically to /usr/bin/ls', async () => {
     const layout = makeLayout();
     fs.mkdirSync(P(layout, 'a', 'b'), { recursive: true });
     fs.symlinkSync('a/b', P(layout, 'l'));
-    asks(`l/../${toSlash(layout)}usr/bin/ls`, on(layout));
+    await asks(`l/../${toSlash(layout)}usr/bin/ls`, on(layout));
   });
 
-  it('asks for a relative word after cd, whose kernel path differs from its lexical path', () => {
+  it('asks for a relative word after cd, whose kernel path differs from its lexical path', async () => {
     const layout = makeLayout();
     fs.mkdirSync(P(layout, 'src'));
-    asks(`cd src && ${toSlash(layout)}usr/bin/ls`, on(layout));
+    await asks(`cd src && ${toSlash(layout)}usr/bin/ls`, on(layout));
   });
 
-  it('asks for an absolute word that walks the writable area to /bin/ls', () => {
+  it('asks for an absolute word that walks the writable area to /bin/ls', async () => {
     const layout = makeLayout();
-    asks(`${layout.project}/${toSlash(layout)}bin/ls`, on(layout));
+    await asks(`${layout.project}/${toSlash(layout)}bin/ls`, on(layout));
   });
 
-  it('asks after mv replaces an entry that the word walks', () => {
+  it('asks after mv replaces an entry that the word walks', async () => {
     const layout = makeLayout();
     touch(P(layout, 'evil'));
     fs.mkdirSync(P(layout, 'd'));
     const row = commandRow(`mv evil d/x; ${P(layout, 'd')}/../${toSlash(layout)}bin/ls`, on(layout));
-    expect(kindIn(row, 'acceptEdits')).toBe('ask');
+    expect(await kindIn(row, 'acceptEdits')).toBe('ask');
   });
 
-  it('asks for a writable link walked by an absolute word', () => {
+  it('asks for a writable link walked by an absolute word', async () => {
     const row = (layout: Layout): string => P(layout, 'l');
     const layoutRow: Extra = {
       prepare: (layout) => {
@@ -118,38 +118,38 @@ describe('slash words and builtins (V2, P2-1)', () => {
       },
     };
     const probe = makeLayout();
-    asks(`${P(probe, 'l')}/${'../'.repeat(20)}usr/bin/ls`, layoutRow);
+    await asks(`${P(probe, 'l')}/${'../'.repeat(20)}usr/bin/ls`, layoutRow);
   });
 });
 
 describe('wrappers are resolved (P2-1, V3, V4)', () => {
-  it.each(['./nice ls', './timeout 5 ls', './time ls', './command ls'])('%s asks', (command) => {
-    asks(command, { prepare: (layout) => void ['nice', 'timeout', 'time', 'command'].map((name) => touch(P(layout, name))) });
+  it.each(['./nice ls', './timeout 5 ls', './time ls', './command ls'])('%s asks', async (command) => {
+    await asks(command, { prepare: (layout) => void ['nice', 'timeout', 'time', 'command'].map((name) => touch(P(layout, name))) });
   });
 
   it('asks for ./nice linked to /usr/bin/nice', () => asks('./nice ls', { prepare: (layout) => fs.symlinkSync('/usr/bin/nice', P(layout, 'nice')) }));
 
-  it('asks for a planted bare nice on a writable entry', () => {
+  it('asks for a planted bare nice on a writable entry', async () => {
     const probe = makeLayout();
-    asks('nice ls', { fs: () => ({ programs: withPrograms({ nice: P(probe, 'bin', 'nice') }) }), roots: () => [probe.project], cwd: () => probe.project });
+    await asks('nice ls', { fs: () => ({ programs: withPrograms({ nice: P(probe, 'bin', 'nice') }) }), roots: () => [probe.project], cwd: () => probe.project });
   });
 
-  it('allows nice ls with Apple nice and timeout from /opt/homebrew/bin', () => {
-    allows('nice ls');
-    allows('timeout 5 ls');
+  it('allows nice ls with Apple nice and timeout from /opt/homebrew/bin', async () => {
+    await allows('nice ls');
+    await allows('timeout 5 ls');
   });
 
-  it('asks for timeout only in a writable entry', () => {
+  it('asks for timeout only in a writable entry', async () => {
     const probe = makeLayout();
-    asks('timeout 5 ls', { fs: () => ({ programs: withPrograms({ timeout: P(probe, 'bin', 'timeout') }) }), roots: () => [probe.project], cwd: () => probe.project });
+    await asks('timeout 5 ls', { fs: () => ({ programs: withPrograms({ timeout: P(probe, 'bin', 'timeout') }) }), roots: () => [probe.project], cwd: () => probe.project });
   });
 
-  it('command -p governs only the next word', () => {
-    asks('command -p nice sed -n 1p f', {
+  it('command -p governs only the next word', async () => {
+    await asks('command -p nice sed -n 1p f', {
       searchPath: '/x',
       fs: () => ({ programs: { sed: '/x/sed' }, programsBySearchPath: { '/usr/bin:/bin:/usr/sbin:/sbin': { nice: '/usr/bin/nice', sed: '/usr/bin/sed' } } }),
     });
-    allows('command -p sed -n 1p f', { searchPath: '/x', fs: () => ({ programs: {}, programsBySearchPath: { '/usr/bin:/bin:/usr/sbin:/sbin': { sed: '/usr/bin/sed' } } }) });
+    await allows('command -p sed -n 1p f', { searchPath: '/x', fs: () => ({ programs: {}, programsBySearchPath: { '/usr/bin:/bin:/usr/sbin:/sbin': { sed: '/usr/bin/sed' } } }) });
   });
 
   it.each(['nice --adjustment=5 ls', 'nice -5 ls', 'stdbuf --output=L ls'])('%s asks: not in the approval table', (command) => asks(command));
@@ -158,8 +158,8 @@ describe('wrappers are resolved (P2-1, V3, V4)', () => {
 });
 
 describe('dynamic option values (V4)', () => {
-  it.each(['find . -name *', 'sort -k * f', 'grep -e * f', 'head -n $X f', 'timeout $X ls', 'nice -n $X ls', 'echo "1 /etc/passwd"; head -n $_', 'echo "1 --compress-program=./x"; sort -k $_ f'])('%s asks', (command) =>
-    asks(command),
+  it.each(['find . -name *', 'sort -k * f', 'grep -e * f', 'head -n $X f', 'timeout $X ls', 'nice -n $X ls', 'echo "1 /etc/passwd"; head -n $_', 'echo "1 --compress-program=./x"; sort -k $_ f'])('%s asks', async (command) =>
+    await asks(command),
   );
 });
 
@@ -194,36 +194,36 @@ describe('sort -o, ps, grep -d (P2-2, P2-4)', () => {
 describe('mutation rows', () => {
   it('dash-match: a glob match named -x asks', () => asks('ls *', { fs: (layout) => ({ globs: { [P(layout, '*')]: { matches: ['-x'] } } }) }));
 
-  it.each(['timeout 5 touch a'])('plain-wrap: %s asks in default and acceptEdits', (command) => {
-    asks(command);
-    expect(kindIn(commandRow(command), 'acceptEdits')).toBe('ask');
+  it.each(['timeout 5 touch a'])('plain-wrap: %s asks in default and acceptEdits', async (command) => {
+    await asks(command);
+    expect(await kindIn(commandRow(command), 'acceptEdits')).toBe('ask');
   });
 
-  it('wrapwrites: a wrapper whose option writes asks', () => {
-    expect(kindIn(commandRow('script -O o.log ls'), 'acceptEdits')).toBe('ask');
+  it('wrapwrites: a wrapper whose option writes asks', async () => {
+    expect(await kindIn(commandRow('script -O o.log ls'), 'acceptEdits')).toBe('ask');
   });
 
-  it('removes-cont: rm -rf .. from a root removes the workspace', () => {
-    expect(decideRow(commandRow('rm -rf ..', { rules: [['allow', 'Bash(rm:*)']] }), 'manual').reason).toContain('removes the workspace');
+  it('removes-cont: rm -rf .. from a root removes the workspace', async () => {
+    expect((await decideRow(commandRow('rm -rf ..', { rules: [['allow', 'Bash(rm:*)']] }), 'manual')).reason).toContain('removes the workspace');
   });
 
   it('unknown-dir: cd; ls with home inside the roots asks', () => asks('cd; ls', { roots: (layout) => [layout.project, layout.home] }));
 });
 
 describe('direct approval assertions (V8)', () => {
-  const approval = (command: string, layout = makeLayout(), filesystem = fakeFs()) =>
-    commandApproval(
+  const approval = async (command: string, layout = makeLayout(), filesystem = fakeFs()) =>
+    await commandApproval(
       { roots: [layout.project], cwd: layout.project, home: layout.home, fs: filesystem, searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET },
       command,
       analyzeCommand(command),
     );
 
-  it.each(['cat ../*', 'cat ~/*', 'cat /etc/*', 'cd -; ls', 'cat a > $F'])('%s is not approved', (command) => {
-    expect(approval(command)).toBeUndefined();
+  it.each(['cat ../*', 'cat ~/*', 'cat /etc/*', 'cd -; ls', 'cat a > $F'])('%s is not approved', async (command) => {
+    expect(await approval(command)).toBeUndefined();
   });
 
-  it('approves the control', () => {
-    expect(approval('cat a')).toBe('read-only');
+  it('approves the control', async () => {
+    expect(await approval('cat a')).toBe('read-only');
   });
 });
 
@@ -248,9 +248,9 @@ describe('repository discovery (P2-8)', () => {
     ['a directory', 'dir'],
   ] as const)('allows with an invalid HEAD: %s', (_label, head) => allows('git status', inSub(head)));
 
-  it('asks for a bare layout in cwd reached from a subdirectory, and at the root', () => {
-    asks('git status', { cwd: (layout) => P(layout, 'd', 'x'), prepare: (layout) => { bareAt(P(layout, 'd')); fs.mkdirSync(P(layout, 'd', 'x')); } });
-    asks('git status', { prepare: (layout) => bareAt(layout.project) });
+  it('asks for a bare layout in cwd reached from a subdirectory, and at the root', async () => {
+    await asks('git status', { cwd: (layout) => P(layout, 'd', 'x'), prepare: (layout) => { bareAt(P(layout, 'd')); fs.mkdirSync(P(layout, 'd', 'x')); } });
+    await asks('git status', { prepare: (layout) => bareAt(layout.project) });
   });
 
   const nested = (prepare: (layout: Layout) => void): Extra => ({
@@ -262,21 +262,21 @@ describe('repository discovery (P2-8)', () => {
     },
   });
 
-  it('allows a .git directory and a bare layout above the roots', () => {
-    allows('git status', nested((layout) => gitAt(layout.project)));
-    allows('git status', nested((layout) => bareAt(layout.project)));
+  it('allows a .git directory and a bare layout above the roots', async () => {
+    await allows('git status', nested((layout) => gitAt(layout.project)));
+    await allows('git status', nested((layout) => bareAt(layout.project)));
   });
 
-  it('asks for a .git file above the roots pointing into a root', () => {
-    asks('git status', nested((layout) => {
+  it('asks for a .git file above the roots pointing into a root', async () => {
+    await asks('git status', nested((layout) => {
       bareAt(P(layout, 'r', 'g'));
       fs.writeFileSync(P(layout, '.git'), `gitdir: ${P(layout, 'r', 'g')}\n`);
     }));
   });
 
-  it('allows no repository and a root with its own .git', () => {
-    allows('git status');
-    allows('git status', { prepare: (layout) => gitAt(layout.project) });
+  it('allows no repository and a root with its own .git', async () => {
+    await allows('git status');
+    await allows('git status', { prepare: (layout) => gitAt(layout.project) });
   });
 });
 
@@ -292,27 +292,27 @@ describe('whole-tree git (P2-6)', () => {
 
   it.each(['git reset --hard', 'git reset --har', 'git reset --merge', 'git checkout :/', 'git restore :/', 'git clean -f :/', 'git checkout -f', 'git switch -f other', 'git switch --discard-chang other'])(
     '%s from sub removes the workspace',
-    (command) => {
-      expect(reason(command, fromSub)).toMatchObject({ kind: 'ask', reason: expect.stringContaining('removes the workspace') });
+    async (command) => {
+      expect(await reason(command, fromSub)).toMatchObject({ kind: 'ask', reason: expect.stringContaining('removes the workspace') });
     },
   );
 
   it.each(['git checkout -- .', 'git checkout HEAD -- .', 'git clean --forc', 'git -c clean.requireForce=false clean -d', 'git clean -n --no-dry-run -f', 'git clean -n --no-dry -f', 'git checkout --forc'])(
     '%s at the root removes the workspace',
-    (command) => {
-      expect(reason(command, atRoot)).toMatchObject({ kind: 'ask', reason: expect.stringContaining('removes the workspace') });
+    async (command) => {
+      expect(await reason(command, atRoot)).toMatchObject({ kind: 'ask', reason: expect.stringContaining('removes the workspace') });
     },
   );
 
-  it.each(['git checkout -- .', 'git checkout HEAD -- .', 'git clean -f'])('%s from sub is cwd-scoped', (command) => {
-    expect(reason(command, fromSub).kind).toBe('allow');
+  it.each(['git checkout -- .', 'git checkout HEAD -- .', 'git clean -f'])('%s from sub is cwd-scoped', async (command) => {
+    expect((await reason(command, fromSub)).kind).toBe('allow');
   });
 
-  it.each(['git clean -n', 'git clean --dry -f', 'git reset .'])('%s at the root is allowed', (command) => {
-    expect(reason(command, atRoot).kind).toBe('allow');
+  it.each(['git clean -n', 'git clean --dry -f', 'git reset .'])('%s at the root is allowed', async (command) => {
+    expect((await reason(command, atRoot)).kind).toBe('allow');
   });
 
-  it('control: git reset --keep has no removes target and is allowed', () => {
-    expect(reason('git reset --keep', fromSub).kind).toBe('allow');
+  it('control: git reset --keep has no removes target and is allowed', async () => {
+    expect((await reason('git reset --keep', fromSub)).kind).toBe('allow');
   });
 });

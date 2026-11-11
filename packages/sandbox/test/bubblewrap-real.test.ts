@@ -42,8 +42,8 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
   const newSandbox = (): Sandbox =>
     createBubblewrapSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')), holders: heldMountPoints });
 
-  const sh = (script: string, overrides: Partial<SandboxPolicy> = {}): SandboxedProcess => {
-    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: BASE_ENV }, policy(overrides), new AbortController().signal);
+  const sh = async (script: string, overrides: Partial<SandboxPolicy> = {}): Promise<SandboxedProcess> => {
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: BASE_ENV }, policy(overrides), new AbortController().signal);
     spawned.push(proc);
     return proc;
   };
@@ -65,7 +65,7 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
   });
 
   it('writes inside the writable root and refuses to write outside it', async () => {
-    const result = await run(sh(`echo ok > inside.txt; echo no > ${outside}/outside.txt`));
+    const result = await run(await sh(`echo ok > inside.txt; echo no > ${outside}/outside.txt`));
     expect(fs.readFileSync(path.join(work, 'inside.txt'), 'utf8')).toBe('ok\n');
     expect(fs.existsSync(path.join(outside, 'outside.txt'))).toBe(false);
     expect(result.code).not.toBe(0);
@@ -74,25 +74,25 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
   it('keeps a write-denied file read-only inside the writable root', async () => {
     const locked = path.join(work, 'locked.txt');
     fs.writeFileSync(locked, 'original');
-    await run(sh(`echo changed > ${locked}`, { writeDeniedLiterals: [locked] }));
+    await run(await sh(`echo changed > ${locked}`, { writeDeniedLiterals: [locked] }));
     expect(fs.readFileSync(locked, 'utf8')).toBe('original');
   });
 
   it('hides a read-denied directory', async () => {
     const hidden = tempDir();
     fs.writeFileSync(path.join(hidden, 'secret'), 'classified');
-    const result = await run(sh(`cat ${hidden}/secret`, { readDenied: [hidden] }));
+    const result = await run(await sh(`cat ${hidden}/secret`, { readDenied: [hidden] }));
     expect(result.stdout).not.toContain('classified');
     expect(result.code).not.toBe(0);
   });
 
   it('has no route through any interface other than loopback when the network is denied', async () => {
-    const result = await run(sh("awk 'FILENAME == \"/proc/net/route\" && FNR > 1 { print $1 } FILENAME == \"/proc/net/ipv6_route\" { print $10 }' /proc/net/route /proc/net/ipv6_route | grep -vc '^lo$'"));
+    const result = await run(await sh("awk 'FILENAME == \"/proc/net/route\" && FNR > 1 { print $1 } FILENAME == \"/proc/net/ipv6_route\" { print $10 }' /proc/net/route /proc/net/ipv6_route | grep -vc '^lo$'"));
     expect(result.stdout.trim()).toBe('0');
   });
 
   it('gives the command a writable private TMPDIR that is removed afterwards', async () => {
-    const result = await run(sh('echo $TMPDIR; touch "$TMPDIR/probe"'));
+    const result = await run(await sh('echo $TMPDIR; touch "$TMPDIR/probe"'));
     const tmp = result.stdout.trim();
     expect(result.code).toBe(0);
     expect(fs.existsSync(tmp)).toBe(false);
@@ -100,7 +100,7 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
 
   it('keeps a protected path that does not exist yet from being created, and removes the placeholder afterwards', async () => {
     const hooks = path.join(work, '.git', 'hooks');
-    const result = await run(sh('mkdir .git 2>/dev/null && echo created || echo refused', { writeDeniedLiterals: [hooks] }));
+    const result = await run(await sh('mkdir .git 2>/dev/null && echo created || echo refused', { writeDeniedLiterals: [hooks] }));
     expect(result.stdout.trim()).toBe('refused');
     expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
   });
@@ -110,22 +110,22 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
     const gates = [path.join(outside, 'gate-first'), path.join(outside, 'gate-second')];
     for (const gate of gates) execFileSync('/usr/bin/mkfifo', [gate]);
     const signalling = { writableRoots: [work, outside], writeDeniedLiterals: [hooks] };
-    const first = sh(`: > ${path.join(outside, 'first-ready')}; cat ${gates[0]}`, signalling);
+    const first = await sh(`: > ${path.join(outside, 'first-ready')}; cat ${gates[0]}`, signalling);
     await waitFor(() => fs.existsSync(path.join(outside, 'first-ready')));
-    const second = sh(`: > ${path.join(outside, 'second-ready')}; cat ${gates[1]} > /dev/null; mkdir .git 2>/dev/null && echo created || echo refused`, signalling);
+    const second = await sh(`: > ${path.join(outside, 'second-ready')}; cat ${gates[1]} > /dev/null; mkdir .git 2>/dev/null && echo created || echo refused`, signalling);
     await waitFor(() => fs.existsSync(path.join(outside, 'second-ready')));
     fs.writeFileSync(gates[0] as string, 'open');
-    await run(first);
+    await run(await first);
     expect(fs.existsSync(path.join(work, '.git'))).toBe(true);
     fs.writeFileSync(gates[1] as string, 'open');
-    expect((await run(second)).stdout.trim()).toBe('refused');
+    expect((await run(await second)).stdout.trim()).toBe('refused');
     expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
   });
 
   it('keeps a protected path from being created under the closure of a widening allow rule', async () => {
     const wide = tempDir();
-    const fileRules = fileRulesOf([fileSpec(`/${wide}/**`, { roots: [work], home: outside, tool: 'Edit', effect: 'allow' })], [work]);
-    const result = await run(sh(`mkdir ${wide}/.git 2>/dev/null && echo created || echo refused; : > ${wide}/other && echo wrote`, { fileRules, writeDeniedLiterals: [path.join(wide, '.git', 'hooks')] }));
+    const fileRules = await fileRulesOf([fileSpec(`/${wide}/**`, { roots: [work], home: outside, tool: 'Edit', effect: 'allow' })], [work]);
+    const result = await run(await sh(`mkdir ${wide}/.git 2>/dev/null && echo created || echo refused; : > ${wide}/other && echo wrote`, { fileRules: await fileRules, writeDeniedLiterals: [path.join(wide, '.git', 'hooks')] }));
     expect(result.stdout.trim().split('\n')).toEqual(['refused', 'wrote']);
     expect(fs.existsSync(path.join(wide, '.git'))).toBe(false);
   });
@@ -147,7 +147,7 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
       ['replacing a hook', 'printf x > .git/hooks/pre-commit'],
     ])('keeps the protected directory in place: %s', async (_label, script) => {
       const hooks = protectedDirectory();
-      await run(sh(script, { writeDeniedLiterals: [hooks] }));
+      await run(await sh(script, { writeDeniedLiterals: [hooks] }));
       expect(fs.readFileSync(path.join(hooks, 'pre-commit'), 'utf8')).toBe('original');
       expect(fs.readdirSync(hooks)).toEqual(['pre-commit']);
     });
@@ -160,7 +160,7 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
     ])('keeps the protected file in place: %s', async (_label, script) => {
       const locked = path.join(work, 'locked.txt');
       fs.writeFileSync(locked, 'original');
-      await run(sh(script, { writeDeniedLiterals: [locked] }));
+      await run(await sh(script, { writeDeniedLiterals: [locked] }));
       expect(fs.readFileSync(locked, 'utf8')).toBe('original');
       expect(fs.existsSync(locked)).toBe(true);
     });
@@ -185,14 +185,14 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
     it('starts when the link lies outside every writable area, where the read-only root already pins it', async () => {
       const git = path.join(outside, 'link');
       fs.symlinkSync('elsewhere', git);
-      const result = await run(sh(`ln -sfn other ${git} 2>/dev/null && echo repointed || echo kept; rm ${git} 2>/dev/null && echo removed || echo kept`, { writeDeniedLiterals: [git] }));
+      const result = await run(await sh(`ln -sfn other ${git} 2>/dev/null && echo repointed || echo kept; rm ${git} 2>/dev/null && echo removed || echo kept`, { writeDeniedLiterals: [git] }));
       expect(result.stdout.trim().split('\n')).toEqual(['kept', 'kept']);
       expect(fs.readlinkSync(git)).toBe('elsewhere');
     });
 
-    it('refuses to start for a looped link on the way to a protected path inside the root', () => {
+    it('refuses to start for a looped link on the way to a protected path inside the root', async () => {
       fs.symlinkSync('.git', path.join(work, '.git'));
-      expect(() => sh('true', { writeDeniedLiterals: [path.join(work, '.git', 'hooks')] })).toThrow(expect.objectContaining({ code: 'protected_path_unreadable' }));
+      await expect(sh('true', { writeDeniedLiterals: [path.join(work, '.git', 'hooks')] })).rejects.toThrow(expect.objectContaining({ code: 'protected_path_unreadable' }));
     });
   });
 
@@ -229,11 +229,11 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
     it('is removed when the process holding it is killed with SIGKILL', async () => {
       const gate = path.join(outside, 'gate');
       execFileSync('/usr/bin/mkfifo', [gate]);
-      const held = sh(`: > ${path.join(outside, 'ready')}; cat ${gate} > /dev/null`, { writableRoots: [work, outside], writeDeniedLiterals: [hooks()] });
+      const held = await sh(`: > ${path.join(outside, 'ready')}; cat ${gate} > /dev/null`, { writableRoots: [work, outside], writeDeniedLiterals: [hooks()] });
       await waitFor(() => fs.existsSync(path.join(outside, 'ready')));
       expect(fs.existsSync(path.join(work, '.git'))).toBe(true);
-      process.kill(-held.pgid, 'SIGKILL');
-      const exit = await held.exited;
+      process.kill(-(await held).pgid, 'SIGKILL');
+      const exit = await (await held).exited;
       expect(exit.signal).toBe('SIGKILL');
       expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
     });
@@ -244,7 +244,7 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
       const gates = [path.join(outside, 'gate-a'), path.join(outside, 'gate-b')];
       for (const gate of gates) execFileSync('/usr/bin/mkfifo', [gate]);
       const signalling = { writableRoots: [work, outside], writeDenied: [mcp] };
-      const first = sh(`: > ${path.join(outside, 'a-ready')}; cat ${gates[0]} > /dev/null`, signalling);
+      const first = await sh(`: > ${path.join(outside, 'a-ready')}; cat ${gates[0]} > /dev/null`, signalling);
       await waitFor(() => fs.existsSync(path.join(outside, 'a-ready')));
       expect(fs.statSync(mcp).isFile()).toBe(true);
       const holder = second.spawn(
@@ -252,14 +252,14 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
         policy(signalling),
         new AbortController().signal,
       );
-      spawned.push(holder);
+      spawned.push(await holder);
       await waitFor(() => fs.existsSync(path.join(outside, 'b-ready')));
       fs.writeFileSync(gates[0] as string, 'open');
-      await run(first);
+      await run(await first);
       expect(fs.existsSync(mcp)).toBe(true);
       fs.writeFileSync(gates[1] as string, 'open');
-      expect((await run(holder)).stdout.trim()).toBe('refused');
-      await run(sh('true', { writableRoots: [work, outside], writeDenied: [path.join(work, '.envrc')] }));
+      expect((await run(await holder)).stdout.trim()).toBe('refused');
+      await run(await sh('true', { writableRoots: [work, outside], writeDenied: [path.join(work, '.envrc')] }));
       expect(fs.existsSync(mcp)).toBe(false);
     });
 
@@ -267,37 +267,37 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
       const gates = [path.join(outside, 'gate-first'), path.join(outside, 'gate-second')];
       for (const gate of gates) execFileSync('/usr/bin/mkfifo', [gate]);
       const signalling = { writableRoots: [work, outside], writeDeniedLiterals: [hooks()] };
-      const first = sh(`: > ${path.join(outside, 'first-ready')}; cat ${gates[0]} > /dev/null`, signalling);
+      const first = await sh(`: > ${path.join(outside, 'first-ready')}; cat ${gates[0]} > /dev/null`, signalling);
       await waitFor(() => fs.existsSync(path.join(outside, 'first-ready')));
-      const second = sh(`: > ${path.join(outside, 'second-ready')}; cat ${gates[1]} > /dev/null; mkdir .git 2>/dev/null && echo created || echo refused`, signalling);
+      const second = await sh(`: > ${path.join(outside, 'second-ready')}; cat ${gates[1]} > /dev/null; mkdir .git 2>/dev/null && echo created || echo refused`, signalling);
       await waitFor(() => fs.existsSync(path.join(outside, 'second-ready')));
-      process.kill(-first.pgid, 'SIGKILL');
-      await first.exited;
+      process.kill(-(await first).pgid, 'SIGKILL');
+      await (await first).exited;
       expect(fs.existsSync(path.join(work, '.git'))).toBe(true);
       fs.writeFileSync(gates[1] as string, 'open');
-      expect((await run(second)).stdout.trim()).toBe('refused');
+      expect((await run(await second)).stdout.trim()).toBe('refused');
       expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
     });
   });
 
   it('terminates the whole process group when aborted', async () => {
     const controller = new AbortController();
-    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', 'sleep 30 & sleep 30'], cwd: work, env: BASE_ENV }, policy(), controller.signal);
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', 'sleep 30 & sleep 30'], cwd: work, env: BASE_ENV }, policy(), controller.signal);
     spawned.push(proc);
     controller.abort();
-    const exit = await proc.exited;
+    const exit = await (await proc).exited;
     expect(exit.killedBy).toBe('abort');
   });
 
   it('gives a running command that ignores SIGTERM the whole kill grace, because bwrap itself, which would end the sandbox at once, is not sent SIGTERM', async () => {
     const controller = new AbortController();
     const ready = path.join(work, 'ready');
-    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', `trap '' TERM; : > ${ready}; sleep 30`], cwd: work, env: BASE_ENV }, policy(), controller.signal);
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', `trap '' TERM; : > ${ready}; sleep 30`], cwd: work, env: BASE_ENV }, policy(), controller.signal);
     spawned.push(proc);
     await waitFor(() => fs.existsSync(ready), { description: 'the command is running' });
     const abortedAt = Date.now();
     controller.abort();
-    const exit = await proc.exited;
+    const exit = await (await proc).exited;
     expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(KILL_GRACE_MS);
     expect(exit.killedBy).toBe('grace-kill');
   });
@@ -305,12 +305,12 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
   it('sends SIGTERM to a running command, which bwrap reports as exit code 143', async () => {
     const controller = new AbortController();
     const ready = path.join(work, 'ready');
-    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', `: > ${ready}; sleep 30`], cwd: work, env: BASE_ENV }, policy(), controller.signal);
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', `: > ${ready}; sleep 30`], cwd: work, env: BASE_ENV }, policy(), controller.signal);
     spawned.push(proc);
     await waitFor(() => fs.existsSync(ready), { description: 'the command is running' });
     const abortedAt = Date.now();
     controller.abort();
-    const exit = await proc.exited;
+    const exit = await (await proc).exited;
     expect(Date.now() - abortedAt).toBeLessThan(KILL_GRACE_MS);
     expect(exit).toMatchObject({ code: 143, signal: null, killedBy: 'abort' });
   });

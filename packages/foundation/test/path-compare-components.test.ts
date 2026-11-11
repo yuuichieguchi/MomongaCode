@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { comparableFromParts, comparablePath, containsByComponents } from '@momonga/foundation';
+import { comparableFromParts, containsByComponents } from '@momonga/foundation';
+import { syncPaths } from '../src/index.ts';
 
 const tempDirs: string[] = [];
 const lockedDirs: string[] = [];
@@ -17,7 +18,6 @@ const makeDir = (): string => {
   tempDirs.push(dir);
   return dir;
 };
-
 
 describe('containsByComponents', () => {
   it('does not contain an existing directory that differs only in case, even with foldTail', () => {
@@ -62,25 +62,25 @@ describe('comparableFromParts', () => {
 });
 
 describe.skipIf(process.getuid?.() === 0)('comparablePath under an unreadable directory', () => {
-  it('does not throw', () => {
+  it('does not throw', async () => {
     const root = makeDir();
     const locked = path.join(root, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
     lockedDirs.push(locked);
-    expect(() => comparablePath(path.join(locked, 'x', 'y'))).not.toThrow();
+    await expect((async () => { await syncPaths.comparablePath(path.join(locked, 'x', 'y')); })()).resolves.toBeUndefined();
   });
 });
 
 describe('comparablePath', () => {
-  it('rejects a relative path', () => {
-    expect(() => comparablePath('relative/dir')).toThrow();
+  it('rejects a relative path', async () => {
+    await expect((async () => syncPaths.comparablePath('relative/dir'))()).rejects.toThrow();
   });
 
   it('resolves a symlinked existing prefix', () => {
     const root = makeDir();
     fs.mkdirSync(path.join(root, 'real'));
     fs.symlinkSync(path.join(root, 'real'), path.join(root, 'link'));
-    expect(comparablePath(path.join(root, 'link', 'x'))).toBe(comparablePath(path.join(root, 'real', 'x')));
+    expect(syncPaths.comparablePath(path.join(root, 'link', 'x'))).toBe(syncPaths.comparablePath(path.join(root, 'real', 'x')));
   });
 });

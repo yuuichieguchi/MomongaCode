@@ -1,4 +1,4 @@
-import { EMPTY_PROTECTED_SET, groupRecordOutcome, momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, groupRecordOutcome, mapAsync, momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import path from 'node:path';
 import type { SandboxExit, SandboxPolicy } from '@momonga/sandbox';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
@@ -51,9 +51,11 @@ const exclusionOf = (target: string, excluded: string, withContents: boolean): s
   return withContents ? ['--glob', exclusionLine(`!${relative}`), '--glob', `${exclusionLine(`!${relative}`)}/**`] : ['--glob', exclusionLine(`!${relative}`)];
 };
 
-const deniedGlobs = (access: ReadAccessMatcher, target: string, isDirectory: boolean): string[] => {
+const deniedGlobs = async (access: ReadAccessMatcher, target: string, isDirectory: boolean): Promise<string[]> => {
   if (!isDirectory) return [];
-  return access.deniedWithin(target).flatMap((resolved) => exclusionOf(target, resolved, !access.leadsToAllowed(resolved)));
+  const globs: string[] = [];
+  for (const resolved of await access.deniedWithin(target)) globs.push(...exclusionOf(target, resolved, !(await access.leadsToAllowed(resolved))));
+  return globs;
 };
 
 const ruleBlockedGlobs = async (access: ReadAccessMatcher, target: string, isDirectory: boolean, ctx: ToolContext): Promise<string[]> => {
@@ -108,7 +110,7 @@ const modelGlobFlags = (glob: string): string[] => {
 
 const isConfigLine = (line: string): boolean => line !== '' && !LINE_BREAK.test(line) && !EDGE_WHITESPACE.test(line) && !line.startsWith(LEADING_LINE_COMMENT);
 
-const ripgrepFlags = (input: GrepInput, mode: OutputMode, target: string, access: ReadAccessMatcher, isDirectory: boolean, ruleBlocked: readonly string[]): string[] => {
+const ripgrepFlags = (input: GrepInput, mode: OutputMode, denied: readonly string[], ruleBlocked: readonly string[]): string[] => {
   const { before, after } = contextOf(input);
   return [
     '--color',
@@ -134,7 +136,7 @@ const ripgrepFlags = (input: GrepInput, mode: OutputMode, target: string, access
     ...(input.multiline === true ? ['-U', '--multiline-dotall'] : []),
     ...(input.type === undefined ? [] : [...extensionsForType(input.type).flatMap((extension) => ['--type-add', `momonga:*.${extension}`]), '--type', 'momonga']),
     ...(input.glob === undefined ? [] : modelGlobFlags(input.glob)),
-    ...deniedGlobs(access, target, isDirectory),
+    ...denied,
     ...ruleBlocked,
   ];
 };
@@ -190,7 +192,7 @@ const nextRecord = (stdout: string, position: number, mode: OutputMode): { recor
   return { record: { recordPath, payload: stdout.slice(nul + 1, end) }, next: end + 1 };
 };
 
-const recordsOf = (stdout: string, mode: OutputMode, input: GrepInput, visible: (recordPath: string) => boolean, show: (recordPath: string) => string): string[] => {
+const recordsOf = async (stdout: string, mode: OutputMode, input: GrepInput, visible: (recordPath: string) => Promise<boolean>, show: (recordPath: string) => Promise<string>): Promise<string[]> => {
   const groups: string[][] = [[]];
   const entries: string[] = [];
   for (let position = 0; position < stdout.length; ) {
@@ -202,15 +204,18 @@ const recordsOf = (stdout: string, mode: OutputMode, input: GrepInput, visible: 
     }
     const { recordPath, payload } = record;
     if (mode === 'files_with_matches') {
-      if (visible(recordPath)) entries.push(recordPath);
+      if (await visible(recordPath)) entries.push(recordPath);
     } else if (mode === 'count') {
-      if (!COUNT_PAYLOAD.test(payload)) throw malformedRecord(show(recordPath));
-      if (visible(recordPath)) entries.push(`${show(recordPath)}:${payload}`);
+      if (!COUNT_PAYLOAD.test(payload)) throw malformedRecord(await show(recordPath));
+      if (await visible(recordPath)) entries.push(`${await show(recordPath)}:${payload}`);
     } else {
       const parsed = CONTENT_PAYLOAD.exec(payload);
-      if (parsed === null) throw malformedRecord(show(recordPath));
+      if (parsed === null) throw malformedRecord(await show(recordPath));
       const [, lineNumber, kind, text] = parsed as unknown as [string, string, string, string];
-      if (visible(recordPath)) (groups[groups.length - 1] as string[]).push(lineNumbersWanted(input) ? `${show(recordPath)}${kind}${lineNumber}${kind}${text}` : `${show(recordPath)}${kind}${text}`);
+      if (await visible(recordPath)) {
+        const shown = await show(recordPath);
+        (groups[groups.length - 1] as string[]).push(lineNumbersWanted(input) ? `${shown}${kind}${lineNumber}${kind}${text}` : `${shown}${kind}${text}`);
+      }
     }
   }
   if (mode !== 'content') return entries;
@@ -234,7 +239,7 @@ type RipgrepRun = { stdout: string; stderr: string; exit: SandboxExit };
 
 const runRipgrep = async (ctx: ToolContext, command: RipgrepCommand, policy: SandboxPolicy, notes: string[]): Promise<RipgrepRun> => {
   const { file, fd, settle } = await requireSpawnMarker(ctx, 'Grep');
-  const child = ctx.sandbox.spawn({ ...command, markerFile: file }, policy, ctx.signal, { markerFd: fd });
+  const child = await ctx.sandbox.spawn({ ...command, markerFile: file }, policy, ctx.signal, { markerFd: fd });
   const attached = groupRecordOutcome(ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() }), file);
   const [stdout, stderr, exit, groupNotice] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited, attached]);
   if (groupNotice !== undefined) notes.push(groupNotice);
@@ -274,7 +279,7 @@ const searchWithRipgrep = async (
   notes: string[],
 ): Promise<SearchResult> => {
   const { readDenied, readAllowed } = ctx.sandboxPolicy;
-  const access = createReadAccessMatcher({ readDenied, readAllowed, fileRules: ctx.sandboxPolicy.fileRules });
+  const access = await createReadAccessMatcher({ readDenied, readAllowed, fileRules: ctx.sandboxPolicy.fileRules }, ctx.paths);
   const allowedRoots: string[] = [];
   if (isDirectory) {
     for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
@@ -284,7 +289,7 @@ const searchWithRipgrep = async (
   const policy = grepPolicyOf(ctx);
   const spawnPolicy: SandboxPolicy = { ...policy, readAllowed: [...(policy.readAllowed ?? []), argumentFile] };
   const spawnCwd = isDirectory ? target : path.dirname(target);
-  const flags = configTextOf(ripgrepFlags(input, mode, target, access, isDirectory, ruleBlocked));
+  const flags = configTextOf(ripgrepFlags(input, mode, await deniedGlobs(access, target, isDirectory), ruleBlocked));
   try {
     await writeArgumentFile(argumentFile, flags);
     return await runSearch(ctx, { argv: [ripgrep, ...ripgrepOperands(input, target, allowedRoots)], cwd: spawnCwd, env: { ...ctx.env, RIPGREP_CONFIG_PATH: argumentFile } }, spawnPolicy, mode, input, access, spawnCwd, notes);
@@ -304,29 +309,29 @@ const runSearch = async (
   notes: string[],
 ): Promise<SearchResult> => {
   const visibleCache = new Map<string, boolean>();
-  const visible = (recordPath: string): boolean => {
+  const visible = async (recordPath: string): Promise<boolean> => {
     let verdict = visibleCache.get(recordPath);
     if (verdict === undefined) {
-      verdict = access.blockedBy(recordPath, spawnCwd, 'Grep') === undefined;
+      verdict = (await access.blockedBy(recordPath, spawnCwd, 'Grep')) === undefined;
       visibleCache.set(recordPath, verdict);
     }
     return verdict;
   };
   const shownCache = new Map<string, string>();
-  const show = (recordPath: string): string => {
+  const show = async (recordPath: string): Promise<string> => {
     let shown = shownCache.get(recordPath);
     if (shown === undefined) {
-      shown = shownPath(ctx, recordPath);
+      shown = await shownPath(ctx, recordPath);
       shownCache.set(recordPath, shown);
     }
     return shown;
   };
   const { stdout, stderr, exit } = await runRipgrep(ctx, command, policy, notes);
   if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };
-  if (exit.code === 0) return { entries: recordsOf(stdout, mode, input, visible, show), unreadable: false };
+  if (exit.code === 0) return { entries: await recordsOf(stdout, mode, input, visible, show), unreadable: false };
   if (exit.code === 2) {
     const ioErrorsOnly = lineList(stderr).every((line) => line.includes('os error'));
-    if (stdout !== '') return { entries: recordsOf(stdout, mode, input, visible, show), unreadable: true };
+    if (stdout !== '') return { entries: await recordsOf(stdout, mode, input, visible, show), unreadable: true };
     if (ioErrorsOnly) return { entries: [], unreadable: true };
   }
   const reason = exit.signal === null ? `exit code ${exit.code}` : `signal ${exit.signal}`;
@@ -385,8 +390,8 @@ export const grepTool = defineTool<GrepInput>({
     return { kind: 'path', tool: 'Grep', paths: [resolvedPathOf(ctx, input.path ?? '.')], access: 'read' };
   },
   execute: async (input, ctx) => {
-    const target = canonicalPathOf(ctx, 'path', input.path ?? '.');
-    const shown = shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
+    const target = await canonicalPathOf(ctx, 'path', input.path ?? '.');
+    const shown = await shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
     const stat = await statIfExists(target);
     if (stat === undefined) throw new ToolExecutionError(`Path does not exist: ${shown}`);
     const problem = stat.isDirectory() ? undefined : regularFileProblem(stat, shown);
@@ -403,7 +408,7 @@ export const grepTool = defineTool<GrepInput>({
     } finally {
       await ripgrep.release();
     }
-    const ordered = mode === 'files_with_matches' ? (await sortByMtimeThenPath(found.entries)).map((file) => shownPath(ctx, file)) : found.entries;
+    const ordered = mode === 'files_with_matches' ? await mapAsync(await sortByMtimeThenPath(found.entries), (file) => shownPath(ctx, file)) : found.entries;
     const skipped = ordered.slice(input.offset ?? 0);
     const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
     const lines = limited.length === 0 ? ['No matches found'] : limited;

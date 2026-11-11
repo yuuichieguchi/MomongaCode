@@ -1,3 +1,7 @@
+import { protectedSetFor } from '@momonga/foundation';
+import type { ProtectedSet } from '@momonga/foundation';
+import { askedBy } from '@momonga/policy';
+import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { RuleVerdict } from '@momonga/protocol';
 import { describeWitness } from './report.ts';
 import type { VerificationReport } from './report.ts';
@@ -36,3 +40,5 @@ export const verdictOfReport = (report: VerificationReport, solver: string): Rul
   ];
   return { verdict: refuted.length > 0 ? 'refuted' : unknown.length > 0 ? 'unknown' : 'proved', solver, refuted, unknown, notProved: [...report.outsideProof] };
 };
+
+export const protectedSetOf = (roots: readonly string[], fs: PolicyHostFilesystem, signal: AbortSignal): Promise<ProtectedSet> => protectedSetFor(roots, askedBy(fs, signal));

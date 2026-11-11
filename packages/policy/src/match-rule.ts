@@ -3,8 +3,8 @@ import type { PathToolName, PermissionRule } from '@momonga/config';
 import { commandMatchStrength, matchesCommand } from './command-match.ts';
 import type { MatchStrength } from './command-match.ts';
 import path from 'node:path';
-import { fileRuleBlocks, resolveCanonicalPath } from '@momonga/foundation';
-import type { FileRuleSet } from '@momonga/foundation';
+import { everyAsync, fileRuleBlocks, someAsync } from '@momonga/foundation';
+import type { FileRuleSet, PathProbes } from '@momonga/foundation';
 import { foldedKey } from './fold.ts';
 import { absoluteFrom } from './path-match.ts';
 import type { PermissionSubject } from './types.ts';
@@ -30,9 +30,11 @@ export const ruleCoversSubject = (rule: PermissionRule, subject: PermissionSubje
 const subjectToolName = (subject: PermissionSubject): string =>
   subject.kind === 'mcp' ? `mcp__${subject.server}__${subject.tool}` : subject.tool;
 
-const pathMatchesRule = (rule: PermissionRule, target: string, fileRules: FileRuleSet, ruleIndex: number): boolean => {
+export type RuleResolution = PathProbes['canonicalise'];
+
+const pathMatchesRule = async (rule: PermissionRule, target: string, fileRules: FileRuleSet, ruleIndex: number, canonicalise: RuleResolution): Promise<boolean> => {
   const requested = path.resolve(rule.cwd, target);
-  const resolution = resolveCanonicalPath(absoluteFrom(target, rule.cwd));
+  const resolution = await canonicalise(absoluteFrom(target, rule.cwd));
   if (!resolution.ok && rule.effect === 'allow') return false;
   const resolved = resolution.ok ? resolution.path : requested;
   return fileRules.entries.some((entry) => entry.ruleIndex === ruleIndex && fileRuleBlocks(fileRules, entry, requested, resolved));
@@ -82,21 +84,36 @@ const repoRestrictMatches = (specifier: string, subject: Extract<PermissionSubje
   return repoRefs(subject).some((ref) => places.some((place) => wildcardMatches(key, foldedKey(`${place}:${ref}`))));
 };
 
-export const matchRule = (rule: PermissionRule, subject: PermissionSubject, fileRules: FileRuleSet, ruleIndex: number): boolean => {
+type PathSubject = Extract<PermissionSubject, { kind: 'path' }>;
+
+export const matchPathlessRule = (rule: PermissionRule, subject: Exclude<PermissionSubject, PathSubject>): boolean => {
   if (!ruleCoversSubject(rule, subject)) return false;
   if (rule.specifier === undefined) return true;
   if (subject.kind === 'repo') return rule.effect === 'allow' ? repoAllowMatches(rule.specifier, subject) : repoRestrictMatches(rule.specifier, subject);
   if (subject.kind === 'forge') return wildcardMatches(rule.specifier, forgeTarget(subject));
   if (subject.kind === 'command') return matchesCommand(rule, subject.command);
-  if (subject.kind !== 'path') return false;
-  if (subject.paths.length === 0) return false;
-  const matches = (target: string): boolean => pathMatchesRule(rule, target, fileRules, ruleIndex);
-  return rule.effect === 'allow' ? subject.paths.every(matches) : subject.paths.some(matches);
+  return false;
 };
 
-export const matchStrength = (rule: PermissionRule, subject: PermissionSubject, fileRules: FileRuleSet, ruleIndex: number): MatchStrength | null => {
+export const matchRule = async (rule: PermissionRule, subject: PermissionSubject, fileRules: FileRuleSet, ruleIndex: number, canonicalise: RuleResolution): Promise<boolean> => {
+  if (subject.kind !== 'path') return matchPathlessRule(rule, subject);
+  if (!ruleCoversSubject(rule, subject)) return false;
+  if (rule.specifier === undefined) return true;
+  if (subject.paths.length === 0) return false;
+  const matches = (target: string): Promise<boolean> => pathMatchesRule(rule, target, fileRules, ruleIndex, canonicalise);
+  return rule.effect === 'allow' ? everyAsync(subject.paths, matches) : someAsync(subject.paths, matches);
+};
+
+export type PathlessSubject = Exclude<PermissionSubject, PathSubject>;
+
+export const matchPathlessStrength = (rule: PermissionRule, subject: PathlessSubject): MatchStrength | null => {
   if (subject.kind === 'command' && rule.specifier !== undefined && ruleCoversToolName(rule, subject.tool)) {
     return commandMatchStrength(rule, subject.command);
   }
-  return matchRule(rule, subject, fileRules, ruleIndex) ? 'position' : null;
+  return matchPathlessRule(rule, subject) ? 'position' : null;
+};
+
+export const matchStrength = async (rule: PermissionRule, subject: PermissionSubject, fileRules: FileRuleSet, ruleIndex: number, canonicalise: RuleResolution): Promise<MatchStrength | null> => {
+  if (subject.kind !== 'path') return matchPathlessStrength(rule, subject);
+  return (await matchRule(rule, subject, fileRules, ruleIndex, canonicalise)) ? 'position' : null;
 };

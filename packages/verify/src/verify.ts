@@ -1,6 +1,6 @@
 import { systemClock } from '@momonga/foundation';
 import type { Clock, ProtectedSet, RuleEnforcement } from '@momonga/foundation';
-import { computeFileRules } from '@momonga/policy';
+import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PermissionRule, PolicyHostFilesystem, SupersededForm } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { startBudget } from './budget.ts';
@@ -28,6 +28,7 @@ export type VerifyRequest = {
   exemptDirectory: string | null;
   enforcement: RuleEnforcement;
   budgetMs: number;
+  signal: AbortSignal;
   clock?: Clock;
   supersededForms?: readonly SupersededForm[];
   alwaysOperations?: readonly string[];
@@ -59,32 +60,35 @@ const unmodelledNotes = (context: QueryContext, rules: readonly PermissionRule[]
   return notes;
 };
 
-export const buildQueryContext = (api: Z3Api, request: VerifyRequest): QueryContext => {
-  const { rules, roots, mode, home, cwd, protectedSet, fs, secretLocations, exemptDirectory, enforcement, budgetMs } = request;
+export const buildQueryContext = async (api: Z3Api, request: VerifyRequest): Promise<QueryContext> => {
+  const { rules, roots, mode, home, cwd, protectedSet, fs, secretLocations, exemptDirectory, enforcement, budgetMs, signal } = request;
   const budget = startBudget(request.clock ?? systemClock, budgetMs);
-  const fileRules = computeFileRules(rules, roots, exemptDirectory, enforcement, fs.canonicalise, fs.volumeProbe);
+  const probes = askedBy(fs, signal);
+  const fileRules = await computeFileRules(rules, roots, exemptDirectory, enforcement, probes);
+  const locationTexts: string[] = [];
+  for (const location of secretLocations) {
+    const canonical = await probes.canonicalise(location.directory);
+    locationTexts.push(location.directory, ...(canonical.ok ? [canonical.path] : []));
+  }
   const alphabet = alphabetFor([
     home,
     cwd,
     ...roots,
     ...rules.map((rule) => rule.specifier ?? ''),
     ...rules.flatMap((rule) => rule.exceptions ?? []),
-    ...secretLocations.flatMap((location) => {
-      const canonical = fs.canonicalise(location.directory);
-      return canonical.ok ? [location.directory, canonical.path] : [location.directory];
-    }),
+    ...locationTexts,
     ...protectedSet.paths,
     ...protectedSet.lexicalPaths,
     ...protectedSet.literals,
     ...fileRules.entries.flatMap((entry) => [entry.anchorDirectory, entry.lexicalDirectory]),
   ]);
   const smt = createSmt(api, alphabet);
-  const paths = createPathModel({ smt, fileRules, protectedSet, roots, probes: fs });
+  const paths = await createPathModel({ smt, fileRules, protectedSet, roots, probes });
   const commands = createCommandModel(smt);
   const models = { smt, paths, commands, rules, mode };
   return {
     models,
-    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs, globBudgetMs: budgetMs },
+    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs, globBudgetMs: budgetMs, signal },
     budget,
     subjects: buildSubjects(models),
     mismatches: [],
@@ -93,7 +97,7 @@ export const buildQueryContext = (api: Z3Api, request: VerifyRequest): QueryCont
 
 export const verifyPermissions = async (api: Z3Api, request: VerifyRequest): Promise<VerificationReport> => {
   const { rules, mode, secretLocations } = request;
-  const context = buildQueryContext(api, request);
+  const context = await buildQueryContext(api, request);
   const { mismatches } = context;
   const checks = [
     (scoped: QueryContext) => checkDenyPrecedence(scoped),

@@ -124,7 +124,7 @@ const runEffect = async (ports: SandboxedRunnerPorts, argv: readonly string[], o
   try {
     supplied = await supplyCredentials(ports, options, network);
     const { redact } = supplied;
-    const child = context.sandbox.spawn(
+    const child = await context.sandbox.spawn(
       { argv: [...argv], cwd: options.cwd, env: { ...supplied.env }, markerFile: file, ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }) },
       supplied.sandboxPolicy,
       options.signal,

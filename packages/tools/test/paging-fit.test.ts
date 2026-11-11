@@ -18,7 +18,7 @@ describe('a paging tool sizes its page by ctx.outputFit', () => {
     const { handle } = await harness.blobs.port.put(lines.join('\n'), { mediaType: 'text/plain; charset=utf-8' });
     const putsBefore = harness.blobs.puts.length;
     const [outcome] = await harness.executor.runBatch({
-      ...harness.input(await toolSetOf(readOutputTool), [call('c1', 'ReadOutput', { handle })]),
+      ...(await harness.input(await toolSetOf(readOutputTool), [call('c1', 'ReadOutput', { handle })])),
       outputFit: port,
     });
     if (outcome?.kind !== 'result') throw new Error('expected a result');

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
-import { SWEEP_INTERVAL_MS, canonicalPath, comparableContains, encodeSse, listenUnix, startDeadlineSignal } from '@momonga/foundation';
+import { SWEEP_INTERVAL_MS, encodeSse, listenUnix, startDeadlineSignal, syncPaths } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
 import type { MarkerOwners } from '@momonga/tools';
 import type { Clock, Redactor, RolePort } from '@momonga/foundation';
@@ -100,10 +100,10 @@ const reportToStderr = (error: unknown): void => {
 };
 
 const assertInsideMomongaHome = (home: string, socketPath: string): void => {
-  const canonicalHome = canonicalPath(home);
-  const socketDirectory = canonicalPath(path.dirname(socketPath));
+  const canonicalHome = syncPaths.canonicalPath(home);
+  const socketDirectory = syncPaths.canonicalPath(path.dirname(socketPath));
   const allowed = path.join(canonicalHome, '.momonga');
-  if (!comparableContains(allowed, socketDirectory)) {
+  if (!syncPaths.comparableContains(allowed, socketDirectory)) {
     throw new Error(`the run socket must live under ${allowed}, but ${socketPath} resolves to ${socketDirectory}`);
   }
 };

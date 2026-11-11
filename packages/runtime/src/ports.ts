@@ -130,7 +130,7 @@ export type RuleVerifyRequest = {
 
 export type RuleVerifierPort = {
   solverVersion(): Promise<string>;
-  inputOf(request: RuleVerifyRequest): Promise<unknown>;
+  inputOf(request: RuleVerifyRequest, signal: AbortSignal): Promise<unknown>;
   verify(input: unknown, signal: AbortSignal): Promise<RuleVerdict>;
 };
 
@@ -138,8 +138,8 @@ export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
-  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement; signal?: AbortSignal }): Promise<ToolPolicy>;
-  recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
+  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement; signal: AbortSignal; discoverGitConfig?: true }): Promise<ToolPolicy>;
+  recoveryContextFor(session: Session, options: { env: ToolEnv; signal: AbortSignal }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandboxes: SandboxBindings;
   ripgrepLocator(env: ToolEnv): RipgrepLocator;

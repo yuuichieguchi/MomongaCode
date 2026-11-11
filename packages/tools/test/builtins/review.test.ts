@@ -46,7 +46,7 @@ const makeFifo = (dir: string, name: string): string => {
 const runWithin = async (tools: Builtins, name: string, args: unknown, extra: RunExtra, ms: number, onHang: () => void) => {
   const controller = new AbortController();
   const started = Date.now();
-  const running = tools.executor.runBatch(tools.batch(name, args, { ...extra, signal: controller.signal }));
+  const running = tools.executor.runBatch(await tools.batch(name, args, { ...extra, signal: controller.signal }));
   let timer: NodeJS.Timeout | undefined;
   const hung = new Promise<'hung'>((resolve) => {
     timer = setTimeout(() => resolve('hung'), ms);
@@ -237,7 +237,7 @@ describe('review 4: Bash stream errors', () => {
         exited: new Promise((resolve) => setTimeout(() => resolve({ code: 0, signal: null }), 50)),
       }),
     };
-    const [outcome] = await tools.executor.runBatch(tools.batch('Bash', { command: 'echo hi' }, { sandbox: failingSandbox }, 'allow_once'));
+    const [outcome] = await tools.executor.runBatch(await tools.batch('Bash', { command: 'echo hi' }, { sandbox: failingSandbox }, 'allow_once'));
     await afterMicrotasks();
     expect(resultOf(outcome).status).toBe('failed');
     expect(unhandled).toEqual([]);

@@ -1,5 +1,5 @@
 import { PinnedOverflowError, formatToolOutput, formattedHeader, readersOffered } from '@momonga/context';
-import { canonicalJson, parseBoundedJson, spanValueOfJsonText } from '@momonga/foundation';
+import { canonicalJson, hostPaths, parseBoundedJson, spanValueOfJsonText } from '@momonga/foundation';
 import { termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
@@ -43,7 +43,7 @@ const callPayload = async (ctx: ClaimContext, display: DisplayContext, item: { c
     name: item.name,
     kind: tool?.kind ?? 'other',
     ...(tool === undefined ? {} : { sideEffect: tool.sideEffect }),
-    title: tool !== undefined && input !== undefined ? tool.title(input, display) : item.name,
+    title: tool !== undefined && input !== undefined ? await tool.title(input, display) : item.name,
     rawInput,
     ...(locations === undefined ? {} : { locations }),
   };
@@ -53,7 +53,7 @@ export const recordCalls = async (ctx: ClaimContext, leading: readonly RunEventP
   const { pendingCalls } = ctx.journal.state;
   const payloads: RunEventPayload[] = [...leading];
   const session = heldSessionOf(ctx.options.store, ctx.run.sessionId);
-  const display = ctx.options.tools.sessionState(session);
+  const display: DisplayContext = { ...ctx.options.tools.sessionState(session), paths: hostPaths(ctx.control.signal) };
   for (const { item } of ownEntries(ctx.journal.state)) {
     if (item.type === 'function_call' && pendingCalls[item.call_id] === undefined) payloads.push(await callPayload(ctx, display, item));
   }
@@ -289,7 +289,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   const { options, journal, run } = ctx;
   const late = lateBatch !== undefined;
   const rules = [...(await permissionRulesFor(options, session)), ...(ctx.delegation?.rules ?? [])];
-  const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal });
+  const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal, discoverGitConfig: true });
   const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
   if (laterVerdict.length > 0) journal.append(laterVerdict);

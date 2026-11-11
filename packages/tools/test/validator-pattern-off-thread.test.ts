@@ -100,7 +100,7 @@ describe('a stop signal during the check', () => {
     recordedWorkers.onStart = () => setImmediate(() => controller.abort());
     const tool = toolWith('Hostile', BACKREFERENCE);
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Hostile', { value: NEVER_FINISHING_INPUT })], { signal: controller.signal }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Hostile', { value: NEVER_FINISHING_INPUT })], { signal: controller.signal }),
     );
     expect(outcomes[0]).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Hostile was cancelled' } });
     expect(recordedWorkers.started.length).toBe(1);

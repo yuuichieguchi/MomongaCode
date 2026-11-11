@@ -22,8 +22,8 @@ const specOf = (specifier: string): FileRuleSpec => ({
 
 const oracleBlocks = (row: ParityRow, candidate: string): boolean => ignore({ ignorecase: false }).add([...row.gitignore]).ignores(candidate);
 
-const engineBlocks = (row: ParityRow, candidate: string): boolean => {
-  const set = compileFileRuleSet([specOf(row.specifier)], [ROOT], null, identity, () => false, HOST_FLAVOUR, ruleEnforcementOf('none'));
+const engineBlocks = async (row: ParityRow, candidate: string): Promise<boolean> => {
+  const set = await compileFileRuleSet([specOf(row.specifier)], [ROOT], null, identity, () => false, HOST_FLAVOUR, ruleEnforcementOf('none'));
   const absolute = `${ROOT}/${candidate}`;
   return set.entries.some((entry) => fileRuleBlocks(set, entry, absolute, absolute));
 };
@@ -37,7 +37,7 @@ describe('exact matcher parity with gitignore', () => {
     expect(blocked.length).toBeLessThan(pairs.length);
   });
 
-  it.each(pairs)('%s against %s agrees with the gitignore oracle', (_specifier, candidate, row) => {
-    expect(engineBlocks(row, candidate)).toBe(oracleBlocks(row, candidate));
+  it.each(pairs)('%s against %s agrees with the gitignore oracle', async (_specifier, candidate, row) => {
+    expect(await engineBlocks(row, candidate)).toBe(oracleBlocks(row, candidate));
   });
 });

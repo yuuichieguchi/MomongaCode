@@ -1,11 +1,16 @@
 import { spawnSync } from '@momonga/testkit/child-process';
+
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { MAX_POINTER_FILE_BYTES } from '@momonga/foundation';
+
+import { REAL_PROCESS_TEST_TIMEOUT_MS, NEVER_CANCELLED } from '@momonga/testkit';
+
+import { MAX_POINTER_FILE_BYTES, syncPaths } from '@momonga/foundation';
+
 import { createPolicyFilesystem } from '@momonga/tools';
+
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -50,9 +55,9 @@ const injectErrno = (code: string, under: string): void => {
   }
 };
 
-const thrownBy = (action: () => unknown): unknown => {
+const thrownBy = async (action: () => unknown): Promise<unknown> => {
   try {
-    action();
+    await action();
   } catch (error) {
     return error;
   }
@@ -63,7 +68,7 @@ const never = (): boolean => false;
 
 describe('resolveProgram walks the search path of the Bash spawn', () => {
   const resolveProgram = (name: string, cwd: string, searchPath: string | undefined, isWritable: (absolute: string) => boolean = never) =>
-    createPolicyFilesystem().resolveProgram(name, cwd, searchPath, isWritable);
+    createPolicyFilesystem().resolveProgram(name, cwd, searchPath, isWritable, NEVER_CANCELLED);
 
   it('returns the system path of the first directory that holds the program for /usr/bin:/bin', () => {
     for (const name of ['ls', 'sed']) {
@@ -125,13 +130,13 @@ describe('resolveProgram walks the search path of the Bash spawn', () => {
     expect(resolveProgram('ls', dir, `${file}:/bin`)).toEqual({ program: '/bin/ls' });
   });
 
-  it('skips an EACCES entry before the holder and rethrows EIO', () => {
+  it('skips an EACCES entry before the holder and rethrows EIO', async () => {
     const dir = makeDir();
     injectErrno('EACCES', path.join(dir, 'denied'));
     expect(resolveProgram('ls', dir, `${path.join(dir, 'denied')}:/bin`)).toEqual({ program: '/bin/ls' });
     vi.restoreAllMocks();
     injectErrno('EIO', path.join(dir, 'broken'));
-    const error = thrownBy(() => resolveProgram('ls', dir, `${path.join(dir, 'broken')}:/bin`)) as NodeJS.ErrnoException;
+    const error = await thrownBy(() => resolveProgram('ls', dir, `${path.join(dir, 'broken')}:/bin`)) as NodeJS.ErrnoException;
     expect(error?.code).toBe('EIO');
   });
 
@@ -171,17 +176,17 @@ describe('resolveProgram walks the search path of the Bash spawn', () => {
 });
 
 describe('unreadable entries are typed (V13)', () => {
-  it('gives Unresolved for a mode 000 .git file and a mode 000 commondir', () => {
+  it('gives Unresolved for a mode 000 .git file and a mode 000 commondir', async () => {
     requireNonRoot();
     const dir = makeDir();
     for (const name of ['.git', 'commondir']) {
       const file = path.join(dir, name);
       fs.writeFileSync(file, 'x', { mode: 0o000 });
-      expect(createPolicyFilesystem().readEntry(file)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
+      expect(await createPolicyFilesystem().readEntry(file, NEVER_CANCELLED)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
     }
   });
 
-  it('gives Unresolved from readNoFollow when readlink fails with EACCES', () => {
+  it('gives Unresolved from readNoFollow when readlink fails with EACCES', async () => {
     const dir = makeDir();
     const link = path.join(dir, 'l');
     fs.symlinkSync('x', link);
@@ -190,56 +195,56 @@ describe('unreadable entries are typed (V13)', () => {
       if (target === link) throw Object.assign(new Error('EACCES: injected'), { code: 'EACCES' });
       return (original as (...args: unknown[]) => unknown)(target, ...rest);
     }) as typeof fs.readlinkSync);
-    expect(createPolicyFilesystem().readNoFollow(link)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
+    expect(await createPolicyFilesystem().readNoFollow(link, NEVER_CANCELLED)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
   });
 });
 
 describe('readEntry', () => {
   const filesystem = () => createPolicyFilesystem();
 
-  it('returns absent for ENOENT and ENOTDIR', () => {
+  it('returns absent for ENOENT and ENOTDIR', async () => {
     const dir = makeDir();
     fs.writeFileSync(path.join(dir, 'file'), '');
-    expect(filesystem().readEntry(path.join(dir, 'missing'))).toEqual({ kind: 'absent' });
-    expect(filesystem().readEntry(path.join(dir, 'file', '.git'))).toEqual({ kind: 'absent' });
+    expect(await filesystem().readEntry(path.join(dir, 'missing'), NEVER_CANCELLED)).toEqual({ kind: 'absent' });
+    expect(await filesystem().readEntry(path.join(dir, 'file', '.git'), NEVER_CANCELLED)).toEqual({ kind: 'absent' });
   });
 
-  it('returns the canonical path of a directory, following a symlink', () => {
+  it('returns the canonical path of a directory, following a symlink', async () => {
     const dir = makeDir();
     fs.mkdirSync(path.join(dir, 'real'));
     fs.symlinkSync(path.join(dir, 'real'), path.join(dir, 'link'));
-    expect(filesystem().readEntry(path.join(dir, 'link'))).toEqual({ kind: 'directory', canonical: path.join(dir, 'real') });
+    expect(await filesystem().readEntry(path.join(dir, 'link'), NEVER_CANCELLED)).toEqual({ kind: 'directory', canonical: path.join(dir, 'real') });
   });
 
-  it('reads a regular file up to MAX_POINTER_FILE_BYTES and reports a larger one as oversize', () => {
+  it('reads a regular file up to MAX_POINTER_FILE_BYTES and reports a larger one as oversize', async () => {
     const dir = makeDir();
     const atLimit = 'g'.repeat(MAX_POINTER_FILE_BYTES);
     fs.writeFileSync(path.join(dir, 'at-limit'), atLimit);
     fs.writeFileSync(path.join(dir, 'over'), `${atLimit}g`);
-    expect(filesystem().readEntry(path.join(dir, 'at-limit'))).toEqual({ kind: 'file', text: atLimit });
-    expect(filesystem().readEntry(path.join(dir, 'over'))).toEqual({ kind: 'oversize' });
+    expect(await filesystem().readEntry(path.join(dir, 'at-limit'), NEVER_CANCELLED)).toEqual({ kind: 'file', text: atLimit });
+    expect(await filesystem().readEntry(path.join(dir, 'over'), NEVER_CANCELLED)).toEqual({ kind: 'oversize' });
   });
 
-  it('maps EACCES below a mode 000 directory to Unresolved', () => {
+  it('maps EACCES below a mode 000 directory to Unresolved', async () => {
     requireNonRoot();
     const dir = makeDir();
     const locked = path.join(dir, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
-    expect(filesystem().readEntry(path.join(locked, '.git'))).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
+    expect(await filesystem().readEntry(path.join(locked, '.git'), NEVER_CANCELLED)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
   });
 
-  it('maps ELOOP to Unresolved', () => {
+  it('maps ELOOP to Unresolved', async () => {
     const dir = makeDir();
     fs.symlinkSync(path.join(dir, 'loop'), path.join(dir, 'loop'));
-    expect(filesystem().readEntry(path.join(dir, 'loop'))).toEqual({ unresolvable: { kind: 'errno', code: 'ELOOP' } });
+    expect(await filesystem().readEntry(path.join(dir, 'loop'), NEVER_CANCELLED)).toEqual({ unresolvable: { kind: 'errno', code: 'ELOOP' } });
   });
 
-  it('rethrows EIO unchanged', () => {
+  it('rethrows EIO unchanged', async () => {
     const dir = makeDir();
     const target = path.join(dir, '.git');
     injectErrno('EIO', target);
-    const error = thrownBy(() => filesystem().readEntry(target)) as NodeJS.ErrnoException;
+    const error = await thrownBy(() => filesystem().readEntry(target, NEVER_CANCELLED)) as NodeJS.ErrnoException;
     expect(error?.code).toBe('EIO');
     expect(error?.path).toBe(target);
   });
@@ -248,23 +253,23 @@ describe('readEntry', () => {
 describe('readNoFollow', () => {
   const filesystem = () => createPolicyFilesystem();
 
-  it('reports missing, symlink, directory and other entries without following a link', () => {
+  it('reports missing, symlink, directory and other entries without following a link', async () => {
     const dir = makeDir();
     fs.mkdirSync(path.join(dir, 'd'));
     fs.writeFileSync(path.join(dir, 'f'), '');
     fs.symlinkSync('../elsewhere', path.join(dir, 'l'));
-    expect(filesystem().readNoFollow(path.join(dir, 'missing'))).toEqual({ kind: 'missing' });
-    expect(filesystem().readNoFollow(path.join(dir, 'l'))).toEqual({ kind: 'symlink', target: '../elsewhere' });
-    expect(filesystem().readNoFollow(path.join(dir, 'd'))).toEqual({ kind: 'directory' });
-    expect(filesystem().readNoFollow(path.join(dir, 'f'))).toEqual({ kind: 'other' });
+    expect(await filesystem().readNoFollow(path.join(dir, 'missing'), NEVER_CANCELLED)).toEqual({ kind: 'missing' });
+    expect(await filesystem().readNoFollow(path.join(dir, 'l'), NEVER_CANCELLED)).toEqual({ kind: 'symlink', target: '../elsewhere' });
+    expect(await filesystem().readNoFollow(path.join(dir, 'd'), NEVER_CANCELLED)).toEqual({ kind: 'directory' });
+    expect(await filesystem().readNoFollow(path.join(dir, 'f'), NEVER_CANCELLED)).toEqual({ kind: 'other' });
   });
 
-  it('maps ENOTDIR to Unresolved and rethrows EIO', () => {
+  it('maps ENOTDIR to Unresolved and rethrows EIO', async () => {
     const dir = makeDir();
     fs.writeFileSync(path.join(dir, 'f'), '');
-    expect(filesystem().readNoFollow(path.join(dir, 'f', 'x'))).toEqual({ unresolvable: { kind: 'errno', code: 'ENOTDIR' } });
+    expect(await filesystem().readNoFollow(path.join(dir, 'f', 'x'), NEVER_CANCELLED)).toEqual({ unresolvable: { kind: 'errno', code: 'ENOTDIR' } });
     injectErrno('EIO', path.join(dir, 'broken'));
-    expect((thrownBy(() => filesystem().readNoFollow(path.join(dir, 'broken'))) as NodeJS.ErrnoException)?.code).toBe('EIO');
+    expect((await thrownBy(() => filesystem().readNoFollow(path.join(dir, 'broken'), NEVER_CANCELLED)) as NodeJS.ErrnoException)?.code).toBe('EIO');
   });
 });
 
@@ -351,114 +356,114 @@ describe('readHead and isSearchable answer as git does', () => {
   it.each([
     ['a symbolic ref', 'ref: refs/heads/main\n', 'text'],
     ['a long file read only to its first 255 bytes', `ref: refs/heads/main\n${'#'.repeat(70_000)}`, 'text'],
-  ])('reads %s', (_label, content, kind) => {
+  ])('reads %s', async (_label, content, kind) => {
     const dir = makeDir();
     fs.writeFileSync(path.join(dir, 'HEAD'), content);
-    const head = createPolicyFilesystem().readHead(path.join(dir, 'HEAD'));
+    const head = await createPolicyFilesystem().readHead(path.join(dir, 'HEAD'), NEVER_CANCELLED);
     expect(head.kind).toBe(kind);
     expect(head.kind === 'text' ? head.text.length : 0).toBe(Math.min(255, content.length));
   });
 
-  it('reads a symlink as its target, and a directory or a missing file as invalid', () => {
+  it('reads a symlink as its target, and a directory or a missing file as invalid', async () => {
     const dir = makeDir();
     fs.symlinkSync('refs/heads/main', path.join(dir, 'HEAD'));
     fs.mkdirSync(path.join(dir, 'dir'));
-    expect(createPolicyFilesystem().readHead(path.join(dir, 'HEAD'))).toEqual({ kind: 'symlink', target: 'refs/heads/main' });
-    expect(createPolicyFilesystem().readHead(path.join(dir, 'dir'))).toEqual({ kind: 'invalid' });
-    expect(createPolicyFilesystem().readHead(path.join(dir, 'missing'))).toEqual({ kind: 'invalid' });
+    expect(await createPolicyFilesystem().readHead(path.join(dir, 'HEAD'), NEVER_CANCELLED)).toEqual({ kind: 'symlink', target: 'refs/heads/main' });
+    expect(await createPolicyFilesystem().readHead(path.join(dir, 'dir'), NEVER_CANCELLED)).toEqual({ kind: 'invalid' });
+    expect(await createPolicyFilesystem().readHead(path.join(dir, 'missing'), NEVER_CANCELLED)).toEqual({ kind: 'invalid' });
   });
 
-  it('is searchable for any entry with the execute bit, as access(X_OK) says, and not for one without', () => {
+  it('is searchable for any entry with the execute bit, as access(X_OK) says, and not for one without', async () => {
     const dir = makeDir();
     fs.writeFileSync(path.join(dir, 'exec'), '', { mode: 0o755 });
     fs.writeFileSync(path.join(dir, 'plain'), '', { mode: 0o644 });
     fs.mkdirSync(path.join(dir, 'directory'));
     const filesystem = createPolicyFilesystem();
-    expect(filesystem.isSearchable(path.join(dir, 'exec'))).toBe(true);
-    expect(filesystem.isSearchable(path.join(dir, 'directory'))).toBe(true);
-    expect(filesystem.isSearchable(path.join(dir, 'plain'))).toBe(false);
-    expect(filesystem.isSearchable(path.join(dir, 'missing'))).toBe(false);
+    expect(await filesystem.isSearchable(path.join(dir, 'exec'), NEVER_CANCELLED)).toBe(true);
+    expect(await filesystem.isSearchable(path.join(dir, 'directory'), NEVER_CANCELLED)).toBe(true);
+    expect(await filesystem.isSearchable(path.join(dir, 'plain'), NEVER_CANCELLED)).toBe(false);
+    expect(await filesystem.isSearchable(path.join(dir, 'missing'), NEVER_CANCELLED)).toBe(false);
   });
 });
 
 describe('readHead and isSearchable pass over what git passes over and rethrow the rest (item 8)', () => {
-  it.each(['EACCES', 'ELOOP', 'ENAMETOOLONG'])('reads %s on HEAD as invalid, as real git passes over such a layout', (code) => {
+  it.each(['EACCES', 'ELOOP', 'ENAMETOOLONG'])('reads %s on HEAD as invalid, as real git passes over such a layout', async (code) => {
     const dir = makeDir();
     const head = path.join(dir, 'HEAD');
     injectErrno(code, head);
-    expect(createPolicyFilesystem().readHead(head)).toEqual({ kind: 'invalid' });
+    expect(await createPolicyFilesystem().readHead(head, NEVER_CANCELLED)).toEqual({ kind: 'invalid' });
   });
 
-  it.each(['EIO', 'EMFILE', 'ENFILE'])('rethrows %s from HEAD unchanged', (code) => {
+  it.each(['EIO', 'EMFILE', 'ENFILE'])('rethrows %s from HEAD unchanged', async (code) => {
     const dir = makeDir();
     const head = path.join(dir, 'HEAD');
     injectErrno(code, head);
-    expect((thrownBy(() => createPolicyFilesystem().readHead(head)) as NodeJS.ErrnoException)?.code).toBe(code);
+    expect((await thrownBy(() => createPolicyFilesystem().readHead(head, NEVER_CANCELLED)) as NodeJS.ErrnoException)?.code).toBe(code);
   });
 
-  it.each(['EIO', 'EMFILE', 'ENFILE'])('rethrows %s from objects unchanged', (code) => {
+  it.each(['EIO', 'EMFILE', 'ENFILE'])('rethrows %s from objects unchanged', async (code) => {
     const dir = makeDir();
     const objects = path.join(dir, 'objects');
     injectErrno(code, objects);
-    expect((thrownBy(() => createPolicyFilesystem().isSearchable(objects)) as NodeJS.ErrnoException)?.code).toBe(code);
+    expect((await thrownBy(() => createPolicyFilesystem().isSearchable(objects, NEVER_CANCELLED)) as NodeJS.ErrnoException)?.code).toBe(code);
   });
 
-  it('is not searchable for objects below a directory that cannot be searched, as real git passes over such a layout', () => {
+  it('is not searchable for objects below a directory that cannot be searched, as real git passes over such a layout', async () => {
     requireNonRoot();
     const dir = makeDir();
     const locked = path.join(dir, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
-    expect(createPolicyFilesystem().isSearchable(path.join(locked, 'objects'))).toBe(false);
+    expect(await createPolicyFilesystem().isSearchable(path.join(locked, 'objects'), NEVER_CANCELLED)).toBe(false);
   });
 
-  it.each(['ELOOP', 'ENAMETOOLONG'])('is not searchable for objects that give %s', (code) => {
+  it.each(['ELOOP', 'ENAMETOOLONG'])('is not searchable for objects that give %s', async (code) => {
     const dir = makeDir();
     const objects = path.join(dir, 'objects');
     injectErrno(code, objects);
-    expect(createPolicyFilesystem().isSearchable(objects)).toBe(false);
+    expect(await createPolicyFilesystem().isSearchable(objects, NEVER_CANCELLED)).toBe(false);
   });
 
-  it('control: ENOENT and ENOTDIR on HEAD mean no repository', () => {
+  it('control: ENOENT and ENOTDIR on HEAD mean no repository', async () => {
     const dir = makeDir();
     fs.writeFileSync(path.join(dir, 'file'), '');
-    expect(createPolicyFilesystem().readHead(path.join(dir, 'missing'))).toEqual({ kind: 'invalid' });
-    expect(createPolicyFilesystem().readHead(path.join(dir, 'file', 'HEAD'))).toEqual({ kind: 'invalid' });
+    expect(await createPolicyFilesystem().readHead(path.join(dir, 'missing'), NEVER_CANCELLED)).toEqual({ kind: 'invalid' });
+    expect(await createPolicyFilesystem().readHead(path.join(dir, 'file', 'HEAD'), NEVER_CANCELLED)).toEqual({ kind: 'invalid' });
   });
 });
 
 describe('pointer files and link targets keep the bytes (review item 10)', () => {
   const invalid = Buffer.from([0x67, 0x69, 0x74, 0x64, 0x69, 0x72, 0x3a, 0x20, 0x2e, 0x2e, 0x2f, 0x65, 0x76, 0x69, 0x6c, 0xff]);
 
-  it('reads a pointer file whose bytes are not UTF-8 as dynamic, and one that is UTF-8 as text', () => {
+  it('reads a pointer file whose bytes are not UTF-8 as dynamic, and one that is UTF-8 as text', async () => {
     const dir = makeDir();
     fs.writeFileSync(path.join(dir, 'bad'), invalid);
     fs.writeFileSync(path.join(dir, 'good'), 'gitdir: ../é\n');
     const filesystem = createPolicyFilesystem();
-    expect(filesystem.readEntry(path.join(dir, 'bad'))).toEqual({ unresolvable: { kind: 'dynamic' } });
-    expect(filesystem.readEntry(path.join(dir, 'good'))).toEqual({ kind: 'file', text: 'gitdir: ../é\n' });
+    expect(await filesystem.readEntry(path.join(dir, 'bad'), NEVER_CANCELLED)).toEqual({ unresolvable: { kind: 'dynamic' } });
+    expect(await filesystem.readEntry(path.join(dir, 'good'), NEVER_CANCELLED)).toEqual({ kind: 'file', text: 'gitdir: ../é\n' });
   });
 
-  it('reads a link target whose bytes are not UTF-8 as dynamic', () => {
+  it('reads a link target whose bytes are not UTF-8 as dynamic', async () => {
     const dir = makeDir();
     const link = path.join(dir, 'link');
     fs.symlinkSync('plain', link);
     const original = fs.readlinkSync as (...args: unknown[]) => unknown;
     vi.spyOn(fs, 'readlinkSync').mockImplementation(((target: unknown, options: unknown) =>
       target === link && options === 'buffer' ? Buffer.from([0x6c, 0xff]) : original(target, options)) as never);
-    expect(createPolicyFilesystem().readNoFollow(link)).toEqual({ unresolvable: { kind: 'dynamic' } });
+    expect(await createPolicyFilesystem().readNoFollow(link, NEVER_CANCELLED)).toEqual({ unresolvable: { kind: 'dynamic' } });
   });
 
-  it('control: a UTF-8 link target is read as before', () => {
+  it('control: a UTF-8 link target is read as before', async () => {
     const dir = makeDir();
     fs.symlinkSync('é/target', path.join(dir, 'link'));
-    expect(createPolicyFilesystem().readNoFollow(path.join(dir, 'link'))).toEqual({ kind: 'symlink', target: 'é/target' });
+    expect(await createPolicyFilesystem().readNoFollow(path.join(dir, 'link'), NEVER_CANCELLED)).toEqual({ kind: 'symlink', target: 'é/target' });
   });
 });
 
 describe('canonicalise', () => {
-  it('behaves as resolveCanonicalPath for a missing tail', () => {
+  it('behaves as syncPaths.resolveCanonicalPath for a missing tail', async () => {
     const dir = makeDir();
-    expect(createPolicyFilesystem().canonicalise(path.join(dir, 'a', 'b'))).toEqual({ ok: true, path: path.join(dir, 'a', 'b') });
+    expect(await createPolicyFilesystem().canonicalise(path.join(dir, 'a', 'b'), NEVER_CANCELLED)).toEqual({ ok: true, path: path.join(dir, 'a', 'b') });
   });
 });

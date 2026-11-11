@@ -86,20 +86,20 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
   const real = (): PlaceholderJournal => createPlaceholderJournal(journalDirectory);
 
   describe('a journal that fails while the placeholders are created', () => {
-    it('fails at the first intent: nothing is created and the error is the journal error', () => {
-      expect(() => start(failingJournal(real(), { method: 'intend', nth: 1, persistent: false }), 'true')).toThrow('the journal failed at intend 1');
+    it('fails at the first intent: nothing is created and the error is the journal error', async () => {
+      await expect((async () => start(failingJournal(real(), { method: 'intend', nth: 1, persistent: false }), 'true'))()).rejects.toThrow('the journal failed at intend 1');
       expect(fs.readdirSync(work)).toEqual([]);
       expect(real().records()).toEqual([]);
     });
 
-    it('fails at the completion of the first placeholder: the file it created is removed, the intent forgotten, the original error kept', () => {
-      expect(() => start(failingJournal(real(), { method: 'complete', nth: 1, persistent: false }), 'true')).toThrow('the journal failed at complete 1');
+    it('fails at the completion of the first placeholder: the file it created is removed, the intent forgotten, the original error kept', async () => {
+      await expect((async () => start(failingJournal(real(), { method: 'complete', nth: 1, persistent: false }), 'true'))()).rejects.toThrow('the journal failed at complete 1');
       expect(fs.readdirSync(work)).toEqual([]);
       expect(real().records()).toEqual([]);
     });
 
-    it('fails at the completion of the second placeholder: the first is released too', () => {
-      expect(() => start(failingJournal(real(), { method: 'complete', nth: 2, persistent: false }), 'true')).toThrow('the journal failed at complete 2');
+    it('fails at the completion of the second placeholder: the first is released too', async () => {
+      await expect((async () => start(failingJournal(real(), { method: 'complete', nth: 2, persistent: false }), 'true'))()).rejects.toThrow('the journal failed at complete 2');
       expect(fs.readdirSync(work)).toEqual([]);
       expect(real().records()).toEqual([]);
     });
@@ -151,7 +151,7 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
   describe('a journal that fails while the placeholders are released', () => {
     it('keeps releasing the other placeholders and still removes the private tmp directory, then reports the failure', async () => {
       const proc = start(failingJournal(real(), { method: 'forget', nth: 1, persistent: false }), 'true');
-      await expect(run(proc)).rejects.toThrow('the journal failed at forget 1');
+      await expect(run(await proc)).rejects.toThrow('the journal failed at forget 1');
       expect(fs.readdirSync(work)).toEqual([]);
       expect(fs.readdirSync(tmpRoot)).toEqual([]);
     });
@@ -159,7 +159,7 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
 
   describe('release removes only the file it created', () => {
     it('leaves a person file that replaced the placeholder during the command', async () => {
-      await run(start(real(), `rm ${mcp()} && : > ${mcp()}`));
+      await run(await start(real(), `rm ${mcp()} && : > ${mcp()}`));
       expect(fs.existsSync(mcp())).toBe(true);
       expect(fs.existsSync(envrc())).toBe(false);
       expect(real().records()).toEqual([]);
@@ -172,12 +172,12 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       const sandbox = sandboxWith(journal);
       const command = { argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } };
       held = new Set([mcp()]);
-      await run(sandbox.spawn(command, policy(), new AbortController().signal));
+      await run(await sandbox.spawn(command, policy(), new AbortController().signal));
       expect(fs.existsSync(mcp())).toBe(true);
       expect(fs.existsSync(envrc())).toBe(false);
       expect(journal.records().map((record) => record.path)).toEqual([mcp()]);
       held = new Set();
-      await run(sandbox.spawn({ ...command, argv: ['/bin/sh', '-c', 'true'] }, { ...policy(), writeDenied: [envrc()] }, new AbortController().signal));
+      await run(await sandbox.spawn({ ...command, argv: ['/bin/sh', '-c', 'true'] }, { ...policy(), writeDenied: [envrc()] }, new AbortController().signal));
       expect(fs.existsSync(mcp())).toBe(false);
       expect(journal.records()).toEqual([]);
     });
@@ -186,7 +186,7 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       const journal = real();
       const sandbox = sandboxWith(journal);
       held = new Set([mcp()]);
-      await run(sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
+      await run(await sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
       sandbox.sweep?.();
       expect(fs.existsSync(mcp())).toBe(true);
       expect(journal.records().map((record) => record.path)).toEqual([mcp()]);
@@ -201,14 +201,14 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       const sandbox = sandboxWith(journal);
       const command = { argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } };
       held = new Set([mcp()]);
-      await run(sandbox.spawn(command, policy(), new AbortController().signal));
+      await run(await sandbox.spawn(command, policy(), new AbortController().signal));
       expect(fs.existsSync(mcp())).toBe(true);
       held = new Set();
-      const planned = sandbox.spawn({ ...command, argv: ['/bin/sh', '-c', 'sleep 0.2'] }, { ...policy(), writeDenied: [mcp()] }, new AbortController().signal);
+      const planned = await sandbox.spawn({ ...command, argv: ['/bin/sh', '-c', 'sleep 0.2'] }, { ...policy(), writeDenied: [mcp()] }, new AbortController().signal);
       sandbox.sweep?.();
       expect(fs.existsSync(mcp())).toBe(true);
       expect(journal.records().map((record) => record.path)).toEqual([mcp()]);
-      await run(planned);
+      await run(await planned);
       expect(fs.existsSync(mcp())).toBe(false);
       expect(journal.records()).toEqual([]);
     });
@@ -231,15 +231,15 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
         },
       });
       held = new Set([mcp()]);
-      await run(sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
+      await run(await sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
       held = new Set();
       failure = new Error('the placeholder could not be removed');
-      expect(() => sandbox.sweep?.()).toThrow('the placeholder could not be removed');
-      expect(() => sandbox.sweep?.()).not.toThrow();
-      expect(() => sandbox.sweep?.()).not.toThrow();
+      await expect((async () => sandbox.sweep?.())()).rejects.toThrow('the placeholder could not be removed');
+      await expect((async () => { await sandbox.sweep?.(); })()).resolves.toBeUndefined();
+      await expect((async () => { await sandbox.sweep?.(); })()).resolves.toBeUndefined();
       failure = new Error('the journal is read-only');
-      expect(() => sandbox.sweep?.()).toThrow('the journal is read-only');
-      expect(() => sandbox.sweep?.()).not.toThrow();
+      await expect((async () => sandbox.sweep?.())()).rejects.toThrow('the journal is read-only');
+      await expect((async () => { await sandbox.sweep?.(); })()).resolves.toBeUndefined();
       expect(fs.existsSync(mcp())).toBe(true);
       failure = undefined;
       sandbox.sweep?.();
@@ -265,19 +265,19 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       });
       const command = { argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } };
       held = new Set([mcp()]);
-      await run(sandbox.spawn(command, policy(), new AbortController().signal));
+      await run(await sandbox.spawn(command, policy(), new AbortController().signal));
       held = new Set();
       failing = true;
-      expect(() => sandbox.sweep?.()).toThrow('the placeholder could not be removed');
-      expect(() => sandbox.sweep?.()).not.toThrow();
+      await expect((async () => sandbox.sweep?.())()).rejects.toThrow('the placeholder could not be removed');
+      await expect((async () => { await sandbox.sweep?.(); })()).resolves.toBeUndefined();
       failing = false;
       sandbox.sweep?.();
       expect(fs.existsSync(mcp())).toBe(false);
       held = new Set([mcp()]);
-      await run(sandbox.spawn(command, policy(), new AbortController().signal));
+      await run(await sandbox.spawn(command, policy(), new AbortController().signal));
       held = new Set();
       failing = true;
-      expect(() => sandbox.sweep?.()).toThrow('the placeholder could not be removed');
+      await expect((async () => sandbox.sweep?.())()).rejects.toThrow('the placeholder could not be removed');
     });
 
     it('reports a sweep that cannot remove the file, and keeps it for the next sweep', async () => {
@@ -299,10 +299,10 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
         },
       });
       held = new Set([mcp()]);
-      await run(sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
+      await run(await sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
       held = new Set();
       failing = true;
-      expect(() => sandbox.sweep?.()).toThrow(failure);
+      await expect((async () => sandbox.sweep?.())()).rejects.toThrow(failure);
       failing = false;
       sandbox.sweep?.();
       expect(fs.existsSync(mcp())).toBe(false);

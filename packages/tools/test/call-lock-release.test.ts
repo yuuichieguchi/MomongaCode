@@ -79,7 +79,7 @@ describe('a call lock whose file cannot be removed', () => {
     const lock = await acquired(createCallLocks({ dir, mechanism, timing: advancingTiming(), waitMs: 0 }).acquire('a', never()));
     seal(dir, context);
 
-    expect(() => lock.release()).toThrow(expect.objectContaining({ code: 'EACCES' }));
+    await expect((async () => lock.release())()).rejects.toThrow(expect.objectContaining({ code: 'EACCES' }));
 
     expect(await mechanism.isHeld(path.join(dir, 'a.lock'))).toBe(false);
   });
@@ -102,7 +102,7 @@ describe('a call lock whose file cannot be removed', () => {
       },
     });
 
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write', {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write', {}, 'allow_once')]));
     const reported = await Promise.race([warned.promise, unhandled.promise]);
     fs.chmodSync(harness.callLockDir, PRIVATE_DIR);
 
@@ -124,7 +124,7 @@ describe('a call lock whose file cannot be removed', () => {
       },
     });
 
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash', {}, 'allow_once')]));
     fs.chmodSync(harness.markerDir, PRIVATE_DIR);
 
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'ran' } });
@@ -146,7 +146,7 @@ describe('a call lock whose file cannot be removed', () => {
       },
     });
 
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
     fs.chmodSync(harness.callLockDir, PRIVATE_DIR);
 
     expect(outcomes[0]).toMatchObject({ kind: 'result', reconciled: 'already_applied' });

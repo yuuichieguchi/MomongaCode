@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProbes, testPaths } from '@momonga/testkit';
 import { resolveCanonicalPath, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSet, PathResolution } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
@@ -15,6 +15,7 @@ import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './builtins/fixtures.ts'
 import type { Builtins } from './builtins/fixtures.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { minimalPolicyFor } from './helpers.ts';
+import { syncPaths } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -44,8 +45,8 @@ const withFileRules = (tools: Builtins, rules: PermissionRule[], fileRules: File
   return { rules, sandboxPolicy, tmpDir: tools.tmpDir, roots: [tools.layout.project], ...extra };
 };
 
-const withRules = (tools: Builtins, rules: PermissionRule[], extra: Extra = {}) =>
-  withFileRules(tools, rules, computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none')), extra);
+const withRules = async (tools: Builtins, rules: PermissionRule[], extra: Extra = {}) =>
+  withFileRules(tools, rules, await computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'), testProbes()), extra);
 
 const failedWith = (outcome: CallOutcome | undefined): string => {
   expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
@@ -94,7 +95,7 @@ describe('executor guards read the user file rules', () => {
   it('fails a Read of a denied .env naming the rule and its file', async () => {
     const tools = await makeBuiltins();
     const target = tools.write('.env', 'SECRET');
-    const outcome = await tools.run('Read', { file_path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
+    const outcome = await tools.run('Read', { file_path: target }, await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
     expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
   });
 
@@ -102,7 +103,7 @@ describe('executor guards read the user file rules', () => {
     const tools = await makeBuiltins();
     const target = tools.write('.env', 'SECRET');
     const { sandbox, spawned } = recordingSandbox('seatbelt', () => '');
-    const outcome = await tools.run('Grep', { pattern: 'SECRET', path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }));
+    const outcome = await tools.run('Grep', { pattern: 'SECRET', path: target }, await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }));
     expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
     expect(spawned).toEqual([]);
   });
@@ -111,7 +112,7 @@ describe('executor guards read the user file rules', () => {
     const tools = await makeBuiltins();
     tools.write(path.join('secrets', 'k'), 'KEY');
     const target = path.join(tools.layout.project, 'secrets');
-    const outcome = await tools.run('Glob', { pattern: '**/*', path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(secrets/**)')]));
+    const outcome = await tools.run('Glob', { pattern: '**/*', path: target }, await withRules(tools, [ruleOf(tools, 'deny', 'Read(secrets/**)')]));
     expect(failedWith(outcome)).toBe(blockedMessage('secrets', 'Read(secrets/**)'));
   });
 
@@ -119,7 +120,7 @@ describe('executor guards read the user file rules', () => {
     const tools = await makeBuiltins();
     tools.write('.env', 'SECRET');
     const visible = tools.write('notes.txt', 'n');
-    const outcome = await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
+    const outcome = await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
     const output = resultOf(outcome).output;
     expect(output.split('\n')).toContain(inProject(tools, visible));
     expect(output).not.toContain('.env');
@@ -129,7 +130,7 @@ describe('executor guards read the user file rules', () => {
     const tools = await makeBuiltins({ realSandbox: true });
     tools.write('.env', 'secret');
     const visible = tools.write('notes.txt', 'secret');
-    const outcome = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } }));
+    const outcome = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } }));
     const lines = resultOf(outcome).output.split('\n');
     expect(lines).toContain(inProject(tools, visible));
     expect(lines.filter((line) => line.includes('.env'))).toEqual([]);
@@ -140,10 +141,10 @@ describe('executor guards read the user file rules', () => {
     tools.write('.env', 'secret');
     tools.write(path.join('sub', '.env'), 'secret');
     const visible = tools.write('notes.txt', 'secret');
-    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
-    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options);
     expect(resultOf(listed).output).toBe(inProject(tools, visible));
-    const content = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project, output_mode: 'content' }, options);
+    const content = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project, output_mode: 'content' }, await options);
     expect(resultOf(content).output).toBe(`${inProject(tools, visible)}:1:secret`);
   });
 
@@ -152,10 +153,10 @@ describe('executor guards read the user file rules', () => {
     const carved = tools.write(path.join('config', 'sample.env'), 'secret');
     const denied = tools.write(path.join('config', 'prod.env'), 'secret');
     const rules = [{ ...ruleOf(tools, 'deny', 'Read(*.env)'), exceptions: ['sample.env'] } as PermissionRule];
-    const options = withRules(tools, rules, { env: { PATH: RG_PATH, LANG: 'C' } });
-    expect(resultOf(await tools.run('Read', { file_path: carved }, options)).status).toBe('completed');
-    expect(resultOf(await tools.run('Read', { file_path: denied }, options)).status).toBe('failed');
-    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    const options = await withRules(tools, rules, { env: { PATH: RG_PATH, LANG: 'C' } });
+    expect(resultOf(await tools.run('Read', { file_path: carved }, await options)).status).toBe('completed');
+    expect(resultOf(await tools.run('Read', { file_path: denied }, await options)).status).toBe('failed');
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options);
     expect(resultOf(listed).output).toBe(inProject(tools, carved));
   });
 
@@ -168,8 +169,8 @@ describe('executor guards read the user file rules', () => {
     const count = Math.ceil(argumentLimit / stem.length) + 100;
     for (let index = 0; index < count; index += 1) fs.writeFileSync(path.join(deniedDirectory, `${stem}-${index}.env`), 'secret');
     const visible = tools.write('notes.txt', 'secret');
-    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
-    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options);
     expect(resultOf(listed).output).toBe(inProject(tools, visible));
   });
 
@@ -179,8 +180,8 @@ describe('executor guards read the user file rules', () => {
     tools.write('trailing.env ', 'secret');
     tools.write('#hash.env', 'secret');
     const visible = tools.write('line\tbreak.envx', 'secret');
-    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)'), ruleOf(tools, 'deny', 'Read(trailing.env*)')], { env: { PATH: RG_PATH, LANG: 'C' } });
-    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)'), ruleOf(tools, 'deny', 'Read(trailing.env*)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options);
     expect(resultOf(listed).output).toBe(inProject(tools, visible));
   });
 
@@ -188,20 +189,20 @@ describe('executor guards read the user file rules', () => {
     const tools = await makeBuiltins({ realSandbox: true });
     tools.write('.env', 'secret');
     const visible = tools.write('sample.envrc', 'secret');
-    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
-    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project, glob: '*.env*' }, options);
+    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project, glob: '*.env*' }, await options);
     expect(resultOf(listed).output).toBe(inProject(tools, visible));
   });
 
   it('hands ripgrep a policy that carries fileRules and drops the denied records', async () => {
     const { tools, project } = await grepFixture();
     const { sandbox, spawned } = recordingSandbox('seatbelt', () => recorded(RECORDINGS.files_with_matches, project));
-    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } });
-    const outcome = await tools.run('Grep', { pattern: 'secret', path: project }, options);
+    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } });
+    const outcome = await tools.run('Grep', { pattern: 'secret', path: project }, await options);
     expect(spawned).toHaveLength(1);
     expect(spawned[0]?.config).toContain('--null');
     expect(spawned[0]?.command.argv).not.toContain('--null');
-    expect((spawned[0]?.policy as SandboxPolicy & { fileRules?: unknown }).fileRules).toBe((options.sandboxPolicy as SandboxPolicy & { fileRules: unknown }).fileRules);
+    expect((spawned[0]?.policy as SandboxPolicy & { fileRules?: unknown }).fileRules).toBe(((await options).sandboxPolicy as SandboxPolicy & { fileRules: unknown }).fileRules);
     expect(resultOf(outcome).output).toBe(inProject(tools, path.join(project, 'notes.txt')));
   });
 
@@ -213,7 +214,7 @@ describe('executor guards read the user file rules', () => {
     const { tools, project } = await grepFixture();
     const { sandbox } = recordingSandbox('none', () => recorded(RECORDINGS[mode], project));
     const args = { pattern: 'secret', path: project, output_mode: mode, ...(mode === 'content' ? { '-C': 1 } : {}) };
-    const outcome = await tools.run('Grep', args, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }));
+    const outcome = await tools.run('Grep', args, await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }));
     const output = resultOf(outcome).output;
     expect(output).not.toContain('.env');
     expect(output).not.toContain('\u0000');
@@ -226,7 +227,7 @@ describe('executor guards read the user file rules', () => {
     const outcome = await tools.run(
       'Grep',
       { pattern: 'secret', path: project, output_mode: 'content' },
-      withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }),
+      await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }),
     );
     expect(spawned[0]?.command.cwd).toBe(project);
     expect(resultOf(outcome).output).toBe('No matches found');
@@ -239,7 +240,7 @@ describe('executor guards read the user file rules', () => {
     fs.writeFileSync(path.join(shared, '.env'), 'SHARED');
     fs.symlinkSync(shared, path.join(tools.layout.project, 'cfg'));
     const target = path.join(tools.layout.project, 'cfg', '.env');
-    const outcome = await tools.run('Read', { file_path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
+    const outcome = await tools.run('Read', { file_path: target }, await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
     expect(failedWith(outcome)).toBe(blockedMessage('cfg/.env', 'Read(.env)'));
   });
 
@@ -247,11 +248,11 @@ describe('executor guards read the user file rules', () => {
     const tools = await makeBuiltins();
     const rules = [ruleOf(tools, 'deny', 'Write(*.pem)')];
     const target = path.join(tools.layout.project, 'k.pem');
-    const blocked = await tools.run('Write', { file_path: target, content: 'x' }, withRules(tools, rules, { mode: 'acceptEdits' }));
+    const blocked = await tools.run('Write', { file_path: target, content: 'x' }, await withRules(tools, rules, { mode: 'acceptEdits' }));
     expect(failedWith(blocked)).toBe(blockedMessage('k.pem', 'Write(*.pem)'));
     expect(fs.existsSync(target)).toBe(false);
     const scratch = path.join(tools.tmpDir, 'k.pem');
-    const allowed = await tools.run('Write', { file_path: scratch, content: 'x' }, withRules(tools, rules, { mode: 'acceptEdits' }));
+    const allowed = await tools.run('Write', { file_path: scratch, content: 'x' }, await withRules(tools, rules, { mode: 'acceptEdits' }));
     expect(resultOf(allowed).status).toBe('completed');
     expect(fs.readFileSync(scratch, 'utf8')).toBe('x');
   });
@@ -262,7 +263,7 @@ describe('executor guards read the user file rules', () => {
     fs.writeFileSync(outside, 'plain');
     const target = path.join(tools.layout.project, '.env');
     fs.symlinkSync(outside, target);
-    const outcome = await tools.run('Read', { file_path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
+    const outcome = await tools.run('Read', { file_path: target }, await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
     expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
   });
 
@@ -274,7 +275,7 @@ describe('executor guards read the user file rules', () => {
     fs.symlinkSync(secret, path.join(tools.layout.project, 'linkdir'));
     const target = path.join(tools.layout.project, 'linkdir', 'k');
     const ruleText = `Read(/${secret}/**)`;
-    const outcome = await tools.run('Read', { file_path: target }, withRules(tools, [ruleOf(tools, 'deny', ruleText)]));
+    const outcome = await tools.run('Read', { file_path: target }, await withRules(tools, [ruleOf(tools, 'deny', ruleText)]));
     expect(failedWith(outcome)).toBe(blockedMessage(path.join(secret, 'k'), ruleText));
   });
 });
@@ -291,7 +292,7 @@ const newlineFixture = async () => {
 
 const grepRecorded = async (tools: Builtins, stdout: string, rules: PermissionRule[], args: Record<string, unknown>) => {
   const { sandbox } = recordingSandbox('none', () => stdout);
-  return tools.run('Grep', { pattern: 'SECRET', ...args }, withRules(tools, rules, { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }));
+  return tools.run('Grep', { pattern: 'SECRET', ...args }, await withRules(tools, rules, { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }));
 };
 
 describe('Grep parses each --null record path up to its NUL', () => {
@@ -341,8 +342,8 @@ describe('Grep parses each --null record path up to its NUL', () => {
 
 const remapping =
   (from: string, to: string) =>
-  (absolute: string): PathResolution =>
-    absolute === from ? { ok: true, path: to } : resolveCanonicalPath(absolute);
+  async (absolute: string): Promise<PathResolution> =>
+    absolute === from ? { ok: true, path: to } : await syncPaths.resolveCanonicalPath(absolute);
 
 const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> =>
   promise.then(
@@ -358,8 +359,8 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
     const target = tools.write(path.join('real', 'k'), 'KEY');
     const ruleText = `Read(/${path.join(tools.layout.project, 'cfg')}/**)`;
     const rules = [ruleOf(tools, effect, ruleText)];
-    const fileRules = computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'), remapping(path.join(tools.layout.project, 'cfg'), path.join(tools.layout.project, 'real')));
-    expect(fileRules.fingerprint).toBe(computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none')).fingerprint);
+    const fileRules = await computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'), { canonicalise: remapping(path.join(tools.layout.project, 'cfg'), path.join(tools.layout.project, 'real')), volumeProbe: testProbes().volumeProbe });
+    expect(fileRules.fingerprint).toBe((await computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'), testProbes())).fingerprint);
     return { tools, target, rules, fileRules, ruleText };
   };
 
@@ -382,7 +383,7 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
     const vault = path.join(tools.layout.outside, 'vault');
     fs.mkdirSync(vault);
     const rules = [ruleOf(tools, 'deny', `Read(/${vault}/**)`)];
-    const fileRules = computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'));
+    const fileRules = await computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'), testProbes());
     fs.rmdirSync(vault);
     fs.symlinkSync(vault, vault);
     const notes = tools.write('notes.txt', 'NOTES');
@@ -398,7 +399,7 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
   it('checks the fingerprint without touching the filesystem: a stale seatbelt set fails as file_rules_stale even when a prefix cannot be resolved', async () => {
     const { tools, rules, notes } = await loopedFixture();
     const { sandbox, spawned } = recordingSandbox('seatbelt', () => '');
-    const stale = computeFileRules([], [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'));
+    const stale = await computeFileRules([], [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'), testProbes());
     const error = await rejectionOf(tools.run('Read', { file_path: notes }, withFileRules(tools, rules, stale, { sandbox })));
     expect(error).toMatchObject({ name: 'SandboxPolicyError', code: 'file_rules_stale' });
     expect(spawned).toEqual([]);
@@ -416,7 +417,7 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
   it('fails a stale set as file_rules_stale under a sandbox of kind none', async () => {
     const tools = await makeBuiltins();
     const rules = [ruleOf(tools, 'deny', 'Read(.env)')];
-    const stale = computeFileRules([], [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'));
+    const stale = await computeFileRules([], [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'), testProbes());
     const { sandbox, spawned } = recordingSandbox('none', () => '');
     const error = await rejectionOf(tools.run('Grep', { pattern: 'x', path: tools.layout.project }, withFileRules(tools, rules, stale, { sandbox, env: { PATH: RG_PATH, LANG: 'C' } })));
     expect(error).toMatchObject({ name: 'SandboxPolicyError', code: 'file_rules_stale' });
@@ -431,8 +432,8 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
       parseRule('Read(.env)', { effect: 'deny', origin: 'user', source: SOURCE, settingsRoot: harness.layout.project, home: harness.layout.home, cwd: harness.layout.project }),
     ];
     const pathTool = makeTool('PathTool', { sideEffect: 'read_only', subjectKind: 'path', subject: () => ({ kind: 'path', tool: 'PathTool', paths: [target], access: 'read' }) });
-    const input = harness.input(await toolSetOf(pathTool), [call('c1', 'PathTool')], { rules, mode: 'bypassPermissions', sandboxPolicy: minimalPolicyFor({ layout: harness.layout, rules }) });
-    const [outcome] = await harness.executor.runBatch(input);
+    const input = harness.input(await toolSetOf(pathTool), [call('c1', 'PathTool')], { rules, mode: 'bypassPermissions', sandboxPolicy: await minimalPolicyFor({ layout: harness.layout, rules }) });
+    const [outcome] = await harness.executor.runBatch(await input);
     expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
   });
 });
@@ -453,21 +454,21 @@ describe('Grep(...) and Glob(...) entries apply to their own tool only (pins)', 
     const visible = tools.write('notes.txt', 'KEY\n');
     fs.utimesSync(visible, 2_000_000, 2_000_000);
     fs.utimesSync(secret, 1_000_000, 1_000_000);
-    return { tools, secret, visible, options: withRules(tools, [ruleOf(tools, 'deny', ruleText)], { env: { PATH: RG_PATH, LANG: 'C' } }) };
+    return { tools, secret, visible, options: await withRules(tools, [ruleOf(tools, 'deny', ruleText)], { env: { PATH: RG_PATH, LANG: 'C' } }) };
   };
 
   it.runIf(HAS_RG)('a Glob deny hides the file from Glob and leaves Read and Grep alone', async () => {
     const { tools, secret, visible, options } = await secretsFixture('Glob(secrets/**)');
-    expect(resultOf(await tools.run('Read', { file_path: secret }, options)).status).toBe('completed');
-    expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe(inProject(tools, visible));
-    expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));
+    expect(resultOf(await tools.run('Read', { file_path: secret }, await options)).status).toBe('completed');
+    expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, await options)).output).toBe(inProject(tools, visible));
+    expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, await options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));
   });
 
   it.runIf(HAS_RG)('a Grep deny hides the file from Grep and leaves Read and Glob alone', async () => {
     const { tools, secret, visible, options } = await secretsFixture('Grep(secrets/**)');
-    expect(resultOf(await tools.run('Read', { file_path: secret }, options)).status).toBe('completed');
-    expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));
-    expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, options)).output).toBe(inProject(tools, visible));
+    expect(resultOf(await tools.run('Read', { file_path: secret }, await options)).status).toBe('completed');
+    expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, await options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));
+    expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, await options)).output).toBe(inProject(tools, visible));
   });
 });
 
@@ -478,7 +479,7 @@ describe('symlinks under user rules (pins)', () => {
     fs.writeFileSync(outside, 'plain');
     const target = path.join(tools.layout.project, '.env');
     fs.symlinkSync(outside, target);
-    const outcome = await tools.run('Write', { file_path: target, content: 'x' }, withRules(tools, [ruleOf(tools, 'deny', 'Write(.env)')], { mode: 'acceptEdits' }));
+    const outcome = await tools.run('Write', { file_path: target, content: 'x' }, await withRules(tools, [ruleOf(tools, 'deny', 'Write(.env)')], { mode: 'acceptEdits' }));
     expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Write(.env)'));
     expect(fs.readFileSync(outside, 'utf8')).toBe('plain');
   });
@@ -495,7 +496,7 @@ describe('symlinks under user rules (pins)', () => {
     fs.symlinkSync(path.join(tools.layout.outside, 'other.txt'), path.join(tools.layout.project, 'x.env'));
     fs.symlinkSync(path.join(secretDir, 'k'), path.join(tools.layout.project, 'k-link'));
     const rules = [ruleOf(tools, 'deny', 'Read(*.env)'), ruleOf(tools, 'deny', `Read(/${secretDir}/**)`)];
-    const outcome = await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, withRules(tools, rules));
+    const outcome = await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, await withRules(tools, rules));
     expect(resultOf(outcome).output).toBe('visible-link');
   });
 });
@@ -507,7 +508,7 @@ describe('read rules block every path subject (pins)', () => {
   ] as const)('blocks %s of a Read-denied file naming the Read rule', async (tool, args) => {
     const tools = await makeBuiltins();
     const target = tools.write('.env', 'SECRET');
-    const outcome = await tools.run(tool, args(target), withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { mode: 'acceptEdits' }));
+    const outcome = await tools.run(tool, args(target), await withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { mode: 'acceptEdits' }));
     expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
     expect(fs.readFileSync(target, 'utf8')).toBe('SECRET');
   });
@@ -515,7 +516,7 @@ describe('read rules block every path subject (pins)', () => {
   it('does not apply a Glob deny to a Write', async () => {
     const tools = await makeBuiltins();
     const target = path.join(tools.layout.project, '.env');
-    const outcome = await tools.run('Write', { file_path: target, content: 'x' }, withRules(tools, [ruleOf(tools, 'deny', 'Glob(.env)')], { mode: 'acceptEdits' }));
+    const outcome = await tools.run('Write', { file_path: target, content: 'x' }, await withRules(tools, [ruleOf(tools, 'deny', 'Glob(.env)')], { mode: 'acceptEdits' }));
     expect(resultOf(outcome).status).toBe('completed');
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
@@ -529,17 +530,17 @@ describe('a user Read deny over owned read allows', () => {
     const secret = path.join(shared, 'f');
     fs.writeFileSync(secret, 'SHARED');
     const ruleText = `Read(/${shared}/**)`;
-    const fileRules = computeFileRules([ruleOf(tools, 'deny', ruleText)], [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'));
-    const matcher = createReadAccessMatcher({ readDenied: [tools.layout.outside], readAllowed: [shared], fileRules });
-    expect(matcher.blockedBy(secret, tools.layout.project)).toMatchObject({ ruleText, layer: 'user', source: SOURCE });
+    const fileRules = await computeFileRules([ruleOf(tools, 'deny', ruleText)], [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'), testProbes());
+    const matcher = await createReadAccessMatcher({ readDenied: [tools.layout.outside], readAllowed: [shared], fileRules }, testPaths());
+    expect(await matcher.blockedBy(secret, tools.layout.project)).toMatchObject({ ruleText, layer: 'user', source: SOURCE });
   });
 
   it('leaves the session tmp dir writable and readable under a user Read deny that covers it (pin)', async () => {
     const tools = await makeBuiltins();
     const rules = [ruleOf(tools, 'deny', `Read(/${tools.layout.root}/**)`)];
     const target = path.join(tools.tmpDir, 'scratch.txt');
-    expect(resultOf(await tools.run('Write', { file_path: target, content: 'tmp' }, withRules(tools, rules, { mode: 'acceptEdits' }))).status).toBe('completed');
-    const read = resultOf(await tools.run('Read', { file_path: target }, withRules(tools, rules)));
+    expect(resultOf(await tools.run('Write', { file_path: target, content: 'tmp' }, await withRules(tools, rules, { mode: 'acceptEdits' }))).status).toBe('completed');
+    const read = resultOf(await tools.run('Read', { file_path: target }, await withRules(tools, rules)));
     expect(read.status).toBe('completed');
     expect(read.output).toContain('tmp');
   });

@@ -7,6 +7,7 @@ import type { Decision, PolicyFilesystem } from '@momonga/policy';
 import { BASH } from './decision-rows.ts';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout } from './helpers.ts';
 import type { Layout } from './helpers.ts';
+import { syncPaths } from '@momonga/foundation';
 
 type SymlinkReadLine = { program: string; argv: string[]; link: 'tree' | 'operand'; mode: 'manual' | 'acceptEdits'; exit: number; readsThrough: boolean };
 
@@ -34,10 +35,10 @@ const buildLayout = (layout: Layout): void => {
   for (const name of ['l', 'x']) fs.writeFileSync(path.join(layout.project, 'b', name), 'plain\n');
 };
 
-const decideLine = (platform: Measured, line: SymlinkReadLine, filesystem?: (layout: Layout) => PolicyFilesystem): { decision: Decision; layout: Layout } => {
+const decideLine = async (platform: Measured, line: SymlinkReadLine, filesystem?: (layout: Layout) => PolicyFilesystem): Promise<{ decision: Decision; layout: Layout }> => {
   const layout = makeLayout();
   buildLayout(layout);
-  const decision = decide({
+  const decision = await decide({
     tool: BASH,
     subject: { kind: 'command', tool: 'Bash', command: commandOf(line) },
     mode: line.mode,
@@ -45,7 +46,7 @@ const decideLine = (platform: Measured, line: SymlinkReadLine, filesystem?: (lay
     roots: [layout.project],
     home: layout.home,
     cwd: layout.project,
-    fileRules: fileRulesFor([], [layout.project]),
+    fileRules: await fileRulesFor([], [layout.project]),
     fs: filesystem?.(layout) ?? fakeFs({ platform }), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]),
     protectedSet: EMPTY_PROTECTED_SET,
   });
@@ -55,12 +56,12 @@ const decideLine = (platform: Measured, line: SymlinkReadLine, filesystem?: (lay
 describe.each(['darwin', 'linux'] as const)('approval agrees with the real %s tool on tree lines (5.2a)', (platform) => {
   for (const line of linesFor(platform).filter((entry) => entry.link === 'tree')) {
     if (isSuccess(line)) {
-      it(`${commandOf(line)} in ${line.mode} is approved iff it does not read through the link`, () => {
-        expect(decideLine(platform, line).decision.kind === 'allow').toBe(!line.readsThrough);
+      it(`${commandOf(line)} in ${line.mode} is approved iff it does not read through the link`, async () => {
+        expect((await decideLine(platform, line)).decision.kind === 'allow').toBe(!line.readsThrough);
       });
     } else {
-      it(`${commandOf(line)} (error exit ${line.exit}) is approved only if it does not read through the link`, () => {
-        const approved = decideLine(platform, line).decision.kind === 'allow';
+      it(`${commandOf(line)} (error exit ${line.exit}) is approved only if it does not read through the link`, async () => {
+        const approved = (await decideLine(platform, line)).decision.kind === 'allow';
         expect(approved && line.readsThrough).toBe(false);
       });
     }
@@ -69,15 +70,15 @@ describe.each(['darwin', 'linux'] as const)('approval agrees with the real %s to
 
 describe.each(['darwin', 'linux'] as const)('operands are resolved through fs.canonicalise on the %s table (3.3 rule 7)', (platform) => {
   for (const line of linesFor(platform).filter((entry) => entry.link === 'operand')) {
-    it(`${commandOf(line)} resolves its operand through the port and asks`, () => {
+    it(`${commandOf(line)} resolves its operand through the port and asks`, async () => {
       const seen: string[] = [];
-      const { decision, layout } = decideLine(platform, line, () =>
+      const { decision, layout } =await  await decideLine(platform, line, () =>
         fakeFs({
           platform,
           overrides: {
             canonicalise: (absolute) => {
               seen.push(absolute);
-              return resolveCanonicalPath(absolute);
+              return syncPaths.resolveCanonicalPath(absolute);
             },
           },
         }),

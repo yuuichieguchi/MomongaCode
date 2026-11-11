@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { canonicalDirectory } from '@momonga/foundation';
+import { syncPaths } from '../src/index.ts';
 
 const tempDirs: string[] = [];
 const lockedDirs: string[] = [];
@@ -42,7 +42,7 @@ describe('canonicalDirectory', () => {
     const root = makeDir();
     const project = path.join(root, 'Work', 'Project');
     fs.mkdirSync(project, { recursive: true });
-    expect(canonicalDirectory(path.join(root, 'WORK', 'project'))).toEqual({ ok: true, path: project });
+    expect(syncPaths.canonicalDirectory(path.join(root, 'WORK', 'project'))).toEqual({ ok: true, path: project });
   });
 
   it('returns the canonical path of a symlinked directory', () => {
@@ -51,28 +51,28 @@ describe('canonicalDirectory', () => {
     fs.mkdirSync(real);
     const link = path.join(root, 'link');
     fs.symlinkSync(real, link, 'dir');
-    expect(canonicalDirectory(link)).toEqual({ ok: true, path: real });
+    expect(syncPaths.canonicalDirectory(link)).toEqual({ ok: true, path: real });
   });
 
   it('returns an existing canonical directory unchanged', () => {
     const root = makeDir();
-    expect(canonicalDirectory(root)).toEqual({ ok: true, path: root });
+    expect(syncPaths.canonicalDirectory(root)).toEqual({ ok: true, path: root });
   });
 
   it('rejects a relative path with "must be an absolute path"', () => {
-    expect(canonicalDirectory('relative/dir')).toEqual({ ok: false, code: 'not_absolute', reason: 'must be an absolute path' });
+    expect(syncPaths.canonicalDirectory('relative/dir')).toEqual({ ok: false, code: 'not_absolute', reason: 'must be an absolute path' });
   });
 
   it('rejects a missing path with "does not exist"', () => {
     const root = makeDir();
-    expect(canonicalDirectory(path.join(root, 'missing', 'deeper'))).toEqual({ ok: false, code: 'missing', reason: 'does not exist' });
+    expect(syncPaths.canonicalDirectory(path.join(root, 'missing', 'deeper'))).toEqual({ ok: false, code: 'missing', reason: 'does not exist' });
   });
 
   it('rejects a file with "is not a directory"', () => {
     const root = makeDir();
     const file = path.join(root, 'file');
     fs.writeFileSync(file, '');
-    expect(canonicalDirectory(file)).toEqual({ ok: false, code: 'not_directory', reason: 'is not a directory' });
+    expect(syncPaths.canonicalDirectory(file)).toEqual({ ok: false, code: 'not_directory', reason: 'is not a directory' });
   });
 
   it('rejects a symlink to a file with "is not a directory"', () => {
@@ -81,21 +81,21 @@ describe('canonicalDirectory', () => {
     fs.writeFileSync(file, '');
     const link = path.join(root, 'link');
     fs.symlinkSync(file, link);
-    expect(canonicalDirectory(link)).toEqual({ ok: false, code: 'not_directory', reason: 'is not a directory' });
+    expect(syncPaths.canonicalDirectory(link)).toEqual({ ok: false, code: 'not_directory', reason: 'is not a directory' });
   });
 
   it('rejects a symlink loop with "cannot be resolved: ..."', () => {
     const root = makeDir();
     fs.symlinkSync(path.join(root, 'b'), path.join(root, 'a'));
     fs.symlinkSync(path.join(root, 'a'), path.join(root, 'b'));
-    const result = canonicalDirectory(path.join(root, 'a'));
+    const result = syncPaths.canonicalDirectory(path.join(root, 'a'));
     expect(result).toEqual({ ok: false, code: 'unresolvable', reason: expect.stringMatching(/^cannot be resolved: .+/) });
   });
 
   it('rejects a path below a file with "cannot be resolved: ..."', () => {
     const root = makeDir();
     fs.writeFileSync(path.join(root, 'file'), '');
-    const result = canonicalDirectory(path.join(root, 'file', 'child'));
+    const result = syncPaths.canonicalDirectory(path.join(root, 'file', 'child'));
     expect(result).toEqual({ ok: false, code: 'unresolvable', reason: expect.stringMatching(/^cannot be resolved: .+/) });
   });
 
@@ -104,7 +104,7 @@ describe('canonicalDirectory', () => {
     const locked = path.join(root, 'locked');
     fs.mkdirSync(locked);
     lock(locked);
-    expect(canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read' });
+    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read' });
   });
 
   it.skipIf(RUNNING_AS_ROOT)('rejects a child under an unreadable parent with "cannot be resolved: ..."', () => {
@@ -112,7 +112,7 @@ describe('canonicalDirectory', () => {
     const parent = path.join(root, 'parent');
     fs.mkdirSync(path.join(parent, 'child'), { recursive: true });
     lock(parent);
-    const result = canonicalDirectory(path.join(parent, 'child'));
+    const result = syncPaths.canonicalDirectory(path.join(parent, 'child'));
     expect(result).toEqual({ ok: false, code: 'unresolvable', reason: expect.stringMatching(/^cannot be resolved: .+/) });
   });
 });
@@ -121,12 +121,12 @@ const errnoError = (code: string): NodeJS.ErrnoException => Object.assign(new Er
 
 describe('canonicalDirectory failure codes', () => {
   it('returns code not_absolute for a relative path', () => {
-    expect(canonicalDirectory('relative/dir')).toEqual({ ok: false, code: 'not_absolute', reason: 'must be an absolute path' });
+    expect(syncPaths.canonicalDirectory('relative/dir')).toEqual({ ok: false, code: 'not_absolute', reason: 'must be an absolute path' });
   });
 
   it('returns code missing for a missing path', () => {
     const root = makeDir();
-    expect(canonicalDirectory(path.join(root, 'missing'))).toEqual({ ok: false, code: 'missing', reason: 'does not exist' });
+    expect(syncPaths.canonicalDirectory(path.join(root, 'missing'))).toEqual({ ok: false, code: 'missing', reason: 'does not exist' });
   });
 
   it('returns code not_directory for a file and for a symlink to a file', () => {
@@ -135,8 +135,8 @@ describe('canonicalDirectory failure codes', () => {
     fs.writeFileSync(file, '');
     const link = path.join(root, 'link');
     fs.symlinkSync(file, link);
-    expect(canonicalDirectory(file)).toEqual({ ok: false, code: 'not_directory', reason: 'is not a directory' });
-    expect(canonicalDirectory(link)).toEqual({ ok: false, code: 'not_directory', reason: 'is not a directory' });
+    expect(syncPaths.canonicalDirectory(file)).toEqual({ ok: false, code: 'not_directory', reason: 'is not a directory' });
+    expect(syncPaths.canonicalDirectory(link)).toEqual({ ok: false, code: 'not_directory', reason: 'is not a directory' });
   });
 
   it('returns code unresolvable for a symlink loop and for a file in the middle of the path', () => {
@@ -145,8 +145,8 @@ describe('canonicalDirectory failure codes', () => {
     fs.symlinkSync(path.join(root, 'a'), path.join(root, 'b'));
     fs.writeFileSync(path.join(root, 'file'), '');
     const unresolvable = { ok: false, code: 'unresolvable', reason: expect.stringMatching(/^cannot be resolved: .+/) };
-    expect(canonicalDirectory(path.join(root, 'a'))).toEqual(unresolvable);
-    expect(canonicalDirectory(path.join(root, 'file', 'child'))).toEqual(unresolvable);
+    expect(syncPaths.canonicalDirectory(path.join(root, 'a'))).toEqual(unresolvable);
+    expect(syncPaths.canonicalDirectory(path.join(root, 'file', 'child'))).toEqual(unresolvable);
   });
 
   it.skipIf(RUNNING_AS_ROOT)('returns code unreadable for a directory with mode 000 and for an injected EACCES', () => {
@@ -154,7 +154,7 @@ describe('canonicalDirectory failure codes', () => {
     const locked = path.join(root, 'locked');
     fs.mkdirSync(locked);
     lock(locked);
-    expect(canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read' });
+    expect(syncPaths.canonicalDirectory(locked)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read' });
 
     const statTarget = path.join(root, 'stat-eacces');
     fs.mkdirSync(statTarget);
@@ -163,10 +163,10 @@ describe('canonicalDirectory failure codes', () => {
       if (String(target) === statTarget) throw errnoError('EACCES');
       return realStat(target, options);
     }) as typeof fs.statSync);
-    expect(canonicalDirectory(statTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read' });
+    expect(syncPaths.canonicalDirectory(statTarget)).toEqual({ ok: false, code: 'unreadable', reason: 'cannot be read' });
   });
 
-  it('never throws on a non-transient errno: injected EPERM in stat and ENOTSUP in access become unreadable', () => {
+  it('never throws on a non-transient errno: injected EPERM in stat and ENOTSUP in access become unreadable', async () => {
     const root = makeDir();
     const statTarget = path.join(root, 'stat-eperm');
     fs.mkdirSync(statTarget);
@@ -183,16 +183,16 @@ describe('canonicalDirectory failure codes', () => {
       realAccess(target, mode);
     });
     let results: unknown[] = [];
-    expect(() => {
-      results = [canonicalDirectory(statTarget), canonicalDirectory(accessTarget)];
-    }).not.toThrow();
+    await expect((async () => {
+      results = [syncPaths.canonicalDirectory(statTarget), syncPaths.canonicalDirectory(accessTarget)];
+    })()).resolves.toBeUndefined();
     expect(results).toEqual([
       { ok: false, code: 'unreadable', reason: 'cannot be read' },
       { ok: false, code: 'unreadable', reason: 'cannot be read' },
     ]);
   });
 
-  it('throws the same error for a transient errno: an injected EMFILE in stat and an injected EIO in access', () => {
+  it('throws the same error for a transient errno: an injected EMFILE in stat and an injected EIO in access', async () => {
     const root = makeDir();
     const statTarget = path.join(root, 'stat-emfile');
     fs.mkdirSync(statTarget);
@@ -210,16 +210,16 @@ describe('canonicalDirectory failure codes', () => {
       if (String(target) === accessTarget) throw eio;
       realAccess(target, mode);
     });
-    const thrownBy = (action: () => unknown): unknown => {
+    const thrownBy = async (action: () => unknown): Promise<unknown> => {
       try {
-        action();
+        await action();
       } catch (error) {
         return error;
       }
       return undefined;
     };
-    expect(thrownBy(() => canonicalDirectory(statTarget))).toBe(emfile);
-    expect(thrownBy(() => canonicalDirectory(accessTarget))).toBe(eio);
+    expect(await thrownBy(() => syncPaths.canonicalDirectory(statTarget))).toBe(emfile);
+    expect(await thrownBy(() => syncPaths.canonicalDirectory(accessTarget))).toBe(eio);
   });
 
   it.each(['EMFILE', 'EIO'])('throws the same error for a transient %s from realpathSync.native during canonicalPath', (code) => {
@@ -234,7 +234,7 @@ describe('canonicalDirectory failure codes', () => {
     }) as typeof fs.realpathSync.native);
     let thrown: unknown;
     try {
-      canonicalDirectory(target);
+      syncPaths.canonicalDirectory(target);
     } catch (error) {
       thrown = error;
     }
@@ -243,7 +243,7 @@ describe('canonicalDirectory failure codes', () => {
 
   it('returns code unresolvable for ENAMETOOLONG', () => {
     const root = makeDir();
-    const result = canonicalDirectory(path.join(root, 'n'.repeat(300)));
+    const result = syncPaths.canonicalDirectory(path.join(root, 'n'.repeat(300)));
     expect(result).toEqual({ ok: false, code: 'unresolvable', reason: expect.stringMatching(/^cannot be resolved: .+/) });
   });
 
@@ -251,7 +251,7 @@ describe('canonicalDirectory failure codes', () => {
     const root = makeDir();
     const file = path.join(root, 'file');
     fs.writeFileSync(file, '');
-    const reasons = [canonicalDirectory('relative'), canonicalDirectory(path.join(root, 'missing')), canonicalDirectory(file)].map((result) =>
+    const reasons = [syncPaths.canonicalDirectory('relative'), syncPaths.canonicalDirectory(path.join(root, 'missing')), syncPaths.canonicalDirectory(file)].map((result) =>
       result.ok ? undefined : result.reason,
     );
     expect(reasons).toEqual(['must be an absolute path', 'does not exist', 'is not a directory']);

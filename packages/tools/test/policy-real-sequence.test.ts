@@ -26,21 +26,21 @@ describe('an earlier segment of the same command can change what a later operand
     expect((await workspace.decideExpanding(command, { mode: 'acceptEdits' })).kind).toBe('ask');
   });
 
-  it('reads the moved directory by its old name as a missing path, not as a hole', () => {
+  it('reads the moved directory by its old name as a missing path, not as a hole', async () => {
     const workspace = makeRealWorkspace();
     withLinkToSecret(workspace);
-    expect(workspace.decide('mv src s2; cat src/plain', { mode: 'acceptEdits' }).kind).toBe('ask');
+    expect((await workspace.decide('mv src s2; cat src/plain', { mode: 'acceptEdits' })).kind).toBe('ask');
   });
 
-  it.each(['mv src s2; cat other/x', 'touch a; cat b', 'mkdir d; cat src/plain', 'cp src/plain copy; cat src/plain'])('keeps allowing %s when the paths do not overlap', (command) => {
+  it.each(['mv src s2; cat other/x', 'touch a; cat b', 'mkdir d; cat src/plain', 'cp src/plain copy; cat src/plain'])('keeps allowing %s when the paths do not overlap', async (command) => {
     const workspace = makeRealWorkspace();
     withLinkToSecret(workspace);
     workspace.write('other/x', 'x\n');
     workspace.write('b', 'b\n');
-    expect(workspace.decide(command, { mode: 'acceptEdits' }).kind).toBe('allow');
+    expect((await workspace.decide(command, { mode: 'acceptEdits' })).kind).toBe('allow');
   });
 
-  it('an earlier segment that plants a git layout makes the directory a later git segment runs in unknown', () => {
+  it('an earlier segment that plants a git layout makes the directory a later git segment runs in unknown', async () => {
     const workspace = makeRealWorkspace();
     const script = path.join(workspace.base, 'hook.sh');
     const marker = path.join(workspace.base, 'fired');
@@ -52,7 +52,7 @@ describe('an earlier segment of the same command can change what a later operand
     const command = 'mv evil sub; cd sub && git status';
     workspace.runBash(command);
     expect(fs.existsSync(marker)).toBe(true);
-    expect(workspace.decide(command, { mode: 'acceptEdits' }).kind).toBe('ask');
-    expect(workspace.decide('touch x; git status', { mode: 'acceptEdits' }).kind).toBe('allow');
+    expect((await workspace.decide(command, { mode: 'acceptEdits' })).kind).toBe('ask');
+    expect((await workspace.decide('touch x; git status', { mode: 'acceptEdits' })).kind).toBe('allow');
   });
 });

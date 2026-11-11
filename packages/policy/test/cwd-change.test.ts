@@ -96,10 +96,10 @@ describe('controls (pins)', () => {
     expect(writes('cd d; tee y')).toContainEqual(CWD_CHANGED);
   });
 
-  it('asks for a wrapper with a directory change under a deny rule, allows it in bypass (pin)', () => {
+  it('asks for a wrapper with a directory change under a deny rule, allows it in bypass (pin)', async () => {
     const row = commandRow('env -C /outside tee x', { rules: [['deny', 'Write(//outside/**)']] });
-    expect(kindIn(row, 'manual')).toBe('ask');
-    expect(kindIn(row, 'acceptEdits')).toBe('ask');
-    expect(kindIn(row, 'bypassPermissions')).toBe('allow');
+    expect(await kindIn(row, 'manual')).toBe('ask');
+    expect(await kindIn(row, 'acceptEdits')).toBe('ask');
+    expect(await kindIn(row, 'bypassPermissions')).toBe('allow');
   });
 });

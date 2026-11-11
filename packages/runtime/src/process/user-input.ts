@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { attachMentions } from '@momonga/context';
 import type { AttachHost, AttachTarget } from '@momonga/context';
-import { comparableContains } from '@momonga/foundation';
+import { hostPaths, someAsync } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
 import type { Sandbox } from '@momonga/sandbox';
@@ -38,7 +38,7 @@ const readBounded = async (absolute: string, maxBytes: number): Promise<Uint8Arr
   }
 };
 
-const targetOf = async (session: Session, roots: readonly string[], mention: string): Promise<AttachTarget | 'outside' | undefined> => {
+const targetOf = async (session: Session, roots: readonly string[], mention: string, signal: AbortSignal): Promise<AttachTarget | 'outside' | undefined> => {
   let absolute: string;
   let stat: fs.Stats;
   try {
@@ -48,7 +48,7 @@ const targetOf = async (session: Session, roots: readonly string[], mention: str
     if (error instanceof Error && 'code' in error && typeof error.code === 'string') return undefined;
     throw error;
   }
-  if (!roots.some((root) => comparableContains(root, absolute))) return 'outside';
+  if (!(await someAsync(roots, (root) => hostPaths(signal).comparableContains(root, absolute)))) return 'outside';
   if (stat.isDirectory()) return { absolute, shown: mention, kind: 'directory', size: 0 };
   return stat.isFile() ? { absolute, shown: mention, kind: 'file', size: stat.size } : undefined;
 };
@@ -59,7 +59,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
     try {
       const env = tools.envFor(session);
       const rules = await permissionRulesFor({ store, settings, clock, home }, session);
-      const policy = await tools.policyFor(session, { env, rules, ruleEnforcement: held.ruleEnforcement });
+      const policy = await tools.policyFor(session, { env, rules, ruleEnforcement: held.ruleEnforcement, signal });
       return { home, roots: policy.roots, tmpDir: policy.tmpDir, env, session: tools.sessionState(session), signal, rules, sandboxPolicy: policy.sandboxPolicy };
     } finally {
       held.done();
@@ -75,7 +75,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
         imageInput,
         trusted,
         tokens: tokensForText,
-        resolve: (mention) => targetOf(session, facts.roots, mention),
+        resolve: (mention) => targetOf(session, facts.roots, mention, signal),
         floor: async (absolute) => ((await policy.userRefusal({ tool: 'Read', path: absolute }, facts)) === undefined ? 'allowed' : 'denied'),
         read: readBounded,
         list: (absolute) => listDirectoryEntries({ root: absolute, env: facts.env, trusted, signal }),

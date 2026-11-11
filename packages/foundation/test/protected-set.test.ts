@@ -98,27 +98,27 @@ describe('EMPTY_PROTECTED_SET', () => {
 });
 
 describe('the anchors of the nested git directories', () => {
-  it('names the modules and worktrees directories of a .git directory, present or not', () => {
-    const set = protectedSetFor([ROOT], portsOf({}));
+  it('names the modules and worktrees directories of a .git directory, present or not', async () => {
+    const set = await protectedSetFor([ROOT], portsOf({}));
     expect(set.moduleAnchors).toEqual([`${ROOT}/.git/modules`]);
     expect(set.worktreeAnchors).toEqual([`${ROOT}/.git/worktrees`]);
   });
 
-  it('names the common directory of a linked worktree, once for the pointer and its main repository', () => {
-    const set = protectedSetFor([ROOT], portsOf(worktreeTree(), [ROOT]));
+  it('names the common directory of a linked worktree, once for the pointer and its main repository', async () => {
+    const set = await protectedSetFor([ROOT], portsOf(worktreeTree(), [ROOT]));
     expect(set.moduleAnchors).toEqual([`${MAIN_GIT}/modules`]);
     expect(set.worktreeAnchors).toEqual([`${MAIN_GIT}/worktrees`]);
   });
 
-  it('names the anchors of every root without repeating one', () => {
+  it('names the anchors of every root without repeating one', async () => {
     const other = '/w/other';
-    const set = protectedSetFor([ROOT, other], portsOf({}, [ROOT, other]));
+    const set = await protectedSetFor([ROOT, other], portsOf({}, [ROOT, other]));
     expect(set.moduleAnchors).toEqual([`${ROOT}/.git/modules`, `${other}/.git/modules`]);
   });
 
-  it('leaves an unresolvable modules directory to the literals rather than naming it as an anchor', () => {
+  it('leaves an unresolvable modules directory to the literals rather than naming it as an anchor', async () => {
     const modules = `${ROOT}/.git/modules`;
-    const set = protectedSetFor([ROOT], portsOf({ noFollow: { [`${ROOT}/.git`]: { kind: 'directory' }, [modules]: { kind: 'symlink', target: 'modules' } }, unresolvableBelow: { [modules]: 'ELOOP' } }));
+    const set = await protectedSetFor([ROOT], portsOf({ noFollow: { [`${ROOT}/.git`]: { kind: 'directory' }, [modules]: { kind: 'symlink', target: 'modules' } }, unresolvableBelow: { [modules]: 'ELOOP' } }));
     expect(set.moduleAnchors).not.toContain(modules);
   });
 });
@@ -126,8 +126,8 @@ describe('the anchors of the nested git directories', () => {
 describe('protectedSetFor with a .git directory or no .git', () => {
   const expectedDefault = (): string[] => sorted([...defaultProtectedPaths(ROOT), `${ROOT}/.git/config.worktree`, `${ROOT}/.git/commondir`]);
 
-  it('gives the default list plus config.worktree and commondir when .git is absent', () => {
-    const set = protectedSetFor([ROOT], portsOf({}));
+  it('gives the default list plus config.worktree and commondir when .git is absent', async () => {
+    const set = await protectedSetFor([ROOT], portsOf({}));
     expect(sorted(set.paths)).toEqual(expectedDefault());
     expect(set.roots).toEqual([ROOT]);
     expect(set.names).toEqual(['.git']);
@@ -136,15 +136,15 @@ describe('protectedSetFor with a .git directory or no .git', () => {
     expect(set.issues).toEqual([]);
   });
 
-  it('gives the same list when .git is a directory', () => {
-    const set = protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: directory(`${ROOT}/.git`) } }));
+  it('gives the same list when .git is a directory', async () => {
+    const set = await protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: directory(`${ROOT}/.git`) } }));
     expect(sorted(set.paths)).toEqual(expectedDefault());
     expect(set.issues).toEqual([]);
   });
 
-  it('uses the resolved directory when .git is a symlink to a directory', () => {
+  it('uses the resolved directory when .git is a symlink to a directory', async () => {
     const elsewhere = '/w/elsewhere/gitdir';
-    const set = protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: directory(elsewhere) } }));
+    const set = await protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: directory(elsewhere) } }));
     expect(set.paths).toEqual(expect.arrayContaining([`${elsewhere}/hooks`, `${elsewhere}/config`, `${elsewhere}/config.worktree`, `${elsewhere}/commondir`]));
     expect(patternBlocks(set, `${elsewhere}/modules/a/hooks`)).toBe(true);
     expect(set.issues).toEqual([]);
@@ -152,8 +152,8 @@ describe('protectedSetFor with a .git directory or no .git', () => {
 });
 
 describe('protectedSetFor with a .git file', () => {
-  it('protects the common hooks and config of a linked worktree and not the worktree hooks', () => {
-    const set = protectedSetFor([ROOT], portsOf(worktreeTree()));
+  it('protects the common hooks and config of a linked worktree and not the worktree hooks', async () => {
+    const set = await protectedSetFor([ROOT], portsOf(worktreeTree()));
     expect(gitPaths(set)).toEqual(
       sorted([
         `${ROOT}/.git`,
@@ -169,10 +169,10 @@ describe('protectedSetFor with a .git file', () => {
     expect(set.issues).toEqual([]);
   });
 
-  it('protects the paths inside the resolved git directory of a submodule', () => {
+  it('protects the paths inside the resolved git directory of a submodule', async () => {
     const root = '/w/main/subm';
     const gitDir = '/w/main/.git/modules/subm';
-    const set = protectedSetFor(
+    const set = await protectedSetFor(
       [root],
       portsOf({ entries: { [`${root}/.git`]: file('gitdir: ../.git/modules/subm\n'), [gitDir]: directory(gitDir) } }, [root]),
     );
@@ -183,14 +183,14 @@ describe('protectedSetFor with a .git file', () => {
     expect(set.issues).toEqual([]);
   });
 
-  it('follows an absolute commondir', () => {
-    const set = protectedSetFor([ROOT], portsOf(worktreeTree(`${MAIN_GIT}\n`)));
+  it('follows an absolute commondir', async () => {
+    const set = await protectedSetFor([ROOT], portsOf(worktreeTree(`${MAIN_GIT}\n`)));
     expect(set.paths).toEqual(expect.arrayContaining([`${MAIN_GIT}/hooks`, `${MAIN_GIT}/config`]));
     expect(set.issues).toEqual([]);
   });
 
-  it('resolves a relative commondir against the git directory', () => {
-    const set = protectedSetFor([ROOT], portsOf(worktreeTree('../../\n')));
+  it('resolves a relative commondir against the git directory', async () => {
+    const set = await protectedSetFor([ROOT], portsOf(worktreeTree('../../\n')));
     expect(set.paths).toEqual(expect.arrayContaining([`${MAIN_GIT}/hooks`, `${MAIN_GIT}/config`]));
     expect(set.issues).toEqual([]);
   });
@@ -203,8 +203,8 @@ describe('pointer parse rule', () => {
     ['no trailing newline', 'gitdir: /w/g'],
     ['LF', 'gitdir: /w/g\n'],
     ['CRLF', 'gitdir: /w/g\r\n'],
-  ])('follows a .git file with %s', (_label, text) => {
-    const set = protectedSetFor([ROOT], portsOf(pointerTree(text)));
+  ])('follows a .git file with %s', async (_label, text) => {
+    const set = await protectedSetFor([ROOT], portsOf(pointerTree(text)));
     expect(set.paths).toEqual(expect.arrayContaining(['/w/g/hooks', '/w/g/config']));
     expect(set.issues).toEqual([]);
   });
@@ -212,8 +212,8 @@ describe('pointer parse rule', () => {
   it.each([
     ['trailing spaces', 'gitdir: /w/g  \n', '/w/g  '],
     ['a second line', 'gitdir: /w/g\nsecond\n', '/w/g\nsecond'],
-  ])('keeps the extra bytes of a .git file with %s, so the chain ends in missing-target', (_label, text, kept) => {
-    const set = protectedSetFor([ROOT], portsOf(pointerTree(text)));
+  ])('keeps the extra bytes of a .git file with %s, so the chain ends in missing-target', async (_label, text, kept) => {
+    const set = await protectedSetFor([ROOT], portsOf(pointerTree(text)));
     expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'missing-target' }]);
     expect(set.paths).toEqual(expect.arrayContaining([`${ROOT}/.git`, kept]));
     expect(set.paths).not.toContain('/w/g/hooks');
@@ -223,42 +223,42 @@ describe('pointer parse rule', () => {
     ['no trailing newline', '../..'],
     ['LF', '../..\n'],
     ['CRLF', '../..\r\n'],
-  ])('follows a commondir file with %s', (_label, text) => {
-    const set = protectedSetFor([ROOT], portsOf(worktreeTree(text)));
+  ])('follows a commondir file with %s', async (_label, text) => {
+    const set = await protectedSetFor([ROOT], portsOf(worktreeTree(text)));
     expect(set.paths).toEqual(expect.arrayContaining([`${MAIN_GIT}/hooks`, `${MAIN_GIT}/config`]));
     expect(set.issues).toEqual([]);
   });
 
-  it('cuts a .git file at the first NUL byte, as git does with its C string', () => {
-    const set = protectedSetFor([ROOT], portsOf(pointerTree('gitdir: /w/g\0/elsewhere\n')));
+  it('cuts a .git file at the first NUL byte, as git does with its C string', async () => {
+    const set = await protectedSetFor([ROOT], portsOf(pointerTree('gitdir: /w/g\0/elsewhere\n')));
     expect(set.paths).toEqual(expect.arrayContaining(['/w/g/hooks', '/w/g/config']));
     expect(set.issues).toEqual([]);
   });
 
-  it('cuts a commondir file at the first NUL byte', () => {
-    const set = protectedSetFor([ROOT], portsOf(worktreeTree('../..\0x\n')));
+  it('cuts a commondir file at the first NUL byte', async () => {
+    const set = await protectedSetFor([ROOT], portsOf(worktreeTree('../..\0x\n')));
     expect(set.paths).toEqual(expect.arrayContaining([`${MAIN_GIT}/hooks`, `${MAIN_GIT}/config`]));
     expect(set.issues).toEqual([]);
   });
 
-  it('strips the line end of the whole text before the cut, so a line end before the NUL stays in the path, as git reads it', () => {
-    const gitFile = protectedSetFor([ROOT], portsOf(pointerTree('gitdir: /w/g\n\0x', '/w/g\n')));
+  it('strips the line end of the whole text before the cut, so a line end before the NUL stays in the path, as git reads it', async () => {
+    const gitFile = await protectedSetFor([ROOT], portsOf(pointerTree('gitdir: /w/g\n\0x', '/w/g\n')));
     expect(gitFile.paths).toEqual(expect.arrayContaining(['/w/g\n/hooks', '/w/g\n/config']));
     expect(gitFile.paths).not.toContain('/w/g/hooks');
-    const commondir = protectedSetFor([ROOT], portsOf(worktreeTree('../..\n\0x')));
+    const commondir = await protectedSetFor([ROOT], portsOf(worktreeTree('../..\n\0x')));
     expect(commondir.paths).not.toContain(`${MAIN_GIT}/hooks`);
   });
 
-  it('treats a .git file whose path starts at a NUL byte as malformed', () => {
-    const set = protectedSetFor([ROOT], portsOf(pointerTree('gitdir: \0/w/g\n')));
+  it('treats a .git file whose path starts at a NUL byte as malformed', async () => {
+    const set = await protectedSetFor([ROOT], portsOf(pointerTree('gitdir: \0/w/g\n')));
     expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'malformed' }]);
   });
 
   it.each([
     ['trailing spaces', '../..  \n', `${MAIN_GIT}/worktrees/..  `],
     ['a second line', '../..\nsecond\n', `${MAIN_GIT}/worktrees/..\nsecond`],
-  ])('keeps the extra bytes of a commondir file with %s, so the chain ends in missing-target', (_label, text, commonDir) => {
-    const set = protectedSetFor([ROOT], portsOf(worktreeTree(text)));
+  ])('keeps the extra bytes of a commondir file with %s, so the chain ends in missing-target', async (_label, text, commonDir) => {
+    const set = await protectedSetFor([ROOT], portsOf(worktreeTree(text)));
     expect(set.issues).toEqual([{ root: ROOT, file: `${WORKTREE_GIT_DIR}/commondir`, problem: 'missing-target' }]);
     expect(set.paths).toContain(commonDir);
     expect(set.paths).not.toContain(`${MAIN_GIT}/hooks`);
@@ -270,8 +270,8 @@ describe('pointer issues', () => {
     ['a file without the prefix', 'not a pointer\n'],
     ['an empty file', ''],
     ['an empty path', 'gitdir: \n'],
-  ])('reports %s as malformed and protects only the pointer file', (_label, text) => {
-    const set = protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: file(text) } }));
+  ])('reports %s as malformed and protects only the pointer file', async (_label, text) => {
+    const set = await protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: file(text) } }));
     expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'malformed' }]);
     expect(gitPaths(set)).toEqual([`${ROOT}/.git`]);
     expect(set.lexicalPaths).toEqual([]);
@@ -282,38 +282,38 @@ describe('pointer issues', () => {
     expect(MAX_POINTER_FILE_BYTES).toBe('gitdir: '.length + 1023 + '\r\n'.length);
   });
 
-  it('reports an oversize pointer file and protects only the pointer file', () => {
-    const set = protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: { kind: 'oversize' } } }));
+  it('reports an oversize pointer file and protects only the pointer file', async () => {
+    const set = await protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: { kind: 'oversize' } } }));
     expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'oversize' }]);
     expect(gitPaths(set)).toEqual([`${ROOT}/.git`]);
   });
 
-  it.each(['EACCES', 'ELOOP'] as const)('reports %s on the .git file as unresolvable with the reason', (code) => {
-    const set = protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: unresolved(code) } }));
+  it.each(['EACCES', 'ELOOP'] as const)('reports %s on the .git file as unresolvable with the reason', async (code) => {
+    const set = await protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: unresolved(code) } }));
     expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'unresolvable', reason: { kind: 'errno', code } }]);
-    expect(isProtectedWrite(set, `${ROOT}/.git`, probesOf({}))).toBe(true);
+    expect(await isProtectedWrite(set, `${ROOT}/.git`, probesOf({}))).toBe(true);
   });
 
-  it.each(['EACCES', 'ELOOP'] as const)('reports %s on the git directory as unresolvable with the reason', (code) => {
+  it.each(['EACCES', 'ELOOP'] as const)('reports %s on the git directory as unresolvable with the reason', async (code) => {
     const tree: FakeTree = { entries: { [`${ROOT}/.git`]: file(`gitdir: ${WORKTREE_GIT_DIR}\n`), [WORKTREE_GIT_DIR]: unresolved(code) } };
-    const set = protectedSetFor([ROOT], portsOf(tree));
+    const set = await protectedSetFor([ROOT], portsOf(tree));
     expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'unresolvable', reason: { kind: 'errno', code } }]);
     expect(set.paths).toContain(`${ROOT}/.git`);
   });
 
-  it.each(['EACCES', 'ELOOP'] as const)('reports %s on the commondir file as unresolvable and protects the git directory as a subtree', (code) => {
+  it.each(['EACCES', 'ELOOP'] as const)('reports %s on the commondir file as unresolvable and protects the git directory as a subtree', async (code) => {
     const tree = worktreeTree();
-    const set = protectedSetFor([ROOT], portsOf({ entries: { ...tree.entries, [`${WORKTREE_GIT_DIR}/commondir`]: unresolved(code) } }));
+    const set = await protectedSetFor([ROOT], portsOf({ entries: { ...tree.entries, [`${WORKTREE_GIT_DIR}/commondir`]: unresolved(code) } }));
     expect(set.issues).toEqual([{ root: ROOT, file: `${WORKTREE_GIT_DIR}/commondir`, problem: 'unresolvable', reason: { kind: 'errno', code } }]);
     expect(set.paths).toContain(WORKTREE_GIT_DIR);
-    expect(isProtectedWrite(set, `${WORKTREE_GIT_DIR}/hooks/pre-commit`, probesOf({}))).toBe(true);
+    expect(await isProtectedWrite(set, `${WORKTREE_GIT_DIR}/hooks/pre-commit`, probesOf({}))).toBe(true);
   });
 
-  it('rethrows EIO from a read unchanged', () => {
+  it('rethrows EIO from a read unchanged', async () => {
     const eio = Object.assign(new Error('EIO: injected'), { code: 'EIO', syscall: 'read', path: `${ROOT}/.git` });
     let caught: unknown;
     try {
-      protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: eio } }));
+      await protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: eio } }));
     } catch (error) {
       caught = error;
     }
@@ -322,70 +322,70 @@ describe('pointer issues', () => {
 });
 
 describe('missing-target', () => {
-  it('protects a missing git directory as a subtree with the pointer file', () => {
-    const set = protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: file('gitdir: inner\n') } }));
+  it('protects a missing git directory as a subtree with the pointer file', async () => {
+    const set = await protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: file('gitdir: inner\n') } }));
     const probes = probesOf({});
     expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'missing-target' }]);
     expect(set.paths).toEqual(expect.arrayContaining([`${ROOT}/.git`, `${ROOT}/inner`]));
     for (const target of [`${ROOT}/inner`, `${ROOT}/inner/config`, `${ROOT}/inner/x/y`, `${ROOT}/.git`]) {
-      expect(isProtectedWrite(set, target, probes)).toBe(true);
+      expect(await isProtectedWrite(set, target, probes)).toBe(true);
     }
-    expect(isProtectedWrite(set, `${ROOT}/innerx/config`, probes)).toBe(false);
+    expect(await isProtectedWrite(set, `${ROOT}/innerx/config`, probes)).toBe(false);
   });
 
-  it('protects a missing common directory as a subtree', () => {
+  it('protects a missing common directory as a subtree', async () => {
     const missing = '/w/nope/.git';
-    const set = protectedSetFor([ROOT], portsOf(worktreeTree(`${missing}\n`)));
+    const set = await protectedSetFor([ROOT], portsOf(worktreeTree(`${missing}\n`)));
     expect(set.issues).toEqual([{ root: ROOT, file: `${WORKTREE_GIT_DIR}/commondir`, problem: 'missing-target' }]);
     expect(set.paths).toContain(missing);
-    expect(isProtectedWrite(set, `${missing}/hooks/pre-commit`, probesOf({}))).toBe(true);
+    expect(await isProtectedWrite(set, `${missing}/hooks/pre-commit`, probesOf({}))).toBe(true);
   });
 });
 
 describe('case (ii): the parsed target does not canonicalise', () => {
-  const pointedTo = (text: string, tree: FakeTree): ProtectedSet =>
-    protectedSetFor([ROOT], portsOf({ ...tree, entries: { [`${ROOT}/.git`]: file(text), ...tree.entries } }));
+  const pointedTo = async (text: string, tree: FakeTree): Promise<ProtectedSet> =>
+    await protectedSetFor([ROOT], portsOf({ ...tree, entries: { [`${ROOT}/.git`]: file(text), ...tree.entries } }));
 
   const literalSet = (set: ProtectedSet): Set<string> => new Set(set.literals);
 
-  it('protects the lexical target for approval, pins a regular file in the path and reports unresolvable', () => {
+  it('protects the lexical target for approval, pins a regular file in the path and reports unresolvable', async () => {
     const set = pointedTo('gitdir: x/y\n', { noFollow: { [`${ROOT}/x`]: { kind: 'other' } }, unresolvableBelow: { [`${ROOT}/x`]: 'ENOTDIR' } });
     const probes = probesOf({ unresolvableBelow: { [`${ROOT}/x`]: 'ENOTDIR' } });
-    expect(set.lexicalPaths).toContain(`${ROOT}/x/y`);
-    expect(set.paths).not.toContain(`${ROOT}/x/y`);
-    expect(literalSet(set)).toEqual(new Set([`${ROOT}/x`]));
-    expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'unresolvable', reason: { kind: 'errno', code: 'ENOTDIR' } }]);
-    expect(isProtectedWrite(set, `${ROOT}/x/y`, probes)).toBe(true);
-    expect(isProtectedWrite(set, `${ROOT}/x/y/config`, probes)).toBe(true);
-    expect(isProtectedWrite(set, `${ROOT}/x`, probes)).toBe(true);
+    expect((await set).lexicalPaths).toContain(`${ROOT}/x/y`);
+    expect((await set).paths).not.toContain(`${ROOT}/x/y`);
+    expect(literalSet(await set)).toEqual(new Set([`${ROOT}/x`]));
+    expect((await set).issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'unresolvable', reason: { kind: 'errno', code: 'ENOTDIR' } }]);
+    expect(await isProtectedWrite(await set, `${ROOT}/x/y`, probes)).toBe(true);
+    expect(await isProtectedWrite(await set, `${ROOT}/x/y/config`, probes)).toBe(true);
+    expect(await isProtectedWrite(await set, `${ROOT}/x`, probes)).toBe(true);
   });
 
-  it('pins a one-link loop', () => {
+  it('pins a one-link loop', async () => {
     const set = pointedTo('gitdir: x/y\n', { noFollow: { [`${ROOT}/x`]: { kind: 'symlink', target: 'x' } }, unresolvableBelow: { [`${ROOT}/x`]: 'ELOOP' } });
-    expect(literalSet(set)).toEqual(new Set([`${ROOT}/x`]));
-    expect(set.issues[0]).toMatchObject({ root: ROOT, problem: 'unresolvable' });
+    expect(literalSet(await set)).toEqual(new Set([`${ROOT}/x`]));
+    expect((await set).issues[0]).toMatchObject({ root: ROOT, problem: 'unresolvable' });
   });
 
-  it('pins both links of a two-link loop', () => {
+  it('pins both links of a two-link loop', async () => {
     const set = pointedTo('gitdir: a/y\n', {
       noFollow: { [`${ROOT}/a`]: { kind: 'symlink', target: 'b' }, [`${ROOT}/b`]: { kind: 'symlink', target: 'a' } },
       unresolvableBelow: { [`${ROOT}/a`]: 'ELOOP' },
     });
-    expect(literalSet(set)).toEqual(new Set([`${ROOT}/a`, `${ROOT}/b`]));
+    expect(literalSet(await set)).toEqual(new Set([`${ROOT}/a`, `${ROOT}/b`]));
   });
 
-  it('pins the link and the regular file it points to', () => {
+  it('pins the link and the regular file it points to', async () => {
     const set = pointedTo('gitdir: sf/y\n', {
       noFollow: { [`${ROOT}/sf`]: { kind: 'symlink', target: 'f' }, [`${ROOT}/f`]: { kind: 'other' } },
       unresolvableBelow: { [`${ROOT}/sf`]: 'ENOTDIR' },
     });
-    expect(literalSet(set)).toEqual(new Set([`${ROOT}/sf`, `${ROOT}/f`]));
+    expect(literalSet(await set)).toEqual(new Set([`${ROOT}/sf`, `${ROOT}/f`]));
     const probes = probesOf({});
-    expect(isProtectedWrite(set, `${ROOT}/sf`, probes)).toBe(true);
-    expect(isProtectedWrite(set, `${ROOT}/f`, probes)).toBe(true);
+    expect(await isProtectedWrite(await set, `${ROOT}/sf`, probes)).toBe(true);
+    expect(await isProtectedWrite(await set, `${ROOT}/f`, probes)).toBe(true);
   });
 
-  it('pins the link and the directory without search permission', () => {
+  it('pins the link and the directory without search permission', async () => {
     const set = pointedTo('gitdir: a/l/y\n', {
       noFollow: {
         [`${ROOT}/a`]: { kind: 'directory' },
@@ -395,10 +395,10 @@ describe('case (ii): the parsed target does not canonicalise', () => {
       },
       unresolvableBelow: { [`${ROOT}/a/l`]: 'EACCES' },
     });
-    expect(literalSet(set)).toEqual(new Set([`${ROOT}/a/l`, `${ROOT}/locked`]));
+    expect(literalSet(await set)).toEqual(new Set([`${ROOT}/a/l`, `${ROOT}/locked`]));
   });
 
-  it('pins every link visited of a loop longer than the hop bound', () => {
+  it('pins every link visited of a loop longer than the hop bound', async () => {
     expect(MAX_SYMLINK_HOPS).toBe(40);
     const count = MAX_SYMLINK_HOPS + 5;
     const link = (index: number): string => `${ROOT}/l${index % count}`;
@@ -406,25 +406,25 @@ describe('case (ii): the parsed target does not canonicalise', () => {
     for (let index = 0; index < count; index += 1) noFollow[link(index)] = { kind: 'symlink', target: path.basename(link(index + 1)) };
     const set = pointedTo('gitdir: l0/y\n', { noFollow, unresolvableBelow: { [`${ROOT}/l0`]: 'ELOOP' } });
     const visited = Array.from({ length: MAX_SYMLINK_HOPS + 1 }, (_unused, index) => link(index));
-    expect(literalSet(set)).toEqual(new Set(visited));
+    expect(literalSet(await set)).toEqual(new Set(visited));
   });
 
-  it('pins nothing for an over-long component', () => {
+  it('pins nothing for an over-long component', async () => {
     const long = 'n'.repeat(300);
     const set = pointedTo(`gitdir: ${long}/y\n`, { noFollow: { [`${ROOT}/${long}`]: unresolved('ENAMETOOLONG') }, unresolvableBelow: { [`${ROOT}/${long}`]: 'ENAMETOOLONG' } });
-    expect(set.literals).toEqual([]);
-    expect(set.lexicalPaths).toContain(`${ROOT}/${long}/y`);
+    expect((await set).literals).toEqual([]);
+    expect((await set).lexicalPaths).toContain(`${ROOT}/${long}/y`);
   });
 
-  it('skips an entry outside every root', () => {
+  it('skips an entry outside every root', async () => {
     const set = pointedTo('gitdir: sf/y\n', {
       noFollow: { [`${ROOT}/sf`]: { kind: 'symlink', target: '/w/elsewhere/f' }, '/w/elsewhere': { kind: 'directory' }, '/w/elsewhere/f': { kind: 'other' } },
       unresolvableBelow: { [`${ROOT}/sf`]: 'ENOTDIR' },
     });
-    expect(literalSet(set)).toEqual(new Set([`${ROOT}/sf`]));
+    expect(literalSet(await set)).toEqual(new Set([`${ROOT}/sf`]));
   });
 
-  it('writes each entry as written and with only its parent canonicalised', () => {
+  it('writes each entry as written and with only its parent canonicalised', async () => {
     const tree: FakeTree = {
       entries: { [`${ROOT}/.git`]: file('gitdir: x/y\n') },
       noFollow: { [`${ROOT}/x`]: { kind: 'other' } },
@@ -435,7 +435,7 @@ describe('case (ii): the parsed target does not canonicalise', () => {
       ...base,
       canonicalise: (absolute) => (absolute === ROOT ? { ok: true, path: `/private${ROOT}` } : base.canonicalise(absolute)),
     };
-    const set = protectedSetFor([ROOT], ports);
+    const set = await protectedSetFor([ROOT], ports);
     expect(literalSet(set)).toEqual(new Set([`${ROOT}/x`, `/private${ROOT}/x`]));
   });
 });
@@ -448,16 +448,16 @@ describe('walkPath failure reports', () => {
       return 'unresolvable' in entry ? { stepFailure: entry } : entry;
     };
 
-  it('reports ENOTDIR with the file as candidate and its parent as prefix', () => {
+  it('reports ENOTDIR with the file as candidate and its parent as prefix', async () => {
     const links: string[] = [];
-    const result = walkPath(`${ROOT}/x/y`, stepOf({ [`${ROOT}/x`]: { kind: 'other' } }), (name) => links.push(name));
+    const result = await walkPath(`${ROOT}/x/y`, stepOf({ [`${ROOT}/x`]: { kind: 'other' } }), (name) => links.push(name));
     expect(result).toEqual({ ok: false, failure: { reason: { kind: 'errno', code: 'ENOTDIR' }, candidate: `${ROOT}/x`, prefix: ROOT } });
     expect(links).toEqual([]);
   });
 
-  it('reports a step failure with the candidate and the current prefix', () => {
+  it('reports a step failure with the candidate and the current prefix', async () => {
     const links: string[] = [];
-    const result = walkPath(
+    const result = await walkPath(
       `${ROOT}/a/l/y`,
       stepOf({
         [`${ROOT}/a`]: { kind: 'directory' },
@@ -471,22 +471,22 @@ describe('walkPath failure reports', () => {
     expect(links).toEqual([`${ROOT}/a/l`]);
   });
 
-  it('reports ELOOP at the link where the bound ran out and has called onLink for every hop', () => {
+  it('reports ELOOP at the link where the bound ran out and has called onLink for every hop', async () => {
     const links: string[] = [];
-    const result = walkPath(`${ROOT}/x/y`, stepOf({ [`${ROOT}/x`]: { kind: 'symlink', target: 'x' } }), (name) => links.push(name));
+    const result = await walkPath(`${ROOT}/x/y`, stepOf({ [`${ROOT}/x`]: { kind: 'symlink', target: 'x' } }), (name) => links.push(name));
     expect(result).toEqual({ ok: false, failure: { reason: { kind: 'errno', code: 'ELOOP' }, candidate: `${ROOT}/x`, prefix: ROOT } });
     expect(links).toHaveLength(MAX_SYMLINK_HOPS + 1);
     expect(new Set(links)).toEqual(new Set([`${ROOT}/x`]));
   });
 
-  it('reports an over-long name as a step failure', () => {
+  it('reports an over-long name as a step failure', async () => {
     const long = `${ROOT}/${'n'.repeat(300)}`;
-    const result = walkPath(`${long}/y`, stepOf({ [long]: unresolved('ENAMETOOLONG') }), () => undefined);
+    const result = await walkPath(`${long}/y`, stepOf({ [long]: unresolved('ENAMETOOLONG') }), () => undefined);
     expect(result).toEqual({ ok: false, stepFailure: { unresolvable: { kind: 'errno', code: 'ENAMETOOLONG' } }, candidate: long, prefix: ROOT });
   });
 
-  it('returns the existing prefix and the missing tail', () => {
-    const result = walkPath(`${ROOT}/missing/deeper`, stepOf({}), () => undefined);
+  it('returns the existing prefix and the missing tail', async () => {
+    const result = await walkPath(`${ROOT}/missing/deeper`, stepOf({}), () => undefined);
     expect(result).toEqual({ ok: true, prefix: ROOT, tail: ['missing', 'deeper'] });
   });
 });
@@ -494,23 +494,23 @@ describe('walkPath failure reports', () => {
 describe('patterns for the nested git directories', () => {
   const PROVENANCE = { ruleText: 'protected set', layer: 'protected', source: 'momonga' };
 
-  it('protects submodule and worktree hooks and config of a worktree common directory, not their objects or HEAD', () => {
-    const set = protectedSetFor([ROOT], portsOf(worktreeTree()));
+  it('protects submodule and worktree hooks and config of a worktree common directory, not their objects or HEAD', async () => {
+    const set = await protectedSetFor([ROOT], portsOf(worktreeTree()));
     for (const target of ['modules/a/hooks', 'modules/a/modules/b/hooks', 'modules/a/config', 'modules/a/config.worktree', 'worktrees/w/config.worktree']) {
       expect(patternBlocks(set, `${MAIN_GIT}/${target}`)).toBe(true);
-      expect(isProtectedWrite(set, `${MAIN_GIT}/${target}`, probesOf({}))).toBe(true);
+      expect(await isProtectedWrite(set, `${MAIN_GIT}/${target}`, probesOf({}))).toBe(true);
     }
     for (const target of ['modules/a/objects/x', 'worktrees/w/HEAD']) {
       expect(patternBlocks(set, `${MAIN_GIT}/${target}`)).toBe(false);
-      expect(isProtectedWrite(set, `${MAIN_GIT}/${target}`, probesOf({}))).toBe(false);
+      expect(await isProtectedWrite(set, `${MAIN_GIT}/${target}`, probesOf({}))).toBe(false);
     }
     for (const entry of set.patterns.entries) {
       expect(entry).toMatchObject({ tool: 'Edit', access: 'write', effect: 'deny', provenance: PROVENANCE });
     }
   });
 
-  it('protects the same entries below a standalone repository', () => {
-    const set = protectedSetFor([ROOT], portsOf({}));
+  it('protects the same entries below a standalone repository', async () => {
+    const set = await protectedSetFor([ROOT], portsOf({}));
     const common = `${ROOT}/.git`;
     for (const target of ['modules/a/hooks', 'modules/a/modules/b/hooks', 'modules/a/config', 'modules/a/config.worktree', 'worktrees/w/config.worktree']) {
       expect(patternBlocks(set, `${common}/${target}`)).toBe(true);
@@ -520,53 +520,53 @@ describe('patterns for the nested git directories', () => {
     }
   });
 
-  it('matches a common directory with glob characters literally', () => {
+  it('matches a common directory with glob characters literally', async () => {
     const root = '/w/a[1]*';
-    const set = protectedSetFor([root], portsOf({}, [root]));
+    const set = await protectedSetFor([root], portsOf({}, [root]));
     expect(patternBlocks(set, `${root}/.git/modules/s/hooks`)).toBe(true);
     expect(patternBlocks(set, '/w/a1x/.git/modules/s/hooks')).toBe(false);
   });
 
-  it('keeps a stable fingerprint', () => {
-    const first = protectedSetFor([ROOT], portsOf(worktreeTree()));
-    const second = protectedSetFor([ROOT], portsOf(worktreeTree()));
+  it('keeps a stable fingerprint', async () => {
+    const first = await protectedSetFor([ROOT], portsOf(worktreeTree()));
+    const second = await protectedSetFor([ROOT], portsOf(worktreeTree()));
     expect(first.patterns.fingerprint).toMatch(/^[0-9a-f]{64}$/);
     expect(second.patterns.fingerprint).toBe(first.patterns.fingerprint);
   });
 });
 
 describe('isProtectedWrite and the .git name', () => {
-  const set = (): ProtectedSet => protectedSetFor([ROOT], portsOf({}));
+  const set = async (): Promise<ProtectedSet> => protectedSetFor([ROOT], portsOf({}));
 
-  it('is true for each derived path and for components named .git', () => {
+  it('is true for each derived path and for components named .git', async () => {
     const probes = probesOf({});
-    for (const entry of set().paths) expect(isProtectedWrite(set(), entry, probes)).toBe(true);
+    for (const entry of (await set()).paths) expect(await isProtectedWrite(await set(), entry, probes)).toBe(true);
     for (const target of [`${ROOT}/.git`, `${ROOT}/.git/objects/ab`, `${ROOT}/sub/.git/config`, `${ROOT}/sub/.git/HEAD`, `${ROOT}/a/b/.git`]) {
-      expect(isProtectedWrite(set(), target, probes)).toBe(true);
+      expect(await isProtectedWrite(await set(), target, probes)).toBe(true);
     }
   });
 
-  it('is false for names that only start or end with .git', () => {
+  it('is false for names that only start or end with .git', async () => {
     const probes = probesOf({});
     for (const target of [`${ROOT}/.gitignore`, `${ROOT}/.github/workflows/ci.yml`, `${ROOT}/x.git`, `${ROOT}/src/a.ts`]) {
-      expect(isProtectedWrite(set(), target, probes)).toBe(false);
+      expect(await isProtectedWrite(await set(), target, probes)).toBe(false);
     }
   });
 
-  it('folds the .git component only on a case-insensitive volume', () => {
-    expect(isProtectedWrite(set(), `${ROOT}/sub/.GIT/config`, probesOf({ caseInsensitive: true }))).toBe(true);
-    expect(isProtectedWrite(set(), `${ROOT}/sub/.GIT/config`, probesOf({ caseInsensitive: false }))).toBe(false);
+  it('folds the .git component only on a case-insensitive volume', async () => {
+    expect(await isProtectedWrite(await set(), `${ROOT}/sub/.GIT/config`, probesOf({ caseInsensitive: true }))).toBe(true);
+    expect(await isProtectedWrite(await set(), `${ROOT}/sub/.GIT/config`, probesOf({ caseInsensitive: false }))).toBe(false);
   });
 
-  it('does not protect a .git below a directory that is not a root', () => {
-    expect(isProtectedWrite(set(), '/w/tmp/session/.git/config', probesOf({}))).toBe(false);
+  it('does not protect a .git below a directory that is not a root', async () => {
+    expect(await isProtectedWrite(await set(), '/w/tmp/session/.git/config', probesOf({}))).toBe(false);
   });
 
-  it('compares an unresolvable paths entry lexically', () => {
+  it('compares an unresolvable paths entry lexically', async () => {
     const lexicalSet: ProtectedSet = { ...EMPTY_PROTECTED_SET, roots: [ROOT], paths: [`${ROOT}/loop`] };
     const probes = probesOf({ unresolvableBelow: { [`${ROOT}/loop`]: 'ELOOP' } });
-    expect(isProtectedWrite(lexicalSet, `${ROOT}/loop/x`, probes)).toBe(true);
-    expect(isProtectedWrite(lexicalSet, `${ROOT}/loopy/x`, probes)).toBe(false);
+    expect(await isProtectedWrite(lexicalSet, `${ROOT}/loop/x`, probes)).toBe(true);
+    expect(await isProtectedWrite(lexicalSet, `${ROOT}/loopy/x`, probes)).toBe(false);
   });
 });
 
@@ -574,8 +574,8 @@ describe('Stage D: pinned .git links and anchors', () => {
   it.each([
     ['ELOOP', { kind: 'symlink', target: '.git' }],
     ['EACCES', { kind: 'symlink', target: 'locked/z' }],
-  ] as const)('an %s read of root/.git pins the link in literals, not in paths', (code, link) => {
-    const set = protectedSetFor(
+  ] as const)('an %s read of root/.git pins the link in literals, not in paths', async (code, link) => {
+    const set = await protectedSetFor(
       [ROOT],
       portsOf({
         entries: { [`${ROOT}/.git`]: unresolved(code) },
@@ -588,22 +588,22 @@ describe('Stage D: pinned .git links and anchors', () => {
     expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'unresolvable', reason: { kind: 'errno', code } }]);
   });
 
-  it('pins a symlinked .git directory in literals', () => {
-    const set = protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: directory(`${ROOT}/realgit`) }, noFollow: { [`${ROOT}/.git`]: { kind: 'symlink', target: 'realgit' }, [`${ROOT}/realgit`]: { kind: 'directory' } } }));
+  it('pins a symlinked .git directory in literals', async () => {
+    const set = await protectedSetFor([ROOT], portsOf({ entries: { [`${ROOT}/.git`]: directory(`${ROOT}/realgit`) }, noFollow: { [`${ROOT}/.git`]: { kind: 'symlink', target: 'realgit' }, [`${ROOT}/realgit`]: { kind: 'directory' } } }));
     expect(set.literals).toContain(`${ROOT}/.git`);
     expect(set.paths).toContain(`${ROOT}/realgit/hooks`);
   });
 
-  it('reports an unresolvable modules directory once', () => {
+  it('reports an unresolvable modules directory once', async () => {
     const modules = `${ROOT}/.git/modules`;
-    const set = protectedSetFor([ROOT], portsOf({ noFollow: { [`${ROOT}/.git`]: { kind: 'directory' }, [modules]: { kind: 'symlink', target: 'modules' } }, unresolvableBelow: { [modules]: 'ELOOP' } }));
+    const set = await protectedSetFor([ROOT], portsOf({ noFollow: { [`${ROOT}/.git`]: { kind: 'directory' }, [modules]: { kind: 'symlink', target: 'modules' } }, unresolvableBelow: { [modules]: 'ELOOP' } }));
     expect(set.issues).toHaveLength(1);
   });
 
-  it('matches a literal through the canonical parent of a hand-built one-spelling set', () => {
+  it('matches a literal through the canonical parent of a hand-built one-spelling set', async () => {
     const set: ProtectedSet = { ...EMPTY_PROTECTED_SET, roots: [ROOT], literals: ['/link/x'] };
     const probes = { canonicalise: (absolute: string): PathResolution => ({ ok: true, path: absolute === '/link' ? ROOT : absolute }), volumeProbe: () => false };
-    expect(isProtectedWrite(set, `${ROOT}/x`, probes)).toBe(true);
-    expect(isProtectedWrite(set, `${ROOT}/y`, probes)).toBe(false);
+    expect(await isProtectedWrite(set, `${ROOT}/x`, probes)).toBe(true);
+    expect(await isProtectedWrite(set, `${ROOT}/y`, probes)).toBe(false);
   });
 });

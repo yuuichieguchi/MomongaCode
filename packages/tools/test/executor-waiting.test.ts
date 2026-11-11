@@ -21,7 +21,7 @@ describe('a tool that asks to wait', () => {
     const announced: string[] = [];
     const toolSet = await toolSetOf(tool);
     const [outcome] = await harness.executor.runBatch(
-      harness.input(toolSet, [call('c1', 'Wait', {})], { onOutcome: (result) => void announced.push(result.callId) }),
+      await harness.input(toolSet, [call('c1', 'Wait', {})], { onOutcome: (result) => void announced.push(result.callId) }),
     );
     expect(outcome).toEqual({ callId: 'c1', kind: 'waiting', awaits: { kind: 'job', jobId: 'bash_x' }, wakeAt: harness.clock.now() + 5000 });
     expect(announced).toEqual([]);
@@ -35,9 +35,9 @@ describe('a tool that asks to wait', () => {
     const { tool, executions } = waitingTool(['pending', 'pending', 'done']);
     const toolSet = await toolSetOf(tool);
     const batch = () => harness.input(toolSet, [call('c1', 'Wait', {})]);
-    expect((await harness.executor.runBatch(batch()))[0]?.kind).toBe('waiting');
-    expect((await harness.executor.runBatch(batch()))[0]?.kind).toBe('waiting');
-    const [outcome] = await harness.executor.runBatch(batch());
+    expect((await harness.executor.runBatch(await batch()))[0]?.kind).toBe('waiting');
+    expect((await harness.executor.runBatch(await batch()))[0]?.kind).toBe('waiting');
+    const [outcome] = await harness.executor.runBatch(await batch());
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'finished' } });
     expect(executions).toEqual(['c1', 'c1', 'c1']);
     expect(harness.started).toEqual(['c1']);
@@ -50,7 +50,7 @@ describe('a tool that asks to wait', () => {
     const toolSet = await toolSetOf(tool, makeTool('Quick'));
     const announced: string[] = [];
     const outcomes = await harness.executor.runBatch(
-      harness.input(toolSet, [call('c1', 'Wait', {}), call('c2', 'Quick', {})], { onOutcome: (result) => void announced.push(result.callId) }),
+      await harness.input(toolSet, [call('c1', 'Wait', {}), call('c2', 'Quick', {})], { onOutcome: (result) => void announced.push(result.callId) }),
     );
     expect(outcomes.map((outcome) => outcome.kind)).toEqual(['waiting', 'result']);
     expect(announced).toEqual(['c2']);
@@ -60,7 +60,7 @@ describe('a tool that asks to wait', () => {
     const harness = makeHarness();
     const { tool } = waitingTool(['pending']);
     const toolSet = await toolSetOf(tool);
-    const [outcome] = await harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Wait', {})], { leaseLost: () => true }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(toolSet, [call('c1', 'Wait', {})], { leaseLost: () => true }));
     expect(outcome).toEqual({ callId: 'c1', kind: 'deferred' });
   });
 });

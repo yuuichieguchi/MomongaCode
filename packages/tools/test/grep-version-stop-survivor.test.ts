@@ -83,7 +83,7 @@ const runGrep = async (survivor: Survivor) => {
   const { timing, groupPort, inspector, sandbox, markers } = scene(survivor);
   let now = 0;
   const harness = makeHarness({ executor: { reap: { inspector, groupPort, timing: { now: () => now, sleep: async (ms: number) => void (now += ms) }, killGraceMs: 100 } } } as HarnessOptions);
-  const batch = harness.executor.runBatch(harness.input(await toolSetOf(grepTool), [call('search', 'Grep', { pattern: 'needle' }, 'allow_once')], { sandbox, ripgrep: versionlessRipgrep() }));
+  const batch = harness.executor.runBatch(await harness.input(await toolSetOf(grepTool), [call('search', 'Grep', { pattern: 'needle' }, 'allow_once')], { sandbox, ripgrep: versionlessRipgrep() }));
   let done = false;
   void batch.finally(() => {
     done = true;

@@ -70,7 +70,7 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
 
   it('forwards the command stdin to the sandboxed process, as Seatbelt and the unsandboxed launcher do', async () => {
     const proc = sandbox().spawn({ argv: ['/bin/cat'], cwd: work, env: { PATH: '/usr/bin:/bin' }, stdin: '{"tool_input":1}' }, policy([]), new AbortController().signal);
-    const result = await run(proc);
+    const result = await run(await proc);
     expect(result.stdout).toBe('{"tool_input":1}');
     expect(result.code).toBe(0);
   });
@@ -82,7 +82,7 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
       policy([hooks]),
       new AbortController().signal,
     );
-    const result = await run(proc);
+    const result = await run(await proc);
     expect(result.stdout.trim()).toBe('pinned');
     expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
   });
@@ -103,7 +103,7 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
       }) as typeof spawn,
     });
     const proc = failing.spawn({ argv: ['/bin/sh', '-c', 'exec sleep 30'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
-    await expect(proc.exited).rejects.toBe(failure);
+    await expect((await proc).exited).rejects.toBe(failure);
     expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
     expect(fs.readdirSync(path.join(base, 'tmp'))).toEqual([]);
   });
@@ -115,10 +115,10 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
     execFileSync('/usr/bin/mkfifo', [gate]);
     const first = shared.spawn({ argv: ['/bin/cat', gate], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
     const second = shared.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
-    await run(second);
+    await run(await second);
     expect(fs.existsSync(path.join(work, '.git'))).toBe(true);
     fs.writeFileSync(gate, 'open');
-    await run(first);
+    await run(await first);
     expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
   });
 
@@ -137,17 +137,17 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
     await announced('second-ready');
 
     fs.writeFileSync(gates[0] as string, 'open');
-    await run(first);
+    await run(await first);
     expect(fs.existsSync(path.join(work, '.git'))).toBe(true);
     fs.writeFileSync(gates[1] as string, 'open');
-    await run(second);
+    await run(await second);
     expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
   });
 
   it('never deletes a placeholder path that holds content', async () => {
     const hooks = path.join(work, '.git', 'hooks');
     const proc = sandbox().spawn({ argv: ['/bin/sh', '-c', 'echo kept > .git'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
-    await run(proc);
+    await run(await proc);
     expect(fs.readFileSync(path.join(work, '.git'), 'utf8')).toBe('kept\n');
   });
 });
@@ -199,8 +199,8 @@ describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent
     });
     const ready = path.join(base, 'ready');
     const controller = new AbortController();
-    const proc = monitored.spawn({ argv: ['/bin/sh', '-c', script(ready)], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([]), controller.signal);
-    const finished = run(proc);
+    const proc = await monitored.spawn({ argv: ['/bin/sh', '-c', script(ready)], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([]), controller.signal);
+    const finished = run(await proc);
     await waitFor(() => fs.existsSync(ready), { description: 'the command is ready' });
     const abortedAt = Date.now();
     controller.abort();
@@ -228,7 +228,7 @@ describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent
       groupMembers: psGroupMembers,
     });
     const controller = new AbortController();
-    const proc = monitored.spawn({ argv: ['/bin/sh', '-c', 'sleep 30'], cwd: work, env: { PATH: '/usr/bin:/bin', SETUP_GATE: gate } }, policy([]), controller.signal);
+    const proc = await monitored.spawn({ argv: ['/bin/sh', '-c', 'sleep 30'], cwd: work, env: { PATH: '/usr/bin:/bin', SETUP_GATE: gate } }, policy([]), controller.signal);
     const finished = run(proc);
     await waitFor(() => psGroupMembers.members(proc.pgid).length === 1, { description: 'bwrap is setting up alone in its group' });
     const abortedAt = Date.now();

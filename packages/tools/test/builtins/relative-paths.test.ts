@@ -5,7 +5,7 @@ import { ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import type { SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProbes, testPaths } from '@momonga/testkit';
 import type { AnyTool, SubjectContext } from '@momonga/tools';
 import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND, keyFor } from '../helpers.ts';
 import { HAS_RG, RG_PATH, approvalOf, makeBuiltins, resultOf, sha256 } from './fixtures.ts';
@@ -35,7 +35,7 @@ const toolNamed = (tools: Builtins, name: string): AnyTool => {
   return tool;
 };
 
-const contextAfterCd = (tools: Builtins, shell: string): SubjectContext => ({
+const contextAfterCd = (tools: Builtins, shell: string): SubjectContext => ({ paths: testPaths(),
   cwd: shell,
   workingDirectory: project(tools),
   home: tools.layout.home,
@@ -57,9 +57,9 @@ const SOURCE = 'user-settings';
 const denyRule = (tools: Builtins, text: string): PermissionRule =>
   parseRule(text, { effect: 'deny', origin: 'user', source: SOURCE, settingsRoot: project(tools), home: tools.layout.home, cwd: project(tools) });
 
-const withDenyRule = (tools: Builtins, text: string) => {
+const withDenyRule = async (tools: Builtins, text: string) => {
   const rules = [denyRule(tools, text)];
-  const fileRules = computeFileRules(rules, [project(tools)], tools.tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND));
+  const fileRules = await computeFileRules(rules, [project(tools)], tools.tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes());
   return { rules, sandboxPolicy: { ...tools.sandboxPolicy, fileRules } as SandboxPolicy, roots: [project(tools)] };
 };
 
@@ -192,7 +192,7 @@ describe('Read with a relative path', () => {
     const tools = await makeBuiltins();
     tools.write('.env', 'SECRET');
     moveShellTo(tools, 'sub');
-    const outcome = await tools.run('Read', { file_path: '.env' }, withDenyRule(tools, 'Read(.env)'));
+    const outcome = await tools.run('Read', { file_path: '.env' }, await withDenyRule(tools, 'Read(.env)'));
     expect(failedOutput(outcome)).toBe(`Permission denied: .env is blocked by Read(.env) (user: ${SOURCE})`);
   });
 

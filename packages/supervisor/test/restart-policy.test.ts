@@ -47,62 +47,62 @@ describe('classifyExit', () => {
     for (const [exit, expected] of unrequested) expect(classifyExit({ ...exit, stop: undefined }), JSON.stringify(exit)).toEqual(expected);
   });
 
-  it('spawn and settings failures without a process are failures with their reason', () => {
+  it('spawn and settings failures without a process are failures with their reason', async () => {
     expect(failureWithoutProcess('spawn-failed')).toEqual({ class: 'failure', reason: 'spawn-failed' });
     expect(failureWithoutProcess('settings-read-failed')).toEqual({ class: 'failure', reason: 'settings-read-failed' });
-    expect(decide(failureWithoutProcess('spawn-failed'), 0, () => 0.5)).toEqual({ next: 'backoff', delayMs: 250 });
-    expect(decide(failureWithoutProcess('settings-read-failed'), 1, () => 0.5)).toEqual({ next: 'backoff', delayMs: 500 });
+    expect(await decide(failureWithoutProcess('spawn-failed'), 0, () => 0.5)).toEqual({ next: 'backoff', delayMs: 250 });
+    expect(await decide(failureWithoutProcess('settings-read-failed'), 1, () => 0.5)).toEqual({ next: 'backoff', delayMs: 500 });
   });
 });
 
 describe('decideAfterExit', () => {
-  it('shutdown stop: any exit is requested and stopped', () => {
+  it('shutdown stop: any exit is requested and stopped', async () => {
     for (const exit of ANY_EXITS) {
       const classified = classifyExit({ ...exit, stop: 'shutdown' });
       expect(classified.class).toBe('requested');
-      expect(decide(classified)).toEqual({ next: 'stopped' });
+      expect(await decide(classified)).toEqual({ next: 'stopped' });
     }
   });
 
-  it('startup-timeout stop is a failure with its reason', () => {
+  it('startup-timeout stop is a failure with its reason', async () => {
     for (const exit of ANY_EXITS) {
       const classified = classifyExit({ ...exit, stop: 'startup-timeout' });
       expect(classified).toEqual({ class: 'failure', reason: 'startup-timeout' });
-      expect(decide(classified, 0, () => 0.5)).toEqual({ next: 'backoff', delayMs: 250 });
+      expect(await decide(classified, 0, () => 0.5)).toEqual({ next: 'backoff', delayMs: 250 });
     }
   });
 
-  it('ready-mismatch stop is a failure with reason protocol-violation', () => {
+  it('ready-mismatch stop is a failure with reason protocol-violation', async () => {
     for (const exit of ANY_EXITS) {
       const classified = classifyExit({ ...exit, stop: 'ready-mismatch' });
       expect(classified).toEqual({ class: 'failure', reason: 'protocol-violation' });
-      expect(decide(classified, 2, () => 0.5)).toEqual({ next: 'backoff', delayMs: 1000 });
+      expect(await decide(classified, 2, () => 0.5)).toEqual({ next: 'backoff', delayMs: 1000 });
     }
   });
 
-  it('0 unrequested backs off', () => {
+  it('0 unrequested backs off', async () => {
     const classified = classifyExit({ code: 0, signal: null, stop: undefined });
     expect(classified).toEqual({ class: 'unexpected-clean', reason: 'unexpected-clean' });
-    expect(decide(classified, 0, () => 0.5)).toEqual({ next: 'backoff', delayMs: 250 });
+    expect(await decide(classified, 0, () => 0.5)).toEqual({ next: 'backoff', delayMs: 250 });
   });
 
-  it('1 and 134 and 127 are failures', () => {
+  it('1 and 134 and 127 are failures', async () => {
     for (const code of [1, 134, 127]) {
       const classified = classifyExit({ code, signal: null, stop: undefined });
       expect(classified).toEqual({ class: 'failure', reason: 'failure' });
-      expect(decide(classified, 1, () => 0.5)).toEqual({ next: 'backoff', delayMs: 500 });
+      expect(await decide(classified, 1, () => 0.5)).toEqual({ next: 'backoff', delayMs: 500 });
     }
   });
 
-  it('signal unrequested is a signal failure', () => {
+  it('signal unrequested is a signal failure', async () => {
     const classified = classifyExit({ code: null, signal: 'SIGKILL', stop: undefined });
     expect(classified).toEqual({ class: 'signal', reason: 'signal' });
-    expect(decide(classified, 0, () => 0.5)).toEqual({ next: 'backoff', delayMs: 250 });
+    expect(await decide(classified, 0, () => 0.5)).toEqual({ next: 'backoff', delayMs: 250 });
   });
 
-  it('75 yields waiting-lock only', () => {
+  it('75 yields waiting-lock only', async () => {
     const classified = classifyExit({ code: 75, signal: null, stop: undefined });
-    for (const failures of [0, 5, 100]) expect(decide(classified, failures, () => 0.999)).toEqual({ next: 'waiting-lock' });
+    for (const failures of [0, 5, 100]) expect(await decide(classified, failures, () => 0.999)).toEqual({ next: 'waiting-lock' });
   });
 
   it('79 is the retire exit: class retired, reason retired, and the child is never restarted (20.1)', () => {
@@ -112,9 +112,9 @@ describe('decideAfterExit', () => {
     expect(decideAfterExit({ exit, consecutiveFailures: 0, policy: DEFAULT_RESTART_POLICY, random: () => 0.5 })).toEqual({ next: 'stopped' });
   });
 
-  it('78 yields held-config', () => {
+  it('78 yields held-config', async () => {
     const classified = classifyExit({ code: 78, signal: null, stop: undefined });
-    for (const failures of [0, 5]) expect(decide(classified, failures, () => 0.999)).toEqual({ next: 'held-config' });
+    for (const failures of [0, 5]) expect(await decide(classified, failures, () => 0.999)).toEqual({ next: 'held-config' });
   });
 });
 

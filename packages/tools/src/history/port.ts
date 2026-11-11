@@ -2,7 +2,7 @@ import type { MemoryOrigin, RunEvent, Stored } from '@momonga/protocol';
 
 export type HistoryScope = 'project' | 'all';
 
-export type ReadDenial = (path: string) => boolean;
+export type ReadDenial = (path: string) => Promise<boolean>;
 
 export type HistorySearchRequest = { query: string; scope: HistoryScope };
 
@@ -37,10 +37,10 @@ export type HistoryReadPage = {
 };
 
 export type HistoryStorePort = {
-  search(request: HistorySearchRequest): Promise<HistorySearchResult>;
+  search(request: HistorySearchRequest, signal: AbortSignal): Promise<HistorySearchResult>;
   read(request: HistoryReadRequest): Promise<HistoryReadPage | null>;
   projectOf(runId: string): string | undefined;
-  readDenial(project: string): Promise<ReadDenial>;
+  readDenial(project: string, signal: AbortSignal): Promise<ReadDenial>;
   redact(text: string): string;
 };
 

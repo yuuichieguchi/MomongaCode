@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
+import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7, syncPaths } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
 import type { Admission, CallTiming, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
@@ -441,7 +441,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     );
   }
   if (typeof options.home !== 'string') throw new TypeError('openRuntimeStore: home is required');
-  const home = fs.realpathSync.native(options.home);
+  const home = syncPaths.realPath(options.home);
   const { clock, leaseMs, maxAttempts, maxTotalAttempts } = options;
   const db = openDatabase(options.path);
   let statements: Statements;

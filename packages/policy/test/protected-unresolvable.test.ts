@@ -7,7 +7,7 @@ import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, prot
 
 const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 
-const loopGuard = () => {
+const loopGuard = async () => {
   const layout = makeLayout();
   fs.mkdirSync(layout.project, { recursive: true });
   const loop = path.join(layout.root, 'loop');
@@ -15,13 +15,13 @@ const loopGuard = () => {
   return { layout, loop, guard: path.join(loop, 'x') };
 };
 
-const writeInput = (layout: ReturnType<typeof makeLayout>, target: string, guard: string): DecideInput => ({
+const writeInput = async (layout: ReturnType<typeof makeLayout>, target: string, guard: string): Promise<DecideInput> => ({
   tool: WRITE,
   subject: { kind: 'path', tool: 'Write', paths: [target], access: 'write' } satisfies PermissionSubject,
   mode: 'acceptEdits',
   rules: [],
   roots: [layout.project],
-  fileRules: fileRulesFor([], [layout.project]),
+  fileRules: await fileRulesFor([], [layout.project]),
   home: layout.home,
   cwd: layout.project,
   protectedSet: protectedSetWith([layout.project], [guard]),
@@ -29,14 +29,14 @@ const writeInput = (layout: ReturnType<typeof makeLayout>, target: string, guard
 });
 
 describe('an unresolvable protected path', () => {
-  it('does not block an unrelated write', () => {
-    const { layout, guard } = loopGuard();
+  it('does not block an unrelated write', async () => {
+    const { layout, guard } = await loopGuard();
     const target = path.join(layout.project, 'a.txt');
-    expect(decide(writeInput(layout, target, guard))).toMatchObject({ kind: 'allow', source: 'mode' });
+    expect(await decide(await writeInput(layout, target, guard))).toMatchObject({ kind: 'allow', source: 'mode' });
   });
 
-  it('asks before a write lexically under the guard', () => {
-    const { layout, loop, guard } = loopGuard();
-    expect(decide(writeInput(layout, path.join(loop, 'x', 'y'), guard))).toMatchObject({ kind: 'ask', source: 'protected' });
+  it('asks before a write lexically under the guard', async () => {
+    const { layout, loop, guard } = await loopGuard();
+    expect(await decide(await writeInput(layout, path.join(loop, 'x', 'y'), guard))).toMatchObject({ kind: 'ask', source: 'protected' });
   });
 });

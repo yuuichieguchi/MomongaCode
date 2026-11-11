@@ -65,8 +65,8 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
       callId: ctx.callId,
       command: input.command,
       timeoutMs: input.timeout ?? DEFAULT_BACKGROUND_TIMEOUT_MS,
-      spawn: (markerFile, signal, markerFd) => {
-        const child = ctx.sandbox.spawn(
+      spawn: async (markerFile, signal, markerFd) => {
+        const child = await ctx.sandbox.spawn(
           {
             argv: [bashPathFor(ctx.env), '-c', input.command],
             cwd: ctx.session.cwd,
@@ -154,7 +154,7 @@ export const bashTool = defineTool<BashInput>({
     const network = await openGrantedNetwork(ctx);
     let child: SandboxedProcess;
     try {
-      child = ctx.sandbox.spawn(
+      child = await ctx.sandbox.spawn(
         {
           argv: [bashPathFor(ctx.env), '-c', script],
           cwd: ctx.session.cwd,
@@ -194,13 +194,13 @@ export const bashTool = defineTool<BashInput>({
     const extracted = extractCwd(capture.text(), nonce);
     let output = extracted.output.replace(/\n+$/, '');
     if (extracted.cwd !== undefined) {
-      if (insideAny(extracted.cwd, canonicalDirectories(ctx.roots))) {
+      if (await insideAny(extracted.cwd, await canonicalDirectories(ctx.roots, ctx.paths), ctx.paths)) {
         ctx.session.cwd = extracted.cwd;
       } else {
-        output += `${output === '' ? '' : '\n'}Shell cwd was reset to ${shownPath(ctx, ctx.session.cwd)}`;
+        output += `${output === '' ? '' : '\n'}Shell cwd was reset to ${await shownPath(ctx, ctx.session.cwd)}`;
       }
     } else {
-      output += `${output === '' ? '' : '\n'}Shell cwd could not be determined and stays at ${shownPath(ctx, ctx.session.cwd)}`;
+      output += `${output === '' ? '' : '\n'}Shell cwd could not be determined and stays at ${await shownPath(ctx, ctx.session.cwd)}`;
     }
     for (const note of notes) output += `${output === '' ? '' : '\n'}${note}`;
     if (exit.signal !== null) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]` };
@@ -234,7 +234,7 @@ export type UserCommandHost = {
   env: Readonly<Record<string, string>>;
   signal: AbortSignal;
   refusal(command: string): Promise<string | undefined>;
-  spawn(command: SandboxCommand, signal: AbortSignal): SandboxedProcess;
+  spawn(command: SandboxCommand, signal: AbortSignal): SandboxedProcess | Promise<SandboxedProcess>;
   onOutput(text: string): void;
 };
 
@@ -243,7 +243,7 @@ export type UserCommandOutcome = { kind: 'refused'; reason: string } | { kind: '
 export const runUserCommand = async (host: UserCommandHost): Promise<UserCommandOutcome> => {
   const reason = await host.refusal(host.command);
   if (reason !== undefined) return { kind: 'refused', reason };
-  const child = host.spawn({ argv: [bashPathFor(host.env), '-c', host.command], cwd: host.cwd, env: bashEnvOf(host.env) }, host.signal);
+  const child = await host.spawn({ argv: [bashPathFor(host.env), '-c', host.command], cwd: host.cwd, env: bashEnvOf(host.env) }, host.signal);
   const capture = createCapture(USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES);
   const stdout = new StringDecoder('utf8');
   const stderr = new StringDecoder('utf8');

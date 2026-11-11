@@ -4,7 +4,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallOutcome, ResultOutcome } from '@momonga/tools';
 import { ruleEnforcementOf } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProbes } from '@momonga/testkit';
 import { computeFileRules } from '@momonga/policy';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import type { Builtins } from './builtins/fixtures.ts';
@@ -87,7 +87,7 @@ describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forc
   it('a write allowed by a file rule outside the workspace is refused too', async () => {
     const wide = stage.layout.outside;
     const rules = [ruleFor(stage.layout)('allow', `Edit(/${wide}/**)`)];
-    await stage.bash(`: > ${wide}/pwn`, { rules, sandboxPolicy: { ...policyFor({ layout: stage.layout, rules, tmpDir: stage.tmpDir }), fileRules: computeFileRules(rules, [stage.layout.project], stage.tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)) } });
+    await stage.bash(`: > ${wide}/pwn`, { rules, sandboxPolicy: { ...(await policyFor({ layout: stage.layout, rules, tmpDir: stage.tmpDir })), fileRules: await computeFileRules(rules, [stage.layout.project], stage.tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()) } });
     expect(fs.existsSync(path.join(wide, 'pwn'))).toBe(false);
   });
 

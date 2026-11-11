@@ -38,7 +38,7 @@ describe('two output fits in one batch', () => {
     const ports: CallOutputFit[] = [];
     const execution = recordingFit(1000);
     const [result] = await harness.executor.runBatch({
-      ...harness.input(await toolSetOf(editTool(outcome, ports)), [call('c1', 'Edit', {}, 'allow_once')]),
+      ...(await harness.input(await toolSetOf(editTool(outcome, ports)), [call('c1', 'Edit', {}, 'allow_once')])),
       reconcileFit: charFit(200),
       outputFit: execution.port,
     });
@@ -56,7 +56,7 @@ describe('two output fits in one batch', () => {
     const ports: CallOutputFit[] = [];
     const execution = recordingFit(1000);
     const [result] = await harness.executor.runBatch({
-      ...harness.input(await toolSetOf(editTool('unknown', ports)), [call('c1', 'Edit', {}, 'allow_once')]),
+      ...(await harness.input(await toolSetOf(editTool('unknown', ports)), [call('c1', 'Edit', {}, 'allow_once')])),
       reconcileFit: charFit(200),
       outputFit: execution.port,
     });
@@ -74,7 +74,7 @@ describe('two output fits in one batch', () => {
     const ports: CallOutputFit[] = [];
     const execution = recordingFit(300);
     const [result] = await harness.executor.runBatch({
-      ...harness.input(await toolSetOf(editTool('not_applied', ports)), [call('c1', 'Edit', {}, 'allow_once')]),
+      ...(await harness.input(await toolSetOf(editTool('not_applied', ports)), [call('c1', 'Edit', {}, 'allow_once')])),
       reconcileFit: charFit(2000),
       outputFit: execution.port,
     });
@@ -115,7 +115,7 @@ describe('two output fits in one batch', () => {
         }),
     });
     const pending = harness.executor.runBatch({
-      ...harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { signal: controller.signal }),
+      ...(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { signal: controller.signal })),
       reconcileFit: charFit(200),
       outputFit: signalBound(charFit(1000)),
     });

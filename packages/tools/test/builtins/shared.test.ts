@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { EMPTY_FILE_RULES, defaultProtectedPaths, momongaLayout } from '@momonga/foundation';
-import { protectedSetWith } from '@momonga/testkit';
+import { protectedSetWith, NEVER_CANCELLED } from '@momonga/testkit';
 import type { ProtectedSet } from '@momonga/foundation';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { buildSandboxPolicy, createBuiltinTools, createToolRegistry } from '@momonga/tools';
@@ -140,7 +140,7 @@ describe('createBuiltinTools', () => {
     const tools = await makeBuiltins();
     const file = tools.write('a.txt', 'a\n');
     const [read, glob, plan] = await tools.executor.runBatch(
-      tools.input(tools.toolSet, [
+      await tools.input(tools.toolSet, [
         { callId: 'r', name: 'Read', arguments: JSON.stringify({ file_path: file }) },
         { callId: 'g', name: 'Glob', arguments: JSON.stringify({ pattern: '*.txt' }) },
         { callId: 'p', name: 'UpdatePlan', arguments: JSON.stringify({ entries: [{ content: 'x', status: 'pending', priority: 'low' }] }) },
@@ -155,9 +155,9 @@ describe('createBuiltinTools', () => {
 describe('buildSandboxPolicy', () => {
   const sortedWriteDenied = (policy: { writeDenied: readonly string[] }): string[] => [...policy.writeDenied].sort();
 
-  it('builds writable roots, protected writes from the protected set and default read denials', () => {
+  it('builds writable roots, protected writes from the protected set and default read denials', async () => {
     const protectedSet = protectedSetWith(['/w/a', '/w/b'], [...defaultProtectedPaths('/w/a'), ...defaultProtectedPaths('/w/b')]);
-    const policy = buildSandboxPolicy({ protectedSet, fileRules: EMPTY_FILE_RULES, roots: ['/w/a', '/w/b'], home: '/Users/me', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' });
+    const policy = await buildSandboxPolicy({ protectedSet, fileRules: EMPTY_FILE_RULES, roots: ['/w/a', '/w/b'], home: '/Users/me', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' }, NEVER_CANCELLED);
     expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
       writableRoots: ['/w/a', '/w/b', '/s/sessions/one'],
       writeDenied: [...protectedSet.paths, '/Users/me/.momonga', momongaLayout('/Users/me').keychains, momongaLayout('/Users/me').executables, '/s/sessions'].sort(),
@@ -171,23 +171,23 @@ describe('buildSandboxPolicy', () => {
     });
   });
 
-  it('derives writeDenied from the paths of the set, not from the roots', () => {
+  it('derives writeDenied from the paths of the set, not from the roots', async () => {
     const protectedSet = protectedSetWith(['/w/a'], ['/w/a/.git', '/w/main/.git/hooks', '/w/main/.git/config']);
-    const policy = buildSandboxPolicy({ protectedSet, fileRules: EMPTY_FILE_RULES, roots: ['/w/a'], home: '/h', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' });
+    const policy = await buildSandboxPolicy({ protectedSet, fileRules: EMPTY_FILE_RULES, roots: ['/w/a'], home: '/h', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' }, NEVER_CANCELLED);
     expect(sortedWriteDenied(policy)).toEqual(['/w/a/.git', '/w/main/.git/hooks', '/w/main/.git/config', '/h/.momonga', momongaLayout('/h').keychains, momongaLayout('/h').executables, '/s/sessions'].sort());
     expect(policy.writeDenied).not.toContain('/w/a/.git/hooks');
   });
 
-  it('keeps writeDeniedLiterals to the launcher literals when the set has literals', () => {
+  it('keeps writeDeniedLiterals to the launcher literals when the set has literals', async () => {
     const protectedSet: ProtectedSet = { ...protectedSetWith(['/w/a'], []), literals: ['/w/a/x'] };
-    const policy = buildSandboxPolicy({ protectedSet, fileRules: EMPTY_FILE_RULES, roots: ['/w/a'], home: '/h', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' });
+    const policy = await buildSandboxPolicy({ protectedSet, fileRules: EMPTY_FILE_RULES, roots: ['/w/a'], home: '/h', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' }, NEVER_CANCELLED);
     expect(policy.writeDeniedLiterals).toEqual(['/h/.local/bin/momonga']);
     expect(policy.protectedSet.literals).toEqual(['/w/a/x']);
   });
 
-  it('appends extra writable and read-denied paths and honors the network setting', () => {
+  it('appends extra writable and read-denied paths and honors the network setting', async () => {
     const protectedSet = protectedSetWith(['/w/a'], defaultProtectedPaths('/w/a'));
-    const policy = buildSandboxPolicy({
+    const policy = await buildSandboxPolicy({
       protectedSet,
       fileRules: EMPTY_FILE_RULES,
       roots: ['/w/a'],
@@ -197,7 +197,7 @@ describe('buildSandboxPolicy', () => {
       network: 'allow',
       extraWritable: ['/cache'],
       extraReadDenied: ['/h/.ssh'],
-    });
+    }, NEVER_CANCELLED);
     expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
       writableRoots: ['/w/a', '/s/sessions/one', '/cache'],
       writeDenied: [...defaultProtectedPaths('/w/a'), '/h/.momonga', momongaLayout('/h').keychains, momongaLayout('/h').executables, '/s/sessions'].sort(),

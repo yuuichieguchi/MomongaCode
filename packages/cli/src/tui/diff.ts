@@ -1,4 +1,4 @@
-import { displayToolPath, isRecord, resolveToolPath } from '@momonga/foundation';
+import { displayToolPathSync, isRecord, resolveToolPath } from '@momonga/foundation';
 
 export type DiffLine = { kind: 'context' | 'removed' | 'added' | 'header'; text: string };
 
@@ -36,7 +36,7 @@ export const diffOfToolInput = (name: string, rawInput: unknown, workingDirector
   if (!isRecord(rawInput)) return undefined;
   const filePath = rawInput['file_path'];
   if (typeof filePath !== 'string') return undefined;
-  const header: DiffLine = { kind: 'header', text: displayToolPath(workingDirectory, resolveToolPath(workingDirectory, filePath)) };
+  const header: DiffLine = { kind: 'header', text: displayToolPathSync(workingDirectory, resolveToolPath(workingDirectory, filePath)) };
   if (name === 'Edit') {
     const oldString = rawInput['old_string'];
     const newString = rawInput['new_string'];

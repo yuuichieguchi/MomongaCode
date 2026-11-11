@@ -20,6 +20,7 @@ import {
   writeProjectSettings,
   writeUserSettings,
 } from './helpers.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   try {
@@ -30,9 +31,9 @@ const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   throw new Error('expected a rejection');
 };
 
-const thrownBy = (call: () => unknown): unknown => {
+const thrownBy = async (call: () => unknown): Promise<unknown> => {
   try {
-    call();
+    await call();
   } catch (error) {
     return error;
   }
@@ -153,8 +154,8 @@ describe('settings composition (fake timers, not used by the code under test)', 
 
     expect(await rejectionOf(f.composition.sessionCreateSettings(f.temp.project, signalNever()))).toBeInstanceOf(ConfigError);
     expect(await rejectionOf(f.composition.settings.rules(session))).toBeInstanceOf(ConfigError);
-    expect(thrownBy(() => f.composition.envFor(session))).toBeInstanceOf(ConfigError);
-    expect(thrownBy(() => f.toolRuntime.port.envFor(session))).toBeInstanceOf(ConfigError);
+    expect(await thrownBy(() => f.composition.envFor(session))).toBeInstanceOf(ConfigError);
+    expect(await thrownBy(() => f.toolRuntime.port.envFor(session))).toBeInstanceOf(ConfigError);
     expect(await rejectionOf(f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) }))).toBeInstanceOf(ConfigError);
   });
 
@@ -205,7 +206,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     expect(await delta(() => f.composition.envFor(session))).toBe(1);
     expect(await delta(() => f.toolRuntime.port.envFor(session))).toBe(1);
     expect(await delta(() => f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) }))).toBe(1);
-    expect(await delta(() => f.toolRuntime.port.policyFor(session, { env: Object.freeze({ PLAIN: '1' }), rules: [], ruleEnforcement: 'exact-paths' }))).toBe(1);
+    expect(await delta(() => f.toolRuntime.port.policyFor(session, { signal: NEVER_CANCELLED, env: Object.freeze({ PLAIN: '1' }), rules: [], ruleEnforcement: 'exact-paths' }))).toBe(1);
   });
 
   it('loadSessionSettings wraps a non-ConfigError as ConfigError with cause', async () => {
@@ -307,12 +308,12 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const env = f.composition.envFor(session) as Record<string, string>;
 
     expect(Object.isFrozen(env)).toBe(true);
-    expect(() => {
+    await expect((async () => {
       env['PLAIN'] = '2';
-    }).toThrow(TypeError);
-    expect(() => {
+    })()).rejects.toThrow(TypeError);
+    await expect((async () => {
       env['ADDED'] = '1';
-    }).toThrow(TypeError);
+    })()).rejects.toThrow(TypeError);
     expect(env).toEqual({ PLAIN: '1' });
   });
 
@@ -320,7 +321,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const temp = await makeTempHome();
     const { store } = openStore(temp);
 
-    const error = thrownBy(() => runtime.createSettingsComposition({ home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
+    const error = await thrownBy(() => runtime.createSettingsComposition({ home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
 
     expect(error).toBeInstanceOf(TypeError);
     expect((error as Error).message).toContain('relative/home');

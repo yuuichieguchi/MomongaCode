@@ -22,7 +22,7 @@ describe('path subject digest fails closed', () => {
     const toolSet = await toolSetOf(tool);
     fs.chmodSync(locked, 0o000);
     try {
-      const outcomes = await harness.executor.runBatch(harness.input(toolSet, [call('p1', 'PathTool')]));
+      const outcomes = await harness.executor.runBatch(await harness.input(toolSet, [call('p1', 'PathTool')]));
       expect(outcomes).toEqual([
         {
           callId: 'p1',
@@ -56,7 +56,7 @@ describe('path subject digest fails closed', () => {
     const toolSet = await toolSetOf(tool);
     fs.chmodSync(locked, 0o000);
     try {
-      const [outcome] = await harness.executor.runBatch(harness.input(toolSet, [call('p1', 'PathTool', {}, 'allow_once')]));
+      const [outcome] = await harness.executor.runBatch(await harness.input(toolSet, [call('p1', 'PathTool', {}, 'allow_once')]));
       expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
       expect(runs).toEqual([]);
     } finally {

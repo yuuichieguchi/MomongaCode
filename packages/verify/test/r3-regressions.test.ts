@@ -5,15 +5,16 @@ import { describe, expect, it } from 'vitest';
 import type { PropertyId, VerificationReport } from '../src/index.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, caseSensitiveFs, makeLayout, rulesOf, useZ3, verifyScenario } from './harness.ts';
 import type { Layout } from './harness.ts';
+import { testProbes } from '@momonga/testkit';
 
 const z3 = useZ3();
 
 const statusOf = (report: VerificationReport, id: PropertyId): string | undefined => report.results.find((result) => result.id === id)?.verdict.status;
 
-const decideCommand = (layout: Layout, rules: readonly PermissionRule[], command: string): string => {
+const decideCommand = async (layout: Layout, rules: readonly PermissionRule[], command: string): Promise<string> => {
   const roots = [layout.project];
   const fileSystem = caseSensitiveFs();
-  return decide({
+  return (await decide({
     tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
     subject: { kind: 'command', tool: 'Bash', command },
     mode: 'manual',
@@ -21,12 +22,12 @@ const decideCommand = (layout: Layout, rules: readonly PermissionRule[], command
     roots,
     home: layout.home,
     cwd: layout.project,
-    fileRules: computeFileRules([...rules], roots, null, ruleEnforcementOf('none')),
-    protectedSet: protectedSetFor(roots, fileSystem),
+    fileRules: await computeFileRules([...rules], roots, null, ruleEnforcementOf('none'), testProbes()),
+    protectedSet: await protectedSetFor(roots, fileSystem),
     fs: fileSystem,
     searchPath: '/usr/bin:/bin',
     isWritable: () => false,
-  }).kind;
+  })).kind;
 };
 
 describe('finding 6: an unmodelled deny or ask rule never leaves a proof standing', () => {
@@ -35,7 +36,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     const rules = rulesOf(layout, [['allow', 'Bash(git:*)'], [effect, 'Bash(git push origin~1:*)']]);
     const report = await verifyScenario(z3.engine().api, layout, rules);
 
-    expect(decideCommand(layout, rules, 'git -C . push origin~1 x')).toBe('allow');
+    expect(await decideCommand(layout, rules, 'git -C . push origin~1 x')).toBe('allow');
     expect(statusOf(report, 'bash-admission')).toBe('unknown');
     expect(statusOf(report, 'rule-consistency')).toBe('unknown');
     expect(report.exitCode).toBe(1);
@@ -115,8 +116,8 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     const rules = rulesOf(layout, [['allow', 'Bash'], ['deny', 'Bash(git push:*)']]);
     const report = await verifyScenario(z3.engine().api, layout, rules);
 
-    expect(decideCommand(layout, rules, 'git -C . push x')).toBe('allow');
-    expect(decideCommand(layout, rules, 'git push x')).toBe('deny');
+    expect(await decideCommand(layout, rules, 'git -C . push x')).toBe('allow');
+    expect(await decideCommand(layout, rules, 'git push x')).toBe('deny');
     expect(statusOf(report, 'bash-admission')).toBe('refuted');
     expect(report.exitCode).toBe(1);
     expect(report.mismatches).toEqual([]);

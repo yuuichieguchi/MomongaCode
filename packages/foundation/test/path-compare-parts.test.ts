@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { canonicalPath, comparableContains, comparablePath, setCaseSensitivityProbe, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { setCaseSensitivityProbe } from '@momonga/foundation';
+import { syncPaths } from '../src/index.ts';
 
 const tempDirs: string[] = [];
 const lockedDirs: string[] = [];
@@ -41,71 +42,71 @@ const fixture = () => {
 describe('a symlink as the last component', () => {
   it('a file symlink pointing outside is not contained', () => {
     const { proj } = fixture();
-    expect(comparableContains(proj, path.join(proj, 'flink'))).toBe(false);
+    expect(syncPaths.comparableContains(proj, path.join(proj, 'flink'))).toBe(false);
   });
 
   it('a dangling symlink pointing outside is not contained', () => {
     const { proj } = fixture();
-    expect(comparableContains(proj, path.join(proj, 'dangle'))).toBe(false);
+    expect(syncPaths.comparableContains(proj, path.join(proj, 'dangle'))).toBe(false);
   });
 
   it('comparablePath of a file symlink is the comparable form of its target', () => {
     const { proj, out } = fixture();
-    expect(canonicalPath(path.join(proj, 'flink'))).toBe(path.join(out, 'f'));
-    expect(comparablePath(path.join(proj, 'flink'))).toBe(comparablePath(path.join(out, 'f')));
+    expect(syncPaths.canonicalPath(path.join(proj, 'flink'))).toBe(path.join(out, 'f'));
+    expect(syncPaths.comparablePath(path.join(proj, 'flink'))).toBe(syncPaths.comparablePath(path.join(out, 'f')));
   });
 
   it('comparablePath of a dangling symlink is the comparable form of its target', () => {
     const { proj, out } = fixture();
-    expect(comparablePath(path.join(proj, 'dangle'))).toBe(comparablePath(path.join(out, 'missing')));
+    expect(syncPaths.comparablePath(path.join(proj, 'dangle'))).toBe(syncPaths.comparablePath(path.join(out, 'missing')));
   });
 
   it('comparablePath agrees with canonicalPath for existing files', () => {
     const { proj, out } = fixture();
     for (const file of [path.join(proj, 'File.txt'), path.join(out, 'f'), path.join(proj, 'flink')]) {
-      expect(comparablePath(file)).toBe(comparablePath(canonicalPath(file)));
+      expect(syncPaths.comparablePath(file)).toBe(syncPaths.comparablePath(syncPaths.canonicalPath(file)));
     }
   });
 });
 
 describe('.. handling', () => {
-  it('resolves .. after a directory symlink the way the kernel does', () => {
+  it('resolves .. after a directory symlink the way the kernel does', async () => {
     const { proj, other } = fixture();
     const input = path.join(proj, 'dlink') + '/../newfile';
-    expect(() => comparablePath(input)).not.toThrow();
-    expect(comparablePath(input)).toBe(comparablePath(path.join(other, 'newfile')));
-    expect(comparableContains(proj, input)).toBe(false);
+    await expect((async () => { await syncPaths.comparablePath(input); })()).resolves.toBeUndefined();
+    expect(syncPaths.comparablePath(input)).toBe(syncPaths.comparablePath(path.join(other, 'newfile')));
+    expect(syncPaths.comparableContains(proj, input)).toBe(false);
   });
 
-  it('throws for .. below a missing component', () => {
+  it('throws for .. below a missing component', async () => {
     const { proj } = fixture();
-    expect(() => comparablePath(path.join(proj, 'missing') + '/..')).toThrow();
+    await expect((async () => syncPaths.comparablePath(path.join(proj, 'missing') + '/..'))()).rejects.toThrow();
   });
 });
 
 describe('canonicalPath errors', () => {
-  it('propagates a symlink loop', () => {
+  it('propagates a symlink loop', async () => {
     const { root } = fixture();
     fs.symlinkSync(path.join(root, 'loop-b'), path.join(root, 'loop-a'));
     fs.symlinkSync(path.join(root, 'loop-a'), path.join(root, 'loop-b'));
-    expect(() => comparablePath(path.join(root, 'loop-a'))).toThrow();
+    await expect((async () => syncPaths.comparablePath(path.join(root, 'loop-a')))()).rejects.toThrow();
   });
 
-  it('propagates a path below a file', () => {
+  it('propagates a path below a file', async () => {
     const { proj } = fixture();
-    expect(() => comparablePath(path.join(proj, 'File.txt', 'child'))).toThrow();
+    await expect((async () => syncPaths.comparablePath(path.join(proj, 'File.txt', 'child')))()).rejects.toThrow();
   });
 
-  it.skipIf(RUNNING_AS_ROOT)('falls back to the deepest accessible directory plus the lexical tail on EACCES', () => {
+  it.skipIf(RUNNING_AS_ROOT)('falls back to the deepest accessible directory plus the lexical tail on EACCES', async () => {
     const { root } = fixture();
     const locked = path.join(root, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
     lockedDirs.push(locked);
     const target = path.join(locked, 'x', 'y');
-    expect(() => comparablePath(target)).not.toThrow();
-    expect(comparableContains(root, target)).toBe(true);
-    expect(comparableContains(path.join(root, 'proj'), target)).toBe(false);
+    await expect((async () => { await syncPaths.comparablePath(target); })()).resolves.toBeUndefined();
+    expect(syncPaths.comparableContains(root, target)).toBe(true);
+    expect(syncPaths.comparableContains(path.join(root, 'proj'), target)).toBe(false);
   });
 });
 
@@ -113,9 +114,9 @@ describe('volume verdict cache cost', () => {
   it('a warm lookup stats the cached mount root at most once beyond the deepest-existing walk', () => {
     const dir = makeDir();
     setCaseSensitivityProbe(() => true);
-    volumeIsCaseInsensitive(dir);
+    syncPaths.volumeIsCaseInsensitive(dir);
     const spy = vi.spyOn(fs, 'statSync');
-    expect(volumeIsCaseInsensitive(path.join(dir, 'Missing'))).toBe(true);
+    expect(syncPaths.volumeIsCaseInsensitive(path.join(dir, 'Missing'))).toBe(true);
     const deepestExistingWalk = 2;
     expect(spy.mock.calls.length).toBeLessThanOrEqual(deepestExistingWalk + 1);
   });

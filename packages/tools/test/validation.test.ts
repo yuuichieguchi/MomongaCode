@@ -37,7 +37,7 @@ const runEdit = async (args: unknown) => {
     },
   });
   const set = await toolSetOf(edit, makeTool('Many', { inputSchema: MANY_SCHEMA }));
-  const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Edit', args)]));
+  const [outcome] = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Edit', args)]));
   return { outcome, executed, harness };
 };
 
@@ -134,7 +134,7 @@ describe('validation messages', () => {
   it('caps the list at 20 lines and counts the rest', async () => {
     const harness = makeHarness();
     const set = await toolSetOf(makeTool('Many', { inputSchema: MANY_SCHEMA }));
-    const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Many', {})]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Many', {})]));
     if (outcome?.kind !== 'result') throw new Error('expected a result outcome');
     const lines = outcome.result.output.split('\n');
     expect(lines[0]).toBe('Invalid input for Many:');

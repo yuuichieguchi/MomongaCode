@@ -1,8 +1,8 @@
 import os from 'node:os';
 import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, findOutboundError, givenSecretStoreChildEnv, minimalChildEnv, outboundFetch, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths, OutboundNetwork, ProcessInspector, SecretStore } from '@momonga/foundation';
-import { computeFileRules } from '@momonga/policy';
-import type { PolicyPorts } from '@momonga/policy';
+import { askedBy, computeFileRules } from '@momonga/policy';
+import type { PolicyHostPorts } from '@momonga/policy';
 import { buildSandboxPolicy, createForgeAccess, createOperationTools, createSandboxedArgvRunner, forgeCredentialOf, hostGitReader, loadForgeDescriptors } from '@momonga/tools';
 import type { AnyTool, ForgeCredentialReference, ForgeFetch, MarkerOwners, ReconcileContext, ReconcileSandbox, ShellHost } from '@momonga/tools';
 import type { SandboxBindings } from '../ports.ts';
@@ -12,7 +12,7 @@ export type OperationToolsOptions = {
   paths: MomongaPaths;
   home: string;
   sandboxes: SandboxBindings;
-  fs: PolicyPorts;
+  fs: PolicyHostPorts;
   network: OutboundNetwork;
   shellHost: ShellHost;
   owners: MarkerOwners;
@@ -44,15 +44,19 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
   const reconcileSandbox = async (context: ReconcileContext): Promise<ReconcileSandbox> => {
     const held = await options.sandboxes.acquire(context.signal);
     const roots = [...context.roots];
-    const sandboxPolicy = buildSandboxPolicy({
-      roots,
-      home: options.home,
-      ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }),
-      sessionsTmpRoot: options.paths.tmp.sessions,
-      fileRules: computeFileRules([], roots, context.tmpDir ?? null, held.value.ruleEnforcement),
-      protectedSet: protectedSetFor(roots, options.fs),
-      network: 'deny',
-    });
+    const ports = askedBy(options.fs, context.signal);
+    const sandboxPolicy = await buildSandboxPolicy(
+      {
+        roots,
+        home: options.home,
+        ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }),
+        sessionsTmpRoot: options.paths.tmp.sessions,
+        fileRules: await computeFileRules([], roots, context.tmpDir ?? null, held.value.ruleEnforcement, ports),
+        protectedSet: await protectedSetFor(roots, ports),
+        network: 'deny',
+      },
+      context.signal,
+    );
     return { sandbox: held.value.sandbox, sandboxPolicy, release: held.release };
   };
 

@@ -1,21 +1,23 @@
-import { comparableContains } from '@momonga/foundation';
-import type { PathResolution } from '@momonga/foundation';
+import { containsByComponents, everyAsync, someAsync } from '@momonga/foundation';
+import type { PolicyPorts } from './filesystem.ts';
 import { absoluteFrom } from './path-match.ts';
 
-export const insideRoots = (
-  paths: readonly string[],
-  roots: readonly string[],
-  cwd: string,
-  canonicalise: (absolute: string) => PathResolution,
-): boolean => {
+export type RootPorts = Pick<PolicyPorts, 'canonicalise' | 'locate'>;
+
+const contains = async (ports: Pick<PolicyPorts, 'locate'>, directory: string, candidate: string): Promise<boolean> => {
+  const located = await ports.locate(candidate);
+  return containsByComponents((await ports.locate(directory)).parts, located.parts, located.caseInsensitive);
+};
+
+export const insideRoots = async (paths: readonly string[], roots: readonly string[], cwd: string, ports: RootPorts): Promise<boolean> => {
   if (paths.length === 0) return false;
   const canonicalRoots: string[] = [];
   for (const root of roots) {
-    const resolution = canonicalise(absoluteFrom(root, cwd));
+    const resolution = await ports.canonicalise(absoluteFrom(root, cwd));
     if (resolution.ok) canonicalRoots.push(resolution.path);
   }
-  return paths.every((target) => {
-    const real = canonicalise(absoluteFrom(target, cwd));
-    return real.ok && canonicalRoots.some((root) => comparableContains(root, real.path));
+  return everyAsync(paths, async (target) => {
+    const real = await ports.canonicalise(absoluteFrom(target, cwd));
+    return real.ok && (await someAsync(canonicalRoots, (root) => contains(ports, root, real.path)));
   });
 };

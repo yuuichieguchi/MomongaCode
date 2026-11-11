@@ -4,8 +4,9 @@ import { MEMORY_SAVE_TOOL_NAME, MEMORY_SEARCH_RESULT_LIMIT, MEMORY_SEARCH_TOOL_N
 import type { MemoryStorePort, MemorySaveRequest } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import { keyFor } from '../helpers.ts';
+import { testPaths } from '@momonga/testkit';
 
-const TITLE_CTX = { cwd: '/work/a', workingDirectory: '/work/a' };
+const TITLE_CTX = { cwd: '/work/a', workingDirectory: '/work/a', paths: testPaths() };
 const FAKE_KEY = 'sk-abcdefghijklmnopqrstuvwxyz0123456789';
 
 const viewOf = (overrides: Partial<MemoryView> = {}): MemoryView => ({
@@ -54,7 +55,7 @@ describe('memory tools', () => {
     const { port, saved } = fakePort();
     const harness = makeHarness();
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'user' })]),
+      await harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'user' })]),
     );
     expect(outcome?.kind).toBe('needs_approval');
     expect(saved).toEqual([]);
@@ -64,7 +65,7 @@ describe('memory tools', () => {
     const { port, saved } = fakePort();
     const harness = makeHarness();
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'project' }, 'allow_once')]),
+      await harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'project' }, 'allow_once')]),
     );
     expect(saved).toEqual([{ scope: 'project', text: 'prefers tabs', runId: 'run-1', step: 1, callId: 'c1', signal: expect.any(AbortSignal) }]);
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'Saved project memory mem-1.' } });
@@ -74,7 +75,7 @@ describe('memory tools', () => {
     const { port, saved } = fakePort();
     const harness = makeHarness();
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'user' })], { mode: 'plan' }),
+      await harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'user' })], { mode: 'plan' }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(saved).toEqual([]);
@@ -84,7 +85,7 @@ describe('memory tools', () => {
     const { port, saved } = fakePort();
     const harness = makeHarness();
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: `my key is ${FAKE_KEY}`, scope: 'user' })]),
+      await harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: `my key is ${FAKE_KEY}`, scope: 'user' })]),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(JSON.stringify(outcome)).toContain('credential or secret');
@@ -97,12 +98,12 @@ describe('memory tools', () => {
     const harness = makeHarness();
     const set = await toolSet(port, false);
     const [refused] = await harness.executor.runBatch(
-      harness.input(set, [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'tests live in test/', scope: 'project' }, 'allow_once')]),
+      await harness.input(set, [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'tests live in test/', scope: 'project' }, 'allow_once')]),
     );
     expect(refused).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(JSON.stringify(refused)).toContain('trusted folders');
     const [accepted] = await harness.executor.runBatch(
-      harness.input(set, [call('c2', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'user' }, 'allow_once')]),
+      await harness.input(set, [call('c2', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'user' }, 'allow_once')]),
     );
     expect(accepted?.kind).toBe('result');
     expect(saved).toEqual([{ scope: 'user', text: 'prefers tabs', runId: 'run-1', step: 1, callId: 'c2', signal: expect.any(AbortSignal) }]);
@@ -113,7 +114,7 @@ describe('memory tools', () => {
     const harness = makeHarness();
     const set = await toolSet(port);
     const outcomes = await harness.executor.runBatch(
-      harness.input(set, [
+      await harness.input(set, [
         call('c1', MEMORY_SAVE_TOOL_NAME, { text: '   ', scope: 'user' }, 'allow_once'),
         call('c2', MEMORY_SAVE_TOOL_NAME, { text: 'x', scope: 'team' }, 'allow_once'),
         call('c3', MEMORY_SAVE_TOOL_NAME, { text: 'x'.repeat(MEMORY_TEXT_MAX_CHARS + 1), scope: 'user' }, 'allow_once'),
@@ -128,7 +129,7 @@ describe('memory tools', () => {
     const harness = makeHarness();
     harness.idempotency.port.begin(keyFor('run-1', 1, 'c1'), { expiresAt: harness.clock.now() + 60_000, meta: { tool: MEMORY_SAVE_TOOL_NAME, runId: 'run-1' } });
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'user' }, 'allow_once')]),
+      await harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'user' }, 'allow_once')]),
     );
     expect(saved).toHaveLength(1);
     expect(outcome).toMatchObject({ kind: 'result', reconciled: 'not_applied', result: { status: 'completed' } });
@@ -137,7 +138,7 @@ describe('memory tools', () => {
   it('searches by words and shows the provenance of each match without asking', async () => {
     const { port, searched } = fakePort([viewOf(), viewOf({ id: 'mem-2', scope: 'project', project: '/p', text: 'run make', source: { kind: 'tool', sessionId: 's2', runId: 'run-9', step: 3, callId: 'c7', seq: 12 } })]);
     const harness = makeHarness();
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSet(port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: ' tabs   make ' })]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSet(port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: ' tabs   make ' })]));
     expect(searched).toEqual([['tabs', 'make']]);
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     const output = outcome?.kind === 'result' ? outcome.result.output : '';
@@ -152,7 +153,7 @@ describe('memory tools', () => {
     const harness = makeHarness();
     const set = await toolSet(port);
     await harness.executor.runBatch(
-      harness.input(set, [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs' }), call('c2', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
+      await harness.input(set, [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs' }), call('c2', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
     );
     expect(includes).toEqual(['live', 'all']);
   });
@@ -161,7 +162,7 @@ describe('memory tools', () => {
     const retired = viewOf({ id: 'mem-old', status: 'stale', state: 'archived', retiredAt: Date.UTC(2026, 10, 4), supersedes: ['mem-older'] });
     const harness = makeHarness();
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSet(fakePort([retired]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
+      await harness.input(await toolSet(fakePort([retired]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
     );
     const output = outcome?.kind === 'result' ? outcome.result.output : '';
     expect(output).toBe(
@@ -173,7 +174,7 @@ describe('memory tools', () => {
     const harness = makeHarness();
     const replaced = viewOf({ id: 'mem-old', supersededBy: ['mem-new'] });
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSet(fakePort([replaced]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
+      await harness.input(await toolSet(fakePort([replaced]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
     );
     const output = outcome?.kind === 'result' ? outcome.result.output : '';
     expect(output).toContain('status unbound, superseded by mem-new, saved');
@@ -183,7 +184,7 @@ describe('memory tools', () => {
     const { port, saved } = fakePort();
     const harness = makeHarness();
     await harness.executor.runBatch(
-      harness.input(await toolSet(port), [
+      await harness.input(await toolSet(port), [
         call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'parser lives in src/parser.ts', scope: 'project', kind: 'fact', paths: ['src/parser.ts'], supersedes: ['mem-9'] }, 'allow_once'),
       ]),
     );
@@ -230,7 +231,7 @@ describe('memory tools', () => {
   it('caps the matches it shows and says that more exist', async () => {
     const many = Array.from({ length: MEMORY_SEARCH_RESULT_LIMIT + 3 }, (_, index) => viewOf({ id: `mem-${index}` }));
     const harness = makeHarness();
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSet(fakePort(many).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs' })]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSet(fakePort(many).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs' })]));
     const lines = (outcome?.kind === 'result' ? outcome.result.output : '').split('\n');
     expect(lines).toHaveLength(MEMORY_SEARCH_RESULT_LIMIT + 1);
     expect(lines.at(-1)).toBe('More matches were not shown; narrow the query.');
@@ -240,7 +241,7 @@ describe('memory tools', () => {
     const harness = makeHarness();
     const set = await toolSet(fakePort().port);
     const [none, blank] = await harness.executor.runBatch(
-      harness.input(set, [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'nothing' }), call('c2', MEMORY_SEARCH_TOOL_NAME, { query: '   ' })]),
+      await harness.input(set, [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'nothing' }), call('c2', MEMORY_SEARCH_TOOL_NAME, { query: '   ' })]),
     );
     expect(none).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'No saved memory matches.' } });
     expect(blank).toMatchObject({ kind: 'result', result: { status: 'failed' } });
@@ -262,7 +263,7 @@ describe('MemorySearch with include all', () => {
     });
     const harness = makeHarness();
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSet(fakePort([note]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
+      await harness.input(await toolSet(fakePort([note]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
     );
     const output = outcome?.kind === 'result' ? outcome.result.output : '';
     expect(output).toContain('validity verified observed 2026-11-02T00:00:00.000Z to 2026-11-04T00:00:00.000Z; stale observed 2026-11-04T00:00:00.000Z to 2026-11-06T00:00:00.000Z (successor)');

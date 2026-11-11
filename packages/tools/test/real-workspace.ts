@@ -4,10 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
-import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, parseRule, prepareGlobs, settleGlobs } from '@momonga/policy';
+import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, parseRule, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { Decision, GlobTable, PermissionRule, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
+import { TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 
 export const REAL_BASH = '/bin/bash';
@@ -32,8 +32,8 @@ export type RealWorkspace = {
   link(target: string, relative: string): string;
   exists(relative: string): boolean;
   read(relative: string): string;
-  decide(command: string, options?: DecideOptions): Decision;
-  decideWrite(toolName: 'Write' | 'Edit', file: string, options?: DecideOptions): Decision;
+  decide(command: string, options?: DecideOptions): Promise<Decision>;
+  decideWrite(toolName: 'Write' | 'Edit', file: string, options?: DecideOptions): Promise<Decision>;
   decideExpanding(command: string, options?: DecideOptions): Promise<Decision>;
   runBash(command: string, cwd?: string, extra?: Record<string, string>): { stdout: string; stderr: string; status: number | null };
   env(extra?: Record<string, string>): NodeJS.ProcessEnv;
@@ -59,12 +59,12 @@ export const makeRealWorkspace = (): RealWorkspace => {
     ...extra,
   });
   const at = (relative: string): string => path.resolve(project, relative);
-  const decideWith = (globs: GlobTable, command: string, options: DecideOptions): Decision => {
+  const decideWith = async (globs: GlobTable, command: string, options: DecideOptions): Promise<Decision> => {
     const rules: PermissionRule[] = (options.rules ?? []).map(([effect, text]) =>
       parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project }),
     );
     const roots = [project];
-    return decide({
+    return await decide({
       tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
       subject: { kind: 'command', tool: 'Bash', command },
       mode: options.mode ?? 'manual',
@@ -72,9 +72,9 @@ export const makeRealWorkspace = (): RealWorkspace => {
       roots,
       home,
       cwd: options.cwd ?? project,
-      fileRules: computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT),
-      protectedSet: protectedSetFor(roots, filesystem),
-      fs: settleGlobs(filesystem, globs),
+      fileRules: await computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT, testProbes()),
+      protectedSet: await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED)),
+      fs: settleGlobs(filesystem, globs, NEVER_CANCELLED),
       searchPath: options.searchPath ?? TEST_SEARCH_PATH,
       isWritable: isWritableFor(roots),
     });
@@ -106,7 +106,7 @@ export const makeRealWorkspace = (): RealWorkspace => {
     exists: (relative) => fs.existsSync(at(relative)),
     read: (relative) => fs.readFileSync(at(relative), 'utf8'),
     decide: (command, options = {}) => decideWith(EMPTY_GLOB_TABLE, command, options),
-    decideWrite: (toolName, file, options = {}) => {
+    decideWrite: async (toolName, file, options = {}) => {
       const rules: PermissionRule[] = (options.rules ?? []).map(([effect, text]) =>
         parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project }),
       );
@@ -119,9 +119,9 @@ export const makeRealWorkspace = (): RealWorkspace => {
         roots,
         home,
         cwd: options.cwd ?? project,
-        fileRules: computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT),
-        protectedSet: protectedSetFor(roots, filesystem),
-        fs: settleGlobs(filesystem, EMPTY_GLOB_TABLE),
+        fileRules: await computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT, testProbes()),
+        protectedSet: await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED)),
+        fs: settleGlobs(filesystem, EMPTY_GLOB_TABLE, NEVER_CANCELLED),
         searchPath: TEST_SEARCH_PATH,
         isWritable: isWritableFor(roots),
       });

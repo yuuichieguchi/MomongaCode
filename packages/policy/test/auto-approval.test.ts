@@ -7,8 +7,8 @@ import path from 'node:path';
 describe('4.1 acceptEdits approval rows', () => {
   for (const row of ACCEPT_EDITS_ROWS) {
     for (const mode of columnModes(row)) {
-      it(`${row.id} ${row.command} in ${mode} -> ${cellAt(row, mode)}${row.pin ? ' (pin)' : ''}`, () => {
-        expect(kindIn(row, mode)).toBe(cellAt(row, mode));
+      it(`${row.id} ${row.command} in ${mode} -> ${cellAt(row, mode)}${row.pin ? ' (pin)' : ''}`, async () => {
+        expect(await kindIn(row, mode)).toBe(cellAt(row, mode));
       });
     }
   }
@@ -17,8 +17,8 @@ describe('4.1 acceptEdits approval rows', () => {
 describe('4.2 read-only approval rows', () => {
   for (const row of READ_ONLY_ROWS) {
     for (const mode of columnModes(row)) {
-      it(`${row.id} ${row.command} in ${mode} -> ${cellAt(row, mode)}${row.pin ? ' (pin)' : ''}`, () => {
-        expect(kindIn(row, mode)).toBe(cellAt(row, mode));
+      it(`${row.id} ${row.command} in ${mode} -> ${cellAt(row, mode)}${row.pin ? ' (pin)' : ''}`, async () => {
+        expect(await kindIn(row, mode)).toBe(cellAt(row, mode));
       });
     }
   }
@@ -29,122 +29,122 @@ describe('5.1.1 an undeclared option is never approved', () => {
     ['rm --frobnicate x'],
     ['ls --frobnicate'],
     ['sed --posix -n 1p f'],
-  ])('%s asks in default and acceptEdits (pin)', (command) => {
-    expect(kindIn(commandRow(command), 'manual')).toBe('ask');
-    expect(kindIn(commandRow(command), 'acceptEdits')).toBe('ask');
+  ])('%s asks in default and acceptEdits (pin)', async (command) => {
+    expect(await kindIn(commandRow(command), 'manual')).toBe('ask');
+    expect(await kindIn(commandRow(command), 'acceptEdits')).toBe('ask');
   });
 
-  it('approves the declared forms of the same programs', () => {
-    expect(kindIn(commandRow('rm x'), 'acceptEdits')).toBe('allow');
-    expect(kindIn(commandRow('ls'), 'manual')).toBe('allow');
-    expect(kindIn(commandRow('sed -n 1p f'), 'manual')).toBe('allow');
+  it('approves the declared forms of the same programs', async () => {
+    expect(await kindIn(commandRow('rm x'), 'acceptEdits')).toBe('allow');
+    expect(await kindIn(commandRow('ls'), 'manual')).toBe('allow');
+    expect(await kindIn(commandRow('sed -n 1p f'), 'manual')).toBe('allow');
   });
 });
 
 describe('5.1.2 an unmodeled program is never approved', () => {
-  it.each(['A13', 'A14'])('%s asks in default and acceptEdits (pin)', (id) => {
-    expect(kindIn(rowById(id), 'manual')).toBe('ask');
-    expect(kindIn(rowById(id), 'acceptEdits')).toBe('ask');
+  it.each(['A13', 'A14'])('%s asks in default and acceptEdits (pin)', async (id) => {
+    expect(await kindIn(rowById(id), 'manual')).toBe('ask');
+    expect(await kindIn(rowById(id), 'acceptEdits')).toBe('ask');
   });
 
-  it('still matches a rule literally (pin)', () => {
+  it('still matches a rule literally (pin)', async () => {
     const row = commandRow('mytool --format=json', { rules: [['allow', 'Bash(mytool:*)']] });
     for (const mode of ['manual', 'acceptEdits', 'bypassPermissions'] as const) {
-      const decision = decideRow(row, mode);
-      expect(decision.kind).toBe('allow');
-      expect(decision.source).toBe('rule');
+      const decision = await decideRow(row, mode);
+      expect((await decision).kind).toBe('allow');
+      expect((await decision).source).toBe('rule');
     }
   });
 });
 
 describe('5.1.3 a modeled program whose targets lie inside the roots is approved', () => {
-  it.each(['A1', 'A2', 'A3', 'A7', 'A9', 'A10', 'A15', 'A16', 'A25'])('%s is allowed in acceptEdits with the acceptEdits reason', (id) => {
-    const decision = decideRow(rowById(id), 'acceptEdits');
-    expect(decision.kind).toBe('allow');
-    expect(decision.source).toBe('mode');
+  it.each(['A1', 'A2', 'A3', 'A7', 'A9', 'A10', 'A15', 'A16', 'A25'])('%s is allowed in acceptEdits with the acceptEdits reason', async (id) => {
+    const decision = await decideRow(rowById(id), 'acceptEdits');
+    expect((await decision).kind).toBe('allow');
+    expect((await decision).source).toBe('mode');
   });
 
-  it.each(['R1', 'R3', 'R4', 'R7', 'R11', 'R13', 'R17', 'R19', 'R22', 'R24', 'R28'])('%s is allowed in default and acceptEdits as a read-only command', (id) => {
+  it.each(['R1', 'R3', 'R4', 'R7', 'R11', 'R13', 'R17', 'R19', 'R22', 'R24', 'R28'])('%s is allowed in default and acceptEdits as a read-only command', async (id) => {
     for (const mode of ['manual', 'acceptEdits'] as const) {
-      const decision = decideRow(rowById(id), mode);
-      expect(decision.kind).toBe('allow');
-      expect(decision.reason).toContain('read-only command');
+      const decision = await decideRow(rowById(id), mode);
+      expect((await decision).kind).toBe('allow');
+      expect((await decision).reason).toContain('read-only command');
     }
   });
 
-  it('names the acceptEdits reason for an edit-set command', () => {
-    expect(decideRow(rowById('A1'), 'acceptEdits').reason).toContain('acceptEdits mode allows filesystem commands inside the workspace');
+  it('names the acceptEdits reason for an edit-set command', async () => {
+    expect((await decideRow(rowById('A1'), 'acceptEdits')).reason).toContain('acceptEdits mode allows filesystem commands inside the workspace');
   });
 });
 
 describe('5.1.4 platform keying with the injected resolver', () => {
-  it('does not approve sed resolved outside /bin and /usr/bin (A26, pin)', () => {
-    expect(kindIn(rowById('A26'), 'manual')).toBe('ask');
-    expect(kindIn(rowById('A26'), 'acceptEdits')).toBe('ask');
+  it('does not approve sed resolved outside /bin and /usr/bin (A26, pin)', async () => {
+    expect(await kindIn(rowById('A26'), 'manual')).toBe('ask');
+    expect(await kindIn(rowById('A26'), 'acceptEdits')).toBe('ask');
   });
 
-  it('approves sed resolved to /usr/bin/sed', () => {
-    expect(kindIn(commandRow('sed -n 1p f', { fs: () => ({ programs: { sed: '/usr/bin/sed' } }) }), 'manual')).toBe('allow');
+  it('approves sed resolved to /usr/bin/sed', async () => {
+    expect(await kindIn(commandRow('sed -n 1p f', { fs: () => ({ programs: { sed: '/usr/bin/sed' } }) }), 'manual')).toBe('allow');
   });
 
-  it("treats /bin/rm as Apple's rm and not ./rm", () => {
+  it("treats /bin/rm as Apple's rm and not ./rm", async () => {
     const noResolution = { fs: () => ({ programs: {} }) };
-    expect(kindIn(commandRow('/bin/rm x', noResolution), 'acceptEdits')).toBe('allow');
-    expect(kindIn(commandRow('./rm x', { ...noResolution, prepare: (layout) => void touch(path.join(layout.project, 'rm')) }), 'acceptEdits')).toBe('ask');
+    expect(await kindIn(commandRow('/bin/rm x', noResolution), 'acceptEdits')).toBe('allow');
+    expect(await kindIn(commandRow('./rm x', { ...noResolution, prepare: (layout) => void touch(path.join(layout.project, 'rm')) }), 'acceptEdits')).toBe('ask');
   });
 
-  it.each(['echo hi', 'pwd', 'cd src'])('approves the builtin %s without any resolution', (command) => {
-    expect(kindIn(commandRow(command, { fs: () => ({ programs: {} }) }), 'manual')).toBe('allow');
+  it.each(['echo hi', 'pwd', 'cd src'])('approves the builtin %s without any resolution', async (command) => {
+    expect(await kindIn(commandRow(command, { fs: () => ({ programs: {} }) }), 'manual')).toBe('allow');
   });
 
-  it('approves only builtins when the resolver resolves nothing', () => {
+  it('approves only builtins when the resolver resolves nothing', async () => {
     const nothing = { fs: () => ({ programs: {} }) };
-    expect(kindIn(commandRow('ls', nothing), 'manual')).toBe('ask');
-    expect(kindIn(commandRow('cat README.md', nothing), 'manual')).toBe('ask');
-    expect(kindIn(commandRow('echo hi', nothing), 'manual')).toBe('allow');
+    expect(await kindIn(commandRow('ls', nothing), 'manual')).toBe('ask');
+    expect(await kindIn(commandRow('cat README.md', nothing), 'manual')).toBe('ask');
+    expect(await kindIn(commandRow('echo hi', nothing), 'manual')).toBe('allow');
   });
 });
 
 describe('5.1.5 the doc exceptions each ask', () => {
-  it.each(['R5', 'R6', 'R8', 'R9', 'R10', 'R12', 'R14', 'R16', 'R20', 'R21', 'R23', 'R26', 'R27', 'R29', 'R30'])('%s asks in default and acceptEdits (pin)', (id) => {
-    expect(kindIn(rowById(id), 'manual')).toBe('ask');
-    expect(kindIn(rowById(id), 'acceptEdits')).toBe('ask');
+  it.each(['R5', 'R6', 'R8', 'R9', 'R10', 'R12', 'R14', 'R16', 'R20', 'R21', 'R23', 'R26', 'R27', 'R29', 'R30'])('%s asks in default and acceptEdits (pin)', async (id) => {
+    expect(await kindIn(rowById(id), 'manual')).toBe('ask');
+    expect(await kindIn(rowById(id), 'acceptEdits')).toBe('ask');
   });
 
-  it('R31: a command longer than MAX_APPROVABLE_COMMAND_CHARS asks', () => {
+  it('R31: a command longer than MAX_APPROVABLE_COMMAND_CHARS asks', async () => {
     expect(MAX_APPROVABLE_COMMAND_CHARS).toBe(10_000);
     const row = commandRow(`echo ${'x'.repeat(MAX_APPROVABLE_COMMAND_CHARS + 1 - 'echo '.length)}`);
     expect(row.command).toHaveLength(MAX_APPROVABLE_COMMAND_CHARS + 1);
-    expect(kindIn(row, 'manual')).toBe('ask');
-    expect(kindIn(row, 'acceptEdits')).toBe('ask');
+    expect(await kindIn(row, 'manual')).toBe('ask');
+    expect(await kindIn(row, 'acceptEdits')).toBe('ask');
     const atLimit = commandRow(`echo ${'x'.repeat(MAX_APPROVABLE_COMMAND_CHARS - 'echo '.length)}`);
-    expect(kindIn(atLimit, 'manual')).toBe('allow');
+    expect(await kindIn(atLimit, 'manual')).toBe('allow');
   });
 
-  it.each(['watch ls', 'setsid ls', 'ionice ls', 'flock f ls'])('the exec wrapper %s asks (pin)', (command) => {
-    expect(kindIn(commandRow(command), 'manual')).toBe('ask');
-    expect(kindIn(commandRow(command), 'acceptEdits')).toBe('ask');
+  it.each(['watch ls', 'setsid ls', 'ionice ls', 'flock f ls'])('the exec wrapper %s asks (pin)', async (command) => {
+    expect(await kindIn(commandRow(command), 'manual')).toBe('ask');
+    expect(await kindIn(commandRow(command), 'acceptEdits')).toBe('ask');
   });
 });
 
 describe('5.1.6 the edit-set still-prompt list', () => {
-  it.each(['A4', 'A5', 'A6', 'A8', 'A17', 'A18', 'A19', 'A22', 'A23', 'A24'])('%s asks in acceptEdits', (id) => {
-    expect(decideRow(rowById(id), 'acceptEdits').kind).toBe('ask');
+  it.each(['A4', 'A5', 'A6', 'A8', 'A17', 'A18', 'A19', 'A22', 'A23', 'A24'])('%s asks in acceptEdits', async (id) => {
+    expect((await decideRow(rowById(id), 'acceptEdits')).kind).toBe('ask');
   });
 
-  it.each(['A4', 'A22'])('%s asks as a protected write in bypassPermissions', (id) => {
-    expect(decideRow(rowById(id), 'bypassPermissions')).toMatchObject({ kind: 'ask', source: 'protected' });
+  it.each(['A4', 'A22'])('%s asks as a protected write in bypassPermissions', async (id) => {
+    expect(await decideRow(rowById(id), 'bypassPermissions')).toMatchObject({ kind: 'ask', source: 'protected' });
   });
 
-  it('asks for mkdir with a redirect to a ~ target (pin)', () => {
-    expect(kindIn(commandRow('mkdir a > ~/n.txt'), 'acceptEdits')).toBe('ask');
+  it('asks for mkdir with a redirect to a ~ target (pin)', async () => {
+    expect(await kindIn(commandRow('mkdir a > ~/n.txt'), 'acceptEdits')).toBe('ask');
   });
 });
 
 describe('5.1.7 critical removal covers every recursive delete effect', () => {
-  it.each(['A6'])('%s asks in default and acceptEdits (pin)', (id) => {
-    expect(kindIn(rowById(id), 'manual')).toBe('ask');
-    expect(kindIn(rowById(id), 'acceptEdits')).toBe('ask');
+  it.each(['A6'])('%s asks in default and acceptEdits (pin)', async (id) => {
+    expect(await kindIn(rowById(id), 'manual')).toBe('ask');
+    expect(await kindIn(rowById(id), 'acceptEdits')).toBe('ask');
   });
 
   it.each([
@@ -155,13 +155,13 @@ describe('5.1.7 critical removal covers every recursive delete effect', () => {
     ['git reset --hard', 'Bash(git:*)'],
     ['git checkout .', 'Bash(git:*)'],
     ['rm -rf .', 'Bash(rm:*)'],
-  ])('%s under %s asks in default and acceptEdits because it removes the workspace', (command, rule) => {
+  ])('%s under %s asks in default and acceptEdits because it removes the workspace', async (command, rule) => {
     const row = commandRow(command, { rules: [['allow', rule]] });
     for (const mode of ['manual', 'acceptEdits'] as const) {
-      const decision = decideRow(row, mode);
-      expect(decision.kind).toBe('ask');
-      expect(decision.reason).toContain('removes the workspace');
+      const decision = await decideRow(row, mode);
+      expect((await decision).kind).toBe('ask');
+      expect((await decision).reason).toContain('removes the workspace');
     }
-    expect(decideRow(row, 'bypassPermissions').kind).toBe('allow');
+    expect((await decideRow(row, 'bypassPermissions')).kind).toBe('allow');
   });
 });

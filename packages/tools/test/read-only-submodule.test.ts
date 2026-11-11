@@ -45,48 +45,48 @@ describe('review 2: a submodule whose configuration names a program is judged, a
   const ENTERING = ['git status', 'git diff', 'git status --porcelain=v2', 'git diff --submodule=diff', 'git log -p --submodule=diff -1', 'git show --submodule=diff'];
   const NOT_ENTERING = ['git status --ignore-submodules=all', 'git diff --ignore-submodules=dirty', 'git log -p -1', 'git rev-parse HEAD', 'git log --submodule=log -1'];
 
-  it.each(ENTERING)('%s is approved with an ordinary submodule', (command) => {
+  it.each(ENTERING)('%s is approved with an ordinary submodule', async (command) => {
     const workspace = makeRealWorkspace();
     withPlantedSubmodule(workspace);
-    expect(workspace.decide(command)).toMatchObject({ kind: 'allow', basis: 'read_only' });
+    expect(await workspace.decide(command)).toMatchObject({ kind: 'allow', basis: 'read_only' });
   });
 
   describe.each(SUBMODULE_PROGRAM_KEYS)('with %s in the submodule configuration', (key, value) => {
-    it.each(ENTERING)('%s asks', (command) => {
+    it.each(ENTERING)('%s asks', async (command) => {
       const workspace = makeRealWorkspace();
       withPlantedSubmodule(workspace);
       plantedKey(workspace, key, value);
-      expect(workspace.decide(command).kind).toBe('ask');
+      expect((await workspace.decide(command)).kind).toBe('ask');
     });
 
-    it.each(NOT_ENTERING)('%s does not enter the submodule and is approved', (command) => {
+    it.each(NOT_ENTERING)('%s does not enter the submodule and is approved', async (command) => {
       const workspace = makeRealWorkspace();
       withPlantedSubmodule(workspace);
       plantedKey(workspace, key, value);
-      expect(workspace.decide(command)).toMatchObject({ kind: 'allow', basis: 'read_only' });
+      expect(await workspace.decide(command)).toMatchObject({ kind: 'allow', basis: 'read_only' });
     });
   });
 
-  it('cd sm && git status is approved for an ordinary submodule and asks for one with a filter', () => {
+  it('cd sm && git status is approved for an ordinary submodule and asks for one with a filter', async () => {
     const workspace = makeRealWorkspace();
     withPlantedSubmodule(workspace);
-    expect(workspace.decide('cd sm && git status')).toMatchObject({ kind: 'allow', basis: 'read_only' });
+    expect(await workspace.decide('cd sm && git status')).toMatchObject({ kind: 'allow', basis: 'read_only' });
     plantedKey(workspace, 'filter.x.clean', 'cat');
-    expect(workspace.decide('cd sm && git status').kind).toBe('ask');
+    expect((await workspace.decide('cd sm && git status')).kind).toBe('ask');
   });
 
-  it('a nested submodule with a diff driver asks from the top', () => {
+  it('a nested submodule with a diff driver asks from the top', async () => {
     const workspace = makeRealWorkspace();
     withPlantedSubmodule(workspace, true);
     plantedKey(workspace, 'diff.d.textconv', 'prog', true);
-    expect(workspace.decide('git status').kind).toBe('ask');
+    expect((await workspace.decide('git status')).kind).toBe('ask');
   });
 
-  it('a repository inside the workspace that is not a submodule still asks from its own directory', () => {
+  it('a repository inside the workspace that is not a submodule still asks from its own directory', async () => {
     const workspace = makeRealWorkspace();
     workspace.initRepository();
     workspace.initRepository('other');
-    expect(workspace.decide('cd other && git status').kind).toBe('ask');
+    expect((await workspace.decide('cd other && git status')).kind).toBe('ask');
   });
 
   it('real git: the filter of the submodule runs in a plain environment, so the check is not idle', () => {
@@ -104,16 +104,16 @@ describe('review 2: a submodule whose configuration names a program is judged, a
 });
 
 describe('the submodule rule: plain git status is approved again', () => {
-  it.each(['git status', 'git diff', 'git status --porcelain=v2', 'git diff --stat', 'git status --ignore-submodules=untracked'])('%s is allowed as read-only with a planted submodule fsmonitor', (command) => {
+  it.each(['git status', 'git diff', 'git status --porcelain=v2', 'git diff --stat', 'git status --ignore-submodules=untracked'])('%s is allowed as read-only with a planted submodule fsmonitor', async (command) => {
     const workspace = makeRealWorkspace();
     withPlantedSubmodule(workspace);
-    expect(workspace.decide(command)).toMatchObject({ kind: 'allow', basis: 'read_only' });
+    expect(await workspace.decide(command)).toMatchObject({ kind: 'allow', basis: 'read_only' });
   });
 
-  it('a submodule nested in a submodule is allowed too', () => {
+  it('a submodule nested in a submodule is allowed too', async () => {
     const workspace = makeRealWorkspace();
     withPlantedSubmodule(workspace, true);
-    expect(workspace.decide('git status')).toMatchObject({ kind: 'allow', basis: 'read_only' });
+    expect(await workspace.decide('git status')).toMatchObject({ kind: 'allow', basis: 'read_only' });
   });
 
   it('real git: the override reaches the submodule process, with the plain run as control', () => {

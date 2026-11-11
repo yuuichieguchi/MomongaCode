@@ -9,7 +9,7 @@ const [work, tmpRoot, journalDirectory, control] = process.argv.slice(2) as [str
 
 const sandbox = createBubblewrapSandbox({ tmpRoot, killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
 
-sandbox.spawn(
+await sandbox.spawn(
   { argv: ['/bin/sh', '-c', `: > ${control}/ready; cat ${control}/gate > /dev/null`], cwd: work, env: { PATH: '/usr/bin:/bin' } },
   {
     writableRoots: [work, control],

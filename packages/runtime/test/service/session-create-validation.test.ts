@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { momongaLayout, momongaPaths, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { momongaLayout, momongaPaths, syncPaths } from '@momonga/foundation';
 import { GatewayRequestError } from '@momonga/runtime';
 import { MODEL_ID, expectError, expectSchema, onCleanup, startService } from './helpers.ts';
 import type { JsonResponse, ServiceEnv } from './helpers.ts';
@@ -12,7 +12,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const CASE_INSENSITIVE = volumeIsCaseInsensitive(fs.realpathSync(os.tmpdir()));
+const CASE_INSENSITIVE = syncPaths.volumeIsCaseInsensitive(fs.realpathSync(os.tmpdir()));
 const RUNNING_AS_ROOT = process.getuid?.() === 0;
 const SESSION_ENV = { PATH: '/usr/bin:/bin', LANG: 'C' };
 

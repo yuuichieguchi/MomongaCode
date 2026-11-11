@@ -8,6 +8,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import type { Session } from '@momonga/store';
 import { makeEnv } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+import { testProbes } from '@momonga/testkit';
 
 describe('tool step rules', () => {
   it('passes the same rules array to policyFor and to runBatch', async () => {
@@ -27,7 +28,7 @@ describe('tool step rules', () => {
             readDenied: [path.dirname(env.sessionTmpDir)],
             readAllowed: [env.sessionTmpDir],
             network: 'deny',
-            fileRules: computeFileRules(options.rules ?? [], roots, env.sessionTmpDir, ruleEnforcementOf('none')),
+            fileRules: await computeFileRules(options.rules ?? [], roots, env.sessionTmpDir, ruleEnforcementOf('none'), testProbes()),
           } as SandboxPolicy;
           return { roots, sandboxPolicy, tmpDir: env.sessionTmpDir, env: options.env };
         },

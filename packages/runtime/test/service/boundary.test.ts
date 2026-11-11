@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, NEVER_CANCELLED } from '@momonga/testkit';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { START_MS, onCleanup, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
 
@@ -52,7 +52,7 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
       fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
       fs.mkdirSync(sandboxTmp);
       const sandbox = createSeatbeltSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
-      const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [env.layout.projectReal], home: env.layout.home, tmpDir, sessionsTmpRoot, network });
+      const policy = await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [env.layout.projectReal], home: env.layout.home, tmpDir, sessionsTmpRoot, network }, NEVER_CANCELLED);
       const marker = path.join(env.layout.projectReal, 'ran.txt');
       const runSocket = env.layout.socketPath;
       const script = [
@@ -65,7 +65,7 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
 
       const controller = new AbortController();
       onCleanup(() => controller.abort());
-      const proc: SandboxedProcess = sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: env.layout.projectReal, env: BASE_ENV }, policy, controller.signal);
+      const proc: SandboxedProcess = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: env.layout.projectReal, env: BASE_ENV }, policy, controller.signal);
       onCleanup(() => killGroupsForCleanup([proc.pgid]));
       const [stdout, stderr, exit] = await Promise.all([collect(proc.stdout), collect(proc.stderr), proc.exited]);
 

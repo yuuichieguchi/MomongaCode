@@ -54,7 +54,7 @@ describe('Bash recovery of an earlier attempt whose marker is held by a process 
         return { outcome: 'unknown', output: 'unknown' };
       },
     });
-    await expect(harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({
+    await expect(harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({
       name: 'EarlierAttemptNotStoppedError',
       reason: 'unverifiable',
     });

@@ -12,7 +12,9 @@ export const OPEN_FLAGS = {
 
 export type DirectoryIdentity = { dev: bigint; ino: bigint };
 
-export type AccessCheck = 'exists' | 'execute';
+export type AccessCheck = 'exists' | 'execute' | 'list';
+
+export type DirectoryReader = { read(): Promise<string | null>; close(): Promise<void> };
 
 export type RemoveOptions = { readonly recursive: boolean };
 
@@ -28,7 +30,10 @@ export interface FileSystem extends AtomicWriteFileSystem {
   mkdirPrivate(directory: string): Promise<void>;
   readOwnerOnlyTextFile(file: string, description: string, maxBytes?: number): Promise<string | undefined>;
   writeFile(file: string, content: FileContent): Promise<void>;
-  access(file: string): Promise<void>;
+  access(file: string, check?: AccessCheck): Promise<void>;
+  readlink(file: string): Promise<string>;
+  realpath(file: string): Promise<string>;
+  openDirectory(directory: string): Promise<DirectoryReader>;
   cp(from: string, to: string): Promise<void>;
   mkdtemp(prefix: string): Promise<string>;
   openThenClose(file: string, flags: number): Promise<void>;
@@ -47,9 +52,13 @@ export interface FileSystemSync extends AtomicWriteFileSystemSync<number> {
   statSync(file: string): fs.Stats;
   accessSync(file: string, check: AccessCheck): void;
   mkdirSync(directory: string, mode: number): void;
+  readlinkSync(file: string): string;
+  realpathSync(file: string): string;
 }
 
-const accessMode = (check: AccessCheck): number => (check === 'execute' ? fs.constants.X_OK : fs.constants.F_OK);
+const ACCESS_MODES: Readonly<Record<AccessCheck, number>> = { exists: fs.constants.F_OK, execute: fs.constants.X_OK, list: fs.constants.R_OK | fs.constants.X_OK };
+
+const accessMode = (check: AccessCheck): number => ACCESS_MODES[check];
 
 const bytesOf = (content: FileContent): Uint8Array => (typeof content === 'string' ? Buffer.from(content, 'utf8') : content);
 
@@ -134,7 +143,13 @@ export const nodeFileSystem: FileSystem = {
     }
   },
   writeFile: (file, content) => fs.promises.writeFile(file, content),
-  access: (file) => fs.promises.access(file),
+  access: (file, check = 'exists') => fs.promises.access(file, accessMode(check)),
+  readlink: (file) => fs.promises.readlink(file),
+  realpath: (file) => fs.promises.realpath(file),
+  openDirectory: async (directory) => {
+    const handle = await fs.promises.opendir(directory);
+    return { read: async () => (await handle.read())?.name ?? null, close: () => handle.close() };
+  },
   cp: (from, to) => fs.promises.cp(from, to, { recursive: true, force: true }),
   mkdtemp: (prefix) => fs.promises.mkdtemp(prefix),
   openThenClose: async (file, flags) => {
@@ -176,6 +191,8 @@ export const nodeFileSystemSync: FileSystemSync = {
   statSync: (file) => fs.statSync(file),
   accessSync: (file, check) => fs.accessSync(file, accessMode(check)),
   mkdirSync: (directory, mode) => void fs.mkdirSync(directory, { recursive: true, mode }),
+  readlinkSync: (file) => fs.readlinkSync(file),
+  realpathSync: (file) => fs.realpathSync.native(file),
   renameSync: (from, to) => fs.renameSync(from, to),
   linkSync: (from, to) => fs.linkSync(from, to),
   rmSync: (file) => fs.rmSync(file, { force: true }),

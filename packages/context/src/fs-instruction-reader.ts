@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import os from 'node:os';
+import { hostPaths } from '@momonga/foundation';
 import { INSTRUCTION_FILE_LIMIT_BYTES } from './instructions.ts';
 import type { InstructionReader } from './types.ts';
 
@@ -38,7 +39,8 @@ const withRegularFile = async <T>(
   }
 };
 
-export const createFsInstructionReader = (): InstructionReader => ({
+export const createFsInstructionReader = (signal: AbortSignal): InstructionReader => ({
+  contains: (directory, candidate) => hostPaths(signal).comparableContains(directory, candidate),
   read: (filePath) =>
     withRegularFile(filePath, async (realPath, handle) => {
       const buffer = new Uint8Array(INSTRUCTION_FILE_LIMIT_BYTES + UTF8_MAX_CHAR_BYTES);

@@ -295,7 +295,7 @@ describe('architecture: checker self-test', () => {
     expect(checkFile('supervisor', fileIn('supervisor'), "import { r } from '@momonga/runtime';")).toHaveLength(1);
     expect(checkFile('supervisor', fileIn('supervisor'), "const g = await import('@momonga/gateway');")).toHaveLength(1);
     expect(checkFile('supervisor', fileIn('supervisor'), "import { o } from '@momonga/observability';")).toHaveLength(1);
-    expect(checkFile('supervisor', fileIn('supervisor'), "import { t } from '@momonga/testkit';")).toHaveLength(1);
+    expect(checkFile('supervisor', fileIn('supervisor'), "import { t, NEVER_CANCELLED } from '@momonga/testkit';")).toHaveLength(1);
     expect(checkManifest('supervisor', { '@momonga/runtime': '*' })).toEqual(['supervisor must not depend on @momonga/runtime']);
     expect(checkManifest('supervisor', { '@momonga/protocol': '*', '@momonga/foundation': '*', '@momonga/config': '*' })).toEqual([]);
   });
@@ -546,7 +546,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
         projectRoot: root,
         home: root,
       },
-      { meter, blobs, instructions: createFsInstructionReader() },
+      { meter, blobs, instructions: createFsInstructionReader(new AbortController().signal) },
     );
     expect(built.tools.map((tool) => tool.name).sort()).toEqual(registered.map((tool) => tool.name).sort());
     for (const tool of registered) expect(built.tools.find((entry) => entry.name === tool.name)?.description).toBe(tool.description);

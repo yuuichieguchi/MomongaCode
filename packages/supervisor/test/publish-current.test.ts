@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { canonicalPath, generationLayout, nodeFileSystem } from '@momonga/foundation';
+import { generationLayout, nodeFileSystem, syncPaths } from '@momonga/foundation';
 import type { AtomicWriteFileSystem } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { SupervisorCloseResult } from '../src/start-supervisor.ts';
@@ -15,7 +15,7 @@ type Rename = { from: string; to: string };
 const TEMPORARY_OF_CURRENT = /^\.current\.[0-9a-f]+\.tmp$/;
 
 const expectedText = (home: string): string => {
-  const sockets = generationLayout(canonicalPath(home), 1).sockets;
+  const sockets = generationLayout(syncPaths.canonicalPath(home), 1).sockets;
   return `${JSON.stringify({ generation: 1, version: TEST_VERSION, sockets: { gateway: sockets.gateway, runtime: sockets.runtime, supervisor: sockets.supervisor } })}\n`;
 };
 

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { DEFAULT_LOCK_TIMEOUT_MS, comparablePath, createKeyedSerializer, isRecord, nodeFileSystem, systemFileLockPorts, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
+import { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, hostPaths, isRecord, nodeFileSystem, systemFileLockPorts, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { settingsLockPath } from './file-lock.ts';
 import { readJsonFile } from './json-file.ts';
@@ -26,13 +26,15 @@ export const editUserSettings = async (
   options: EditUserSettingsOptions,
 ): Promise<void> => {
   const ports = options.ports ?? systemFileLockPorts;
+  const paths = hostPaths(options.signal);
   await nodeFileSystem.mkdir(path.dirname(settingsFile), PRIVATE_DIRECTORY_MODE);
   await nodeFileSystem.mkdir(layoutOf(home).run, PRIVATE_DIRECTORY_MODE);
+  const lockPath = await settingsLockPath(home, settingsFile, paths);
   await serializeInProcess(
-    comparablePath(settingsFile),
+    await paths.comparablePath(settingsFile),
     () =>
       withFileLock(
-        settingsLockPath(home, settingsFile),
+        lockPath,
         async () => {
           const document = await documentOf(settingsFile);
           if (!edit(document)) return;

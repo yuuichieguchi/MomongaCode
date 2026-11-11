@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { RULE_PROPOSE_TOOL_NAME, createGovernanceTools, createMemoryTools, subjectDigestOf } from '@momonga/tools';
 import type { AnyTool, GovernancePort, MemoryStorePort, RuleProposalInput } from '@momonga/tools';
+import { testPaths } from '@momonga/testkit';
 
 const INPUT: RuleProposalInput = { kind: 'constraint', target: 'pandas', text: 'do not use pandas', scope: 'project', paths: ['src/**'], enforcement: { behavior: 'deny', rule: 'Bash(pip install pandas)' }, supersedes: [] };
 
-const CTX = { cwd: '/work/a', workingDirectory: '/work/a', home: '/home/u', roots: ['/work/a'] };
+const CTX = { cwd: '/work/a', workingDirectory: '/work/a', home: '/home/u', roots: ['/work/a'], paths: testPaths() };
 
 const canonicalise = (absolute: string) => ({ ok: true as const, path: absolute });
 
@@ -29,7 +30,7 @@ const tool = (trusted = true): AnyTool => {
   return found;
 };
 
-const digestOf = (input: RuleProposalInput): string => subjectDigestOf(tool().subject(input as never, CTX), '/work/a', canonicalise);
+const digestOf = async (input: RuleProposalInput): Promise<string> => subjectDigestOf(tool().subject(input as never, CTX), '/work/a', canonicalise);
 
 describe('RulePropose', () => {
   it('is offered in a trusted folder and not in an untrusted one', () => {
@@ -76,12 +77,12 @@ describe('RulePropose', () => {
     ['enforcement behavior', { enforcement: { behavior: 'ask', rule: 'Bash(pip install pandas)' } }],
     ['enforcement rule', { enforcement: { behavior: 'deny', rule: 'Bash(pip:*)' } }],
     ['no enforcement', { enforcement: null }],
-  ])('changes the digest when %s changes, so an approval cannot apply', (_name, change) => {
-    expect(digestOf({ ...INPUT, ...change })).not.toBe(digestOf(INPUT));
+  ])('changes the digest when %s changes, so an approval cannot apply', async (_name, change) => {
+    expect(await digestOf({ ...INPUT, ...change })).not.toBe(await digestOf(INPUT));
   });
 
-  it('gives the same digest for the same content', () => {
-    expect(digestOf({ ...INPUT })).toBe(digestOf(INPUT));
+  it('gives the same digest for the same content', async () => {
+    expect(await digestOf({ ...INPUT })).toBe(await digestOf(INPUT));
   });
 
   it('records the call as the source when it runs, and says so again on a replay', async () => {

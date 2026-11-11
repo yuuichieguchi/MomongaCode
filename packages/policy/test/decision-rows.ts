@@ -39,14 +39,14 @@ const prepareWorkspace = (layout: Layout): void => {
 
 export type RowContext = { layout: Layout; roots: string[]; cwd: string; filesystem: PolicyFilesystem; protectedSet: ProtectedSet };
 
-export const contextOf = (row: Row): RowContext => {
+export const contextOf = async (row: Row): Promise<RowContext> => {
   const layout = makeLayout();
   prepareWorkspace(layout);
   row.prepare?.(layout);
   const roots = row.roots?.(layout) ?? [layout.project];
   const cwd = row.cwd?.(layout) ?? layout.project;
   const filesystem = fakeFs(row.fs?.(layout) ?? {});
-  const protectedSet = row.protection === true ? protectedSetOf(roots, filesystem) : EMPTY_PROTECTED_SET;
+  const protectedSet = row.protection === true ? await protectedSetOf(roots, filesystem) : EMPTY_PROTECTED_SET;
   return { layout, roots, cwd, filesystem, protectedSet };
 };
 
@@ -55,11 +55,12 @@ export const subjectOf = (row: Row, context: RowContext): { tool: PolicyTool; su
     ? { tool: BASH, subject: { kind: 'command', tool: 'Bash', command: row.command as string } }
     : { tool: WRITE, subject: { kind: 'path', tool: 'Write', paths: [row.write(context.layout)], access: 'write' } };
 
-export const decideRow = (row: Row, mode: PermissionMode, context: RowContext = contextOf(row)): Decision => {
+export const decideRow = async (row: Row, mode: PermissionMode, given?: RowContext): Promise<Decision> => {
+  const context = given ?? (await contextOf(row));
   const make = ruleIn(context.layout);
   const rules = (row.rules ?? []).map(([effect, text]) => make(effect, text));
   const { tool, subject } = subjectOf(row, context);
-  return decide({
+  return await decide({
     tool,
     subject,
     mode,
@@ -67,7 +68,7 @@ export const decideRow = (row: Row, mode: PermissionMode, context: RowContext = 
     roots: context.roots,
     home: context.layout.home,
     cwd: context.cwd,
-    fileRules: fileRulesFor(rules, context.roots),
+    fileRules: await fileRulesFor(rules, context.roots),
     fs: context.filesystem, searchPath: 'searchPath' in row ? row.searchPath : TEST_SEARCH_PATH, isWritable: isWritableFor(context.roots),
     protectedSet: context.protectedSet,
   });
@@ -498,7 +499,7 @@ export const rowById = (id: string): Row => {
 
 export const columnModes = (row: Row): ReadonlyArray<(typeof MODES)[number]> => (row.write === undefined ? RULE_MODES : MODES);
 
-export const kindIn = (row: Row, mode: PermissionMode): Cell => cellOf(decideRow(row, mode));
+export const kindIn = async (row: Row, mode: PermissionMode): Promise<Cell> => cellOf(await decideRow(row, mode));
 
 export const commandRow = (command: string, extra: Omit<Row, 'id' | 'command' | 'after' | 'pin'> = {}): Row => ({
   id: command,

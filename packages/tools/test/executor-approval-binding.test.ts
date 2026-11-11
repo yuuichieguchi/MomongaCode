@@ -68,7 +68,7 @@ describe('approval binding by subject digest', () => {
     const { tools, target, args } = await setup();
     approvalOf(await tools.run('Write', args, {}, undefined, 'w1'));
     const bare = { callId: 'w1', name: 'Write', arguments: args, approval: 'allow_once' as unknown as NonNullable<ToolCall['approval']> };
-    const [outcome] = await tools.executor.runBatch({ ...tools.batch('Write', args, {}, undefined, 'w1'), calls: [bare] });
+    const [outcome] = await tools.executor.runBatch({ ...(await tools.batch('Write', args, {}, undefined, 'w1')), calls: [bare] });
     expect(approvalOf(outcome).callId).toBe('w1');
     expect(fs.existsSync(target)).toBe(false);
     expect(tools.idempotency.records.size).toBe(0);

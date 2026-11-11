@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { Context } from 'hono';
-import { canonicalDirectory } from '@momonga/foundation';
+import { syncPaths } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
@@ -23,7 +23,7 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
 
   const getTrust: Handler = (context) => {
     const input = requiredPathQuery(context);
-    const result = canonicalDirectory(input);
+    const result = syncPaths.canonicalDirectory(input);
     if (!result.ok) {
       if (result.code === 'missing') throw notFound(`path ${input} ${result.reason}`);
       throw invalidRequest(`path ${input} ${result.reason}`, 'path');
@@ -33,7 +33,7 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
 
   const putTrust: Handler = async (context) => {
     const body = validateBody<PutTrustBody>('PutTrustRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    const result = canonicalDirectory(body.path);
+    const result = syncPaths.canonicalDirectory(body.path);
     if (!result.ok) throw invalidRequest(`path ${body.path} ${result.reason}`, 'path');
     if (body.decision === 'trusted' && path.dirname(result.path) === result.path) {
       throw invalidRequest('the filesystem root cannot be trusted', 'decision');

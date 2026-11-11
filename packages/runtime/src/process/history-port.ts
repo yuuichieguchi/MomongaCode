@@ -1,4 +1,4 @@
-import { canonicalPath } from '@momonga/foundation';
+import { hostPaths, mapAsync } from '@momonga/foundation';
 import type { Clock, Redactor, RuleEnforcement } from '@momonga/foundation';
 import { permissionRulesFor } from '../governance/rules.ts';
 import { createHistoryTools, createReadDenial } from '@momonga/tools';
@@ -20,24 +20,37 @@ export const createHistoryPort = ({ store, settings, clock, home, redactor, enfo
   load: (session) => {
     const trusted = settings.trusted(session);
     const visibility: HistoryVisibility = { trusted, project: session.cwd };
-    const denialFor = async (project: string): Promise<ReadDenial> => {
+    const denialFor = async (project: string, signal: AbortSignal): Promise<ReadDenial> => {
       const own = project === session.cwd;
       const rules = await permissionRulesFor({ store, settings, clock, home }, own ? session : { ...session, cwd: project, additionalDirectories: [] });
       const roots = own ? [session.cwd, ...session.additionalDirectories] : [project];
-      return createReadDenial({ rules, roots: roots.map(canonicalPath), cwd: project, enforcement: enforcement() });
+      return createReadDenial({ rules, roots: await mapAsync(roots, hostPaths(signal).canonicalPath), cwd: project, enforcement: enforcement(), signal });
     };
     const toolPort: HistoryStorePort = {
-      search: async (request) => {
+      search: async (request, signal) => {
         const projects = store.search.visibleProjects(visibility, request.scope);
-        const denials = new Map(await Promise.all(projects.map(async (project) => [project, await denialFor(project)] as const)));
-        return store.search.query(visibility, {
-          ...request,
-          readDenied: (target, project) => {
-            const denial = denials.get(project);
-            if (denial === undefined) throw new Error(`no read denial was built for project ${project}`);
-            return denial(target);
-          },
-        });
+        const denials = new Map(await Promise.all(projects.map(async (project) => [project, await denialFor(project, signal)] as const)));
+        const denialOf = (project: string): ReadDenial => {
+          const denial = denials.get(project);
+          if (denial === undefined) throw new Error(`no read denial was built for project ${project}`);
+          return denial;
+        };
+        const verdicts = new Map<string, boolean>();
+        const keyOf = (target: string, project: string): string => JSON.stringify([project, target]);
+        for (;;) {
+          const unanswered: Array<{ target: string; project: string }> = [];
+          const result = store.search.query(visibility, {
+            ...request,
+            readDenied: (target, project) => {
+              const verdict = verdicts.get(keyOf(target, project));
+              if (verdict !== undefined) return verdict;
+              unanswered.push({ target, project });
+              return false;
+            },
+          });
+          if (unanswered.length === 0) return result;
+          for (const { target, project } of unanswered) verdicts.set(keyOf(target, project), await denialOf(project)(target));
+        }
       },
       read: async (request) => {
         const result = await store.search.readRange(visibility, { ...request, limit: HISTORY_READ_PAGE_EVENTS, redactor });

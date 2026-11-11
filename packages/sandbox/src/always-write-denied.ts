@@ -1,7 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { isTransientErrno, momongaLayout } from '@momonga/foundation';
-import { canonicalizePath } from './canonical-path.ts';
+import { hostPaths, isTransientErrno, momongaLayout, nodeFileSystem, settledOrAborted } from '@momonga/foundation';
+import type { PathResolver } from '@momonga/foundation';
 
 const LAUNCHER_LINKS_MAX_BYTES = 64 * 1024;
 
@@ -20,9 +19,9 @@ export interface AlwaysWriteDenied {
   launcherLinks: LauncherLinksStatus;
 }
 
-export function canonicalParentForm(literal: string): string {
+export async function canonicalParentForm(literal: string, paths: Pick<PathResolver, 'canonicalPath'>): Promise<string> {
   try {
-    return path.join(canonicalizePath(path.dirname(literal)), path.basename(literal));
+    return path.join(await paths.canonicalPath(path.dirname(literal)), path.basename(literal));
   } catch (error) {
     if (isTransientErrno(error)) throw error;
     return literal;
@@ -54,10 +53,10 @@ function recordedLinks(content: Buffer): string[] {
   return links;
 }
 
-function readLauncherLinks(file: string): { links: string[]; launcherLinks: LauncherLinksStatus } {
-  let stat: fs.Stats;
+async function readLauncherLinks(file: string, signal: AbortSignal): Promise<{ links: string[]; launcherLinks: LauncherLinksStatus }> {
+  let stat: Awaited<ReturnType<typeof nodeFileSystem.lstat>>;
   try {
-    stat = fs.lstatSync(file);
+    stat = await settledOrAborted(nodeFileSystem.lstat(file), signal);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { links: [], launcherLinks: { status: 'absent' } };
     throw error;
@@ -65,20 +64,23 @@ function readLauncherLinks(file: string): { links: string[]; launcherLinks: Laun
   if (stat.isSymbolicLink()) return { links: [], launcherLinks: { status: 'ignored', reason: 'symlink' } };
   if (!stat.isFile()) return { links: [], launcherLinks: { status: 'ignored', reason: 'not_regular' } };
   if (stat.size > LAUNCHER_LINKS_MAX_BYTES) return { links: [], launcherLinks: { status: 'ignored', reason: 'too_large' } };
-  return { links: recordedLinks(fs.readFileSync(file)), launcherLinks: { status: 'read' } };
+  return { links: recordedLinks(Buffer.from(await settledOrAborted(nodeFileSystem.readFile(file), signal))), launcherLinks: { status: 'read' } };
 }
 
-export function alwaysWriteDenied(home: string): AlwaysWriteDenied {
+export async function alwaysWriteDenied(home: string, signal: AbortSignal): Promise<AlwaysWriteDenied> {
   const paths = momongaLayout(home);
-  const { links, launcherLinks } = readLauncherLinks(path.join(paths.root, 'bin', 'launcher-links'));
+  const resolver = hostPaths(signal);
+  const { links, launcherLinks } = await readLauncherLinks(path.join(paths.root, 'bin', 'launcher-links'), signal);
   const lexical = [paths.launcher, ...links];
+  const literals: string[] = [];
+  for (const link of lexical) literals.push(link, await canonicalParentForm(link, resolver));
   return {
     root: paths.root,
     keychains: paths.keychains,
     executables: paths.executables,
     subtrees: [paths.root, paths.keychains, paths.executables],
     readDenied: [paths.root, paths.keychains],
-    literals: [...new Set(lexical.flatMap((link) => [link, canonicalParentForm(link)]))],
+    literals: [...new Set(literals)],
     launcherLinks,
   };
 }

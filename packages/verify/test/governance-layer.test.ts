@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { hostFilesystemOf } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
 import type { Witness } from '../src/decision-model.ts';
 import { predictDecision } from '../src/queries.ts';
 import { replayWitness } from '../src/replay.ts';
@@ -20,13 +20,13 @@ const predictionFor = async (mode: PermissionMode, effect: 'deny' | 'ask', ruleT
   const fileSystem = caseSensitiveFs();
   const roots = [layout.project];
   const rules: PermissionRule[] = rulesOf(layout, [[effect, ruleText]]).map((rule) => ({ ...rule, layer: 'governance' }));
-  const context = buildQueryContext(z3.engine().api, {
+  const context = await buildQueryContext(z3.engine().api, { signal: NEVER_CANCELLED,
     rules,
     roots,
     mode,
     home: layout.home,
     cwd: layout.project,
-    protectedSet: protectedSetFor(roots, fileSystem),
+    protectedSet: await protectedSetFor(roots, fileSystem),
     fs: hostFilesystemOf(fileSystem),
     secretLocations: [sshLocation(layout)],
     exemptDirectory: null,
@@ -55,13 +55,13 @@ describe('the governance layer in the model', () => {
     const layout = makeLayout();
     const fileSystem = caseSensitiveFs();
     const roots = [layout.project];
-    const context = buildQueryContext(z3.engine().api, {
+    const context = await buildQueryContext(z3.engine().api, { signal: NEVER_CANCELLED,
       rules: rulesOf(layout, [['ask', 'Read(secrets/**)']]),
       roots,
       mode: 'bypassPermissions',
       home: layout.home,
       cwd: layout.project,
-      protectedSet: protectedSetFor(roots, fileSystem),
+      protectedSet: await protectedSetFor(roots, fileSystem),
       fs: hostFilesystemOf(fileSystem),
       secretLocations: [sshLocation(layout)],
       exemptDirectory: null,

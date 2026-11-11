@@ -15,7 +15,7 @@ describe('executor output fit and self-paging tools', () => {
         return { status: 'completed', output: 'ok' };
       },
     });
-    await harness.executor.runBatch({ ...harness.input(await toolSetOf(tool), [call('c1', 'Probe')]), outputFit: asked.port });
+    await harness.executor.runBatch({ ...(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')])), outputFit: asked.port });
     expect(seen).toHaveLength(1);
     expect(await callAnsweredBy(seen[0] as CallOutputFit, asked)).toEqual({ callId: 'c1', tool: 'Probe' });
   });
@@ -24,7 +24,7 @@ describe('executor output fit and self-paging tools', () => {
     const harness = makeHarness({ outputLimitChars: BUDGET });
     const output = `${'p'.repeat(BUDGET - 1)}\n`;
     const tool = makeTool('Pager', { pagesOutput: true, execute: async () => ({ status: 'completed', output }) });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Pager')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Pager')]));
     expect(outcome).toEqual({ callId: 'c1', kind: 'result', idemKey: expect.any(String), result: { status: 'completed', output } });
     expect(harness.blobs.puts).toEqual([]);
   });
@@ -33,7 +33,7 @@ describe('executor output fit and self-paging tools', () => {
     const harness = makeHarness({ outputLimitChars: BUDGET });
     const output = Array.from({ length: 200 }, (_, index) => `line ${index}`).join('\n');
     const tool = makeTool('Pager', { pagesOutput: true, execute: async () => ({ status: 'completed', output }) });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Pager')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Pager')]));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', truncated: true } });
     const result = (outcome as { result: { output: string; handle: string } }).result;
     expect(result.output.length).toBeLessThanOrEqual(BUDGET);

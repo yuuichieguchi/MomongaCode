@@ -7,8 +7,8 @@ const rowsTable = (title: string, rows: readonly Row[]): void => {
   describe(title, () => {
     for (const row of rows) {
       for (const mode of columnModes(row)) {
-        it(`${row.id} ${row.command} in ${mode} -> ${cellAt(row, mode)}${row.pin ? ' (pin)' : ''}`, () => {
-          expect(kindIn(row, mode)).toBe(cellAt(row, mode));
+        it(`${row.id} ${row.command} in ${mode} -> ${cellAt(row, mode)}${row.pin ? ' (pin)' : ''}`, async () => {
+          expect(await kindIn(row, mode)).toBe(cellAt(row, mode));
         });
       }
     }
@@ -38,8 +38,8 @@ describe('candidate targets', () => {
 });
 
 describe('A21 removes a denied file in every mode', () => {
-  it('denies rm .env under Write(.env) by the rule', () => {
-    expect(decideRow(rowById('A21'), 'bypassPermissions')).toMatchObject({ kind: 'deny', source: 'rule' });
+  it('denies rm .env under Write(.env) by the rule', async () => {
+    expect(await decideRow(rowById('A21'), 'bypassPermissions')).toMatchObject({ kind: 'deny', source: 'rule' });
   });
 });
 
@@ -89,44 +89,44 @@ describe('B4 forms and unresolvable targets', () => {
     ['cat $F', DENY_SSH],
   ];
 
-  it.each(FORMS)('%s with a deny rule asks in default and acceptEdits and is allowed in bypass', (command, rules) => {
+  it.each(FORMS)('%s with a deny rule asks in default and acceptEdits and is allowed in bypass', async (command, rules) => {
     const row = commandRow(command, { rules });
-    expect(kindIn(row, 'manual')).toBe('ask');
-    expect(kindIn(row, 'acceptEdits')).toBe('ask');
-    expect(kindIn(row, 'bypassPermissions')).toBe('allow');
+    expect(await kindIn(row, 'manual')).toBe('ask');
+    expect(await kindIn(row, 'acceptEdits')).toBe('ask');
+    expect(await kindIn(row, 'bypassPermissions')).toBe('allow');
   });
 
-  it.each(FORMS)('%s without a deny rule asks in default and is allowed in bypass', (command) => {
+  it.each(FORMS)('%s without a deny rule asks in default and is allowed in bypass', async (command) => {
     const row = commandRow(command);
-    expect(kindIn(row, 'manual')).toBe('ask');
-    expect(kindIn(row, 'bypassPermissions')).toBe('allow');
+    expect(await kindIn(row, 'manual')).toBe('ask');
+    expect(await kindIn(row, 'bypassPermissions')).toBe('allow');
   });
 
-  it.each(['C1', 'C2'])('%s names other-user-home in the reason of its ask', (id) => {
-    expect(decideRow(rowById(id), 'manual').reason).toContain('other-user-home');
+  it.each(['C1', 'C2'])('%s names other-user-home in the reason of its ask', async (id) => {
+    expect((await decideRow(rowById(id), 'manual')).reason).toContain('other-user-home');
   });
 
-  it('C4 names other-user-home in the reason of its ask', () => {
-    expect(decideRow(rowById('C4'), 'manual').reason).toContain('other-user-home');
+  it('C4 names other-user-home in the reason of its ask', async () => {
+    expect((await decideRow(rowById('C4'), 'manual')).reason).toContain('other-user-home');
   });
 });
 
 describe('5.11 bypass adds no decision for unresolvable targets', () => {
   const B4_FORMS = ['echo x > "$HOME/.bashrc"', 'echo x >$HOME/.bashrc', 'cd ~; echo x > .bashrc', 'echo x <(true) >"$HOME/.bashrc"'];
 
-  it.each(['C1', 'C2', 'C3'])('%s is allowed in bypassPermissions', (id) => {
-    expect(kindIn(rowById(id), 'bypassPermissions')).toBe('allow');
+  it.each(['C1', 'C2', 'C3'])('%s is allowed in bypassPermissions', async (id) => {
+    expect(await kindIn(rowById(id), 'bypassPermissions')).toBe('allow');
   });
 
-  it.each(B4_FORMS)('%s under Write(~/.bashrc) deny is allowed in bypassPermissions', (command) => {
-    expect(kindIn(commandRow(command, { rules: [['deny', 'Write(~/.bashrc)']] }), 'bypassPermissions')).toBe('allow');
+  it.each(B4_FORMS)('%s under Write(~/.bashrc) deny is allowed in bypassPermissions', async (command) => {
+    expect(await kindIn(commandRow(command, { rules: [['deny', 'Write(~/.bashrc)']] }), 'bypassPermissions')).toBe('allow');
   });
 
   it.each([...['C1', 'C2', 'C3'].map((id) => rowById(id)), ...B4_FORMS.map((command) => commandRow(command, { rules: [['deny', 'Write(~/.bashrc)']] }))])(
     '$id asks and never denies in default and acceptEdits',
-    (row) => {
-      expect(kindIn(row, 'manual')).toBe('ask');
-      expect(kindIn(row, 'acceptEdits')).toBe('ask');
+    async (row) => {
+      expect(await kindIn(row, 'manual')).toBe('ask');
+      expect(await kindIn(row, 'acceptEdits')).toBe('ask');
     },
   );
 });

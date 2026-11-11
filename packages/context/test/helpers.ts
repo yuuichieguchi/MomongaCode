@@ -27,6 +27,7 @@ import {
   type TokenMeter,
   type TouchedPath,
 } from '@momonga/context';
+import { testPaths } from '@momonga/testkit';
 
 export const MODEL = 'test-model';
 export const HOME = '/home/u';
@@ -128,6 +129,7 @@ export const fakeReader = (
   return {
     reads,
     existsChecks,
+    contains: (directory, candidate) => testPaths().comparableContains(directory, candidate),
     read: async (filePath) => {
       reads.push(filePath);
       const entry = files[filePath];

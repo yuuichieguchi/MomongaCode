@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, UNMEASURED_CAPABILITY, createLockCapability, createMarker, momongaLayout, readAttemptRecord, readMarkerGroup, recordMarkerGroup } from '@momonga/foundation';
 import type { LockCapabilityProbe } from '@momonga/foundation';
 import { buildSandboxPolicy } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, NEVER_CANCELLED } from '@momonga/testkit';
 import { trackGroup } from './builtins/fixtures.ts';
 import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND, createHostSandbox, makeLayout } from './helpers.ts';
 
@@ -38,12 +38,12 @@ describe.runIf(HAS_REAL_SANDBOX).each(capabilities)(`a spawn's marker file under
     fs.mkdirSync(sandboxTmpRoot);
     const tmpDir = path.join(paths.tmp.sessions, 'own-session');
     fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
-    const policy = buildSandboxPolicy({ roots: [layout.home], home: layout.home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET, network: 'deny' });
+    const policy = await buildSandboxPolicy({ roots: [layout.home], home: layout.home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules: EMPTY_FILE_RULES, protectedSet: EMPTY_PROTECTED_SET, network: 'deny' }, NEVER_CANCELLED);
     const sandbox = createHostSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 });
     const runChild = async (script: string) => {
-      const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: layout.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, tmpDir, markerFile: marker }, policy, new AbortController().signal, { markerFd: handle.fd });
-      trackGroup(proc.pgid);
-      const [stdout, stderr, exit] = await Promise.all([collect(proc.stdout), collect(proc.stderr), proc.exited]);
+      const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: layout.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, tmpDir, markerFile: marker }, policy, new AbortController().signal, { markerFd: handle.fd });
+      trackGroup((await proc).pgid);
+      const [stdout, stderr, exit] = await Promise.all([collect((await proc).stdout), collect((await proc).stderr), (await proc).exited]);
       return { code: exit.code, stdout, stderr };
     };
     return { marker, handle, runChild };

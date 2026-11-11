@@ -16,14 +16,14 @@ const specOf = (specifier: string, tool: FileRuleSpec['tool'] = 'Read'): FileRul
   provenance: { ruleText: `${tool}(${specifier})`, layer: 'user', source: 'user-settings' },
 });
 
-const compiled = (specifier: string, flavour: PathFlavour = 'win32') =>
-  compileFileRuleSet([specOf(specifier)], [ROOT], null, (absolute) => ({ ok: true, path: absolute }), () => false, flavour, ruleEnforcementOf('none'));
+const compiled = async (specifier: string, flavour: PathFlavour = 'win32') =>
+  await compileFileRuleSet([specOf(specifier)], [ROOT], null, (absolute) => ({ ok: true, path: absolute }), () => false, flavour, ruleEnforcementOf('none'));
 
-const blocks = (specifier: string, candidate: string): boolean => {
-  const set = compiled(specifier);
-  const [entry] = set.entries;
+const blocks = async (specifier: string, candidate: string): Promise<boolean> => {
+  const set = await compiled(specifier);
+  const [entry] = (await set).entries;
   if (entry === undefined) throw new Error('no entry');
-  return fileRuleBlocks(set, entry, candidate, candidate);
+  return fileRuleBlocks(await set, entry, candidate, candidate);
 };
 
 describe('the protected set judges Windows paths component by component', () => {
@@ -47,8 +47,8 @@ describe('the protected set judges Windows paths component by component', () => 
     ['C:\\proj\\sub\\.git\\config', true],
     ['C:\\proj\\sub\\x.txt', false],
     ['D:\\proj\\.git\\hooks\\pre-commit', false],
-  ])('%s is protected: %s', (target, expected) => {
-    expect(isProtectedWrite(set, target, probes)).toBe(expected);
+  ])('%s is protected: %s', async (target, expected) => {
+    expect(await isProtectedWrite(set, target, probes)).toBe(expected);
   });
 });
 
@@ -91,12 +91,12 @@ describe('Windows file rules match canonical Windows paths', () => {
     ['~/.ssh/**', 'C:\\Users\\other\\.ssh\\id_rsa', false],
     ['\\\\srv\\share\\x\\**', '\\\\srv\\share\\x\\y', true],
     ['\\\\srv\\share\\x\\**', '\\\\srv\\share\\z\\y', false],
-  ] as const)('rule %s against %s is %s', (specifier, candidate, expected) => {
-    expect(blocks(specifier, candidate)).toBe(expected);
+  ] as const)('rule %s against %s is %s', async (specifier, candidate, expected) => {
+    expect(await blocks(specifier, candidate)).toBe(expected);
   });
 
-  it('keeps the POSIX behaviour byte for byte', () => {
-    const set = compileFileRuleSet(
+  it('keeps the POSIX behaviour byte for byte', async () => {
+    const set = await compileFileRuleSet(
       [{ ...specOf('//etc/passwd'), context: { roots: ['/proj'], home: '/home/me', settingsRoot: '/proj', effect: 'deny' } }],
       ['/proj'],
       null,
@@ -118,32 +118,32 @@ describe('Windows file rules match canonical Windows paths', () => {
     ['trailing dots and spaces', 'C:\\secret\\key.txt. . '],
     ['a trailing dot on a directory name', 'C:\\secret.\\key.txt'],
     ['the plain name', 'C:\\secret\\key.txt'],
-  ])('blocks the same file when it is named with %s, as Windows resolves it', (_label, candidate) => {
-    expect(blocks('C:\\secret\\key.txt', candidate)).toBe(true);
-    expect(blocks('C:\\secret\\**', candidate)).toBe(true);
+  ])('blocks the same file when it is named with %s, as Windows resolves it', async (_label, candidate) => {
+    expect(await blocks('C:\\secret\\key.txt', candidate)).toBe(true);
+    expect(await blocks('C:\\secret\\**', candidate)).toBe(true);
   });
 
-  it.each(['C:\\proj\\sub\\keep', '\\\\srv\\share\\keep'])('refuses the ! pattern %s, which could never match and would leave the deny wider than the author meant', (exception) => {
+  it.each(['C:\\proj\\sub\\keep', '\\\\srv\\share\\keep'])('refuses the ! pattern %s, which could never match and would leave the deny wider than the author meant', async (exception) => {
     const spec: FileRuleSpec = { ...specOf('sub\\**'), exceptions: [exception] };
-    expect(() => compileFileRuleSet([spec], [ROOT], null, (absolute) => ({ ok: true, path: absolute }), () => false, 'win32', ruleEnforcementOf('none'))).toThrow(expect.objectContaining({ code: 'unsupported_pattern', reason: 'absolute_exception' }));
+    await expect(compileFileRuleSet([spec], [ROOT], null, (absolute) => ({ ok: true, path: absolute }), () => false, 'win32', ruleEnforcementOf('none'))).rejects.toThrow(expect.objectContaining({ code: 'unsupported_pattern', reason: 'absolute_exception' }));
   });
 
-  it('does not block a different file whose name only starts the same way', () => {
-    expect(blocks('C:\\secret\\key.txt', 'C:\\secret\\key.txt.bak')).toBe(false);
-    expect(blocks('C:\\secret\\key.txt', 'C:\\secret\\key.txt2:stream')).toBe(false);
+  it('does not block a different file whose name only starts the same way', async () => {
+    expect(await blocks('C:\\secret\\key.txt', 'C:\\secret\\key.txt.bak')).toBe(false);
+    expect(await blocks('C:\\secret\\key.txt', 'C:\\secret\\key.txt2:stream')).toBe(false);
   });
 
-  it('keeps names on POSIX byte for byte, where a colon and a trailing dot are ordinary characters', () => {
-    const set = compiled('//etc/key.txt', 'posix');
-    const [entry] = set.entries;
-    expect(entry !== undefined && fileRuleBlocks(set, entry, '/etc/key.txt::$DATA', '/etc/key.txt::$DATA')).toBe(false);
-    expect(entry !== undefined && fileRuleBlocks(set, entry, '/etc/key.txt.', '/etc/key.txt.')).toBe(false);
-    expect(entry !== undefined && fileRuleBlocks(set, entry, '/etc/key.txt', '/etc/key.txt')).toBe(true);
+  it('keeps names on POSIX byte for byte, where a colon and a trailing dot are ordinary characters', async () => {
+    const set = await compiled('//etc/key.txt', 'posix');
+    const [entry] = (await set).entries;
+    expect(entry !== undefined && fileRuleBlocks(await set, entry, '/etc/key.txt::$DATA', '/etc/key.txt::$DATA')).toBe(false);
+    expect(entry !== undefined && fileRuleBlocks(await set, entry, '/etc/key.txt.', '/etc/key.txt.')).toBe(false);
+    expect(entry !== undefined && fileRuleBlocks(await set, entry, '/etc/key.txt', '/etc/key.txt')).toBe(true);
   });
 
-  it('shows that without the flavour the same rule silently matched nothing', () => {
-    const set = compiled('C:\\secret\\**', 'posix');
-    const [entry] = set.entries;
-    expect(entry !== undefined && fileRuleBlocks(set, entry, 'C:\\secret\\a.txt', 'C:\\secret\\a.txt')).toBe(false);
+  it('shows that without the flavour the same rule silently matched nothing', async () => {
+    const set = await compiled('C:\\secret\\**', 'posix');
+    const [entry] = (await set).entries;
+    expect(entry !== undefined && fileRuleBlocks(await set, entry, 'C:\\secret\\a.txt', 'C:\\secret\\a.txt')).toBe(false);
   });
 });

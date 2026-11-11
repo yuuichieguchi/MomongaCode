@@ -25,7 +25,7 @@ const RM: PermissionSubject = { kind: 'command', tool: 'Bash', command: 'rm -rf 
 
 const governed = (layout: Layout, effect: 'deny' | 'ask', text: string): PermissionRule => ({ ...ruleIn(layout)(effect, text), layer: 'governance' });
 
-const decideWith = (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mode: PermissionMode, rules: PermissionRule[]) => {
+const decideWith = async (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mode: PermissionMode, rules: PermissionRule[]) => {
   const roots = [layout.project];
   return decide({
     tool,
@@ -35,7 +35,7 @@ const decideWith = (layout: Layout, tool: PolicyTool, subject: PermissionSubject
     roots,
     home: layout.home,
     cwd: layout.project,
-    fileRules: fileRulesFor(rules, roots),
+    fileRules: await fileRulesFor(rules, roots),
     protectedSet: EMPTY_PROTECTED_SET,
     fs: fakeFs(),
     searchPath: TEST_SEARCH_PATH,
@@ -44,88 +44,88 @@ const decideWith = (layout: Layout, tool: PolicyTool, subject: PermissionSubject
 };
 
 describe('the governance subject', () => {
-  it.each(PERMISSION_MODES)('asks a person in %s mode', (mode) => {
-    expect(decideWith(makeLayout(), PROPOSE, GOVERNANCE, mode, [])).toMatchObject({ kind: 'ask', humanOnly: true });
+  it.each(PERMISSION_MODES)('asks a person in %s mode', async (mode) => {
+    expect(await decideWith(makeLayout(), PROPOSE, GOVERNANCE, mode, [])).toMatchObject({ kind: 'ask', humanOnly: true });
   });
 
-  it.each(PERMISSION_MODES)('cannot be allowed by a rule in %s mode', (mode) => {
+  it.each(PERMISSION_MODES)('cannot be allowed by a rule in %s mode', async (mode) => {
     const layout = makeLayout();
     const allow = { ...ruleIn(layout)('allow', 'Read'), tool: 'RulePropose', text: 'RulePropose' };
-    expect(decideWith(layout, PROPOSE, GOVERNANCE, mode, [allow])).toMatchObject({ kind: 'ask', humanOnly: true });
+    expect(await decideWith(layout, PROPOSE, GOVERNANCE, mode, [allow])).toMatchObject({ kind: 'ask', humanOnly: true });
   });
 
-  it('suggests no allow rule', () => {
+  it('suggests no allow rule', async () => {
     const canonicalise = () => {
       throw new Error('a governance subject names no path');
     };
-    expect(suggestAllowRule(PROPOSE, GOVERNANCE, '/work', canonicalise)).toBeUndefined();
+    expect(await suggestAllowRule(PROPOSE, GOVERNANCE, '/work', canonicalise)).toBeUndefined();
   });
 });
 
 describe('a governance rule', () => {
-  it.each(PERMISSION_MODES)('denies in %s mode', (mode) => {
+  it.each(PERMISSION_MODES)('denies in %s mode', async (mode) => {
     const layout = makeLayout();
-    const decision = decideWith(layout, BASH, RM, mode, [governed(layout, 'deny', 'Bash(rm:*)')]);
+    const decision = await decideWith(layout, BASH, RM, mode, [governed(layout, 'deny', 'Bash(rm:*)')]);
     expect(decision).toMatchObject({ kind: 'deny', source: 'rule' });
   });
 
-  it.each(PERMISSION_MODES)('asks a person in %s mode', (mode) => {
+  it.each(PERMISSION_MODES)('asks a person in %s mode', async (mode) => {
     const layout = makeLayout();
-    const decision = decideWith(layout, BASH, RM, mode, [governed(layout, 'ask', 'Bash(rm:*)')]);
+    const decision = await decideWith(layout, BASH, RM, mode, [governed(layout, 'ask', 'Bash(rm:*)')]);
     expect(decision).toMatchObject({ kind: 'ask', source: 'rule', humanOnly: true });
   });
 
-  it('asks on a read-only tool in plan and bypass modes', () => {
+  it('asks on a read-only tool in plan and bypass modes', async () => {
     const layout = makeLayout();
     const subject: PermissionSubject = { kind: 'path', tool: 'Read', paths: [touch(path.join(layout.project, 'a.txt'))], access: 'read' };
     for (const mode of ['plan', 'bypassPermissions'] as const) {
-      expect(decideWith(layout, READ, subject, mode, [governed(layout, 'ask', 'Read')])).toMatchObject({ kind: 'ask', humanOnly: true });
+      expect(await decideWith(layout, READ, subject, mode, [governed(layout, 'ask', 'Read')])).toMatchObject({ kind: 'ask', humanOnly: true });
     }
   });
 
-  it('is not bypassed by an allow rule of the settings', () => {
+  it('is not bypassed by an allow rule of the settings', async () => {
     const layout = makeLayout();
     const rules = [ruleIn(layout)('allow', 'Bash(rm:*)'), governed(layout, 'ask', 'Bash(rm:*)')];
-    expect(decideWith(layout, BASH, RM, 'bypassPermissions', rules)).toMatchObject({ kind: 'ask', humanOnly: true });
+    expect(await decideWith(layout, BASH, RM, 'bypassPermissions', rules)).toMatchObject({ kind: 'ask', humanOnly: true });
   });
 
   describe('on a path the command builds at run time', () => {
     const DYNAMIC: PermissionSubject = { kind: 'command', tool: 'Bash', command: 'cat $(echo secrets/key)' };
 
-    it.each(PERMISSION_MODES.filter((mode) => mode !== 'plan'))('asks a person in %s mode, because the rule cannot be matched against a path that is not known', (mode) => {
+    it.each(PERMISSION_MODES.filter((mode) => mode !== 'plan'))('asks a person in %s mode, because the rule cannot be matched against a path that is not known', async (mode) => {
       const layout = makeLayout();
-      const decision = decideWith(layout, BASH, DYNAMIC, mode, [governed(layout, 'ask', 'Read(secrets/**)')]);
+      const decision = await decideWith(layout, BASH, DYNAMIC, mode, [governed(layout, 'ask', 'Read(secrets/**)')]);
       expect(decision).toMatchObject({ kind: 'ask', humanOnly: true });
     });
 
-    it('asks a person in plan mode too', () => {
+    it('asks a person in plan mode too', async () => {
       const layout = makeLayout();
-      expect(decideWith(layout, BASH, DYNAMIC, 'plan', [governed(layout, 'ask', 'Read(secrets/**)')]).kind).not.toBe('allow');
+      expect((await decideWith(layout, BASH, DYNAMIC, 'plan', [governed(layout, 'ask', 'Read(secrets/**)')])).kind).not.toBe('allow');
     });
 
-    it('holds for a deny rule as well, in bypass', () => {
+    it('holds for a deny rule as well, in bypass', async () => {
       const layout = makeLayout();
-      expect(decideWith(layout, BASH, DYNAMIC, 'bypassPermissions', [governed(layout, 'deny', 'Read(secrets/**)')])).toMatchObject({ kind: 'ask', humanOnly: true });
+      expect(await decideWith(layout, BASH, DYNAMIC, 'bypassPermissions', [governed(layout, 'deny', 'Read(secrets/**)')])).toMatchObject({ kind: 'ask', humanOnly: true });
     });
 
-    it('stays as before when no governing rule covers reading, in bypass', () => {
+    it('stays as before when no governing rule covers reading, in bypass', async () => {
       const layout = makeLayout();
-      expect(decideWith(layout, BASH, DYNAMIC, 'bypassPermissions', [ruleIn(layout)('ask', 'Read(secrets/**)')]).kind).toBe('allow');
-      expect(decideWith(layout, BASH, DYNAMIC, 'bypassPermissions', [governed(layout, 'ask', 'Bash(rm:*)')]).kind).toBe('allow');
+      expect((await decideWith(layout, BASH, DYNAMIC, 'bypassPermissions', [ruleIn(layout)('ask', 'Read(secrets/**)')])).kind).toBe('allow');
+      expect((await decideWith(layout, BASH, DYNAMIC, 'bypassPermissions', [governed(layout, 'ask', 'Bash(rm:*)')])).kind).toBe('allow');
     });
 
-    it('is not a human-only question when only the settings hold the rule, so a hook or the classifier may still answer it', () => {
+    it('is not a human-only question when only the settings hold the rule, so a hook or the classifier may still answer it', async () => {
       const layout = makeLayout();
-      const decision = decideWith(layout, BASH, DYNAMIC, 'manual', [ruleIn(layout)('ask', 'Read(secrets/**)')]);
-      expect(decision.kind).toBe('ask');
-      expect(decision.humanOnly).toBeUndefined();
+      const decision = await decideWith(layout, BASH, DYNAMIC, 'manual', [ruleIn(layout)('ask', 'Read(secrets/**)')]);
+      expect((await decision).kind).toBe('ask');
+      expect((await decision).humanOnly).toBeUndefined();
     });
   });
 
-  it('leaves a settings ask overridable by bypass, as before', () => {
+  it('leaves a settings ask overridable by bypass, as before', async () => {
     const layout = makeLayout();
-    const decision = decideWith(layout, BASH, RM, 'bypassPermissions', [ruleIn(layout)('ask', 'Bash(rm:*)')]);
-    expect(decision.kind).toBe('allow');
-    expect(decision.humanOnly).toBeUndefined();
+    const decision = await decideWith(layout, BASH, RM, 'bypassPermissions', [ruleIn(layout)('ask', 'Bash(rm:*)')]);
+    expect((await decision).kind).toBe('allow');
+    expect((await decision).humanOnly).toBeUndefined();
   });
 });

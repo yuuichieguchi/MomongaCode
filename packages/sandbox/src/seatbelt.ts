@@ -1,8 +1,7 @@
 import fs from 'node:fs';
-import { canonicalizePath } from './canonical-path.ts';
 import { launch } from './process.ts';
 import { buildSeatbeltProfile } from './profile.ts';
-import { createOwnedDirectorySync } from '@momonga/foundation';
+import { createOwnedDirectorySync, hostPaths, nodeFileSystem, settledOrAborted } from '@momonga/foundation';
 import { assertExistingDirectory } from './scratch.ts';
 import type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxPolicy, SandboxedProcess } from './types.ts';
 
@@ -19,21 +18,21 @@ const paramArgsOf = (params: Record<string, string>): string[] => Object.entries
 export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox {
   const sandboxExecPath = options.sandboxExecPath ?? DEFAULT_SANDBOX_EXEC_PATH;
   fs.accessSync(sandboxExecPath, fs.constants.X_OK);
-  const tmpRoot = fs.realpathSync(options.tmpRoot);
 
   return {
     kind: 'seatbelt',
-    spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess {
+    async spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> {
+      const paths = hostPaths(signal);
       for (const root of policy.writableRoots) assertExistingDirectory(root);
       if (command.tmpDir !== undefined) {
         assertExistingDirectory(command.tmpDir);
-        const { profile, params } = buildSeatbeltProfile(policy, { tmpDir: command.tmpDir });
+        const { profile, params } = await buildSeatbeltProfile(policy, { tmpDir: command.tmpDir }, paths);
         return launch({
           file: sandboxExecPath,
           args: ['-p', profile, ...paramArgsOf(params), '--', ...command.argv],
           cwd: command.cwd,
           ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
-        ...(descriptors?.markerFd === undefined ? {} : { markerFd: descriptors.markerFd }),
+          ...(descriptors?.markerFd === undefined ? {} : { markerFd: descriptors.markerFd }),
           ...(command.stdin === undefined ? {} : { stdin: command.stdin }),
           env: { ...command.env, TMPDIR: command.tmpDir },
           signal,
@@ -41,17 +40,18 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
           afterExit: () => undefined,
         });
       }
+      const tmpRoot = await settledOrAborted(nodeFileSystem.realpath(options.tmpRoot), signal);
       const scratch = createOwnedDirectorySync({ parent: tmpRoot, prefix: 'sandbox-' });
       const tmpDir = scratch.path;
       try {
-        const scratchDir = canonicalizePath(tmpDir);
-        const { profile, params } = buildSeatbeltProfile({ ...policy, writableRoots: [...policy.writableRoots, scratchDir] }, { scratchDir });
+        const scratchDir = await paths.canonicalPath(tmpDir);
+        const { profile, params } = await buildSeatbeltProfile({ ...policy, writableRoots: [...policy.writableRoots, scratchDir] }, { scratchDir }, paths);
         return launch({
           file: sandboxExecPath,
           args: ['-p', profile, ...paramArgsOf(params), '--', ...command.argv],
           cwd: command.cwd,
           ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
-        ...(descriptors?.markerFd === undefined ? {} : { markerFd: descriptors.markerFd }),
+          ...(descriptors?.markerFd === undefined ? {} : { markerFd: descriptors.markerFd }),
           ...(command.stdin === undefined ? {} : { stdin: command.stdin }),
           env: { ...command.env, TMPDIR: tmpDir },
           signal,

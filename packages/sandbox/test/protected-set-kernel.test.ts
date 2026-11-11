@@ -5,7 +5,7 @@ import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga
 import type { ProtectedSet } from '@momonga/foundation';
 import { buildSeatbeltProfile, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, planBubblewrap } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -18,11 +18,11 @@ type Built = { roots: string[]; cwd: string };
 const createHostSandbox = (options: { tmpRoot: string; killGraceMs: number }): Sandbox =>
   process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints() });
 
-const admits = (policy: SandboxPolicy, cwd: string): unknown => (process.platform === 'darwin' ? buildSeatbeltProfile(policy) : planBubblewrap(policy, { cwd }));
+const admits = async (policy: SandboxPolicy, cwd: string): Promise<unknown> => (process.platform === 'darwin' ? await buildSeatbeltProfile(policy, {}, testPaths()) : await planBubblewrap(policy, { cwd }, NEVER_CANCELLED));
 
-const startRefusal = (policy: SandboxPolicy, cwd: string): unknown => {
+const startRefusal = async (policy: SandboxPolicy, cwd: string): Promise<unknown> => {
   try {
-    admits(policy, cwd);
+    await admits(policy, cwd);
     return undefined;
   } catch (error) {
     return error;
@@ -57,21 +57,21 @@ describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap o
     protectedSet,
   });
 
-  const setOf = (roots: readonly string[]): ProtectedSet => protectedSetFor(roots, fakePolicyFilesystem());
+  const setOf = async (roots: readonly string[]): Promise<ProtectedSet> => protectedSetFor(roots, fakePolicyFilesystem());
 
   const sh = async (cwd: string, script: string, policy: SandboxPolicy) => {
-    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd, env: BASE_ENV }, policy, new AbortController().signal);
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd, env: BASE_ENV }, policy, new AbortController().signal);
     spawned.push(proc);
-    return run(proc);
+    return run(await proc);
   };
 
   const refusedWithControl = async (build: (base: string) => Built, script: string, unchanged: (cwd: string) => unknown) => {
     const protectedBase = tempDir();
     const target = build(protectedBase);
-    const set = setOf(target.roots);
-    const policy = policyOf(target.roots, set);
+    const set = await setOf(target.roots);
+    const policy = policyOf(target.roots, await set);
     const before = unchanged(target.cwd);
-    const refusedToStart = startRefusal(policy, target.cwd);
+    const refusedToStart = await startRefusal(policy, target.cwd);
     if (refusedToStart === undefined) {
       const refused = await sh(target.cwd, script, policy);
       expect(refused.code).not.toBe(0);
@@ -212,7 +212,7 @@ describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap o
 
     const allowed = async (build: (base: string) => Built, target: string): Promise<void> => {
       const built = build(tempDir());
-      const result = await sh(built.cwd, write(target), policyOf(built.roots, setOf(built.roots)));
+      const result = await sh(built.cwd, write(target), policyOf(built.roots, await setOf(built.roots)));
       expect(result.code).toBe(0);
       expect(fs.readFileSync(path.join(built.cwd, target), 'utf8')).toBe('x');
     };
@@ -292,7 +292,7 @@ describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap o
       it('plans a placeholder where the modules directory is missing, so no module can be created', async () => {
         const built = standalone(tempDir());
         fs.rmdirSync(path.join(built.cwd, '.git', 'modules'));
-        const refused = await sh(built.cwd, 'mkdir .git/modules', policyOf(built.roots, setOf(built.roots)));
+        const refused = await sh(built.cwd, 'mkdir .git/modules', policyOf(built.roots, await setOf(built.roots)));
         expect(refused.code).not.toBe(0);
         expect(fs.existsSync(path.join(built.cwd, '.git', 'modules'))).toBe(false);
       });
@@ -306,8 +306,8 @@ describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap o
       const base = tempDir();
       const built = worktreeBoth(base);
       const roots = [built.cwd];
-      const policy = policyOf(roots, setOf(roots));
-      expect(() => admits(policy, built.cwd)).not.toThrow();
+      const policy = policyOf(roots, await setOf(roots));
+      await expect((async () => { await await admits(policy, built.cwd); })()).resolves.toBeUndefined();
       const inside = await sh(built.cwd, 'printf x > inside.txt', policy);
       expect(inside.code).toBe(0);
       expect(fs.readFileSync(path.join(built.cwd, 'inside.txt'), 'utf8')).toBe('x');

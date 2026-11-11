@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 
 type Layout = 'plain' | 'symlinked';
 
@@ -19,7 +20,7 @@ const writeTool = (target: string, runs: string[]) =>
     },
   });
 
-const launcherHarness = (layout: Layout) => {
+const launcherHarness = async (layout: Layout) => {
   const harness = makeHarness();
   const home = harness.layout.home;
   const unprotectedTarget = path.join(harness.layout.outside, 'momonga');
@@ -35,7 +36,7 @@ const launcherHarness = (layout: Layout) => {
   const sessionsTmpRoot = path.join(harness.layout.root, 'sessions');
   const tmpDir = path.join(sessionsTmpRoot, 'one');
   fs.mkdirSync(tmpDir, { recursive: true });
-  const sandboxPolicy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [home], null, ruleEnforcementOf('none')), roots: [home], home, tmpDir, sessionsTmpRoot });
+  const sandboxPolicy = await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([], [home], null, ruleEnforcementOf('none'), testProbes()), roots: [home], home, tmpDir, sessionsTmpRoot }, NEVER_CANCELLED);
   const rewriteRecord = (content: string): void => {
     const file = path.join(home, '.momonga', 'bin', 'launcher-links');
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -44,7 +45,7 @@ const launcherHarness = (layout: Layout) => {
   const attempt = async (target: string) => {
     const runs: string[] = [];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(writeTool(target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+      await harness.input(await toolSetOf(writeTool(target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
         roots: [home],
         session: { cwd: home, workingDirectory: home, readLedger: new Map() },
@@ -56,7 +57,7 @@ const launcherHarness = (layout: Layout) => {
   return { home, launcher, attempt, rewriteRecord };
 };
 
-const expectRefused = ({ outcome, runs }: Awaited<ReturnType<ReturnType<typeof launcherHarness>['attempt']>>): void => {
+const expectRefused = ({ outcome, runs }: Awaited<ReturnType<Awaited<ReturnType<typeof launcherHarness>>['attempt']>>): void => {
   expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
   expect(outcome.result.output).toMatch(/^Permission denied: /);
   expect(runs).toEqual([]);
@@ -64,28 +65,28 @@ const expectRefused = ({ outcome, runs }: Awaited<ReturnType<ReturnType<typeof l
 
 describe('executor: the launcher link is always write-denied without following it', () => {
   it('refuses a write to the lexical link path whose target lies outside every protected area', async () => {
-    const { launcher, attempt } = launcherHarness('plain');
+    const { launcher, attempt } = await launcherHarness('plain');
     expectRefused(await attempt(launcher));
   });
 
   it('refuses a write to ~/.local/bin, which would remove or replace the link', async () => {
-    const { home, attempt } = launcherHarness('plain');
+    const { home, attempt } = await launcherHarness('plain');
     expectRefused(await attempt(path.join(home, '.local', 'bin')));
   });
 
   it('refuses a write to ~/.local', async () => {
-    const { home, attempt } = launcherHarness('plain');
+    const { home, attempt } = await launcherHarness('plain');
     expectRefused(await attempt(path.join(home, '.local')));
   });
 
   it('refuses the lexical link and the canonical-parent link when ~/.local is a symlink', async () => {
-    const { home, launcher, attempt } = launcherHarness('symlinked');
+    const { home, launcher, attempt } = await launcherHarness('symlinked');
     expectRefused(await attempt(launcher));
     expectRefused(await attempt(path.join(home, 'dotfiles', 'local', 'bin', 'momonga')));
   });
 
   it('refuses writes to the lexical and canonical ancestors when ~/.local is a symlink', async () => {
-    const { home, attempt } = launcherHarness('symlinked');
+    const { home, attempt } = await launcherHarness('symlinked');
     for (const ancestor of [
       path.join(home, '.local'),
       path.join(home, '.local', 'bin'),
@@ -98,7 +99,7 @@ describe('executor: the launcher link is always write-denied without following i
   });
 
   it('still allows a write to another file in ~/.local/bin', async () => {
-    const { home, attempt } = launcherHarness('plain');
+    const { home, attempt } = await launcherHarness('plain');
     const other = path.join(home, '.local', 'bin', 'other-tool');
     const { outcome, runs } = await attempt(other);
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
@@ -106,7 +107,7 @@ describe('executor: the launcher link is always write-denied without following i
   });
 
   it('still refuses writes into the momonga root and the keychains', async () => {
-    const { home, attempt } = launcherHarness('plain');
+    const { home, attempt } = await launcherHarness('plain');
     expectRefused(await attempt(path.join(home, '.momonga', 'x')));
     expectRefused(await attempt(path.join(momongaLayout(home).keychains, 'x')));
   });
@@ -114,7 +115,7 @@ describe('executor: the launcher link is always write-denied without following i
 
 describe('executor: the guard follows the policy, not a later launcher-links', () => {
   it('does not protect a link recorded after the policy was built', async () => {
-    const { home, attempt, rewriteRecord } = launcherHarness('plain');
+    const { home, attempt, rewriteRecord } = await launcherHarness('plain');
     const recorded = path.join(home, 'late', 'momonga');
     fs.mkdirSync(path.dirname(recorded));
     rewriteRecord(`${recorded}\n`);

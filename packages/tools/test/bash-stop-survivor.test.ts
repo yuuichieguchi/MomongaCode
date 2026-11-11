@@ -50,7 +50,7 @@ describe('a command whose process group keeps a member that survives the stop', 
     const timing = virtualTiming();
     const h = world('held', {}, new Set([LEAVER_PGID]));
     const batch = h.harness.executor.runBatch(
-      h.harness.input(await toolSetOf(bashTool), [call('survivor', 'Bash', { command: 'echo survivor-output' }, 'allow_once')], { sandbox: survivingSandbox(timing) }),
+      await h.harness.input(await toolSetOf(bashTool), [call('survivor', 'Bash', { command: 'echo survivor-output' }, 'allow_once')], { sandbox: survivingSandbox(timing) }),
     );
     let done = false;
     void batch.finally(() => {

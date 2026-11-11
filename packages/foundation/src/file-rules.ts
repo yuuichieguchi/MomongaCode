@@ -1,12 +1,12 @@
 import path from 'node:path';
 import { canonicalJson, sha256Hex } from './canonical-json.ts';
-import { comparableContains } from './path-compare.ts';
+import type { PathResolver } from './path-compare.ts';
 import { FileRuleError, fileMatcherOf, parseExceptionPattern, parseFilePattern, testExpression, testFileMatcher } from './file-pattern.ts';
 import type { Expression, FileMatcher, FilePattern, FilePatternContext } from './file-pattern.ts';
 import { HOST_FLAVOUR, candidatePathOf, isNativeAbsolute, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
 import type { PathFlavour } from './path-flavour.ts';
 import { unresolvableReasonOf } from './path-resolution.ts';
-import type { PathResolution, UnresolvableReason } from './path-resolution.ts';
+import type { PathProbes, PathResolution, UnresolvableReason } from './path-resolution.ts';
 
 export { FileRuleError } from './file-pattern.ts';
 
@@ -82,22 +82,22 @@ const notExact = (spec: FileRuleSpec, what: string): FileRuleError =>
 
 const lexicalDirectoryOf = (directory: string): string => path.posix.normalize(directory.normalize('NFC')).replace(/(.)\/$/, '$1');
 
-const resolveBelowRegularFile = (directory: string, canonicalise: (absolute: string) => PathResolution): PathResolution => {
-  const first = canonicalise(directory);
+const resolveBelowRegularFile = async (directory: string, canonicalise: PathProbes['canonicalise']): Promise<PathResolution> => {
+  const first = await canonicalise(directory);
   if (first.ok || first.reason.kind !== 'errno' || first.reason.code !== 'ENOTDIR') return first;
-  const parent = resolveBelowRegularFile(path.posix.dirname(directory), canonicalise);
+  const parent = await resolveBelowRegularFile(path.posix.dirname(directory), canonicalise);
   return parent.ok ? { ok: true, path: path.posix.join(parent.path, path.posix.basename(directory)) } : parent;
 };
 
-const compileException = (
+const compileException = async (
   text: string,
   pattern: FilePattern,
   spec: FileRuleSpec,
-  canonicalise: (absolute: string) => PathResolution,
-): FileRuleException => {
+  canonicalise: PathProbes['canonicalise'],
+): Promise<FileRuleException> => {
   const root = pattern.root ?? spec.context.roots[0];
   const parsed = parseExceptionPattern(text, root as string, spec.effect);
-  const resolution = resolveBelowRegularFile(parsed.directory, canonicalise);
+  const resolution = await resolveBelowRegularFile(parsed.directory, canonicalise);
   if (!resolution.ok) throw unresolvablePrefix(spec, parsed.directory, resolution.reason);
   const directory = resolution.path.normalize('NFC');
   return { exact: fileMatcherOf(parsed, directory, 'exact'), subset: fileMatcherOf(parsed, directory, 'subset') };
@@ -109,16 +109,16 @@ export const HOST_RULE_ENFORCEMENT: RuleEnforcement = process.platform === 'darw
 
 export const ruleEnforcementOf = (sandboxKind: 'seatbelt' | 'bubblewrap' | 'none'): RuleEnforcement => (sandboxKind === 'seatbelt' ? 'seatbelt-profile' : 'exact-paths');
 
-const compileEntry = (
+const compileEntry = async (
   spec: FileRuleSpec,
   pattern: FilePattern,
-  canonicalise: (absolute: string) => PathResolution,
-  volumeProbe: (directory: string) => boolean,
+  canonicalise: PathProbes['canonicalise'],
+  volumeProbe: PathProbes['volumeProbe'],
   flavour: PathFlavour,
   enforcement: RuleEnforcement,
-): FileRuleEntry => {
+): Promise<FileRuleEntry> => {
   const lexicalDirectory = lexicalDirectoryOf(pattern.directory);
-  const resolution = resolveBelowRegularFile(pattern.directory, canonicalise);
+  const resolution = await resolveBelowRegularFile(pattern.directory, canonicalise);
   if (!resolution.ok && spec.effect !== 'allow') throw unresolvablePrefix(spec, pattern.directory, resolution.reason);
   const anchorDirectory = resolution.ok ? resolution.path.normalize('NFC') : lexicalDirectory;
   const matchersAt = (directory: string) => ({
@@ -129,13 +129,14 @@ const compileEntry = (
   const canonical = matchersAt(anchorDirectory);
   const lexical = anchorDirectory === lexicalDirectory ? null : matchersAt(lexicalDirectory);
   const widening = isWidening(spec, pattern);
-  const caseInsensitive = resolution.ok ? flavour === 'win32' || volumeProbe(anchorDirectory) : false;
+  const caseInsensitive = resolution.ok ? flavour === 'win32' || (await volumeProbe(anchorDirectory)) : false;
   if (resolution.ok && !caseInsensitive && enforcement === 'seatbelt-profile') {
     if (widening) throw notExact(spec, 'a write allow rule that widens the sandbox');
     if (spec.exceptions.length > 0) throw notExact(spec, 'a rule with ! exceptions');
   }
   const ignoreCase = spec.effect !== 'allow' && caseInsensitive;
-  const exceptions = resolution.ok ? spec.exceptions.map((text) => compileException(text, pattern, spec, canonicalise)) : [];
+  const exceptions: FileRuleException[] = [];
+  if (resolution.ok) for (const text of spec.exceptions) exceptions.push(await compileException(text, pattern, spec, canonicalise));
   const blockedAsWhole =
     canonical.exact.own.kind === 'subpath' && exceptions.every((exception) => !testFileMatcher(exception.exact, anchorDirectory, ignoreCase).own);
   return {
@@ -171,32 +172,36 @@ const inPatternSpace = (spec: FileRuleSpec, flavour: PathFlavour): FileRuleSpec 
   },
 });
 
-export const compileFileRuleSet = (
+export const compileFileRuleSet = async (
   specs: readonly FileRuleSpec[],
   roots: readonly string[],
   exemptDirectory: string | null,
-  canonicalise: (absolute: string) => PathResolution,
-  volumeProbe: (directory: string) => boolean,
+  canonicalise: PathProbes['canonicalise'],
+  volumeProbe: PathProbes['volumeProbe'],
   flavour: PathFlavour,
   enforcement: RuleEnforcement,
-): FileRuleSet => {
+): Promise<FileRuleSet> => {
   const inPattern = (resolution: PathResolution): PathResolution => (resolution.ok ? { ok: true, path: patternPathOf(flavour, resolution.path) } : resolution);
-  const canonicaliseNative = (absolute: string): PathResolution => inPattern(canonicalise(nativePathOf(flavour, absolute)));
-  const probeNative = (directory: string): boolean => volumeProbe(nativePathOf(flavour, directory));
+  const canonicaliseNative = async (absolute: string): Promise<PathResolution> => inPattern(await canonicalise(nativePathOf(flavour, absolute)));
+  const probeNative = (directory: string): ReturnType<PathProbes['volumeProbe']> => volumeProbe(nativePathOf(flavour, directory));
+  const entries: FileRuleEntry[] = [];
+  for (const spec of specs) {
+    const absolute = spec.exceptions.find((text) => isNativeAbsolute(flavour, text));
+    if (absolute !== undefined) {
+      throw new FileRuleError(
+        'unsupported_pattern',
+        'absolute_exception',
+        `${spec.provenance.ruleText} (${spec.provenance.layer}: ${spec.provenance.source}): the ! pattern ${absolute} is a Windows absolute path, but a ! pattern names a path below the rule's own directory`,
+        spec.provenance,
+      );
+    }
+    const translated = inPatternSpace(spec, flavour);
+    for (const pattern of parseFilePattern(translated.specifier, translated.context)) {
+      entries.push(await compileEntry(translated, pattern, canonicaliseNative, probeNative, flavour, enforcement));
+    }
+  }
   return {
-    entries: specs.flatMap((spec) => {
-      const absolute = spec.exceptions.find((text) => isNativeAbsolute(flavour, text));
-      if (absolute !== undefined) {
-        throw new FileRuleError(
-          'unsupported_pattern',
-          'absolute_exception',
-          `${spec.provenance.ruleText} (${spec.provenance.layer}: ${spec.provenance.source}): the ! pattern ${absolute} is a Windows absolute path, but a ! pattern names a path below the rule's own directory`,
-          spec.provenance,
-        );
-      }
-      const translated = inPatternSpace(spec, flavour);
-      return parseFilePattern(translated.specifier, translated.context).map((pattern) => compileEntry(translated, pattern, canonicaliseNative, probeNative, flavour, enforcement));
-    }),
+    entries,
     exemptDirectory: exemptDirectory === null ? null : patternPathOf(flavour, exemptDirectory.normalize('NFC')),
     fingerprint: fileRuleFingerprint(specs, roots, exemptDirectory),
     flavour,
@@ -258,17 +263,19 @@ export const lexicallyWithin = (candidate: string, root: string): boolean => {
   return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 };
 
-export const inWritableArea = (area: WritableArea, candidate: string, mode: 'canonical' | 'lexical'): boolean => {
+export const inWritableArea = async (area: WritableArea, candidate: string, mode: 'canonical' | 'lexical', paths: Pick<PathResolver, 'comparableContains'>): Promise<boolean> => {
   const normalised = candidate.normalize('NFC');
-  const inRoot = area.roots.some((root) => (mode === 'canonical' ? comparableContains(root, normalised) : lexicallyWithin(normalised, root)));
-  return inRoot || area.widening.some((expression) => testExpression(expression, normalised, false));
+  for (const root of area.roots) {
+    if (mode === 'canonical' ? await paths.comparableContains(root, normalised) : lexicallyWithin(normalised, root)) return true;
+  }
+  return area.widening.some((expression) => testExpression(expression, normalised, false));
 };
 
 export const writableCheckOf =
-  (area: WritableArea) =>
-  (entry: string): boolean => {
+  (area: WritableArea, paths: Pick<PathResolver, 'comparableContains'>) =>
+  async (entry: string): Promise<boolean> => {
     try {
-      return inWritableArea(area, entry, 'canonical');
+      return await inWritableArea(area, entry, 'canonical', paths);
     } catch (error) {
       if (unresolvableReasonOf(error) === undefined) throw error;
       return true;

@@ -25,7 +25,7 @@ describe('traceparentOf and contextOf', () => {
     const child = startChatSpan(
       h.telemetry.tracer,
       { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', maxTokens: 16, stream: true, runId: RUN_ID, step: 1, attempt: 1 },
-      contextOf(header),
+      await contextOf(header),
     );
     child.end(h.clock.now());
     parent.end(h.clock.now());
@@ -39,7 +39,7 @@ describe('traceparentOf and contextOf', () => {
   it('round-trips a literal traceparent', async () => {
     const h = harness();
     const header = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
-    const span = startAgentSpan(h.telemetry.tracer, { agentName: 'a', agentId: 'b', conversationId: 'c', runId: RUN_ID }, contextOf(header));
+    const span = startAgentSpan(h.telemetry.tracer, { agentName: 'a', agentId: 'b', conversationId: 'c', runId: RUN_ID }, await contextOf(header));
     span.end(h.clock.now());
     await h.telemetry.forceFlush();
     const [finished] = h.memory.getFinishedSpans();
@@ -49,7 +49,7 @@ describe('traceparentOf and contextOf', () => {
 
   it('yields a root context for a malformed traceparent', async () => {
     const h = harness();
-    const span = startAgentSpan(h.telemetry.tracer, { agentName: 'a', agentId: 'b', conversationId: 'c', runId: RUN_ID }, contextOf('garbage'));
+    const span = startAgentSpan(h.telemetry.tracer, { agentName: 'a', agentId: 'b', conversationId: 'c', runId: RUN_ID }, await contextOf('garbage'));
     span.end(h.clock.now());
     await h.telemetry.forceFlush();
     const [finished] = h.memory.getFinishedSpans();
@@ -96,7 +96,7 @@ describe('closeTelemetry', () => {
     startAgentSpan(telemetry.tracer, { agentName: 'a', agentId: 'b', conversationId: 'c', runId: 'run-close' }).end(clock.now());
     await closeTelemetry(telemetry, store);
     expect(dumpAllRows(file)).toContain('run-close');
-    expect(() => store.spansForRun('run-close')).toThrow();
+    await expect((async () => store.spansForRun('run-close'))()).rejects.toThrow();
     startAgentSpan(telemetry.tracer, { agentName: 'a', agentId: 'b', conversationId: 'c', runId: 'run-after' }).end(clock.now());
     await telemetry.forceFlush();
     expect(exportedRunIds).toEqual(['run-close']);

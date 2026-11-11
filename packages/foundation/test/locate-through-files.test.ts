@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { canonicalPath, comparablePath, containsByComponents, locateThroughFiles } from '@momonga/foundation';
+import { containsByComponents } from '@momonga/foundation';
+import { syncPaths } from '../src/index.ts';
 
 const directories: string[] = [];
 
@@ -20,9 +21,9 @@ describe('locateThroughFiles', () => {
   it('gives a path below a regular file the form it has when nothing exists there', () => {
     const base = workspace();
     const target = path.join(base, '.git', 'hooks');
-    const absent = locateThroughFiles(target);
+    const absent = syncPaths.locateThroughFiles(target);
     fs.writeFileSync(path.join(base, '.git'), '');
-    const placeholder = locateThroughFiles(target);
+    const placeholder = syncPaths.locateThroughFiles(target);
     expect(placeholder.parts).toEqual(absent.parts);
     expect(placeholder.parts).toEqual({ existing: base, tail: ['.git', 'hooks'] });
   });
@@ -31,10 +32,10 @@ describe('locateThroughFiles', () => {
     const base = workspace();
     const target = path.join(base, '.git', 'hooks', 'pre-commit');
     fs.mkdirSync(path.join(base, '.git', 'hooks'), { recursive: true });
-    const guard = locateThroughFiles(path.join(base, '.git', 'hooks')).parts;
+    const guard = syncPaths.locateThroughFiles(path.join(base, '.git', 'hooks')).parts;
     fs.rmSync(path.join(base, '.git'), { recursive: true });
     fs.writeFileSync(path.join(base, '.git'), '');
-    const located = locateThroughFiles(target);
+    const located = syncPaths.locateThroughFiles(target);
     expect(containsByComponents(guard, located.parts, located.caseInsensitive)).toBe(true);
   });
 
@@ -42,15 +43,15 @@ describe('locateThroughFiles', () => {
     const base = workspace();
     fs.mkdirSync(path.join(base, 'real'));
     fs.symlinkSync('real', path.join(base, 'link'));
-    expect(locateThroughFiles(path.join(base, 'link', 'x')).parts).toEqual({ existing: path.join(base, 'real'), tail: ['x'] });
+    expect(syncPaths.locateThroughFiles(path.join(base, 'link', 'x')).parts).toEqual({ existing: path.join(base, 'real'), tail: ['x'] });
   });
 
   it('follows a symlink whose target passes through a file the same way with and without that file', () => {
     const base = workspace();
     fs.symlinkSync('g/hooks/x', path.join(base, 'l'));
-    const absent = locateThroughFiles(path.join(base, 'l'));
+    const absent = syncPaths.locateThroughFiles(path.join(base, 'l'));
     fs.writeFileSync(path.join(base, 'g'), '');
-    const placeholder = locateThroughFiles(path.join(base, 'l'));
+    const placeholder = syncPaths.locateThroughFiles(path.join(base, 'l'));
     expect(placeholder.parts).toEqual(absent.parts);
     expect(placeholder.parts).toEqual({ existing: base, tail: ['g', 'hooks', 'x'] });
   });
@@ -61,19 +62,19 @@ describe('locateThroughFiles', () => {
     fs.mkdirSync(path.join(base, 'real'));
     fs.symlinkSync('real', path.join(base, 'm'));
     fs.symlinkSync('../g/inner', path.join(base, 'real', 'n'));
-    expect(locateThroughFiles(path.join(base, 'm', 'n', 'deep')).parts).toEqual({ existing: base, tail: ['g', 'inner', 'deep'] });
+    expect(syncPaths.locateThroughFiles(path.join(base, 'm', 'n', 'deep')).parts).toEqual({ existing: base, tail: ['g', 'inner', 'deep'] });
   });
 
-  it('rethrows an error that is not ENOTDIR', () => {
+  it('rethrows an error that is not ENOTDIR', async () => {
     const base = workspace();
     fs.symlinkSync('loop', path.join(base, 'loop'));
-    expect(() => locateThroughFiles(path.join(base, 'loop', 'x'))).toThrow(expect.objectContaining({ code: 'ELOOP' }));
+    await expect((async () => syncPaths.locateThroughFiles(path.join(base, 'loop', 'x')))()).rejects.toThrow(expect.objectContaining({ code: 'ELOOP' }));
   });
 
-  it('control: comparablePath and canonicalPath still throw ENOTDIR below a regular file', () => {
+  it('control: comparablePath and canonicalPath still throw ENOTDIR below a regular file', async () => {
     const base = workspace();
     fs.writeFileSync(path.join(base, 'file'), '');
-    expect(() => canonicalPath(path.join(base, 'file', 'x'))).toThrow(expect.objectContaining({ code: 'ENOTDIR' }));
-    expect(() => comparablePath(path.join(base, 'file', 'x'))).toThrow(expect.objectContaining({ code: 'ENOTDIR' }));
+    await expect((async () => syncPaths.canonicalPath(path.join(base, 'file', 'x')))()).rejects.toThrow(expect.objectContaining({ code: 'ENOTDIR' }));
+    await expect((async () => syncPaths.comparablePath(path.join(base, 'file', 'x')))()).rejects.toThrow(expect.objectContaining({ code: 'ENOTDIR' }));
   });
 });

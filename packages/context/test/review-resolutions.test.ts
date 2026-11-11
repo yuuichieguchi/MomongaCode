@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, NEVER_CANCELLED } from '@momonga/testkit';
 import { sha256Hex } from '@momonga/foundation';
 import type { CompactionInputItem, InputItem } from '@momonga/protocol';
 import { PrefixChangedError, buildContext, createFsInstructionReader } from '@momonga/context';
@@ -150,7 +150,7 @@ describe('fs reader rejects non-regular files', () => {
     const fifo = path.join(dir, 'AGENTS.md');
     const { execFileSync } = await import('@momonga/testkit/child-process');
     execFileSync('mkfifo', [fifo]);
-    const reader = createFsInstructionReader();
+    const reader = createFsInstructionReader(NEVER_CANCELLED);
     const started = performance.now();
     const result = await Promise.race([
       reader.read(fifo),
@@ -167,7 +167,7 @@ describe('fs reader rejects non-regular files', () => {
     const server = net.createServer();
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
-      expect(await createFsInstructionReader().read(socketPath)).toBeUndefined();
+      expect(await createFsInstructionReader(NEVER_CANCELLED).read(socketPath)).toBeUndefined();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -179,7 +179,7 @@ describe('fs reader rejects non-regular files', () => {
     fs.writeFileSync(file, 'x');
     const link = path.join(dir, 'link.md');
     fs.symlinkSync(file, link);
-    const reader = createFsInstructionReader();
+    const reader = createFsInstructionReader(NEVER_CANCELLED);
     expect(await reader.exists(file)).toBe(true);
     expect(await reader.exists(path.join(dir, 'missing.md'))).toBe(false);
     expect(await reader.realpath(link)).toBe(file);
@@ -204,7 +204,7 @@ describe('symlinked project root', () => {
         home: makeDir(),
         touchedPaths: [touchedFile(path.join(linkedRoot, 'src', 'a.ts'))],
       }),
-      { ...ports, instructions: createFsInstructionReader() },
+      { ...ports, instructions: createFsInstructionReader(NEVER_CANCELLED) },
     );
     const texts = developerTexts(result.input);
     expect(texts.some((text) => text.includes('linked root rules'))).toBe(true);
@@ -313,9 +313,9 @@ describe('frozen digested items', () => {
     const history = partsHistory();
     await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }) }), harness(capabilities).ports);
     const callItem = history[1]?.item as { arguments: string };
-    expect(() => {
+    await expect((async () => {
       callItem.arguments = '{"changed":true}';
-    }).toThrow(TypeError);
+    })()).rejects.toThrow(TypeError);
   });
 
   it('rejects mutation of a nested content part after a build', async () => {
@@ -323,13 +323,13 @@ describe('frozen digested items', () => {
     const history = partsHistory();
     await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }) }), harness(capabilities).ports);
     const part = (history[0]?.item as unknown as { content: Array<{ text: string }> }).content[0] as { text: string };
-    expect(() => {
+    await expect((async () => {
       part.text = 'mutated';
-    }).toThrow(TypeError);
+    })()).rejects.toThrow(TypeError);
     const content = (history[0]?.item as unknown as { content: unknown[] }).content;
-    expect(() => {
+    await expect((async () => {
       content.push({ type: 'input_text', text: 'extra' });
-    }).toThrow(TypeError);
+    })()).rejects.toThrow(TypeError);
   });
 
   it('gives equal digests to structurally equal distinct items', async () => {

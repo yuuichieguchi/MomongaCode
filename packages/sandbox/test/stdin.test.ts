@@ -31,8 +31,8 @@ describe.runIf(process.platform === 'darwin').each(variants)('stdin (%s)', { tim
     network: 'deny',
   });
 
-  const sh = (script: string, stdin: string | undefined): SandboxedProcess => {
-    const proc = sandbox.spawn(
+  const sh = async (script: string, stdin: string | undefined): Promise<SandboxedProcess> => {
+    const proc = await sandbox.spawn(
       { argv: ['/bin/sh', '-c', script], cwd: root, env: BASE_ENV, ...(stdin === undefined ? {} : { stdin }) },
       policy(),
       new AbortController().signal,
@@ -60,18 +60,18 @@ describe.runIf(process.platform === 'darwin').each(variants)('stdin (%s)', { tim
   });
 
   it('delivers the given text to the child and closes the stream', async () => {
-    const result = await run(sh('cat', '{"hook":"input"}'));
+    const result = await run(await sh('cat', '{"hook":"input"}'));
     expect(result.code).toBe(0);
     expect(result.stdout).toBe('{"hook":"input"}');
   });
 
   it('gives a child that never reads stdin an exit instead of a broken pipe failure', async () => {
-    const result = await run(sh('exit 3', 'x'.repeat(1_000_000)));
+    const result = await run(await sh('exit 3', 'x'.repeat(1_000_000)));
     expect(result.code).toBe(3);
   });
 
   it('leaves stdin closed when no text is given', async () => {
-    const result = await run(sh('cat', undefined));
+    const result = await run(await sh('cat', undefined));
     expect(result.code).toBe(0);
     expect(result.stdout).toBe('');
   });

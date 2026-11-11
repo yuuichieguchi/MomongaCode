@@ -14,20 +14,20 @@ describe('one scanner: a comment inside $() ends at the newline, as in real /bin
     expect(workspace.exists('pwn')).toBe(true);
   });
 
-  it.each([HIDDEN_TOUCH, HIDDEN_TOUCH_QUOTED])('does not allow %j in manual mode', (command) => {
+  it.each([HIDDEN_TOUCH, HIDDEN_TOUCH_QUOTED])('does not allow %j in manual mode', async (command) => {
     const workspace = makeRealWorkspace();
-    expect(workspace.decide(command, { mode: 'manual' }).kind).toBe('ask');
+    expect((await workspace.decide(command, { mode: 'manual' })).kind).toBe('ask');
   });
 
-  it('denies the hidden command under a deny rule for it', () => {
+  it('denies the hidden command under a deny rule for it', async () => {
     const workspace = makeRealWorkspace();
-    const decision = workspace.decide(HIDDEN_TOUCH, { rules: [['deny', 'Bash(touch:*)']] });
-    expect(decision.kind).toBe('deny');
+    const decision = await workspace.decide(HIDDEN_TOUCH, { rules: [['deny', 'Bash(touch:*)']] });
+    expect((await decision).kind).toBe('deny');
   });
 
-  it('keeps a quoted parenthesis and a quoted hash inside a substitution literal', () => {
+  it('keeps a quoted parenthesis and a quoted hash inside a substitution literal', async () => {
     const workspace = makeRealWorkspace();
     expect(workspace.runBash("echo $(echo ')' '#' a)").stdout).toBe(") # a\n");
-    expect(workspace.decide("echo $(echo ')' '#' a)").kind).toBe('allow');
+    expect((await workspace.decide("echo $(echo ')' '#' a)")).kind).toBe('allow');
   });
 });

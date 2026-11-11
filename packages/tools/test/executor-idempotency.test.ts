@@ -22,8 +22,8 @@ describe('idempotency NEW and COMPLETED', () => {
     const harness = makeHarness();
     const { tool, executions } = tracked('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' });
     const set = await toolSetOf(tool);
-    const first = await harness.executor.runBatch(harness.input(set, [call('c1', 'Write')]));
-    const second = await harness.executor.runBatch(harness.input(set, [call('c1', 'Write')]));
+    const first = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Write')]));
+    const second = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Write')]));
     expect(second).toEqual(first);
     expect(executions).toEqual(['Write']);
     expect(harness.started).toEqual(['c1']);
@@ -33,7 +33,7 @@ describe('idempotency NEW and COMPLETED', () => {
   it('stores exactly the returned outcome', async () => {
     const harness = makeHarness();
     const { tool } = tracked('Read');
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     const completion = harness.idempotency.log.find((entry) => entry.op === 'complete');
     expect(completion?.op === 'complete' ? completion.result : undefined).toEqual(outcome);
   });
@@ -42,10 +42,10 @@ describe('idempotency NEW and COMPLETED', () => {
     const harness = makeHarness();
     const { tool, executions } = tracked('Read');
     const set = await toolSetOf(tool);
-    await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
-    await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')], { step: 2 }));
-    await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')], { runId: 'run-2' }));
-    await harness.executor.runBatch(harness.input(set, [call('c2', 'Read')]));
+    await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')]));
+    await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')], { step: 2 }));
+    await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')], { runId: 'run-2' }));
+    await harness.executor.runBatch(await harness.input(set, [call('c2', 'Read')]));
     expect(executions).toHaveLength(4);
     expect([...harness.idempotency.records.keys()].sort()).toEqual(
       [keyFor('run-1', 1, 'c1'), keyFor('run-1', 2, 'c1'), keyFor('run-2', 1, 'c1'), keyFor('run-1', 1, 'c2')].sort(),
@@ -58,7 +58,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
     const harness = makeHarness();
     const { tool, executions } = tracked('Read');
     harness.idempotency.seed(KEY, state, { tool: 'Read' });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(executions).toEqual(['Read']);
     expect(outcomes[0]).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed', output: 'Read fresh' }, reconciled: 'not_applied' });
     expect(harness.idempotency.stateOf(KEY)).toBe('COMPLETED');
@@ -73,7 +73,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
     const harness = makeHarness();
     const { tool, executions } = tracked(name, { sideEffect, subjectKind: 'none', kind: sideEffect === 'exec' ? 'execute' : 'edit' });
     harness.idempotency.seed(KEY, state, { tool: name });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
     expect(executions).toEqual([]);
     const outcome = outcomes[0];
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed' }, reconciled: 'unknown' });
@@ -82,7 +82,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
     expect(outcome.result.output).toMatch(/unknown/i);
     expect(outcome.result.output).toMatch(/inspect/i);
     expect(harness.idempotency.stateOf(KEY)).toBe('COMPLETED');
-    const replay = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
+    const replay = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
     expect(replay).toEqual(outcomes);
     expect(executions).toEqual([]);
   });
@@ -99,7 +99,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
       },
     });
     const rec = harness.idempotency.seed(KEY, 'PENDING', { tool: 'Write', prepared: { sha: 'abc' } });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write')]));
     expect(seen).toEqual([rec]);
     expect(executions).toEqual([]);
     expect(outcomes).toEqual([
@@ -119,7 +119,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
     const reconcile = async (): Promise<ReconcileResult> => ({ outcome: 'unknown', output: 'cannot tell whether the command ran' });
     const { tool, executions } = tracked('Bash', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', reconcile });
     harness.idempotency.seed(KEY, 'UNKNOWN', { tool: 'Bash' });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
     expect(executions).toEqual([]);
     expect(outcomes[0]).toMatchObject({
       kind: 'result',
@@ -137,7 +137,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
       reconcile: async () => ({ outcome: 'not_applied', output: 'file unchanged' }),
     });
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Write' });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write')]));
     expect(executions).toEqual(['Write']);
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'Write fresh' }, reconciled: 'not_applied' });
     expect(harness.idempotency.stateOf(KEY)).toBe('COMPLETED');
@@ -147,7 +147,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
     const harness = makeHarness();
     const { tool, executions } = tracked('Read', { reconcile: async () => ({ outcome: 'already_applied', output: 'cached' }) });
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Read' });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(executions).toEqual([]);
     expect(outcomes[0]).toMatchObject({ result: { status: 'completed', output: 'cached' }, reconciled: 'already_applied' });
   });
@@ -163,12 +163,12 @@ describe('idempotency lookup before decide', () => {
     const harness = makeHarness();
     const { tool, executions } = writeTool();
     const set = await toolSetOf(tool);
-    const first = await harness.executor.runBatch(harness.input(set, [call('c1', 'Write')]));
+    const first = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Write')]));
     const extra =
       'rules' in change
         ? { rules: [ruleFor(harness.layout)('deny', 'Write')] }
         : { mode: change.mode };
-    const second = await harness.executor.runBatch(harness.input(set, [call('c1', 'Write')], extra));
+    const second = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Write')], extra));
     expect(second).toEqual(first);
     expect(second[0]).toMatchObject({ idemKey: KEY });
     expect(executions).toEqual(['Write']);
@@ -184,8 +184,8 @@ describe('idempotency lookup before decide', () => {
       subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }),
     });
     const set = await toolSetOf(tool);
-    const first = await harness.executor.runBatch(harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
-    const second = await harness.executor.runBatch(harness.input(set, [call('c1', 'Bash')]));
+    const first = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Bash', {}, 'allow_once')]));
+    const second = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Bash')]));
     expect(second).toEqual(first);
     expect(executions).toEqual(['Bash']);
     expect(harness.started).toEqual(['c1']);
@@ -195,9 +195,9 @@ describe('idempotency lookup before decide', () => {
     const harness = makeHarness();
     const { tool } = writeTool();
     const set = await toolSetOf(tool);
-    await harness.executor.runBatch(harness.input(set, [call('c1', 'Write')]));
+    await harness.executor.runBatch(await harness.input(set, [call('c1', 'Write')]));
     const lookupsBefore = harness.idempotency.lookups.length;
-    const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Write', { extra: 1 })]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Write', { extra: 1 })]));
     expect(outcome).toEqual({ callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Invalid input for Write:\n- (root): unknown property "extra"' } });
     expect(harness.idempotency.lookups).toHaveLength(lookupsBefore);
   });
@@ -205,7 +205,7 @@ describe('idempotency lookup before decide', () => {
   it('looks up the key and proceeds normally when it is missing', async () => {
     const harness = makeHarness();
     const { tool, executions } = writeTool();
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write')]));
     expect(harness.idempotency.lookups).toEqual([KEY]);
     expect(executions).toEqual(['Write']);
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed' }, idemKey: KEY });
@@ -217,7 +217,7 @@ describe('idempotency lookup before decide', () => {
     const harness = makeHarness();
     const { tool, executions } = writeTool();
     const rules = [ruleFor(harness.layout)('deny', 'Write')];
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules }));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules }));
     expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(outcomes[0]).not.toHaveProperty('idemKey');
     expect(executions).toEqual([]);

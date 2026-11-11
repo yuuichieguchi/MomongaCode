@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildSeatbeltProfile } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { makeTempDir } from './helpers.ts';
+import { NEVER_CANCELLED, testPaths } from '@momonga/testkit';
 
 const created: string[] = [];
 
@@ -37,12 +38,12 @@ const rulesOf = (profile: string, params: Record<string, string>): Rule[] =>
   });
 
 describe('buildSeatbeltProfile readAllowed', () => {
-  it('re-allows each readAllowed subpath after every read deny', () => {
+  it('re-allows each readAllowed subpath after every read deny', async () => {
     const root = tempDir();
     const denied = path.join(root, 'sessions');
     const allowed = path.join(denied, 's1');
     fs.mkdirSync(allowed, { recursive: true });
-    const { profile, params } = buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [allowed] }));
+    const { profile, params } = await buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [allowed] }), {}, testPaths());
     const rules = rulesOf(profile, params);
     const denies = rules.filter((rule) => rule.action === 'deny' && rule.operation === 'file-read*');
     const allows = rules.filter((rule) => rule.action === 'allow' && rule.operation === 'file-read*');
@@ -51,12 +52,12 @@ describe('buildSeatbeltProfile readAllowed', () => {
     for (const allow of allows) for (const deny of denies) expect(allow.index).toBeGreaterThan(deny.index);
   });
 
-  it('allows metadata reads on each ancestor from the deny root down to the allowed entry parent', () => {
+  it('allows metadata reads on each ancestor from the deny root down to the allowed entry parent', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     const allowed = path.join(denied, 'a', 'b', 'c');
     fs.mkdirSync(allowed, { recursive: true });
-    const { profile, params } = buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [allowed] }));
+    const { profile, params } = await buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [allowed] }), {}, testPaths());
     const rules = rulesOf(profile, params);
     const metadata = rules.filter((rule) => rule.action === 'allow' && rule.operation === 'file-read-metadata');
     expect(metadata.every((rule) => rule.filter === 'literal')).toBe(true);
@@ -65,32 +66,31 @@ describe('buildSeatbeltProfile readAllowed', () => {
     for (const rule of metadata) expect(rule.index).toBeGreaterThan(lastDeny);
   });
 
-  it('emits no read allows when readAllowed is absent', () => {
+  it('emits no read allows when readAllowed is absent', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     fs.mkdirSync(denied);
-    const { profile } = buildSeatbeltProfile(policyFor(root, { readDenied: [denied] }));
+    const { profile } = await buildSeatbeltProfile(policyFor(root, { readDenied: [denied] }), {}, testPaths());
     expect(profile).not.toMatch(/\(allow file-read\* \(subpath/);
     expect(profile).not.toContain('file-read-metadata');
   });
 
-  it('canonicalizes readAllowed entries given through a symlink', () => {
+  it('canonicalizes readAllowed entries given through a symlink', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     const allowed = path.join(denied, 'ok');
     fs.mkdirSync(allowed, { recursive: true });
     const link = path.join(root, 'link');
     fs.symlinkSync(denied, link);
-    const { profile, params } = buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [path.join(link, 'ok')] }));
+    const { profile, params } = await buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [path.join(link, 'ok')] }), {}, testPaths());
     const allows = rulesOf(profile, params).filter((rule) => rule.action === 'allow' && rule.operation === 'file-read*');
     expect(allows.map((rule) => rule.value)).toEqual([allowed]);
   });
 
-  it('keeps every write deny after every writable-root allow', () => {
+  it('keeps every write deny after every writable-root allow', async () => {
     const root = tempDir();
-    const { profile, params } = buildSeatbeltProfile(
-      policyFor(root, { writableRoots: [root, '/'], writeDenied: [path.join(root, '.momonga'), path.join(root, 'Library', 'Keychains')] }),
-    );
+    const { profile, params } = await buildSeatbeltProfile(
+      policyFor(root, { writableRoots: [root, '/'], writeDenied: [path.join(root, '.momonga'), path.join(root, 'Library', 'Keychains')] }), {}, testPaths());
     const rules = rulesOf(profile, params);
     const allows = rules.filter((rule) => rule.action === 'allow' && rule.operation === 'file-write*');
     const denies = rules.filter((rule) => rule.action === 'deny' && rule.operation === 'file-write*');
@@ -100,69 +100,69 @@ describe('buildSeatbeltProfile readAllowed', () => {
 });
 
 describe('buildSeatbeltProfile readAllowed validation', () => {
-  it('throws for an entry outside every readDenied entry', () => {
+  it('throws for an entry outside every readDenied entry', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     const elsewhere = path.join(root, 'elsewhere');
     fs.mkdirSync(denied);
     fs.mkdirSync(elsewhere);
-    expect(() => buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [elsewhere] }))).toThrow();
+    await expect(buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [elsewhere] }), {}, testPaths())).rejects.toThrow();
   });
 
-  it('throws when readDenied is empty', () => {
+  it('throws when readDenied is empty', async () => {
     const root = tempDir();
-    expect(() => buildSeatbeltProfile(policyFor(root, { readDenied: [], readAllowed: [path.join(root, 'x')] }))).toThrow();
+    await expect(buildSeatbeltProfile(policyFor(root, { readDenied: [], readAllowed: [path.join(root, 'x')] }), {}, testPaths())).rejects.toThrow();
   });
 
-  it('throws for an entry equal to a readDenied entry', () => {
+  it('throws for an entry equal to a readDenied entry', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     fs.mkdirSync(denied);
-    expect(() => buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [denied] }))).toThrow();
+    await expect(buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [denied] }), {}, testPaths())).rejects.toThrow();
   });
 
-  it('throws for an entry that is an ancestor of another readDenied entry', () => {
+  it('throws for an entry that is an ancestor of another readDenied entry', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     const inner = path.join(denied, 'x', 'y');
     fs.mkdirSync(inner, { recursive: true });
-    expect(() => buildSeatbeltProfile(policyFor(root, { readDenied: [denied, inner], readAllowed: [path.join(denied, 'x')] }))).toThrow();
+    await expect(buildSeatbeltProfile(policyFor(root, { readDenied: [denied, inner], readAllowed: [path.join(denied, 'x')] }), {}, testPaths())).rejects.toThrow();
   });
 
-  it('throws for an entry that equals a readDenied entry only after canonicalization', () => {
+  it('throws for an entry that equals a readDenied entry only after canonicalization', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     fs.mkdirSync(denied);
     const link = path.join(root, 'alias');
     fs.symlinkSync(denied, link);
-    expect(() => buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [link] }))).toThrow();
+    await expect(buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [link] }), {}, testPaths())).rejects.toThrow();
   });
 
-  it('accepts an entry strictly inside a readDenied entry', () => {
+  it('accepts an entry strictly inside a readDenied entry', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     const allowed = path.join(denied, 'ok');
     fs.mkdirSync(allowed, { recursive: true });
-    expect(() => buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [allowed] }))).not.toThrow();
+    await expect((async () => { await await buildSeatbeltProfile(policyFor(root, { readDenied: [denied], readAllowed: [allowed] }), {}, testPaths()); })()).resolves.toBeUndefined();
   });
 });
 
 const caseInsensitiveVolume = process.platform === 'darwin' || process.platform === 'win32';
 
 describe.runIf(caseInsensitiveVolume)('buildSeatbeltProfile readAllowed validation on a case-insensitive volume', () => {
-  it('throws for an entry that equals a readDenied entry in another case', () => {
+  it('throws for an entry that equals a readDenied entry in another case', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     fs.mkdirSync(denied);
-    expect(() => buildSeatbeltProfile(policyFor(root, { readDenied: [root, denied], readAllowed: [path.join(root, 'VAULT')] }))).toThrow();
+    await expect(buildSeatbeltProfile(policyFor(root, { readDenied: [root, denied], readAllowed: [path.join(root, 'VAULT')] }), {}, testPaths())).rejects.toThrow();
   });
 
-  it('throws for an entry that is an ancestor of a readDenied entry in another case', () => {
+  it('throws for an entry that is an ancestor of a readDenied entry in another case', async () => {
     const root = tempDir();
     const denied = path.join(root, 'vault');
     const inner = path.join(denied, 'x', 'y');
     fs.mkdirSync(inner, { recursive: true });
-    expect(() => buildSeatbeltProfile(policyFor(root, { readDenied: [root, inner], readAllowed: [path.join(root, 'VAULT', 'X')] }))).toThrow();
+    await expect(buildSeatbeltProfile(policyFor(root, { readDenied: [root, inner], readAllowed: [path.join(root, 'VAULT', 'X')] }), {}, testPaths())).rejects.toThrow();
   });
 });
 
@@ -180,9 +180,9 @@ describe('buildSeatbeltProfile session tmpDir validation', () => {
     return { root, home, sessions, mine, other, policy };
   };
 
-  it('accepts a tmpDir that is a readAllowed entry and re-allows writes to it after the denies', () => {
+  it('accepts a tmpDir that is a readAllowed entry and re-allows writes to it after the denies', async () => {
     const fx = sessionFixture();
-    const { profile, params } = buildSeatbeltProfile(fx.policy, { tmpDir: fx.mine });
+    const { profile, params } = await buildSeatbeltProfile(fx.policy, { tmpDir: fx.mine }, testPaths());
     const rules = rulesOf(profile, params);
     const reAllow = rules.find((rule) => rule.action === 'allow' && rule.operation === 'file-write*' && rule.value === fx.mine);
     expect(reAllow).toBeDefined();
@@ -190,31 +190,31 @@ describe('buildSeatbeltProfile session tmpDir validation', () => {
     expect(reAllow?.index).toBeGreaterThan(lastWriteDeny);
   });
 
-  it('throws for a tmpDir equal to home', () => {
+  it('throws for a tmpDir equal to home', async () => {
     const fx = sessionFixture();
-    expect(() => buildSeatbeltProfile(fx.policy, { tmpDir: fx.home })).toThrow();
+    await expect(buildSeatbeltProfile(fx.policy, { tmpDir: fx.home }, testPaths())).rejects.toThrow();
   });
 
-  it('throws for a tmpDir equal to the sessions root', () => {
+  it('throws for a tmpDir equal to the sessions root', async () => {
     const fx = sessionFixture();
-    expect(() => buildSeatbeltProfile(fx.policy, { tmpDir: fx.sessions })).toThrow();
+    await expect(buildSeatbeltProfile(fx.policy, { tmpDir: fx.sessions }, testPaths())).rejects.toThrow();
   });
 
-  it('throws for a tmpDir of /', () => {
+  it('throws for a tmpDir of /', async () => {
     const fx = sessionFixture();
-    expect(() => buildSeatbeltProfile(fx.policy, { tmpDir: '/' })).toThrow();
+    await expect(buildSeatbeltProfile(fx.policy, { tmpDir: '/' }, testPaths())).rejects.toThrow();
   });
 
-  it('throws for a tmpDir that is not a readAllowed entry', () => {
+  it('throws for a tmpDir that is not a readAllowed entry', async () => {
     const fx = sessionFixture();
-    expect(() => buildSeatbeltProfile(fx.policy, { tmpDir: fx.other })).toThrow();
+    await expect(buildSeatbeltProfile(fx.policy, { tmpDir: fx.other }, testPaths())).rejects.toThrow();
   });
 
-  it('throws for a tmpDir that is readAllowed but is an ancestor of a writeDenied entry', () => {
+  it('throws for a tmpDir that is readAllowed but is an ancestor of a writeDenied entry', async () => {
     const fx = sessionFixture();
     const inner = path.join(fx.mine, 'locked');
     fs.mkdirSync(inner);
     const policy = { ...fx.policy, writeDenied: [...fx.policy.writeDenied, inner] };
-    expect(() => buildSeatbeltProfile(policy, { tmpDir: fx.mine })).toThrow();
+    await expect(buildSeatbeltProfile(policy, { tmpDir: fx.mine }, testPaths())).rejects.toThrow();
   });
 });

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as runtime from '@momonga/runtime';
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { fakePolicyFilesystem, NEVER_CANCELLED } from '@momonga/testkit';
 import { createSession, makeDir, makeLogger, makeTempHome, openStore } from './helpers.ts';
 
 const failingFilesystem = () => {
@@ -35,7 +35,7 @@ describe('recoveryContextFor needs no protected set (3.15 (a) Recovery)', () => 
     const recoveryContextFor = runtime.createRecoveryContextFor({ paths: temp.paths, home: temp.home, sessionStates, fs: filesystem });
     const env = Object.freeze({ PLAIN: '1' });
 
-    const context = await recoveryContextFor(session, { env });
+    const context = await recoveryContextFor(session, { signal: NEVER_CANCELLED, env });
 
     expect(context.roots).toEqual([temp.project, extra]);
     expect(context.tmpDir).toBe(path.join(temp.paths.tmp.sessions, session.id));

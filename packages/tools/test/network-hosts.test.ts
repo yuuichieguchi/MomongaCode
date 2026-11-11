@@ -201,7 +201,7 @@ describe('a background job that was granted named hosts', () => {
     expect(spawns[0]?.command.env['HTTPS_PROXY']).toBe(`http://127.0.0.1:${network.loopbackPort}`);
     expect(await refusesConnections(network.loopbackPort)).toBe(false);
     end();
-    await child.exited;
+    await (await child).exited;
     expect(await refusesConnections(network.loopbackPort)).toBe(true);
   });
 });

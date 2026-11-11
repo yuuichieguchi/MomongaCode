@@ -15,7 +15,7 @@ type Seen = Parameters<BatchOutputFormatter>[0];
 const runWith = async (output: string, formatOutput: BatchOutputFormatter | undefined, limit: number = LIMIT) => {
   const harness = makeHarness({ outputLimitChars: limit });
   const set = await toolSetOf(makeTool('Grep', { kind: 'search', execute: async () => ({ status: 'completed', output }) }));
-  const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Grep')], formatOutput === undefined ? {} : { formatOutput }));
+  const [outcome] = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Grep')], formatOutput === undefined ? {} : { formatOutput }));
   if (outcome?.kind !== 'result') throw new Error('expected a result');
   return { harness, result: outcome.result };
 };

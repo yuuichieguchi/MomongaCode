@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { commondirTarget, gitFileTarget } from '@momonga/foundation';
+import { commondirTarget, everyAsync, gitFileTarget } from '@momonga/foundation';
 import type { HeadRead, PolicyFilesystem } from './filesystem.ts';
 
 export type RepositoryPorts = Pick<PolicyFilesystem, 'canonicalise' | 'readEntry' | 'readHead' | 'isSearchable'>;
@@ -25,75 +25,75 @@ const headIsValid = (head: HeadRead): boolean => {
 
 type Common = { directory: string } | 'unresolved' | 'broken';
 
-const commonDirectoryOf = (gitDirectory: string, ports: RepositoryPorts): Common => {
-  const common = ports.readEntry(path.join(gitDirectory, 'commondir'));
+const commonDirectoryOf = async (gitDirectory: string, ports: RepositoryPorts): Promise<Common> => {
+  const common = await ports.readEntry(path.join(gitDirectory, 'commondir'));
   if ('unresolvable' in common || common.kind === 'oversize') return 'unresolved';
   if (common.kind !== 'file') return { directory: gitDirectory };
   const target = commondirTarget(common.text);
   if (target === undefined) return 'broken';
-  const resolved = canonicalOf(path.resolve(gitDirectory, target), ports);
+  const resolved = await canonicalOf(path.resolve(gitDirectory, target), ports);
   return resolved === undefined ? 'unresolved' : { directory: resolved };
 };
 
-const directoryValidity = (directory: string, ports: RepositoryPorts): Validity => {
-  if (!headIsValid(ports.readHead(path.join(directory, 'HEAD')))) return 'invalid';
-  const common = commonDirectoryOf(directory, ports);
+const directoryValidity = async (directory: string, ports: RepositoryPorts): Promise<Validity> => {
+  if (!headIsValid(await ports.readHead(path.join(directory, 'HEAD')))) return 'invalid';
+  const common = await commonDirectoryOf(directory, ports);
   if (common === 'unresolved') return 'unresolved';
   if (common === 'broken') return 'invalid';
-  return ['objects', 'refs'].every((name) => ports.isSearchable(path.join(common.directory, name))) ? 'valid' : 'invalid';
+  return (await everyAsync(['objects', 'refs'], (name) => ports.isSearchable(path.join(common.directory, name)))) ? 'valid' : 'invalid';
 };
 
-const canonicalOf = (absolute: string, ports: RepositoryPorts): string | undefined => {
-  const resolution = ports.canonicalise(absolute);
+const canonicalOf = async (absolute: string, ports: RepositoryPorts): Promise<string | undefined> => {
+  const resolution = await ports.canonicalise(absolute);
   return resolution.ok ? resolution.path : undefined;
 };
 
-const gitDirectoriesOf = (gitDirectory: string, ports: RepositoryPorts): string[] | undefined => {
-  const common = commonDirectoryOf(gitDirectory, ports);
+const gitDirectoriesOf = async (gitDirectory: string, ports: RepositoryPorts): Promise<string[] | undefined> => {
+  const common = await commonDirectoryOf(gitDirectory, ports);
   if (common === 'unresolved' || common === 'broken') return undefined;
   return common.directory === gitDirectory ? [gitDirectory] : [gitDirectory, common.directory];
 };
 
-const hitAtGitfile = (directory: string, text: string, ports: RepositoryPorts): Discovery => {
+const hitAtGitfile = async (directory: string, text: string, ports: RepositoryPorts): Promise<Discovery> => {
   const named = gitFileTarget(text);
   if (named === undefined) return NOT_FOUND;
-  const target = canonicalOf(path.resolve(directory, named), ports);
+  const target = await canonicalOf(path.resolve(directory, named), ports);
   if (target === undefined) return UNRESOLVED;
-  const validity = directoryValidity(target, ports);
+  const validity = await directoryValidity(target, ports);
   if (validity === 'unresolved') return UNRESOLVED;
-  return validity === 'valid' ? hitAt(directory, 'dotgit', target, ports) : NOT_FOUND;
+  return validity === 'valid' ? await hitAt(directory, 'dotgit', target, ports) : NOT_FOUND;
 };
 
-const hitAt = (directory: string, entry: RepositoryHit['entry'], gitDirectory: string | undefined, ports: RepositoryPorts): Discovery => {
+const hitAt = async (directory: string, entry: RepositoryHit['entry'], gitDirectory: string | undefined, ports: RepositoryPorts): Promise<Discovery> => {
   if (gitDirectory === undefined) return UNRESOLVED;
-  const gitDirectories = gitDirectoriesOf(gitDirectory, ports);
+  const gitDirectories = await gitDirectoriesOf(gitDirectory, ports);
   return gitDirectories === undefined ? UNRESOLVED : { found: true, hit: { directory, entry, gitDirectories } };
 };
 
 export type DiscoveryOptions = { bare: boolean };
 
-const discoverBare = (directory: string, ports: RepositoryPorts): Discovery => {
-  const own = directoryValidity(directory, ports);
+const discoverBare = async (directory: string, ports: RepositoryPorts): Promise<Discovery> => {
+  const own = await directoryValidity(directory, ports);
   if (own === 'unresolved') return UNRESOLVED;
-  return own === 'valid' ? hitAt(directory, 'bare', directory, ports) : NOT_FOUND;
+  return own === 'valid' ? await hitAt(directory, 'bare', directory, ports) : NOT_FOUND;
 };
 
-export const discoverRepository = (cwd: string, ports: RepositoryPorts, options: DiscoveryOptions = { bare: false }): Discovery => {
-  const start = ports.canonicalise(cwd);
+export const discoverRepository = async (cwd: string, ports: RepositoryPorts, options: DiscoveryOptions = { bare: false }): Promise<Discovery> => {
+  const start = await ports.canonicalise(cwd);
   if (!start.ok) return UNRESOLVED;
-  if (options.bare) return discoverBare(start.path, ports);
+  if (options.bare) return await discoverBare(start.path, ports);
   for (let directory = start.path; ; directory = path.dirname(directory)) {
-    const dotGit = ports.readEntry(path.join(directory, '.git'));
+    const dotGit = await ports.readEntry(path.join(directory, '.git'));
     if ('unresolvable' in dotGit || dotGit.kind === 'oversize') return UNRESOLVED;
-    if (dotGit.kind === 'file') return hitAtGitfile(directory, dotGit.text, ports);
+    if (dotGit.kind === 'file') return await hitAtGitfile(directory, dotGit.text, ports);
     if (dotGit.kind === 'directory') {
-      const validity = directoryValidity(dotGit.canonical, ports);
+      const validity = await directoryValidity(dotGit.canonical, ports);
       if (validity === 'unresolved') return UNRESOLVED;
-      if (validity === 'valid') return hitAt(directory, 'dotgit', dotGit.canonical, ports);
+      if (validity === 'valid') return await hitAt(directory, 'dotgit', dotGit.canonical, ports);
     }
-    const own = directoryValidity(directory, ports);
+    const own = await directoryValidity(directory, ports);
     if (own === 'unresolved') return UNRESOLVED;
-    if (own === 'valid') return hitAt(directory, 'bare', directory, ports);
+    if (own === 'valid') return await hitAt(directory, 'bare', directory, ports);
     if (path.dirname(directory) === directory) return NOT_FOUND;
   }
 };

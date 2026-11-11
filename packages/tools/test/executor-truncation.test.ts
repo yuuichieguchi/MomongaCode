@@ -8,7 +8,7 @@ const FULL = LINES.join('\n');
 const run = async (output: string, outputLimitChars = 200) => {
   const harness = makeHarness({ outputLimitChars });
   const set = await toolSetOf(makeTool('Read', { execute: async () => ({ status: 'completed', output }) }));
-  const first = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
+  const first = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')]));
   const outcome = first[0];
   if (outcome?.kind !== 'result') throw new Error('expected result');
   return { harness, set, first, result: outcome.result };
@@ -46,7 +46,7 @@ describe('output truncation', () => {
   it('keeps truncated failed results failed', async () => {
     const harness = makeHarness({ outputLimitChars: 200 });
     const set = await toolSetOf(makeTool('Read', { execute: async () => ({ status: 'failed', output: FULL }) }));
-    const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')]));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed', truncated: true, handle: blobHandle(1) } });
   });
 
@@ -59,7 +59,7 @@ describe('output truncation', () => {
         execute: async (input) => ({ status: 'completed', output: input['big'] === true ? `${atLimit}b` : atLimit }),
       }),
     );
-    const outcomes = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read', { big: false }), call('c2', 'Read', { big: true })]));
+    const outcomes = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read', { big: false }), call('c2', 'Read', { big: true })]));
     expect(outcomes[0]).toMatchObject({ result: { output: atLimit } });
     expect(outcomes[0]?.kind === 'result' ? outcomes[0].result.truncated : 'missing').toBeUndefined();
     expect(outcomes[1]).toMatchObject({ result: { truncated: true } });
@@ -68,7 +68,7 @@ describe('output truncation', () => {
 
   it('replays a truncated result identically without storing another blob', async () => {
     const { harness, set, first } = await run(FULL);
-    const second = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
+    const second = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')]));
     expect(second).toEqual(first);
     expect(harness.blobs.puts).toHaveLength(1);
   });

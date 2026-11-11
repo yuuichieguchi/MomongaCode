@@ -10,6 +10,6 @@ export { describeWitness } from './report.ts';
 export type { Z3Api } from './smt.ts';
 export { formatReport } from './format.ts';
 export { CREDENTIAL_PATHS, secretLocationsOf } from './secret-locations.ts';
-export { ruleVerifyInputOf, verdictOfReport } from './verdict.ts';
+export { protectedSetOf, ruleVerifyInputOf, verdictOfReport } from './verdict.ts';
 export type { RuleVerifyInput } from './verdict.ts';
 export { nodeDistributionFiles } from './distribution-files.ts';

@@ -31,7 +31,7 @@ const teeingStderr = (inner: Sandbox, captured: string[]): Sandbox => ({
   spawn: (command, policy, signal) => {
     const child = inner.spawn(command, policy, signal);
     const tee = async function* (): AsyncGenerator<Uint8Array> {
-      for await (const chunk of child.stderr) {
+      for await (const chunk of (await child).stderr) {
         captured.push(Buffer.from(chunk).toString('utf8'));
         yield chunk;
       }

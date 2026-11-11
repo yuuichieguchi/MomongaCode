@@ -68,7 +68,7 @@ const setup = async () => {
   const run = async (name: string, args: unknown): Promise<CallOutcome | undefined> => {
     sequence += 1;
     const [outcome] = await harness.executor.runBatch({
-      ...harness.input(toolSet, [call(`c${sequence}`, name, args)], {
+      ...(await harness.input(toolSet, [call(`c${sequence}`, name, args)], {
         env: world.env,
         roots: [world.work],
         home: world.home,
@@ -76,7 +76,7 @@ const setup = async () => {
         rules,
         mandate: { supersededForms: FORMS, coveredPrograms: COVERED_PROGRAMS },
         hold: { blockers: [] },
-      }),
+      })),
       step: sequence,
     });
     return outcome;

@@ -1,4 +1,4 @@
-import { TRUNCATION_MARKER_SOURCE, safeSlice } from '@momonga/foundation';
+import { TRUNCATION_MARKER_SOURCE, safeSlice, someAsync } from '@momonga/foundation';
 import { assistantTextOf } from '@momonga/protocol';
 import type { RunEvent } from '@momonga/protocol';
 import type { HistoryAnchor, HistoryReadPage, HistorySearchResult, HistorySession, ReadDenial } from './port.ts';
@@ -110,7 +110,7 @@ export type ReadRender = { output: string; resume: ReadResume | undefined };
 
 export type ReadRenderOptions = {
   page: HistoryReadPage;
-  denied: ReadDenial;
+  deniedCalls: ReadonlySet<string>;
   redact(text: string): string;
   ownRun: boolean;
   offset: number;
@@ -128,8 +128,15 @@ const sliceFrom = (text: string, start: number): string => safeSlice(text, start
 
 const sliceUpTo = (text: string, end: number): string => safeSlice(text, 0, end);
 
-export const renderRead = ({ page, denied, redact, ownRun, offset, offsetSeq, budgetChars, continuation }: ReadRenderOptions): ReadRender => {
-  const deniedCalls = new Set(Object.entries(page.callPaths).filter(([, paths]) => paths.some(denied)).map(([callId]) => callId));
+export const deniedCallsOf = async (page: Pick<HistoryReadPage, 'callPaths'>, denied: ReadDenial): Promise<Set<string>> => {
+  const calls = new Set<string>();
+  for (const [callId, paths] of Object.entries(page.callPaths)) {
+    if (await someAsync(paths, denied)) calls.add(callId);
+  }
+  return calls;
+};
+
+export const renderRead = ({ page, deniedCalls, redact, ownRun, offset, offsetSeq, budgetChars, continuation }: ReadRenderOptions): ReadRender => {
   const isWithheld = (event: RunEvent): boolean => {
     const callId = callIdOf(event);
     return callId !== undefined && deniedCalls.has(callId);

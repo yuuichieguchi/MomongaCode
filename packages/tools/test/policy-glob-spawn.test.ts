@@ -2,9 +2,9 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
-import { MAX_GLOB_MATCHES, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs } from '@momonga/policy';
+import { MAX_GLOB_MATCHES, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { DecideInput, GlobDeadline } from '@momonga/policy';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 import type { GlobChild, GlobPorts } from '@momonga/tools';
 import { makeRealWorkspace } from './real-workspace.ts';
@@ -151,13 +151,13 @@ describe('expandGlob stays inside the decision budget (HIGH-1)', () => {
       roots,
       home: workspace.home,
       cwd: workspace.project,
-      fileRules: computeFileRules([], roots, null, ruleEnforcementOf('none')),
-      protectedSet: protectedSetFor(roots, host),
-      fs: settleGlobs(host, globs),
+      fileRules: await computeFileRules([], roots, null, ruleEnforcementOf('none'), testProbes()),
+      protectedSet: await protectedSetFor(roots, askedBy(host, NEVER_CANCELLED)),
+      fs: settleGlobs(host, globs, NEVER_CANCELLED),
       searchPath: TEST_SEARCH_PATH,
       isWritable: isWritableFor(roots),
     };
-    expect(decide(input)).toMatchObject({ kind: 'ask' });
+    expect(await decide(input)).toMatchObject({ kind: 'ask' });
   });
 
   it('spends the whole budget once across the words of a decision: the second word finds nothing left', async () => {
@@ -179,7 +179,7 @@ describe('expandGlob stays inside the decision budget (HIGH-1)', () => {
     const globs = await pending;
     expect(spawned).toHaveLength(1);
     expect(timers).toHaveLength(1);
-    const settled = settleGlobs(createPolicyFilesystem('linux', SHELLS, ports), globs);
+    const settled = settleGlobs(createPolicyFilesystem('linux', SHELLS, ports), globs, NEVER_CANCELLED);
     expect(settled.expandGlob('a*', '/work', MAX_GLOB_MATCHES)).toEqual({ matches: ['a1'] });
     expect(settled.expandGlob('b*', '/work', MAX_GLOB_MATCHES)).toEqual(DYNAMIC);
   });

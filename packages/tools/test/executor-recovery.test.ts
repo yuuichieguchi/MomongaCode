@@ -33,7 +33,7 @@ describe('executor recovery of an interrupted call', () => {
     const harness = makeHarness();
     harness.idempotency.seed(KEY, state, { tool: 'Edit', prepared: STORED });
     const { tool, seen } = recordingTool('already_applied');
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
     expect(outcome).toMatchObject({ kind: 'result', reconciled: 'already_applied', result: { status: 'completed', output: 'reconciled already_applied' } });
     expect(seen.prepares).toBe(0);
     expect(seen.reconciled.map((record) => record.meta)).toEqual([{ tool: 'Edit', prepared: STORED }]);
@@ -44,7 +44,7 @@ describe('executor recovery of an interrupted call', () => {
     const harness = makeHarness();
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit', prepared: STORED });
     const { tool, seen } = recordingTool('not_applied');
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
     expect(outcome).toMatchObject({ kind: 'result', reconciled: 'not_applied', result: { status: 'completed', output: 'executed' } });
     expect(seen.prepares).toBe(0);
     expect(seen.executed).toEqual([STORED]);
@@ -54,7 +54,7 @@ describe('executor recovery of an interrupted call', () => {
     const harness = makeHarness();
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit', prepared: STORED });
     const { tool, seen } = recordingTool('unknown');
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
     expect(outcome).toMatchObject({ kind: 'result', reconciled: 'unknown', result: { status: 'failed' } });
     expect(seen.prepares).toBe(0);
     expect(seen.executed).toEqual([]);
@@ -63,7 +63,7 @@ describe('executor recovery of an interrupted call', () => {
   it('runs prepare and passes its result to execute when there is no record', async () => {
     const harness = makeHarness();
     const { tool, seen } = recordingTool('unknown');
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'executed' } });
     expect(seen.prepares).toBe(1);
     expect(seen.reconciled).toEqual([]);

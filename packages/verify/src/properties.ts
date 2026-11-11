@@ -1,4 +1,5 @@
-import { matchRule, supersededFormOf } from '@momonga/policy';
+import { someAsync } from '@momonga/foundation';
+import { matchPathlessRule, supersededFormOf } from '@momonga/policy';
 import type { PermissionRule, SupersededForm } from '@momonga/policy';
 import type { Bool } from 'z3-solver';
 import { SUBJECT_TOOLS, ruleEffectCases } from './decision-model.ts';
@@ -95,9 +96,9 @@ const locationAccessSubjects = (access: 'read' | 'write'): readonly SubjectTool[
 export const checkSecretReach = async (context: QueryContext, locations: readonly SecretLocation[]): Promise<PropertyResult> => {
   const { models } = context;
   const tally = newTally();
-  const regions: Array<{ label: string; access: 'read' | 'write'; region: (resolved: NonNullable<ReturnType<typeof subjectOf>['resolvedTerm']>) => Bool }> = [];
+  const regions: Array<{ label: string; access: 'read' | 'write'; region: (resolved: NonNullable<ReturnType<typeof subjectOf>['resolvedTerm']>) => Bool | Promise<Bool> }> = [];
   for (const location of locations) {
-    const canonical = models.paths.canonicalDirectory(location.directory);
+    const canonical = await models.paths.canonicalDirectory(location.directory);
     if (!canonical.ok) {
       tally.unknowns.push(`${location.label} cannot be resolved to its real location (${canonical.reason.kind === 'errno' ? canonical.reason.code : canonical.reason.kind})`);
       continue;
@@ -109,7 +110,7 @@ export const checkSecretReach = async (context: QueryContext, locations: readonl
     for (const tool of locationAccessSubjects(access)) {
       const resolved = subjectOf(context, tool).resolvedTerm;
       if (resolved === undefined) continue;
-      const reached = await probe(context, 'secret-reach', `${label} through ${tool}`, tool, [region(resolved), outcomeFor(context, tool).allow]);
+      const reached = await probe(context, 'secret-reach', `${label} through ${tool}`, tool, [await region(resolved), outcomeFor(context, tool).allow]);
       absorb(tally, reached, (counterexample) => ({
         subject: label,
         message: `${describeWitness(counterexample.witness)} is reachable without approval: ${counterexample.cause}`,
@@ -141,7 +142,7 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
     if (rule.tool === 'Bash' && models.commands.unmodelled(rule)) {
       if (models.commands.wrapperDeny(rule)) {
         const candidates = models.commands.candidates(rule);
-        const effective = candidates.some((candidate) => commandDecisionWithout(context.env, candidate, undefined) !== commandDecisionWithout(context.env, candidate, rule));
+        const effective = await someAsync(candidates, async (candidate) => (await commandDecisionWithout(context.env, candidate, undefined)) !== (await commandDecisionWithout(context.env, candidate, rule)));
         if (!effective) tally.unknowns.push(`${ruleLabel(rule)} is a deny rule for a wrapper, shell or eval program; none of the commands tried (${candidates.join(' | ')}) shows it changing a decision, and other commands through the wrapper are not modelled`);
       } else {
         tally.unknowns.push(`${ruleLabel(rule)} ${rule.effect === 'deny' ? 'uses a word outside the modelled command alphabet' : rule.effect === 'ask' ? 'is an ask rule that the model cannot follow (a deny rule can reach the command through the wrapper or the word is outside the modelled alphabet)' : 'is an allow rule that the model cannot follow (a word outside the modelled alphabet, or a wrapper, shell or eval program)'}, so whether it can take effect was not decided`);
@@ -281,7 +282,7 @@ export const checkSupersededForms = (context: QueryContext, forms: readonly Supe
     for (const form of forms) {
       const admitted = candidatesFor(rule, form).find((command) => {
         if (supersededFormOf(command, [form]) === undefined) return false;
-        return matchRule(rule, { kind: 'command', tool: 'Bash', command }, context.env.fileRules, context.models.rules.indexOf(rule));
+        return matchPathlessRule(rule, { kind: 'command', tool: 'Bash', command });
       });
       if (admitted === undefined) continue;
       tally.findings.push({

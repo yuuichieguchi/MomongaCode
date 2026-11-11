@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { JsonDepthError, MAX_JSON_DEPTH, canonicalPath, comparableContains, parseOutsideJson } from '@momonga/foundation';
+import { JsonDepthError, MAX_JSON_DEPTH, parseOutsideJson, syncPaths } from '@momonga/foundation';
 
 export type JsonFile = { found: false } | { found: true; value: unknown };
 
@@ -199,9 +199,9 @@ const assertReadable = async (file: string, confineTo: string | undefined): Prom
     }
     if (!target.isFile()) throw new Error(`${file}: not a regular file`);
     if (confineTo !== undefined) {
-      const real = canonicalPath(file);
-      const root = canonicalPath(confineTo);
-      if (!comparableContains(root, real)) throw new Error(`${file}: symlink target ${real} is outside the project ${root}`);
+      const real = syncPaths.canonicalPath(file);
+      const root = syncPaths.canonicalPath(confineTo);
+      if (!syncPaths.comparableContains(root, real)) throw new Error(`${file}: symlink target ${real} is outside the project ${root}`);
     }
     return true;
   }

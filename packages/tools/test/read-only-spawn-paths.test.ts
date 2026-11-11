@@ -46,18 +46,18 @@ describe('rule 2: the sandbox policy of each path that approves a Bash call', ()
   it('a file rule that allows writes outside the workspace does not widen the call', async () => {
     const built = await setup();
     const rules = [ruleFor(built.layout)('allow', `Edit(/${built.layout.outside}/**)`)];
-    const sandboxPolicy = policyFor({ layout: built.layout, rules, tmpDir: built.tmpDir });
-    expect(sandboxPolicy.fileRules.entries.some((entry) => entry.widening)).toBe(true);
-    resultOf(await built.run('Bash', { command: 'pwd' }, { rules, sandboxPolicy }));
+    const sandboxPolicy = await policyFor({ layout: built.layout, rules, tmpDir: built.tmpDir });
+    expect((await sandboxPolicy).fileRules.entries.some((entry) => entry.widening)).toBe(true);
+    resultOf(await built.run('Bash', { command: 'pwd' }, { rules, sandboxPolicy: await sandboxPolicy }));
     expect(built.spawns[0]?.policy.fileRules.entries.some((entry) => entry.widening)).toBe(false);
-    expect(built.spawns[0]?.policy.fileRules.entries).toHaveLength(sandboxPolicy.fileRules.entries.length);
+    expect(built.spawns[0]?.policy.fileRules.entries).toHaveLength((await sandboxPolicy).fileRules.entries.length);
   });
 
   it('a file rule that allows writes outside the workspace still widens a call that is not read-only', async () => {
     const built = await setup();
     const rules = [ruleFor(built.layout)('allow', `Edit(/${built.layout.outside}/**)`), ruleFor(built.layout)('allow', 'Bash(pwd:*)')];
-    const sandboxPolicy = policyFor({ layout: built.layout, rules, tmpDir: built.tmpDir });
-    resultOf(await built.run('Bash', { command: 'pwd' }, { rules, sandboxPolicy }));
+    const sandboxPolicy = await policyFor({ layout: built.layout, rules, tmpDir: built.tmpDir });
+    resultOf(await built.run('Bash', { command: 'pwd' }, { rules, sandboxPolicy: await sandboxPolicy }));
     expect(built.spawns[0]?.policy.fileRules.entries.some((entry) => entry.widening)).toBe(true);
   });
 

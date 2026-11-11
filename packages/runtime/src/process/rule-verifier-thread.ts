@@ -34,11 +34,13 @@ const sourceOf = async (verifier: VerifyModule, recipe: RuleSolverRecipe): Promi
   });
 };
 
+const THREAD_LIFETIME: AbortSignal = new AbortController().signal;
+
 export const runRuleVerifyJob = async (job: RuleVerifyJob): Promise<RuleVerdict> => {
   const verifier = await import('@momonga/verify');
   const engine = await verifier.openZ3(await sourceOf(verifier, job.solver));
   try {
-    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createPolicyFilesystem(), exemptDirectory: null, budgetMs: job.budgetMs });
+    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createPolicyFilesystem(), exemptDirectory: null, budgetMs: job.budgetMs, signal: THREAD_LIFETIME });
     return verifier.verdictOfReport(report, job.solverVersion);
   } finally {
     await engine.close();

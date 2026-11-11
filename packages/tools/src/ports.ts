@@ -59,7 +59,7 @@ export type BackgroundJobStart = {
   callId: string;
   command: string;
   timeoutMs: number;
-  spawn(markerFile: string, signal: AbortSignal, markerFd?: number): SandboxedProcess;
+  spawn(markerFile: string, signal: AbortSignal, markerFd?: number): SandboxedProcess | Promise<SandboxedProcess>;
 };
 
 export type BackgroundJobRead = { job: JobView; output: string };

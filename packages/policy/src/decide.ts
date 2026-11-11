@@ -1,20 +1,23 @@
 import path from 'node:path';
-import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, isProtectedWrite, lexicallyWithin, networkScopeOfRequest } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, filterAsync, findAsync, isProtectedWrite, lexicallyWithin, networkScopeOfRequest, someAsync } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, SandboxNetworkSetting, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
-import type { PolicyFilesystem } from './filesystem.ts';
+import { createDecisionResolver } from './filesystem.ts';
+import type { PolicyFilesystem, WritableCheck } from './filesystem.ts';
 import { supersededVerdictOf } from './superseded.ts';
 import type { CoveredProgram, SupersededForm } from './superseded.ts';
-import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
+import { matchPathlessStrength, matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
+import type { PathlessSubject, RuleResolution } from './match-rule.ts';
+import type { MatchStrength } from './command-match.ts';
 import { absoluteFrom } from './path-match.ts';
 import { commandSpecsFor } from './platform-specs.ts';
 import { insideRoots } from './roots.ts';
 import { analyzeCommand, executionSteps, looseRedirectTargets } from './shell.ts';
 import type { Analysis } from './shell.ts';
-import { changedBefore, judgedAfter, locateTargets, locateWrites, sedResolution } from './step-plan.ts';
+import { changedBefore, judgedAfter, locateTargets, locateWrites, resolveSedPrograms, sedResolution } from './step-plan.ts';
 import type { PathPlan } from './step-plan.ts';
 import { describeReason, markRelativeUnresolvable, targetOfText } from './targets.ts';
 import type { DecisionKind, PermissionSubject, PolicyTool } from './types.ts';
@@ -33,7 +36,7 @@ export type DecideInput = {
   protectedSet: ProtectedSet;
   fs: PolicyFilesystem;
   searchPath: string | undefined;
-  isWritable: (absolute: string) => boolean;
+  isWritable: WritableCheck;
   sandboxNetwork?: SandboxNetworkSetting;
   mandate?: true;
   supersededForms?: readonly SupersededForm[];
@@ -77,47 +80,56 @@ const askByRule = (rule: PermissionRule, verb: string): Decision => ({ ...byRule
 const isEmptySet = (set: ProtectedSet): boolean =>
   set.paths.length === 0 && set.lexicalPaths.length === 0 && set.literals.length === 0 && set.names.length === 0 && set.patterns.entries.length === 0;
 
-const protectedWriteReason = (input: DecideInput, subject: PermissionSubject): string | undefined => {
+const protectedWriteReason = async (input: DecideInput, subject: PermissionSubject): Promise<string | undefined> => {
   if (subject.kind !== 'path' || subject.access !== 'write' || isEmptySet(input.protectedSet)) return undefined;
   const probes = { canonicalise: input.fs.canonicalise, volumeProbe: input.fs.volumeProbe };
   for (const target of subject.paths) {
-    const resolution = input.fs.canonicalise(absoluteFrom(target, input.cwd));
+    const resolution = await input.fs.canonicalise(absoluteFrom(target, input.cwd));
     if (!resolution.ok) {
       return `writing to ${target} requires approval because its real location cannot be resolved (${describeReason(resolution.reason)}) and protected paths exist`;
     }
-    if (isProtectedWrite(input.protectedSet, resolution.path, probes)) return `writing to protected path ${resolution.path} requires approval`;
+    if (await isProtectedWrite(input.protectedSet, resolution.path, probes)) return `writing to protected path ${resolution.path} requires approval`;
   }
   return undefined;
 };
 
 type Applicable = Array<{ rule: PermissionRule; ruleIndex: number }>;
 
-type DenyInput = Pick<DecideInput, 'rules' | 'mode' | 'fileRules'>;
+type DenyInput = Pick<DecideInput, 'rules' | 'mode' | 'fileRules'> & { fs: { canonicalise: RuleResolution } };
 
 const applicableRules = (input: Pick<DecideInput, 'rules'>, subject: PermissionSubject): Applicable =>
   input.rules.map((rule, ruleIndex) => ({ rule, ruleIndex })).filter(({ rule }) => ruleCoversSubject(rule, subject));
 
 type DenyScan = { denied: Decision | undefined; incidental: PermissionRule | undefined };
 
-const scanDeny = (input: DenyInput, subject: PermissionSubject, applicable: Applicable): DenyScan => {
-  const hits = applicable
-    .filter(({ rule }) => rule.effect === 'deny')
-    .map(({ rule, ruleIndex }) => ({ rule, strength: matchStrength(rule, subject, input.fileRules, ruleIndex) }));
+type DenyHit = { rule: PermissionRule; strength: MatchStrength | null };
+
+const scanDeny = async (input: DenyInput, subject: PermissionSubject, applicable: Applicable): Promise<DenyScan> => {
+  const hits: DenyHit[] = [];
+  for (const { rule, ruleIndex } of applicable) {
+    if (rule.effect === 'deny') hits.push({ rule, strength: await matchStrength(rule, subject, input.fileRules, ruleIndex, input.fs.canonicalise) });
+  }
+  return strongestDeny(hits, input.mode);
+};
+
+const strongestDeny = (hits: readonly DenyHit[], mode: PermissionMode): DenyScan => {
   const position = hits.find((hit) => hit.strength === 'position');
   const incidentals = hits.filter((hit) => hit.strength === 'incidental');
   const incidental = incidentals.find((hit) => isGoverningRule(hit.rule)) ?? incidentals[0];
   const denied =
     position !== undefined
       ? byRule('deny', position.rule, 'denied')
-      : incidental !== undefined && input.mode === 'bypassPermissions'
+      : incidental !== undefined && mode === 'bypassPermissions'
         ? byRule('deny', incidental.rule, 'denied')
         : undefined;
   return { denied, incidental: incidental?.rule };
 };
 
-export const denyingRuleFor = (rules: readonly PermissionRule[], mode: PermissionMode, subject: PermissionSubject): PermissionRule | undefined => {
-  const input: DenyInput = { rules: [...rules], mode, fileRules: EMPTY_FILE_RULES };
-  return scanDeny(input, subject, applicableRules(input, subject)).denied?.rule;
+export const denyingRuleFor = (rules: readonly PermissionRule[], mode: PermissionMode, subject: PathlessSubject): PermissionRule | undefined => {
+  const hits = applicableRules({ rules: [...rules] }, subject)
+    .filter(({ rule }) => rule.effect === 'deny')
+    .map(({ rule }) => ({ rule, strength: matchPathlessStrength(rule, subject) }));
+  return strongestDeny(hits, mode).denied?.rule;
 };
 
 const operationDecision = (subject: PermissionSubject): Decision | undefined =>
@@ -125,15 +137,15 @@ const operationDecision = (subject: PermissionSubject): Decision | undefined =>
     ? { kind: 'ask', source: 'operation', humanOnly: true, reason: `${subject.operation} always needs a person to approve it, in every mode` }
     : undefined;
 
-const protectedDecision = (input: DecideInput, subject: PermissionSubject): Decision | undefined => {
-  const reason = protectedWriteReason(input, subject);
+const protectedDecision = async (input: DecideInput, subject: PermissionSubject): Promise<Decision | undefined> => {
+  const reason = await protectedWriteReason(input, subject);
   return reason === undefined ? undefined : { kind: 'ask', source: 'protected', reason, humanOnly: true };
 };
 
-const checkGuards = (input: DecideInput, subject: PermissionSubject): Decision | undefined =>
-  scanDeny(input, subject, applicableRules(input, subject)).denied ?? protectedDecision(input, subject);
+const checkGuards = async (input: DecideInput, subject: PermissionSubject): Promise<Decision | undefined> =>
+  (await scanDeny(input, subject, applicableRules(input, subject))).denied ?? protectedDecision(input, subject);
 
-const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision => {
+const modeDefault = async (input: DecideInput, subject: PermissionSubject): Promise<Decision> => {
   const { mode, roots, cwd } = input;
   if (subject.kind === 'governance') {
     return { ...byMode('ask', 'adding a governing fact needs a person to approve it in every mode, because it binds later sessions'), humanOnly: true };
@@ -154,10 +166,10 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
     case 'command':
       return commandDefault(input, subject.command);
     case 'path': {
-      const inside = insideRoots(subject.paths, roots, cwd, input.fs.canonicalise);
+      const inside = await insideRoots(subject.paths, roots, cwd, input.fs);
       if (subject.access === 'read') {
         if (inside) return byMode('allow', 'reads inside the workspace are allowed');
-        if (insideRoots(subject.paths, [...roots, ...(input.readRoots ?? [])], cwd, input.fs.canonicalise)) {
+        if (await insideRoots(subject.paths, [...roots, ...(input.readRoots ?? [])], cwd, input.fs)) {
           return byMode('allow', 'reads inside an agent skill directory are allowed');
         }
         return byMode('ask', 'read outside the workspace requires approval');
@@ -168,17 +180,18 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
   }
 };
 
-const commandDefault = (input: DecideInput, command: string): Decision => {
-  const approval = commandApproval(input, command, analyzeCommand(command, commandSpecsFor(input.fs.platform)));
+const commandDefault = async (input: DecideInput, command: string): Promise<Decision> => {
+  const approval = await commandApproval(input, command, analyzeCommand(command, commandSpecsFor(input.fs.platform)));
   if (approval === 'read-only') return byMode('allow', 'read-only command', 'read_only');
   if (approval === 'edit' && input.mode === 'acceptEdits') return byMode('allow', 'acceptEdits mode allows filesystem commands inside the workspace');
   return byMode('ask', 'shell commands require approval');
 };
 
-const decideSubject = (input: DecideInput, tool: PolicyTool, subject: PermissionSubject, commandDerived: boolean): Decision => {
+const decideSubject = async (input: DecideInput, tool: PolicyTool, subject: PermissionSubject, commandDerived: boolean): Promise<Decision> => {
   const { mode, fileRules } = input;
+  const { canonicalise } = input.fs;
   const applicable = applicableRules(input, subject);
-  const { denied, incidental } = scanDeny(input, subject, applicable);
+  const { denied, incidental } = await scanDeny(input, subject, applicable);
   if (denied !== undefined) return denied;
 
   if (subject.kind === 'governance') return modeDefault(input, subject);
@@ -187,13 +200,13 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
     return byMode('deny', `plan mode only allows read-only tools; ${tool.name} has side effect ${tool.sideEffect}`);
   }
 
-  const guarded = protectedDecision(input, subject);
+  const guarded = await protectedDecision(input, subject);
   if (guarded !== undefined) return guarded;
 
   const always = operationDecision(subject);
   if (always !== undefined) return always;
 
-  const askRules = applicable.filter(({ rule, ruleIndex }) => rule.effect === 'ask' && matchRule(rule, subject, fileRules, ruleIndex));
+  const askRules = await filterAsync(applicable, async ({ rule, ruleIndex }) => rule.effect === 'ask' && (await matchRule(rule, subject, fileRules, ruleIndex, canonicalise)));
   const governingAsk = askRules.find(({ rule }) => isGoverningRule(rule));
   if (governingAsk !== undefined) return askByRule(governingAsk.rule, 'approval required');
   const asked = askRules[0];
@@ -210,7 +223,7 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
           allowRules.map(({ rule }) => rule),
           subject.command,
         )
-      : allowRules.find(({ rule, ruleIndex }) => matchRule(rule, subject, fileRules, ruleIndex))?.rule;
+      : (await findAsync(allowRules, ({ rule, ruleIndex }) => matchRule(rule, subject, fileRules, ruleIndex, canonicalise)))?.rule;
   if (allowed !== undefined) return byRule('allow', allowed, 'allowed');
 
   return modeDefault(input, subject);
@@ -224,14 +237,14 @@ const mergePlans = (plans: readonly PathPlan[]): PathPlan => ({
   needsApproval: plans.some((plan) => plan.needsApproval),
 });
 
-const analysisPlan = (input: DecideInput, analysis: Analysis): { writes: PathPlan; reads: PathPlan } => {
-  const steps = executionSteps(analysis, sedResolution(input));
-  const plans = locateWrites(input, steps);
+const analysisPlan = async (input: DecideInput, analysis: Analysis): Promise<{ writes: PathPlan; reads: PathPlan }> => {
+  const steps = executionSteps(analysis, sedResolution(await resolveSedPrograms(input, analysis)));
+  const plans = await locateWrites(input, steps);
   const writes: PathPlan[] = [];
   const reads: PathPlan[] = [];
   for (const [index, plan] of plans.entries()) {
     const changed = changedBefore(plans, index, 'name-creating').paths;
-    reads.push(judgedAfter(locateTargets(input, plan.step.reads), changed));
+    reads.push(judgedAfter(await locateTargets(input, plan.step.reads), changed));
     writes.push(judgedAfter(plan.writes, changed));
   }
   return { writes: mergePlans(writes), reads: mergePlans(reads) };
@@ -239,36 +252,36 @@ const analysisPlan = (input: DecideInput, analysis: Analysis): { writes: PathPla
 
 const looseUnresolvable: UnresolvableReason = { kind: 'unanalyzable' };
 
-const planPathAccess = (input: DecideInput, command: string): { writes: PathPlan; reads: PathPlan } => {
+const planPathAccess = async (input: DecideInput, command: string): Promise<{ writes: PathPlan; reads: PathPlan }> => {
   const analysis = analyzeCommand(command, commandSpecsFor(input.fs.platform));
   if (analysis !== null) return analysisPlan(input, analysis);
-  const loose = locateTargets(input, markRelativeUnresolvable(looseRedirectTargets(command).map((text) => targetOfText(text)), 'changed'));
+  const loose = await locateTargets(input, markRelativeUnresolvable(looseRedirectTargets(command).map((text) => targetOfText(text)), 'changed'));
   return {
     writes: { ...loose, paths: loose.paths.filter((target) => path.isAbsolute(target)), unresolvable: command.includes('>') ? [looseUnresolvable] : [] },
-    reads: { ...locateTargets(input, []), unresolvable: command.includes('<') ? [looseUnresolvable] : [] },
+    reads: { ...(await locateTargets(input, [])), unresolvable: command.includes('<') ? [looseUnresolvable] : [] },
   };
 };
 
-const removesWorkspace = (input: DecideInput, targets: readonly string[]): boolean => {
+const removesWorkspace = async (input: DecideInput, targets: readonly string[]): Promise<boolean> => {
   const roots: string[] = [];
   for (const root of input.roots) {
-    const resolution = input.fs.canonicalise(absoluteFrom(root, input.cwd));
+    const resolution = await input.fs.canonicalise(absoluteFrom(root, input.cwd));
     if (resolution.ok) roots.push(resolution.path);
   }
-  return targets.some((target) => {
-    const resolution = input.fs.canonicalise(target);
+  return someAsync(targets, async (target) => {
+    const resolution = await input.fs.canonicalise(target);
     return resolution.ok && roots.some((root) => lexicallyWithin(root, resolution.path));
   });
 };
 
-const decidePathAccess = (input: DecideInput, plan: PathPlan, tool: PolicyTool, access: 'read' | 'write'): Decision[] => {
+const decidePathAccess = async (input: DecideInput, plan: PathPlan, tool: PolicyTool, access: 'read' | 'write'): Promise<Decision[]> => {
   const decisions: Decision[] = [];
-  if (input.mode !== 'bypassPermissions' && removesWorkspace(input, plan.removes)) decisions.push({ ...byMode('ask', 'the command removes the workspace'), humanOnly: true });
+  if (input.mode !== 'bypassPermissions' && (await removesWorkspace(input, plan.removes))) decisions.push({ ...byMode('ask', 'the command removes the workspace'), humanOnly: true });
   if (plan.paths.length > 0) {
-    decisions.push(decideSubject(input, tool, { kind: 'path', tool: tool.name, paths: plan.paths, access }, true));
+    decisions.push(await decideSubject(input, tool, { kind: 'path', tool: tool.name, paths: plan.paths, access }, true));
   }
   if (plan.candidates.length > 0) {
-    const guard = checkGuards(input, { kind: 'path', tool: tool.name, paths: plan.candidates, access });
+    const guard = await checkGuards(input, { kind: 'path', tool: tool.name, paths: plan.candidates, access });
     if (guard !== undefined) decisions.push(guard);
   }
   const governed = applicableRules(input, { kind: 'path', tool: tool.name, paths: [], access }).some(({ rule }) => isGoverningRule(rule));
@@ -282,15 +295,19 @@ const decidePathAccess = (input: DecideInput, plan: PathPlan, tool: PolicyTool, 
   return decisions;
 };
 
-export const decidePrimary = (input: DecideInput): Decision => decideSubject(input, input.tool, input.subject, false);
+const resolvingOnce = (input: DecideInput): DecideInput => ({ ...input, fs: createDecisionResolver(input.fs) });
 
-const decideWithoutNetwork = (input: DecideInput): Decision => {
-  const primary = decidePrimary(input);
+const primaryOf = (input: DecideInput): Promise<Decision> => decideSubject(input, input.tool, input.subject, false);
+
+export const decidePrimary = (input: DecideInput): Promise<Decision> => primaryOf(resolvingOnce(input));
+
+const decideWithoutNetwork = async (input: DecideInput): Promise<Decision> => {
+  const primary = await primaryOf(input);
   if (input.subject.kind !== 'command' || primary.kind === 'deny') return primary;
 
-  const plan = planPathAccess(input, input.subject.command);
-  const writeDecisions = decidePathAccess(input, plan.writes, WRITE_TOOL, 'write');
-  const secondary = [...writeDecisions, ...decidePathAccess(input, plan.reads, READ_TOOL, 'read')];
+  const plan = await planPathAccess(input, input.subject.command);
+  const writeDecisions = await decidePathAccess(input, plan.writes, WRITE_TOOL, 'write');
+  const secondary = [...writeDecisions, ...(await decidePathAccess(input, plan.reads, READ_TOOL, 'read'))];
   const denied = secondary.find((decision) => decision.kind === 'deny');
   if (denied !== undefined) return denied;
   const humanOnly = secondary.find((decision) => decision.kind === 'ask' && decision.humanOnly === true);
@@ -349,22 +366,24 @@ const withinMandate = (input: DecideInput, decision: Decision): Decision => {
   return { kind: 'deny', source: 'mode', outside: true, reason: `Not run: outside the declared mandate (${decision.reason}). Continue with work inside it or report.` };
 };
 
-const onlyReads = (input: DecideInput): boolean => {
-  const unruled = decideWithoutNetwork({ ...input, rules: [], fileRules: EMPTY_FILE_RULES });
+const onlyReads = async (input: DecideInput): Promise<boolean> => {
+  const unruled = await decideWithoutNetwork({ ...input, rules: [], fileRules: EMPTY_FILE_RULES });
   return unruled.kind === 'allow' && unruled.basis === 'read_only';
 };
 
-export const decide = (input: DecideInput): Decision => {
-  const ordinary = (): Decision => withTarget(input, withinMandate(input, withNetworkRequest(input, decideWithoutNetwork(input))));
+export const decide = (given: DecideInput): Promise<Decision> => decideResolvingOnce(resolvingOnce(given));
+
+const decideResolvingOnce = async (input: DecideInput): Promise<Decision> => {
+  const ordinary = async (): Promise<Decision> => withTarget(input, withinMandate(input, withNetworkRequest(input, await decideWithoutNetwork(input))));
   if (input.mandate !== true || input.subject.kind !== 'command' || input.supersededForms === undefined) return ordinary();
   const verdict = supersededVerdictOf(input.subject.command, input.supersededForms, commandSpecsFor(input.fs.platform), input.coveredPrograms);
   if (verdict === undefined) return ordinary();
   if (verdict.kind === 'superseded') {
     return byMode('deny', `Not run: this run has a mandate, and ${verdict.form.argv.join(' ')} is replaced by a dedicated operation; use ${verdict.form.operation}`);
   }
-  const decided = withNetworkRequest(input, decideWithoutNetwork(input));
+  const decided = withNetworkRequest(input, await decideWithoutNetwork(input));
   if (decided.kind === 'deny') return decided;
-  if (onlyReads(input)) return ordinary();
+  if (await onlyReads(input)) return ordinary();
   return {
     kind: 'ask',
     source: 'operation',

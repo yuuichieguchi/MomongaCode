@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { volumeIsCaseInsensitive } from '@momonga/policy';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths } from '@momonga/testkit';
+
 import { SandboxPolicyError, validateSandboxPolicy } from '@momonga/sandbox';
 import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
+import { syncPaths } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -16,7 +17,7 @@ afterEach(() => {
 
 const ACCEPT = { mode: 'acceptEdits' } as const;
 
-describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('Keychains stays unreadable whatever readAllowed says', () => {
+describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('Keychains stays unreadable whatever readAllowed says', () => {
   it('Read of home/Library/Keychains/k.db is refused with a case-variant readAllowed entry', async () => {
     const tools = await makeBuiltins();
     const keychains = path.join(tools.layout.home, 'Library', 'Keychains');
@@ -53,7 +54,7 @@ describe('validateSandboxPolicy rejects an invalid session tmp dir', () => {
       const tools = await makeBuiltins();
       let thrown: unknown;
       try {
-        validateSandboxPolicy(tools.sandboxPolicy, { tmpDir: tmpDirOf(tools) });
+        await validateSandboxPolicy(tools.sandboxPolicy, { tmpDir: tmpDirOf(tools) }, testPaths());
       } catch (error) {
         thrown = error;
       }
@@ -186,7 +187,7 @@ describe.each(grepBackends)('Grep allowed-root discovery (%s backend)', (_name, 
   });
 });
 
-describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensitively on a case-insensitive volume', () => {
+describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensitively on a case-insensitive volume', () => {
   it('Write to a differently cased path under a missing root is inside the roots in acceptEdits', async () => {
     const tools = await makeBuiltins();
     const root = path.join(tools.layout.project, 'newdir');
@@ -237,9 +238,9 @@ describe.each(grepBackends)('Grep with an allowed target (%s backend)', (_name, 
 });
 
 describe('validateSandboxPolicy rejects a malformed readAllowed policy', () => {
-  const codeOf = (action: () => unknown): unknown => {
+  const codeOf = async (action: () => unknown): Promise<unknown> => {
     try {
-      action();
+      await action();
     } catch (error) {
       expect(error).toBeInstanceOf(SandboxPolicyError);
       return (error as SandboxPolicyError).code;
@@ -255,7 +256,7 @@ describe('validateSandboxPolicy rejects a malformed readAllowed policy', () => {
       readDenied: [...tools.sandboxPolicy.readDenied, vault, path.join(vault, 'ok', 'deep', 'z')],
       readAllowed: [...(tools.sandboxPolicy.readAllowed ?? []), path.join(vault, 'ok'), path.join(vault, 'ok', 'deep'), path.join(vault, 'ok', 'deep', 'z', 'w')],
     };
-    expect(codeOf(() => validateSandboxPolicy(sandboxPolicy))).toBe('read_allowed_contains_denied');
+    expect(await codeOf(() => validateSandboxPolicy(sandboxPolicy, {}, testPaths()))).toBe('read_allowed_contains_denied');
   });
 
   it('rejects an allowed entry outside every readDenied entry', async () => {
@@ -264,6 +265,6 @@ describe('validateSandboxPolicy rejects a malformed readAllowed policy', () => {
       ...tools.sandboxPolicy,
       readAllowed: [...(tools.sandboxPolicy.readAllowed ?? []), path.join(tools.layout.project, 'free')],
     };
-    expect(codeOf(() => validateSandboxPolicy(sandboxPolicy))).toBe('read_allowed_not_inside_denied');
+    expect(await codeOf(() => validateSandboxPolicy(sandboxPolicy, {}, testPaths()))).toBe('read_allowed_not_inside_denied');
   });
 });

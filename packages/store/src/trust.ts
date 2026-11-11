@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { comparableContains, type Clock } from '@momonga/foundation';
+import { type Clock, syncPaths } from '@momonga/foundation';
 import { readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
 import type { StoredTrustDecision, TrustStore } from './types.ts';
@@ -21,17 +21,17 @@ export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, c
     return storedOneOf(context, 'trust', real, 'decision', DECISIONS, readerFor('trust', real, row).string('decision'));
   };
   return {
-    get: (target): StoredTrustDecision | undefined => decisionAt(fs.realpathSync.native(target)),
+    get: (target): StoredTrustDecision | undefined => decisionAt(syncPaths.realPath(target)),
     decisionFor: (target) => {
       let start: string;
       try {
-        start = fs.realpathSync.native(target);
+        start = syncPaths.realPath(target);
       } catch {
         return { decision: null };
       }
       for (let current = start; ; current = path.dirname(current)) {
         const decision = decisionAt(current);
-        const exactOnly = comparableContains(current, home);
+        const exactOnly = syncPaths.comparableContains(current, home);
         if (decision !== undefined && (current === start || !exactOnly)) {
           return current === start ? { decision } : { decision, inheritedFrom: current };
         }
@@ -39,14 +39,14 @@ export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, c
       }
     },
     set: (target, decision) => {
-      const real = fs.realpathSync.native(target);
+      const real = syncPaths.realPath(target);
       if (decision === 'trusted' && path.dirname(real) === real) {
         throw new Error(`trust: refusing to trust the filesystem root ${real}`);
       }
       upsert.run({ path: real, decision, decidedAt: clock.now() });
     },
     clear: (target) => {
-      const resolved = fs.existsSync(target) ? fs.realpathSync.native(target) : path.resolve(target);
+      const resolved = fs.existsSync(target) ? syncPaths.realPath(target) : path.resolve(target);
       remove.run({ path: resolved });
     },
   };

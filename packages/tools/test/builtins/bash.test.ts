@@ -268,7 +268,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     const ready = path.join(tools.layout.project, 'ready');
     const controller = new AbortController();
     const command = `sleep 30 & echo $! > ${ready}.tmp; mv ${ready}.tmp ${ready}; wait`;
-    const running = tools.executor.runBatch(tools.batch('Bash', { command }, { signal: controller.signal }, 'allow_once'));
+    const running = tools.executor.runBatch(await tools.batch('Bash', { command }, { signal: controller.signal }, 'allow_once'));
     expect(await waitFor(() => fs.existsSync(ready), 10_000)).toBe(true);
     const child = Number(fs.readFileSync(ready, 'utf8').trim());
     trackPid(child);

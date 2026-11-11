@@ -7,6 +7,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor } from './helpers.ts';
+import { testPaths } from '@momonga/testkit';
 
 const KEY = keyFor('run-1', 1, 'c1');
 
@@ -51,7 +52,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
     const { tool, seen } = reconcilingTool('already_applied');
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true, sandboxPolicy: relativeWritablePolicy(harness) }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true, sandboxPolicy: relativeWritablePolicy(harness) }),
     );
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'already_applied', result: { status: 'completed', output: 'reconciled already_applied' } });
@@ -66,7 +67,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
     const { tool, seen } = reconcilingTool('already_applied');
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Mark')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], {
         recoverOnly: true,
         tmpDir: strayTmpDir(harness),
         sandboxPolicy: { writableRoots: [harness.layout.project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], readAllowed: [], network: 'deny' },
@@ -83,7 +84,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
     harness.idempotency.seed(keyFor('run-1', 1, 'c2'), 'PENDING', { tool: 'Mark' });
     const { tool, seen } = reconcilingTool('not_applied');
 
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark'), call('c2', 'Mark'), call('c3', 'Mark')], { recoverOnly: true }));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark'), call('c2', 'Mark'), call('c3', 'Mark')], { recoverOnly: true }));
 
     expect(seen.subjects).toBe(0);
     expect(seen.executed).toBe(0);
@@ -106,7 +107,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
       reconcile: async () => ({ outcome: 'already_applied', output: 'already there' }),
     });
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'already_applied', result: { status: 'completed', output: 'already there' } });
   });
@@ -117,7 +118,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
     const { tool, seen } = reconcilingTool('already_applied');
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Mark')], {
+      await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], {
         recoverOnly: true,
         tmpDir: 'relative-session-tmp',
         sandboxPolicy: {
@@ -134,11 +135,11 @@ describe('executor recoverOnly batches skip policy validation', () => {
     expect(seen.reconciled).toBe(1);
   });
 
-  it('the same policy is rejected at the one validation point, validateSandboxPolicy', () => {
+  it('the same policy is rejected at the one validation point, validateSandboxPolicy', async () => {
     const harness = makeHarness();
     let thrown: unknown;
     try {
-      validateSandboxPolicy(relativeWritablePolicy(harness));
+      await validateSandboxPolicy(relativeWritablePolicy(harness), {}, testPaths());
     } catch (error) {
       thrown = error;
     }
@@ -153,7 +154,7 @@ describe('executor recoverOnly treats UNKNOWN as already abandoned', () => {
     harness.idempotency.seed(KEY, 'UNKNOWN', { tool: 'Mark' });
     const { tool, seen } = reconcilingTool('already_applied');
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'unknown', result: { status: 'failed' } });
     expect(seen.reconciled).toBe(0);
@@ -172,7 +173,7 @@ describe('executor recoverOnly treats UNKNOWN as already abandoned', () => {
     ]);
     expect(harness.idempotency.stateOf(KEY)).toBe('UNKNOWN');
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'unknown', result: { status: 'failed' } });
     expect(seen.reconciled).toBe(0);
@@ -184,7 +185,7 @@ describe('executor recoverOnly treats UNKNOWN as already abandoned', () => {
     harness.idempotency.seed(KEY, 'UNKNOWN', { tool: 'Mark' });
     const { tool, seen } = reconcilingTool('already_applied');
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark', {}, 'allow_once')], { mode: 'bypassPermissions' }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark', {}, 'allow_once')], { mode: 'bypassPermissions' }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'already_applied' });
     expect(seen.reconciled).toBe(1);
@@ -214,7 +215,7 @@ describe('recovery reaches only reconcile, with a context that names no sandbox 
       },
     });
 
-    const [result] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
+    const [result] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
 
     expect(result).toMatchObject({ callId: 'c1', kind: 'result', reconciled: outcome, result: { status: outcome === 'already_applied' ? 'completed' : 'failed' } });
     expect(contexts).toHaveLength(1);

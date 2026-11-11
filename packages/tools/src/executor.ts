@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostKernelLock, hostPaths, hostReapTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, nodeFileSystem, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
 import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
-import type { Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathResolution, ProcessGroupPort, ProcessInspector, ReapReport, ReapTiming, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
-import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
+import type { Awaitable, Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, ReapReport, ReapTiming, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
 import type { ApprovalBasis, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
@@ -32,7 +32,7 @@ import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 import { blockedByHeldText, blockerOf, footprintOf } from './footprint.ts';
 import type { Footprint, HeldFootprint } from './footprint.ts';
 import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, CallOutputFit, GateFacts, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import type { AnyTool, CallOutputFit, DisplayContext, GateFacts, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
@@ -267,22 +267,22 @@ const storedOutcome = (stored: unknown): ResultOutcome => {
   return stored;
 };
 
-const readDeniedPath = (subject: PermissionSubject, access: ReadAccessMatcher, cwd: string): string | undefined => {
+const readDeniedPath = async (subject: PermissionSubject, access: ReadAccessMatcher, cwd: string): Promise<string | undefined> => {
   if (subject.kind !== 'path' || !access.deniesAnything) return undefined;
-  const target = subject.paths.find((candidate) => access.blocks(candidate, cwd));
+  const target = await findAsync(subject.paths, (candidate) => access.blocks(candidate, cwd));
   if (target === undefined) return undefined;
-  const matched = access.blockedForm(target, cwd);
+  const matched = await access.blockedForm(target, cwd);
   if (matched === undefined) throw new Error(`${target} is read-denied but no matching form was found`);
   return matched;
 };
 
 const readRuleToolOf = (subjectTool: string): ReadFamilyTool => (subjectTool === 'Grep' || subjectTool === 'Glob' ? subjectTool : 'Read');
 
-const ruleBlock = (subject: PermissionSubject, access: BatchAccess, cwd: string): { target: string; provenance: FileRuleProvenance } | undefined => {
+const ruleBlock = async (subject: PermissionSubject, access: BatchAccess, cwd: string): Promise<{ target: string; provenance: FileRuleProvenance } | undefined> => {
   if (subject.kind !== 'path') return undefined;
   const tool = readRuleToolOf(subject.tool);
   for (const target of subject.paths) {
-    const block = access.blockedMatch(target, cwd, tool) ?? (subject.access === 'write' ? access.writeBlockedMatch(target, cwd) : undefined);
+    const block = (await access.blockedMatch(target, cwd, tool)) ?? (subject.access === 'write' ? await access.writeBlockedMatch(target, cwd) : undefined);
     if (block !== undefined) return { target: block.matched, provenance: block.provenance };
   }
   return undefined;
@@ -290,10 +290,10 @@ const ruleBlock = (subject: PermissionSubject, access: BatchAccess, cwd: string)
 
 const describeProvenance = ({ ruleText, layer, source }: FileRuleProvenance): string => `${ruleText} (${layer}: ${source})`;
 
-const parentCanonicalKey = (target: string): string => {
+const parentCanonicalKey = async (target: string, paths: PathResolver): Promise<string> => {
   const directory = path.dirname(target);
   const name = path.basename(target);
-  const { parts, caseInsensitive } = locateThroughFiles(directory);
+  const { parts, caseInsensitive } = await paths.locateThroughFiles(directory);
   return path.join(comparableFromParts(parts, caseInsensitive), caseInsensitive ? name.toLowerCase() : name);
 };
 
@@ -303,66 +303,67 @@ const lexicalAncestorsOf = (target: string): string[] => {
   return found;
 };
 
-const launcherGuardKeys = (literals: readonly string[]): Set<string> =>
-  new Set(
-    literals
-      .flatMap((literal) => [literal, canonicalParentForm(literal)])
-      .flatMap((literal) => [literal, ...lexicalAncestorsOf(literal)])
-      .map(parentCanonicalKey),
-  );
+const launcherGuardKeys = async (literals: readonly string[], paths: PathResolver): Promise<Set<string>> => {
+  const forms = (await mapAsync(literals, async (literal) => [literal, await canonicalParentForm(literal, paths)])).flat();
+  return new Set(await mapAsync(forms.flatMap((literal) => [literal, ...lexicalAncestorsOf(literal)]), (literal) => parentCanonicalKey(literal, paths)));
+};
 
-const isEmptyRegularFile = (target: string): boolean => {
-  const stat = fs.lstatSync(target);
+const isEmptyRegularFile = async (target: string, signal: AbortSignal): Promise<boolean> => {
+  const stat = await settledOrAborted(nodeFileSystem.lstat(target), signal);
   return stat.isFile() && stat.size === 0;
 };
 
-const requireResolvable = (entry: string): void => {
+const requireResolvable = async (entry: string, paths: PathResolver, signal: AbortSignal): Promise<void> => {
   try {
-    canonicalPath(entry);
+    await paths.canonicalPath(entry);
     return;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOTDIR') throw error;
     for (let ancestor = path.dirname(entry); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
       let real: string;
       try {
-        real = canonicalPath(ancestor);
+        real = await paths.canonicalPath(ancestor);
       } catch (inner) {
         if ((inner as NodeJS.ErrnoException).code !== 'ENOTDIR') throw inner;
         continue;
       }
-      if (isEmptyRegularFile(real)) return;
+      if (await isEmptyRegularFile(real, signal)) return;
       throw error;
     }
     throw error;
   }
 };
 
-const createWriteGuard = (batch: Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir'>): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
-  batch.sandboxPolicy.writableRoots.forEach(canonicalPath);
+type AccessFacts = Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir' | 'signal'>;
+
+type WriteGuard = (subject: PermissionSubject, cwd: string) => Promise<string | undefined>;
+
+const createWriteGuard = async (batch: AccessFacts, paths: PathResolver): Promise<WriteGuard> => {
+  for (const root of batch.sandboxPolicy.writableRoots) await paths.canonicalPath(root);
   const layout = momongaLayout(batch.home);
   const homeGuards = new Set([layout.root, layout.keychains]);
   const approvalGated = new Set(batch.sandboxPolicy.protectedSet.paths);
   const entries = batch.sandboxPolicy.writeDenied.filter((entry) => homeGuards.has(entry) || !approvalGated.has(entry));
-  const guards = entries.map((entry) => {
-    requireResolvable(entry);
-    return locateThroughFiles(entry).parts;
+  const guards = await mapAsync(entries, async (entry) => {
+    await requireResolvable(entry, paths, batch.signal);
+    return (await paths.locateThroughFiles(entry)).parts;
   });
-  const launcherKeys = launcherGuardKeys(batch.sandboxPolicy.writeDeniedLiterals);
-  const blocksLauncher = (target: string): boolean => launcherKeys.has(parentCanonicalKey(target));
-  const exempt = batch.tmpDir === undefined ? undefined : locateThroughFiles(batch.tmpDir).parts;
-  const blocks = (target: string): boolean => {
-    const { parts, caseInsensitive } = locateThroughFiles(target);
+  const launcherKeys = await launcherGuardKeys(batch.sandboxPolicy.writeDeniedLiterals, paths);
+  const blocksLauncher = async (target: string): Promise<boolean> => launcherKeys.has(await parentCanonicalKey(target, paths));
+  const exempt = batch.tmpDir === undefined ? undefined : (await paths.locateThroughFiles(batch.tmpDir)).parts;
+  const blocks = async (target: string): Promise<boolean> => {
+    const { parts, caseInsensitive } = await paths.locateThroughFiles(target);
     const exemptContains = exempt !== undefined && containsByComponents(exempt, parts, caseInsensitive);
     return guards.some((guard) => containsByComponents(guard, parts, caseInsensitive)) && !exemptContains;
   };
-  return (subject, cwd) => {
+  return async (subject, cwd) => {
     if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
     for (const target of subject.paths) {
       const requested = path.resolve(cwd, target);
       const resolvedInput = absoluteFrom(target, cwd);
-      if (!(blocks(resolvedInput) || blocks(requested) || blocksLauncher(requested))) continue;
-      if (blocksLauncher(requested) || entries.some((entry) => lexicallyWithin(requested, entry))) return requested;
-      const resolution = resolveCanonicalPath(resolvedInput);
+      if (!((await blocks(resolvedInput)) || (await blocks(requested)) || (await blocksLauncher(requested)))) continue;
+      if ((await blocksLauncher(requested)) || entries.some((entry) => lexicallyWithin(requested, entry))) return requested;
+      const resolution = await paths.resolveCanonicalPath(resolvedInput);
       return resolution.ok ? resolution.path : requested;
     }
     return undefined;
@@ -370,14 +371,15 @@ const createWriteGuard = (batch: Pick<ExecutionBatchInput, 'sandboxPolicy' | 'ho
 };
 
 type BatchAccess = ReadAccessMatcher & {
-  writeDeniedPath: (subject: PermissionSubject, cwd: string) => string | undefined;
-  isWritable: (absolute: string) => boolean;
+  writeDeniedPath: WriteGuard;
+  isWritable: (absolute: string) => Promise<boolean>;
 };
 
-const accessOf = (facts: Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir'>): BatchAccess => {
+const accessOf = async (facts: AccessFacts): Promise<BatchAccess> => {
+  const paths = hostPaths(facts.signal);
   const { writableRoots } = facts.sandboxPolicy;
-  const isWritable = writableCheckOf(writableAreaOf({ writableRoots, entries: facts.sandboxPolicy.fileRules.entries }));
-  return { ...createReadAccessMatcher(facts.sandboxPolicy), writeDeniedPath: createWriteGuard(facts), isWritable };
+  const isWritable = writableCheckOf(writableAreaOf({ writableRoots, entries: facts.sandboxPolicy.fileRules.entries }), paths);
+  return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(facts, paths), isWritable };
 };
 
 const USER_CALL_ID = 'user';
@@ -389,12 +391,15 @@ const USER_TOOLS: Readonly<Record<UserSubject['tool'], PolicyTool>> = {
 
 const rootsOf = (batch: Pick<BatchCore, 'roots' | 'tmpDir'>): readonly string[] => (batch.tmpDir === undefined ? batch.roots : [...batch.roots, batch.tmpDir]);
 
-const subjectContextOf = (batch: BatchCore): SubjectContext => ({
+const subjectContextOf = (batch: BatchCore, signal: AbortSignal = batch.signal): SubjectContext => ({
   cwd: batch.session.cwd,
   workingDirectory: batch.session.workingDirectory,
   home: batch.home,
   roots: rootsOf(batch),
+  paths: hostPaths(signal),
 });
+
+const displayContextOf = (batch: BatchCore): DisplayContext => ({ cwd: batch.session.cwd, workingDirectory: batch.session.workingDirectory, paths: hostPaths(batch.signal) });
 
 const subjectOfTool = async (tool: AnyTool, input: unknown, batch: BatchCore): Promise<{ subject: PermissionSubject; facts?: GateFacts }> => {
   const context = subjectContextOf(batch);
@@ -423,32 +428,32 @@ const recordedFactsOf = (record: ToolIdempotencyRecord): SubjectFacts => {
 const observesCall = (batch: BatchCore, tool: AnyTool): boolean =>
   batch.workTreeObserver !== undefined && tool.sideEffect !== 'read_only' && tool.subjectKind !== 'path';
 
-const digestSubject = (subject: PermissionSubject, cwd: string, canonicalise: (absolute: string) => PathResolution, show: (absolute: string) => string): unknown => {
+type Canonicalise = PathProbes['canonicalise'];
+
+type Show = (absolute: string) => Awaitable<string>;
+
+const digestSubject = async (subject: PermissionSubject, cwd: string, canonicalise: Canonicalise, show: Show): Promise<unknown> => {
   if (subject.kind === 'path') {
     return {
       ...subject,
-      paths: subject.paths.map((target) => {
+      paths: await mapAsync(subject.paths, async (target) => {
         const absolute = absoluteFrom(target, cwd);
-        const real = canonicalise(absolute);
-        if (!real.ok) throw new Error(`${show(absolute)} cannot be resolved to a real location`);
+        const real = await canonicalise(absolute);
+        if (!real.ok) throw new Error(`${await show(absolute)} cannot be resolved to a real location`);
         return real.path;
       }),
     };
   }
   if (subject.kind === 'command') {
-    const canonicalCwd = canonicalise(cwd);
-    if (!canonicalCwd.ok) throw new Error(`session cwd ${show(cwd)} cannot be resolved to a real location`);
+    const canonicalCwd = await canonicalise(cwd);
+    if (!canonicalCwd.ok) throw new Error(`session cwd ${await show(cwd)} cannot be resolved to a real location`);
     return { subject, cwd: canonicalCwd.path };
   }
   return subject;
 };
 
-export const subjectDigestOf = (
-  subject: PermissionSubject,
-  cwd: string,
-  canonicalise: (absolute: string) => PathResolution,
-  show: (absolute: string) => string = (absolute) => absolute,
-): string => sha256Hex(canonicalJson(digestSubject(subject, cwd, canonicalise, show)));
+export const subjectDigestOf = async (subject: PermissionSubject, cwd: string, canonicalise: Canonicalise, show: Show = (absolute) => absolute): Promise<string> =>
+  sha256Hex(canonicalJson(await digestSubject(subject, cwd, canonicalise, show)));
 
 const failedOutcome = (callId: string, output: string): ResultOutcome => ({
   callId,
@@ -684,17 +689,18 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     batch: PolicyFacts,
   ): Promise<{ outcome: ResultOutcome } | { decision: Decision }> => {
     const cwd = batch.session.cwd;
-    const shown = (absolute: string): string => displayToolPath(batch.session.workingDirectory, absolute);
-    const blockedPath = readDeniedPath(subject, access, cwd);
-    if (blockedPath !== undefined) return { outcome: deniedOutcome(call.callId, { source: 'sandbox', reason: `${shown(blockedPath)} is blocked by the sandbox policy` }) };
-    const writeBlockedPath = access.writeDeniedPath(subject, cwd);
+    const paths = hostPaths(batch.signal);
+    const shown = (absolute: string): Promise<string> => displayToolPath(batch.session.workingDirectory, absolute, paths);
+    const blockedPath = await readDeniedPath(subject, access, cwd);
+    if (blockedPath !== undefined) return { outcome: deniedOutcome(call.callId, { source: 'sandbox', reason: `${await shown(blockedPath)} is blocked by the sandbox policy` }) };
+    const writeBlockedPath = await access.writeDeniedPath(subject, cwd);
     if (writeBlockedPath !== undefined) {
-      return { outcome: deniedOutcome(call.callId, { source: 'sandbox', reason: `${shown(writeBlockedPath)} is write-protected by the sandbox policy` }) };
+      return { outcome: deniedOutcome(call.callId, { source: 'sandbox', reason: `${await shown(writeBlockedPath)} is write-protected by the sandbox policy` }) };
     }
-    const blockedByRule = ruleBlock(subject, access, cwd);
+    const blockedByRule = await ruleBlock(subject, access, cwd);
     if (blockedByRule !== undefined) {
       return {
-        outcome: deniedOutcome(call.callId, { source: 'rule', reason: `${shown(blockedByRule.target)} is blocked by ${describeProvenance(blockedByRule.provenance)}` }),
+        outcome: deniedOutcome(call.callId, { source: 'rule', reason: `${await shown(blockedByRule.target)} is blocked by ${describeProvenance(blockedByRule.provenance)}` }),
       };
     }
     const globs = await prepareGlobs({
@@ -707,7 +713,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       signal: batch.signal,
     });
     if (batch.signal.aborted) return { outcome: failedOutcome(call.callId, `${tool.name} was cancelled`) };
-    const decision = decide({
+    const decision = await decide({
       tool,
       subject,
       mode: batch.mode,
@@ -718,7 +724,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       cwd,
       fileRules: batch.sandboxPolicy.fileRules,
       protectedSet: batch.sandboxPolicy.protectedSet,
-      fs: settleGlobs(options.fs, globs),
+      fs: settleGlobs(options.fs, globs, batch.signal),
       searchPath: batch.env['PATH'],
       isWritable: access.isWritable,
       ...(batch.sandboxNetwork === undefined ? {} : { sandboxNetwork: batch.sandboxNetwork }),
@@ -794,7 +800,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if ((decision.kind === 'ask' || unsandboxedExec)) {
       let subjectDigest: string;
       try {
-        subjectDigest = subjectDigestOf(subject, cwd, options.fs.canonicalise, (absolute) => displayToolPath(batch.session.workingDirectory, absolute));
+        const asked = askedBy(options.fs, batch.signal);
+        subjectDigest = await subjectDigestOf(subject, cwd, asked.canonicalise, (absolute) => displayToolPath(batch.session.workingDirectory, absolute, hostPaths(batch.signal)));
       } catch (error) {
         return failedOutcome(call.callId, `Permission check failed: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -807,7 +814,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           const classified = await batch.classifier.classify({
             callId: call.callId,
             toolName: tool.name,
-            title: tool.title(input, batch.session),
+            title: await tool.title(input, displayContextOf(batch)),
             input,
             reason: effective.reason,
             subjectDigest,
@@ -821,15 +828,15 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const suggestedRule =
           unsandboxedExec || decision.source === 'protected' || decision.source === 'hook' || decision.rule?.layer === 'governance'
             ? undefined
-            : suggestAllowRule(policyTool, subject, cwd, options.fs.canonicalise);
-        const locations = tool.locations?.(input, batch.session);
+            : await suggestAllowRule(policyTool, subject, cwd, askedBy(options.fs, batch.signal).canonicalise);
+        const locations = tool.locations?.(input, displayContextOf(batch));
         return {
           callId: call.callId,
           kind: 'needs_approval',
           decision: effective,
           subjectDigest,
           ...(suggestedRule === undefined ? {} : { suggestedRule }),
-          title: tool.title(input, batch.session),
+          title: await tool.title(input, displayContextOf(batch)),
           toolKind: tool.kind,
           ...(locations === undefined ? {} : { locations }),
           footprint: footprintOf(subject, cwd),
@@ -1025,7 +1032,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     activeKeys.set(key, (activeKeys.get(key) ?? 0) + 1);
     const trace = batch.traceparentFor?.(callId);
     const reconcileCtx: ReconcileContext = {
-      ...subjectContextOf(batch),
+      ...subjectContextOf(batch, controller.signal),
       ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }),
       runId: batch.runId,
       step: batch.step,
@@ -1573,7 +1580,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return { outcome: 'unknown', output: interruptedOutput(tool) };
   };
 
-  const prepareBatch = (given: BatchInput): { batch: BatchInput; access: BatchAccess | undefined } => {
+  const prepareBatch = async (given: BatchInput): Promise<{ batch: BatchInput; access: BatchAccess | undefined }> => {
     if ((given.outputFit as OutputFit | undefined) === undefined || (given.reconcileFit as OutputFit | undefined) === undefined) {
       throw new TypeError('a tool batch needs outputFit and reconcileFit: the ports that decide how much of an output the model sees');
     }
@@ -1582,7 +1589,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (given.sandboxPolicy.fileRules.fingerprint !== expected) {
       throw new SandboxPolicyError('file_rules_stale', 'the sandbox policy was built from different permission rules, roots or session tmp dir than this batch');
     }
-    return { batch: given, access: accessOf(given) };
+    return { batch: given, access: await accessOf(given) };
   };
 
   const userRefusal: UserPolicy['userRefusal'] = async (subject, facts) => {
@@ -1590,7 +1597,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       { callId: USER_CALL_ID },
       USER_TOOLS[subject.tool],
       subject.tool === 'Read' ? { kind: 'path', tool: subject.tool, paths: [subject.path], access: 'read' } : { kind: 'command', tool: subject.tool, command: subject.command },
-      accessOf(facts),
+      await accessOf(facts),
       { ...facts, mode: USER_MODE },
     );
     if ('outcome' in verdict) return verdict.outcome.result.denial?.reason ?? verdict.outcome.result.output;
@@ -1598,7 +1605,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   };
 
   const runBatch = async (given: BatchInput): Promise<CallOutcome[]> => {
-    const { batch, access } = prepareBatch(given);
+    const { batch, access } = await prepareBatch(given);
     const { calls } = batch;
     const outcomes: Array<CallOutcome | undefined> = new Array<CallOutcome | undefined>(calls.length).fill(undefined);
     const inFlight = new Set<Promise<void>>();

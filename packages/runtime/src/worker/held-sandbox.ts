@@ -14,8 +14,8 @@ export const holdSandbox = async (bindings: SandboxBindings, signal: AbortSignal
   };
   const sandbox: Sandbox = {
     kind: bound.kind,
-    spawn: (command, policy, spawnSignal, descriptors) => {
-      const child = bound.spawn(command, policy, spawnSignal, descriptors);
+    spawn: async (command, policy, spawnSignal, descriptors) => {
+      const child = await bound.spawn(command, policy, spawnSignal, descriptors);
       holders += 1;
       void child.exited.then(letGo, letGo);
       return child;

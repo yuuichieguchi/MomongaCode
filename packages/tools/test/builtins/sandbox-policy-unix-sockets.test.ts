@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import { buildSandboxPolicy } from '@momonga/tools';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const created: string[] = [];
 
@@ -31,23 +32,23 @@ const build = (unixSocketAllow?: readonly string[]) => {
     fileRules: EMPTY_FILE_RULES,
     protectedSet: EMPTY_PROTECTED_SET,
     ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }),
-  });
+  }, NEVER_CANCELLED);
 };
 
 describe('buildSandboxPolicy and the Unix socket allow list', () => {
-  it('allows no Unix socket by default and keeps the network denied', () => {
+  it('allows no Unix socket by default and keeps the network denied', async () => {
     const policy = build();
-    expect(policy.unixSocketAllow).toEqual([]);
-    expect(policy.network).toBe('deny');
+    expect((await policy).unixSocketAllow).toEqual([]);
+    expect((await policy).network).toBe('deny');
   });
 
-  it('carries the listed paths and never opens the network for them', () => {
+  it('carries the listed paths and never opens the network for them', async () => {
     const policy = build(['/var/run/agent', '/var/run/agent', '/tmp/x.sock']);
-    expect(policy.unixSocketAllow).toEqual(['/var/run/agent', '/tmp/x.sock']);
-    expect(policy.network).toBe('deny');
+    expect((await policy).unixSocketAllow).toEqual(['/var/run/agent', '/tmp/x.sock']);
+    expect((await policy).network).toBe('deny');
   });
 
-  it('refuses an entry that is not an absolute path', () => {
-    expect(() => build(['agent.sock'])).toThrow(SandboxPolicyError);
+  it('refuses an entry that is not an absolute path', async () => {
+    await expect((async () => build(['agent.sock']))()).rejects.toThrow(SandboxPolicyError);
   });
 });

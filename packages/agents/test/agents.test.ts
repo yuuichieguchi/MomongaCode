@@ -3,6 +3,7 @@ import type { DirectoryEntry, SkillFileSystem } from '@momonga/skills';
 import { AGENT_TOOL_NAME, ChildRunError, agentSystemPrompt, createAgentLoader, pinOf, readAgentPin } from '@momonga/agents';
 import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
 import type { ToolContext } from '@momonga/tools';
+import { testPaths } from '@momonga/testkit';
 
 const HOME = '/home/u';
 const PROJECT = '/work/app';
@@ -76,8 +77,8 @@ describe('agent pins', () => {
     const pin = pinOf(set.agents[0] as NonNullable<(typeof set.agents)[0]>);
     expect(readAgentPin({ agent: pin })).toEqual({ name: 'r', description: 'd', prompt: 'Prompt.', tools: ['Read'], model: 'fast' });
     expect(readAgentPin({})).toBeUndefined();
-    expect(() => readAgentPin({ agent: { name: 1 } })).toThrow('malformed');
-    expect(() => readAgentPin({ agent: { ...pin, tools: [1] } })).toThrow('tools');
+    await expect((async () => readAgentPin({ agent: { name: 1 } }))()).rejects.toThrow('malformed');
+    await expect((async () => readAgentPin({ agent: { ...pin, tools: [1] } }))()).rejects.toThrow('tools');
     expect(agentSystemPrompt('base', pin)).toContain('subagent "r"');
     expect(agentSystemPrompt('base', pin).endsWith('Prompt.')).toBe(true);
   });
@@ -104,7 +105,7 @@ describe('the Agent tool', () => {
     expect(tool.description).toContain('- r: Reviews code');
     expect(tool.inputSchema).toMatchObject({ properties: { subagent_type: { enum: ['r'] } }, required: ['description', 'prompt', 'subagent_type'] });
     expect(tool.sideEffect).toBe('read_only');
-    expect(tool.subject({}, { cwd: '/', workingDirectory: '/', home: HOME, roots: [] })).toEqual({ kind: 'none', tool: 'Agent' });
+    expect(tool.subject({}, { paths: testPaths(), cwd: '/', workingDirectory: '/', home: HOME, roots: [] })).toEqual({ kind: 'none', tool: 'Agent' });
   });
 
   it('asks to wait for a running child, keyed by the call, until the run deadline', async () => {

@@ -7,11 +7,12 @@ import { SandboxPolicyError, buildSeatbeltProfile } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { EarlierAttemptNotStoppedError } from '@momonga/tools';
 import { dispositionOf } from '../../src/worker/gateway-policy.ts';
+import { testPaths } from '@momonga/testkit';
 
-const policyErrorFromProfile = (): unknown => {
+const policyErrorFromProfile = async (): Promise<unknown> => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cls-')));
   try {
-    buildSeatbeltProfile({ writableRoots: [dir], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], readDenied: [], readAllowed: [dir], network: 'deny', fileRules: EMPTY_FILE_RULES } as SandboxPolicy);
+    await buildSeatbeltProfile({ writableRoots: [dir], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], readDenied: [], readAllowed: [dir], network: 'deny', fileRules: EMPTY_FILE_RULES } as SandboxPolicy, {}, testPaths());
   } catch (error) {
     return error;
   } finally {
@@ -28,8 +29,8 @@ describe('dispositionOf an EarlierAttemptNotStoppedError', () => {
 });
 
 describe('dispositionOf a SandboxPolicyError', () => {
-  it('fails the run with sandbox_policy_error and never requeues', () => {
-    const error = policyErrorFromProfile();
+  it('fails the run with sandbox_policy_error and never requeues', async () => {
+    const error = await policyErrorFromProfile();
     expect(error).toBeInstanceOf(SandboxPolicyError);
     expect(dispositionOf(error, 0)).toEqual({ kind: 'fail', code: 'sandbox_policy_error', message: (error as Error).message });
   });

@@ -16,7 +16,7 @@ describe('tools that wait for a person', () => {
         throw new ToolInputRequired({ server: 'remote', requests: REQUESTS, checkpoint: { kind: 'mrtr', rounds: 1, requestState: 's' } });
       },
     });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Ask', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Ask', {}, 'allow_once')]));
     expect(outcome).toEqual({ callId: 'c1', kind: 'needs_input', server: 'remote', requests: REQUESTS });
     const lookup = harness.idempotency.port.get(keyFor('run-1', 1, 'c1'));
     expect(lookup).toMatchObject({ s: 'PENDING', rec: { meta: { checkpoint: { kind: 'mrtr', rounds: 1, requestState: 's' } } } });
@@ -38,10 +38,10 @@ describe('tools that wait for a person', () => {
       },
     });
     const toolSet = await toolSetOf(tool);
-    await harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Ask', {}, 'allow_once')]));
+    await harness.executor.runBatch(await harness.input(toolSet, [call('c1', 'Ask', {}, 'allow_once')]));
     const responses = { who: { action: 'accept', content: { name: 'Ada' } } };
     const [outcome] = await harness.executor.runBatch(
-      harness.input(toolSet, [{ ...call('c1', 'Ask', {}, 'allow_once'), inputResponses: responses }]),
+      await harness.input(toolSet, [{ ...call('c1', 'Ask', {}, 'allow_once'), inputResponses: responses }]),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'hello Ada' } });
     expect(outcome).not.toHaveProperty('reconciled');
@@ -59,7 +59,7 @@ describe('tools that wait for a person', () => {
       },
     });
     harness.idempotency.seed(keyFor('run-1', 1, 'c1'), 'PENDING', { tool: 'Poll', checkpoint: { kind: 'task', taskId: 't1', answered: [] } });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Poll', {}, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Poll', {}, 'allow_once')]));
     expect(outcome).toMatchObject({ kind: 'result', result: { output: 'task done' } });
     expect(seen).toEqual([{ checkpoint: { kind: 'task', taskId: 't1', answered: [] }, inputResponses: undefined }]);
   });
@@ -74,7 +74,7 @@ describe('tools that wait for a person', () => {
         return { status: 'completed', output: 'ok' };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Poll', {}, 'allow_once')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Poll', {}, 'allow_once')]));
     expect(harness.idempotency.log.filter((entry) => entry.op === 'checkpoint').map((entry) => entry.op === 'checkpoint' && entry.state)).toEqual([
       { kind: 'task', taskId: 't1', answered: [] },
       undefined,

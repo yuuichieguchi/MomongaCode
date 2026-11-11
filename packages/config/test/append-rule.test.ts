@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { appendPermissionRule, systemFileLockPorts } from '@momonga/config';
 import type { FileLockPorts } from '@momonga/foundation';
 import { settingsLockPath } from '../src/file-lock.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, testPaths } from '@momonga/testkit';
 import { localSettingsDir, localSettingsPath, makeDir, makeTree, registerCleanup, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
@@ -99,18 +99,18 @@ for (let i = 0; i < 15; i += 1) await appendPermissionRule({ ports: systemFileLo
     const tree = makeTree();
     await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow', signal: NEVER_ABORTED });
     expect(fs.readdirSync(localSettingsDir(tree))).toEqual(['settings.local.json']);
-    const lockPath = settingsLockPath(tree.home, localSettingsPath(tree));
+    const lockPath = await settingsLockPath(tree.home, localSettingsPath(tree), testPaths());
     expect(path.dirname(lockPath)).toBe(path.join(tree.home, '.momonga', 'run'));
     expect(fs.existsSync(lockPath)).toBe(true);
     const viaLink = path.join(makeDir(), 'link');
     fs.symlinkSync(path.dirname(localSettingsPath(tree)), viaLink);
-    expect(settingsLockPath(tree.home, path.join(viaLink, 'settings.local.json'))).toBe(lockPath);
+    expect(await settingsLockPath(tree.home, path.join(viaLink, 'settings.local.json'), testPaths())).toBe(lockPath);
   });
 
   it('times out naming the holder when another process holds the settings lock', async (context) => {
     const tree = makeTree();
     await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow', signal: NEVER_ABORTED });
-    const holder = await startLockHolder(context, settingsLockPath(tree.home, localSettingsPath(tree)));
+    const holder = await startLockHolder(context, await settingsLockPath(tree.home, localSettingsPath(tree), testPaths()));
     await expect(appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(b)', effect: 'allow', signal: NEVER_ABORTED, lockTimeoutMs: 50 })).rejects.toThrow(
       `held by process ${holder.pid}`,
     );
@@ -120,7 +120,7 @@ for (let i = 0; i < 15; i += 1) await appendPermissionRule({ ports: systemFileLo
   it('is not blocked by a lock left behind by a process that died holding it', async (context) => {
     const tree = makeTree();
     await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow', signal: NEVER_ABORTED });
-    const holder = await startLockHolder(context, settingsLockPath(tree.home, localSettingsPath(tree)));
+    const holder = await startLockHolder(context, await settingsLockPath(tree.home, localSettingsPath(tree), testPaths()));
     holder.kill('SIGKILL');
     await new Promise<void>((resolve) => holder.once('exit', () => resolve()));
     await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(b)', effect: 'allow', signal: NEVER_ABORTED, lockTimeoutMs: 1000 });
@@ -129,7 +129,7 @@ for (let i = 0; i < 15; i += 1) await appendPermissionRule({ ports: systemFileLo
 
   it("a rule save waiting behind another ends with its signal's reason and writes nothing", async (context) => {
     const tree = makeTree();
-    const lockPath = settingsLockPath(tree.home, localSettingsPath(tree));
+    const lockPath = await settingsLockPath(tree.home, localSettingsPath(tree), testPaths());
     fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
     const holder = await startLockHolder(context, lockPath);
     const firstIsInsideItsSave = Promise.withResolvers<void>();

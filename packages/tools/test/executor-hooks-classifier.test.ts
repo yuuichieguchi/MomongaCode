@@ -48,7 +48,7 @@ describe('PreToolUse hooks in the permission gate', () => {
     const harness = makeHarness();
     const executed: string[] = [];
     const { hooks } = fakeHooks({ decision: 'deny', reason: 'no builds today' });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, mode: 'bypassPermissions' }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, mode: 'bypassPermissions' }));
     expect(outcome).toEqual({
       callId: 'c1',
       kind: 'result',
@@ -62,7 +62,7 @@ describe('PreToolUse hooks in the permission gate', () => {
     const executed: string[] = [];
     const { hooks, seen } = fakeHooks({ decision: 'allow', reason: 'fine' });
     const rules = [ruleFor(harness.layout)('deny', 'Bash(make build)')];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed', denial: { source: 'rule' } } });
     expect(executed).toEqual([]);
     expect(seen).toEqual([]);
@@ -72,7 +72,7 @@ describe('PreToolUse hooks in the permission gate', () => {
     const harness = makeHarness();
     const executed: string[] = [];
     const { hooks } = fakeHooks({ decision: 'allow' });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks }));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'built' } });
     expect(executed).toEqual(['run']);
   });
@@ -82,7 +82,7 @@ describe('PreToolUse hooks in the permission gate', () => {
     const executed: string[] = [];
     const { hooks } = fakeHooks({ decision: 'allow' });
     const rules = [ruleFor(harness.layout)('ask', 'Bash(make build)')];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
     expect(outcome).toMatchObject({ kind: 'needs_approval', decision: { source: 'rule' } });
     expect(executed).toEqual([]);
   });
@@ -92,7 +92,7 @@ describe('PreToolUse hooks in the permission gate', () => {
     const executed: string[] = [];
     const { hooks } = fakeHooks({ decision: 'ask', reason: 'confirm builds' });
     const rules = [ruleFor(harness.layout)('allow', 'Bash(make build)')];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
     expect(outcome).toMatchObject({ kind: 'needs_approval', decision: { source: 'hook', reason: 'confirm builds' } });
     expect(outcome).not.toHaveProperty('suggestedRule');
     expect(executed).toEqual([]);
@@ -103,7 +103,7 @@ describe('PreToolUse hooks in the permission gate', () => {
     const executed: string[] = [];
     const { hooks, seen } = fakeHooks(undefined, { feedback: 'lint failed' });
     const rules = [ruleFor(harness.layout)('allow', 'Bash(make build)')];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'built\n\n[PostToolUse hook]\nlint failed' } });
     expect(seen).toEqual(['pre:c1', 'post:c1:built']);
   });
@@ -127,7 +127,7 @@ describe('questions only a person may answer: protected writes and removal of th
     const harness = makeHarness();
     const executed: string[] = [];
     const { classifier, requests } = fakeClassifier('allow');
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(command, executed)), [call('c1', 'Bash')], { mode: 'auto', classifier, tmpDir: sessionTmpDirOf(harness.layout), sandboxPolicy: policyFor({ layout: harness.layout }) }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool(command, executed)), [call('c1', 'Bash')], { mode: 'auto', classifier, tmpDir: sessionTmpDirOf(harness.layout), sandboxPolicy: await policyFor({ layout: harness.layout }) }));
     expect(outcome).toMatchObject({ kind: 'needs_approval' });
     expect(requests).toEqual([]);
     expect(executed).toEqual([]);
@@ -140,7 +140,7 @@ describe('questions only a person may answer: protected writes and removal of th
     const harness = makeHarness();
     const executed: string[] = [];
     const { hooks } = fakeHooks({ decision: 'allow', reason: 'fine' });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(command, executed)), [call('c1', 'Bash')], { hooks, tmpDir: sessionTmpDirOf(harness.layout), sandboxPolicy: policyFor({ layout: harness.layout }) }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool(command, executed)), [call('c1', 'Bash')], { hooks, tmpDir: sessionTmpDirOf(harness.layout), sandboxPolicy: await policyFor({ layout: harness.layout }) }));
     expect(outcome).toMatchObject({ kind: 'needs_approval' });
     expect(executed).toEqual([]);
   });
@@ -150,16 +150,16 @@ describe('questions only a person may answer: protected writes and removal of th
 
     const governingAsk = (harness: ReturnType<typeof makeHarness>) => [{ ...ruleFor(harness.layout)('ask', 'Read(secrets/**)'), layer: 'governance' as const }];
 
-    const options = (harness: ReturnType<typeof makeHarness>) => ({
+    const options = async (harness: ReturnType<typeof makeHarness>) => ({
       rules: governingAsk(harness),
       tmpDir: sessionTmpDirOf(harness.layout),
-      sandboxPolicy: policyFor({ layout: harness.layout, rules: governingAsk(harness) }),
+      sandboxPolicy: await policyFor({ layout: harness.layout, rules: governingAsk(harness) }),
     });
 
     it('still asks a person in bypass mode', async () => {
       const harness = makeHarness();
       const executed: string[] = [];
-      const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(DYNAMIC, executed)), [call('c1', 'Bash')], { mode: 'bypassPermissions', ...options(harness) }));
+      const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool(DYNAMIC, executed)), [call('c1', 'Bash')], { mode: 'bypassPermissions', ...(await options(harness)) }));
       expect(outcome).toMatchObject({ kind: 'needs_approval', decision: { kind: 'ask', humanOnly: true } });
       expect(executed).toEqual([]);
     });
@@ -168,7 +168,7 @@ describe('questions only a person may answer: protected writes and removal of th
       const harness = makeHarness();
       const executed: string[] = [];
       const { hooks } = fakeHooks({ decision: 'allow', reason: 'fine' });
-      const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(DYNAMIC, executed)), [call('c1', 'Bash')], { hooks, ...options(harness) }));
+      const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool(DYNAMIC, executed)), [call('c1', 'Bash')], { hooks, ...(await options(harness)) }));
       expect(outcome).toMatchObject({ kind: 'needs_approval' });
       expect(executed).toEqual([]);
     });
@@ -177,7 +177,7 @@ describe('questions only a person may answer: protected writes and removal of th
       const harness = makeHarness();
       const executed: string[] = [];
       const { classifier, requests } = fakeClassifier('allow');
-      const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(DYNAMIC, executed)), [call('c1', 'Bash')], { mode: 'auto', classifier, ...options(harness) }));
+      const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool(DYNAMIC, executed)), [call('c1', 'Bash')], { mode: 'auto', classifier, ...(await options(harness)) }));
       expect(outcome).toMatchObject({ kind: 'needs_approval' });
       expect(requests).toEqual([]);
       expect(executed).toEqual([]);
@@ -188,7 +188,7 @@ describe('questions only a person may answer: protected writes and removal of th
     const harness = makeHarness();
     const executed: string[] = [];
     const { hooks } = fakeHooks({ decision: 'allow', reason: 'fine' });
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool('make build', executed)), [call('c1', 'Bash')], { hooks }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool('make build', executed)), [call('c1', 'Bash')], { hooks }));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
   });
 });
@@ -198,7 +198,7 @@ describe('auto mode classifier in the permission gate', () => {
     const harness = makeHarness();
     const executed: string[] = [];
     const { classifier, requests } = fakeClassifier('allow');
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { mode: 'auto', classifier }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { mode: 'auto', classifier }));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ callId: 'c1', toolName: 'Bash', reason: expect.stringContaining('approval') });
@@ -208,7 +208,7 @@ describe('auto mode classifier in the permission gate', () => {
     const harness = makeHarness();
     const executed: string[] = [];
     const { classifier } = fakeClassifier('ask');
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { mode: 'auto', classifier }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { mode: 'auto', classifier }));
     expect(outcome).toMatchObject({ kind: 'needs_approval' });
     expect(executed).toEqual([]);
   });
@@ -218,10 +218,10 @@ describe('auto mode classifier in the permission gate', () => {
     const executed: string[] = [];
     const { classifier, requests } = fakeClassifier('allow');
     const denyRules = [ruleFor(harness.layout)('deny', 'Bash(make build)')];
-    const [denied] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { mode: 'auto', classifier, rules: denyRules }));
+    const [denied] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { mode: 'auto', classifier, rules: denyRules }));
     expect(denied).toMatchObject({ kind: 'result', result: { denial: { source: 'rule' } } });
     const askRules = [ruleFor(harness.layout)('ask', 'Bash(make build)')];
-    const [asked] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c2', 'Bash')], { mode: 'auto', classifier, rules: askRules }));
+    const [asked] = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c2', 'Bash')], { mode: 'auto', classifier, rules: askRules }));
     expect(asked).toMatchObject({ kind: 'needs_approval' });
     expect(requests).toEqual([]);
     expect(executed).toEqual([]);
@@ -232,11 +232,11 @@ describe('auto mode classifier in the permission gate', () => {
     const executed: string[] = [];
     const { classifier, requests } = fakeClassifier('ask');
     const set = await toolSetOf(bash(executed));
-    const [first] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Bash')], { mode: 'auto', classifier }));
+    const [first] = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Bash')], { mode: 'auto', classifier }));
     expect(first?.kind).toBe('needs_approval');
     const digest = (first as { subjectDigest: string }).subjectDigest;
     const [second] = await harness.executor.runBatch(
-      harness.input(set, [{ ...call('c1', 'Bash'), approval: { kind: 'allow_once', subjectDigest: digest } }], { mode: 'auto', classifier }),
+      await harness.input(set, [{ ...call('c1', 'Bash'), approval: { kind: 'allow_once', subjectDigest: digest } }], { mode: 'auto', classifier }),
     );
     expect(second).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(requests).toHaveLength(1);
@@ -249,7 +249,7 @@ describe('auto mode classifier in the permission gate', () => {
     const { hooks, seen } = fakeHooks(undefined);
     const rules = [ruleFor(harness.layout)('ask', 'Bash(make build)')];
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash'), call('c2', 'Bash')], { mode: 'auto', classifier, hooks, rules }),
+      await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash'), call('c2', 'Bash')], { mode: 'auto', classifier, hooks, rules }),
     );
     expect(outcomes.map((outcome) => outcome.kind)).toEqual(['needs_approval', 'deferred']);
     expect(requests).toEqual([]);
@@ -258,7 +258,7 @@ describe('auto mode classifier in the permission gate', () => {
 
   it('refuses to run auto mode without a classifier', async () => {
     const harness = makeHarness();
-    await expect(harness.executor.runBatch(harness.input(await toolSetOf(bash([])), [call('c1', 'Bash')], { mode: 'auto' }))).rejects.toThrow(/classifier/);
+    await expect(harness.executor.runBatch(await harness.input(await toolSetOf(bash([])), [call('c1', 'Bash')], { mode: 'auto' }))).rejects.toThrow(/classifier/);
   });
 });
 
@@ -294,7 +294,7 @@ describe('PreToolUse hook input updates, halting and single execution', () => {
     const { hooks } = countingHooks({ decision: 'allow', updatedInput: { command: 'make safe' } });
     const rules = [ruleFor(harness.layout)('allow', 'Bash(make safe)')];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'make build' } }], { hooks, rules }),
+      await harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'make build' } }], { hooks, rules }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(executed).toEqual([{ command: 'make safe' }]);
@@ -306,7 +306,7 @@ describe('PreToolUse hook input updates, halting and single execution', () => {
     const { hooks } = countingHooks({ decision: 'allow', updatedInput: { command: 'make danger' } });
     const rules = [ruleFor(harness.layout)('allow', 'Bash(make build)'), ruleFor(harness.layout)('deny', 'Bash(make danger)')];
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'make build' } }], { hooks, rules }),
+      await harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'make build' } }], { hooks, rules }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { denial: { source: 'rule' } } });
     expect(executed).toEqual([]);
@@ -317,7 +317,7 @@ describe('PreToolUse hook input updates, halting and single execution', () => {
     const executed: unknown[] = [];
     const { hooks } = countingHooks({ decision: 'allow', updatedInput: { command: 5 } });
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'make build' } }], { hooks }),
+      await harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'make build' } }], { hooks }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed', output: expect.stringContaining('rejects') } });
     expect(executed).toEqual([]);
@@ -329,10 +329,10 @@ describe('PreToolUse hook input updates, halting and single execution', () => {
     const { hooks, runs } = countingHooks({ updatedInput: { command: 'make safe' } });
     const set = await toolSetOf(inputBash(executed));
     const first = { ...call('c1', 'Bash'), arguments: { command: 'make build' } };
-    const [asked] = await harness.executor.runBatch(harness.input(set, [first], { hooks }));
+    const [asked] = await harness.executor.runBatch(await harness.input(set, [first], { hooks }));
     expect(asked).toMatchObject({ kind: 'needs_approval', title: 'make safe' });
     const digest = (asked as { subjectDigest: string }).subjectDigest;
-    const [done] = await harness.executor.runBatch(harness.input(set, [{ ...first, approval: { kind: 'allow_once' as const, subjectDigest: digest } }], { hooks }));
+    const [done] = await harness.executor.runBatch(await harness.input(set, [{ ...first, approval: { kind: 'allow_once' as const, subjectDigest: digest } }], { hooks }));
     expect(done).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(executed).toEqual([{ command: 'make safe' }]);
     expect(runs()).toBe(1);
@@ -344,7 +344,7 @@ describe('PreToolUse hook input updates, halting and single execution', () => {
     const halts: string[] = [];
     const { hooks } = countingHooks({ halt: { reason: 'maintenance window' } });
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'a' } }, { ...call('c2', 'Bash'), arguments: { command: 'b' } }], {
+      await harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'a' } }, { ...call('c2', 'Bash'), arguments: { command: 'b' } }], {
         hooks,
         mode: 'bypassPermissions',
         onHalt: (reason: string) => void halts.push(reason),
@@ -365,7 +365,7 @@ describe('PreToolUse hook input updates, halting and single execution', () => {
       postToolUse: async () => ({ halt: { reason: 'enough' } }),
     };
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'a' } }, { ...call('c2', 'Bash'), arguments: { command: 'b' } }], {
+      await harness.input(await toolSetOf(inputBash(executed)), [{ ...call('c1', 'Bash'), arguments: { command: 'a' } }, { ...call('c2', 'Bash'), arguments: { command: 'b' } }], {
         hooks,
         mode: 'bypassPermissions',
         onHalt: (reason: string) => void halts.push(reason),

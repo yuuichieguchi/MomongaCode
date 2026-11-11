@@ -4,6 +4,7 @@ import { ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules, fileRuleSpecsOf } from '@momonga/policy';
 import { EDIT_FAMILY, READ_FAMILY } from '../src/match-rule.ts';
 import { makeLayout } from './helpers.ts';
+import { testProbes } from '@momonga/testkit';
 
 describe('one table of path tools (DUP-24)', () => {
   it('lists exactly the record keys', () => {
@@ -16,14 +17,14 @@ describe('one table of path tools (DUP-24)', () => {
     for (const tool of ['Bash', 'WebFetch', 'mcp__srv__run', 'read']) expect(isPathTool(tool)).toBe(false);
   });
 
-  it.each(['allow', 'ask', 'deny'] as const)('compiles every path tool rule with effect %s to exactly one spec of the record', (effect) => {
+  it.each(['allow', 'ask', 'deny'] as const)('compiles every path tool rule with effect %s to exactly one spec of the record', async (effect) => {
     const layout = makeLayout();
     for (const tool of PATH_TOOLS) {
       const rule = parseRule(`${tool}(/x/**)`, { effect, origin: 'user', source: 'user-settings', settingsRoot: layout.project, home: layout.home, cwd: layout.project });
       const specs = fileRuleSpecsOf([rule], [layout.project]);
       expect(specs).toHaveLength(1);
       expect(specs[0]).toMatchObject({ tool: PATH_TOOL_RULES[tool].tool, access: PATH_TOOL_RULES[tool].access, effect });
-      expect(computeFileRules([rule], [layout.project], null, ruleEnforcementOf('none')).entries.length).toBeGreaterThanOrEqual(1);
+      expect((await computeFileRules([rule], [layout.project], null, ruleEnforcementOf('none'), testProbes())).entries.length).toBeGreaterThanOrEqual(1);
     }
   });
 

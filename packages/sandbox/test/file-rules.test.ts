@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { volumeIsCaseInsensitive, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, syncPaths } from '@momonga/foundation';
 import type { FileRuleSet, FileRuleSpec } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
@@ -71,7 +71,7 @@ describe.runIf(process.platform === 'darwin')('user file rules under real Seatbe
 
   const sandboxed = async (fx: Fixture, specs: readonly FileRuleSpec[], script: string, options: RunOptions = {}) => {
     const roots = options.roots ?? [fx.root];
-    const fileRules: FileRuleSet = fileRulesOf(specs, roots);
+    const fileRules: FileRuleSet = await fileRulesOf(specs, roots);
     const policy = {
       writableRoots: options.writableRoots ?? [fx.root],
       writeDenied: options.writeDenied ?? [],
@@ -82,7 +82,7 @@ describe.runIf(process.platform === 'darwin')('user file rules under real Seatbe
       fileRules,
     } as SandboxPolicy;
     const sandbox = createSeatbeltSandbox({ tmpRoot: options.tmpRoot ?? fx.tmpRoot, killGraceMs: KILL_GRACE_MS });
-    const proc = sandbox.spawn(
+    const proc = await sandbox.spawn(
       {
         argv: ['/bin/sh', '-c', script, 'sh', ...(options.args ?? [])],
         cwd: options.cwd ?? fx.root,
@@ -93,7 +93,7 @@ describe.runIf(process.platform === 'darwin')('user file rules under real Seatbe
       new AbortController().signal,
     );
     spawned.push(proc);
-    return run(proc);
+    return run(await proc);
   };
 
   const readVerdicts = async (fx: Fixture, specs: readonly FileRuleSpec[], names: readonly string[], options: RunOptions = {}) => {
@@ -230,7 +230,7 @@ describe.runIf(process.platform === 'darwin')('user file rules under real Seatbe
     expect(fs.existsSync(key)).toBe(true);
   });
 
-  it.runIf(volumeIsCaseInsensitive(process.cwd()))('denies an existing case variant and the creation of a new one', async () => {
+  it.runIf(syncPaths.volumeIsCaseInsensitive(process.cwd()))('denies an existing case variant and the creation of a new one', async () => {
     const fx = fixture();
     const upper = file(path.join(fx.root, '.ENV'), 'SECRET');
     const specs = [spec(fx, '.env'), spec(fx, '.env', { tool: 'Edit' }), spec(fx, '*.key', { tool: 'Edit' })];
@@ -251,7 +251,7 @@ describe.runIf(process.platform === 'darwin')('user file rules under real Seatbe
     const writes = await sandboxed(fx, specs, 'mkdir -p a/b; echo x > a/b/x.pem; echo x > x.pemx; echo x > x.PEM; cat secrets/sub/key');
     expect(fs.existsSync(path.join(fx.root, 'a', 'b', 'x.pem'))).toBe(false);
     expect(fs.existsSync(path.join(fx.root, 'x.pemx'))).toBe(true);
-    if (volumeIsCaseInsensitive(fx.root)) expect(fs.readdirSync(fx.root)).not.toContain('x.PEM');
+    if (syncPaths.volumeIsCaseInsensitive(fx.root)) expect(fs.readdirSync(fx.root)).not.toContain('x.PEM');
     expect(writes.stdout).not.toContain('KEY');
   });
 

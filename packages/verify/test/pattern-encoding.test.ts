@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileRuleBlocks, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { PolicyFilesystem } from '@momonga/policy';
-import { hostFilesystemOf } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
 import type { Witness } from '../src/decision-model.ts';
 import { buildQueryContext } from '../src/verify.ts';
 import { UnsupportedRegexError, parseRegexSource } from '../src/regex-source.ts';
@@ -56,13 +56,13 @@ const modelMatches = async (layout: Layout, specifier: string, fileSystem: Polic
   const [base] = rulesOf(layout, [['deny', `Read(${specifier})`]], 'user');
   const rule = { ...(base as NonNullable<typeof base>), ...(exceptions.length > 0 ? { exceptions } : {}) };
   const roots = [layout.project];
-  const context = buildQueryContext(z3.engine().api, {
+  const context = await buildQueryContext(z3.engine().api, { signal: NEVER_CANCELLED,
     rules: [rule],
     roots,
     mode: 'manual',
     home: layout.home,
     cwd: layout.project,
-    protectedSet: protectedSetFor(roots, fileSystem),
+    protectedSet: await protectedSetFor(roots, fileSystem),
     fs: hostFilesystemOf(fileSystem),
     secretLocations: [sshLocation(layout)],
     exemptDirectory: null,
@@ -119,7 +119,7 @@ describe('file patterns encode the regular language the product matches', () => 
 describe('the regular expression subset', () => {
   const dialect = { alphabet: [[0x20, 0x7e]] as [number, number][], ignoreCase: false };
 
-  it('rejects a construct the product does not generate rather than guessing its meaning', () => {
+  it('rejects a construct the product does not generate rather than guessing its meaning', async () => {
     for (const source of ['a*', '^a', '^a{2}$', '^(?:a)$', '^a(?=b)$', '^\\d$', '^a**$']) {
       expect(() => parseRegexSource(source, dialect), source).toThrow(UnsupportedRegexError);
     }

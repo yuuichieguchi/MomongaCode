@@ -98,14 +98,14 @@ export const updateLedgerAfterWrite = async (session: ToolSessionState, canonica
   }
 };
 
-const differentLocation = (scope: PathScope, requestedPath: string, expected: string, actual: string): ToolExecutionError =>
+const differentLocation = async (scope: PathScope, requestedPath: string, expected: string, actual: string): Promise<ToolExecutionError> =>
   new ToolExecutionError(
-    `${shownPath(scope, requestedPath)} resolves to a different location than when it was approved (${shownPath(scope, expected)} → ${shownPath(scope, actual)}); retry the call`,
+    `${await shownPath(scope, requestedPath)} resolves to a different location than when it was approved (${await shownPath(scope, expected)} → ${await shownPath(scope, actual)}); retry the call`,
   );
 
 const assertResolvesTo = async (scope: PathScope, requestedPath: string, directory: string): Promise<void> => {
   const resolved = await fs.promises.realpath(directory);
-  if (resolved !== directory) throw differentLocation(scope, requestedPath, directory, resolved);
+  if (resolved !== directory) throw await differentLocation(scope, requestedPath, directory, resolved);
 };
 
 const createMissingDirectories = async (scope: PathScope, directory: string, requestedPath: string): Promise<void> => {
@@ -162,8 +162,8 @@ export const writeFileAtomically = async (write: AtomicWrite): Promise<string | 
   return ledgerWarning === undefined ? syncWarning : `${ledgerWarning}\n${syncWarning}`;
 };
 
-export const assertSameLocation = (scope: PathScope, requestedPath: string, approvedPath: string, currentPath: string): void => {
-  if (currentPath !== approvedPath) throw differentLocation(scope, requestedPath, approvedPath, currentPath);
+export const assertSameLocation = async (scope: PathScope, requestedPath: string, approvedPath: string, currentPath: string): Promise<void> => {
+  if (currentPath !== approvedPath) throw await differentLocation(scope, requestedPath, approvedPath, currentPath);
 };
 
 export const newFileMode = (): number => 0o666 & ~process.umask();

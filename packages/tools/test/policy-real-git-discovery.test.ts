@@ -24,7 +24,7 @@ const bareLayout = (workspace: RealWorkspace, directory: string, config: string)
 const fsmonitorConfig = (script: string): string => `[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tworktree = ..\n\tfsmonitor = ${script}\n`;
 
 describe('git discovery as git performs it (real git 2.54, real /bin/bash)', () => {
-  it('git --bare takes the working directory as the git directory even when a valid .git is beside it', () => {
+  it('git --bare takes the working directory as the git directory even when a valid .git is beside it', async () => {
     const workspace = makeRealWorkspace();
     const hook = hookIn(workspace);
     workspace.initRepository();
@@ -32,15 +32,15 @@ describe('git discovery as git performs it (real git 2.54, real /bin/bash)', () 
 
     expect(workspace.git(workspace.project, 'status').status).toBe(0);
     expect(hook.fired()).toBe(false);
-    expect(workspace.decide('git status').kind).toBe('allow');
+    expect((await workspace.decide('git status')).kind).toBe('allow');
 
     workspace.git(workspace.project, '--bare', 'status');
     expect(hook.fired()).toBe(true);
-    expect(workspace.decide('git --bare status').kind).toBe('ask');
-    expect(workspace.decide('git --bare log -1', { mode: 'plan' }).kind).toBe('ask');
+    expect((await workspace.decide('git --bare status')).kind).toBe('ask');
+    expect((await workspace.decide('git --bare log -1', { mode: 'plan' })).kind).toBe('ask');
   });
 
-  it('a bare layout in a subdirectory is the repository once the shell is there, also inside a nested substitution', () => {
+  it('a bare layout in a subdirectory is the repository once the shell is there, also inside a nested substitution', async () => {
     const workspace = makeRealWorkspace();
     const hook = hookIn(workspace);
     workspace.initRepository();
@@ -50,22 +50,22 @@ describe('git discovery as git performs it (real git 2.54, real /bin/bash)', () 
     expect(hook.fired()).toBe(true);
 
     for (const command of ['cd sub && git status', 'cd sub && echo "$(git status)"', 'cd sub; echo `git status`', 'echo $(cd sub && git status)', 'cd ./sub && echo "$(echo "$(git status)")"']) {
-      expect(workspace.decide(command).kind, command).toBe('ask');
+      expect((await workspace.decide(command)).kind, command).toBe('ask');
     }
-    expect(workspace.decide('git status', { cwd: path.join(workspace.project, 'sub') }).kind).toBe('ask');
+    expect((await workspace.decide('git status', { cwd: path.join(workspace.project, 'sub') })).kind).toBe('ask');
   });
 
-  it('a cd into an ordinary subdirectory of a repository the workspace root owns is still read-only at any nesting level', () => {
+  it('a cd into an ordinary subdirectory of a repository the workspace root owns is still read-only at any nesting level', async () => {
     const workspace = makeRealWorkspace();
     workspace.initRepository();
     workspace.mkdir('plain');
     for (const command of ['cd plain && git status', 'cd plain && echo "$(git status)"', `cd plain; cd ${workspace.project}; echo $(git log -1)`]) {
-      expect(workspace.decide(command).kind, command).toBe('allow');
+      expect((await workspace.decide(command)).kind, command).toBe('allow');
       expect(workspace.runBash(command).status, command).toBe(0);
     }
   });
 
-  it('a directory that names another directory through commondir is a git directory without objects and refs of its own', () => {
+  it('a directory that names another directory through commondir is a git directory without objects and refs of its own', async () => {
     const workspace = makeRealWorkspace();
     const hook = hookIn(workspace);
     workspace.initRepository();
@@ -82,11 +82,11 @@ describe('git discovery as git performs it (real git 2.54, real /bin/bash)', () 
     workspace.git(sub, 'log', '-p');
     expect(hook.fired()).toBe(true);
 
-    expect(workspace.decide('git log -p', { cwd: sub }).kind).toBe('ask');
-    expect(workspace.decide('cd sub && git log -p').kind).toBe('ask');
+    expect((await workspace.decide('git log -p', { cwd: sub })).kind).toBe('ask');
+    expect((await workspace.decide('cd sub && git log -p')).kind).toBe('ask');
   });
 
-  it('a .git directory with a commondir file and no objects of its own is a repository too', () => {
+  it('a .git directory with a commondir file and no objects of its own is a repository too', async () => {
     const workspace = makeRealWorkspace();
     const hook = hookIn(workspace);
     workspace.initRepository('main');
@@ -99,16 +99,16 @@ describe('git discovery as git performs it (real git 2.54, real /bin/bash)', () 
     const nest = path.join(workspace.project, 'nest');
     workspace.git(nest, 'log', '-p');
     expect(hook.fired()).toBe(true);
-    expect(workspace.decide('git log -p', { cwd: nest }).kind).toBe('ask');
+    expect((await workspace.decide('git log -p', { cwd: nest })).kind).toBe('ask');
   });
 
-  it('a commondir with trailing carriage returns and line feeds is followed as git follows it', () => {
+  it('a commondir with trailing carriage returns and line feeds is followed as git follows it', async () => {
     const workspace = makeRealWorkspace();
     workspace.initRepository('main');
     workspace.write('sub/HEAD', 'ref: refs/heads/main\n');
     workspace.write('sub/commondir', '../main/.git\r\n\r\n');
     const sub = path.join(workspace.project, 'sub');
     expect(workspace.git(sub, 'rev-parse', '--git-common-dir').stdout.trim()).toBe(path.join(workspace.project, 'main', '.git'));
-    expect(workspace.decide('git log', { cwd: sub }).kind).toBe('ask');
+    expect((await workspace.decide('git log', { cwd: sub })).kind).toBe('ask');
   });
 });

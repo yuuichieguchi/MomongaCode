@@ -21,23 +21,23 @@ const gitdirLayout = (workspace: RealWorkspace, name: string, commondir: string,
 };
 
 describe('a NUL byte in a pointer file ends the text, as it does for real git (item 9)', () => {
-  it('follows a commondir cut at the NUL to a valid git directory, and decides as for the same text without the NUL', () => {
+  it('follows a commondir cut at the NUL to a valid git directory, and decides as for the same text without the NUL', async () => {
     const workspace = makeRealWorkspace();
     const cwd = gitdirLayout(workspace, 'with-nul', '../with-nul-real\0x', true);
     const plainCwd = gitdirLayout(workspace, 'plain', '../plain-real', true);
-    const decision = workspace.decide('git status', { cwd });
-    expect(decision.kind).toBe('ask');
-    expect(workspace.decide('git status', { cwd: plainCwd }).kind).toBe(decision.kind);
+    const decision = await workspace.decide('git status', { cwd });
+    expect((await decision).kind).toBe('ask');
+    expect((await workspace.decide('git status', { cwd: plainCwd })).kind).toBe((await decision).kind);
   });
 
-  it('passes over a layout whose cut commondir is not a git directory, as git does, and approves git status', () => {
+  it('passes over a layout whose cut commondir is not a git directory, as git does, and approves git status', async () => {
     const workspace = makeRealWorkspace();
     const cwd = gitdirLayout(workspace, 'nul', '../nul-real\0x', false);
     expect(workspace.git(cwd, 'rev-parse', '--git-common-dir').status).toBe(128);
-    expect(workspace.decide('git status', { cwd }).kind).toBe('allow');
+    expect((await workspace.decide('git status', { cwd })).kind).toBe('allow');
   });
 
-  it('keeps a line end that precedes the NUL in a .git file: git follows the directory named with the newline, and so does the decision', () => {
+  it('keeps a line end that precedes the NUL in a .git file: git follows the directory named with the newline, and so does the decision', async () => {
     const workspace = makeRealWorkspace();
     workspace.mkdir('n2');
     const evil = path.join(workspace.project, 'evil\n');
@@ -47,19 +47,19 @@ describe('a NUL byte in a pointer file ends the text, as it does for real git (i
     workspace.write('n2/.git', 'gitdir: ../evil\n\0x');
     const cwd = path.join(workspace.project, 'n2');
     expect(workspace.git(cwd, 'rev-parse', '--git-dir').stdout).toBe(`${evil}\n`);
-    expect(workspace.decide('git status', { cwd }).kind).toBe('ask');
+    expect((await workspace.decide('git status', { cwd })).kind).toBe('ask');
   });
 
-  it('keeps a line end that precedes the NUL in a commondir file', () => {
+  it('keeps a line end that precedes the NUL in a commondir file', async () => {
     const workspace = makeRealWorkspace();
     const cwd = gitdirLayout(workspace, 'cd', '../cd-real\n\0x', false);
     workspace.mkdir('cd-real\n/objects');
     workspace.mkdir('cd-real\n/refs');
     expect(workspace.git(cwd, 'rev-parse', '--git-common-dir').status).toBe(0);
-    expect(workspace.decide('git status', { cwd }).kind).toBe('ask');
+    expect((await workspace.decide('git status', { cwd })).kind).toBe('ask');
   });
 
-  it('follows a .git file cut at the NUL, and decides as for the same text without the NUL', () => {
+  it('follows a .git file cut at the NUL, and decides as for the same text without the NUL', async () => {
     const workspace = makeRealWorkspace();
     workspace.mkdir('sub');
     const real = path.join(workspace.outside, 'real');
@@ -69,8 +69,8 @@ describe('a NUL byte in a pointer file ends the text, as it does for real git (i
     workspace.write('.git', 'gitdir: ../outside/real\0x\n');
     const cwd = path.join(workspace.project, 'sub');
     expect(workspace.git(cwd, 'rev-parse', '--git-dir').stdout.trim()).toBe(real);
-    const withNul = workspace.decide('git status', { cwd });
+    const withNul = await workspace.decide('git status', { cwd });
     workspace.write('.git', 'gitdir: ../outside/real\n');
-    expect(workspace.decide('git status', { cwd }).kind).toBe(withNul.kind);
+    expect((await workspace.decide('git status', { cwd })).kind).toBe((await withNul).kind);
   });
 });

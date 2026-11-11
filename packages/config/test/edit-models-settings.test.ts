@@ -8,6 +8,7 @@ import { settingsLockPath } from '../src/file-lock.ts';
 import { S1_FILE, S2, S2_LMSTUDIO, S3_PLAN, S4, S4_SERVER } from './model-fixtures.ts';
 import { connectionsOf, documentOf, editModels, homeWith, idsOf, modelsOf, op, planModels, refusalOfEdit, textOf } from './models-edit.ts';
 import type { Home, Operation, Planned } from './models-edit.ts';
+import { testPaths } from '@momonga/testkit';
 
 const OLLAMA = { adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434' };
 const DEVSTRAL = { id: 'devstral-small-2:latest', capabilities: { contextWindow: 131072, maxOutputTokens: 32768 } };
@@ -65,12 +66,12 @@ const planned = (document: unknown, operations: readonly Operation[]): Planned =
   return plan;
 };
 
-const heldLock = (home: Home) => {
+const heldLock = async (home: Home) => {
   let release = (): void => undefined;
   const released = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const lockPath = settingsLockPath(home.tree.home, home.file);
+  const lockPath = await settingsLockPath(home.tree.home, home.file, testPaths());
   fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
   const holder = withFileLock(lockPath, () => released, { ports: systemFileLockPorts });
   return { release, holder };
@@ -92,7 +93,7 @@ describe('addModel: the one way a model enters the settings', () => {
     expect(fs.statSync(home.file).mode & 0o777).toBe(0o600);
 
     const waiting = homeWith();
-    const { release, holder } = heldLock(waiting);
+    const { release, holder } = await heldLock(waiting);
     const flow = new AbortController();
     const editing = editModels(waiting, [addModel(OLLAMA, DEVSTRAL)], flow.signal);
     const outcome = editing.then(
@@ -465,7 +466,7 @@ describe('what the writer never does', () => {
 
   it('the edit is planned again on the file read under the lock', async () => {
     const home = homeWith(S1_FILE);
-    const { release, holder } = heldLock(home);
+    const { release, holder } = await heldLock(home);
     const outcome = editModels(home, [op('setStart', { model: QWEN_MODEL })]).then(
       (result) => result.summaries,
       (error: unknown) => [error instanceof Error ? error.message : String(error)],

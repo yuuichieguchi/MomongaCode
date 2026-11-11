@@ -37,7 +37,7 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
         return { status: 'completed', output: 'finished after progress' };
       },
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
     expect(outputOf(outcomes[0])).toBe('finished after progress');
     expect(stops).toEqual([]);
   });
@@ -56,7 +56,7 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
       },
     });
     const startedAt = Date.now();
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(140);
     expect(outputOf(outcomes[0])).toBe('stopped by idle after 100 ms');
     expect(stops).toMatchObject([{ bound: 'idle', ms: 100 }]);
@@ -78,7 +78,7 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
       },
     });
     const startedAt = Date.now();
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
     expect(Date.now() - startedAt).toBeLessThan(2_000);
     expect(outputOf(outcomes[0])).toBe('stopped by total after 200 ms');
   });
@@ -92,7 +92,7 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
       stopText: stopTextOf(stops),
       execute: (_input, ctx) => waitForAbort(ctx),
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Probe')], { deadlineAt: harness.clock.now() + 80 }));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')], { deadlineAt: harness.clock.now() + 80 }));
     expect(outputOf(outcomes[0])).toBe('stopped by deadline after 80 ms');
     expect(stops).toEqual([{ bound: 'deadline', ms: 80 }]);
   });
@@ -100,7 +100,7 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
   it('uses the executor sentence for a run deadline stop only when the tool declares no stop text', async () => {
     const harness = makeHarness();
     const tool = makeTool('Probe', { timeoutMs: 5_000, idleTimeoutMs: 1_000, execute: (_input, ctx) => waitForAbort(ctx) });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Probe')], { deadlineAt: harness.clock.now() + 80 }));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')], { deadlineAt: harness.clock.now() + 80 }));
     expect(outputOf(outcomes[0])).toBe('Probe timed out after 80 ms');
   });
 
@@ -113,7 +113,7 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
         return waitForAbort(ctx);
       },
     });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
     expect(outputOf(outcomes[0])).toBe('Read timed out after 40 ms');
   });
 
@@ -126,7 +126,7 @@ describe('G2: a call bounded by an idle window that progress restarts, an overal
         return { status: 'completed', output: 'ok' };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
     expect(offered).toBeUndefined();
   });
 });
@@ -159,7 +159,7 @@ describe('the idle window is armed only when callStopOf places the stop at the i
     const harness = makeHarness();
     const stops: ToolStop[] = [];
     const tool = makeTool('Probe', { timeoutMs: 400, idleTimeoutMs: 100, stopText: stopTextOf(stops), execute: progressNearTheFixedTerm(harness, 350) });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
     expect(outputOf(outcomes[0])).toBe('stopped by total after 400 ms');
     expect(stops).toEqual([{ bound: 'total', ms: 400 }]);
   });
@@ -168,7 +168,7 @@ describe('the idle window is armed only when callStopOf places the stop at the i
     const harness = makeHarness();
     const stops: ToolStop[] = [];
     const tool = makeTool('Probe', { timeoutMs: 5_000, idleTimeoutMs: 100, stopText: stopTextOf(stops), execute: progressNearTheFixedTerm(harness, 350) });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Probe')], { deadlineAt: harness.clock.now() + 400 }));
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Probe')], { deadlineAt: harness.clock.now() + 400 }));
     expect(outputOf(outcomes[0])).toBe('stopped by deadline after 400 ms');
     expect(stops).toEqual([{ bound: 'deadline', ms: 400 }]);
   });

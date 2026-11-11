@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createBuiltinTools } from '@momonga/tools';
+import { testPaths } from '@momonga/testkit';
 
-const CONTEXT = { cwd: '/work/shell-moved-here', workingDirectory: '/work', home: '/home/me', roots: ['/work'] };
+const CONTEXT = { cwd: '/work/shell-moved-here', workingDirectory: '/work', home: '/home/me', roots: ['/work'], paths: testPaths() };
 
 const locationsOf = (name: string, input: unknown): { path: string }[] | undefined => {
   const tool = createBuiltinTools().find((candidate) => candidate.name === name);

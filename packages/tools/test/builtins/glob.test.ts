@@ -148,7 +148,7 @@ describe('Glob', () => {
 
   it('asks before searching outside the roots', async () => {
     const tools = await makeBuiltins();
-    const [outcome] = await tools.executor.runBatch(tools.batch('Glob', { pattern: '*', path: tools.layout.outside }));
+    const [outcome] = await tools.executor.runBatch(await tools.batch('Glob', { pattern: '*', path: tools.layout.outside }));
     expect(outcome?.kind).toBe('needs_approval');
   });
 });

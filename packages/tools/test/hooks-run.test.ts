@@ -119,7 +119,7 @@ describe('PreToolUse hook processes', () => {
   it('applies deny over ask over allow across hooks', async () => {
     const decide = (decision: string) => JSON.stringify({ hookSpecificOutput: { permissionDecision: decision } });
     const hooks: HooksSettings = {
-      PreToolUse: [{ hooks: [{ type: 'command', command: `echo '${decide('allow')}'` }, { type: 'command', command: `echo '${decide('deny')}'` }, { type: 'command', command: `echo '${decide('ask')}'` }] }],
+      PreToolUse: [{ hooks: [{ type: 'command', command: `echo '${await decide('allow')}'` }, { type: 'command', command: `echo '${await decide('deny')}'` }, { type: 'command', command: `echo '${await decide('ask')}'` }] }],
     };
     const { context, executions } = contextFor(hooks);
     expect(await createToolHooks(context).preToolUse(call)).toMatchObject({ decision: 'deny' });
@@ -157,7 +157,7 @@ describe('PreToolUse hook processes', () => {
     expect(await createToolHooks(context).preToolUse(call)).toMatchObject({ decision: 'ask' });
     expect(executions[0]).toMatchObject({ outcome: 'timed_out' });
     const pid = Number(fs.readFileSync(pidFile, 'utf8'));
-    expect(() => process.kill(pid, 0)).toThrow();
+    await expect((async () => process.kill(pid, 0))()).rejects.toThrow();
   });
 
   it('reports cancellation without spawning when the signal is already aborted', async () => {
@@ -247,7 +247,7 @@ describe('updated input, halting and process markers', () => {
     const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
     const markerDir = path.join(dir, 'markers');
     await reapMarkerDirectory({ dir: markerDir, signal: new AbortController().signal, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
-    expect(() => process.kill(pid, 0)).toThrow();
+    await expect((async () => process.kill(pid, 0))()).rejects.toThrow();
     controller.abort();
     await pending;
   });

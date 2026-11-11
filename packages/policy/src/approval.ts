@@ -1,11 +1,11 @@
 import path from 'node:path';
-import { lexicallyWithin } from '@momonga/foundation';
+import { everyAsync, lexicallyWithin, someAsync } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
 import { hasOption, isOptionWord, parseArgv } from './argv.ts';
 import type { ParsedArgv, ParsedOption } from './argv.ts';
 import type { GitParse } from './git-argv.ts';
 import { GIT_LISTING_SELECTORS, GIT_LISTING_SPECS, GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec, optionVerifiesSignature, reflogView } from './git-subcommands.ts';
-import type { PolicyFilesystem } from './filesystem.ts';
+import type { PolicyFilesystem, WritableCheck } from './filesystem.ts';
 import { MAX_GLOB_MATCHES, expandGlobWord } from './glob-expansion.ts';
 import { firstUnescaped, unescapeGlob } from './glob-pattern.ts';
 import type { OptionEffect, CommandSpec } from './command-specs.ts';
@@ -19,7 +19,7 @@ import { insideRoots } from './roots.ts';
 import { scanSedScript } from './sed-script.ts';
 import { executionSteps } from './shell.ts';
 import type { Analysis, DirectoryStep, Segment, Word } from './shell.ts';
-import { changedBefore, changedPathList, locateWrites, sedResolution } from './step-plan.ts';
+import { changedBefore, changedPathList, locateWrites, resolveSedPrograms, sedResolution } from './step-plan.ts';
 import type { WrapperUse } from './wrappers.ts';
 
 export const MAX_APPROVABLE_COMMAND_CHARS = 10_000;
@@ -31,7 +31,7 @@ export type ApprovalContext = {
   home: string;
   roots: readonly string[];
   searchPath: string | undefined;
-  isWritable: (absolute: string) => boolean;
+  isWritable: WritableCheck;
   protectedSet: ProtectedSet;
 };
 
@@ -41,22 +41,22 @@ const DISQUALIFYING_EFFECTS: ReadonlySet<OptionEffect> = new Set(['write', 'exec
 const CAPABLE_EFFECTS: ReadonlySet<OptionEffect> = new Set(['write', 'exec', 'delete', 'opens-path', 'sensitive']);
 
 
-const globAllowed = (pattern: string, context: ApprovalContext): boolean => {
+const globAllowed = async (pattern: string, context: ApprovalContext): Promise<boolean> => {
   if (firstUnescaped(pattern, '{}') !== -1 || pattern.startsWith('~') || unescapeGlob(pattern).split('/').includes('..')) return false;
   const directory = globDirectory(pattern);
-  const canonicalise = context.fs.canonicalise;
-  if (!insideRoots([absoluteFrom(directory, context.cwd)], context.roots, context.cwd, canonicalise)) return false;
-  return expandGlobWord(context, pattern).every(
-    (entry) =>
+  if (!(await insideRoots([absoluteFrom(directory, context.cwd)], context.roots, context.cwd, context.fs))) return false;
+  return everyAsync(
+    expandGlobWord(context, pattern),
+    async (entry) =>
       entry.kind !== 'unresolvable' &&
       !(entry.kind === 'match' && path.basename(entry.text).startsWith('-')) &&
-      insideRoots([entry.absolute], context.roots, context.cwd, canonicalise),
+      (await insideRoots([entry.absolute], context.roots, context.cwd, context.fs)),
   );
 };
 
-const operandsAllowed = (spec: CommandSpec, operands: readonly Word[], context: ApprovalContext): boolean => {
+const operandsAllowed = (spec: CommandSpec, operands: readonly Word[], context: ApprovalContext): Promise<boolean> => {
   const capable = spec.options.some((option) => CAPABLE_EFFECTS.has(option.effect));
-  return operands.every((word) => {
+  return everyAsync(operands, (word) => {
     if (word.staticValue !== null) return true;
     if (capable || spec.approval === 'edit') return false;
     if (word.glob !== null) return globAllowed(word.glob, context);
@@ -108,9 +108,9 @@ const sedAllowed = (spec: CommandSpec, parsed: ParsedArgv): boolean => {
   return facts.scripts.every((script) => script !== null && scanSedScript(script, spec.dialect ?? 'bsd').simple);
 };
 
-const programApproved = (spec: CommandSpec, segment: Segment, context: ApprovalContext): boolean => {
+const programApproved = async (spec: CommandSpec, segment: Segment, context: ApprovalContext): Promise<boolean> => {
   if (spec.builtin === true && !(segment.words[segment.effectiveIndex] as Word).value.includes('/') && !executedByWrapper(segment)) return true;
-  const resolution = resolveSegmentProgram(segment, context);
+  const resolution = await resolveSegmentProgram(segment, context);
   if (!('program' in resolution)) return false;
   return systemProgramDirectories(context.fs.platform).some((directory) => resolution.program === path.join(directory, spec.names[0] as string));
 };
@@ -125,37 +125,37 @@ const namedStepPath = (state: string, step: { path: string; physical: boolean },
   return path.isAbsolute(step.path) ? step.path : `${state}/${step.path}`;
 };
 
-const physicalLandings = (context: ApprovalContext, named: string): Landing[] | undefined => {
-  const resolution = context.fs.canonicalise(named);
+const physicalLandings = async (context: ApprovalContext, named: string): Promise<Landing[] | undefined> => {
+  const resolution = await context.fs.canonicalise(named);
   if (resolution.ok) return [{ reaches: resolution.path, named }];
   const { reason } = resolution;
   return reason.kind === 'errno' && (reason.code === 'ENOENT' || reason.code === 'ENOTDIR') ? [] : undefined;
 };
 
-const landingsOf = (context: ApprovalContext, state: string, step: { path: string; physical: boolean }): Landing[] | undefined => {
+const landingsOf = async (context: ApprovalContext, state: string, step: { path: string; physical: boolean }): Promise<Landing[] | undefined> => {
   const named = namedStepPath(state, step, context.home);
   if (named === undefined) return undefined;
   if (step.physical) return physicalLandings(context, named);
   const lexical: Landing = { reaches: path.resolve(named), named };
-  const entry = context.fs.readEntry(lexical.reaches);
+  const entry = await context.fs.readEntry(lexical.reaches);
   if ('unresolvable' in entry) return undefined;
   if (entry.kind === 'directory') return [lexical];
-  const physical = physicalLandings(context, named);
+  const physical = await physicalLandings(context, named);
   return physical === undefined ? undefined : [lexical, ...physical];
 };
 
-const reachableDirectories = (context: ApprovalContext, trail: readonly DirectoryStep[], changed: readonly string[]): string[] | undefined => {
+const reachableDirectories = async (context: ApprovalContext, trail: readonly DirectoryStep[], changed: readonly string[]): Promise<string[] | undefined> => {
   let states = [context.cwd];
   for (const step of trail) {
     if (step === null) return undefined;
     const reached = new Set(states);
     for (const state of states) {
-      const landings = landingsOf(context, state, step);
+      const landings = await landingsOf(context, state, step);
       if (landings === undefined) return undefined;
       for (const landing of landings) {
         const named = path.resolve(landing.named);
         if (changed.some((entry) => lexicallyWithin(landing.reaches, entry) || lexicallyWithin(named, entry))) return undefined;
-        const entry = context.fs.readEntry(landing.reaches);
+        const entry = await context.fs.readEntry(landing.reaches);
         if ('unresolvable' in entry) return undefined;
         if (entry.kind !== 'directory' && changed.some((written) => lexicallyWithin(written, landing.reaches) || lexicallyWithin(written, named))) return undefined;
         if (entry.kind === 'directory') reached.add(landing.reaches);
@@ -174,39 +174,43 @@ const ancestorsOf = (directory: string): string[] => {
   return found;
 };
 
-const discoveryAffected = (context: ApprovalContext, directory: string, changed: readonly string[]): boolean => {
+const discoveryAffected = async (context: ApprovalContext, directory: string, changed: readonly string[]): Promise<boolean> => {
   if (changed.length === 0) return false;
-  const canonical = context.fs.canonicalise(directory);
+  const canonical = await context.fs.canonicalise(directory);
   const chain = [...ancestorsOf(directory), ...(canonical.ok ? ancestorsOf(canonical.path) : [])];
   return changed.some((entry) => chain.some((ancestor) => lexicallyWithin(ancestor, entry) || DISCOVERY_ENTRIES.some((name) => lexicallyWithin(entry, path.join(ancestor, name)))));
 };
 
-const configNamesNoProgram = (fs: PolicyFilesystem, gitDirectories: readonly string[]): boolean =>
-  gitDirectories.every((directory) => {
-    const read = fs.configPrograms(directory);
+const configNamesNoProgram = (fs: PolicyFilesystem, gitDirectories: readonly string[]): Promise<boolean> =>
+  everyAsync(gitDirectories, async (directory) => {
+    const read = await fs.configPrograms(directory);
     return !('unresolvable' in read) && read.keys.length === 0;
   });
 
-const isRegisteredSubmodule = (context: ApprovalContext, hit: RepositoryHit): boolean => {
+const isRegisteredSubmodule = async (context: ApprovalContext, hit: RepositoryHit): Promise<boolean> => {
   const { fs } = context;
-  const parent = discoverRepository(path.dirname(hit.directory), fs);
+  const parent = await discoverRepository(path.dirname(hit.directory), fs);
   if ('unresolved' in parent || !parent.found || parent.hit.entry === 'bare') return false;
-  const links = fs.gitlinks(parent.hit.gitDirectories[0] as string);
+  const links = await fs.gitlinks(parent.hit.gitDirectories[0] as string);
   if ('unresolvable' in links || 'unreadable' in links) return false;
   return links.paths.some((relative) => sameDirectory(path.join(parent.hit.directory, relative), hit.directory));
 };
 
-const gitRepositoryAllowed = (context: ApprovalContext, directory: string, bare: boolean): boolean => {
+const gitRepositoryAllowed = async (context: ApprovalContext, directory: string, bare: boolean): Promise<boolean> => {
   const { fs, protectedSet, isWritable } = context;
-  const discovery = discoverRepository(directory, fs, { bare });
+  const discovery = await discoverRepository(directory, fs, { bare });
   if ('unresolved' in discovery) return false;
   if (!discovery.found) return true;
   const { hit } = discovery;
-  const roots = context.roots.map((root) => fs.canonicalise(root)).flatMap((resolution) => (resolution.ok ? [resolution.path] : []));
+  const roots: string[] = [];
+  for (const root of context.roots) {
+    const resolution = await fs.canonicalise(root);
+    if (resolution.ok) roots.push(resolution.path);
+  }
   const ownRoot = hit.entry === 'dotgit' ? roots.find((root) => sameDirectory(root, hit.directory)) : undefined;
   if (ownRoot !== undefined) return !protectedSet.issues.some((issue) => issue.root === ownRoot);
-  if (hit.entry === 'dotgit' && isRegisteredSubmodule(context, hit)) return configNamesNoProgram(fs, hit.gitDirectories);
-  return !isWritable(hit.directory) && hit.gitDirectories.every((directory) => !isWritable(directory));
+  if (hit.entry === 'dotgit' && (await isRegisteredSubmodule(context, hit))) return configNamesNoProgram(fs, hit.gitDirectories);
+  return !(await isWritable(hit.directory)) && (await everyAsync(hit.gitDirectories, async (gitDirectory) => !(await isWritable(gitDirectory))));
 };
 
 const SUBMODULE_ENTERING_SUBCOMMANDS: ReadonlySet<string> = new Set(['status', 'diff']);
@@ -225,23 +229,23 @@ const entersSubmodules = (git: GitParse): boolean => {
   return last === undefined || last.option === NO_SUBMODULE_OPTION || !SUBMODULE_SKIPPING_MODES.has(last.value);
 };
 
-const submodulesAllowed = (context: ApprovalContext, directory: string, visited: Set<string>): boolean => {
+const submodulesAllowed = async (context: ApprovalContext, directory: string, visited: Set<string>): Promise<boolean> => {
   const { fs } = context;
-  const discovery = discoverRepository(directory, fs);
+  const discovery = await discoverRepository(directory, fs);
   if ('unresolved' in discovery) return false;
   if (!discovery.found || discovery.hit.entry === 'bare') return true;
   const { hit } = discovery;
   const gitDirectory = hit.gitDirectories[0] as string;
   if (visited.has(gitDirectory)) return true;
   visited.add(gitDirectory);
-  const links = fs.gitlinks(gitDirectory);
+  const links = await fs.gitlinks(gitDirectory);
   if ('unresolvable' in links || 'unreadable' in links) return false;
-  return links.paths.every((relative) => {
+  return everyAsync(links.paths, async (relative) => {
     const nested = path.join(hit.directory, relative);
-    const inner = discoverRepository(nested, fs);
+    const inner = await discoverRepository(nested, fs);
     if ('unresolved' in inner) return false;
     if (!inner.found || !sameDirectory(inner.hit.directory, nested)) return true;
-    return configNamesNoProgram(fs, inner.hit.gitDirectories) && submodulesAllowed(context, nested, visited);
+    return (await configNamesNoProgram(fs, inner.hit.gitDirectories)) && (await submodulesAllowed(context, nested, visited));
   });
 };
 
@@ -291,19 +295,19 @@ const gitSubcommandAllowed = (git: GitParse): boolean => {
   }
 };
 
-const gitApproved = (segment: Segment, context: ApprovalContext, changed: readonly string[]): boolean => {
+const gitApproved = async (segment: Segment, context: ApprovalContext, changed: readonly string[]): Promise<boolean> => {
   const git = segment.effects.git;
   if (git === undefined || git.unknownOption || git.cwdChange || git.configOverride) return false;
   const spec = segment.effects.spec as CommandSpec;
   if (git.optionLikeValue || git.globals.some((entry) => DISQUALIFYING_EFFECTS.has(spec.effectOf(entry.option) ?? 'flag'))) return false;
   if (git.rest.some((word) => word.staticValue === null)) return false;
   if (!gitSubcommandAllowed(git)) return false;
-  const directories = reachableDirectories(context, segment.cwdTrail, changed);
+  const directories = await reachableDirectories(context, segment.cwdTrail, changed);
   if (directories === undefined) return false;
-  if (directories.some((directory) => discoveryAffected(context, directory, changed))) return false;
+  if (await someAsync(directories, (directory) => discoveryAffected(context, directory, changed))) return false;
   const bare = git.globals.some((entry) => entry.option === '--bare');
-  if (!directories.every((directory) => gitRepositoryAllowed(context, directory, bare))) return false;
-  return bare || !entersSubmodules(git) || directories.every((directory) => submodulesAllowed(context, directory, new Set()));
+  if (!(await everyAsync(directories, (directory) => gitRepositoryAllowed(context, directory, bare)))) return false;
+  return bare || !entersSubmodules(git) || everyAsync(directories, (directory) => submodulesAllowed(context, directory, new Set()));
 };
 
 const wrapperApproved = (wrapper: WrapperUse): boolean => {
@@ -313,26 +317,26 @@ const wrapperApproved = (wrapper: WrapperUse): boolean => {
   return allowed === undefined || wrapper.options.every((option) => allowed.includes(option.option));
 };
 
-const segmentClass = (segment: Segment, context: ApprovalContext, changed: readonly string[]): ApprovalClass | undefined => {
+const segmentClass = async (segment: Segment, context: ApprovalContext, changed: readonly string[]): Promise<ApprovalClass | undefined> => {
   if (segment.unanalyzable || segment.commandIndex > 0) return undefined;
   const spec = segment.effects.spec;
   if (spec?.approval === undefined) return undefined;
   if (!segment.wrappers.every(wrapperApproved)) return undefined;
   if (spec.plainOperandsOnly === true && segment.wrappers.length > 0) return undefined;
-  if (!programApproved(spec, segment, context)) return undefined;
+  if (!(await programApproved(spec, segment, context))) return undefined;
   const writing = segment.effects.writes.length > 0 || segment.wrapperWrites.length > 0;
-  const approved = spec.extractor === 'git' ? gitApproved(segment, context, changed) : plainApproved(spec, segment, context);
+  const approved = await (spec.extractor === 'git' ? gitApproved(segment, context, changed) : plainApproved(spec, segment, context));
   if (!approved) return undefined;
   return spec.approval === 'edit' && writing ? 'edit' : 'read-only';
 };
 
-const plainApproved = (spec: CommandSpec, segment: Segment, context: ApprovalContext): boolean => {
+const plainApproved = async (spec: CommandSpec, segment: Segment, context: ApprovalContext): Promise<boolean> => {
   const parsed = segment.effects.parsed;
   if (parsed === undefined || parsed.undeclared.length > 0) return false;
   if (parsed.options.some((entry) => entry.dynamic === true)) return false;
   if (!optionsAllowed(spec, parsed)) return false;
   if (spec.plainOperandsOnly === true && parsed.options.length > 0) return false;
-  if (!operandsAllowed(spec, parsed.operands, context)) return false;
+  if (!(await operandsAllowed(spec, parsed.operands, context))) return false;
   if (spec.extractor === 'sed' && !sedAllowed(spec, parsed)) return false;
   if (spec.dashOperand === 'previous-directory' && parsed.operands.some((word) => word.staticValue === '-')) return false;
   if (!psAllowed(spec, segment, parsed.operands)) return false;
@@ -349,16 +353,16 @@ const changesIntoUnknownDirectory = (segment: Segment): boolean => {
 
 type ChangedBySegment = ReadonlyMap<Segment, readonly string[]>;
 
-const analysisApproval = (context: ApprovalContext, analysis: Analysis, changes: ChangedBySegment): ApprovalClass | undefined => {
+const analysisApproval = async (context: ApprovalContext, analysis: Analysis, changes: ChangedBySegment): Promise<ApprovalClass | undefined> => {
   if ([...analysis.redirects, ...analysis.reads].some((target) => 'unresolvable' in target)) return undefined;
   let directoryUnknown = false;
   let approval: ApprovalClass = 'read-only';
   for (const [position, segment] of analysis.segments.entries()) {
     for (const inner of analysis.nested) {
-      if (inner.at === position && analysisApproval(context, inner, changes) !== 'read-only') return undefined;
+      if (inner.at === position && (await analysisApproval(context, inner, changes)) !== 'read-only') return undefined;
     }
     if (directoryUnknown) return undefined;
-    const kind = segmentClass(segment, context, changes.get(segment) as readonly string[]);
+    const kind = await segmentClass(segment, context, changes.get(segment) as readonly string[]);
     if (kind === undefined) return undefined;
     if (kind === 'edit') approval = 'edit';
     if (changesIntoUnknownDirectory(segment)) directoryUnknown = true;
@@ -366,8 +370,8 @@ const analysisApproval = (context: ApprovalContext, analysis: Analysis, changes:
   return approval;
 };
 
-const changesBySegment = (context: ApprovalContext, analysis: Analysis): ChangedBySegment => {
-  const plans = locateWrites(context, executionSteps(analysis, sedResolution(context)));
+const changesBySegment = async (context: ApprovalContext, analysis: Analysis): Promise<ChangedBySegment> => {
+  const plans = await locateWrites(context, executionSteps(analysis, sedResolution(await resolveSedPrograms(context, analysis))));
   const changes = new Map<Segment, readonly string[]>();
   for (const [index, plan] of plans.entries()) {
     if (plan.step.segment !== undefined) changes.set(plan.step.segment, changedPathList(changedBefore(plans, index, 'every-write')));
@@ -375,8 +379,8 @@ const changesBySegment = (context: ApprovalContext, analysis: Analysis): Changed
   return changes;
 };
 
-export const commandApproval = (context: ApprovalContext, command: string, analysis: Analysis | null): ApprovalClass | undefined => {
+export const commandApproval = async (context: ApprovalContext, command: string, analysis: Analysis | null): Promise<ApprovalClass | undefined> => {
   if (analysis === null || command.length > MAX_APPROVABLE_COMMAND_CHARS || analysis.segments.length === 0) return undefined;
-  if (!insideRoots([context.cwd], context.roots, context.cwd, context.fs.canonicalise)) return undefined;
-  return analysisApproval(context, analysis, changesBySegment(context, analysis));
+  if (!(await insideRoots([context.cwd], context.roots, context.cwd, context.fs))) return undefined;
+  return analysisApproval(context, analysis, await changesBySegment(context, analysis));
 };

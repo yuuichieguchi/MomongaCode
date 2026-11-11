@@ -5,7 +5,7 @@ import { openZ3, Z3LoadError } from '../src/engine.ts';
 import { formatReport } from '../src/format.ts';
 import type { VerificationReport } from '../src/index.ts';
 import { exitCodeOf } from '../src/report.ts';
-import { hostFilesystemOf } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
 import { replayWitness } from '../src/replay.ts';
 import type { PropertyResult } from '../src/report.ts';
 import { caseSensitiveFs, makeLayout, rulesOf } from './harness.ts';
@@ -99,7 +99,7 @@ describe('reporting', () => {
       cwd: layout.project,
       fileRules: { entries: [], exemptDirectory: null, fingerprint: '', flavour: 'posix' as const },
       protectedSet: { forms: {}, roots: [], paths: [], lexicalPaths: [], literals: [], names: [], moduleAnchors: [], worktreeAnchors: [], patterns: { entries: [], exemptDirectory: null, fingerprint: '', flavour: 'posix' as const }, issues: [] },
-      fs: hostFilesystemOf(fileSystem),
+      fs: hostFilesystemOf(fileSystem), signal: NEVER_CANCELLED,
       globBudgetMs: 1_000,
     };
 

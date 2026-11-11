@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ignore from 'ignore';
 import type { Ignore } from 'ignore';
-import { resolveCanonicalPath } from '@momonga/foundation';
+import { hostPaths } from '@momonga/foundation';
 import type { FileRuleSet } from '@momonga/foundation';
 import { createReadAccessMatcher } from '../read-access.ts';
 import type { ReadAccessMatcher, ReadFamilyTool } from '../read-access.ts';
@@ -25,10 +25,10 @@ export type WalkOptions = {
 export type RuleBlockedEntry = { absolute: string; isDirectory: boolean };
 
 export type Blocks = {
-  blocksResolved(resolved: string): boolean;
-  leadsToAllowed(resolved: string): boolean;
-  allowedWithin(directory: string): string[];
-  isAllowedEntry(resolved: string): boolean;
+  blocksResolved(resolved: string): Promise<boolean>;
+  leadsToAllowed(resolved: string): Promise<boolean>;
+  allowedWithin(directory: string): Promise<string[]>;
+  isAllowedEntry(resolved: string): Promise<boolean>;
 };
 
 type WalkAccess = Blocks & Pick<ReadAccessMatcher, 'blockedByForms'>;
@@ -75,8 +75,8 @@ const isIgnored = (frames: readonly IgnoreFrame[], relative: string, isDirectory
 
 const byName = (left: fs.Dirent, right: fs.Dirent): number => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
 
-const nextComponents = (directory: string, denied: Blocks): string[] => {
-  const names = denied.allowedWithin(directory).map((allowed) => allowed.slice(directory.length + 1).split(path.sep)[0] as string);
+const nextComponents = async (directory: string, denied: Blocks): Promise<string[]> => {
+  const names = (await denied.allowedWithin(directory)).map((allowed) => allowed.slice(directory.length + 1).split(path.sep)[0] as string);
   return [...new Set(names)].sort();
 };
 
@@ -90,10 +90,10 @@ export async function* reachableAllowedRoots(
   access: Blocks,
 ): AsyncGenerator<AllowedRoot> {
   options.signal.throwIfAborted();
-  const directoryBlocked = access.blocksResolved(directory);
+  const directoryBlocked = await access.blocksResolved(directory);
   const own = directoryBlocked ? undefined : await loadIgnoreRules(directory, base, options.onUnreadable);
   const active = own === undefined ? frames : [...frames, own];
-  for (const name of nextComponents(directory, access)) {
+  for (const name of await nextComponents(directory, access)) {
     const child = path.join(directory, name);
     const stat = await fs.promises.lstat(child).catch((error: unknown) => {
       if (isMissing(error)) return undefined;
@@ -104,7 +104,7 @@ export async function* reachableAllowedRoots(
     if (!isDirectory && !stat.isFile()) continue;
     const relative = `${base}${name}`;
     if (isIgnored(active, relative, isDirectory)) continue;
-    if (access.isAllowedEntry(child)) {
+    if (await access.isAllowedEntry(child)) {
       if (directoryBlocked) yield { absolute: child, relative, isDirectory, frames: active };
     } else if (isDirectory) yield* reachableAllowedRoots(child, `${relative}/`, active, options, access);
   }
@@ -146,8 +146,8 @@ async function* walkDirectory(
     if (entry.name === '.git') continue;
     const absolute = path.join(directory, entry.name);
     const relative = `${base}${entry.name}`;
-    if (denied.blocksResolved(absolute)) {
-      if (entry.isDirectory() && denied.leadsToAllowed(absolute) && !isIgnored(active, relative, true)) {
+    if (await denied.blocksResolved(absolute)) {
+      if (entry.isDirectory() && (await denied.leadsToAllowed(absolute)) && !isIgnored(active, relative, true)) {
         yield* walkAllowedRoots(absolute, `${relative}/`, active, options, denied);
       }
       continue;
@@ -160,10 +160,10 @@ async function* walkDirectory(
     let isFile = entry.isFile();
     if (entry.isSymbolicLink()) {
       if (!options.includeSymlinkedFiles) continue;
-      const resolution = resolveCanonicalPath(absolute);
+      const resolution = await hostPaths(options.signal).resolveCanonicalPath(absolute);
       if (!resolution.ok) continue;
       const canonicalTarget = resolution.path;
-      if (denied.blocksResolved(canonicalTarget) || denied.blockedByForms(absolute, canonicalTarget, options.tool) !== undefined) continue;
+      if ((await denied.blocksResolved(canonicalTarget)) || denied.blockedByForms(absolute, canonicalTarget, options.tool) !== undefined) continue;
       const target = await fs.promises.stat(canonicalTarget).catch((error: unknown) => {
         if (isMissing(error)) return undefined;
         throw error;
@@ -182,4 +182,6 @@ async function* walkDirectory(
   }
 }
 
-export const walkFiles = (options: WalkOptions): AsyncGenerator<WalkEntry> => walkDirectory(options.root, '', [], options, createReadAccessMatcher(options));
+export async function* walkFiles(options: WalkOptions): AsyncGenerator<WalkEntry> {
+  yield* walkDirectory(options.root, '', [], options, await createReadAccessMatcher(options, hostPaths(options.signal)));
+}

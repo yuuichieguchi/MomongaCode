@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { setCaseSensitivityProbe, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { setCaseSensitivityProbe } from '@momonga/foundation';
+import { syncPaths } from '../src/index.ts';
 
 const tempDirs: string[] = [];
 
@@ -44,12 +45,12 @@ describe('per-device case cache', () => {
       });
     }) as typeof fs.statSync);
 
-    expect(volumeIsCaseInsensitive(dir)).toBe(true);
-    expect(volumeIsCaseInsensitive(path.join(dir, 'Missing'))).toBe(true);
+    expect(syncPaths.volumeIsCaseInsensitive(dir)).toBe(true);
+    expect(syncPaths.volumeIsCaseInsensitive(path.join(dir, 'Missing'))).toBe(true);
     expect(probed).toHaveLength(1);
 
     remounted = true;
-    expect(volumeIsCaseInsensitive(dir)).toBe(true);
+    expect(syncPaths.volumeIsCaseInsensitive(dir)).toBe(true);
     expect(probed).toHaveLength(2);
   });
 
@@ -61,8 +62,8 @@ describe('per-device case cache', () => {
       return true;
     });
     const spy = vi.spyOn(fs, 'statSync');
-    volumeIsCaseInsensitive(dir);
-    volumeIsCaseInsensitive(dir);
+    syncPaths.volumeIsCaseInsensitive(dir);
+    syncPaths.volumeIsCaseInsensitive(dir);
     expect(spy).toHaveBeenCalled();
     expect(probed).toHaveLength(1);
   });

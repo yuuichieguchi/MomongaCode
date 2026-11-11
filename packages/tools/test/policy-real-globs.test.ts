@@ -41,8 +41,8 @@ describe('a glob or brace read operand is judged by the files it expands to (rea
     expect((await workspace.decideExpanding('cat *', { rules: ALLOW_CAT })).kind).toBe('allow');
   });
 
-  it('asks when an expansion exceeds the match limit', () => {
+  it('asks when an expansion exceeds the match limit', async () => {
     const workspace = makeRealWorkspace();
-    expect(workspace.decide('cat f{1..5000}', { rules: ALLOW_CAT }).kind).toBe('ask');
+    expect((await workspace.decide('cat f{1..5000}', { rules: ALLOW_CAT })).kind).toBe('ask');
   });
 });

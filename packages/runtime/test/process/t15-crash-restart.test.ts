@@ -65,7 +65,7 @@ describe.runIf(process.platform === 'darwin')('T15 a lost call whose leader surv
       makeTool('Bash', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', execute: async () => ({ status: 'completed', output: 'ran' }) }),
     ];
     const run = async (name: string, callId: string) => {
-      const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(...tools), [call(callId, name, {}, 'allow_once')]));
+      const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(...tools), [call(callId, name, {}, 'allow_once')]));
       return (outcome as ResultOutcome).result;
     };
     for (const [name, callId] of [['Write', 'w'], ['Edit', 'e'], ['Bash', 'b']] as const) {

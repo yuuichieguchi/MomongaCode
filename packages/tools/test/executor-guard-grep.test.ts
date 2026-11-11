@@ -23,7 +23,7 @@ const runner = makeTool('Runner', { sideEffect: 'exec', subjectKind: 'none', exe
 const extra = { sandbox: noMatchSandbox, ripgrep: fakeRipgrep };
 
 const runGrep = async (h: ReturnType<typeof world>, callId: string) => {
-  const [outcome] = await h.harness.executor.runBatch(h.harness.input(await toolSetOf(leaver, grepTool), [call(callId, 'Grep', { pattern: 'needle' }, 'allow_once')], extra));
+  const [outcome] = await h.harness.executor.runBatch(await h.harness.input(await toolSetOf(leaver, grepTool), [call(callId, 'Grep', { pattern: 'needle' }, 'allow_once')], extra));
   return outcome;
 };
 

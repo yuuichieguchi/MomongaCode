@@ -10,8 +10,8 @@ const rowsTable = (title: string, rows: readonly Row[]): void => {
   describe(title, () => {
     for (const row of rows) {
       for (const mode of columnModes(row)) {
-        it(`${row.id} ${row.command ?? 'Write tool'} in ${mode} -> ${cellAt(row, mode)}${row.pin ? ' (pin)' : ''}`, () => {
-          expect(kindIn(row, mode)).toBe(cellAt(row, mode));
+        it(`${row.id} ${row.command ?? 'Write tool'} in ${mode} -> ${cellAt(row, mode)}${row.pin ? ' (pin)' : ''}`, async () => {
+          expect(await kindIn(row, mode)).toBe(cellAt(row, mode));
         });
       }
     }
@@ -31,31 +31,31 @@ const writeRow = (target: (layout: Parameters<NonNullable<Row['write']>>[0]) => 
 });
 
 describe('.git name components', () => {
-  it('asks for a Write to .git/commondir in acceptEdits as a protected write', () => {
+  it('asks for a Write to .git/commondir in acceptEdits as a protected write', async () => {
     const row = writeRow((layout) => P(layout, '.git', 'commondir'), { prepare: (layout) => void touch(P(layout, '.git', 'config')) });
-    expect(decideRow(row, 'acceptEdits')).toMatchObject({ kind: 'ask', source: 'protected' });
+    expect(await decideRow(row, 'acceptEdits')).toMatchObject({ kind: 'ask', source: 'protected' });
   });
 
-  it('asks for a Write to a nested sub/.git/config as a protected write', () => {
+  it('asks for a Write to a nested sub/.git/config as a protected write', async () => {
     const row = writeRow((layout) => P(layout, 'sub', '.git', 'config'));
-    expect(decideRow(row, 'acceptEdits')).toMatchObject({ kind: 'ask', source: 'protected' });
+    expect(await decideRow(row, 'acceptEdits')).toMatchObject({ kind: 'ask', source: 'protected' });
   });
 
-  it.each(['.gitignore', '.github/workflows/ci.yml', 'x.git'])('allows a Write to %s in acceptEdits', (name) => {
+  it.each(['.gitignore', '.github/workflows/ci.yml', 'x.git'])('allows a Write to %s in acceptEdits', async (name) => {
     const row = writeRow((layout) => P(layout, name));
-    expect(decideRow(row, 'acceptEdits')).toMatchObject({ kind: 'allow', source: 'mode' });
+    expect(await decideRow(row, 'acceptEdits')).toMatchObject({ kind: 'allow', source: 'mode' });
   });
 
-  it('folds the .git component on a case-insensitive volume through the injected probe', () => {
+  it('folds the .git component on a case-insensitive volume through the injected probe', async () => {
     const folding = writeRow((layout) => P(layout, 'sub', '.GIT', 'config'), { fs: () => ({ overrides: { volumeProbe: () => true } }) });
     const exact = writeRow((layout) => P(layout, 'sub', '.GIT', 'config'), { fs: () => ({ overrides: { volumeProbe: () => false } }) });
-    expect(decideRow(folding, 'acceptEdits')).toMatchObject({ kind: 'ask', source: 'protected' });
-    expect(decideRow(exact, 'acceptEdits')).toMatchObject({ kind: 'allow', source: 'mode' });
+    expect(await decideRow(folding, 'acceptEdits')).toMatchObject({ kind: 'ask', source: 'protected' });
+    expect(await decideRow(exact, 'acceptEdits')).toMatchObject({ kind: 'allow', source: 'mode' });
   });
 });
 
 describe('GF6: a lexical target protected for approval after the obstacle changed', () => {
-  it.each(['manual', 'acceptEdits', 'plan', 'bypassPermissions'] as const)('asks for a Write to x/y/config in %s', (mode) => {
+  it.each(['manual', 'acceptEdits', 'plan', 'bypassPermissions'] as const)('asks for a Write to x/y/config in %s', async (mode) => {
     const row: Row = {
       id: 'GF6',
       write: (layout) => P(layout, 'x', 'y', 'config'),
@@ -64,27 +64,27 @@ describe('GF6: a lexical target protected for approval after the obstacle change
       protection: true,
       prepare: (layout) => fs.writeFileSync(P(layout, '.git'), 'gitdir: x/y\n'),
     };
-    const context = contextOf(row);
-    expect(context.protectedSet.lexicalPaths).toContain(P(context.layout, 'x', 'y'));
-    fs.rmSync(P(context.layout, 'x'));
-    fs.mkdirSync(P(context.layout, 'x', 'y'), { recursive: true });
-    const decision = decideRow(row, mode, context);
-    expect(mode === 'plan' ? decision.kind : `${decision.kind}/${decision.source}`).toBe(mode === 'plan' ? 'deny' : 'ask/protected');
+    const context = await contextOf(row);
+    expect((await context).protectedSet.lexicalPaths).toContain(P((await context).layout, 'x', 'y'));
+    fs.rmSync(P((await context).layout, 'x'));
+    fs.mkdirSync(P((await context).layout, 'x', 'y'), { recursive: true });
+    const decision = await decideRow(row, mode, await context);
+    expect(mode === 'plan' ? (await decision).kind : `${(await decision).kind}/${(await decision).source}`).toBe(mode === 'plan' ? 'deny' : 'ask/protected');
   });
 });
 
 describe('git approval follows repository discovery from the persisted cwd', () => {
-  it('approves git status in project/sub without a .git there, as after an earlier cd sub', () => {
+  it('approves git status in project/sub without a .git there, as after an earlier cd sub', async () => {
     const row = commandRow('git status', { cwd: (layout) => P(layout, 'sub'), prepare: (layout) => fs.mkdirSync(P(layout, 'sub')) });
-    expect(kindIn(row, 'manual')).toBe('allow');
+    expect(await kindIn(row, 'manual')).toBe('allow');
   });
 
-  it('refuses the approval in project/sub when sub/.git exists on disk (pin)', () => {
+  it('refuses the approval in project/sub when sub/.git exists on disk (pin)', async () => {
     const row = commandRow('git status', { cwd: (layout) => P(layout, 'sub'), prepare: (layout) => validGitDirectory(layout, 'sub') });
-    expect(kindIn(row, 'manual')).toBe('ask');
+    expect(await kindIn(row, 'manual')).toBe('ask');
   });
 
-  it('refuses the approval when a .git file in sub points at a git directory the workspace can write (pin)', () => {
+  it('refuses the approval when a .git file in sub points at a git directory the workspace can write (pin)', async () => {
     const row = commandRow('git status', {
       cwd: (layout) => P(layout, 'sub'),
       prepare: (layout) => {
@@ -93,13 +93,13 @@ describe('git approval follows repository discovery from the persisted cwd', () 
         fs.writeFileSync(P(layout, 'sub', '.git'), `gitdir: ${P(layout, 'other', '.git')}\n`);
       },
     });
-    expect(kindIn(row, 'manual')).toBe('ask');
+    expect(await kindIn(row, 'manual')).toBe('ask');
   });
 
   it.each([
     ['names a directory that is not a git directory', (layout: Layout) => `gitdir: ${path.join(layout.outside, 'other', '.git')}\n`],
     ['has no gitdir line', () => 'garbage\n'],
-  ])('approves git status when the .git file in sub %s, because git stops with a fatal error before reading any configuration', (_label, text) => {
+  ])('approves git status when the .git file in sub %s, because git stops with a fatal error before reading any configuration', async (_label, text) => {
     const row = commandRow('git status', {
       cwd: (layout) => P(layout, 'sub'),
       prepare: (layout) => {
@@ -107,23 +107,23 @@ describe('git approval follows repository discovery from the persisted cwd', () 
         fs.writeFileSync(P(layout, 'sub', '.git'), text(layout));
       },
     });
-    expect(kindIn(row, 'manual')).toBe('allow');
+    expect(await kindIn(row, 'manual')).toBe('allow');
   });
 });
 
 describe('port errors are rethrown by decide', () => {
   const eio = (): NodeJS.ErrnoException => Object.assign(new Error('EIO: injected'), { code: 'EIO' });
 
-  const thrownBy = (action: () => unknown): unknown => {
+  const thrownBy = async (action: () => unknown): Promise<unknown> => {
     try {
-      action();
+      await action();
     } catch (error) {
       return error;
     }
     return undefined;
   };
 
-  it('FE4: rethrows EIO from readEntry', () => {
+  it('FE4: rethrows EIO from readEntry', async () => {
     const error = eio();
     const row = commandRow('git status', {
       cwd: (layout) => P(layout, 'sub'),
@@ -136,10 +136,10 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    expect(thrownBy(() => decideRow(row, 'manual'))).toBe(error);
+    expect(await thrownBy(() => decideRow(row, 'manual'))).toBe(error);
   });
 
-  it.each(['EIO', 'EMFILE', 'ENFILE'])('FE4a: rethrows %s from readHead and never approves the command', (code) => {
+  it.each(['EIO', 'EMFILE', 'ENFILE'])('FE4a: rethrows %s from readHead and never approves the command', async (code) => {
     const error = Object.assign(new Error(`${code}: injected`), { code });
     const row = commandRow('git status', {
       cwd: (layout) => P(layout, 'sub'),
@@ -152,10 +152,10 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    for (const mode of ['manual', 'acceptEdits'] as const) expect(thrownBy(() => decideRow(row, mode))).toBe(error);
+    for (const mode of ['manual', 'acceptEdits'] as const) expect(await thrownBy(() => decideRow(row, mode))).toBe(error);
   });
 
-  it('FE4b: rethrows EMFILE from isSearchable and never approves the command', () => {
+  it('FE4b: rethrows EMFILE from isSearchable and never approves the command', async () => {
     const error = Object.assign(new Error('EMFILE: injected'), { code: 'EMFILE' });
     const row = commandRow('git status', {
       cwd: (layout) => P(layout, 'sub'),
@@ -169,10 +169,10 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    expect(thrownBy(() => decideRow(row, 'manual'))).toBe(error);
+    expect(await thrownBy(() => decideRow(row, 'manual'))).toBe(error);
   });
 
-  it('FE5: rethrows EIO from expandGlob', () => {
+  it('FE5: rethrows EIO from expandGlob', async () => {
     const error = eio();
     const row = commandRow('cat *', {
       fs: () => ({
@@ -183,10 +183,10 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    expect(thrownBy(() => decideRow(row, 'manual'))).toBe(error);
+    expect(await thrownBy(() => decideRow(row, 'manual'))).toBe(error);
   });
 
-  it('FE6: rethrows EIO from resolveProgram', () => {
+  it('FE6: rethrows EIO from resolveProgram', async () => {
     const error = eio();
     const row = commandRow('ls', {
       fs: () => ({
@@ -197,6 +197,6 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    expect(thrownBy(() => decideRow(row, 'manual'))).toBe(error);
+    expect(await thrownBy(() => decideRow(row, 'manual'))).toBe(error);
   });
 });

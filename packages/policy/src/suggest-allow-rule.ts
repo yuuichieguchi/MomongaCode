@@ -1,5 +1,5 @@
 import { COMMAND_PREFIX_SUFFIX, hasBalancedParentheses } from '@momonga/config';
-import type { PathResolution } from '@momonga/foundation';
+import type { PathProbes } from '@momonga/foundation';
 import { analyzeCommand } from './shell.ts';
 import { absoluteFrom } from './path-match.ts';
 import type { PermissionSubject, PolicyTool } from './types.ts';
@@ -16,20 +16,20 @@ const suggestForCommand = (command: string): string | undefined => {
   return `Bash(${text})`;
 };
 
-const suggestForPath = (tool: PolicyTool, subject: Extract<PermissionSubject, { kind: 'path' }>, cwd: string, canonicalise: (absolute: string) => PathResolution): string | undefined => {
+const suggestForPath = async (tool: PolicyTool, subject: Extract<PermissionSubject, { kind: 'path' }>, cwd: string, canonicalise: PathProbes['canonicalise']): Promise<string | undefined> => {
   const [target] = subject.paths;
   if (subject.paths.length !== 1 || target === undefined) return undefined;
-  const resolution = canonicalise(absoluteFrom(target, cwd));
+  const resolution = await canonicalise(absoluteFrom(target, cwd));
   if (!resolution.ok || UNMATCHABLE_PATH_CHARACTERS.test(resolution.path)) return undefined;
   return `${tool.name}(/${resolution.path})`;
 };
 
-export const suggestAllowRule = (
+export const suggestAllowRule = async (
   tool: PolicyTool,
   subject: PermissionSubject,
   cwd: string,
-  canonicalise: (absolute: string) => PathResolution,
-): string | undefined => {
+  canonicalise: PathProbes['canonicalise'],
+): Promise<string | undefined> => {
   switch (subject.kind) {
     case 'command':
       return subject.network === undefined ? suggestForCommand(subject.command) : undefined;

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
-import { hostFilesystemOf } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
 import { checkBashAdmission, checkDenyPrecedence, checkRuleConsistency, checkSecretReach } from '../src/properties.ts';
@@ -122,14 +122,14 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
     const layout = makeLayout();
     const roots = [layout.project];
     const fileSystem = caseSensitiveFs();
-    const contextFor = (): QueryContext =>
-      buildQueryContext(z3.engine().api, {
+    const contextFor = async (): Promise<QueryContext> =>
+      await buildQueryContext(z3.engine().api, { signal: NEVER_CANCELLED,
         rules: rulesOf(layout, rules),
         roots,
         mode: 'manual',
         home: layout.home,
         cwd: layout.project,
-        protectedSet: protectedSetFor(roots, fileSystem),
+        protectedSet: await protectedSetFor(roots, fileSystem),
         fs: hostFilesystemOf(fileSystem),
         secretLocations: [sshLocation(layout)],
         exemptDirectory: null,
@@ -137,9 +137,9 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
         budgetMs: 120_000,
       });
 
-    const baselineContext = contextFor();
-    const counter = forceUnknownAt(baselineContext, -1);
-    const baseline = await check(baselineContext, [sshLocation(layout)]);
+    const baselineContext = await contextFor();
+    const counter = forceUnknownAt(await baselineContext, -1);
+    const baseline = await check(await baselineContext, [sshLocation(layout)]);
     expect(baseline.id).toBe(id);
     expect(baseline.verdict.status).toBe('proved');
     const sites = counter.calls();
@@ -147,9 +147,9 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
 
     const statuses: string[] = [];
     for (let site = 0; site < sites; site += 1) {
-      const context = contextFor();
-      forceUnknownAt(context, site);
-      const result = await check(context, [sshLocation(layout)]);
+      const context = await contextFor();
+      forceUnknownAt(await context, site);
+      const result = await check(await context, [sshLocation(layout)]);
       statuses.push(result.verdict.status);
     }
     expect(statuses).toEqual(Array.from({ length: sites }, () => 'unknown'));

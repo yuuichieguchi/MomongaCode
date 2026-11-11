@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
-import { canonicalDirectory, canonicalPath, comparableContains, discoverGitConfigFiles, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno, protectedSetFor } from '@momonga/foundation';
+import { discoverGitConfigFiles, ensureSessionTmpDir as defaultEnsureSessionTmpDir, filterAsync, hostPaths, isTransientErrno, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths, RuleEnforcement, SessionScratch } from '@momonga/foundation';
-import { computeFileRules } from '@momonga/policy';
-import type { PolicyPorts } from '@momonga/policy';
+import { askedBy, computeFileRules } from '@momonga/policy';
+import type { PolicyHostPorts } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { SessionStates } from './session-states.ts';
@@ -11,7 +11,7 @@ import type { SessionStates } from './session-states.ts';
 export type RecoveryContextOptions = {
   paths: MomongaPaths;
   home: string;
-  fs: PolicyPorts;
+  fs: PolicyHostPorts;
   sessionStates: Pick<SessionStates, 'get'>;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
 };
@@ -25,12 +25,13 @@ const wrapperFor =
 
 const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defaultEnsureSessionTmpDir }: RecoveryContextOptions) => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
-  return async (session: Parameters<ToolRuntimePort['policyFor']>[0]): Promise<{ roots: string[]; tmpDir: string; wrap: (cause: unknown) => ConfigError }> => {
+  return async (session: Parameters<ToolRuntimePort['policyFor']>[0], signal: AbortSignal): Promise<{ roots: string[]; tmpDir: string; wrap: (cause: unknown) => ConfigError }> => {
+    const resolver = hostPaths(signal);
     const wrap = wrapperFor(session.id);
     sessionStates.get(session);
     const roots: string[] = [];
     for (const root of [session.cwd, ...session.additionalDirectories]) {
-      const result = canonicalDirectory(root);
+      const result = await resolver.canonicalDirectory(root);
       if (!result.ok) throw wrap(new Error(`root ${root} ${result.reason}`));
       roots.push(result.path);
     }
@@ -52,17 +53,20 @@ export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor =>
   const { paths, home, fs, ruleEnforcement } = options;
   const contextFor = contextBuilder(options);
 
-  return async (session, { env, rules, readableDirectories, unixSocketAllow, signal }) => {
-    const { roots, tmpDir, wrap } = await contextFor(session);
+  return async (session, { env, rules, readableDirectories, unixSocketAllow, signal, discoverGitConfig }) => {
+    const { roots, tmpDir, wrap } = await contextFor(session, signal);
     try {
-      const fileRules = computeFileRules(rules, roots, tmpDir, ruleEnforcement);
-      const gitConfigFiles = signal === undefined ? [] : await discoverGitConfigFiles({ workingDirectory: session.cwd, env, signal });
-      const protectedSet = protectedSetFor(roots, fs, gitConfigFiles);
-      const skillsRoot = canonicalPath(paths.skills);
-      const readAllowed = (readableDirectories ?? []).filter((directory) => comparableContains(skillsRoot, directory));
-      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed, ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }) });
+      const resolver = hostPaths(signal);
+      const ports = askedBy(fs, signal);
+      const fileRules = await computeFileRules(rules, roots, tmpDir, ruleEnforcement, ports);
+      const gitConfigFiles = discoverGitConfig === true ? await discoverGitConfigFiles({ workingDirectory: session.cwd, env, signal }) : [];
+      const protectedSet = await protectedSetFor(roots, ports, gitConfigFiles);
+      const skillsRoot = await resolver.canonicalPath(paths.skills);
+      const readAllowed = await filterAsync(readableDirectories ?? [], (directory) => resolver.comparableContains(skillsRoot, directory));
+      const sandboxPolicy = await buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed, ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }) }, signal);
       return { roots, sandboxPolicy, tmpDir, env };
     } catch (error) {
+      signal.throwIfAborted();
       if (isTransientErrno(error)) throw error;
       throw wrap(error);
     }
@@ -71,8 +75,8 @@ export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor =>
 
 export const createRecoveryContextFor = (options: RecoveryContextOptions): ToolRuntimePort['recoveryContextFor'] => {
   const contextFor = contextBuilder(options);
-  return async (session, { env }) => {
-    const { roots, tmpDir } = await contextFor(session);
+  return async (session, { env, signal }) => {
+    const { roots, tmpDir } = await contextFor(session, signal);
     return { roots, tmpDir, env };
   };
 };

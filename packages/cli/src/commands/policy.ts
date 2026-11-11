@@ -1,12 +1,13 @@
 import path from 'node:path';
 import { loadSettings, parseGovernanceRule, parseRule } from '@momonga/config';
-import { canonicalDirectory, canonicalPath, protectedSetFor, ruleEnforcementOf, ruleFingerprint } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { hostPaths, mapAsync, ruleEnforcementOf, ruleFingerprint } from '@momonga/foundation';
+import type { MomongaPaths, PathResolver } from '@momonga/foundation';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
 import { formatGovernanceVerification } from '../rule/format.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
+import { interruptOf } from '../ports.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import type { PolicyVerifyHost } from '../verify/host.ts';
@@ -26,9 +27,9 @@ export class PolicyVerifyInputError extends Error {
   }
 }
 
-const rootsOf = (cwd: string, additional: readonly string[]): string[] =>
-  [cwd, ...additional].map((root) => {
-    const resolved = canonicalDirectory(root);
+const rootsOf = (cwd: string, additional: readonly string[], paths: PathResolver): Promise<string[]> =>
+  mapAsync([cwd, ...additional], async (root) => {
+    const resolved = await paths.canonicalDirectory(root);
     if (!resolved.ok) throw new PolicyVerifyInputError(`the folder ${root} ${resolved.reason}`);
     return resolved.path;
   });
@@ -52,11 +53,13 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   }
   const loaded = await loadSettings({ home: ports.home, projectDir: ports.cwd, cli: {}, trust: { isTrusted: () => trusted } });
   const governanceRules = governance.rules.map((entry) => parseGovernanceRule(entry, { home: ports.home, project: ports.cwd }));
-  const roots = rootsOf(ports.cwd, loaded.settings.permissions.additionalDirectories);
+  const signal = interruptOf(ports);
+  const resolver = hostPaths(signal);
+  const roots = await rootsOf(ports.cwd, loaded.settings.permissions.additionalDirectories, resolver);
   const mode = options.mode ?? loaded.settings.permissions.defaultMode ?? 'manual';
   const verifier = await host.loadVerifier();
   const fs = await host.loadPolicyFilesystem();
-  const home = canonicalPath(ports.home);
+  const home = await resolver.canonicalPath(ports.home);
   const secretLocations = verifier.secretLocationsOf(
     home,
     paths,
@@ -80,7 +83,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
     mode,
     home,
     cwd: ports.cwd,
-    protectedSet: protectedSetFor(roots, fs),
+    protectedSet: await verifier.protectedSetOf(roots, fs, signal),
     secretLocations,
     enforcement: ruleEnforcementOf(loaded.settings.sandbox),
   };
@@ -92,6 +95,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
       fs,
       exemptDirectory: null,
       budgetMs: VERIFY_BUDGET_MS,
+      signal,
       ...(catalogue === undefined ? {} : { supersededForms: catalogue.supersededForms, alwaysOperations: catalogue.alwaysOperations }),
     });
   } finally {

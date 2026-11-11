@@ -6,6 +6,7 @@ import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './fixtures.ts';
 import type { RunExtra } from './fixtures.ts';
+import { testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 
 const ACCEPT = { mode: 'acceptEdits' } as const;
 
@@ -21,7 +22,7 @@ const fixture = async () => {
     ...ACCEPT,
     roots: [project],
     tmpDir,
-    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [project], tmpDir, ruleEnforcementOf('none')), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
+    sandboxPolicy: await buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: await computeFileRules([], [project], tmpDir, ruleEnforcementOf('none'), testProbes()), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }, NEVER_CANCELLED),
   };
   return { tools, sessions, tmpDir, sibling, extra };
 };

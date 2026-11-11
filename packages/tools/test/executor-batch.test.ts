@@ -52,7 +52,7 @@ describe('batch scheduling', () => {
   it('runs consecutive read-only calls concurrently and returns outcomes in call order', async () => {
     const harness = makeHarness();
     const reader = controllable('Read');
-    const pending = harness.executor.runBatch(harness.input(await toolSetOf(reader.tool), [call('r1', 'Read'), call('r2', 'Read'), call('r3', 'Read')]));
+    const pending = harness.executor.runBatch(await harness.input(await toolSetOf(reader.tool), [call('r1', 'Read'), call('r2', 'Read'), call('r3', 'Read')]));
     await waitFor(() => reader.startedIds.length === 3, { description: '() => reader.startedIds.length === 3' });
     reader.finish('r3');
     reader.finish('r1');
@@ -66,7 +66,7 @@ describe('batch scheduling', () => {
     const harness = makeHarness({ maxParallel: 2 });
     const reader = controllable('Read');
     const calls = ['r1', 'r2', 'r3', 'r4'].map((id) => call(id, 'Read'));
-    const pending = harness.executor.runBatch(harness.input(await toolSetOf(reader.tool), calls));
+    const pending = harness.executor.runBatch(await harness.input(await toolSetOf(reader.tool), calls));
     await waitFor(() => reader.startedIds.length === 2, { description: '() => reader.startedIds.length === 2' });
     await afterMicrotasks();
     expect(reader.startedIds).toHaveLength(2);
@@ -84,7 +84,7 @@ describe('batch scheduling', () => {
   it('runs write and exec calls one at a time in order', async () => {
     const harness = makeHarness();
     const writer = controllable('Write', 'write');
-    const pending = harness.executor.runBatch(harness.input(await toolSetOf(writer.tool), [call('w1', 'Write'), call('w2', 'Write'), call('w3', 'Write')]));
+    const pending = harness.executor.runBatch(await harness.input(await toolSetOf(writer.tool), [call('w1', 'Write'), call('w2', 'Write'), call('w3', 'Write')]));
     await waitFor(() => writer.startedIds.length === 1, { description: '() => writer.startedIds.length === 1' });
     await afterMicrotasks();
     expect(writer.startedIds).toEqual(['w1']);
@@ -104,7 +104,7 @@ describe('batch scheduling', () => {
     const reader = controllable('Read');
     const writer = controllable('Write', 'write');
     const set = await toolSetOf(reader.tool, writer.tool);
-    const pending = harness.executor.runBatch(harness.input(set, [call('r1', 'Read'), call('r2', 'Read'), call('w3', 'Write'), call('r4', 'Read')]));
+    const pending = harness.executor.runBatch(await harness.input(set, [call('r1', 'Read'), call('r2', 'Read'), call('w3', 'Write'), call('r4', 'Read')]));
     await waitFor(() => reader.startedIds.length === 2, { description: '() => reader.startedIds.length === 2' });
     await afterMicrotasks();
     expect(writer.startedIds).toEqual([]);
@@ -136,7 +136,7 @@ describe('batch scheduling', () => {
     });
     const set = await toolSetOf(instant('Read', 'read_only', log), instant('Write', 'write', log), bash);
     const outcomes = await harness.executor.runBatch(
-      harness.input(set, [
+      await harness.input(set, [
         call('c1', 'Write'),
         call('c2', 'Bash'),
         call('c3', 'Nope'),
@@ -171,7 +171,7 @@ describe('batch scheduling', () => {
     fs.writeFileSync(inside, 'a');
     fs.writeFileSync(outside, 'b');
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(reader), [call('r1', 'Read', { where: inside }), call('r2', 'Read', { where: outside }), call('r3', 'Read', { where: inside })]),
+      await harness.input(await toolSetOf(reader), [call('r1', 'Read', { where: inside }), call('r2', 'Read', { where: outside }), call('r3', 'Read', { where: inside })]),
     );
     expect(outcomes[0]).toMatchObject({ callId: 'r1', kind: 'result', result: { status: 'completed', output: 'r1 read' } });
     expect(outcomes[1]).toMatchObject({ callId: 'r2', kind: 'needs_approval' });
@@ -194,13 +194,13 @@ describe('batch scheduling', () => {
     });
     const set = await toolSetOf(instant('Read', 'read_only', log), bash);
     const first = await harness.executor.runBatch(
-      harness.input(set, [call('c1', 'Bash', { command: 'make one' }, 'allow_once'), call('c2', 'Read'), call('c3', 'Bash', { command: 'make two' }), call('c4', 'Read')]),
+      await harness.input(set, [call('c1', 'Bash', { command: 'make one' }, 'allow_once'), call('c2', 'Read'), call('c3', 'Bash', { command: 'make two' }), call('c4', 'Read')]),
     );
     expect(first.map((outcome) => outcome.kind)).toEqual(['result', 'result', 'needs_approval', 'deferred']);
     expect(log).toEqual(['c1', 'c2']);
     expect(harness.started).toEqual(['c1', 'c2']);
     const second = await harness.executor.runBatch(
-      harness.input(set, [call('c1', 'Bash', { command: 'make one' }), call('c2', 'Read'), call('c3', 'Bash', { command: 'make two' }, 'allow_once'), call('c4', 'Read')]),
+      await harness.input(set, [call('c1', 'Bash', { command: 'make one' }), call('c2', 'Read'), call('c3', 'Bash', { command: 'make two' }, 'allow_once'), call('c4', 'Read')]),
     );
     expect(second[0]).toEqual(first[0]);
     expect(second[1]).toEqual(first[1]);
@@ -231,7 +231,7 @@ describe('batch scheduling', () => {
         return { kind: 'none', tool: 'Read' };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(mover, reader), [call('c1', 'Read'), call('c2', 'Bash'), call('c3', 'Read')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(mover, reader), [call('c1', 'Read'), call('c2', 'Bash'), call('c3', 'Read')]));
     expect(seenCwd).toEqual([harness.layout.project, subDir]);
     expect(harness.session.cwd).toBe(subDir);
   });

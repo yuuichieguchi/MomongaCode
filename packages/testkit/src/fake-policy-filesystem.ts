@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { EMPTY_PROTECTED_SET, gitlinksOfIndex, programKeysOfConfig, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, gitlinksOfIndex, hostPaths, programKeysOfConfig } from '@momonga/foundation';
 import { TEST_HEARTBEAT_MS } from './test-support.ts';
-import type { ConfigPrograms, EntryRead, GitlinkRead, PathResolution, ProtectedSet, StepRead, Unresolved, UnresolvableErrno } from '@momonga/foundation';
+import type { ConfigPrograms, EntryRead, GitlinkRead, LocatedParts, PathProbes, PathResolution, PathResolver, ProtectedSet, StepRead, Unresolved, UnresolvableErrno } from '@momonga/foundation';
 
 export type FakeProgramResolution = { program: string } | { none: true };
 export type FakeGlobExpansion = { matches: string[] } | { overflow: true } | Unresolved;
@@ -11,19 +11,28 @@ export type FakeHeadRead = { kind: 'symlink'; target: string } | { kind: 'text';
 
 export type FakePolicyFilesystem = {
   platform: NodeJS.Platform;
-  canonicalise: (absolute: string) => PathResolution;
-  volumeProbe: (directory: string) => boolean;
-  resolveProgram: (name: string, cwd: string, searchPath: string | undefined, isWritable: (absolute: string) => boolean) => FakeProgramResolution;
+  canonicalise: (absolute: string) => PathResolution | Promise<PathResolution>;
+  volumeProbe: (directory: string) => boolean | Promise<boolean>;
+  locate: (absolute: string) => LocatedParts | Promise<LocatedParts>;
+  resolveProgram: (name: string, cwd: string, searchPath: string | undefined, isWritable: FakeWritableCheck) => FakeProgramResolution | Promise<FakeProgramResolution>;
   expandGlob: (pattern: string, cwd: string, limit: number) => FakeGlobExpansion;
-  readEntry: (absolutePath: string) => EntryRead;
-  readNoFollow: (absolutePath: string) => StepRead;
-  readHead: (absolutePath: string) => FakeHeadRead;
-  isSearchable: (absolutePath: string) => boolean;
-  gitlinks: (gitDirectory: string) => GitlinkRead | Unresolved;
-  configPrograms: (gitDirectory: string) => ConfigPrograms | Unresolved;
+  readEntry: (absolutePath: string) => EntryRead | Promise<EntryRead>;
+  readNoFollow: (absolutePath: string) => StepRead | Promise<StepRead>;
+  readHead: (absolutePath: string) => FakeHeadRead | Promise<FakeHeadRead>;
+  isSearchable: (absolutePath: string) => boolean | Promise<boolean>;
+  gitlinks: (gitDirectory: string) => GitlinkRead | Unresolved | Promise<GitlinkRead | Unresolved>;
+  configPrograms: (gitDirectory: string) => ConfigPrograms | Unresolved | Promise<ConfigPrograms | Unresolved>;
 };
 
-export type FakeResolveCall = { name: string; cwd: string; searchPath: string | undefined; isWritable: (absolute: string) => boolean };
+export type FakeWritableCheck = (absolute: string) => boolean | Promise<boolean>;
+
+export type FakeResolveCall = { name: string; cwd: string; searchPath: string | undefined; isWritable: FakeWritableCheck };
+
+export const NEVER_CANCELLED: AbortSignal = new AbortController().signal;
+
+export const testPaths = (): PathResolver => hostPaths(NEVER_CANCELLED);
+
+export const testProbes = (): PathProbes => ({ canonicalise: (absolute) => testPaths().resolveCanonicalPath(absolute), volumeProbe: (directory) => testPaths().volumeIsCaseInsensitive(directory) });
 
 export type RecordingPolicyFilesystem = FakePolicyFilesystem & { resolveCalls: FakeResolveCall[] };
 
@@ -162,8 +171,9 @@ export const fakePolicyFilesystem = (layout: FakePolicyFilesystemLayout = {}): R
   return {
     resolveCalls,
     platform: layout.platform ?? 'darwin',
-    canonicalise: (absolute) => resolveCanonicalPath(absolute),
-    volumeProbe: (directory) => volumeIsCaseInsensitive(directory),
+    canonicalise: (absolute) => testPaths().resolveCanonicalPath(absolute),
+    volumeProbe: (directory) => testPaths().volumeIsCaseInsensitive(directory),
+    locate: (absolute) => testPaths().locate(absolute),
     resolveProgram: (name, cwd, searchPath, isWritable) => {
       resolveCalls.push({ name, cwd, searchPath, isWritable });
       if (searchPath === undefined) return { none: true };

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { appendPermissionRule, editUserSettings, systemFileLockPorts } from '@momonga/config';
 import { momongaLayout } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, testPaths } from '@momonga/testkit';
 import { settingsLockPath } from '../src/file-lock.ts';
 import { localSettingsPath, makeDir, makeTree, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
@@ -32,11 +32,11 @@ const recordingEdit = () => {
 };
 
 describe('editUserSettings is the one writer of a settings file and takes the settings lock under the home', () => {
-  it('takes the lock at settingsLockPath(home, file)', async (context) => {
+  it('takes the lock at await settingsLockPath(home, file, testPaths())', async (context) => {
     const tree = makeTree();
     const file = userSettingsOf(tree);
     lockRunDirectoryOf(tree);
-    const holder = await startLockHolder(context, settingsLockPath(tree.home, file));
+    const holder = await startLockHolder(context, await settingsLockPath(tree.home, file, testPaths()));
     const recorded = recordingEdit();
     await expect(editUserSettings(tree.home, file, recorded.edit, { signal: new AbortController().signal, lockTimeoutMs: 50 })).rejects.toThrow(`held by process ${holder.pid}`);
     expect(recorded.calls).toEqual([]);
@@ -50,7 +50,7 @@ describe('editUserSettings is the one writer of a settings file and takes the se
     const viaLink = path.join(makeDir(), 'link');
     fs.symlinkSync(path.dirname(realFile), viaLink);
     const linkPath = path.join(viaLink, path.basename(realFile));
-    const holder = await startLockHolder(context, settingsLockPath(tree.home, realFile));
+    const holder = await startLockHolder(context, await settingsLockPath(tree.home, realFile, testPaths()));
     const recorded = recordingEdit();
     await expect(editUserSettings(tree.home, linkPath, recorded.edit, { signal: new AbortController().signal, lockTimeoutMs: 50 })).rejects.toThrow(`held by process ${holder.pid}`);
     expect(recorded.calls).toEqual([]);
@@ -67,7 +67,7 @@ describe('editUserSettings is the one writer of a settings file and takes the se
   it('appendPermissionRule and editUserSettings take the same lock for one local settings file', async (context) => {
     const tree = makeTree();
     await appendPermissionRule({ signal: new AbortController().signal, ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow' });
-    const holder = await startLockHolder(context, settingsLockPath(tree.home, localSettingsPath(tree)));
+    const holder = await startLockHolder(context, await settingsLockPath(tree.home, localSettingsPath(tree), testPaths()));
     await expect(appendPermissionRule({ signal: new AbortController().signal, ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(b)', effect: 'allow', lockTimeoutMs: 50 })).rejects.toThrow(
       `held by process ${holder.pid}`,
     );

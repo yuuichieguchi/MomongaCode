@@ -60,13 +60,13 @@ describe.runIf(process.platform === 'darwin').each(variants)('marker file as fd 
     ...overrides,
   });
 
-  const sh = (script: string, markerFile: string | undefined, overrides: Partial<SandboxPolicy> = {}): SandboxedProcess => {
+  const sh = async (script: string, markerFile: string | undefined, overrides: Partial<SandboxPolicy> = {}): Promise<SandboxedProcess> => {
     const controller = new AbortController();
     controllers.push(controller);
     const command = markerFile === undefined
       ? { argv: ['/bin/sh', '-c', script], cwd: root, env: BASE_ENV }
       : { argv: ['/bin/sh', '-c', script], cwd: root, env: BASE_ENV, markerFile };
-    const proc = sandbox.spawn(command, policy(overrides), controller.signal);
+    const proc = await sandbox.spawn(command, policy(overrides), controller.signal);
     spawned.push(proc);
     return proc;
   };
@@ -96,32 +96,32 @@ describe.runIf(process.platform === 'darwin').each(variants)('marker file as fd 
 
   it('lets the child read the marker through fd 3', async () => {
     const marker = makeMarker(tempDir());
-    const result = await run(sh('cat <&3', marker));
+    const result = await run(await sh('cat <&3', marker));
     expect(result.code).toBe(0);
     expect(result.stdout).toBe(MARKER_CONTENT);
   });
 
   it('makes the child and its grandchild visible as marker holders while running, but not the parent', async () => {
     const marker = makeMarker(tempDir());
-    const proc = sh('sleep 30 & echo "ready $!"; wait', marker);
-    const lines = await readLinesUntil(proc.stdout, (current) => current.some((line) => line.startsWith('ready ')));
+    const proc = await sh('sleep 30 & echo "ready $!"; wait', marker);
+    const lines = await readLinesUntil((await proc).stdout, (current) => current.some((line) => line.startsWith('ready ')));
     const sleepPid = Number(lines.find((line) => line.startsWith('ready '))?.slice('ready '.length));
     const holders = holdersOf(marker);
-    expect(holders).toContain(proc.pid);
+    expect(holders).toContain((await proc).pid);
     expect(holders).toContain(sleepPid);
     expect(holders).not.toContain(process.pid);
   });
 
   it('does not open fd 3 in the child without a marker file', async () => {
-    const result = await run(sh('if { true <&3; } 2>/dev/null; then echo open; else echo closed; fi', undefined));
+    const result = await run(await sh('if { true <&3; } 2>/dev/null; then echo open; else echo closed; fi', undefined));
     expect(result.stdout).toBe('closed\n');
   });
 
-  it('fails to spawn with an error naming a missing marker file', () => {
+  it('fails to spawn with an error naming a missing marker file', async () => {
     const missing = path.join(tempDir(), 'missing-marker');
     let error: unknown;
     try {
-      sh('true', missing);
+      await sh('true', missing);
     } catch (caught) {
       error = caught;
     }
@@ -133,7 +133,7 @@ describe.runIf(process.platform === 'darwin').each(variants)('marker file as fd 
     const secret = tempDir();
     const marker = makeMarker(secret);
     const script = `cat <&3; echo; if cat '${marker}' >/dev/null 2>&1; then echo path-ok; else echo path-denied; fi`;
-    const result = await run(sh(script, marker, { readDenied: [secret] }));
+    const result = await run(await sh(script, marker, { readDenied: [secret] }));
     expect(result.stdout).toBe(`${MARKER_CONTENT}\npath-denied\n`);
   });
 });

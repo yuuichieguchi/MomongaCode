@@ -79,7 +79,7 @@ describe('the executor observes the work tree around a non-read-only call that d
     const { harness, counts } = setup(script);
     const file = path.join(harness.layout.project, 'out.txt');
     script.push([{ path: file, change: 'write' }]);
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(sh(written)), [call('c1', 'Sh', { command: 'make fmt', file }, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(sh(written)), [call('c1', 'Sh', { command: 'make fmt', file }, 'allow_once')]));
     const result = resultOf(outcome);
     expect(written).toEqual([file]);
     expect(result.files).toEqual([{ path: file, sha256: sha256Hex('make fmt'), access: 'write' }]);
@@ -92,27 +92,27 @@ describe('the executor observes the work tree around a non-read-only call that d
     const { harness } = setup(script);
     const gone = path.join(harness.layout.project, 'gone.txt');
     script.push([{ path: gone, change: 'remove' }]);
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'rm gone.txt' }, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'rm gone.txt' }, 'allow_once')]));
     expect(resultOf(outcome).files).toEqual([{ path: gone, access: 'remove' }]);
   });
 
   it('sets files to [] when the observer saw no change', async () => {
     const { harness, counts } = setup([[]]);
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'true' }, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'true' }, 'allow_once')]));
     expect(resultOf(outcome).files).toEqual([]);
     expect(counts.changedSince).toBe(1);
   });
 
   it('leaves files absent when the observer returns undefined', async () => {
     const { harness, counts } = setup([undefined]);
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'true' }, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'true' }, 'allow_once')]));
     expect(counts.mark).toBe(1);
     expect(resultOf(outcome)).not.toHaveProperty('files');
   });
 
   it('never observes a read-only call', async () => {
     const { harness, trees } = setup([]);
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(read()), [call('r1', 'Read')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(read()), [call('r1', 'Read')]));
     expect(resultOf(outcome)).not.toHaveProperty('files');
     expect(trees()).toBe(0);
   });
@@ -120,7 +120,7 @@ describe('the executor observes the work tree around a non-read-only call that d
   it('never observes a call whose subject names the paths it writes, which keeps its own files', async () => {
     const { harness, trees } = setup([]);
     const file = path.join(harness.layout.project, 'w.txt');
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(write()), [call('w1', 'Write', { file_path: file }, 'allow_once')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(write()), [call('w1', 'Write', { file_path: file }, 'allow_once')]));
     expect(resultOf(outcome).files).toEqual([{ path: file, sha256: sha256Hex('own'), access: 'write' }]);
     expect(trees()).toBe(0);
   });
@@ -130,7 +130,7 @@ describe('marks per batch are counted, never timed', () => {
   it('takes observed calls plus one marks when nothing else wrote between them', async () => {
     const { harness, trees, counts } = setup([[], [], []]);
     const calls = ['c1', 'c2', 'c3'].map((id) => call(id, 'Sh', { command: `step ${id}` }, 'allow_once'));
-    await harness.executor.runBatch(harness.input(await toolSetOf(sh([]), read()), [calls[0]!, call('r1', 'Read'), calls[1]!, calls[2]!]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(sh([]), read()), [calls[0]!, call('r1', 'Read'), calls[1]!, calls[2]!]));
     expect(counts.changedSince).toBe(3);
     expect(trees()).toBe(4);
   });
@@ -139,7 +139,7 @@ describe('marks per batch are counted, never timed', () => {
     const { harness, trees, counts } = setup([[], []]);
     const file = path.join(harness.layout.project, 'between.txt');
     await harness.executor.runBatch(
-      harness.input(await toolSetOf(sh([]), write()), [
+      await harness.input(await toolSetOf(sh([]), write()), [
         call('c1', 'Sh', { command: 'one' }, 'allow_once'),
         call('w1', 'Write', { file_path: file }, 'allow_once'),
         call('c2', 'Sh', { command: 'two' }, 'allow_once'),
@@ -155,7 +155,7 @@ describe('a window shared with a background job or a child run', () => {
     const answers = [false, true];
     const { harness } = setup([[]]);
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'make' }, 'allow_once')], { windowShared: () => answers.shift() ?? false } as never),
+      await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'make' }, 'allow_once')], { windowShared: () => answers.shift() ?? false } as never),
     );
     expect(resultOf(outcome).windowShared).toBe(true);
   });
@@ -164,7 +164,7 @@ describe('a window shared with a background job or a child run', () => {
     const answers = [true, false];
     const { harness } = setup([[]]);
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'make' }, 'allow_once')], { windowShared: () => answers.shift() ?? false } as never),
+      await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'make' }, 'allow_once')], { windowShared: () => answers.shift() ?? false } as never),
     );
     expect(resultOf(outcome).windowShared).toBe(true);
     expect(answers).toEqual([]);
@@ -174,7 +174,7 @@ describe('a window shared with a background job or a child run', () => {
     let asked = 0;
     const { harness } = setup([[]]);
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'make' }, 'allow_once')], {
+      await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'make' }, 'allow_once')], {
         windowShared: () => {
           asked += 1;
           return false;

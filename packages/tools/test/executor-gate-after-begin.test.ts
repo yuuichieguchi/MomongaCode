@@ -60,7 +60,7 @@ describe('executor gates a call whose recovered record vanished before begin', (
     const { harness, tool, executor, executions } = setup();
 
     const [outcome] = await executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('deny', 'Write')] }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('deny', 'Write')] }),
     );
 
     expect(outcome?.kind).toBe('result');
@@ -75,7 +75,7 @@ describe('executor gates a call whose recovered record vanished before begin', (
   it('returns needs_approval with the subject digest and never executes when the policy asks', async () => {
     const { harness, tool, subject, executor, executions } = setup();
 
-    const [outcome] = await executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')], { mode: 'manual' }));
+    const [outcome] = await executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write')], { mode: 'manual' }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval', subjectDigest: expectedSubjectDigest(subject, harness.layout.project) });
     expect(executions()).toBe(0);
@@ -87,10 +87,10 @@ describe('executor gates a call whose recovered record vanished before begin', (
     const { harness, tool, executor, executions } = setup('unknown');
     const toolSet = await toolSetOf(tool);
 
-    const [asked] = await executor.runBatch(harness.input(toolSet, [call('c1', 'Write')], { mode: 'manual' }));
+    const [asked] = await executor.runBatch(await harness.input(toolSet, [call('c1', 'Write')], { mode: 'manual' }));
     expect(asked?.kind).toBe('needs_approval');
 
-    const [approved] = await harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Write', {}, 'allow_once')], { mode: 'manual' }));
+    const [approved] = await harness.executor.runBatch(await harness.input(toolSet, [call('c1', 'Write', {}, 'allow_once')], { mode: 'manual' }));
 
     expect(approved).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed', output: 'written' } });
     expect(executions()).toBe(1);
@@ -102,7 +102,7 @@ describe('executor gates a call whose recovered record vanished before begin', (
   it('runs a fresh prepare instead of reusing the vanished record prepared meta', async () => {
     const { harness, tool, executor, preparedSeen, prepareCalls } = setup();
 
-    await executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('allow', 'Write')] }));
+    await executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('allow', 'Write')] }));
 
     expect(prepareCalls()).toBe(1);
     expect(preparedSeen).toEqual([{ generation: 'fresh' }]);
@@ -111,7 +111,7 @@ describe('executor gates a call whose recovered record vanished before begin', (
   it('executes exactly once when the call carries a matching approval', async () => {
     const { harness, tool, executor, executions } = setup();
 
-    const [outcome] = await executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write', {}, 'allow_once')], { mode: 'manual' }));
+    const [outcome] = await executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write', {}, 'allow_once')], { mode: 'manual' }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed', output: 'written' } });
     expect(executions()).toBe(1);
@@ -122,7 +122,7 @@ describe('executor gates a call whose recovered record vanished before begin', (
     const { harness, tool, executor, executions } = setup();
 
     const [outcome] = await executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('allow', 'Write')] }),
+      await harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules: [ruleFor(harness.layout)('allow', 'Write')] }),
     );
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed', output: 'written' } });
@@ -133,7 +133,7 @@ describe('executor gates a call whose recovered record vanished before begin', (
   it('cancels a recoverOnly call whose record vanished without preparing, executing, or recording', async () => {
     const { harness, tool, executor, executions, prepareCalls } = setup();
 
-    const [outcome] = await executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')], { recoverOnly: true }));
+    const [outcome] = await executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Write')], { recoverOnly: true }));
 
     expect(outcome?.kind).toBe('result');
     expect((outcome as { result: { status: string } }).result.status).toBe('failed');

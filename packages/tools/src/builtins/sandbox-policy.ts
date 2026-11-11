@@ -1,6 +1,6 @@
-import { comparableContains, momongaLayout } from '@momonga/foundation';
+import { hostPaths, mapAsync, momongaLayout, someAsync } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
-import { SandboxPolicyError, alwaysWriteDenied, assertAbsoluteEntries, canonicalizePath, validateSandboxPolicy } from '@momonga/sandbox';
+import { SandboxPolicyError, alwaysWriteDenied, assertAbsoluteEntries, validateSandboxPolicy } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 
 export type SandboxPolicyOptions = {
@@ -19,7 +19,8 @@ export type SandboxPolicyOptions = {
 
 const unique = (values: readonly string[]): string[] => [...new Set(values)];
 
-export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy => {
+export const buildSandboxPolicy = async (options: SandboxPolicyOptions, signal: AbortSignal): Promise<SandboxPolicy> => {
+  const paths = hostPaths(signal);
   assertAbsoluteEntries('writable_root_not_absolute', 'roots', options.roots);
   assertAbsoluteEntries('entry_not_absolute', 'home', [options.home]);
   assertAbsoluteEntries('entry_not_absolute', 'tmpDir', options.tmpDir === undefined ? [] : [options.tmpDir]);
@@ -27,7 +28,7 @@ export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy
   assertAbsoluteEntries('entry_not_absolute', 'extraWritable', options.extraWritable ?? []);
   assertAbsoluteEntries('entry_not_absolute', 'extraReadDenied', options.extraReadDenied ?? []);
   assertAbsoluteEntries('entry_not_absolute', 'readAllowed', options.readAllowed ?? []);
-  const denied = alwaysWriteDenied(options.home);
+  const denied = await alwaysWriteDenied(options.home, signal);
   const readDenied = [...denied.readDenied, options.sessionsTmpRoot, ...(options.extraReadDenied ?? [])];
   const ownTmp = options.tmpDir === undefined ? [] : [options.tmpDir];
   const readAllowed = unique([...ownTmp, ...(options.readAllowed ?? [])]);
@@ -42,11 +43,11 @@ export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy
     fileRules: options.fileRules,
     protectedSet: options.protectedSet,
   };
-  validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir });
-  const homeGuards = denied.readDenied.map(canonicalizePath);
-  const skillsRoot = canonicalizePath(momongaLayout(options.home).skills);
-  for (const entry of readAllowed.map(canonicalizePath)) {
-    if (homeGuards.some((guard) => comparableContains(guard, entry)) && !comparableContains(skillsRoot, entry)) {
+  await validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir }, paths);
+  const homeGuards = await mapAsync(denied.readDenied, paths.canonicalPath);
+  const skillsRoot = await paths.canonicalPath(momongaLayout(options.home).skills);
+  for (const entry of await mapAsync(readAllowed, paths.canonicalPath)) {
+    if ((await someAsync(homeGuards, (guard) => paths.comparableContains(guard, entry))) && !(await paths.comparableContains(skillsRoot, entry))) {
       throw new SandboxPolicyError('read_allowed_inside_owned_root', `readAllowed entry must not lie inside ${denied.root} or ${denied.keychains}: ${entry}`, { path: entry });
     }
   }

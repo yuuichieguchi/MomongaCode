@@ -2,9 +2,9 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs } from '@momonga/policy';
+import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs, askedBy } from '@momonga/policy';
 import { discoverGitConfigFiles, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
-import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
+import { TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND, createHostSandbox } from '../helpers.ts';
@@ -17,7 +17,7 @@ const OTHER = 'file:///elsewhere/other.git';
 const gitFilesOf = (directory: string): string => ['config', 'config.worktree'].map((name) => (fs.existsSync(path.join(directory, '.git', name)) ? fs.readFileSync(path.join(directory, '.git', name), 'utf8') : '')).join('\n');
 
 describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote of a repository (default policy and sandbox)', () => {
-  const setup = () => {
+  const setup = async () => {
     const workspace = makeRealWorkspace();
     workspace.initRepository();
     workspace.git(workspace.project, 'remote', 'add', 'origin', `file://${workspace.base}/origin.git`);
@@ -25,21 +25,21 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote of a repository (defau
     const tmpDir = path.join(workspace.base, 'sessions', 'session-1');
     for (const directory of [tmpDir, path.join(workspace.base, 'sandbox-tmp')]) fs.mkdirSync(directory, { recursive: true });
     const sandbox = createHostSandbox({ tmpRoot: path.join(workspace.base, 'sandbox-tmp'), killGraceMs: 300 });
-    const policy = buildSandboxPolicy({
+    const policy = await buildSandboxPolicy({
       roots,
       home: workspace.home,
       tmpDir,
       sessionsTmpRoot: path.join(workspace.base, 'sessions'),
-      fileRules: computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)),
-      protectedSet: protectedSetFor(roots, createPolicyFilesystem()),
+      fileRules: await computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
+      protectedSet: await protectedSetFor(roots, askedBy(createPolicyFilesystem(), NEVER_CANCELLED)),
       network: 'deny',
-    });
+    }, NEVER_CANCELLED);
     const inSandbox = async (script: string): Promise<{ code: number | null; stderr: string }> => {
-      const proc = sandbox.spawn({ argv: ['/bin/bash', '-c', script], cwd: workspace.project, env: { ...workspace.env(), PATH: workspace.env()['PATH'] ?? '' } as Record<string, string> }, policy, new AbortController().signal);
+      const proc = await sandbox.spawn({ argv: ['/bin/bash', '-c', script], cwd: workspace.project, env: { ...workspace.env(), PATH: workspace.env()['PATH'] ?? '' } as Record<string, string> }, policy, new AbortController().signal);
       const chunks: Buffer[] = [];
-      for await (const chunk of proc.stderr) chunks.push(Buffer.from(chunk));
-      for await (const chunk of proc.stdout) void chunk;
-      const exit = await proc.exited;
+      for await (const chunk of (await proc).stderr) chunks.push(Buffer.from(chunk));
+      for await (const chunk of (await proc).stdout) void chunk;
+      const exit = await (await proc).exited;
       return { code: exit.code, stderr: Buffer.concat(chunks).toString('utf8') };
     };
     return { workspace, inSandbox };
@@ -58,19 +58,19 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote of a repository (defau
   ];
 
   it.each(ROUTES)('%s: the policy asks a person and the sandbox leaves the configuration unchanged', async (_name, commandFor) => {
-    const { workspace, inSandbox } = setup();
+    const { workspace, inSandbox } = await setup();
     const command = commandFor(workspace);
     const before = gitFilesOf(workspace.project);
-    const decision = workspace.decide(command);
+    const decision = await workspace.decide(command);
     const result = await inSandbox(command);
     const homeFiles = ['.gitconfig', '.config/git/config'].filter((relative) => fs.existsSync(path.join(workspace.home, relative)));
     const changed = gitFilesOf(workspace.project) !== before || homeFiles.length > 0;
-    expect({ decision: decision.kind, changed }).toEqual({ decision: 'ask', changed: false });
+    expect({ decision: (await decision).kind, changed }).toEqual({ decision: 'ask', changed: false });
   });
 
-  it.each(['Write', 'Edit'] as const)('%s on .git/config needs a person, whatever the mode defaults say', (toolName) => {
-    const { workspace } = setup();
-    expect(workspace.decideWrite(toolName, path.join(workspace.project, '.git', 'config'))).toMatchObject({ kind: 'ask', source: 'protected', humanOnly: true });
+  it.each(['Write', 'Edit'] as const)('%s on .git/config needs a person, whatever the mode defaults say', async (toolName) => {
+    const { workspace } = await setup();
+    expect(await workspace.decideWrite(toolName, path.join(workspace.project, '.git', 'config'))).toMatchObject({ kind: 'ask', source: 'protected', humanOnly: true });
   });
 });
 
@@ -95,18 +95,18 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote when the workspace roo
     for (const directory of [tmpDir, path.join(workspace.base, 'sandbox-tmp')]) fs.mkdirSync(directory, { recursive: true });
     const filesystem = createPolicyFilesystem();
     const gitConfigFiles = await discoverGitConfigFiles({ workingDirectory: project, env, signal: new AbortController().signal });
-    const protectedSet = protectedSetFor(roots, filesystem, gitConfigFiles);
-    const fileRules = computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND));
-    const policy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(workspace.base, 'sessions'), fileRules, protectedSet, network: 'deny' });
+    const protectedSet = await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED), gitConfigFiles);
+    const fileRules = await computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes());
+    const policy = await buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(workspace.base, 'sessions'), fileRules, protectedSet, network: 'deny' }, NEVER_CANCELLED);
     const sandbox = createHostSandbox({ tmpRoot: path.join(workspace.base, 'sandbox-tmp'), killGraceMs: 300 });
     const inSandbox = async (script: string): Promise<number | null> => {
-      const proc = sandbox.spawn({ argv: ['/bin/bash', '-c', script], cwd: project, env }, policy, new AbortController().signal);
-      for await (const chunk of proc.stderr) void chunk;
-      for await (const chunk of proc.stdout) void chunk;
+      const proc = await sandbox.spawn({ argv: ['/bin/bash', '-c', script], cwd: project, env }, policy, new AbortController().signal);
+      for await (const chunk of (await proc).stderr) void chunk;
+      for await (const chunk of (await proc).stdout) void chunk;
       return (await proc.exited).code;
     };
-    const decision = (tool: { name: string; kind: 'execute' | 'edit'; sideEffect: 'exec' | 'write'; subjectKind: 'command' | 'path' }, subject: Parameters<typeof decide>[0]['subject']) =>
-      decide({ tool, subject, mode: 'manual', rules: [], roots, home, cwd: project, fileRules, protectedSet, fs: settleGlobs(filesystem, EMPTY_GLOB_TABLE), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots) });
+    const decision = async (tool: { name: string; kind: 'execute' | 'edit'; sideEffect: 'exec' | 'write'; subjectKind: 'command' | 'path' }, subject: Parameters<typeof decide>[0]['subject']) =>
+      await decide({ tool, subject, mode: 'manual', rules: [], roots, home, cwd: project, fileRules, protectedSet, fs: settleGlobs(filesystem, EMPTY_GLOB_TABLE, NEVER_CANCELLED), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots) });
     const bash = (command: string) => decision({ name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' }, { kind: 'command', tool: 'Bash', command });
     const write = (file: string) => decision({ name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' }, { kind: 'path', tool: 'Write', paths: [file], access: 'write' });
     return { home, project, included, inSandbox, bash, write, workspace };
@@ -117,7 +117,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote when the workspace roo
   it('git config --global needs a person and the sandbox leaves ~/.gitconfig absent', async () => {
     const { home, inSandbox, bash, workspace } = await setup();
     const command = `env -u GIT_CONFIG_GLOBAL git config --global ${insteadOf(workspace)}`;
-    expect(bash(command).kind).toBe('ask');
+    expect((await bash(command)).kind).toBe('ask');
     await inSandbox(command);
     expect(fs.existsSync(path.join(home, '.gitconfig'))).toBe(false);
   });

@@ -7,7 +7,7 @@ import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
-import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, isTransientErrno, sha256Hex, syncPaths } from '@momonga/foundation';
 import type { Clock, GenerationRole } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
@@ -145,7 +145,7 @@ const requireAbsolute = (value: string, label: string): void => {
 };
 
 const protectedAreaOf = (areas: readonly string[], target: string): string | undefined =>
-  areas.find((area) => comparableContains(area, target));
+  areas.find((area) => syncPaths.comparableContains(area, target));
 
 const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
@@ -288,7 +288,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   const createSession: Handler = async (context) => {
     refuseNewWork();
     const body = validateBody<CreateSessionBody>('CreateSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    const resolved = canonicalDirectory(body.cwd);
+    const resolved = syncPaths.canonicalDirectory(body.cwd);
     if (!resolved.ok) throw invalidRequest(`cwd ${body.cwd} ${resolved.reason}`, 'cwd');
     const cwd = resolved.path;
     const cwdArea = protectedAreaOf(deps.protectedRootAreas, cwd);
@@ -298,13 +298,13 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const model = body.model === undefined ? start : requestedModelOf(body.model, views);
     const settings = await sessionSettingsOf(cwd, context.req.raw.signal);
     const additionalDirectories: string[] = [];
-    const seen = new Set<string>([comparablePath(cwd)]);
+    const seen = new Set<string>([syncPaths.comparablePath(cwd)]);
     for (const entry of settings.additionalDirectories) {
       const area = protectedAreaOf(deps.protectedRootAreas, entry);
       if (area !== undefined) {
         throw configError(`additionalDirectories entry ${entry} is inside ${area} and cannot be a session root`, 'additionalDirectories');
       }
-      const key = comparablePath(entry);
+      const key = syncPaths.comparablePath(entry);
       if (seen.has(key)) continue;
       seen.add(key);
       additionalDirectories.push(entry);
@@ -326,7 +326,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     requireAbsolute(requested, 'cwd');
     let cwd: string;
     try {
-      cwd = canonicalPath(requested);
+      cwd = syncPaths.canonicalPath(requested);
     } catch (error) {
       if (isTransientErrno(error)) throw error;
       throw invalidRequest(`cwd ${requested} cannot be resolved: ${(error as Error).message}`, 'cwd');
@@ -603,7 +603,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       requireAbsolute(requestedCwd, 'cwd');
       let cwd: string;
       try {
-        cwd = canonicalPath(requestedCwd);
+        cwd = syncPaths.canonicalPath(requestedCwd);
       } catch (error) {
         if (isTransientErrno(error)) throw error;
         throw invalidRequest(`cwd ${requestedCwd} cannot be resolved: ${(error as Error).message}`, 'cwd');

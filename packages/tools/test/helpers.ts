@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex, ruleEnforcementOf } from '@momonga/foundation';
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { LeaseFence, LeasedIdempotencyPort } from '@momonga/tools';
@@ -250,30 +250,30 @@ export const sessionTmpDirOf = (layout: Layout): string => {
 
 export type PolicyInputs = { layout: Layout; rules?: readonly PermissionRule[]; roots?: readonly string[]; tmpDir?: string };
 
-export const minimalPolicyFor = ({ layout, rules = [], roots = [layout.project], tmpDir }: PolicyInputs): SandboxPolicy => {
+export const minimalPolicyFor = async ({ layout, rules = [], roots = [layout.project], tmpDir }: PolicyInputs): Promise<SandboxPolicy> => {
   const policy: SandboxPolicy = {
     writableRoots: [layout.project],
     writeDenied: [],
     writeDeniedLiterals: [],
     readDenied: [],
     network: 'deny',
-    fileRules: computeFileRules(rules, roots, tmpDir ?? null, ruleEnforcementOf(HOST_SANDBOX_KIND)),
+    fileRules: await computeFileRules(rules, roots, tmpDir ?? null, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
     protectedSet: EMPTY_PROTECTED_SET,
   };
-  validateSandboxPolicy(policy, tmpDir === undefined ? {} : { tmpDir });
+  await validateSandboxPolicy(policy, tmpDir === undefined ? {} : { tmpDir }, testPaths());
   return policy;
 };
 
-export const policyFor = ({ layout, rules = [], roots = [layout.project], tmpDir = sessionTmpDirOf(layout) }: PolicyInputs): SandboxPolicy =>
-  buildSandboxPolicy({
+export const policyFor = async ({ layout, rules = [], roots = [layout.project], tmpDir = sessionTmpDirOf(layout) }: PolicyInputs): Promise<SandboxPolicy> =>
+  await buildSandboxPolicy({
     roots: [...roots],
     home: layout.home,
     tmpDir,
     sessionsTmpRoot: sessionsTmpRootOf(layout),
-    fileRules: computeFileRules(rules, roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)),
-    protectedSet: protectedSetFor(roots, fakePolicyFilesystem()),
+    fileRules: await computeFileRules(rules, roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
+    protectedSet: await protectedSetFor(roots, fakePolicyFilesystem()),
     network: 'deny',
-  });
+  }, NEVER_CANCELLED);
 
 export const keyFor = (runId: string, step: number, callId: string): string => sha256Hex(canonicalJson([runId, step, callId]));
 

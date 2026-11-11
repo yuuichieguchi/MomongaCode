@@ -98,14 +98,14 @@ export const editTool = defineTool<EditInput>({
     additionalProperties: false,
   },
   timeoutMs: 30_000,
-  title: (input, ctx) => `Edit ${shownPath(ctx, accessedPathOf(ctx, input.file_path))}`,
+  title: async (input, ctx) => `Edit ${await shownPath(ctx, await accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Edit', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
   prepare: async (input, ctx) => {
     if (input.old_string === '') throw new ToolExecutionError('old_string must not be empty; use Write to create or replace a file');
     if (input.old_string === input.new_string) throw new ToolExecutionError('old_string and new_string are identical; nothing to change');
-    const target = canonicalPathOf(ctx, 'file_path', input.file_path);
-    const shown = shownPath(ctx, resolvedPathOf(ctx, input.file_path));
+    const target = await canonicalPathOf(ctx, 'file_path', input.file_path);
+    const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
     const stat = await statIfExists(target);
     if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${shown}`);
     if (stat.isDirectory()) throw new ToolExecutionError(`${shown} is a directory, not a file`);
@@ -119,8 +119,8 @@ export const editTool = defineTool<EditInput>({
   execute: async (input, ctx, prepared) => {
     const plan = parsePreparedWrite(prepared);
     const requested = resolvedPathOf(ctx, input.file_path);
-    const shown = shownPath(ctx, requested);
-    assertSameLocation(ctx, requested, plan.path, canonicalPathOf(ctx, 'file_path', input.file_path));
+    const shown = await shownPath(ctx, requested);
+    await assertSameLocation(ctx, requested, plan.path, await canonicalPathOf(ctx, 'file_path', input.file_path));
     const stat = await statIfExists(plan.path);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);

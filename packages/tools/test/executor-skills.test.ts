@@ -8,7 +8,7 @@ describe('executor and skills', () => {
     const harness = makeHarness();
     const skill = { name: 'pdf', content: '<skill_content name="pdf">body</skill_content>' };
     const set = await toolSetOf(makeTool('activate_skill', { execute: async () => ({ status: 'completed', output: skill.content, skill }) }));
-    const outcomes = await harness.executor.runBatch(harness.input(set, [call('c1', 'activate_skill')]));
+    const outcomes = await harness.executor.runBatch(await harness.input(set, [call('c1', 'activate_skill')]));
     expect(outcomes).toEqual([
       { callId: 'c1', kind: 'result', result: { status: 'completed', output: skill.content, skill }, idemKey: keyFor('run-1', 1, 'c1') },
     ]);
@@ -21,10 +21,10 @@ describe('executor and skills', () => {
     const tool = makeTool('Read', { sideEffect: 'read_only', subjectKind: 'path', subject: () => ({ kind: 'path', tool: 'Read', paths: [target], access: 'read' }) });
     const set = await toolSetOf(tool);
 
-    const [asked] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
+    const [asked] = await harness.executor.runBatch(await harness.input(set, [call('c1', 'Read')]));
     expect(asked?.kind).toBe('needs_approval');
 
-    const [allowed] = await harness.executor.runBatch(harness.input(set, [call('c2', 'Read')], { readRoots: [skillDirectory] }));
+    const [allowed] = await harness.executor.runBatch(await harness.input(set, [call('c2', 'Read')], { readRoots: [skillDirectory] }));
     expect(allowed?.kind).toBe('result');
   });
 });

@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { canonicalPath } from '@momonga/foundation';
+
 import { EMPTY_SYMLINK_SUPPORTED } from '@momonga/testkit';
+import { syncPaths } from '../src/index.ts';
 
 const tempDirs: string[] = [];
 
@@ -23,7 +24,7 @@ const kernelCreate = (input: string): string => {
 };
 
 const expectKernelAgreement = (input: string, kernelTarget: string): void => {
-  const predicted = canonicalPath(input);
+  const predicted = syncPaths.canonicalPath(input);
   const created = kernelCreate(input);
   expect(created).toBe(kernelTarget);
   expect(fs.readFileSync(kernelTarget, 'utf8')).toBe('x');
@@ -112,17 +113,17 @@ describe('canonicalPath resolves dotdot after a symlink in kernel order', () => 
 });
 
 describe('canonicalPath behaviour that must be preserved', () => {
-  it('throws on a symlink loop', () => {
+  it('throws on a symlink loop', async () => {
     const d = makeDir();
     fs.symlinkSync('b', path.join(d, 'a'));
     fs.symlinkSync('a', path.join(d, 'b'));
-    expect(() => canonicalPath(path.join(d, 'a'))).toThrow();
+    await expect((async () => syncPaths.canonicalPath(path.join(d, 'a')))()).rejects.toThrow();
   });
 
   it('returns an existing file unchanged', () => {
     const d = makeDir();
     fs.writeFileSync(path.join(d, 'f'), 'x');
-    expect(canonicalPath(path.join(d, 'f'))).toBe(path.join(d, 'f'));
+    expect(syncPaths.canonicalPath(path.join(d, 'f'))).toBe(path.join(d, 'f'));
   });
 
   it('agrees with the kernel for a missing file under an existing real dir', () => {
@@ -141,16 +142,16 @@ describe('canonicalPath behaviour that must be preserved', () => {
   });
 });
 
-const expectKernelRefuses = (input: string): void => {
-  expect(() => fs.writeFileSync(input, 'x')).toThrow();
-  expect(() => canonicalPath(input)).toThrow();
+const expectKernelRefuses = async (input: string): Promise<void> => {
+  await expect((async () => fs.writeFileSync(input, 'x'))()).rejects.toThrow();
+  await expect((async () => syncPaths.canonicalPath(input))()).rejects.toThrow();
 };
 
 describe('canonicalPath honours a trailing slash like the kernel', () => {
-  it('throws for a regular file followed by a slash', () => {
+  it('throws for a regular file followed by a slash', async () => {
     const d = makeDir();
     fs.writeFileSync(path.join(d, 'f'), 'x');
-    expect(() => fs.openSync(`${d}/f/`, 'r')).toThrow(expect.objectContaining({ code: 'ENOTDIR' }));
+    await expect((async () => fs.openSync(`${d}/f/`, 'r'))()).rejects.toThrow(expect.objectContaining({ code: 'ENOTDIR' }));
     expectKernelRefuses(`${d}/f/`);
   });
 
@@ -163,15 +164,15 @@ describe('canonicalPath honours a trailing slash like the kernel', () => {
   it('returns the directory for an existing directory followed by a slash', () => {
     const d = makeDir();
     fs.mkdirSync(path.join(d, 'dir'));
-    expect(canonicalPath(`${d}/dir/`)).toBe(path.join(d, 'dir'));
+    expect(syncPaths.canonicalPath(`${d}/dir/`)).toBe(path.join(d, 'dir'));
   });
 
-  it('throws for a symlink whose target ends in a slash and names a file', () => {
+  it('throws for a symlink whose target ends in a slash and names a file', async () => {
     const d = makeDir();
     fs.writeFileSync(path.join(d, 'f'), 'x');
     fs.symlinkSync('f/', path.join(d, 'l'));
-    expect(() => fs.openSync(path.join(d, 'l'), 'r')).toThrow();
-    expect(() => canonicalPath(path.join(d, 'l'))).toThrow();
+    await expect((async () => fs.openSync(path.join(d, 'l'), 'r'))()).rejects.toThrow();
+    await expect((async () => syncPaths.canonicalPath(path.join(d, 'l')))()).rejects.toThrow();
   });
 });
 

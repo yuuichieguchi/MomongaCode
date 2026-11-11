@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, ProbeFailedError, canonicalPath, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, orphanReapGraceMs, probeFailed, runtimeMaxCloseMs, scopeToGeneration, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, orphanReapGraceMs, probeFailed, runtimeMaxCloseMs, scopeToGeneration, supervisorMaxCloseMs, syncPaths } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -430,7 +430,7 @@ describe('orphan reap at supervisor start', () => {
       },
     });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000, description: 'both children spawned' });
-    expect(h.markers.calls.reapMarkerDirectory).toEqual([expect.objectContaining({ dir: scopeToGeneration(momongaPaths(canonicalPath(h.home), process.platform, {}), 3).markers.daemons, killGraceMs: DAEMON_MARKER_KILL_GRACE_MS, label: 'daemon' })]);
+    expect(h.markers.calls.reapMarkerDirectory).toEqual([expect.objectContaining({ dir: scopeToGeneration(momongaPaths(syncPaths.canonicalPath(h.home), process.platform, {}), 3).markers.daemons, killGraceMs: DAEMON_MARKER_KILL_GRACE_MS, label: 'daemon' })]);
     expect(h.markers.calls.findHolders).toEqual([]);
     expect(others.map((marker) => fs.existsSync(marker))).toEqual([true, true, true]);
     const messages = h.log.messages();

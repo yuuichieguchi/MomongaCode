@@ -2,12 +2,13 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isProtectedWrite, protectedSetFor } from '@momonga/foundation';
-import { allWriteTargets, analyzeCommand, commandSpecsFor, programNameOf } from '@momonga/policy';
+import { allWriteTargets, analyzeCommand, commandSpecsFor, programNameOf, askedBy } from '@momonga/policy';
 import type { Analysis, Decision } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { createPolicyFilesystem } from '@momonga/tools';
 import { CANARY } from './fixture.ts';
 import type { DifferentialWorkspace } from './fixture.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 export type Case = {
   command: string;
@@ -162,10 +163,10 @@ export const runCase = async (workspace: DifferentialWorkspace, input: Case): Pr
   const after = snapshot(workspace.base);
   const fired = new Set(workspace.firedMarkers());
   const filesystem = createPolicyFilesystem();
-  const protectedSet = protectedSetFor([workspace.project], filesystem);
+  const protectedSet = await protectedSetFor([workspace.project], askedBy(filesystem, NEVER_CANCELLED));
   const reported = reportedWrites(analysis, cwd);
   for (const entry of changedPaths(before, after)) {
-    if (isProtectedWrite(protectedSet, entry, filesystem)) {
+    if (await isProtectedWrite(protectedSet, entry, askedBy(filesystem, NEVER_CANCELLED))) {
       violations.push(`changed ${entry}, which is protected`);
       continue;
     }

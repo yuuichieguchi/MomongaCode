@@ -32,12 +32,12 @@ export const writeTool = defineTool<WriteInput>({
     additionalProperties: false,
   },
   timeoutMs: 30_000,
-  title: (input, ctx) => `Write ${shownPath(ctx, accessedPathOf(ctx, input.file_path))}`,
+  title: async (input, ctx) => `Write ${await shownPath(ctx, await accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Write', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
   prepare: async (input, ctx) => {
-    const target = canonicalPathOf(ctx, 'file_path', input.file_path);
-    const shown = shownPath(ctx, resolvedPathOf(ctx, input.file_path));
+    const target = await canonicalPathOf(ctx, 'file_path', input.file_path);
+    const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
     const stat = await statIfExists(target);
     if (stat?.isDirectory() === true) throw new ToolExecutionError(`${shown} is a directory, not a file`);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
@@ -49,8 +49,8 @@ export const writeTool = defineTool<WriteInput>({
     const plan = parsePreparedWrite(prepared);
     if (sha256Hex(input.content) !== plan.postHash) throw new ToolExecutionError('Write content does not match the prepared state');
     const requested = resolvedPathOf(ctx, input.file_path);
-    const shown = shownPath(ctx, requested);
-    assertSameLocation(ctx, requested, plan.path, canonicalPathOf(ctx, 'file_path', input.file_path));
+    const shown = await shownPath(ctx, requested);
+    await assertSameLocation(ctx, requested, plan.path, await canonicalPathOf(ctx, 'file_path', input.file_path));
     const stat = await statIfExists(plan.path);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);

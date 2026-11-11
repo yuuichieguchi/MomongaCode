@@ -34,7 +34,7 @@ describe('executor passes the search path and the writable check to the resolver
     const { harness, extra, tmp, sandboxPolicy } = setup(hostFilesystemOf(recording));
     const searchPath = `${extra}:/usr/bin:/bin`;
     await harness.executor.runBatch(
-      harness.input(await toolSetOf(commandTool('sed -n 1p f', [])), [call('c1', 'Bash')], { env: { PATH: searchPath }, sandboxPolicy }),
+      await harness.input(await toolSetOf(commandTool('sed -n 1p f', [])), [call('c1', 'Bash')], { env: { PATH: searchPath }, sandboxPolicy: await sandboxPolicy }),
     );
     const sedCalls = recording.resolveCalls.filter((entry) => entry.name === 'sed');
     expect(sedCalls.length).toBeGreaterThan(0);
@@ -50,9 +50,9 @@ describe('executor passes the search path and the writable check to the resolver
     const planted = setup(createPolicyFilesystem());
     const plantedRuns: string[] = [];
     const [asked] = await planted.harness.executor.runBatch(
-      planted.harness.input(await toolSetOf(commandTool('sed -n 1p f', plantedRuns)), [call('c1', 'Bash')], {
+      await planted.harness.input(await toolSetOf(commandTool('sed -n 1p f', plantedRuns)), [call('c1', 'Bash')], {
         env: { PATH: `${planted.extra}:/usr/bin:/bin` },
-        sandboxPolicy: planted.sandboxPolicy,
+        sandboxPolicy: await planted.sandboxPolicy,
       }),
     );
     expect(asked).toMatchObject({ kind: 'needs_approval' });
@@ -61,7 +61,7 @@ describe('executor passes the search path and the writable check to the resolver
     const plain = setup(createPolicyFilesystem());
     const plainRuns: string[] = [];
     const [ran] = await plain.harness.executor.runBatch(
-      plain.harness.input(await toolSetOf(commandTool('sed -n 1p f', plainRuns)), [call('c1', 'Bash')], { env: { PATH: '/usr/bin:/bin' }, sandboxPolicy: plain.sandboxPolicy }),
+      await plain.harness.input(await toolSetOf(commandTool('sed -n 1p f', plainRuns)), [call('c1', 'Bash')], { env: { PATH: '/usr/bin:/bin' }, sandboxPolicy: await plain.sandboxPolicy }),
     );
     expect(ran).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(plainRuns).toEqual(['sed -n 1p f']);

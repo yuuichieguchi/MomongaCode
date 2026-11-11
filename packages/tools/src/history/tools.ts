@@ -3,7 +3,7 @@ import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { AnyTool } from '../types.ts';
 import { HISTORY_QUERY_MAX_CHARS, HISTORY_READ_TOOL_NAME, HISTORY_SEARCH_TOOL_NAME, HISTORY_TOOL_TIMEOUT_MS } from './constants.ts';
 import type { HistoryScope, HistoryToolsOptions } from './port.ts';
-import { renderRead, renderSearch } from './render.ts';
+import { deniedCallsOf, renderRead, renderSearch } from './render.ts';
 import type { ReadResume } from './render.ts';
 
 type SearchInput = { query: string; scope?: HistoryScope };
@@ -50,7 +50,7 @@ export const createHistoryTools = ({ port, trusted, project }: HistoryToolsOptio
       return trusted && input.scope === 'all' ? { kind: 'history', tool: HISTORY_SEARCH_TOOL_NAME, project: 'all' } : { kind: 'none', tool: HISTORY_SEARCH_TOOL_NAME };
     },
     execute: async (input, ctx) => {
-      const result = await port.search({ query: input.query, scope: input.scope ?? 'project' });
+      const result = await port.search({ query: input.query, scope: input.scope ?? 'project' }, ctx.signal);
       return { status: 'completed', output: await pageToFit(ctx.outputFit, (budget) => renderSearch(result, budget)) };
     },
   });
@@ -98,13 +98,13 @@ export const createHistoryTools = ({ port, trusted, project }: HistoryToolsOptio
       if (page === null) throw new ToolExecutionError(`no recorded run ${runId} is visible`);
       const offset = input.offset ?? 0;
       if (offset > 0 && page.events[0]?.seq !== input.seqFrom) throw new ToolExecutionError(`no recorded event at seq ${String(input.seqFrom)} to continue from`);
-      const denied = await port.readDenial(page.project);
+      const deniedCalls = await deniedCallsOf(page, await port.readDenial(page.project, ctx.signal));
       const output = await pageToFit(
         ctx.outputFit,
         (budget) =>
           renderRead({
             page,
-            denied,
+            deniedCalls,
             redact: (text) => port.redact(text),
             ownRun: page.runId === ctx.runId,
             offset,

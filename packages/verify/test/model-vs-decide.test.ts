@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
-import { hostFilesystemOf } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
 import type { SubjectTool, Witness } from '../src/decision-model.ts';
 import { predictDecision } from '../src/queries.ts';
 import { isMismatch } from '../src/report.ts';
@@ -161,13 +161,13 @@ describe('the model agrees with the decision code', () => {
       const fileSystem = makeFs();
       const roots = [layout.project];
       const rules = rulesOf(layout, specs, makeFs === caseInsensitiveFs ? 'user' : 'project');
-      const context = buildQueryContext(z3.engine().api, {
+      const context = await buildQueryContext(z3.engine().api, { signal: NEVER_CANCELLED,
         rules,
         roots,
         mode,
         home: layout.home,
         cwd: layout.project,
-        protectedSet: protectedSetFor(roots, fileSystem),
+        protectedSet: await protectedSetFor(roots, fileSystem),
         fs: hostFilesystemOf(fileSystem),
         secretLocations: [sshLocation(layout)],
         exemptDirectory: null,

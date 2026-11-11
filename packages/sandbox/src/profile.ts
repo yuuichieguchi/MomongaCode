@@ -1,10 +1,9 @@
 import path from 'node:path';
-import { comparableContains, inWritableArea, lexicallyWithin, unresolvableReasonOf, writableAreaOf } from '@momonga/foundation';
-import type { WritableArea } from '@momonga/foundation';
+import { filterAsync, findAsync, inWritableArea, lexicallyWithin, mapAsync, someAsync, unresolvableReasonOf, writableAreaOf } from '@momonga/foundation';
+import type { Awaitable, PathResolver, WritableArea } from '@momonga/foundation';
 import type { Expression, FileMatcher, FileRuleEntry } from '@momonga/foundation';
 import { SandboxPolicyError } from './policy-error.ts';
 import { canonicalParentForm } from './always-write-denied.ts';
-import { canonicalizePath } from './canonical-path.ts';
 import type { SandboxPolicy } from './types.ts';
 
 export interface SeatbeltProfile {
@@ -12,21 +11,24 @@ export interface SeatbeltProfile {
   params: Record<string, string>;
 }
 
-function isWithin(candidate: string, root: string): boolean {
-  return comparableContains(root, candidate);
-}
+type Within = (candidate: string, root: string) => Awaitable<boolean>;
 
-function isStrictlyWithin(candidate: string, root: string): boolean {
-  return isWithin(candidate, root) && !isWithin(root, candidate);
-}
+const withinOf =
+  (paths: PathResolver): Within =>
+  (candidate, root) =>
+    paths.comparableContains(root, candidate);
+
+const strictlyWithin = async (within: Within, candidate: string, root: string): Promise<boolean> => (await within(candidate, root)) && !(await within(root, candidate));
+
+const sameLocation = async (within: Within, left: string, right: string): Promise<boolean> => (await within(left, right)) && (await within(right, left));
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
 
-function guardCandidateInside(area: WritableArea, candidate: string, mode: 'canonical' | 'lexical'): boolean {
+async function guardCandidateInside(area: WritableArea, candidate: string, mode: 'canonical' | 'lexical', paths: PathResolver): Promise<boolean> {
   try {
-    return inWritableArea(area, candidate, mode);
+    return await inWritableArea(area, candidate, mode, paths);
   } catch (error) {
     const reason = unresolvableReasonOf(error);
     if (reason === undefined) throw error;
@@ -34,13 +36,15 @@ function guardCandidateInside(area: WritableArea, candidate: string, mode: 'cano
   }
 }
 
-function ancestorsWithin(target: string, area: WritableArea, mode: 'canonical' | 'lexical', includeTarget = false): string[] {
+async function ancestorsWithin(target: string, area: WritableArea, mode: 'canonical' | 'lexical', paths: PathResolver, includeTarget = false): Promise<string[]> {
   const found: string[] = [];
   for (let current = includeTarget ? target : path.dirname(target); current !== path.dirname(current); current = path.dirname(current)) {
-    if (guardCandidateInside(area, current, mode)) found.push(current);
+    if (await guardCandidateInside(area, current, mode, paths)) found.push(current);
   }
   return found;
 }
+
+const flatMapAsync = async <T, R>(items: readonly T[], convert: (item: T) => Awaitable<readonly R[]>): Promise<R[]> => (await mapAsync(items, convert)).flat();
 
 export function assertAbsoluteEntries(code: 'entry_not_absolute' | 'writable_root_not_absolute', field: string, entries: readonly string[]): void {
   for (const entry of entries) {
@@ -48,32 +52,34 @@ export function assertAbsoluteEntries(code: 'entry_not_absolute' | 'writable_roo
   }
 }
 
-function assertReadAllowedValid(readDenied: readonly string[], readAllowed: readonly string[]): string[] {
-  const denied = unique(readDenied.map(canonicalizePath));
-  return unique(readAllowed.map(canonicalizePath)).map((entry) => {
-    if (!denied.some((guard) => isStrictlyWithin(entry, guard))) {
+async function assertReadAllowedValid(readDenied: readonly string[], readAllowed: readonly string[], paths: PathResolver): Promise<string[]> {
+  const within = withinOf(paths);
+  const denied = unique(await mapAsync(readDenied, paths.canonicalPath));
+  return mapAsync(unique(await mapAsync(readAllowed, paths.canonicalPath)), async (entry) => {
+    if (!(await someAsync(denied, (guard) => strictlyWithin(within, entry, guard)))) {
       throw new SandboxPolicyError('read_allowed_not_inside_denied', `readAllowed entry must lie strictly inside a readDenied entry: ${entry}`, { path: entry });
     }
-    if (denied.some((guard) => isWithin(guard, entry))) {
+    if (await someAsync(denied, (guard) => within(guard, entry))) {
       throw new SandboxPolicyError('read_allowed_contains_denied', `readAllowed entry must not equal or contain a readDenied entry: ${entry}`, { path: entry });
     }
     return entry;
   });
 }
 
-function assertSessionTmpDirValid(policy: SandboxPolicy, tmpDir: string): string {
-  const canonical = canonicalizePath(tmpDir);
-  const readAllowed = (policy.readAllowed ?? []).map(canonicalizePath);
-  if (!readAllowed.some((entry) => isWithin(canonical, entry) && isWithin(entry, canonical))) {
+async function assertSessionTmpDirValid(policy: SandboxPolicy, tmpDir: string, paths: PathResolver): Promise<string> {
+  const within = withinOf(paths);
+  const canonical = await paths.canonicalPath(tmpDir);
+  const readAllowed = await mapAsync(policy.readAllowed ?? [], paths.canonicalPath);
+  if (!(await someAsync(readAllowed, (entry) => sameLocation(within, canonical, entry)))) {
     throw new SandboxPolicyError('session_tmp_not_read_allowed', `session tmpDir must be one of the readAllowed entries: ${canonical}`, { path: canonical });
   }
-  if (policy.writeDenied.map(canonicalizePath).some((entry) => isWithin(entry, canonical))) {
+  if (await someAsync(await mapAsync(policy.writeDenied, paths.canonicalPath), (entry) => within(entry, canonical))) {
     throw new SandboxPolicyError('session_tmp_write_denied', `session tmpDir must not equal or contain a writeDenied entry: ${canonical}`, { path: canonical });
   }
   return canonical;
 }
 
-export function validateSandboxPolicy(policy: SandboxPolicy, options: { tmpDir?: string } = {}): void {
+export async function validateSandboxPolicy(policy: SandboxPolicy, options: { tmpDir?: string }, paths: PathResolver): Promise<void> {
   assertAbsoluteEntries('writable_root_not_absolute', 'writableRoots', policy.writableRoots);
   assertAbsoluteEntries('entry_not_absolute', 'writeDenied', policy.writeDenied);
   assertAbsoluteEntries('entry_not_absolute', 'writeDeniedLiterals', policy.writeDeniedLiterals);
@@ -81,22 +87,17 @@ export function validateSandboxPolicy(policy: SandboxPolicy, options: { tmpDir?:
   assertAbsoluteEntries('entry_not_absolute', 'readDenied', policy.readDenied);
   assertAbsoluteEntries('entry_not_absolute', 'readAllowed', policy.readAllowed ?? []);
   assertAbsoluteEntries('entry_not_absolute', 'unixSocketAllow', policy.unixSocketAllow ?? []);
-  assertReadAllowedValid(policy.readDenied, policy.readAllowed ?? []);
-  if (options.tmpDir !== undefined) assertSessionTmpDirValid(policy, options.tmpDir);
+  await assertReadAllowedValid(policy.readDenied, policy.readAllowed ?? [], paths);
+  if (options.tmpDir !== undefined) await assertSessionTmpDirValid(policy, options.tmpDir, paths);
 }
 
-function metadataAncestors(
-  allowed: readonly string[],
-  denied: readonly string[],
-  within: (candidate: string, root: string) => boolean = isWithin,
-): string[] {
-  const strictlyWithin = (candidate: string, root: string): boolean => within(candidate, root) && !within(root, candidate);
+async function metadataAncestors(allowed: readonly string[], denied: readonly string[], within: Within): Promise<string[]> {
   const found: string[] = [];
   for (const entry of allowed) {
-    for (const guard of denied.filter((candidate) => strictlyWithin(entry, candidate))) {
-      for (let current = path.dirname(entry); within(current, guard); current = path.dirname(current)) {
+    for (const guard of await filterAsync(denied, (candidate) => strictlyWithin(within, entry, candidate))) {
+      for (let current = path.dirname(entry); await within(current, guard); current = path.dirname(current)) {
         found.push(current);
-        if (within(guard, current)) break;
+        if (await within(guard, current)) break;
       }
     }
   }
@@ -148,33 +149,36 @@ const denyFormsOf = (entry: FileRuleEntry): DenyForm[] => [
   ...(entry.denyLexical === null ? [] : [{ matcher: entry.denyLexical, directory: entry.lexicalDirectory }]),
 ];
 
-export function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: string; scratchDir?: string } = {}): SeatbeltProfile {
-  validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir });
-  const roots = unique(policy.writableRoots.map(canonicalizePath));
-  const writeDenied = unique(policy.writeDenied.map(canonicalizePath));
-  const readDenied = unique(policy.readDenied.map(canonicalizePath));
-  const readAllowed = unique((policy.readAllowed ?? []).map(canonicalizePath));
-  const sessionTmpDir = options.tmpDir === undefined ? undefined : canonicalizePath(options.tmpDir);
-  const scratchDir = options.scratchDir === undefined ? undefined : canonicalizePath(options.scratchDir);
+export async function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: string; scratchDir?: string }, paths: PathResolver): Promise<SeatbeltProfile> {
+  await validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir }, paths);
+  const within = withinOf(paths);
+  const roots = unique(await mapAsync(policy.writableRoots, paths.canonicalPath));
+  const writeDenied = unique(await mapAsync(policy.writeDenied, paths.canonicalPath));
+  const readDenied = unique(await mapAsync(policy.readDenied, paths.canonicalPath));
+  const readAllowed = unique(await mapAsync(policy.readAllowed ?? [], paths.canonicalPath));
+  const sessionTmpDir = options.tmpDir === undefined ? undefined : await paths.canonicalPath(options.tmpDir);
+  const scratchDir = options.scratchDir === undefined ? undefined : await paths.canonicalPath(options.scratchDir);
   const area = writableAreaOf({ writableRoots: roots, entries: policy.fileRules.entries });
   const literals = unique([...policy.writeDeniedLiterals, ...policy.protectedSet.literals]);
-  const literalForms = unique(literals.flatMap((literal) => [literal, canonicalParentForm(literal)]));
-  const literalAncestors = unique(literalForms.flatMap((target) => ancestorsWithin(target, area, 'canonical')));
+  const literalForms = unique(await flatMapAsync(literals, async (literal) => [literal, await canonicalParentForm(literal, paths)]));
+  const literalAncestors = unique(await flatMapAsync(literalForms, (target) => ancestorsWithin(target, area, 'canonical', paths)));
   const userDenies = [...policy.fileRules.entries, ...policy.protectedSet.patterns.entries].filter(isUserDeny);
   const userAncestors = unique(
-    userDenies.flatMap((entry) =>
-      denyFormsOf(entry).flatMap(({ matcher, directory }) => ancestorsWithin(directory, area, 'lexical', matcher.own.kind !== 'subpath')),
+    await flatMapAsync(userDenies, (entry) =>
+      flatMapAsync(denyFormsOf(entry), ({ matcher, directory }) => ancestorsWithin(directory, area, 'lexical', paths, matcher.own.kind !== 'subpath')),
     ),
   );
   const userReadGuards = unique(userDenies.filter((entry) => entry.access === 'read').flatMap((entry) => denyFormsOf(entry).map(({ directory }) => directory)));
-  const guardedAncestors = unique([...writeDenied.flatMap((target) => ancestorsWithin(target, area, 'canonical')), ...literalAncestors, ...userAncestors]);
+  const guardedAncestors = unique([...(await flatMapAsync(writeDenied, (target) => ancestorsWithin(target, area, 'canonical', paths))), ...literalAncestors, ...userAncestors]);
   const symlinkGuarded = unique([...literalAncestors, ...userAncestors]);
   const metadataAllowed = [...readAllowed, ...(userDenies.length > 0 && scratchDir !== undefined ? [scratchDir] : [])];
   const reallowedScratch = [...(sessionTmpDir === undefined ? [] : [sessionTmpDir]), ...(scratchDir === undefined ? [] : [scratchDir])];
-  const metadataOf = (allowed: readonly string[]): string[] =>
-    unique([...metadataAncestors(allowed, readDenied), ...metadataAncestors(allowed, userReadGuards, lexicallyWithin)]);
-  const reallowedMetadata = metadataOf(reallowedScratch);
-  const metadataDirs = unique([...metadataOf(metadataAllowed), ...reallowedMetadata]);
+  const metadataOf = async (allowed: readonly string[]): Promise<string[]> =>
+    unique([...(await metadataAncestors(allowed, readDenied, within)), ...(await metadataAncestors(allowed, userReadGuards, lexicallyWithin))]);
+  const reallowedMetadata = await metadataOf(reallowedScratch);
+  const metadataDirs = unique([...(await metadataOf(metadataAllowed)), ...reallowedMetadata]);
+
+  const sessionTmpEntry = sessionTmpDir === undefined ? undefined : await findAsync(readAllowed, (entry) => sameLocation(within, sessionTmpDir, entry));
 
   const params: Record<string, string> = {};
   const counters = new Map<string, number>();
@@ -248,7 +252,7 @@ export function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: 
     }
     for (const terms of guards) lines.push(`(deny file-read-metadata (require-all ${[...terms, '(vnode-type SYMLINK)'].join(' ')}))`);
     for (const name of sessionTmpNames) lines.push(`(allow file-write* (subpath (param "${name}")))`);
-    const sessionTmpIndex = sessionTmpDir === undefined ? -1 : readAllowed.findIndex((entry) => isWithin(sessionTmpDir, entry) && isWithin(entry, sessionTmpDir));
+    const sessionTmpIndex = sessionTmpEntry === undefined ? -1 : readAllowed.indexOf(sessionTmpEntry);
     if (sessionTmpIndex >= 0) lines.push(`(allow file-read* (subpath (param "${readAllowedNames[sessionTmpIndex]}")))`);
     if (scratchDir !== undefined) {
       for (const name of define('PRIVATE_TMP', [scratchDir])) {
@@ -258,7 +262,7 @@ export function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: 
     for (const directory of reallowedMetadata) lines.push(`(allow file-read-metadata (literal (param "${metadataNames[metadataDirs.indexOf(directory)]}")))`);
     lines.push(...DEVICE_NODE_RULES);
   }
-  const unixSocketAllow = unique((policy.unixSocketAllow ?? []).map(canonicalizePath));
+  const unixSocketAllow = unique(await mapAsync(policy.unixSocketAllow ?? [], paths.canonicalPath));
   if (policy.network === 'allow') lines.push('(allow network*)');
   if (typeof policy.network === 'object') {
     const { loopbackPort } = policy.network;

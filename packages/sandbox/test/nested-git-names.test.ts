@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, protectedSetFor } from '@momonga/foundation';
 import { createSeatbeltSandbox, planBubblewrap } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
 import { buildSeatbeltProfile } from '../src/profile.ts';
 import { makeTempDir, run } from './helpers.ts';
 
@@ -27,8 +27,8 @@ afterEach(() => {
   fs.rmSync(base, { recursive: true, force: true });
 });
 
-const policy = (): SandboxPolicy => {
-  const protectedSet = protectedSetFor([work], fakePolicyFilesystem());
+const policy = async (): Promise<SandboxPolicy> => {
+  const protectedSet = await protectedSetFor([work], fakePolicyFilesystem());
   return {
     writableRoots: [work],
     writeDenied: [...protectedSet.paths],
@@ -43,8 +43,8 @@ const policy = (): SandboxPolicy => {
 const paramIn = (line: string): string[] => [...line.matchAll(/\(param "([A-Z0-9_]+)"\)/g)].map((match) => match[1] as string);
 
 describe('the .git name rule of the protected set reaches the sandbox', () => {
-  it('denies in the Seatbelt profile the control entries of every .git below a root, existing or not', () => {
-    const profile = buildSeatbeltProfile(policy());
+  it('denies in the Seatbelt profile the control entries of every .git below a root, existing or not', async () => {
+    const profile = await buildSeatbeltProfile(await policy(), {}, testPaths());
     const regexes = profile.profile
       .split('\n')
       .filter((line) => /^\(deny file-write\* \(regex \(param "FILE_DENY_WRITE_\d+"\)\)\)$/.test(line))
@@ -58,8 +58,8 @@ describe('the .git name rule of the protected set reaches the sandbox', () => {
     expect(blocked(path.join(work, 'vendor', 'lib', 'src', 'config'))).toBe(false);
   });
 
-  it('mounts read-only in the bubblewrap plan the control entries of every existing nested .git', () => {
-    const { args } = planBubblewrap(policy(), { cwd: work });
+  it('mounts read-only in the bubblewrap plan the control entries of every existing nested .git', async () => {
+    const { args } = await planBubblewrap(await policy(), { cwd: work }, NEVER_CANCELLED);
     const readOnly = args.flatMap((value, index) => (value === '--ro-bind' && args[index + 1] === args[index + 2] ? [args[index + 1]] : []));
     expect(readOnly).toContain(path.join(work, 'vendor', 'lib', '.git', 'hooks'));
     expect(readOnly).not.toContain(path.join(work, 'vendor', 'lib', '.git', 'objects'));
@@ -68,11 +68,11 @@ describe('the .git name rule of the protected set reaches the sandbox', () => {
   it.runIf(process.platform === 'darwin')('refuses a real sandboxed write to a nested .git hook and config, even in a .git that does not exist yet', async () => {
     const sandbox = createSeatbeltSandbox({ tmpRoot: base, killGraceMs: 300 });
     const sh = async (script: string) => {
-      const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: { PATH: BASE_PATH, HOME: work } }, policy(), new AbortController().signal);
+      const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: { PATH: BASE_PATH, HOME: work } }, await policy(), new AbortController().signal);
       try {
-        return await run(proc);
+        return await run(await proc);
       } finally {
-        killGroupsForCleanup([proc.pgid]);
+        killGroupsForCleanup([(await proc).pgid]);
       }
     };
     expect((await sh('echo x > vendor/lib/.git/hooks/post-checkout')).code).not.toBe(0);

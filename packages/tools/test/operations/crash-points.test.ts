@@ -31,7 +31,7 @@ const setup = async () => {
   const reconciled: Array<ResultOutcome['reconciled']> = [];
   const attempt = async (): Promise<CallOutcome | undefined> => {
     const [outcome] = await harness.executor.runBatch(
-      harness.input(toolSet, [call('c1', 'GitCommit', { message: 'Add two' })], {
+      await harness.input(toolSet, [call('c1', 'GitCommit', { message: 'Add two' })], {
         env: world.env,
         roots: [world.work],
         home: world.home,

@@ -6,7 +6,6 @@ import { installTrust, trustFailureText } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
-  canonicalPath,
   createJsonLogger,
   createRedactor,
   createLockCapability,
@@ -35,6 +34,7 @@ import {
   nodeFileSystem,
   nodeFileSystemSync,
   runtimeTeardownBudgetMs,
+  syncPaths,
 } from '@momonga/foundation';
 import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
@@ -199,7 +199,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
   const startedAtMs = clock.now();
   const startedAt = new Date(startedAtMs).toISOString();
-  const canonicalHome = canonicalPath(home);
+  const canonicalHome = syncPaths.canonicalPath(home);
   const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
   const onWarning = (message: string): void => logger.warn(message);
@@ -798,7 +798,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           defaults: RUNTIME_DEFAULTS.limits,
           home: canonicalHome,
           blobs: store.blobs,
-          instructionReader: createFsInstructionReader(),
+          instructionReader: createFsInstructionReader(lifetime.signal),
           wake: notifier,
           onError: (error, context) =>
             logger.error('worker error', {

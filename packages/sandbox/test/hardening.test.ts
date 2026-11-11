@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, testPaths } from '@momonga/testkit';
 import { isAlive, makeTempDir, run, waitUntilDead } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -23,14 +23,14 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
   let outside = '';
   let sandbox: Sandbox;
 
-  function tempDir(): string {
+  async function tempDir(): Promise<string> {
     const dir = fs.realpathSync(makeTempDir());
     created.push(dir);
     return dir;
   }
 
-  function sh(script: string, overrides: Partial<SandboxPolicy> = {}): SandboxedProcess {
-    const proc = sandbox.spawn(
+  async function sh(script: string, overrides: Partial<SandboxPolicy> = {}): Promise<SandboxedProcess> {
+    const proc = await sandbox.spawn(
       { argv: ['/bin/sh', '-c', script], cwd: root, env: BASE_ENV },
       { writableRoots: [root], writeDenied: defaultProtectedPaths(root), protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny', ...overrides },
       new AbortController().signal,
@@ -53,10 +53,10 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
     });
   }
 
-  beforeEach(() => {
-    root = tempDir();
-    outside = tempDir();
-    sandbox = createSeatbeltSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS });
+  beforeEach(async () => {
+    root = await tempDir();
+    outside = await tempDir();
+    sandbox = createSeatbeltSandbox({ tmpRoot: await tempDir(), killGraceMs: KILL_GRACE_MS });
   });
 
   afterEach(async () => {
@@ -74,25 +74,25 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
   });
 
   it('terminates background processes left behind by the leader before exited resolves', async () => {
-    const proc = sh(`(sleep 30 &) ; sleep 300 & echo $! > pids; echo started`);
-    const result = await run(proc);
+    const proc = await sh(`(sleep 30 &) ; sleep 300 & echo $! > pids; echo started`);
+    const result = await run(await proc);
     expect(result.code).toBe(0);
     expect(result.stdout.trim()).toBe('started');
     const backgrounded = Number(fs.readFileSync(path.join(root, 'pids'), 'utf8').trim());
     expect(Number.isInteger(backgrounded) && backgrounded > 1).toBe(true);
     expect(isAlive(backgrounded)).toBe(false);
-    expect(await groupAlive(proc.pgid)).toBe(false);
+    expect(await groupAlive((await proc).pgid)).toBe(false);
   });
 
   it('removes the private TMPDIR only after leftover background processes are gone', async () => {
-    const result = await run(sh(`printf %s "$TMPDIR"; (sleep 30 &)`));
+    const result = await run(await sh(`printf %s "$TMPDIR"; (sleep 30 &)`));
     expect(result.code).toBe(0);
     expect(fs.existsSync(result.stdout)).toBe(false);
   });
 
   it('does not terminate descendants that call setsid (known limitation: Seatbelt cannot deny setsid)', async () => {
     const script = `perl -e 'use POSIX; setsid(); open(F, ">pid"); print F $$; close F; my $end = time + 4; sleep 1 while time < $end' >/dev/null 2>&1 & sleep 0.5; echo started`;
-    const result = await run(sh(script));
+    const result = await run(await sh(script));
     expect(result.code).toBe(0);
     const escaped = Number(fs.readFileSync(path.join(root, 'pid'), 'utf8'));
     strayPids.push(escaped);
@@ -104,14 +104,14 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
   it('denies xattr, chflags and chmod on protected paths', async () => {
     protectedFixture();
     const result = await run(
-      sh(
+      await sh(
         `xattr -w user.test v .mcp.json; xattr -w user.test v .git/hooks/x; chflags hidden .mcp.json; chflags hidden .git/hooks/x; chmod 777 .mcp.json .git/hooks/x`,
       ),
     );
     expect(result.stderr.match(/Operation not permitted/g)?.length).toBe(6);
     expect(fs.statSync(path.join(root, '.mcp.json')).mode & 0o777).toBe(0o644);
     expect(fs.statSync(path.join(root, '.git', 'hooks', 'x')).mode & 0o777).toBe(0o644);
-    const attrs = await run(sh(`xattr -l .mcp.json .git/hooks/x`));
+    const attrs = await run(await sh(`xattr -l .mcp.json .git/hooks/x`));
     expect(attrs.stdout).not.toContain('user.test');
   });
 
@@ -119,7 +119,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
     protectedFixture();
     fs.writeFileSync(path.join(root, 'payload'), 'evil');
     const result = await run(
-      sh(`cp -c payload .mcp.json; cp -c payload .git/hooks/y; cp -c payload '${path.join(outside, 'z')}'`),
+      await sh(`cp -c payload .mcp.json; cp -c payload .git/hooks/y; cp -c payload '${path.join(outside, 'z')}'`),
     );
     expect(result.code).not.toBe(0);
     expect(fs.readFileSync(path.join(root, '.mcp.json'), 'utf8')).toBe('original-mcp');
@@ -129,43 +129,43 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
 
   it('denies ditto to outside the root', async () => {
     fs.writeFileSync(path.join(root, 'payload'), 'evil');
-    const result = await run(sh(`ditto payload '${path.join(outside, 'd')}'`));
+    const result = await run(await sh(`ditto payload '${path.join(outside, 'd')}'`));
     expect(result.code).not.toBe(0);
     expect(fs.existsSync(path.join(outside, 'd'))).toBe(false);
   });
 
   it('does not let osascript or open perform writes outside the root', async () => {
     const target = path.join(outside, 'osa');
-    const viaOsascript = await run(sh(`osascript -e 'do shell script "touch ${target}"'`));
+    const viaOsascript = await run(await sh(`osascript -e 'do shell script "touch ${target}"'`));
     expect(viaOsascript.code).not.toBe(0);
     expect(fs.existsSync(target)).toBe(false);
     fs.writeFileSync(path.join(root, 'doc.txt'), 'x');
-    const viaOpen = await run(sh(`open -a TextEdit doc.txt`));
+    const viaOpen = await run(await sh(`open -a TextEdit doc.txt`));
     expect(viaOpen.code).not.toBe(0);
   });
 
   it('cannot run crontab or at, and cannot inspect other processes', async () => {
-    const cron = await run(sh(`crontab -l`));
+    const cron = await run(await sh(`crontab -l`));
     expect(cron.code).not.toBe(0);
     expect(cron.stderr).toMatch(/Operation not permitted/);
-    const at = await run(sh(`at -l`));
+    const at = await run(await sh(`at -l`));
     expect(at.code).not.toBe(0);
     expect(at.stderr).toMatch(/Operation not permitted/);
-    const vmmap = await run(sh(`vmmap $PPID`));
+    const vmmap = await run(await sh(`vmmap $PPID`));
     expect(vmmap.stderr).toMatch(/vmmap/);
     expect(vmmap.stdout).not.toMatch(/REGION TYPE/);
   });
 
   it('denies writes through a writable root whose path component was replaced by a symlink after canonicalization', async () => {
-    const parent = tempDir();
-    const work = path.join(parent, 'work');
+    const parent = await tempDir();
+    const work = path.join(await parent, 'work');
     fs.mkdirSync(work);
-    const { profile, params } = buildSeatbeltProfile({
+    const { profile, params } = await buildSeatbeltProfile({
       writableRoots: [work],
       writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
       readDenied: [],
       network: 'deny',
-    });
+    }, {}, testPaths());
     fs.rmSync(work, { recursive: true });
     fs.symlinkSync(outside, work);
     const args = Object.entries(params).flatMap(([name, value]) => ['-D', `${name}=${value}`]);
@@ -187,7 +187,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
       });
       await listen(server, 0);
       const port = (server.address() as net.AddressInfo).port;
-      const result = await run(sh(`/usr/bin/nc -z -w 2 localhost ${port}`, { network: 'allow' }));
+      const result = await run(await sh(`/usr/bin/nc -z -w 2 localhost ${port}`, { network: 'allow' }));
       expect(result.code).toBe(0);
       await expect.poll(() => connections).toBe(1);
     });
@@ -208,13 +208,13 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
       await listen(serve('open'), path.join(open, 'other.sock'));
 
       const blocked = await run(
-        sh(`/usr/bin/nc -U '${path.join(secrets, 'gateway.sock')}' </dev/null`, { network: 'allow', readDenied: [secrets] }),
+        await sh(`/usr/bin/nc -U '${path.join(secrets, 'gateway.sock')}' </dev/null`, { network: 'allow', readDenied: [secrets] }),
       );
       expect(blocked.code).not.toBe(0);
       expect(hits).not.toContain('secret');
 
       const permitted = await run(
-        sh(`/usr/bin/nc -U '${path.join(open, 'other.sock')}' </dev/null`, { network: 'allow', readDenied: [secrets] }),
+        await sh(`/usr/bin/nc -U '${path.join(open, 'other.sock')}' </dev/null`, { network: 'allow', readDenied: [secrets] }),
       );
       expect(permitted.code).toBe(0);
       await expect.poll(() => hits).toContain('open');
@@ -233,7 +233,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
         path.join(secrets, 'gateway.sock'),
       );
       const result = await run(
-        sh(`/usr/bin/nc -U '${path.join(secrets, 'gateway.sock')}' </dev/null`, { network: 'deny', readDenied: [secrets] }),
+        await sh(`/usr/bin/nc -U '${path.join(secrets, 'gateway.sock')}' </dev/null`, { network: 'deny', readDenied: [secrets] }),
       );
       expect(result.code).not.toBe(0);
       expect(hit).toBe(false);

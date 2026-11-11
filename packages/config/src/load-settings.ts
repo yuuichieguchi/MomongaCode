@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
-import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, canonicalDirectory, comparableContains, lexicallyWithin } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, lexicallyWithin, syncPaths } from '@momonga/foundation';
 import type { SandboxNetworkSetting, StopValues } from '@momonga/foundation';
 
 export type GatewayStopValues = Pick<StopValues, 'closeGraceMs' | 'managedServerStopGraceMs'>;
@@ -133,7 +133,7 @@ export const parseLayerRules = (layer: Layer, home: string, projectDir: string, 
 
 const resolveDirectory = (directory: string, layer: Layer, home: string): string => {
   const expanded = directory === '~' ? home : directory.startsWith('~/') ? path.join(home, directory.slice(2)) : directory;
-  const resolved = canonicalDirectory(path.resolve(layer.root, expanded));
+  const resolved = syncPaths.canonicalDirectory(path.resolve(layer.root, expanded));
   if (!resolved.ok) throw new ConfigError(`${layer.source}: additionalDirectories entry ${JSON.stringify(directory)} ${resolved.reason}`);
   return resolved.path;
 };
@@ -158,7 +158,7 @@ const enforceableUnixSockets = ({ source, allow }: { source: string; allow: stri
 export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[]): ResolvedSettings => {
   let projectReal: string;
   try {
-    projectReal = fs.realpathSync.native(projectDir);
+    projectReal = syncPaths.realPath(projectDir);
   } catch (error) {
     rethrowIfTransient(error);
     throw toConfigError(error);
@@ -230,7 +230,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     for (const directory of permissions?.additionalDirectories ?? []) {
       const resolved = resolveDirectory(directory, layer, home);
       const repositoryControlled = layer.origin === 'project' || layer.origin === 'local';
-      if (repositoryControlled && !comparableContains(projectReal, resolved)) {
+      if (repositoryControlled && !syncPaths.comparableContains(projectReal, resolved)) {
         warnings.push(`${layer.source}: additionalDirectories entry ${JSON.stringify(directory)} is outside the project and only honored in user settings; discarded`);
       } else {
         merged.permissions.additionalDirectories.push(resolved);

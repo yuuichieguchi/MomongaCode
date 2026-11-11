@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SandboxPolicyError, buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, NEVER_CANCELLED, testPaths } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 const created: string[] = [];
@@ -34,25 +34,25 @@ const policyFor = (root: string, overrides: Partial<SandboxPolicy> = {}): Sandbo
 const socketRules = (profile: string): string[] => profile.split('\n').filter((line) => line.includes('unix-socket'));
 
 describe('the Unix socket allow list in the Seatbelt profile', () => {
-  it('has no network rule at all when the list is empty', () => {
-    const { profile } = buildSeatbeltProfile(policyFor(tempDir(), { unixSocketAllow: [] }));
+  it('has no network rule at all when the list is empty', async () => {
+    const { profile } = await buildSeatbeltProfile(policyFor(tempDir(), { unixSocketAllow: [] }), {}, testPaths());
     expect(profile).not.toContain('network');
   });
 
-  it('allows connecting to each listed path and below it, and never binding', () => {
+  it('allows connecting to each listed path and below it, and never binding', async () => {
     const root = tempDir();
     const listed = path.join(root, 'sockets');
-    const { profile, params } = buildSeatbeltProfile(policyFor(root, { unixSocketAllow: [listed] }));
+    const { profile, params } = await buildSeatbeltProfile(policyFor(root, { unixSocketAllow: [listed] }), {}, testPaths());
     expect(socketRules(profile)).toEqual(['(allow network-outbound (remote unix-socket (subpath (param "UNIX_SOCKET_ALLOW_0"))))']);
     expect(params['UNIX_SOCKET_ALLOW_0']).toBe(listed);
     expect(profile).not.toContain('network-bind');
     expect(profile).not.toContain('(allow network*)');
   });
 
-  it('denies every read-denied subtree after the allows, so an owned socket stays closed whatever is listed', () => {
+  it('denies every read-denied subtree after the allows, so an owned socket stays closed whatever is listed', async () => {
     const root = tempDir();
     const owned = path.join(root, 'owned');
-    const { profile, params } = buildSeatbeltProfile(policyFor(root, { readDenied: [owned], unixSocketAllow: [path.join(owned, 'run'), path.join(root, 'open')] }));
+    const { profile, params } = await buildSeatbeltProfile(policyFor(root, { readDenied: [owned], unixSocketAllow: [path.join(owned, 'run'), path.join(root, 'open')] }), {}, testPaths());
     const rules = socketRules(profile);
     expect(rules).toEqual([
       '(allow network-outbound (remote unix-socket (subpath (param "UNIX_SOCKET_ALLOW_0"))))',
@@ -62,18 +62,18 @@ describe('the Unix socket allow list in the Seatbelt profile', () => {
     expect(params['READ_DENIED_0']).toBe(owned);
   });
 
-  it('refuses a list entry that is not an absolute path', () => {
-    expect(() => buildSeatbeltProfile(policyFor(tempDir(), { unixSocketAllow: ['relative/agent.sock'] }))).toThrow(SandboxPolicyError);
+  it('refuses a list entry that is not an absolute path', async () => {
+    await expect(buildSeatbeltProfile(policyFor(tempDir(), { unixSocketAllow: ['relative/agent.sock'] }), {}, testPaths())).rejects.toThrow(SandboxPolicyError);
   });
 
-  it('keeps every deny of an owned subtree after every allow, for any list in any order', () => {
+  it('keeps every deny of an owned subtree after every allow, for any list in any order', async () => {
     const root = tempDir();
     const owned = [path.join(root, 'a'), path.join(root, 'b')];
     const entries = [path.join(root, 'a', 'run'), path.join(root, 'b'), path.join(root, 'c', 'x.sock'), path.join(root, 'c')];
     const orders = (rest: readonly string[]): string[][] => [[], ...rest.flatMap((first, index) => orders(rest.filter((_, other) => other !== index)).map((tail) => [first, ...tail]))];
     for (const network of ['deny', 'allow'] as const) {
       for (const unixSocketAllow of orders(entries)) {
-        const lines = buildSeatbeltProfile(policyFor(root, { readDenied: owned, unixSocketAllow, network })).profile.split('\n');
+        const lines = await (await buildSeatbeltProfile(policyFor(root, { readDenied: owned, unixSocketAllow, network }), {}, testPaths())).profile.split('\n');
         const lastAllow = lines.findLastIndex((line) => line.startsWith('(allow network'));
         const denies = lines.flatMap((line, index) => (line.startsWith('(deny network-outbound (remote unix-socket') ? [index] : []));
         if (lastAllow === -1) expect(denies, unixSocketAllow.join(' ')).toEqual([]);
@@ -96,8 +96,8 @@ describe.runIf(process.platform === 'darwin')('the Unix socket allow list under 
   let sandbox: Sandbox;
   let hits: string[] = [];
 
-  const connect = (socket: string, overrides: Partial<SandboxPolicy>): SandboxedProcess => {
-    const proc = sandbox.spawn(
+  const connect = async (socket: string, overrides: Partial<SandboxPolicy>): Promise<SandboxedProcess> => {
+    const proc = await sandbox.spawn(
       { argv: ['/bin/sh', '-c', `/usr/bin/nc -U '${socket}' </dev/null`], cwd: root, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' } },
       policyFor(root, overrides),
       new AbortController().signal,
@@ -139,7 +139,7 @@ describe.runIf(process.platform === 'darwin')('the Unix socket allow list under 
 
   it('connects to a socket under a listed path while the network stays denied', async () => {
     const socket = await serve('listed', path.join(outside, 'agents', 'a.sock'));
-    const result = await run(connect(socket, { unixSocketAllow: [path.join(outside, 'agents')] }));
+    const result = await run(await connect(socket, { unixSocketAllow: [path.join(outside, 'agents')] }));
     expect(result.code).toBe(0);
     expect(result.stdout).toBe('hi');
     expect(hits).toEqual(['listed']);
@@ -147,7 +147,7 @@ describe.runIf(process.platform === 'darwin')('the Unix socket allow list under 
 
   it('cannot connect to a socket that is under no listed path', async () => {
     const socket = await serve('unlisted', path.join(outside, 'other', 'b.sock'));
-    const result = await run(connect(socket, { unixSocketAllow: [path.join(outside, 'agents')] }));
+    const result = await run(await connect(socket, { unixSocketAllow: [path.join(outside, 'agents')] }));
     expect(result.code).not.toBe(0);
     expect(hits).toEqual([]);
   });
@@ -155,7 +155,7 @@ describe.runIf(process.platform === 'darwin')('the Unix socket allow list under 
   it('cannot connect to a socket under a read-denied subtree even when it is listed', async () => {
     const owned = path.join(outside, 'owned');
     const socket = await serve('owned', path.join(owned, 'run', 'g.sock'));
-    const result = await run(connect(socket, { readDenied: [owned], unixSocketAllow: [path.join(owned, 'run')] }));
+    const result = await run(await connect(socket, { readDenied: [owned], unixSocketAllow: [path.join(owned, 'run')] }));
     expect(result.code).not.toBe(0);
     expect(hits).toEqual([]);
   });
@@ -168,13 +168,13 @@ describe.runIf(process.platform === 'darwin')('the Unix socket allow list under 
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const port = (server.address() as net.AddressInfo).port;
-    const proc = sandbox.spawn(
+    const proc = await sandbox.spawn(
       { argv: ['/bin/sh', '-c', `/usr/bin/nc -z -w 2 127.0.0.1 ${port}`], cwd: root, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' } },
       policyFor(root, { unixSocketAllow: [outside] }),
       new AbortController().signal,
     );
     spawned.push(proc);
-    expect((await run(proc)).code).not.toBe(0);
+    expect((await run(await proc)).code).not.toBe(0);
     expect(hits).toEqual([]);
   });
 });

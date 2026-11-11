@@ -15,6 +15,7 @@ export type ReplayEnvironment = {
   protectedSet: ProtectedSet;
   fs: PolicyHostFilesystem;
   globBudgetMs: number;
+  signal: AbortSignal;
 };
 
 export type Prediction = { kind: DecisionKind; dependsOnDefault: boolean; viaPaths: boolean };
@@ -59,9 +60,9 @@ const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): 
   }
 };
 
-export const commandDecisionWithout = (env: ReplayEnvironment, command: string, omitted: PermissionRule | undefined): DecisionKind => {
+export const commandDecisionWithout = async (env: ReplayEnvironment, command: string, omitted: PermissionRule | undefined): Promise<DecisionKind> => {
   const rules = env.rules.filter((rule) => rule !== omitted);
-  return decidePrimary({ ...inputFor({ ...env, rules }, 'Bash', { kind: 'command', command, defaultAllow: false }), fs: settleGlobs(env.fs, EMPTY_GLOB_TABLE) }).kind;
+  return (await decidePrimary({ ...inputFor({ ...env, rules }, 'Bash', { kind: 'command', command, defaultAllow: false }), fs: settleGlobs(env.fs, EMPTY_GLOB_TABLE, env.signal) })).kind;
 };
 
 export const replayWitness = async (env: ReplayEnvironment, tool: SubjectTool, witness: Witness, predicted: Prediction): Promise<Replay> => {
@@ -76,11 +77,11 @@ export const replayWitness = async (env: ReplayEnvironment, tool: SubjectTool, w
       cwd: env.cwd,
       home: env.home,
       deadline: createGlobDeadline(env.globBudgetMs),
-      signal: new AbortController().signal,
+      signal: env.signal,
     });
-    const input: DecideInput = { ...unsettled, fs: settleGlobs(env.fs, globs) };
-    actual = decidePrimary(input).kind;
-    final = decide(input).kind;
+    const input: DecideInput = { ...unsettled, fs: settleGlobs(env.fs, globs, env.signal) };
+    actual = (await decidePrimary(input)).kind;
+    final = (await decide(input)).kind;
   } catch (error) {
     if (!(error instanceof Error)) throw error;
     return { crashed: `${error.name}: ${error.message}` };

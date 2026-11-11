@@ -30,12 +30,12 @@ export const readTool = defineTool<ReadInput>({
   },
   pagesOutput: true,
   timeoutMs: 30_000,
-  title: (input, ctx) => `Read ${shownPath(ctx, accessedPathOf(ctx, input.file_path))}`,
+  title: async (input, ctx) => `Read ${await shownPath(ctx, await accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path), ...(input.offset === undefined ? {} : { line: input.offset }) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Read', paths: [resolvedPathOf(ctx, input.file_path)], access: 'read' }),
   execute: async (input, ctx) => {
-    const canonical = canonicalPathOf(ctx, 'file_path', input.file_path);
-    const shown = shownPath(ctx, resolvedPathOf(ctx, input.file_path));
+    const canonical = await canonicalPathOf(ctx, 'file_path', input.file_path);
+    const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
     const stat = await statIfExists(canonical);
     if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${shown}`);
     if (stat.isDirectory()) {

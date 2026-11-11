@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, resolveCanonicalPath, sha256Hex, truncationMarker, validateUntrusted } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, testPaths } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createHostRipgrepLocator, createToolExecutor, createToolRegistry, defineTool, schemaIdentity } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../test/support/pinned-ripgrep.ts';
@@ -11,6 +11,7 @@ import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode, SideEffect } from '@momonga/protocol';
 import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, minimalPolicyFor } from './helpers.ts';
 import type { Layout } from './helpers.ts';
+import { syncPaths } from '@momonga/foundation';
 
 export type Input = Record<string, unknown>;
 
@@ -121,11 +122,11 @@ export const makeHarness = (options: HarnessOptions = {}) => {
   });
   const session = { cwd: layout.project, workingDirectory: layout.project, readLedger: new Map<string, { sha256: string; mtimeMs: number }>() };
   const started: string[] = [];
-  const input = (
+  const input = async (
     toolSet: ToolSet,
     calls: HarnessCall[],
     extra: Partial<Omit<ExecutionBatchInput, 'recoverOnly'>> & { recoverOnly?: true; mode?: PermissionMode; rules?: PermissionRule[] } = {},
-  ): ExecutionBatchInput => {
+  ): Promise<ExecutionBatchInput> => {
     const batch = {
     calls: calls.map((entry) =>
       bindApproval(entry, toolSet, { cwd: (extra.session ?? session).cwd, workingDirectory: (extra.session ?? session).workingDirectory, home: extra.home ?? layout.home, roots: extra.roots ?? [layout.project] }),
@@ -153,7 +154,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     };
     if (extra.ripgrep === undefined) Object.assign(batch, { ripgrep: createHostRipgrepLocator({ setting: pinnedRipgrepPath(), env: batch.env }) });
     if (extra.sandboxPolicy !== undefined) return batch as unknown as ExecutionBatchInput;
-    const sandboxPolicy = minimalPolicyFor({ layout, rules: batch.rules, roots: batch.roots, ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }) });
+    const sandboxPolicy = await minimalPolicyFor({ layout, rules: batch.rules, roots: batch.roots, ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }) });
     return { ...batch, sandboxPolicy } as unknown as ExecutionBatchInput;
   };
   return { layout, markerDir, callLockDir, kernelLock, clock, idempotency, blobs, executor, session, started, input, warnings };
@@ -177,13 +178,13 @@ const subjectForDigest = (subject: PermissionSubject, cwd: string): unknown => {
       ...subject,
       paths: subject.paths.map((target) => {
         const absolute = absoluteFrom(target, cwd);
-        const resolution = resolveCanonicalPath(absolute);
+        const resolution = syncPaths.resolveCanonicalPath(absolute);
         return resolution.ok ? resolution.path : absolute;
       }),
     };
   }
   if (subject.kind === 'command') {
-    const resolution = resolveCanonicalPath(cwd);
+    const resolution = syncPaths.resolveCanonicalPath(cwd);
     return { subject, cwd: resolution.ok ? resolution.path : null };
   }
   return subject;
@@ -197,7 +198,7 @@ const digestForCall = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: str
   const value: unknown = typeof entry.arguments === 'string' ? JSON.parse(entry.arguments) : entry.arguments;
   if (!validateUntrusted(schemaIdentity(tool), tool.inputSchema, value).valid) return UNRESOLVED_SUBJECT_DIGEST;
   try {
-    return expectedSubjectDigest(tool.subject(value, context), context.cwd);
+    return expectedSubjectDigest(tool.subject(value, { ...context, paths: testPaths() }), context.cwd);
   } catch {
     return UNRESOLVED_SUBJECT_DIGEST;
   }

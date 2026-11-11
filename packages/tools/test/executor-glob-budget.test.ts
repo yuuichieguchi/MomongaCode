@@ -34,7 +34,7 @@ describe('the executor spends one glob budget per decision, derived from the lea
     const { fs, deadlines } = recordingFilesystem();
     const harness = makeHarness({ executor: { fs, leaseMs, heartbeatMs } });
     const runs: string[] = [];
-    await harness.executor.runBatch(harness.input(await toolSetOf(commandTool('cat a* b*', runs)), [call('c1', 'Bash')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool('cat a* b*', runs)), [call('c1', 'Bash')]));
     expect(deadlines).toHaveLength(2);
     const [first, second] = deadlines.map((remaining) => remaining());
     expect(first).toBeLessThanOrEqual(budget);
@@ -53,7 +53,7 @@ describe('the executor spends one glob budget per decision, derived from the lea
       },
     };
     const harness = makeHarness({ executor: { fs } });
-    await harness.executor.runBatch(harness.input(await toolSetOf(commandTool('cat a* b*', [])), [call('c1', 'Bash')]));
+    await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool('cat a* b*', [])), [call('c1', 'Bash')]));
     expect(seen).toHaveLength(2);
     expect(seen[0]).toBe(seen[1]);
   });
@@ -63,7 +63,7 @@ describe('the executor spends one glob budget per decision, derived from the lea
     const fs = { ...host, expandGlob: async () => ({ unresolvable: { kind: 'dynamic' as const } }) };
     const harness = makeHarness({ executor: { fs } });
     const runs: string[] = [];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool('cat a*', runs)), [call('c1', 'Bash')]));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool('cat a*', runs)), [call('c1', 'Bash')]));
     expect(outcome).toMatchObject({ kind: 'needs_approval' });
     expect(runs).toEqual([]);
   });
@@ -84,7 +84,7 @@ describe('the executor spends one glob budget per decision, derived from the lea
     };
     const harness = makeHarness({ executor: { fs } });
     const runs: string[] = [];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool('cat a*', runs)), [call('c1', 'Bash')], { signal: controller.signal }));
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool('cat a*', runs)), [call('c1', 'Bash')], { signal: controller.signal }));
     expect(received).toBe(controller.signal);
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed', output: expect.stringContaining('cancelled') } });
     expect(runs).toEqual([]);
@@ -101,7 +101,7 @@ describe('the executor spends one glob budget per decision, derived from the lea
     };
     const harness = makeHarness({ executor: { fs } });
     const runs: string[] = [];
-    await expect(harness.executor.runBatch(harness.input(await toolSetOf(commandTool('cat a*', runs)), [call('c1', 'Bash')]))).rejects.toBe(failure);
+    await expect(harness.executor.runBatch(await harness.input(await toolSetOf(commandTool('cat a*', runs)), [call('c1', 'Bash')]))).rejects.toBe(failure);
     expect(runs).toEqual([]);
   });
 });
