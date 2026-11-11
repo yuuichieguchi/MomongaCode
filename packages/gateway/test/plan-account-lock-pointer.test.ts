@@ -37,6 +37,44 @@ const installOf = (h: Harness, signIn: FakeSignIn) =>
     signal(),
   );
 
+describe('the active account is chosen under the lock of the account it names (S5-8)', () => {
+  it('a sign-out asked for while the account is being made active waits until the pointer is written', async () => {
+    const { h, gated } = await gatedHarness();
+    await signedIn(h, 'work');
+    h.auth.identity = { sub: 'sub-second-user', email: 'second@example.com' };
+    await signedIn(h, 'home');
+    const counted = holdingOneWrite(h.store, () => false);
+    await h.reopen({ accounts: [work, home], store: counted.store });
+    const pointerWrite = gated.gate('rename', isActiveFile(h));
+    const selecting = h.sessions.selectActive(work, signal());
+    await pointerWrite.reached;
+    let signedOut = false;
+    const signingOut = h.sessions.signOut(work, signal()).then(() => {
+      signedOut = true;
+    });
+    await vi.waitFor(() => expect(signedOut || counted.lockRequests() >= 2).toBe(true), CONDITION_WAIT);
+    expect(signedOut).toBe(false);
+    expect((await readRecord(h, 'work'))?.['state']).toBe('active');
+    expect(await pointerOf(h)).toEqual({ [PROFILE_ID]: 'home' });
+    pointerWrite.release();
+    await selecting;
+    expect(await pointerOf(h)).toEqual({ [PROFILE_ID]: 'work' });
+    await signingOut;
+    expect((await readRecord(h, 'work'))?.['state']).toBe('registered');
+  });
+
+  it('an account whose record on disk is signed out is refused, whatever this session remembers of it', async () => {
+    const { h } = await gatedHarness();
+    await signedIn(h, 'work');
+    h.auth.identity = { sub: 'sub-second-user', email: 'second@example.com' };
+    await signedIn(h, 'home');
+    const older = await h.another({ accounts: [work, home] });
+    await h.sessions.signOut(work, signal());
+    await expect(older.selectActive(work, signal())).rejects.toThrow('work has no verified sign-in to switch to. Sign in to it first.');
+    expect(await pointerOf(h)).toEqual({ [PROFILE_ID]: 'home' });
+  });
+});
+
 describe('the record an install writes and the record in memory agree (F13, G9-5)', () => {
   it('the record a new install writes holds no pause of the sign-in it replaces', async () => {
     const { h } = await gatedHarness();

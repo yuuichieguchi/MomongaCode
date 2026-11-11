@@ -1164,8 +1164,13 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const selectActive = (ref: NamedPlanAccountRef, signal: AbortSignal): Promise<void> =>
     forAccount(ref, async (account) => {
       await load(account, signal);
-      if (!SELECTABLE_STATES.has(statusOf(viewOf(account), clock.now()).state)) throw new PlanAccountNotSelectableError(ref);
-      await moveActive(ref);
+      await asAfterLoad(account, signal, (locked) =>
+        locked(account, async (_entry, refusal) => {
+          if (!SELECTABLE_STATES.has(statusOf(viewOf(account), clock.now()).state)) throw new PlanAccountNotSelectableError(ref);
+          if (refusal !== undefined) throw refusal;
+          await moveActive(ref);
+        }),
+      );
     });
 
   const unpinnedView = (): AccountView => (pointerProblem === undefined ? { kind: 'absent' } : { kind: 'unreadable', cause: pointerProblem });
