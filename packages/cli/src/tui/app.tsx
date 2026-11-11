@@ -339,6 +339,7 @@ export function App(props: AppProps) {
     working: busy,
     prompting: phase.kind === 'trust' || transcript.approval !== undefined || transcript.elicitation !== undefined,
     notify,
+    timers,
   });
 
   const enterPhase = (next: Phase): void => {

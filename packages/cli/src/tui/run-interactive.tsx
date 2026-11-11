@@ -30,7 +30,7 @@ import { MAX_FPS } from './screen/constants.ts';
 import { createScreenInput } from './screen/input.ts';
 import { colorLevelOfDepth, noColorAsked } from './screen/theme.ts';
 import { TerminalFrame } from './terminal/frame.tsx';
-import { hostProcess, hostTerminalOutput } from './terminal/host.ts';
+import { hostProcessOn, hostTerminalOutput, NO_DESCRIPTOR_TEXT } from './terminal/host.ts';
 import { createInkStdin } from './terminal/ink-stdin.ts';
 import { createTerminalLayer } from './terminal/layer.ts';
 import type { HandoverTerminal, TerminalLayer } from './terminal/layer.ts';
@@ -84,11 +84,9 @@ const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, laye
     release: () => {
       released = { terminal: layer.handoverTerminal(), negotiation: layer.state().negotiation };
       layer.release();
-      terminal.stdout.write = () => true;
     },
     resume: () => {
       if (released !== undefined) {
-        Reflect.deleteProperty(terminal.stdout, 'write');
         layer.adopt(released.terminal, released.negotiation);
         released = undefined;
       }
@@ -125,8 +123,13 @@ const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, laye
 };
 
 export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, options: InteractiveOptions, update: UpdateWiring, shell: ShellPort): Promise<number> => {
+  const output = hostTerminalOutput(terminal.stdout);
+  if (output.kind === 'no-descriptor') {
+    ports.stderr.write(`momonga: ${NO_DESCRIPTOR_TEXT}\n`);
+    return 1;
+  }
   const adoption = adoptionOf(ports.handover?.started, ['tui']);
-  if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr, terminal: { output: hostTerminalOutput(terminal.stdout), input: terminal.stdin } }, adoption);
+  if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr, terminal: { output: output.port, input: terminal.stdin } }, adoption);
   const backend = createTuiBackend(ports, paths, options, createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update));
   const tasks = createBackgroundTasks();
   const autoMode: AutoModePort = {
@@ -154,20 +157,21 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   });
   await keyBindings.load();
   const inkStdin = createInkStdin();
+  const moveFailures: unknown[] = [];
   const input = createScreenInput();
   const layer = createTerminalLayer({
     input: terminal.stdin,
-    output: hostTerminalOutput(terminal.stdout),
-    process: hostProcess,
+    output: output.port,
+    process: hostProcessOn(ports.platform),
     timers: systemTiming,
     screen: readerAtStart ? 'scrollback' : tuiSettings.initial.screen,
     screenSetByUser: readerAtStart,
     mouse: tuiSettings.initial.mouse,
     onEvents: input.push,
+    onFailure: (error) => moveFailures.push(error),
   });
   if (adoption.kind === 'record') startWithHandoverTerminal(layer, ports.handover?.started?.terminal, adoption.record.neg);
   else layer.start();
-  const moveFailures: unknown[] = [];
   const moving = wireMove(ports, paths, terminal, layer, (error) => moveFailures.push(error));
   const adopted: { adoption?: TuiAdoption } = adoption.kind === 'record' ? { adoption: { record: adoption.record, attached: () => ports.handover?.removeRecord(adoption.file) } } : {};
   const externalEditor = createExternalEditor({

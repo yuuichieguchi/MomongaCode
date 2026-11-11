@@ -24,7 +24,10 @@ const hostOf = (env: ExternalEditorHost['env'], edit: (text: string) => string =
     },
     leaveScreen: () => {
       steps.push('leave the screen');
-      return () => void steps.push('return to the screen');
+      return async () => {
+        await Promise.resolve();
+        steps.push('return to the screen');
+      };
     },
     launch: async (argv) => {
       steps.push(`launch ${argv.join(' ')}`);

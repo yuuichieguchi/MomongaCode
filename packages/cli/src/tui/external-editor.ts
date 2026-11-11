@@ -21,7 +21,7 @@ export type ExternalEditorHost = {
   writePrivate(file: string, text: string): Promise<void>;
   read(file: string): Promise<string>;
   remove(directory: string): Promise<void>;
-  leaveScreen(): () => void;
+  leaveScreen(): () => Promise<void>;
   launch(argv: readonly string[]): Promise<void>;
 };
 
@@ -50,7 +50,7 @@ export const createExternalEditor = (host: ExternalEditorHost): ExternalEditorPo
       try {
         await host.launch([...command, file]);
       } finally {
-        returnToScreen();
+        await returnToScreen();
       }
       return { kind: 'edited', text: (await host.read(file)).replace(/\n$/, '') };
     } finally {
