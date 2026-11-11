@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isLoopbackHost, matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from '@momonga/foundation';
+import { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from '@momonga/foundation';
+import { isLoopbackHost } from '../src/loopback.ts';
 import type { NetworkConfig, Route } from '@momonga/foundation';
 
 const PROXY = 'http://user:secret@proxy.corp:3128';

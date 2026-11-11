@@ -8,11 +8,11 @@ import {
   findOutboundError,
   isAcceptableAddress,
   isLoopbackAddress,
-  isLoopbackHost,
   openOutboundTunnel,
   outboundFetch,
   transportUrlProblem,
 } from '@momonga/foundation';
+import { isLoopbackHost } from '../src/loopback.ts';
 import type { NetworkConfig, OutboundNetwork } from '@momonga/foundation';
 
 const TEST_TIMEOUT_MS = 30_000;

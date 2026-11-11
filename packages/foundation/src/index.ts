@@ -220,7 +220,7 @@ export {
 } from './secret-store.ts';
 export type { SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export { isAcceptableAddress, isLoopbackAddress } from './global-address.ts';
-export { isLoopbackHost, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
+export { claimsLoopback, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
 export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
 export { startSharedCall } from './shared-call.ts';

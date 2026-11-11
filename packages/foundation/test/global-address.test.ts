@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isAcceptableAddress, isLoopbackAddress, isLoopbackHost } from '@momonga/foundation';
+import { isAcceptableAddress, isLoopbackAddress } from '@momonga/foundation';
+import { isLoopbackHost } from '../src/loopback.ts';
 
 const REFUSING_LOOPBACK = { loopback: false } as const;
 const ALLOWING_LOOPBACK = { loopback: true } as const;
