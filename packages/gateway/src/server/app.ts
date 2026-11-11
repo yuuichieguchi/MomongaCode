@@ -6,6 +6,7 @@ import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView,
 import { ClientDisconnectedError, GatewayError, gatewayClosedError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import { withinPlanOperation } from '../plan/api.ts';
+import { PLAN_ROUTE_BODY_BYTES } from '../plan/request-limit.ts';
 import type { PlanApi } from '../plan/api.ts';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { quoteOf } from '../core/quote.ts';
@@ -237,7 +238,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     if (dependencies.plan === undefined) throw notFound('plan_unavailable', 'this gateway serves no plan sign-in');
     return dependencies.plan;
   };
-  const planBody = (context: Context): Promise<unknown> => readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
+  const planBody = (context: Context): Promise<unknown> => readJsonBody(context.req.raw, PLAN_ROUTE_BODY_BYTES);
   const accountParam = (context: Context): string => {
     const account = context.req.param('account');
     if (account === undefined || account === '') throw invalidRequest('invalid_path', 'the account label is missing from the path', 'account');

@@ -8,6 +8,8 @@ export type PlanRequestLimit = { limitMs: number; label: string };
 
 export const SIGN_IN_RECORD_STORE = 'the sign-in record store';
 
+export const PLAN_ROUTE_BODY_BYTES = 64 * 1024;
+
 export const PLAN_OPERATION_LIMIT: PlanRequestLimit = { limitMs: HOST_READ_BOUND_MS, label: 'the plan operation limit' };
 
 export const limitFailureOf = (error: unknown): PlanCredentialError | undefined => {
