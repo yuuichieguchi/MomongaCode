@@ -10,6 +10,7 @@ import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import { nodeFileSystem } from './node-file-system.ts';
 import type { Random } from './random.ts';
 import { SecretStoreAbsentError, StoreCallEndedError, limitEndOf } from './secret-store-failures.ts';
+import { SecretNotFoundError, SecretUnavailableError } from './secret-store.ts';
 import type { SecretStore } from './secret-store.ts';
 import { systemRandom } from './system-random.ts';
 
@@ -54,6 +55,8 @@ type CreatedKey = { keyHex: string; name: string };
 
 type CreationState = { found: string | undefined; created: CreatedKey | undefined };
 
+type KeyReading = { kind: 'no-marker' } | { kind: 'gone'; name: string; error: SecretNotFoundError } | { kind: 'key'; keyHex: string };
+
 const throwIfCancelled = (error: unknown, signal: AbortSignal): void => {
   if (error instanceof StoreCallEndedError) throw new StoreCallEndedError({ ...error.call, name: undefined }, error.limit);
   if ((signal.aborted && error === signal.reason) || limitEndOf(error) !== undefined) throw error;
@@ -71,6 +74,9 @@ const ENVELOPE_FIELDS: readonly (keyof Envelope)[] = ['format', 'key', 'nonce', 
 
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const keyFailureText = (error: unknown): string =>
+  error instanceof SecretUnavailableError ? `the ${error.backend.label} did not give the key ${error.secretName} (${error.answer})` : messageOf(error);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -158,16 +164,23 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     return text === undefined ? undefined : keyNameOfMarker(text, markerFile);
   };
 
-  const readNamedKey = async (store: SecretStore, signal: AbortSignal): Promise<string | undefined> => {
+  const readNamedKey = async (store: SecretStore, signal: AbortSignal): Promise<KeyReading> => {
     const name = await readMarker();
-    return name === undefined ? undefined : store.read(name, signal);
+    if (name === undefined) return { kind: 'no-marker' };
+    try {
+      return { kind: 'key', keyHex: await store.read(name, signal) };
+    } catch (error) {
+      if (error instanceof SecretNotFoundError) return { kind: 'gone', name, error };
+      throw error;
+    }
   };
 
   const createKey = async (store: SecretStore, signal: AbortSignal): Promise<string> => {
     const creation: CreationState = { found: undefined, created: undefined };
     const steps: Readonly<Record<CreationStep, () => Promise<void>>> = {
       read_marker_again: async () => {
-        creation.found = await readNamedKey(store, signal);
+        const reading = await readNamedKey(store, signal);
+        creation.found = reading.kind === 'key' ? reading.keyHex : undefined;
       },
       write_os_item: async () => {
         const keyHex = Buffer.from(random.bytes(KEY_BYTES)).toString('hex');
@@ -188,21 +201,24 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
   };
 
   const keyForWriting = async (store: SecretStore, signal: AbortSignal): Promise<string> => {
-    const named = await readNamedKey(store, signal);
-    if (named !== undefined) return named;
+    const reading = await readNamedKey(store, signal);
+    if (reading.kind === 'key') return reading.keyHex;
     await nodeFileSystem.mkdirPrivate(options.stateDirectory);
     return withFileLock(lockFile, () => createKey(store, signal), { ports, mechanism: options.lock, signal });
   };
 
   const keyForReading = async (signal: AbortSignal, file: string): Promise<string> => {
     if (options.secretStore.kind === 'none') throw refusedWithoutStore('store_unreadable', { reason: options.secretStore.reason, backend: undefined });
-    const named = await readNamedKey(options.secretStore.store, signal).catch((error: unknown) => {
+    const reading = await readNamedKey(options.secretStore.store, signal).catch((error: unknown) => {
       throwIfCancelled(error, signal);
       if (error instanceof SecretStoreAbsentError) throw refusedWithoutStore('store_unreadable', error);
-      throw new CredentialStoreError('store_unreadable', `the key of the credential file ${file} could not be read: ${messageOf(error)}`, { cause: error });
+      throw new CredentialStoreError('store_unreadable', `the key of the credential file ${file} could not be read: ${keyFailureText(error)}`, { cause: error });
     });
-    if (named === undefined) throw new CredentialStoreError('store_unreadable', `the credential file ${file} is encrypted, but the marker ${markerFile} naming its key is missing`, { cause: new Error(`${markerFile} does not exist`) });
-    return named;
+    if (reading.kind === 'no-marker') throw new CredentialStoreError('store_unreadable', `the credential file ${file} is encrypted, but the marker ${markerFile} naming its key is missing`, { cause: new Error(`${markerFile} does not exist`) });
+    if (reading.kind === 'gone') {
+      throw new CredentialStoreError('store_unreadable', `the key ${reading.name} of the credential file ${file} is no longer in the ${reading.error.backend.label}, so what was stored under it cannot be read; sign in again to store it under a new key`, { cause: reading.error });
+    }
+    return reading.keyHex;
   };
 
   const decode = async (key: string, text: string | undefined, plaintext: boolean, signal: AbortSignal): Promise<string | undefined> => {
@@ -227,7 +243,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     const keyHex = await keyForWriting(options.secretStore.store, signal).catch((error: unknown) => {
       throwIfCancelled(error, signal);
       if (error instanceof SecretStoreAbsentError) throw refusedWithoutStore('store_unwritable', error);
-      throw new CredentialStoreError('store_unwritable', `the credential key could not be read or created: ${messageOf(error)}`, { cause: error });
+      throw new CredentialStoreError('store_unwritable', `the credential key could not be read or created: ${keyFailureText(error)}`, { cause: error });
     });
     return JSON.stringify(await seal(random, keyHex, key, value));
   };

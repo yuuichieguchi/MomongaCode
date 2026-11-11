@@ -29,6 +29,7 @@ const BACKEND: SecretBackend = {
   storeCommand: (name) => `test-keyring store ${name}`,
   unansweredAdvice: 'the Test Keyring may be waiting for an answer: unlock it',
   readiness: undefined,
+  notFound: () => false,
 };
 
 const hangingReads = (inner: ListableCredentialStore): { store: ListableCredentialStore; hang: { on: boolean }; reads(): number } => {

@@ -1,5 +1,6 @@
 import * as foundation from '@momonga/foundation';
-import { KEYCHAIN_SERVICE, SECRET_TOOL_BINARY, SECURITY_BINARY, SecretUnavailableError } from '@momonga/foundation';
+import { KEYCHAIN_SERVICE, SECRET_TOOL_BINARY, SECURITY_BINARY } from '@momonga/foundation';
+import { SecretNotFoundError } from '@momonga/foundation/secret-store';
 import type { SecretProcessPort, SecretProcessResult, SecretStore } from '@momonga/foundation';
 import type { SecretStoreFiles } from '@momonga/foundation/secret-store';
 
@@ -55,7 +56,7 @@ export const createFakeSecretStore = (secrets: Readonly<Record<string, string>>,
       reads.push(name);
       if (hangs()) return hung<string>('read', name, signal);
       const value = held.get(name);
-      if (value === undefined) throw new SecretUnavailableError(name, ITEM_NOT_FOUND_EXIT, 'the fake store has no such secret');
+      if (value === undefined) throw new SecretNotFoundError(name, ITEM_NOT_FOUND_EXIT, 'the fake store has no such secret');
       return value;
     },
     write: async (name, value, signal) => {

@@ -225,7 +225,7 @@ describe('backends that declare no readiness question', () => {
   });
 
   it('a secret-tool failure stays a SecretUnavailableError', async () => {
-    const fake = perCommandPort({ call: answering({ exitCode: 1, stdout: '', stderr: '' }) });
+    const fake = perCommandPort({ call: answering({ exitCode: 1, stdout: '', stderr: 'Cannot autolaunch D-Bus' }) });
     const error = await rejection(createSecretServiceStore(fake.port).read('k', SIGNAL));
     expect(error).toBeInstanceOf(SecretUnavailableError);
     expect((error as Error).name).toBe('SecretUnavailableError');

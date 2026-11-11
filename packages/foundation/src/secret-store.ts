@@ -40,6 +40,7 @@ export type SecretBackend = {
   storeCommand(secretName: string): string;
   unansweredAdvice: string | undefined;
   readiness: Readiness | undefined;
+  notFound(result: SecretProcessResult): boolean;
 };
 
 export type SecretStore = {
@@ -47,6 +48,10 @@ export type SecretStore = {
   read(name: string, signal: AbortSignal): Promise<string>;
   write(name: string, value: string, signal: AbortSignal): Promise<void>;
 };
+
+const KEYCHAIN_ITEM_NOT_FOUND_EXIT = 44;
+const SECRET_TOOL_NOT_FOUND_EXIT = 1;
+const CREDENTIAL_NOT_FOUND_EXIT = 3;
 
 const DEFAULT_KEYCHAIN_ANSWER = /^    "(.+)"\n$/;
 const DEFAULT_KEYCHAIN_REFUSAL = /^(?:[^:\n]*: )?(SecKeychainCopyDefault: .*)$/;
@@ -78,6 +83,7 @@ export const KEYCHAIN_BACKEND: SecretBackend = {
   storeCommand: (secretName) => `security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${secretName} -w`,
   unansweredAdvice: 'the Keychain may be waiting for an answer in a window on your screen: answer it or unlock the login keychain',
   readiness: { advice: 'make a default keychain available', args: ['default-keychain'], read: readDefaultKeychain },
+  notFound: (result) => result.exitCode === KEYCHAIN_ITEM_NOT_FOUND_EXIT,
 };
 
 export const SECRET_SERVICE_BACKEND: SecretBackend = {
@@ -87,6 +93,7 @@ export const SECRET_SERVICE_BACKEND: SecretBackend = {
   storeCommand: (secretName) => `secret-tool store --label=${KEYCHAIN_SERVICE} service ${KEYCHAIN_SERVICE} account ${secretName}`,
   unansweredAdvice: 'the Secret Service may be waiting for you to answer a prompt: answer it or unlock the keyring',
   readiness: undefined,
+  notFound: (result) => result.exitCode === SECRET_TOOL_NOT_FOUND_EXIT && result.stdout === '' && result.stderr.trim() === '',
 };
 
 export const CREDENTIAL_MANAGER_BACKEND: SecretBackend = {
@@ -96,19 +103,37 @@ export const CREDENTIAL_MANAGER_BACKEND: SecretBackend = {
   storeCommand: (secretName) => `cmdkey /generic:${KEYCHAIN_SERVICE}/${secretName} /user:${KEYCHAIN_SERVICE} /pass`,
   unansweredAdvice: undefined,
   readiness: undefined,
+  notFound: (result) => result.exitCode === CREDENTIAL_NOT_FOUND_EXIT,
 };
+
+const answeredAs = (exitCode: number, detail: string): string => `exit ${exitCode}${detail === '' ? '' : `: ${detail}`}`;
 
 export class SecretUnavailableError extends Error {
   readonly secretName: string;
   readonly exitCode: number;
+  readonly detail: string;
+  readonly backend: SecretBackend;
 
   constructor(secretName: string, exitCode: number, detail: string, backend: SecretBackend = KEYCHAIN_BACKEND) {
     super(
-      `the secret "${secretName}" could not be read from the ${backend.label} (exit ${exitCode}${detail === '' ? '' : `: ${detail}`}); store it with: ${backend.storeCommand(secretName)}; the gateway reads a missing secret again on the next request`,
+      `the secret "${secretName}" could not be read from the ${backend.label} (${answeredAs(exitCode, detail)}); store it with: ${backend.storeCommand(secretName)}; the gateway reads a missing secret again on the next request`,
     );
     this.name = 'SecretUnavailableError';
     this.secretName = secretName;
     this.exitCode = exitCode;
+    this.detail = detail;
+    this.backend = backend;
+  }
+
+  get answer(): string {
+    return answeredAs(this.exitCode, this.detail);
+  }
+}
+
+export class SecretNotFoundError extends SecretUnavailableError {
+  constructor(secretName: string, exitCode: number, detail: string, backend: SecretBackend = KEYCHAIN_BACKEND) {
+    super(secretName, exitCode, detail, backend);
+    this.name = 'SecretNotFoundError';
   }
 }
 
@@ -203,7 +228,10 @@ const createCommandSecretStore = (
     read: async (name, signal) => {
       assertNameShape(name);
       const result = await answeredWhenReady({ action: 'read', name }, commands.read(name), signal);
-      if (result.exitCode !== 0) throw new SecretUnavailableError(name, result.exitCode, result.stderr.trim(), backend);
+      if (result.exitCode !== 0) {
+        const Refusal = backend.notFound(result) ? SecretNotFoundError : SecretUnavailableError;
+        throw new Refusal(name, result.exitCode, result.stderr.trim(), backend);
+      }
       const value = withoutOneTrailingNewline(result.stdout);
       if (value === '') throw new SecretEmptyError(name, backend);
       return value;
@@ -268,6 +296,7 @@ export const credentialReadScript = (target: string): string =>
     "'@",
     '$secret = $null',
     `$status = [MomongaCredential]::Read('${target}', [ref]$secret)`,
+    `if ($status -eq 1168) { exit ${CREDENTIAL_NOT_FOUND_EXIT} }`,
     'if ($status -ne 0) { [Console]::Error.WriteLine("CredRead failed with Win32 error $status"); exit 2 }',
     '[Console]::Out.Write($secret)',
   ].join('\n');
