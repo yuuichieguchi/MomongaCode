@@ -1,4 +1,5 @@
-import type { PlanSignOutResponse } from '@momonga/protocol';
+import { PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED } from '@momonga/protocol';
+import type { PlanAccountRef, PlanSignOutResponse } from '@momonga/protocol';
 import { reconsentCommand, signInCommandOf } from '../policy-messages.ts';
 import type { MessageSurface } from '../policy-messages.ts';
 
@@ -11,21 +12,21 @@ export const noBrowserHintLine = (providerId: string, accountLabel: string): str
 
 export const signedInLine = (account: { label: string; email?: string }): string => `Signed in as ${account.label}${account.email === undefined ? '' : ` (${account.email})`}`;
 
-export const tryAgainLine = (surface: MessageSurface, plan: { profile: string; account: string }): string => `Run ${signInCommandOf(surface, plan)} to try again.`;
+export const tryAgainLine = (surface: MessageSurface, plan: PlanAccountRef): string => `Run ${signInCommandOf(surface, plan)} to try again.`;
 
 export const codeNotAcceptedLine = (surface: MessageSurface, profile: { id: string; messages: { identityLabel: string } }, account: string): string =>
   `${profile.messages.identityLabel} did not accept the sign-in code (invalid_grant). ${tryAgainLine(surface, { profile: profile.id, account })}`;
 
 export const planDisabledLines = (surface: MessageSurface, profile: { id: string; messages: { planNotEnabledMessage: string } }, account: string): string[] =>
-  surface === 'headless' ? [`${profile.messages.planNotEnabledMessage} · Run ${reconsentCommand(profile.id, account)} to enable it`] : [profile.messages.planNotEnabledMessage];
+  surface === 'headless' ? [`${profile.messages.planNotEnabledMessage} · Run ${reconsentCommand({ profile: profile.id, account })} to enable it`] : [profile.messages.planNotEnabledMessage];
 
 export const signedOutLines = (profile: { messages: { identityLabel: string } }, label: string, report: PlanSignOutResponse): string[] => {
   switch (report.revocation) {
-    case 'none':
+    case PLAN_REVOCATION_NONE:
       return [`${label} was already signed out.`];
-    case 'confirmed':
+    case PLAN_REVOCATION_CONFIRMED:
       return [`Signed out ${label}`, 'Remote revocation confirmed.'];
-    case 'unconfirmed':
+    case PLAN_REVOCATION_UNCONFIRMED:
       return [`Signed out ${label}`, `Remote revocation was not confirmed; disconnect the app in ${profile.messages.identityLabel} Settings: ${report.usageUrl}`];
   }
 };

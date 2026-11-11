@@ -6,13 +6,12 @@ import { InheritanceError, JournalThreadError } from '@momonga/store';
 import type { RunError, StatusPatch } from '@momonga/store';
 import { EarlierAttemptNotStoppedError, RetiringYield } from '@momonga/tools';
 import { GatewayFailureError } from './errors.ts';
-import { GatewayRequestError, isGatewayNeverReached, isGenerationRetiredRefusal, isTargetProbing } from '../gateway-client.ts';
-import { USAGE_LIMIT_CODES } from '@momonga/protocol';
+import { GatewayRequestError, isGatewayNeverReached, isGenerationRetiredRefusal } from '../gateway-client.ts';
+import { SERVICE_UNAVAILABLE_STATUS, USAGE_LIMIT_CODES, isTargetProbing } from '@momonga/protocol';
 import type { PlanAccountRef, StopReason } from '@momonga/protocol';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
 const PROVIDER_UNAVAILABLE_CODE = 'provider_unavailable';
-const SERVICE_UNAVAILABLE_STATUS = 503;
 const DEFERRAL_FAILURE_CODE = 'rate_limited';
 const GATEWAY_FAILURE_CODE = 'gateway_failure';
 const JOURNAL_THREAD_FAILURE_CODE = 'journal_thread_error';
@@ -79,7 +78,7 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (isTargetProbing(error)) return { kind: 'wait', code: error.code, message: error.message, retryAfterMs };
   if (error.deferred === true) return { kind: 'defer', code: DEFERRAL_FAILURE_CODE, message: error.message, retryAfterMs };
   if (error.code === 'gateway_unavailable' && error.provenNotSent === true) return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
-  if (error.status === 503 && error.code === 'gateway_closed') return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
+  if (error.status === SERVICE_UNAVAILABLE_STATUS && error.code === 'gateway_closed') return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.code === 'stream_interrupted') return { kind: 'requeue', refund: interruptions < STREAM_INTERRUPTED_REFUNDS, retryAfterMs, interrupted: true };
   if (error.type === 'transport' || error.code === PROVIDER_UNAVAILABLE_CODE || error.status === SERVICE_UNAVAILABLE_STATUS || TRANSIENT_REQUEST_STATUSES.includes(error.status)) return { kind: 'requeue', refund: false, retryAfterMs, interrupted: false };
   return { kind: 'fail', code: error.code, message: error.message, ...planOf(error) };

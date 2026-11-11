@@ -1,3 +1,4 @@
+import { PLAN_SIGN_IN_FAILURE } from '@momonga/protocol';
 import { AUTHORIZATION_WAIT_MS, OAuthAuthorizationError, startLoopbackRedirect, systemTiming } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
 import { planProfileOf } from '@momonga/config';
@@ -94,7 +95,7 @@ export class SignInAttemptNotFoundError extends Error {
   }
 }
 
-const ATTEMPT_NOT_FOUND = 'attempt_not_found';
+const ATTEMPT_NOT_FOUND = PLAN_SIGN_IN_FAILURE.attemptNotFound;
 
 export const callbackPathOf = (profile: string): string => planProfileOf(profile).oauth.callbackPath;
 

@@ -521,7 +521,7 @@ const guardedPlans = async (
   const throwing = guardAdapter(
     baseAdapter({
       capabilities: async () => {
-        throw new GatewayError({ status: 429, type: 'too_many_requests', code: 'plan_usage_limit', param: 'p'.repeat(200), message: 'limit', plan: plan as unknown as { profile: string; account: string } });
+        throw new GatewayError({ status: 429, type: 'too_many_requests', code: 'plan_usage_limit', param: 'p'.repeat(200), message: 'limit', plan: plan as unknown as { profile: string } });
       },
     }),
     redactor,
@@ -582,5 +582,21 @@ describe('guardAdapter keeps plan on an error only when its profile and account 
     expect(guarded.errorEvent['plan']).toEqual(kept);
     expect(guarded.failed['plan']).toEqual(kept);
     expect(guarded.gatewayError['plan']).toEqual(kept);
+  });
+});
+
+describe('guardAdapter passes the served account of its adapter through the one reference guard (N-PLAN-2)', () => {
+  const servedBy = (served: unknown): unknown =>
+    guardAdapter(baseAdapter({ servedAccount: () => served as { profile: string } }), redactor, REASONING_ORIGIN_CODEC).servedAccount?.(TARGET);
+
+  it('keeps a reference whose labels match, with its two keys only, and the profile-only form', () => {
+    expect(servedBy({ profile: 'chatgpt', account: 'work', token: 'x' })).toEqual({ profile: 'chatgpt', account: 'work' });
+    expect(servedBy({ profile: 'chatgpt' })).toEqual({ profile: 'chatgpt' });
+  });
+
+  it('names no account when the adapter names none or one whose label is outside the pattern', () => {
+    expect(servedBy(undefined)).toBeUndefined();
+    expect(servedBy({ profile: 'chat/gpt', account: 'work' })).toBeUndefined();
+    expect(servedBy({ profile: 'chatgpt', account: 'wo rk' })).toBeUndefined();
   });
 });

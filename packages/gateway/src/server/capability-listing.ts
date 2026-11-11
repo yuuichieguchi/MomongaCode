@@ -4,7 +4,7 @@ import { ClientDisconnectedError, GatewayError } from '../core/errors.ts';
 import { UpstreamFailure, failureFrom, plainError } from '../core/retry.ts';
 import { mergeCapabilities } from '../core/router.ts';
 import type { Router, TargetRuntime } from '../core/router.ts';
-import { isTargetProbing, probingOf } from '../probe/auto-probe.ts';
+import { isTargetProbingError, probingOf } from '../probe/auto-probe.ts';
 
 export type ListedCapabilities<C> = C | NotListedCapabilities;
 
@@ -24,7 +24,7 @@ const listedOf = async (router: Router, target: TargetRuntime, signal: AbortSign
   try {
     return await router.capabilitiesOf(target);
   } catch (error) {
-    if (isTargetProbing(error)) return { toolCalling: probingOf(error), source: 'unprobed' };
+    if (isTargetProbingError(error)) return { toolCalling: probingOf(error), source: 'unprobed' };
     if (error instanceof ClientDisconnectedError) throw error;
     const failure = failureFrom(target.adapter, error, signal);
     if (failure instanceof GatewayError) return unavailableOf(failure);

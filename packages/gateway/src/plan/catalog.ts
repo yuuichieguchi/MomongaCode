@@ -1,5 +1,5 @@
 import type { PlanProfile } from '@momonga/config';
-import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { isRecord } from '@momonga/foundation';
 import type { Clock, CredentialStore, EventPayload } from '@momonga/foundation';
 import { maxOutputTokensFor } from '@momonga/protocol';
 import type { PlanCatalogEntry, PlanModelsResponse } from '@momonga/protocol';
@@ -17,6 +17,8 @@ import type { AuthSource } from './auth-source.ts';
 import { PLAN_EVENT_INTERNAL, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
 import type { PlanOutbound } from './outbound.ts';
+import { ownEntry } from './own-entry.ts';
+import { parsePlanJson } from './plan-json.ts';
 import { recordAccess } from './record-io.ts';
 import type { PlanFetch, PlanSleep } from './refresh.ts';
 
@@ -55,26 +57,22 @@ const listErrorOf = (response: ListAnswer, clock: Clock): UpstreamHttpError => {
 
 export const catalogKey = (profile: string, account: string): string => `${profile}/${account}`;
 
-const parsedRecordText = (text: string): unknown => {
-  try {
-    return parseOutsideJson(text);
-  } catch (error) {
-    if (error instanceof JsonDepthError) throw error;
-    throw new Error('the plan catalog record is not valid JSON', { cause: error });
-  }
+const recordEntryOf = (entry: unknown): RecordEntry => {
+  if (isRecord(entry) && ownEntry(entry, 'unreported') === true) return { unreported: true };
+  const contextWindow = isRecord(entry) ? ownEntry(entry, 'contextWindow') : undefined;
+  const maxOutputTokens = isRecord(entry) ? ownEntry(entry, 'maxOutputTokens') : undefined;
+  if (typeof contextWindow !== 'number' || typeof maxOutputTokens !== 'number') throw new Error('the plan catalog record has an unrecognised entry');
+  return { contextWindow, maxOutputTokens, source: 'reported' };
 };
 
 const parseRecord = (text: string): CatalogRecord => {
-  const value: unknown = parsedRecordText(text);
-  if (!isRecord(value) || typeof value['readAt'] !== 'string' || !isRecord(value['models'])) throw new Error('the plan catalog record has an unrecognised shape');
-  const models: Record<string, RecordEntry> = {};
-  for (const [slug, entry] of Object.entries(value['models'])) {
-    if (isRecord(entry) && entry['unreported'] === true) models[slug] = { unreported: true };
-    else if (isRecord(entry) && typeof entry['contextWindow'] === 'number' && typeof entry['maxOutputTokens'] === 'number') {
-      models[slug] = { contextWindow: entry['contextWindow'], maxOutputTokens: entry['maxOutputTokens'], source: 'reported' };
-    } else throw new Error('the plan catalog record has an unrecognised entry');
-  }
-  return { readAt: value['readAt'], models };
+  const value = parsePlanJson(text, (problem) => new Error(`the plan catalog record ${problem}`));
+  if (!isRecord(value)) throw new Error('the plan catalog record has an unrecognised shape');
+  const readAt = ownEntry(value, 'readAt');
+  const stored = ownEntry(value, 'models');
+  if (typeof readAt !== 'string' || !isRecord(stored)) throw new Error('the plan catalog record has an unrecognised shape');
+  const models = Object.fromEntries(Object.entries(stored).map(([slug, entry]): [string, RecordEntry] => [slug, recordEntryOf(entry)]));
+  return { readAt, models };
 };
 
 type Listed = { models: PlanCatalogEntry[]; entryKeys: string[] };
@@ -212,7 +210,8 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
   };
 
   const capabilitiesOf = (profile: string, account: string, model: string): { contextWindow: number; maxOutputTokens: number } | undefined => {
-    const entry = records.get(catalogKey(profile, account))?.models[model];
+    const record = records.get(catalogKey(profile, account));
+    const entry = record === undefined ? undefined : ownEntry(record.models, model);
     return entry === undefined || 'unreported' in entry ? undefined : { contextWindow: entry.contextWindow, maxOutputTokens: entry.maxOutputTokens };
   };
 

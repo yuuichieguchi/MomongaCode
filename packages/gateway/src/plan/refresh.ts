@@ -4,6 +4,7 @@ import { readTextLimited } from '../adapters/shared/body-reading.ts';
 import { nextWait } from '../core/retry.ts';
 import type { WaitPolicy } from '../core/retry.ts';
 import { PLAN_SESSION_DEFAULTS } from '../defaults.ts';
+import { OAUTH_INVALID_GRANT } from './oauth-wire.ts';
 
 export type PlanFetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -19,7 +20,7 @@ export type PlanTokenResponse = {
   earliest_refresh_at?: string;
 };
 
-export const PLAN_TERMINAL_REFRESH_CODES = ['invalid_grant', 'invalid_refresh_token', 'token_expired', 'refresh_token_expired', 'refresh_token_invalidated', 'refresh_token_reused'] as const;
+export const PLAN_TERMINAL_REFRESH_CODES = [OAUTH_INVALID_GRANT, 'invalid_refresh_token', 'token_expired', 'refresh_token_expired', 'refresh_token_invalidated', 'refresh_token_reused'] as const;
 
 export const PLAN_CONFIGURATION_REFRESH_CODES = ['invalid_client'] as const;
 
