@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
-import { DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, WORDS } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
@@ -47,6 +47,7 @@ import {
   checkTrust,
 } from './contract.ts';
 import type { CliClock } from '../ports.ts';
+import { UsageError } from '../usage-error.ts';
 import type { ApprovalView, ElicitationView, RunView, SessionView, TrustView } from './views.ts';
 
 export class RunApiError extends Error {
@@ -284,6 +285,13 @@ const frameOf = (event: { id?: string; event?: string; data: string }, descripti
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
+const NO_SEGMENT = new Set(['', '.', '..']);
+
+export const pathSegment = (value: string): string => {
+  if (NO_SEGMENT.has(value)) throw new UsageError(messageOf('notAnId', 'cli', { value }));
+  return encodeURIComponent(value);
+};
+
 export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; onMoved?: () => Promise<void> };
 
 export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
@@ -352,43 +360,43 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
   };
 
   const getSession = async (id: string): Promise<SessionView> => {
-    const path = `/v1/sessions/${id}`;
+    const path = `/v1/sessions/${pathSegment(id)}`;
     const { body } = await send('GET', path, [200]);
     return sessionOf(body, `GET ${path}`);
   };
 
   const listRuns = async (sessionId: string): Promise<RunView[]> => {
-    const path = `/v1/sessions/${sessionId}/runs`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}/runs`;
     const { body } = await send('GET', path, [200]);
     return listOf(body, 'runs', `GET ${path}`).map((entry) => checkRun(entry, `GET ${path}`));
   };
 
   const skills = async (sessionId: string): Promise<SkillsResponse> => {
-    const path = `/v1/sessions/${sessionId}/skills`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}/skills`;
     const { body } = await send('GET', path, [200]);
     return checkSkills(body, `GET ${path}`);
   };
 
   const agents = async (sessionId: string): Promise<AgentsResponse> => {
-    const path = `/v1/sessions/${sessionId}/agents`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}/agents`;
     const { body } = await send('GET', path, [200]);
     return checkAgents(body, `GET ${path}`);
   };
 
   const jobs = async (sessionId: string): Promise<JobView[]> => {
-    const path = `/v1/sessions/${sessionId}/jobs`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}/jobs`;
     const { body } = await send('GET', path, [200]);
     return checkJobs(body, `GET ${path}`).jobs;
   };
 
   const childRuns = async (runId: string): Promise<RunView[]> => {
-    const path = `/v1/runs/${runId}/children`;
+    const path = `/v1/runs/${pathSegment(runId)}/children`;
     const { body } = await send('GET', path, [200]);
     return listOf(body, 'runs', `GET ${path}`).map((entry) => checkRun(entry, `GET ${path}`));
   };
 
   const setMcpServers = async (sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView> => {
-    const path = `/v1/sessions/${sessionId}`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}`;
     const { body } = await send('PATCH', path, [200], { body: { mcpServers: servers } });
     return sessionOf(body, `PATCH ${path}`);
   };
@@ -400,19 +408,19 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
   };
 
   const setPermissionMode = async (sessionId: string, mode: PermissionMode): Promise<SessionView> => {
-    const path = `/v1/sessions/${sessionId}`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}`;
     const { body } = await send('PATCH', path, [200], { body: { permissionMode: mode } });
     return sessionOf(body, `PATCH ${path}`);
   };
 
   const setModel = async (sessionId: string, model: string): Promise<SessionView> => {
-    const path = `/v1/sessions/${sessionId}`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}`;
     const { body } = await send('PATCH', path, [200], { body: { model } });
     return sessionOf(body, `PATCH ${path}`);
   };
 
   const createRun = async (sessionId: string, input: string, runOptions: CreateRunOptions = {}): Promise<{ run: RunView; location: string }> => {
-    const path = `/v1/sessions/${sessionId}/runs`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}/runs`;
     const { response, body } = await send('POST', path, [202], {
       body: createRunBody(input, runOptions),
       ...(runOptions.idempotencyKey === undefined ? {} : { headers: { 'idempotency-key': runOptions.idempotencyKey } }),
@@ -423,97 +431,97 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
   };
 
   const compact = async (sessionId: string, instructions?: string): Promise<RunView> => {
-    const path = `/v1/sessions/${sessionId}/compact`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}/compact`;
     const { body } = await send('POST', path, [202], { body: instructions === undefined ? {} : { instructions } });
     return runOf(body, `POST ${path}`);
   };
 
   const getRun = async (id: string): Promise<RunView> => {
-    const path = `/v1/runs/${id}`;
+    const path = `/v1/runs/${pathSegment(id)}`;
     const { body } = await send('GET', path, [200]);
     return runOf(body, `GET ${path}`);
   };
 
   const inboxAdd = async (sessionId: string, delivery: InboxDelivery, text: string, images: readonly ImageAttachment[] = []): Promise<InboxAddResponse> => {
-    const path = `/v1/sessions/${sessionId}/inbox`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}/inbox`;
     const { body } = await send('POST', path, [201], { body: { delivery, text, ...(images.length === 0 ? {} : { images }) } });
     return checkInboxAdd(body, `POST ${path}`);
   };
 
   const inboxWithdraw = async (id: string): Promise<InboxWithdrawResponse> => {
-    const path = `/v1/inbox/${id}/withdraw`;
+    const path = `/v1/inbox/${pathSegment(id)}/withdraw`;
     const { body } = await send('POST', path, [200]);
     return checkInboxWithdraw(body, `POST ${path}`);
   };
 
   const inboxList = async (sessionId: string): Promise<InboxRowView[]> => {
-    const path = `/v1/sessions/${sessionId}/inbox`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}/inbox`;
     const { body } = await send('GET', path, [200]);
     return checkInbox(body, `GET ${path}`).pending;
   };
 
   const runSuccessor = async (runId: string): Promise<RunView | undefined> => {
-    const path = `/v1/runs/${runId}/successor`;
+    const path = `/v1/runs/${pathSegment(runId)}/successor`;
     const { body } = await send('GET', path, [200]);
     const { successor } = checkRunSuccessor(body, `GET ${path}`);
     return successor === null ? undefined : successor;
   };
 
   const cancel = async (id: string): Promise<{ status: 200 | 202; run: RunView }> => {
-    const path = `/v1/runs/${id}/cancel`;
+    const path = `/v1/runs/${pathSegment(id)}/cancel`;
     const { response, body } = await send('POST', path, [200, 202]);
     return { status: response.status === 200 ? 200 : 202, run: runOf(body, `POST ${path}`) };
   };
 
   const trace = async (runId: string): Promise<RunTraceView> => {
-    const path = `/v1/runs/${runId}/trace`;
+    const path = `/v1/runs/${pathSegment(runId)}/trace`;
     const { body } = await send('GET', path, [200]);
     return checkTrace(body, `GET ${path}`);
   };
 
   const approvals = async (runId: string): Promise<ApprovalView[]> => {
-    const path = `/v1/runs/${runId}/approvals`;
+    const path = `/v1/runs/${pathSegment(runId)}/approvals`;
     const { body } = await send('GET', path, [200]);
     return listOf(body, 'approvals', `GET ${path}`).map((entry) => checkApproval(entry, `GET ${path}`));
   };
 
   const getApproval = async (id: string): Promise<ApprovalView> => {
-    const path = `/v1/approvals/${id}`;
+    const path = `/v1/approvals/${pathSegment(id)}`;
     const { body } = await send('GET', path, [200]);
     return checkApproval(fieldOf(body, 'approval', `GET ${path}`), `GET ${path}`);
   };
 
   const resolveApproval = async (id: string, optionId: string): Promise<ResolvedApproval> => {
-    const path = `/v1/approvals/${id}`;
+    const path = `/v1/approvals/${pathSegment(id)}`;
     const { body } = await send('POST', path, [200], { body: { optionId } });
     return { approval: checkApproval(fieldOf(body, 'approval', `POST ${path}`), `POST ${path}`), run: runOf(body, `POST ${path}`) };
   };
 
   const elicitations = async (runId: string): Promise<ElicitationView[]> => {
-    const path = `/v1/runs/${runId}/elicitations`;
+    const path = `/v1/runs/${pathSegment(runId)}/elicitations`;
     const { body } = await send('GET', path, [200]);
     return listOf(body, 'elicitations', `GET ${path}`).map((entry) => checkElicitation(entry, `GET ${path}`));
   };
 
   const getElicitation = async (id: string): Promise<ElicitationView> => {
-    const path = `/v1/elicitations/${id}`;
+    const path = `/v1/elicitations/${pathSegment(id)}`;
     const { body } = await send('GET', path, [200]);
     return checkElicitation(fieldOf(body, 'elicitation', `GET ${path}`), `GET ${path}`);
   };
 
   const resolveElicitation = async (id: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<ResolvedElicitation> => {
-    const path = `/v1/elicitations/${id}`;
+    const path = `/v1/elicitations/${pathSegment(id)}`;
     const { body } = await send('POST', path, [200], { body: { responses } });
     return { elicitation: checkElicitation(fieldOf(body, 'elicitation', `POST ${path}`), `POST ${path}`), run: runOf(body, `POST ${path}`) };
   };
 
   const mcpServers = async (sessionId: string): Promise<McpServerView[]> => {
-    const path = `/v1/sessions/${sessionId}/mcp/servers`;
+    const path = `/v1/sessions/${pathSegment(sessionId)}/mcp/servers`;
     const { body } = await send('GET', path, [200]);
     return checkMcpServers(body, `GET ${path}`).servers;
   };
 
-  const authorizationPath = (sessionId: string, server: string): string => `/v1/sessions/${sessionId}/mcp/servers/${encodeURIComponent(server)}/authorization`;
+  const authorizationPath = (sessionId: string, server: string): string => `/v1/sessions/${pathSegment(sessionId)}/mcp/servers/${pathSegment(server)}/authorization`;
 
   const startMcpAuthorization = async (sessionId: string, server: string): Promise<McpAuthorizationView> => {
     const path = authorizationPath(sessionId, server);
@@ -561,19 +569,19 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
   };
 
   const runAnsweredBy = async (runId: string): Promise<RunAnsweredByView> => {
-    const path = `/v1/runs/${encodeURIComponent(runId)}/answered-by`;
+    const path = `/v1/runs/${pathSegment(runId)}/answered-by`;
     const { body } = await send('GET', path, [200]);
     return checkRunAnsweredBy(body, `GET ${path}`);
   };
 
   const runReflection = async (runId: string): Promise<RunReflectionView> => {
-    const path = `/v1/runs/${encodeURIComponent(runId)}/reflection`;
+    const path = `/v1/runs/${pathSegment(runId)}/reflection`;
     const { body } = await send('GET', path, [200]);
     return checkRunReflection(body, `GET ${path}`);
   };
 
   const memory = async (id: string): Promise<MemoryView> => {
-    const path = `/v1/memories/${encodeURIComponent(id)}`;
+    const path = `/v1/memories/${pathSegment(id)}`;
     const { body } = await send('GET', path, [200]);
     return checkMemory(body, `GET ${path}`).memory;
   };
@@ -584,23 +592,23 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
   };
 
   const deleteMemory = async (id: string): Promise<void> => {
-    await send('DELETE', `/v1/memories/${encodeURIComponent(id)}`, [204]);
+    await send('DELETE', `/v1/memories/${pathSegment(id)}`, [204]);
   };
 
   const memoryHistory = async (id: string): Promise<MemoryView[]> => {
-    const path = `/v1/memories/${encodeURIComponent(id)}/history`;
+    const path = `/v1/memories/${pathSegment(id)}/history`;
     const { body } = await send('GET', path, [200]);
     return checkMemories(body, `GET ${path}`).memories;
   };
 
   const changeMemory = (action: 'accept' | 'reject' | 'restore') => async (id: string): Promise<MemoryView> => {
-    const path = `/v1/memories/${encodeURIComponent(id)}/${action}`;
+    const path = `/v1/memories/${pathSegment(id)}/${action}`;
     const { body } = await send('POST', path, [200]);
     return checkMemory(body, `POST ${path}`).memory;
   };
 
   const promoteMemory = async (id: string, skill: string): Promise<string> => {
-    const path = `/v1/memories/${encodeURIComponent(id)}/promote`;
+    const path = `/v1/memories/${pathSegment(id)}/promote`;
     const { body } = await send('POST', path, [201], { body: { skill } });
     return checkPromoted(body, `POST ${path}`).path;
   };
@@ -617,17 +625,17 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
   };
 
   const retireRule = async (id: string): Promise<GoverningFactView> => {
-    const path = `/v1/rules/${encodeURIComponent(id)}/retire`;
+    const path = `/v1/rules/${pathSegment(id)}/retire`;
     const { body } = await send('POST', path, [200]);
     return checkRule(body, `POST ${path}`).fact;
   };
 
   const ignoreMarker = async (name: string): Promise<void> => {
-    await send('POST', `/v1/markers/${encodeURIComponent(name)}/ignore`, [204]);
+    await send('POST', `/v1/markers/${pathSegment(name)}/ignore`, [204]);
   };
 
   const ruleHistory = async (id: string): Promise<GoverningFactView[]> => {
-    const path = `/v1/rules/${encodeURIComponent(id)}/history`;
+    const path = `/v1/rules/${pathSegment(id)}/history`;
     const { body } = await send('GET', path, [200]);
     return checkRules(body, `GET ${path}`).facts;
   };
@@ -639,7 +647,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
   };
 
   const putRuleVerdict = async (fingerprint: string, verdict: RuleVerdict): Promise<void> => {
-    await send('PUT', `/v1/policy/verdicts/${encodeURIComponent(fingerprint)}`, [204], { body: { verdict } satisfies PutRuleVerdictRequest });
+    await send('PUT', `/v1/policy/verdicts/${pathSegment(fingerprint)}`, [204], { body: { verdict } satisfies PutRuleVerdictRequest });
   };
 
   const costPath = (filter: CostFilter, format: 'json' | 'text'): string => `/v1/cost?${new URLSearchParams({ ...filter, format }).toString()}`;
@@ -690,7 +698,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
   };
 
   const traceContent = async (runId: string, request: { after: number; limit: number }): Promise<TraceContentPage> => {
-    const path = `/v1/runs/${runId}/trace/content?${new URLSearchParams({ after: String(request.after), limit: String(request.limit) }).toString()}`;
+    const path = `/v1/runs/${pathSegment(runId)}/trace/content?${new URLSearchParams({ after: String(request.after), limit: String(request.limit) }).toString()}`;
     const { body } = await send('GET', path, [200]);
     return checkTraceContent(body, `GET ${path}`);
   };
@@ -735,7 +743,8 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkTrust(fieldOf(body, 'trust', description), description);
   };
 
-  async function* openEventStream(path: string, description: string, eventsOptions: EventsOptions): AsyncGenerator<RunEventFrame> {
+  async function* openEventStream(path: string, eventsOptions: EventsOptions): AsyncGenerator<RunEventFrame> {
+    const description = `GET ${path}`;
     const response = await http.request({
       method: 'GET',
       path: `${path}${eventsQueryOf(eventsOptions)}`,
@@ -747,11 +756,13 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     for await (const event of decodeSse(response.body)) yield frameOf(event, description);
   }
 
-  const streamEvents = (runId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> =>
-    openEventStream(`/v1/runs/${runId}/events`, `GET /v1/runs/${runId}/events`, eventsOptions);
+  async function* streamEvents(runId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> {
+    yield* openEventStream(`/v1/runs/${pathSegment(runId)}/events`, eventsOptions);
+  }
 
-  const streamSessionEvents = (sessionId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> =>
-    openEventStream(`/v1/sessions/${sessionId}/events`, `GET /v1/sessions/${sessionId}/events`, eventsOptions);
+  async function* streamSessionEvents(sessionId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> {
+    yield* openEventStream(`/v1/sessions/${pathSegment(sessionId)}/events`, eventsOptions);
+  }
 
   return {
     health,
@@ -772,7 +783,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     inboxWithdraw,
     inboxList,
     userShell: async (sessionId, command, include, onOutput) => {
-      const path = `/v1/sessions/${sessionId}/user-shell`;
+      const path = `/v1/sessions/${pathSegment(sessionId)}/user-shell`;
       const description = `POST ${path}`;
       const response = await http.request({ method: 'POST', path, headers: JSON_HEADERS, body: JSON.stringify({ command, include }) });
       if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
@@ -784,10 +795,10 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
       throw new ContractViolation(description, 'the stream ended without an exit');
     },
     stopUserShell: async (sessionId) => {
-      await send('DELETE', `/v1/sessions/${sessionId}/user-shell`, [200]);
+      await send('DELETE', `/v1/sessions/${pathSegment(sessionId)}/user-shell`, [200]);
     },
     pendingUserShell: async (sessionId) => {
-      const path = `/v1/sessions/${sessionId}/user-shell`;
+      const path = `/v1/sessions/${pathSegment(sessionId)}/user-shell`;
       const { body } = await send('GET', path, [200]);
       return checkUserShellPending(body, `GET ${path}`).pending;
     },
