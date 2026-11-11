@@ -130,6 +130,8 @@ export type { BenchDifficulty, BenchTask, BenchTaskType, Benchmark, OracleCheck 
 export { BENCH_PROBLEMS, gradeTrial, validateBenchmark } from './bench-grade.ts';
 export type { BenchProblem, GradeInput, TaskValidation, Validation, ValidationPorts } from './bench-grade.ts';
 export { gradeChecks } from './oracle-grade.ts';
+export { createWorkspaceProbe } from './workspace-probe.ts';
+export type { CommandSandbox, SandboxedProbeCommand, WorkspaceProbePorts } from './workspace-probe.ts';
 export type { CheckResult, ChecksInput, TrialGrade, WorkspaceProbe } from './oracle-grade.ts';
 export { buildBenchmarkReport, suiteDigestOf } from './bench-report.ts';
 export type { BenchmarkTrial, BuildBenchmarkReportInput } from './bench-report.ts';

@@ -3,13 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeWorkspaceFiles, parseDataset, treeDigest } from '@momonga/eval';
+import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { createFakeKernelLock } from '@momonga/testkit';
 import { runBenchLive } from '../src/commands/bench.ts';
 import type { BenchHostEffects } from '../src/commands/bench.ts';
 import { runGoldenLive } from '../src/commands/evaluate.ts';
-import { createWorkspaceProbe } from '../src/node-ports.ts';
+import { nodeWorkspaceProbeOf } from '../src/node-ports.ts';
 import { userModelsOf } from './user-models.ts';
 
 const PINNED = 'p/m';
@@ -18,6 +19,8 @@ const BUGGY = 'exports.add = (a, b) => a - b;\n';
 const TEST = "const test = require('node:test');\nconst assert = require('node:assert');\nconst { add } = require('../src/add.js');\ntest('adds', () => assert.strictEqual(add(2, 3), 5));\n";
 
 const created: string[] = [];
+
+const createWorkspaceProbe = nodeWorkspaceProbeOf({ commandOf: async (command) => ({ file: '/bin/sh', args: ['-c', command], protection: CONTROL_PLANE_LAUNCH }) }, hostProcessGroupPort());
 afterEach(() => {
   for (const dir of created.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
