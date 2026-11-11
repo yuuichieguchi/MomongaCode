@@ -13,11 +13,23 @@ import { asError } from './as-error.ts';
 import { POOL_IDLE_CLOSE_MS } from './constants.ts';
 import type { SettingsComposition } from './settings-port.ts';
 
+export type McpFolder = { cwd: string; env: Readonly<Record<string, string>> };
+
+export type McpScope = Pick<Session, 'id' | 'cwd' | 'env' | 'mcpServers'>;
+
+const folderScopeId = (cwd: string): string => `folder:${sha256Hex(cwd)}`;
+
+const folderScope = (folder: McpFolder): McpScope => ({ id: folderScopeId(folder.cwd), cwd: folder.cwd, env: { ...folder.env }, mcpServers: {} });
+
 export type McpAdmin = {
   servers(sessionId: string, signal: AbortSignal): Promise<McpServerView[]>;
   startAuthorization(sessionId: string, name: string, signal: AbortSignal): Promise<McpAuthorizationView>;
   authorization(sessionId: string, name: string): McpAuthorizationView | undefined;
   cancelAuthorization(sessionId: string, name: string): boolean;
+  folderServers(folder: McpFolder, signal: AbortSignal): Promise<McpServerView[]>;
+  startFolderAuthorization(folder: McpFolder, name: string, signal: AbortSignal): Promise<McpAuthorizationView>;
+  folderAuthorization(cwd: string, name: string): McpAuthorizationView | undefined;
+  cancelFolderAuthorization(cwd: string, name: string): boolean;
   pendingAuthorizations(): number;
   close(graceMs: number): Promise<void>;
 };
@@ -50,7 +62,7 @@ type Attempt = {
 
 export const loadSessionMcpServers = (
   options: { home: string; settings: Pick<SettingsComposition, 'trustOracle' | 'keptLayers'> },
-  session: Session,
+  session: Pick<Session, 'cwd' | 'mcpServers'>,
   env: ToolEnv,
   user: UserLayer,
   use: SettingsUse,
@@ -87,15 +99,15 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     return session;
   };
 
-  const serverOf = async (session: Session, name: string, signal: AbortSignal): Promise<McpServerEntry> => {
+  const serverOf = async (scope: McpScope, name: string, signal: AbortSignal): Promise<McpServerEntry> => {
     const { user } = await options.settings.admitUserSnapshot(signal);
-    const loaded = await loadSessionMcpServers(options, session, await options.settings.envFor(session, signal), user, 'admit', signal);
+    const loaded = await loadSessionMcpServers(options, scope, await options.settings.envFor(scope, signal), user, 'admit', signal);
     const entry = loaded.enabled.find((candidate) => candidate.name === name);
-    if (entry === undefined) throw notFound(`session ${session.id} has no enabled MCP server named ${name}`);
+    if (entry === undefined) throw notFound(`${scope.cwd} has no enabled MCP server named ${name}`);
     return entry;
   };
 
-  const poolFor = (servers: McpServerEntry[], session: Session, env: ToolEnv, remote: McpRemotePorts): McpAuthorizingPool =>
+  const poolFor = (servers: McpServerEntry[], session: Pick<Session, 'cwd'>, env: ToolEnv, remote: McpRemotePorts): McpAuthorizingPool =>
     options.createPool({
       servers,
       projectDir: session.cwd,
@@ -109,7 +121,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       ...(options.markers === undefined ? {} : { markers: options.markers }),
     });
 
-  const keyOf = (sessionId: string, name: string): string => `${sessionId}/${name}`;
+  const keyOf = (scopeId: string, name: string): string => `${scopeId}/${name}`;
 
   const closeProbePool = (key: string, entry: ProbePool, graceMs: number): void => {
     if (probePools.get(key) !== entry) return;
@@ -138,8 +150,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     if (entry.users === 0) entry.idle = options.timers.setTimeout(() => closeProbePool(key, entry, options.readCloseGraceMs()), POOL_IDLE_CLOSE_MS);
   };
 
-  const servers: McpAdmin['servers'] = async (sessionId, signal) => {
-    const session = sessionOf(sessionId);
+  const serversOf = async (session: McpScope, signal: AbortSignal): Promise<McpServerView[]> => {
     const { user } = await options.settings.admitUserSnapshot(signal);
     const env = await options.settings.envFor(session, signal);
     const loaded = await loadSessionMcpServers(options, session, env, user, 'admit', signal);
@@ -151,7 +162,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       for (const entry of loaded.enabled) {
         signal.throwIfAborted();
         const probe = await pool.authState(entry.name, signal);
-        const attempt = attempts.get(keyOf(sessionId, entry.name));
+        const attempt = attempts.get(keyOf(session.id, entry.name));
         views.push({
           name: entry.name,
           scope: entry.scope,
@@ -168,11 +179,10 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     }
   };
 
-  const startAuthorization: McpAdmin['startAuthorization'] = async (sessionId, name, signal) => {
-    const session = sessionOf(sessionId);
+  const startAuthorizationOf = async (session: McpScope, name: string, signal: AbortSignal): Promise<McpAuthorizationView> => {
     const entry = await serverOf(session, name, signal);
     if (!('url' in entry.config)) throw invalidRequest(`MCP server ${name} is a stdio server and has no authorization`, 'name');
-    const key = keyOf(sessionId, name);
+    const key = keyOf(session.id, name);
     const running = attempts.get(key);
     if (running?.view.status === 'awaiting_user') return { ...running.view };
 
@@ -213,21 +223,27 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     return { ...view };
   };
 
+  const authorizationOf = (scopeId: string, name: string): McpAuthorizationView | undefined => {
+    const attempt = attempts.get(keyOf(scopeId, name));
+    return attempt === undefined ? undefined : { ...attempt.view };
+  };
+
+  const cancelAuthorizationOf = (scopeId: string, name: string): boolean => {
+    const attempt = attempts.get(keyOf(scopeId, name));
+    if (attempt === undefined || attempt.view.status !== 'awaiting_user') return false;
+    attempt.controller.abort(new Error('authorization was cancelled by the client'));
+    return true;
+  };
+
   return {
-    servers,
-    startAuthorization,
-    authorization: (sessionId, name) => {
-      sessionOf(sessionId);
-      const attempt = attempts.get(keyOf(sessionId, name));
-      return attempt === undefined ? undefined : { ...attempt.view };
-    },
-    cancelAuthorization: (sessionId, name) => {
-      sessionOf(sessionId);
-      const attempt = attempts.get(keyOf(sessionId, name));
-      if (attempt === undefined || attempt.view.status !== 'awaiting_user') return false;
-      attempt.controller.abort(new Error('authorization was cancelled by the client'));
-      return true;
-    },
+    servers: async (sessionId, signal) => serversOf(sessionOf(sessionId), signal),
+    startAuthorization: async (sessionId, name, signal) => startAuthorizationOf(sessionOf(sessionId), name, signal),
+    authorization: (sessionId, name) => authorizationOf(sessionOf(sessionId).id, name),
+    cancelAuthorization: (sessionId, name) => cancelAuthorizationOf(sessionOf(sessionId).id, name),
+    folderServers: (folder, signal) => serversOf(folderScope(folder), signal),
+    startFolderAuthorization: (folder, name, signal) => startAuthorizationOf(folderScope(folder), name, signal),
+    folderAuthorization: (cwd, name) => authorizationOf(folderScopeId(cwd), name),
+    cancelFolderAuthorization: (cwd, name) => cancelAuthorizationOf(folderScopeId(cwd), name),
     pendingAuthorizations: () => [...attempts.values()].filter((attempt) => attempt.view.status === 'awaiting_user').length,
     close: async (graceMs) => {
       for (const attempt of attempts.values()) attempt.controller.abort(new Error('the runtime is shutting down'));

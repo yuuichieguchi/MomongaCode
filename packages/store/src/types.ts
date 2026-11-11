@@ -71,7 +71,7 @@ export type Session = {
 
 export type SessionPageRequest = { cwd?: string; limit: number; cursor: string | null };
 
-export type ListedSession = Session & { activeRunId: string | null; latestRunId: string | null };
+export type ListedSession = Session & { activeRunId: string | null; activeRunAt: number | null; latestRunId: string | null; latestRunAt: number | null };
 
 export type SessionPage = { sessions: ListedSession[]; next: string | null };
 

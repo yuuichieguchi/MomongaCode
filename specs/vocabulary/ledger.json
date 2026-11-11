@@ -4,6 +4,9 @@
   "burnDown": "A use nobody has read against the table yet: it is either in the other meaning or it is to be replaced by the word of the table, by the package of the area that owns the file. A count only shrinks.",
   "uses": {
     "otherMeaning": {
+      "packages/cli/src/commands/jobs.ts": {
+        "job": 1
+      },
       "packages/cli/src/commands/report.ts": {
         "limit": 2
       },

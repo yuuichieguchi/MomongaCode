@@ -27,7 +27,11 @@ export const watchedRun = (home: string, frames: readonly RunEventFrame[], ended
       return { status: 202, run: ended };
     },
     streamEvents: async function* (_runId: string, stream: { signal?: AbortSignal } = {}) {
-      for (const each of frames) yield each;
+      for (const each of frames) {
+        stream.signal?.throwIfAborted();
+        yield each;
+      }
+      stream.signal?.throwIfAborted();
       if (options.staysOpen !== true) return;
       const aborted = Promise.withResolvers<never>();
       const abort = (): void => aborted.reject(stream.signal?.reason);

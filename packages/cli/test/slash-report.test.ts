@@ -37,7 +37,7 @@ vi.mock('../src/run/open-session.ts', async (original) => ({
       runtime.asked.push(runId);
       return { id: runId, report: runtime.report };
     },
-    listSessions: async () => [{ id: 'another-session', createdAt: 99, latestRunId: 'run-of-another-session' }],
+    listSessions: async () => [{ id: 'another-session', createdAt: 99, latestRunId: 'run-of-another-session', latestRunAt: 100 }],
     close: async () => undefined,
   }),
 }));

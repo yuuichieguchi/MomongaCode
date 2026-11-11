@@ -44,7 +44,7 @@ export class EvaluateUsageError extends UsageError {
   }
 }
 
-export type EvaluateOptions = { record?: string; replay?: string; interrupt?: AbortSignal };
+export type EvaluateOptions = { record?: string; replay?: string; interrupt: AbortSignal };
 
 const WORKSPACE_PREFIX = 'momonga-eval-';
 
@@ -56,10 +56,10 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
   }
 };
 
-const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined, interrupt: AbortSignal | undefined): Promise<EvalReport> => {
+const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined, interrupt: AbortSignal): Promise<EvalReport> => {
   await ensureCurrentDaemon(ports, paths);
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
-  const env = await environmentSnapshot(ports, ports.interrupt);
+  const env = await environmentSnapshot(ports, interrupt);
   const client = connectRuntime(ports, paths);
   const api = goldenRunApi(client, undefined, {
     pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
@@ -67,7 +67,7 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
     pollMs: REFLECTION_POLL_MS,
     now: () => ports.clock.now(),
     wait: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
-    ...(interrupt === undefined ? {} : { signal: interrupt }),
+    signal: interrupt,
   });
   const workspaces: OwnedDirectory[] = [];
   if (record !== undefined) await ports.files.mkdir(record);
@@ -85,7 +85,7 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
         return { api, workspace: { cwd, env }, oracle: { base: base.path, probe: nodeWorkspaceProbe(env), files: ports.files }, close: async () => undefined };
       },
       ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
-      ...(interrupt === undefined ? {} : { signal: interrupt }),
+      signal: interrupt,
     });
   } finally {
     await Promise.all(workspaces.map((workspace) => workspace.dispose()));

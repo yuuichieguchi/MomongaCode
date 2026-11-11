@@ -51,7 +51,9 @@ export type MandateBudget = { steps?: number; tokens?: number; costUsd?: number;
 
 export const QUIESCENT_BEHAVIOURS = ['report', 'wait'] as const;
 
-export type MandateHold = { onQuiescent?: (typeof QUIESCENT_BEHAVIOURS)[number] };
+export type QuiescentBehaviour = (typeof QUIESCENT_BEHAVIOURS)[number];
+
+export type MandateHold = { onQuiescent?: QuiescentBehaviour };
 
 export type Mandate = { completion?: CompletionDeclaration; profile?: string; scope?: MandateScope; budget?: MandateBudget; hold?: MandateHold };
 
