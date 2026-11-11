@@ -104,7 +104,8 @@ const run = (file: string, args: readonly string[], options: CommandInputs, time
       exit = leader;
       ended();
     }, fail);
-    stdin.end(options.input ?? '');
+    if (options.input === undefined) stdin.end();
+    else stdin.end(options.input);
   });
 
 const exited = (file: string, { exit, stdout, stderr }: Ending): CommandResult => {
