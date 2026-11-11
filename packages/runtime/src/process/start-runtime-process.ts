@@ -586,6 +586,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, signal: lifetime.signal });
       const mcpNetwork = await outboundNetworkOf(settings.network, startDeadlineSignal(undefined));
       const runtime: ToolRuntime = createToolRuntime({
+        version,
         owners: markerOwners,
         lockCapability,
         kernelLock,

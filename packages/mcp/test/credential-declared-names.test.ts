@@ -8,6 +8,7 @@ const DECLARED = 'PROVIDER_ENDPOINT_ID';
 const constructionNotices = (credentialNames: readonly string[]): string[] => {
   const notices: string[] = [];
   const connection = createManagedConnection({
+    clientVersion: '0.0.0-test',
     name: 'local',
     config: { command: process.execPath, args: [], env: { [DECLARED]: 'Zq7#vK2' } },
     scope: 'user',

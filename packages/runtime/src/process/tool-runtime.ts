@@ -57,6 +57,7 @@ export type ToolRuntimeOptions = {
   onJobSettled?: () => void;
   onAuthorizationEnded?: () => void;
   home: string;
+  version: string;
   store: RuntimeStore;
   notifier: Pick<RunNotifier, 'watchRun'>;
   clock: Clock;
@@ -168,6 +169,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     settings,
     remote: mcpRemote,
     createPool: options.createAdminPool ?? createMcpPool,
+    clientVersion: options.version,
     readCloseGraceMs,
     readConnectTimeoutMs: () => settings.takeUserSnapshot().settings.mcp.connectTimeoutMs,
     markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
@@ -230,6 +232,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               projectDir: session.cwd,
               baseEnv: env,
               clock,
+              clientVersion: options.version,
               credentials,
               credentialNames,
               timers,

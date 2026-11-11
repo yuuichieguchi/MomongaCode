@@ -58,6 +58,7 @@ const makeAuthPool = (options: McpPoolOptions, plan: ProbePlan): FakeAuthPool =>
 };
 
 const CLOSE_GRACE_MS = 40;
+const ADMIN_CLIENT_VERSION = '0.0.0-admin-test';
 const CONNECT_TIMEOUT_MS = 45_000;
 
 const setup = async () => {
@@ -70,6 +71,7 @@ const setup = async () => {
   const cache = makeCache(temp.home);
   const reporter = makeReporter();
   const pools: FakeAuthPool[] = [];
+  const created: McpPoolOptions[] = [];
   const plan: ProbePlan = { next: { state: 'required' } };
   const ended = { count: 0 };
   const admin: McpAdmin = createMcpAdmin({
@@ -95,18 +97,29 @@ const setup = async () => {
       keptLayers: (use) => ({ store: cache.kept, use }),
     },
     remote: { openAuthorizationUrl: () => Promise.reject(new Error('the admin must supply its own opener')) } as never,
+    clientVersion: ADMIN_CLIENT_VERSION,
     createPool: (options) => {
+      created.push(options);
       const pool = makeAuthPool(options, plan);
       pools.push(pool);
       return pool;
     },
   });
-  return { admin, session, pools, plan, timers, reporter, ended };
+  return { admin, session, pools, created, plan, timers, reporter, ended };
 };
 
 const controllerSignal = (): AbortSignal => new AbortController().signal;
 
 describe('createMcpAdmin servers', () => {
+  it('gives every pool it creates the client version it was given', async () => {
+    const { admin, session, created } = await setup();
+
+    await admin.servers(session.id, controllerSignal());
+
+    expect(created.length).toBeGreaterThan(0);
+    for (const options of created) expect(options.clientVersion).toBe(ADMIN_CLIENT_VERSION);
+  });
+
   it('servers passes the request signal to authState', async () => {
     const { admin, session, pools } = await setup();
     const request = controllerSignal();

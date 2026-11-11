@@ -73,6 +73,7 @@ describe('a dropped notification reaches the notices of the tool source through 
     const fixture = await startHttpFixture({ era: 'modern', deepTools: {} });
     const clock = createFakeClock(1_000_000);
     const pool = createMcpPool({
+      clientVersion: '0.0.0-test',
       servers: [entry('remote', { type: 'http', url: fixture.url })],
       projectDir: makeDir(),
       baseEnv: BASE_ENV,

@@ -38,7 +38,6 @@ import { pause, systemTimers } from './timers.ts';
 import type { McpTimers } from './timers.ts';
 
 const CLIENT_NAME = 'momonga';
-const CLIENT_VERSION = '0.0.0';
 const DEFAULT_CONNECT_TIMEOUT_MS = MCP_CONNECT_TIMEOUT_LIMITS.default;
 const DEFAULT_RESET_AFTER_MS = 60_000;
 const FAILURE_THRESHOLD = 3;
@@ -112,6 +111,7 @@ export type McpConnectionOptions = {
   projectDir: string;
   baseEnv: Record<string, string>;
   clock: Clock;
+  clientVersion: string;
   timers?: McpTimers;
   remote?: McpRemotePorts;
   random?: () => number;
@@ -800,7 +800,7 @@ class ManagedConnection implements McpServerConnection {
     this.pendingTransport = transport;
     const remote = 'url' in config;
     const client = new Client(
-      { name: CLIENT_NAME, version: CLIENT_VERSION },
+      { name: CLIENT_NAME, version: this.options.clientVersion },
       {
         capabilities: { elicitation: { form: {}, url: {} }, ...(remote ? { extensions: { [TASKS_EXTENSION]: {} } } : {}) },
         versionNegotiation: { mode: 'auto' },

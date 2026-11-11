@@ -255,6 +255,7 @@ describe('the store calls the MCP SDK makes for an operation of a connection', (
 
   it('listTools has the request limit when the request hangs outside the store', async () => {
     const connection = createManagedConnection({
+      clientVersion: '0.0.0-test',
       name: 's',
       config: { command: process.execPath, args: ['-e', SERVER_THAT_NEVER_ANSWERS_A_LISTING] },
       scope: 'user',

@@ -32,6 +32,7 @@ export type McpAdminOptions = {
   settings: Pick<SettingsComposition, 'envFor' | 'admitUserSnapshot' | 'keptLayers' | 'trustOracle'>;
   remote: McpRemotePorts;
   createPool(options: McpPoolOptions): McpAuthorizingPool;
+  clientVersion: string;
   readCloseGraceMs(): number;
   readConnectTimeoutMs(): number | undefined;
   markers?: McpMarkerOptions;
@@ -99,6 +100,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       projectDir: session.cwd,
       baseEnv: { ...options.settings.envFor(session) },
       clock,
+      clientVersion: options.clientVersion,
       timers: options.timers,
       remote,
       closeGraceMs: options.readCloseGraceMs,

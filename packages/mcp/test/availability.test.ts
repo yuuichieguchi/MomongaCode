@@ -69,6 +69,7 @@ const fixtureOf = (onList: 'silent' | 'exit', onInitialize: 'answer' | 'silent' 
   const held = timersHolding([REQUEST_LIMIT_MS, CONNECT_LIMIT_MS]);
   const clock = createFakeClock(1_000_000);
   const connection = createManagedConnection({
+    clientVersion: '0.0.0-test',
     name: 's',
     config: { command: process.execPath, args: ['-e', serverScript(onList, onInitialize)] },
     scope: 'user',
