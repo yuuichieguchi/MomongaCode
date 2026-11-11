@@ -21,14 +21,14 @@ export type CliSession = {
   close(): Promise<void>;
 };
 
-export const environmentSnapshot = async (ports: Pick<DaemonPorts, 'env' | 'home'>): Promise<Record<string, string>> => {
-  const { settings } = await loadUserSettings({ home: ports.home });
+export const environmentSnapshot = async (ports: Pick<CliPorts, 'env' | 'home'>, signal: AbortSignal): Promise<Record<string, string>> => {
+  const { settings } = await loadUserSettings({ home: ports.home, signal });
   const defined = Object.fromEntries(Object.entries(ports.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   return stripCredentialEnv(defined, credentialEnvNames(settings.models), settings.credentials).env;
 };
 
-export const autoModeConfigured = async (ports: Pick<DaemonPorts, 'home'>): Promise<boolean> => {
-  const { settings } = await loadUserSettings({ home: ports.home });
+export const autoModeConfigured = async (ports: Pick<CliPorts, 'home'>, signal: AbortSignal): Promise<boolean> => {
+  const { settings } = await loadUserSettings({ home: ports.home, signal });
   return settings.autoMode?.classifier !== undefined;
 };
 
@@ -37,7 +37,7 @@ export const connectRuntime = (ports: Pick<CliPorts, 'clock'>, paths: MomongaPat
 export const connectSessionRuntime = (ports: Pick<DaemonPorts, 'version' | 'clock'>, paths: MomongaPaths, onNewer?: NewerListener): RuntimeClient =>
   createRuntimeClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'runtime'), clock: ports.clock, onMoved: endSessionWhenMovedAway(paths, ports.version, onNewer) });
 
-export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
+export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr' | 'interrupt'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
   const { onNewer } = options;
   await ensureSessionDaemon(ports, paths, { ...(options.signal === undefined ? {} : { signal: options.signal }), ...(onNewer === undefined ? {} : { onNewer }) });
   const client = connectSessionRuntime(ports, paths, onNewer);
@@ -48,7 +48,7 @@ export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 's
     }
     const created = await client.createSession({
       cwd: ports.cwd,
-      env: await environmentSnapshot(ports),
+      env: await environmentSnapshot(ports, options.signal ?? ports.interrupt),
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
       ...(options.model === undefined ? {} : { model: options.model }),

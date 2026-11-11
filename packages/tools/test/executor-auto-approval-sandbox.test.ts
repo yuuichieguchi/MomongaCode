@@ -54,6 +54,61 @@ describe('sandbox none forces approval for every Bash command (4.6, 5.11)', () =
   });
 });
 
+describe('without a sandbox, running a command is a question only a person answers', () => {
+  const NO_SANDBOX = 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval';
+
+  const classifierCounting = () => {
+    const requests: string[] = [];
+    return { requests, classifier: { classify: async (request: { callId: string }) => (requests.push(request.callId), 'allow' as const) } };
+  };
+
+  const allowingHooks = () => ({
+    matchesPreToolUse: () => true,
+    preToolUse: async () => ({ decision: 'allow' as const, reason: 'fine' }),
+    postToolUse: async () => undefined,
+  });
+
+  it.each([
+    ['a command the mode asks about', 'make build', false],
+    ['a command a rule allows', 'make build', true],
+    ['a read-only command', 'ls src', false],
+  ])('never sends %s to the auto classifier, and asks with the reason', async (_label, command, allowed) => {
+    const harness = makeHarness();
+    fs.mkdirSync(path.join(harness.layout.project, 'src'));
+    const runs: string[] = [];
+    const { classifier, requests } = classifierCounting();
+    const rules = allowed ? [ruleFor(harness.layout)('allow', 'Bash(make:*)')] : [];
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool(command, runs)), [call('c1', 'Bash')], { mode: 'auto', classifier, rules, sandbox: noneSandbox }));
+    expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval', decision: { kind: 'ask', humanOnly: true, reason: expect.stringContaining(NO_SANDBOX) } });
+    expect(outcome).not.toHaveProperty('suggestedRule');
+    expect(requests).toEqual([]);
+    expect(runs).toEqual([]);
+  });
+
+  it.each([
+    ['a command the mode asks about', false],
+    ['a command a rule allows', true],
+  ])('is not lifted by a hook that allows %s', async (_label, allowed) => {
+    const harness = makeHarness();
+    const runs: string[] = [];
+    const rules = allowed ? [ruleFor(harness.layout)('allow', 'Bash(make:*)')] : [];
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(commandTool('make build', runs)), [call('c1', 'Bash')], { hooks: allowingHooks(), rules, sandbox: noneSandbox }));
+    expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval', decision: { kind: 'ask', humanOnly: true } });
+    expect(runs).toEqual([]);
+  });
+
+  it('runs the command once the person approved it', async () => {
+    const harness = makeHarness();
+    const runs: string[] = [];
+    const tools = await toolSetOf(commandTool('make build', runs));
+    const [asked] = await harness.executor.runBatch(await harness.input(tools, [call('c1', 'Bash')], { sandbox: noneSandbox }));
+    if (asked?.kind !== 'needs_approval') throw new Error('the call did not ask');
+    const [outcome] = await harness.executor.runBatch(await harness.input(tools, [{ ...call('c1', 'Bash'), approval: { kind: 'allow_once', subjectDigest: asked.subjectDigest } }], { sandbox: noneSandbox }));
+    expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed' } });
+    expect(runs).toEqual(['make build']);
+  });
+});
+
 describe('the harness batch keeps the R1a fingerprint with the protected set added (5.11)', () => {
   it('carries a file-rule fingerprint equal to the fingerprint of the batch rules and the empty protected set', async () => {
     const harness = makeHarness();

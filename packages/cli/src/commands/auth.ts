@@ -1,4 +1,4 @@
-import { PLAN_LABEL_REFUSAL, displayMapOf, messageOf, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
+import { PLAN_LABEL_REFUSAL, displayMapOf, messageOf, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE } from '@momonga/foundation';
 import type { OpenUrl } from '@momonga/foundation';
@@ -140,6 +140,8 @@ const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSig
   switch (answer.outcome) {
     case RETRY_OUTCOME:
       return [codeNotAcceptedLine('cli', profile, account)];
+    case IDENTITY_UNCONFIRMED_OUTCOME:
+      return [`${account}: the sign-in as ${answer.identity.email ?? answer.identity.subject} was not saved, because the account identity was not confirmed.`];
     case PLAN_DISABLED_STATE:
       return planDisabledLines('cli', profile, answer.account.label);
     case SIGNED_IN_OUTCOME:

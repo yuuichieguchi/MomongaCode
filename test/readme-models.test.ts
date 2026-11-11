@@ -26,7 +26,7 @@ describe('the README states the model settings in the shape the product loads (d
       const file = momongaLayout(home).settingsFile;
       fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
       fs.writeFileSync(file, block, { mode: 0o600 });
-      const loaded = await loadUserSettings({ home });
+      const loaded = await loadUserSettings({ home, signal: new AbortController().signal });
       expect(loaded.warnings).toEqual([]);
       expect(loaded.settings.models.models.size).toBeGreaterThan(0);
     }

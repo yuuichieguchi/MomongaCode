@@ -1,4 +1,4 @@
-import { nodeCommandRunner, nodeEntryIo } from '@momonga/foundation';
+import { nodeBoundedCommandRunner, nodeEntryIo } from '@momonga/foundation';
 import { daemonEntries } from '../../../packages/cli/src/daemon/entries.ts';
 import { describeFailure } from '../../../packages/cli/src/failure.ts';
 import { nodeHelperHost, nodePorts } from '../../../packages/cli/src/node-ports.ts';
@@ -30,7 +30,7 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
       ports: {
         ...wiring.ports,
         run: (file, args, options) =>
-          file === '/usr/bin/codesign' && process.env[REAL_CODESIGN_ENV] === undefined ? Promise.resolve({ exitCode: 0, stdout: '', stderr: '' }) : nodeCommandRunner(file, args, options),
+          file === '/usr/bin/codesign' && process.env[REAL_CODESIGN_ENV] === undefined ? Promise.resolve({ exitCode: 0, stdout: '', stderr: '' }) : nodeBoundedCommandRunner(file, args, options),
       },
     }),
     interrupt: interrupt.signal,

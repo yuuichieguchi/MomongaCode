@@ -134,7 +134,7 @@ export type PlanSignInBeginRequest = NamedPlanAccountRef & { port: number; recon
 
 export type PlanSignInBeginResponse = { attemptId: string; authorizationUrl: string; state: string; expiresAt: string };
 
-export type PlanSignInCompleteRequest = { attemptId: string; callbackUrl: string };
+export type PlanSignInCompleteRequest = { attemptId: string; callbackUrl: string } | { attemptId: string; identityConfirmed: true };
 
 export type PlanSignInFailureRule = { status: number; type: ErrorType; template: string };
 
@@ -153,6 +153,7 @@ export const PLAN_SIGN_IN_FAILURE = {
   idTokenInvalid: 'id_token_invalid',
   jwksUnavailable: 'jwks_unavailable',
   identityMismatch: 'identity_mismatch',
+  identityNotExchanged: 'identity_not_exchanged',
 } as const;
 
 export const PLAN_SIGN_IN_FAILURE_RULES = {
@@ -178,6 +179,7 @@ export const PLAN_SIGN_IN_FAILURE_RULES = {
   [PLAN_SIGN_IN_FAILURE.idTokenInvalid]: { status: 400, type: 'invalid_request', template: 'The identity returned by {identityLabel} could not be verified ({check}). Nothing was saved.' },
   [PLAN_SIGN_IN_FAILURE.jwksUnavailable]: { status: 502, type: 'server_error', template: 'The keys needed to verify the identity returned by {identityLabel} could not be fetched.' },
   [PLAN_SIGN_IN_FAILURE.identityMismatch]: { status: 400, type: 'invalid_request', template: 'The account that signed in is not the account saved under this label. Nothing was changed.' },
+  [PLAN_SIGN_IN_FAILURE.identityNotExchanged]: { status: 409, type: 'invalid_request', template: 'This sign-in attempt has no account identity to confirm yet: the browser has not returned.' },
 } as const satisfies Readonly<Record<string, PlanSignInFailureRule>>;
 
 export type PlanSignInFailure = keyof typeof PLAN_SIGN_IN_FAILURE_RULES;
@@ -189,11 +191,17 @@ export type IdTokenCheck = (typeof ID_TOKEN_CHECKS)[number];
 
 export const SIGNED_IN_OUTCOME = 'signed_in' as const;
 export const RETRY_OUTCOME = 'retry' as const;
-export const PLAN_SIGN_IN_OUTCOMES = [SIGNED_IN_OUTCOME, PLAN_DISABLED_STATE, RETRY_OUTCOME] as const;
+export const IDENTITY_UNCONFIRMED_OUTCOME = 'identity_unconfirmed' as const;
+export const PLAN_SIGN_IN_OUTCOMES = [SIGNED_IN_OUTCOME, PLAN_DISABLED_STATE, RETRY_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME] as const;
 export const INVALID_GRANT_REASON = 'invalid_grant' as const;
+
+export type PlanSignInIdentity = { subject: string; email?: string };
+
+export type PlanSignInIdentityUnconfirmed = { outcome: typeof IDENTITY_UNCONFIRMED_OUTCOME; attemptId: string; identity: PlanSignInIdentity; expiresAt: string };
 
 export type PlanSignInCompleteResponse =
   | { outcome: typeof SIGNED_IN_OUTCOME | typeof PLAN_DISABLED_STATE; account: PlanAccountView; firstSignIn: boolean }
+  | PlanSignInIdentityUnconfirmed
   | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON };
 
 export type PlanSignInCancelRequest = { attemptId: string };

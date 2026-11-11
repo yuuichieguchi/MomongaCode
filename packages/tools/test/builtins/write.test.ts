@@ -133,8 +133,20 @@ describe('Write', () => {
     fs.writeFileSync(outsideFile, 'outside');
     const link = path.join(tools.layout.project, 'escape.txt');
     fs.symlinkSync(outsideFile, link);
+    tools.markRead(fs.realpathSync(outsideFile));
     const outcome = await tools.run('Write', { file_path: link, content: 'x' }, { mode: 'acceptEdits' });
     expect(approvalOf(outcome).toolKind).toBe('edit');
+    expect(fs.readFileSync(outsideFile, 'utf8')).toBe('outside');
+  });
+
+  it('does not ask about a write through a symlink to a file that was not read, which could not run', async () => {
+    const tools = await makeBuiltins();
+    const outsideFile = path.join(tools.layout.outside, 'target.txt');
+    fs.writeFileSync(outsideFile, 'outside');
+    const link = path.join(tools.layout.project, 'escape.txt');
+    fs.symlinkSync(outsideFile, link);
+    const result = resultOf(await tools.run('Write', { file_path: link, content: 'x' }, { mode: 'acceptEdits' }));
+    expect(result).toMatchObject({ status: 'failed', output: expect.stringContaining('has not been read in this session') });
     expect(fs.readFileSync(outsideFile, 'utf8')).toBe('outside');
   });
 

@@ -1,10 +1,10 @@
 import path from 'node:path';
 import type { MarkerState, ProcessGroupPort, ProcessInspector, SignalSender, UninspectableProcess } from '@momonga/foundation';
 import type { AnyTool, CallOutcome, ResultOutcome, ToolExecutorOptions } from '@momonga/tools';
+import { sleepDrivenTiming } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { HarnessOptions } from './harness.ts';
 import { keyFor } from './helpers.ts';
-import { sleepDrivenTiming } from '@momonga/testkit';
 
 const unenforced = { of: async () => 'unenforced' as const, contradicted: () => undefined };
 

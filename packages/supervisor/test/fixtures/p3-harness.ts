@@ -1,3 +1,4 @@
+import { AsyncResource } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -559,7 +560,7 @@ export const fakeSettingsWatch = (): FakeSettingsWatch => {
         closed += 1;
       },
     });
-    if (listener !== undefined) emitter.on('change', listener);
+    if (listener !== undefined) emitter.on('change', AsyncResource.bind(listener));
     emitters.push(emitter);
     return emitter;
   }) as unknown as typeof fs.watch;

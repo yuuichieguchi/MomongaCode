@@ -2,11 +2,12 @@ import path from 'node:path';
 import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, filterAsync, findAsync, isProtectedWrite, lexicallyWithin, networkScopeOfRequest, someAsync } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, SandboxNetworkSetting, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
-import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
+import type { ApprovalBasis, PermissionDenialSource, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import { createDecisionResolver } from './filesystem.ts';
 import type { PolicyFilesystem, WritableCheck } from './filesystem.ts';
+import { suggestAllowRule } from './suggest-allow-rule.ts';
 import { supersededVerdictOf } from './superseded.ts';
 import type { CoveredProgram, SupersededForm } from './superseded.ts';
 import { matchPathlessStrength, matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
@@ -43,16 +44,18 @@ export type DecideInput = {
   coveredPrograms?: readonly CoveredProgram[];
 };
 
-export type Decision = {
-  kind: DecisionKind;
+export type DenialCause = Extract<PermissionDenialSource, 'rule' | 'mode' | 'setting' | 'mandate' | 'superseded'>;
+
+type DecisionFacts = {
   source: 'rule' | 'mode' | 'protected' | 'hook' | 'operation';
   reason: string;
   rule?: PermissionRule;
   humanOnly?: true;
   basis?: ApprovalBasis;
   network?: true;
-  outside?: true;
 };
+
+export type Decision = (DecisionFacts & { kind: Exclude<DecisionKind, 'deny'> }) | (DecisionFacts & { kind: 'deny'; denial: DenialCause });
 
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
@@ -63,15 +66,12 @@ const describeRule = (rule: PermissionRule): string => `${rule.text} (${rule.ori
 
 const basisOf = (kind: DecisionKind, basis: ApprovalBasis): { basis?: ApprovalBasis } => (kind === 'allow' ? { basis } : {});
 
-const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decision => ({
-  kind,
-  source: 'rule',
-  rule,
-  reason: `${verb} by rule ${describeRule(rule)}`,
-  ...basisOf(kind, 'rule'),
-});
+const decided = (kind: DecisionKind, cause: DenialCause, facts: DecisionFacts): Decision => (kind === 'deny' ? { ...facts, kind, denial: cause } : { ...facts, kind });
 
-const byMode = (kind: DecisionKind, reason: string, basis: ApprovalBasis = 'mode'): Decision => ({ kind, source: 'mode', reason, ...basisOf(kind, basis) });
+const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decision =>
+  decided(kind, 'rule', { source: 'rule', rule, reason: `${verb} by rule ${describeRule(rule)}`, ...basisOf(kind, 'rule') });
+
+const byMode = (kind: DecisionKind, reason: string, basis: ApprovalBasis = 'mode'): Decision => decided(kind, 'mode', { source: 'mode', reason, ...basisOf(kind, basis) });
 
 export const isGoverningRule = (rule: PermissionRule): boolean => rule.layer === 'governance';
 
@@ -142,7 +142,7 @@ const unanalysedReason = (subject: CommandSubject, restriction: string): string 
 
 const unanalysedUnderDeny = (mode: PermissionMode, subject: CommandSubject): Decision => {
   const reason = unanalysedReason(subject, 'a deny rule');
-  if (mode === 'bypassPermissions') return { kind: 'deny', source: 'mode', reason: `Not run: ${reason}, and bypassPermissions mode asks nobody` };
+  if (mode === 'bypassPermissions') return { kind: 'deny', denial: 'mode', source: 'mode', reason: `Not run: ${reason}, and bypassPermissions mode asks nobody` };
   return { kind: 'ask', source: 'mode', humanOnly: true, reason: `${reason}; a person decides` };
 };
 
@@ -360,7 +360,7 @@ const withNetworkRequest = (input: DecideInput, decision: Decision): Decision =>
   const scope = networkScopeOfRequest(input.subject.network);
   const requests = `the command requests ${describeNetworkScope(scope)}${scope.kind === 'hosts' ? ` (${PROXY_NOTE})` : ''}`;
   const setting = input.sandboxNetwork ?? DEFAULT_SANDBOX_NETWORK;
-  if (setting === 'deny') return { kind: 'deny', source: 'mode', reason: `${requests}, and the setting sandboxNetwork is deny`, network: true };
+  if (setting === 'deny') return { kind: 'deny', denial: 'setting', source: 'mode', reason: `${requests}, and the setting sandboxNetwork is deny`, network: true };
   if (setting === 'allow' || input.mode === 'bypassPermissions') return decision.kind === 'ask' ? { ...decision, reason: `${decision.reason}; ${requests}` } : decision;
   if (decision.kind === 'ask') return { ...decision, reason: `${decision.reason}; ${requests}`, network: true };
   return { kind: 'ask', source: 'mode', reason: requests, network: true };
@@ -387,9 +387,11 @@ const withTarget = (input: DecideInput, decision: Decision): Decision => {
   return target === undefined ? decision : { ...decision, reason: `${decision.reason}; target: ${target}` };
 };
 
-const withinMandate = (input: DecideInput, decision: Decision): Decision => {
+const withinMandate = async (input: DecideInput, decision: Decision): Promise<Decision> => {
   if (input.mandate !== true || decision.kind !== 'ask' || decision.source !== 'mode' || decision.humanOnly === true) return decision;
-  return { kind: 'deny', source: 'mode', outside: true, reason: `Not run: outside the declared mandate (${decision.reason}). Continue with work inside it or report.` };
+  const rule = await suggestAllowRule(input.tool, input.subject, input.cwd, input.fs.canonicalise);
+  const wayForward = rule === undefined ? '' : ` To allow it in a run under this mandate, add the rule ${rule} to the allow list of the mandate.`;
+  return { kind: 'deny', denial: 'mandate', source: 'mode', reason: `Not run: outside the declared mandate (${decision.reason}).${wayForward} Continue with work inside it or report.` };
 };
 
 const onlyReads = async (input: DecideInput): Promise<boolean> => {
@@ -400,12 +402,17 @@ const onlyReads = async (input: DecideInput): Promise<boolean> => {
 export const decide = (given: DecideInput): Promise<Decision> => decideResolvingOnce(resolvingOnce(given));
 
 const decideResolvingOnce = async (input: DecideInput): Promise<Decision> => {
-  const ordinary = async (): Promise<Decision> => withTarget(input, withinMandate(input, withNetworkRequest(input, await decideWithoutNetwork(input))));
+  const ordinary = async (): Promise<Decision> => withTarget(input, await withinMandate(input, withNetworkRequest(input, await decideWithoutNetwork(input))));
   if (input.mandate !== true || input.subject.kind !== 'command' || input.supersededForms === undefined) return ordinary();
   const verdict = supersededVerdictOf(input.subject.command, input.supersededForms, commandSpecsFor(input.fs.platform), input.coveredPrograms);
   if (verdict === undefined) return ordinary();
   if (verdict.kind === 'superseded') {
-    return byMode('deny', `Not run: this run has a mandate, and ${verdict.form.argv.join(' ')} is replaced by a dedicated operation; use ${verdict.form.operation}`);
+    return {
+      kind: 'deny',
+      denial: 'superseded',
+      source: 'mode',
+      reason: `Not run: this run has a mandate, and ${verdict.form.argv.join(' ')} is replaced by a dedicated operation; use ${verdict.form.operation}`,
+    };
   }
   const decided = withNetworkRequest(input, await decideWithoutNetwork(input));
   if (decided.kind === 'deny') return decided;

@@ -10,7 +10,7 @@ describe('sandboxNetwork setting', () => {
 
   it('defaults to ask', async () => {
     const tree = makeTree();
-    expect((await loadUserSettings({ home: tree.home })).settings.sandboxNetwork).toBe('ask');
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.sandboxNetwork).toBe('ask');
     expect((await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings.sandboxNetwork).toBe('ask');
   });
 
@@ -43,7 +43,7 @@ describe('sandboxNetwork setting', () => {
   it('refuses an unknown value naming the pointer', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { sandboxNetwork: 'open' });
-    const failure = loadUserSettings({ home: tree.home });
+    const failure = loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow('/sandboxNetwork');
   });

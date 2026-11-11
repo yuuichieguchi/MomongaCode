@@ -11,7 +11,7 @@ import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { DAEMON_POLL_INTERVAL_MS } from '../src/constants.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { createFakeWork, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { createFakeWork, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor, SpawnedProcess } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -33,7 +33,7 @@ const setup = async (context: TestContext) => {
     running.push(supervisor);
     return supervisor;
   };
-  const portsWith = (spawn: DaemonPorts['spawnDetached'], version = VERSION): DaemonPorts => ({ version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn });
+  const portsWith = (spawn: DaemonPorts['spawnDetached'], version = VERSION): DaemonPorts => ({ version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn, ...installedProgram(version).ports });
   const counter = path.join(paths.run, 'generation.counter');
   return { home, paths, start, portsWith, counter };
 };
@@ -241,7 +241,7 @@ describe('the busy lock and the starting lock (15.14 P7 a, P10)', () => {
 
     const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
 
-    expect((failure as Error).message).toBe(`the supervisor exited (code 78, signal null) before it was ready; see ${paths.logFiles.supervisor}`);
+    expect((failure as Error).message).toBe(`The new daemon (v${VERSION}) did not start (it stopped with exit code 78 before it was ready). The reason is in ${paths.logFiles.supervisor}.`);
     expect(await startingLockHeld(home, 1)).toBe(false);
   });
 });
@@ -260,7 +260,7 @@ describe('a start that does not happen says why (20.12, 20.14)', () => {
     expect((failure as Error).message).toBe(`gateway is held by its configuration: invalid settings; see ${paths.logFiles.supervisor}`);
   });
 
-  it('says the directory was removed, and that the older daemon keeps running, when its start was abandoned', async (context) => {
+  it('says its files were removed, and that the older daemon keeps running, when its start was abandoned', async (context) => {
     const { home, paths, start, portsWith, counter } = await setup(context);
     fs.writeFileSync(counter, '1');
     await start({ version: '0.0.1', generation: 1 });
@@ -273,11 +273,11 @@ describe('a start that does not happen says why (20.12, 20.14)', () => {
 
     expect(failure).toBeInstanceOf(DaemonStartError);
     expect((failure as Error).message).toBe(
-      `The new daemon (v${VERSION}) did not start (its start was abandoned before it began: its directory was removed). v0.0.1 keeps running.; see ${paths.logFiles.supervisor}`,
+      `The new daemon (v${VERSION}) did not start (its files were removed while it was starting); v0.0.1 keeps running. Run the command again.`,
     );
   });
 
-  it('says its supervisor stopped before it was promoted when the supervisor claimed the generation and then ended', async (context) => {
+  it('says it stopped before it was ready, and where the reason is, when the supervisor claimed the generation and then ended', async (context) => {
     const { paths, start, portsWith } = await setup(context);
     const { spawn } = recordingSpawn(async (spec) => {
       const supervisor = await start({ version: VERSION, generation: Number(generationArgOf(spec)?.slice('--generation='.length)), publishes: false });
@@ -288,10 +288,10 @@ describe('a start that does not happen says why (20.12, 20.14)', () => {
 
     const failure = await ensureDaemon({ ...portsWith(spawn), clock: hostClock }, paths, { bounds: { readyMs: STARTUP_TIMEOUT_MS, stopMs: STARTUP_TIMEOUT_MS } }).catch((error: unknown) => error);
 
-    expect((failure as Error).message).toBe(`The new daemon (v${VERSION}) did not start (its supervisor stopped before it was promoted).; see ${paths.logFiles.supervisor}`);
+    expect((failure as Error).message).toBe(`The new daemon (v${VERSION}) did not start (it stopped before it was ready). The reason is in ${paths.logFiles.supervisor}.`);
   });
 
-  it('says the generation was replaced by an older version when a later generation of a lower version became current', async (context) => {
+  it('says a daemon of the older version started at the same time when a later generation of a lower version became current', async (context) => {
     const { paths, start, portsWith, counter } = await setup(context);
     fs.writeFileSync(counter, '1');
     const { spawn } = recordingSpawn((spec) => {
@@ -301,7 +301,7 @@ describe('a start that does not happen says why (20.12, 20.14)', () => {
 
     const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
 
-    expect((failure as Error).message).toBe(`generation 2 was replaced by an older version (v1.2.2) before it started; no daemon of v${VERSION} is running; see ${paths.logFiles.supervisor}`);
+    expect((failure as Error).message).toBe(`The new daemon (v${VERSION}) did not start (a daemon of v1.2.2 started at the same time); v1.2.2 keeps running. Run the command again.`);
   });
 
   it('refuses a start with the settled text when run/current cannot be read (20.15)', async (context) => {

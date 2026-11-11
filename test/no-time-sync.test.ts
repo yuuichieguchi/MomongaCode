@@ -8,6 +8,7 @@ type Kept = { kinds: Partial<Record<TimeSyncKind, number>>; reason: string };
 type BurnDown = { kinds: Partial<Record<TimeSyncKind, number>>; owner: string };
 
 const KEPT: Readonly<Record<string, Kept>> = {
+  'packages/cli/test/broken-pipe-entry.ts': { kinds: { 'timer wait': 1 }, reason: 'the flooding command gives the event loop a turn so that the broken pipe of its output is delivered while it still writes: the turn is the event the case needs' },
   'packages/eval/test/runner.test.ts': { kinds: { 'timer wait': 2 }, reason: 'node reports an unhandled rejection only after a macrotask: the turn is the event the case waits for' },
   'packages/foundation/test/outbound-trust-off-loop.test.ts': { kinds: { 'wall-clock reading': 1 }, reason: 'the fake worker spends a fixed span of CPU so the case can show it runs off the event loop' },
   'packages/foundation/test/path-asking.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the case proves the asking does not block the event loop: a turn that runs while the work is pending is the event' },

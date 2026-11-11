@@ -2,7 +2,8 @@ import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { startFakeForge } from '@momonga/testkit';
+import { createUdsClient, fixedSocket } from '@momonga/foundation';
+import { firstGeneration, startFakeForge } from '@momonga/testkit';
 import type { FakeForge, Fault } from '@momonga/testkit';
 import { skipCase, titleOf } from './support/cases.ts';
 import { E2E_SECRETS_FILE_NAME } from './support/gateway-secrets-main.ts';
@@ -40,6 +41,17 @@ const initRepository = (home: E2eHome, origin: string): string => {
   return gitIn(home, 'rev-parse', 'HEAD');
 };
 
+const trustProject = async (home: E2eHome): Promise<void> => {
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
+  try {
+    const response = await client.request({ method: 'PUT', path: '/v1/trust', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: home.project, decision: 'trusted' }) });
+    expect(response.status).toBe(200);
+    await response.text();
+  } finally {
+    await client.close();
+  }
+};
+
 const killRuntime = async (stack: Awaited<ReturnType<typeof startStack>>): Promise<void> => {
   const pid = childOf(await stack.client.health(), 'runtime').pid;
   if (pid === undefined) throw new Error('runtime has no pid');
@@ -65,6 +77,7 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
     const stack = await startStack({ home, needsBash: true, deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY }, script: loadThen('GitCommit', { message: COMMIT_MESSAGE }) });
     const runtime = createRuntimeClient(home);
     try {
+      await trustProject(home);
       const { session } = await runtime.createSession();
       const { run } = await runtime.createRun(session.id, 'Commit the staged change');
       await until(() => linesOf(runs).length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the commit hook of the first attempt has started' });
@@ -103,6 +116,7 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
     });
     const runtime = createRuntimeClient(home);
     try {
+      await trustProject(home);
       const { session } = await runtime.createSession();
       const { run } = await runtime.createRun(session.id, 'Open the pull request');
       await until(() => forge.creates() === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the create request reached the forge' });

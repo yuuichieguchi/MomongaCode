@@ -13,7 +13,8 @@
       "base": { "type": "string", "refName": true, "description": "The branch to merge into" },
       "title": { "type": "string", "minLength": 1 },
       "body": { "type": "string" },
-      "headSha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The commit the head branch is expected to be at" }
+      "headSha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The commit the head branch is expected to be at" },
+      "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote whose forge is asked; origin when left out" }
     },
     "required": ["head", "base", "title", "body", "headSha"],
     "additionalProperties": false

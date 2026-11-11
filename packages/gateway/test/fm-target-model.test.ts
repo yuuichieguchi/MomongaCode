@@ -73,11 +73,11 @@ describe('the model id the managed fm target sends to fm serve', () => {
 
   it('is never another model: an entry id that differs from the recorded one is refused with 412 model_id_changed (rule M)', async () => {
     const { fmServe } = await startListing();
-    const refused = targetOf(fmServe, { declaredModel: 'declared', report: { ...makeReport(1, 1), modelId: 'recorded' } });
+    const target = await targetOf(fmServe, { declaredModel: 'declared', report: { ...makeReport(1, 1), modelId: 'recorded' } });
 
-    await expect(refused).rejects.toMatchObject({
+    await expect(target.upstreamModel(TARGET, new AbortController().signal)).rejects.toMatchObject({
       status: 412,
-      body: { type: 'invalid_request', code: MODEL_ID_CHANGED_CODE, param: 'model', message: 'The server of fm lists "recorded", not "declared". Run /models add to add the model it serves now.' },
+      body: { type: 'invalid_request', code: MODEL_ID_CHANGED_CODE, param: 'model', message: 'The server fm of the model fm/declared lists "recorded", not "declared". Run /models add to add the model it serves now.' },
     });
   });
 

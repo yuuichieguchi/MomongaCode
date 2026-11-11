@@ -1,10 +1,14 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { StopReason } from '@agentclientprotocol/sdk';
 import { TARGET_NOT_READY } from '@momonga/protocol';
+import type { BudgetExhausted } from '@momonga/protocol';
+import { stoppedByLine } from '../commands/report.ts';
 import { unmetConditionLines } from '../policy-messages.ts';
 import type { RunView } from '../client/views.ts';
 
 export const RUN_STOPPED_CODE = -32010;
+
+export const BUDGET_EXHAUSTED_CODE = 'budget_exhausted';
 
 const storedRemedyOf = (message: string): { remedy?: string } => {
   const lines = message.split('\n');
@@ -25,25 +29,49 @@ const stopped = (run: RunView, description: string): RequestError => new Request
 
 const failed = (run: RunView, description: string): RequestError => RequestError.internalError(detailOf(run), `run ${run.id} ${description}`);
 
+type RunStopReason = NonNullable<RunView['stopReason']>;
+
+type Ending = StopReason | 'failure';
+
+const NO_DIMENSION_ENDING: StopReason = 'max_tokens';
+
+const BUDGET_ENDINGS: Readonly<Record<BudgetExhausted['dimension'], Ending>> = {
+  steps: 'max_turn_requests',
+  tokens: 'max_tokens',
+  cost: 'failure',
+  time: 'failure',
+  retries: 'failure',
+};
+
+const STOP_ENDINGS: Readonly<Record<Exclude<RunStopReason, 'budget'>, Ending>> = {
+  max_steps: 'max_turn_requests',
+  max_tokens: 'max_tokens',
+  refusal: 'refusal',
+  timeout: 'failure',
+  loop: 'failure',
+  approval_timeout: 'failure',
+  usage_limit: 'failure',
+  conditions_unmet: 'failure',
+};
+
+const stoppedText = (run: RunView, reason: Exclude<RunStopReason, 'budget'>): string =>
+  reason === 'conditions_unmet' && run.report !== undefined ? ['stopped: conditions_unmet', ...unmetConditionLines(run.report)].join('\n') : `stopped: ${reason}`;
+
+const budgetEndingOf = (run: RunView): StopReason => {
+  const exhausted = run.report?.stoppedBy;
+  if (exhausted === undefined) return NO_DIMENSION_ENDING;
+  const ending = BUDGET_ENDINGS[exhausted.dimension];
+  if (ending !== 'failure') return ending;
+  throw new RequestError(RUN_STOPPED_CODE, `run ${run.id} ${stoppedByLine(exhausted)}`, { ...detailOf(run), code: BUDGET_EXHAUSTED_CODE, budget: exhausted });
+};
+
 const stoppedReasonOf = (run: RunView): StopReason => {
   const reason = run.stopReason;
   if (reason === undefined) throw new Error(`run ${run.id} is STOPPED without a stop reason`);
-  switch (reason) {
-    case 'max_steps':
-      return 'max_turn_requests';
-    case 'max_tokens':
-    case 'budget':
-      return 'max_tokens';
-    case 'refusal':
-      return 'refusal';
-    case 'timeout':
-    case 'loop':
-    case 'approval_timeout':
-    case 'usage_limit':
-      throw stopped(run, `stopped: ${reason}`);
-    case 'conditions_unmet':
-      throw stopped(run, ['stopped: conditions_unmet', ...(run.report === undefined ? [] : unmetConditionLines(run.report))].join('\n'));
-  }
+  if (reason === 'budget') return budgetEndingOf(run);
+  const ending = STOP_ENDINGS[reason];
+  if (ending !== 'failure') return ending;
+  throw stopped(run, stoppedText(run, reason));
 };
 
 export const stopReasonOf = (run: RunView): StopReason => {

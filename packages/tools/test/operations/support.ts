@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { createOperationTools, hostGitReader, openGitCredentialChannel } from '@momonga/tools';
+import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { ToolExecutionError, createOperationTools, nodeShellHost, openGitCredentialChannel } from '@momonga/tools';
 import type { AnyTool, ArgvRunner, ForgeAccess, ForgeFetch, OperationSettings, ReconcileContext, ReconcileResult, ToolContext, ToolIdempotencyRecord, ToolResult } from '@momonga/tools';
 import { testPaths } from '@momonga/testkit';
 
@@ -85,38 +86,53 @@ export const remoteSha = (world: GitWorld, ref: string): string => {
   return out === '' ? ZERO : (out.split(/\s+/)[0] as string);
 };
 
-export type CountingRunner = { run: ArgvRunner; calls: Array<readonly string[]>; environments: Array<Readonly<Record<string, string>>> };
+export const shaOfRemote = (world: GitWorld, remote: string, ref: string): string => {
+  const out = world.git(world.base, 'ls-remote', remote, `refs/heads/${ref}`);
+  return out === '' ? ZERO : (out.split(/\s+/)[0] as string);
+};
 
-const execArgv = (argv: readonly string[], cwd: string, env: Readonly<Record<string, string>>, signal: AbortSignal): Promise<{ exitCode: number; stdout: string; stderr: string }> =>
-  new Promise((resolve) => {
+export type CountingRunner = { run: ArgvRunner; calls: Array<readonly string[]>; environments: Array<Readonly<Record<string, string>>>; directories: string[]; credentialed: boolean[] };
+
+const execArgv = (argv: readonly string[], cwd: string, env: Readonly<Record<string, string>>, signal: AbortSignal, stdin?: string): Promise<{ exitCode: number; stdout: string; stderr: string }> =>
+  new Promise((resolve, reject) => {
     const [file, ...args] = argv;
-    execFile(file as string, args, { cwd, env: { ...env }, signal, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+    const child = execFile(file as string, args, { cwd, env: { ...env }, signal, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (signal.aborted) {
+        reject(new ToolExecutionError(`${argv.slice(0, 2).join(' ')} was cancelled or ran out of time`));
+        return;
+      }
       const code = error === null ? 0 : typeof error.code === 'number' ? error.code : 1;
       resolve({ exitCode: code, stdout, stderr });
     });
+    child.stdin?.on('error', () => undefined);
+    child.stdin?.end(stdin ?? '');
   });
 
 export const countingRunner = (): CountingRunner => {
   const calls: Array<readonly string[]> = [];
   const environments: Array<Readonly<Record<string, string>>> = [];
+  const directories: string[] = [];
+  const credentialed: boolean[] = [];
   const run: ArgvRunner = async (argv, options) => {
     calls.push([...argv]);
+    directories.push(options.cwd);
     const credentials = options.credentials ?? [];
+    credentialed.push(credentials.length > 0);
     if (credentials.length === 0) {
       environments.push(options.env);
-      return execArgv(argv, options.cwd, options.env, options.signal);
+      return execArgv(argv, options.cwd, options.env, options.signal, options.stdin);
     }
-    const channel = await openGitCredentialChannel(credentials, { root: os.tmpdir() });
+    const channel = await openGitCredentialChannel(credentials, { root: os.tmpdir(), random: systemRandom, files: nodeFileSystem });
     try {
       const env = channel.environment(options.env);
       environments.push(env);
-      const result = await execArgv(argv, options.cwd, env, options.signal);
+      const result = await execArgv(argv, options.cwd, env, options.signal, options.stdin);
       return { exitCode: result.exitCode, stdout: channel.redact(result.stdout), stderr: channel.redact(result.stderr) };
     } finally {
       await channel.close();
     }
   };
-  return { run, calls, environments };
+  return { run, calls, environments, directories, credentialed };
 };
 
 export const TEST_FETCH: ForgeFetch = (url, { boundMs: _boundMs, ...init }) => fetch(url, init);
@@ -129,7 +145,7 @@ export const NO_FORGE: ForgeAccess = {
 };
 
 export const operationTool = (name: string, deps: { runArgv: ArgvRunner; forge?: ForgeAccess; settings?: OperationSettings }): AnyTool => {
-  const tools = createOperationTools({ runArgv: deps.runArgv, readGit: hostGitReader, forge: deps.forge ?? NO_FORGE, settings: deps.settings ?? {} });
+  const tools = createOperationTools({ runArgv: deps.runArgv, forge: deps.forge ?? NO_FORGE, settings: deps.settings ?? {} });
   const tool = tools.find((candidate) => candidate.name === name);
   if (tool === undefined) throw new Error(`no operation tool named ${name}`);
   return tool;
@@ -152,6 +168,9 @@ export const contextFor = (cwd: string, env: Readonly<Record<string, string>>, i
     signal: new AbortController().signal,
     deadlineAt: Date.now() + 120_000,
     clock: { now: () => Date.now() },
+    shellHost: nodeShellHost(),
+    random: systemRandom,
+    files: nodeFileSystem,
     session: { cwd, workingDirectory: cwd, readLedger: new Map() },
     attachProcess: () => undefined,
     update: () => undefined,
@@ -170,7 +189,7 @@ export const recordOf = (tool: string, prepared: Record<string, unknown> | undef
   }) as ToolIdempotencyRecord;
 
 export const gateFactsFor = (tool: AnyTool, input: unknown, ctx: CallContext): Promise<Record<string, unknown> | undefined> =>
-  tool.gateFacts === undefined ? Promise.resolve(undefined) : tool.gateFacts(input, ctx, { signal: ctx.signal, env: ctx.env });
+  tool.gateFacts === undefined ? Promise.resolve(undefined) : tool.gateFacts(input, ctx, { signal: ctx.signal, env: ctx.env, context: ctx });
 
 export const subjectFor = async (tool: AnyTool, input: unknown, world: GitWorld): Promise<ReturnType<AnyTool['subject']>> => {
   const ctx = contextFor(world.work, world.env);

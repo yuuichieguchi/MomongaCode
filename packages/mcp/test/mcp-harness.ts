@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { HOST_FLAVOUR, groupAlive, compileFileRuleSet, EMPTY_PROTECTED_SET, ruleEnforcementOf, syncPaths } from '@momonga/foundation';
+import { compileFileRuleSet, EMPTY_PROTECTED_SET, groupAlive, HOST_FLAVOUR, nodeFileSystem, ruleEnforcementOf, syncPaths, systemRandom } from '@momonga/foundation';
 
 import os from 'node:os';
 import path from 'node:path';
@@ -13,7 +13,7 @@ import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from
 import { createMcpPool, type McpPool } from '@momonga/mcp';
 
 
-import { createToolExecutor, createToolRegistry } from '@momonga/tools';
+import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 
 
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
@@ -211,7 +211,10 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
   fs.mkdirSync(markers, { mode: 0o700 });
   const callLocks = path.join(root, 'call-locks');
   fs.mkdirSync(callLocks, { mode: 0o700 });
-  const executor = createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+  const executor = createToolExecutor({
+    shellHost: nodeShellHost(),
+    random: systemRandom,
+    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: makeIdempotency(),
     blobs: unusedBlobs,
     clock,

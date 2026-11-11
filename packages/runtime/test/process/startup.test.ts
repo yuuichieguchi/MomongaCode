@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
+import { nodeChildPorts } from '@momonga/tools';
 import { FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
@@ -327,7 +328,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       const stack = await prepareStack();
       stack.settings({ sandbox: 'bubblewrap' });
       const { file, log } = recordingBwrap(stack.temp);
-      const shellHost = { platform: 'linux' as const, isExecutable: (candidate: string) => candidate === '/usr/bin/bash' };
+      const shellHost = { platform: 'linux' as const, isExecutable: (candidate: string) => candidate === '/usr/bin/bash', child: nodeChildPorts() };
       await launchRuntime(stack.temp, { sandboxExecPath: file, platform: 'linux', shellHost });
       const lines = fs.readFileSync(log, 'utf8').trimEnd().split('\n');
       expect(lines.slice(-3)).toEqual(['/usr/bin/bash', '-c', ':']);
@@ -338,7 +339,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       const temp = makeRunHome();
       writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
       const { file, log } = recordingBwrap(temp);
-      const shellHost = { platform: 'linux' as const, isExecutable: () => false };
+      const shellHost = { platform: 'linux' as const, isExecutable: () => false, child: nodeChildPorts() };
       const { started } = startBare(temp, { sandboxExecPath: file, platform: 'linux', shellHost });
       const error = await failureOf(started);
       expect(error).toBeInstanceOf(ConfigError);

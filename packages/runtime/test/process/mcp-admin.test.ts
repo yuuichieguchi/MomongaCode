@@ -87,9 +87,9 @@ const setup = async () => {
     readCloseGraceMs: () => CLOSE_GRACE_MS,
     readConnectTimeoutMs: () => CONNECT_TIMEOUT_MS,
     settings: {
-      envFor: () => ({}),
-      admitUserSnapshot: () => {
-        const snapshot = cache.snapshot();
+      envFor: async () => ({}),
+      admitUserSnapshot: async (signal) => {
+        const snapshot = await cache.load(signal);
         if ('error' in snapshot) throw snapshot.error;
         return { settings: snapshot.settings, user: snapshot.user };
       },

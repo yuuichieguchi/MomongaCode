@@ -50,7 +50,7 @@ export type TuiRecord = Common & {
   notes: HandoverNote[];
 };
 
-export type AcpRecord = Common & { kind: 'acp'; initialize: unknown; sessions: string[] };
+export type AcpRecord = Common & { kind: 'acp'; initialize: unknown; sessions: string[]; input: string };
 
 export type StreamRecord = Common & { kind: 'attach' | 'headless'; runId: string; output: OutputFormat; verbose: boolean };
 
@@ -183,7 +183,7 @@ const acpOf = (fields: Fields): AcpRecord => {
   const sessions = fields['sessions'];
   if (!Array.isArray(sessions) || !sessions.every((session): session is string => typeof session === 'string')) throw malformed('sessions');
   if (!('initialize' in fields)) throw malformed('initialize');
-  return { ...commonOf(fields), kind: 'acp', initialize: fields['initialize'], sessions };
+  return { ...commonOf(fields), kind: 'acp', initialize: fields['initialize'], sessions, input: textOf(fields, 'input') };
 };
 
 const streamOf = (fields: Fields, kind: 'attach' | 'headless'): StreamRecord => ({

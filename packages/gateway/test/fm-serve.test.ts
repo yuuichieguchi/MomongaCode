@@ -913,7 +913,7 @@ describe('createManagedServer bounds each precondition command by the asking ope
     const reason = new Error('the request ended');
     asker.abort(reason);
     expect(await starting).toBe(reason);
-    expect(signals[0]?.aborted).toBe(true);
+    await vi.waitFor(() => expect(signals[0]?.aborted).toBe(true));
     expect(spawn).not.toHaveBeenCalled();
   });
 

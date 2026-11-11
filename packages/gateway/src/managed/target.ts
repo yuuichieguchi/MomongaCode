@@ -1,6 +1,6 @@
 import { canonicalJson, createUdsClient, fixedSocket, probeKeyComponentLabel, startSharedCall } from '@momonga/foundation';
 import type { SharedCall } from '@momonga/foundation';
-import { countReplyOf } from '@momonga/protocol';
+import { WORDS, countReplyOf } from '@momonga/protocol';
 import type {
   AdapterStop,
   ChainRoomFacts,
@@ -44,6 +44,7 @@ import { targetProbingError } from '../probe/auto-probe.ts';
 import { modelIdChangedError } from '../probe/model-id-changed.ts';
 import type { InstanceProbe } from '../probe/instance-probe.ts';
 import { declaredDialectRefusal, needsProbeOf } from '../probe/remedy.ts';
+import { aboutModel, managedModelName } from './name.ts';
 import { missingExecutableVerdict, notReadyText } from './preconditions.ts';
 import type { ExecResult } from './preconditions.ts';
 import type { ManagedServer } from './server.ts';
@@ -58,7 +59,7 @@ export type ManagedTargetOptions = {
   binary: string;
   exec: ExecWithStdinFn;
   probeRecordDir: string;
-  target: string;
+  serverName: string;
   requestLimitMs: number;
   isUsableBinary: (binary: string) => Promise<boolean>;
   readKey: (signal: AbortSignal) => Promise<ProbeKey>;
@@ -135,9 +136,9 @@ const countedText = (request: CountTokensRequest): string => {
 };
 
 export const parseCount = (target: string, result: ExecResult): number => {
-  if (result.exitCode !== 0) throw new Error(`the model "${target}": the token counter failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+  if (result.exitCode !== 0) throw new Error(aboutModel(target, `the token counter failed with exit code ${result.exitCode}: ${result.stderr.trim()}`));
   const text = result.stdout.trim();
-  if (!INTEGER_TEXT.test(text)) throw new Error(`the model "${target}": the token counter printed an unexpected value: ${JSON.stringify(text.slice(0, 80))}`);
+  if (!INTEGER_TEXT.test(text)) throw new Error(aboutModel(target, `the token counter printed an unexpected value: ${JSON.stringify(text.slice(0, 80))}`));
   return Number(text);
 };
 
@@ -186,7 +187,10 @@ const keyText = (description: ManagedServerDescription, key: KnownProbeKey): str
 };
 
 export const createManagedTarget = async (options: ManagedTargetOptions): Promise<ManagedTarget> => {
-  const { description, target: targetName } = options;
+  const { description } = options;
+  let recorded: Recorded | undefined;
+  let servedId: string | undefined;
+  const modelName = (): string => managedModelName(options.serverName, { declared: options.declaredModel, listed: recorded?.report?.modelId ?? servedId });
   const allowedTools: readonly AllowedToolsForm[] = description.toolForms;
   const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
   const declaredBounds = options.declaredCapabilities;
@@ -201,9 +205,9 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
         };
 
   const recordedOf = (identityText: string, report: ProbeReport): Recorded => {
-    const needsProbe = needsProbeOf(targetName, `the model "${targetName}" sets toolCalling to auto, but no probe record exists`, `no probe record exists for ${identityText}`);
+    const needsProbe = needsProbeOf(modelName(), `the ${WORDS.model} "${modelName()}" sets toolCalling to auto, but no probe record exists`, `no probe record exists for ${identityText}`);
     const modeOf = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
-    const refusedDeclaration = options.toolCallingSetting === 'auto' ? declaredDialectRefusal(targetName, options.declaredDialect, report.schemaDialect, identityText) : undefined;
+    const refusedDeclaration = options.toolCallingSetting === 'auto' ? declaredDialectRefusal(modelName(), options.declaredDialect, report.schemaDialect, identityText) : undefined;
     const schemaDialect = resolveDialectId(options.declaredDialect, report);
     const capabilities = (policy?: ProbeOutputPolicy): Capabilities => {
       const probed = probedOf(report, refusedDeclaration, modeOf, policy);
@@ -222,8 +226,8 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
 
   const checkBinary = async (): Promise<void> => {
     if (await options.isUsableBinary(options.binary)) return;
-    const refusal = missingExecutableVerdict(targetName, options.binary);
-    throw new PreconditionFailedError(notReadyText(targetName, refusal.message), refusal.detail, undefined);
+    const refusal = missingExecutableVerdict(modelName(), options.binary);
+    throw new PreconditionFailedError(notReadyText(modelName(), refusal.message), refusal.detail, undefined);
   };
 
   let unknownProbe: { component: string; probe: InstanceProbe<ProbeReport> } | undefined;
@@ -242,7 +246,6 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
   };
   const servingKey = (signal: AbortSignal): Promise<ProbeKey> => heldKey ?? options.readKey(signal);
 
-  let recorded: Recorded | undefined;
   const readRecorded = async (): Promise<Recorded> => {
     await checkBinary();
     const key = await servingKey(requestSignal());
@@ -252,23 +255,19 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
         if (declaredOnly !== undefined) return (recorded = declaredOnly);
         throw targetProbingError(ensured.probing);
       }
-      recorded = recordedOf(`the model "${targetName}"`, ensured.report);
+      recorded = recordedOf(`the ${WORDS.model} "${modelName()}"`, ensured.report);
       return recorded;
     }
-    const report = await loadProbeRecord(options.probeRecordDir, key, options.currency, targetName);
+    const report = await loadProbeRecord(options.probeRecordDir, key, options.currency, modelName());
     if (report === null) {
       if (declaredOnly !== undefined) return (recorded = declaredOnly);
       throw targetProbingError(await options.startProbe(key));
     }
-    recorded = recordedOf(`the probe key of the model "${targetName}" (${keyText(description, key)})`, report);
+    recorded = recordedOf(`the probe key of the ${WORDS.model} "${modelName()}" (${keyText(description, key)})`, report);
     return recorded;
   };
-  const checkServedId = (listed: string | undefined): void => {
-    const entry = options.declaredModel;
-    if (entry !== undefined && listed !== undefined && listed !== entry) throw modelIdChangedError(targetName, listed, entry);
-  };
   const lastRecorded = (): Recorded => {
-    if (recorded === undefined) throw new Error(`the probe record of the model "${targetName}" was read by no request yet`);
+    if (recorded === undefined) throw new Error(`the probe record of the ${WORDS.model} "${modelName()}" was read by no request yet`);
     return recorded;
   };
 
@@ -277,9 +276,9 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     try {
       const response = await client.request({ method: 'GET', path: description.models.listPath, signal });
       const text = await response.text();
-      if (response.status !== 200) throw new Error(`the model "${targetName}": the server answered GET ${description.models.listPath} with HTTP ${response.status}: ${text.slice(0, 200)}`);
+      if (response.status !== 200) throw new Error(aboutModel(modelName(), `the server answered GET ${description.models.listPath} with HTTP ${response.status}: ${text.slice(0, 200)}`));
       const id = valueAtPath(parseJson(text), description.models.idPath);
-      if (typeof id !== 'string') throw new Error(`the model "${targetName}": the server lists no model id at GET ${description.models.listPath}`);
+      if (typeof id !== 'string') throw new Error(aboutModel(modelName(), `the server lists no model id at GET ${description.models.listPath}`));
       return id;
     } finally {
       await client.close();
@@ -306,17 +305,19 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     listedModel = listing;
     return listing;
   };
-  let servedId: string | undefined;
-  const upstreamModel = async (_target: AdapterTarget, signal: AbortSignal): Promise<string> => {
+  const listedId = async (signal: AbortSignal): Promise<string> => {
     const recordedModel = lastRecorded().report?.modelId;
-    if (recordedModel !== undefined) {
-      checkServedId(recordedModel);
-      return options.declaredModel ?? recordedModel;
-    }
+    if (recordedModel !== undefined) return recordedModel;
     const endpoint = await options.server.ensureRunning(signal);
     servedId = await (listedModel ?? sharedListing(endpoint.path)).join(signal);
-    checkServedId(servedId);
-    return options.declaredModel ?? servedId;
+    return servedId;
+  };
+  const upstreamModel = async (_target: AdapterTarget, signal: AbortSignal): Promise<string> => {
+    const listed = await listedId(signal);
+    const entry = options.declaredModel;
+    if (entry === undefined) return listed;
+    if (listed !== entry) throw modelIdChangedError({ server: options.serverName, model: modelName() }, listed, entry);
+    return entry;
   };
 
   const { tokenCount } = description;
@@ -335,7 +336,6 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     upstreamModel,
     capabilities: async (_target, policy) => {
       const read = await readRecorded();
-      checkServedId(read.report?.modelId ?? servedId);
       return { ...read.capabilities(policy), allowedTools };
     },
     roomFacts: async () => {
@@ -353,12 +353,12 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
             const { report } = await readRecorded();
             const text = countedText(request);
             if (text === '') return countResultOf(0, report);
-            return countResultOf(parseCount(targetName, await options.exec(options.binary, tokenCount.argv, text, signal)), report);
+            return countResultOf(parseCount(modelName(), await options.exec(options.binary, tokenCount.argv, text, signal)), report);
           },
         }),
     health: async () => {
       if (!(await options.isUsableBinary(options.binary))) {
-        const refusal = missingExecutableVerdict(targetName, options.binary);
+        const refusal = missingExecutableVerdict(modelName(), options.binary);
         return { ok: false, reason: 'precondition_failed', detail: refusal.detail };
       }
       return options.server.health(requestSignal());

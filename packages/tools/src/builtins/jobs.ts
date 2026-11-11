@@ -1,7 +1,8 @@
 import type { JobView } from '@momonga/protocol';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { ReconcileContext, ToolContext } from '../types.ts';
-import type { BackgroundJobs } from '../ports.ts';
+import { checkWithPatterns, validateUntrusted } from '@momonga/foundation';
+import type { BackgroundJobs, LineFilter } from '../ports.ts';
 
 export const DEFAULT_OUTPUT_WAIT_MS = 30_000;
 export const MAX_OUTPUT_WAIT_MS = 600_000;
@@ -27,13 +28,35 @@ const requireJobs = (ctx: ReconcileContext): BackgroundJobs => {
   return ctx.jobs;
 };
 
-const compileFilter = (pattern: string): RegExp => {
+const FILTER_IDENTITY = 'BashOutput.filter';
+
+const assertFilterSyntax = (pattern: string): void => {
   try {
-    return new RegExp(pattern);
+    new RegExp(pattern);
   } catch (error) {
     throw new ToolExecutionError(`filter is not a valid regular expression: ${error instanceof Error ? error.message : String(error)}`);
   }
 };
+
+export type LineFilterOptions = { readonly signal?: AbortSignal; readonly patternCheckLimitMs?: number };
+
+export const createLineFilter = (pattern: string, options: LineFilterOptions): LineFilter => {
+  assertFilterSyntax(pattern);
+  const schema = { type: 'string', pattern };
+  return async (lines) => {
+    const checked = await checkWithPatterns(() => lines.map((line) => validateUntrusted(FILTER_IDENTITY, schema, line).valid), options);
+    if (checked.kind === 'stopped') throw new ToolExecutionError('BashOutput was cancelled');
+    if (checked.kind === 'not-checked') {
+      throw new ToolExecutionError(
+        `filter could not be matched against the new output within ${checked.limitMs} ms: the pattern is too costly to match. The output was not consumed: read it again with a simpler filter, or with none.`,
+      );
+    }
+    return lines.filter((_line, index) => checked.value[index] === true);
+  };
+};
+
+const lineFilterOf = (pattern: string, ctx: ToolContext): LineFilter =>
+  createLineFilter(pattern, { signal: ctx.signal, ...(ctx.patternCheckLimitMs === undefined ? {} : { patternCheckLimitMs: ctx.patternCheckLimitMs }) });
 
 export const bashOutputTool = defineTool<BashOutputInput>({
   name: 'BashOutput',
@@ -66,7 +89,7 @@ export const bashOutputTool = defineTool<BashOutputInput>({
   prepare: async (input: BashOutputInput, ctx: ToolContext) => ({ waitUntil: ctx.clock.now() + (input.timeout ?? DEFAULT_OUTPUT_WAIT_MS) }),
   execute: async (input, ctx, prepared) => {
     const jobs = requireJobs(ctx);
-    const filter = input.filter === undefined ? undefined : compileFilter(input.filter);
+    const keep = input.filter === undefined ? undefined : lineFilterOf(input.filter, ctx);
     const waitUntil = prepared?.['waitUntil'];
     if (input.block === true) {
       if (typeof waitUntil !== 'number') throw new Error('BashOutput lost the time it may wait until');
@@ -75,7 +98,7 @@ export const bashOutputTool = defineTool<BashOutputInput>({
         return { status: 'pending', awaits: { kind: 'job', jobId: job.id }, wakeAt: waitUntil };
       }
     }
-    const { job, output } = await jobs.read(ctx.runId, input.bash_id, { call: `${ctx.runId}/${ctx.callId}`, ...(filter === undefined ? {} : { filter }) });
+    const { job, output } = await jobs.read(ctx.runId, input.bash_id, { call: `${ctx.runId}/${ctx.callId}`, ...(keep === undefined ? {} : { keep }) });
     const header = `Job ${job.id}: ${describeJobStatus(job)}.`;
     return { status: 'completed', output: output === '' ? `${header}\nNo new output.` : `${header}\n${output}` };
   },

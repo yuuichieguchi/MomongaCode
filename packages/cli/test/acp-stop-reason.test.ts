@@ -1,7 +1,52 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import { describe, expect, it } from 'vitest';
-import { RUN_STOPPED_CODE, stopReasonOf } from '../src/acp/stop-reason.ts';
+import type { BudgetExhausted, RunReport } from '@momonga/protocol';
+import { BUDGET_EXHAUSTED_CODE, RUN_STOPPED_CODE, stopReasonOf } from '../src/acp/stop-reason.ts';
+import type { RunView } from '../src/client/views.ts';
 import { runView } from './fake-backend.ts';
+
+const stoppedBy = (dimension: BudgetExhausted['dimension'], cause: BudgetExhausted['cause'] = 'limit'): RunView =>
+  runView({ id: 'run-9', status: 'STOPPED', stopReason: 'budget', report: { stoppedBy: { dimension, cause, spent: 500_000_000, limit: 500_000_000 } } as unknown as RunReport });
+
+const failureOf = (run: RunView): unknown => {
+  try {
+    return stopReasonOf(run);
+  } catch (error) {
+    return error;
+  }
+};
+
+describe('the end of a run that a budget stopped', () => {
+  it.each([
+    ['tokens', 'max_tokens'],
+    ['steps', 'max_turn_requests'],
+  ] as const)('gives the ACP stop reason of the dimension: %s is %s', (dimension, expected) => {
+    expect(stopReasonOf(stoppedBy(dimension))).toBe(expected);
+  });
+
+  it('is max_tokens when no dimension of the budget stopped it: the context of the session did not fit the model', () => {
+    expect(stopReasonOf(runView({ status: 'STOPPED', stopReason: 'budget' }))).toBe('max_tokens');
+  });
+
+  it.each([
+    ['cost', 'money'],
+    ['time', 'time'],
+    ['retries', 'retry'],
+  ] as const)('fails the prompt with the product code of an exhausted budget when the dimension is %s, which ACP has no stop reason for', (dimension, word) => {
+    const failure = failureOf(stoppedBy(dimension));
+
+    expect(failure).toBeInstanceOf(RequestError);
+    expect(failure).toMatchObject({
+      code: RUN_STOPPED_CODE,
+      data: { runId: 'run-9', status: 'STOPPED', stopReason: 'budget', code: BUDGET_EXHAUSTED_CODE, budget: { dimension, cause: 'limit', spent: 500_000_000, limit: 500_000_000 } },
+    });
+    expect((failure as Error).message).toContain(`run run-9 stopped by the ${word}`);
+  });
+
+  it('says in the failure why the money ran out and how much was used', () => {
+    expect((failureOf(stoppedBy('cost', 'unpriced')) as Error).message).toBe('run run-9 stopped by the money limit: a model call has no price, so its cost cannot be counted (0.5 USD of 0.5 USD used or reserved)');
+  });
+});
 
 describe('stopReasonOf', () => {
   it.each([

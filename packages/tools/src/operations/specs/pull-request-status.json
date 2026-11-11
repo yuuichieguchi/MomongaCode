@@ -8,7 +8,10 @@
   "approval": "rule",
   "input": {
     "type": "object",
-    "properties": { "number": { "type": "integer", "minimum": 1, "description": "The pull request number" } },
+    "properties": {
+      "number": { "type": "integer", "minimum": 1, "description": "The pull request number" },
+      "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote whose forge is asked; origin when left out" }
+    },
     "required": ["number"],
     "additionalProperties": false
   },

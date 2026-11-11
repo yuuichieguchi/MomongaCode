@@ -19,14 +19,14 @@ describe('sandbox setting', () => {
 
   it('defaults to the platform sandbox for user settings', async () => {
     const tree = makeTree();
-    const result = await loadUserSettings({ home: tree.home });
+    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     expect(result.settings.sandbox).toBe(defaultSandboxSetting());
   });
 
   it('resolves none from user settings', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { sandbox: 'none' });
-    const result = await loadUserSettings({ home: tree.home });
+    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     expect(result.settings.sandbox).toBe('none');
     expect(result.warnings).toEqual([]);
   });
@@ -34,7 +34,7 @@ describe('sandbox setting', () => {
   it('rejects an unknown sandbox value in user settings naming the pointer', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { sandbox: 'docker' });
-    const failure = loadUserSettings({ home: tree.home });
+    const failure = loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow('/sandbox');
   });
