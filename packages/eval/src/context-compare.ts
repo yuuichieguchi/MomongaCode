@@ -1,4 +1,4 @@
-import { escapeTerminalLine, modelKindOf } from '@momonga/protocol';
+import { WORDS, escapeTerminalLine, modelKindOf } from '@momonga/protocol';
 import { MINIMUM_PAIRS, pairedBootstrap, pairedRatioBootstrap } from './bootstrap.ts';
 import type { ClusterPair } from './bootstrap.ts';
 import type { BootstrapInterval, Cluster } from './bootstrap.ts';
@@ -150,17 +150,17 @@ const identitiesOf = (report: Answering): string => report.answeredBy.map(answer
 export const answerProblemsOf = (label: string, report: Answering): string[] => {
   const kind = modelKindOf(report.answeredBy, report.unrecordedAnswers);
   const named = (answers: 'script' | 'unknown'): string => report.answeredBy.filter((answerer) => answerer.answers === answers).map((answerer) => answerer.target).join(', ');
-  if (kind === 'fake') return [`the ${label} was answered by scripted target(s) ${named('script')}, and a scripted model proves only that the machinery works`];
+  if (kind === 'fake') return [`the ${label} was answered by scripted ${WORDS.model}(s) ${named('script')}, and a scripted ${WORDS.model} proves only that the machinery works`];
   const problems: string[] = [];
   for (const answerer of report.answeredBy.filter((entry) => entry.answers === 'unknown')) {
     problems.push(
       answerer.adapter === undefined
-        ? `the ${label} holds a paid answer that recorded no answering target, so what answered it is unknown`
-        : `the ${label} was answered by target ${answerer.target}, which does not declare what answers: set answers to model or script on it`,
+        ? `the ${label} holds a paid answer that recorded no answering ${WORDS.model}, so what answered it is unknown`
+        : `the ${label} was answered by the ${WORDS.model} ${answerer.target}, which does not declare what answers: set answers to model or script on it`,
     );
   }
-  if (report.unrecordedAnswers > 0) problems.push(`${report.unrecordedAnswers} transcript(s) of the ${label} record no answering target, so what answered is unknown`);
-  if (kind === 'unknown' && problems.length === 0) problems.push(`the ${label} records no answering target, so what answered is unknown`);
+  if (report.unrecordedAnswers > 0) problems.push(`${report.unrecordedAnswers} transcript(s) of the ${label} record no answering ${WORDS.model}, so what answered is unknown`);
+  if (kind === 'unknown' && problems.length === 0) problems.push(`the ${label} records no answering ${WORDS.model}, so what answered is unknown`);
   return problems;
 };
 
@@ -176,7 +176,7 @@ export const answererTerm = (baseline: Answering, candidate: Answering, requireM
     passed: problems.length === 0,
     detail:
       problems.length === 0
-        ? `baseline and candidate were both answered by ${before}${requireModel ? ', declared as models by the pinned provenance of the targets' : ''}`
+        ? `baseline and candidate were both answered by ${before}${requireModel ? ', declared as models by their pinned provenance' : ''}`
         : problems.join('; '),
   };
 };

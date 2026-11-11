@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AUTHORIZATION_WAIT_MS } from '@momonga/foundation';
+import { AUTHORIZATION_WAIT_MS, systemTiming } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
 import { authLogin } from '../src/commands/auth.ts';
@@ -68,7 +68,7 @@ const startSignIn = () => {
   const outcome = signIn(
     {
       plan: fake.plan,
-      startListener: loopbackSignInListener(new AbortController().signal),
+      startListener: loopbackSignInListener(systemTiming, new AbortController().signal),
       authorize: async () => undefined,
       pasted: (_state, signal) => waitForAbort(signal),
       signal: new AbortController().signal,
@@ -144,7 +144,7 @@ const startLogin = () => {
     stdout,
     stderr,
     plan: fake.plan,
-    startListener: loopbackSignInListener(new AbortController().signal),
+    startListener: loopbackSignInListener(systemTiming, new AbortController().signal),
     openUrl: () => Promise.resolve(),
     sandbox: async () => 'seatbelt' as const,
     signal: new AbortController().signal,
@@ -202,7 +202,7 @@ describe('the TUI prints the outcome of the wait as an info line (O-R5-6 J 3, J 
 
   it('prints the listener-failed text as an info line, with the attempt cancelled exactly once', async () => {
     const signInTimers = createFakeTimers(createFakeClock(START_MS));
-    const { app, backend } = await tuiWaitingScreen({ startListener: loopbackSignInListener(new AbortController().signal), signInTimers });
+    const { app, backend } = await tuiWaitingScreen({ startListener: loopbackSignInListener(systemTiming, new AbortController().signal), signInTimers });
     await untilListenerWaits();
     failWaitingListener(new Error('socket reset'));
     await untilOutput(app, LISTENER_FAILED);

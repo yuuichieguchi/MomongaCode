@@ -1,57 +1,48 @@
 export { computeBackoff, parseRetryAfter } from './backoff.ts';
 export { TRANSIENT_REQUEST_STATUSES, isRetryableHttp, parseShouldRetry } from './http-retry.ts';
-export type { BackoffOptions } from './backoff.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
 export { ruleFingerprint } from './rule-fingerprint.ts';
 export { capText, sanitizeServerText } from './untrusted-text.ts';
 export { CircuitBreaker } from './circuit-breaker.ts';
-export type { CircuitBreakerOptions, CircuitState } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
-export type { CodeOrigin } from './code-digest.ts';
-export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
-export type { DeadlineTiming } from './deadline.ts';
 export { TOO_DEEP_PLACEHOLDER, isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
-export type { BoundedJson } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
-export type { JsonReplyInput, JsonReplyPath, JsonReplyRead } from './json-reply.ts';
+export type { JsonReplyInput } from './json-reply.ts';
 export { MAX_REDACTED_CHARS, MIN_CREDENTIAL_CHARS, REDACTED_MARKER, createRedactor } from './redaction.ts';
 export type { Redactor, RedactorOptions } from './redaction.ts';
 export { safeSlice } from './text-slice.ts';
 export { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, cutToChars, keepingHeadAndTail } from './history-output.ts';
 export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from './output-marker.ts';
 export { highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, openDatabaseWithIdentity, readTx } from './sqlite.ts';
-export type { DatabaseFileIdentity, OpenedDatabase } from './sqlite.ts';
-export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
+export type { DatabaseFileIdentity, Migration } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
-export { createBrowserOpener, openCommandFor } from './open-browser.ts';
-export type { BrowserOpenerPorts, LaunchProgram, OpenCommand, OpenUrl, ProgramEnd } from './open-browser.ts';
+export { URL_OPENER_PROGRAMS, createBrowserOpener, openCommandFor, urlOpenerFileFor } from './open-browser.ts';
+export type { LaunchProgram, OpenUrl, ProgramEnd } from './open-browser.ts';
 export { findProgramOnPath } from './program-search.ts';
 export { FILE_CANDIDATE_LIMIT, directoryEntriesOf } from './file-candidates.ts';
 export type { FileCandidates } from './file-candidates.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './uds.ts';
-export type { SocketResolver, UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
+export type { SocketResolver, UdsClient, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
 export { CALL_ID_PREFIX, newCallId } from './call-id.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
-export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
+export type { FileLockPorts } from './file-lock.ts';
 export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
-export type { CredentialEntry, CredentialKeyListing, CredentialStore, FileCredentialStoreOptions, ListableCredentialStore, ScopedOperations } from './credential-store.ts';
+export type { CredentialEntry, CredentialStore, ListableCredentialStore } from './credential-store.ts';
 export {
-  CREDENTIAL_ENVELOPE_FORMAT,
   CREDENTIAL_KEY_CREATION_STEPS,
   CREDENTIAL_KEY_LOCK_NAME,
   CREDENTIAL_KEY_MARKER_FILE,
   CREDENTIAL_KEY_OS_POINTS,
   CREDENTIAL_KEY_PREFIX,
-  CREDENTIAL_STORE_ERROR_CODES,
   CredentialStoreError,
   createEncryptedCredentialStore,
 } from './encrypted-credential-store.ts';
-export type { CredentialSecretStore, CredentialStoreErrorCode, EncryptedCredentialStoreOptions } from './encrypted-credential-store.ts';
+export type { CredentialSecretStore } from './encrypted-credential-store.ts';
 export { AUTHORIZATION_WAIT_MS } from './authorization-wait.ts';
 export { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 export type { AuthorizationFailure } from './oauth-authorization-error.ts';
@@ -61,35 +52,28 @@ export { startLoopbackRedirect } from './loopback-redirect.ts';
 export { parseJwt, verifyRs256 } from './oidc.ts';
 export type { ParsedJwt } from './oidc.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
-export { ATOMIC_WRITE_STEP_ACTIONS, ClaimedDescriptorUnwritableError, ClaimedEntryReplacedError, atomicWriteSteps, isAtomicWriteTemporary, syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
+export { ATOMIC_WRITE_STEP_ACTIONS, atomicWriteSteps, isAtomicWriteTemporary, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
 export type {
   AtomicWriteStep,
-  DescriptorWriter,
-  DescriptorWriterSync,
   AtomicWriteFileHandle,
   AtomicWriteFileSystem,
   AtomicWriteFileSystemSync,
-  AtomicWriteOptions,
-  AtomicWriteOptionsSync,
-  CreateOutcome,
   FileContent,
   PublishMode,
 } from './atomic-file.ts';
 export { sleep } from './timing.ts';
-export type { SleepOutcome, Timing } from './timing.ts';
+export type { Timing } from './timing.ts';
 export { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
-export type { WaitOutcome, WaitUntilOptions } from './wait-until.ts';
 export type { Random } from './random.ts';
-export { systemTiming } from './system-timing.ts';
+export { systemClock, systemTiming, systemWaitTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
-export { nodeDescriptorWriter, nodeDescriptorWriterSync, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
-export type { AccessCheck, DirectoryReader, FileSystem, FileSystemSync, RemoveOptions } from './node-file-system.ts';
-export { GroupNotStoppedError, forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
-export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
+export { nodeDescriptorWriter, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
+export type { FileSystem, FileSystemSync } from './node-file-system.ts';
+export { forceKillGroup, groupAlive, groupTerminationBoundMs, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
+export type { TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
-export type { GroupMember, GroupMembersReader, MemberStat } from './platform/group-members.ts';
+export type { GroupMembersReader } from './platform/group-members.ts';
 export {
-  HOLDER_READ_MAX_BYTES,
   LOCK_FD_ENV,
   LOCK_NONCE_ENV,
   LockAdoptionError,
@@ -100,61 +84,47 @@ export {
   inspectProcessLock,
 } from './process-lock.ts';
 export type {
-  AcquireProcessLockOptions,
-  DescribeHolder,
   InspectProcessLockOptions,
   LockHandoff,
   LockHandoffClaim,
   ProcessLock,
   ProcessLockInspection,
-  ProcessLockOptions,
 } from './process-lock.ts';
-export { bsdFileLock, createFileLock, nodeFileLockOps, resolveKernelLock, writeHolderOrRelease } from './platform/kernel-lock.ts';
+export { bsdFileLock, createFileLock, nodeFileLockOps, resolveKernelLock } from './platform/kernel-lock.ts';
 export { createKernelLockMechanism, hostKernelLock } from './platform/host-kernel-lock.ts';
-export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, SyncClaimUnsupportedError, claimNewEntry, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf, sidecarSuffixOf } from './platform/lock-form.ts';
-export type { EntryKind, LockForm } from './platform/lock-form.ts';
+export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, claimNewEntry, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf } from './platform/lock-form.ts';
+export type { LockForm } from './platform/lock-form.ts';
 export { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_OWNER_FIELD, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverLeftovers, handoverRecordOwner } from './handover-leftovers.ts';
-export type { ProcessProbe } from './handover-leftovers.ts';
-export { nodeLeftoverFiles, sweepLeftovers } from './leftover-sweep.ts';
-export type { LeftoverDirectory, LeftoverFiles, LeftoverSweep, SweepLeftoversOptions } from './leftover-sweep.ts';
+export { sweepLeftovers } from './leftover-sweep.ts';
+export type { LeftoverDirectory, LeftoverFiles } from './leftover-sweep.ts';
 export { createOwnedDirectory, createOwnedDirectorySync } from './owned-directory.ts';
 export { createLockedEntry } from './locked-entry.ts';
 export type { LockedEntry, LockedEntryFiles } from './locked-entry.ts';
-export type { OwnedDirectory, OwnedDirectoryOptions, OwnedDirectorySync } from './owned-directory.ts';
-export { StagingLinkError, createLockCapability, hostLockCapability } from './platform/lock-capability.ts';
-export type { LockCapability, LockCapabilityOptions, LockCapabilityProbe, StagingFiles } from './platform/lock-capability.ts';
+export type { OwnedDirectory, OwnedDirectorySync } from './owned-directory.ts';
+export { createLockCapability } from './platform/lock-capability.ts';
+export type { LockCapability, LockCapabilityProbe } from './platform/lock-capability.ts';
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
-export { MARKER_MODES, MARKER_PHASES, MARKER_STATES } from './marker-state.ts';
-export type { MarkerMode, MarkerPhase, MarkerState } from './marker-state.ts';
+export { MARKER_STATES } from './marker-state.ts';
+export type { MarkerMode, MarkerState } from './marker-state.ts';
 export { UNNAMED_REASON, commandMayStillRun, refusedReason } from './command-liveness.ts';
-export type { CommandLiveness, CommandLivenessEvidence, GroupLiveness, HolderListing } from './command-liveness.ts';
-export { RETRY_KINDS, claimRetry, markIgnored, nodeRecordFiles, parseAttemptRecord, groupRecordNotice, groupRecordOutcome, readAttemptRecord, readMarkerGroup, readMarkerGroupName, recordMarkerGroup, unreadableMarkerNotice } from './platform/marker-record.ts';
-export type { AttemptRecord, ClaimOutcome as RetryClaim, RecordFiles, RetryKind } from './platform/marker-record.ts';
+export type { CommandLiveness, GroupLiveness, HolderListing } from './command-liveness.ts';
+export { RETRY_KINDS, claimRetry, markIgnored, groupRecordOutcome, readAttemptRecord, readMarkerGroup, recordMarkerGroup, unreadableMarkerNotice } from './platform/marker-record.ts';
+export type { AttemptRecord, RetryKind } from './platform/marker-record.ts';
 export { closeMarkerDescriptor, createMarker } from './platform/marker-file.ts';
-export type { CreateMarkerOptions, MarkerHandle } from './platform/marker-file.ts';
+export type { MarkerHandle } from './platform/marker-file.ts';
 export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, probeRemovesOpenFiles, sqliteFileLock } from './platform/sqlite-lock.ts';
-export type { OpenLockDatabase, SqliteLockOps, UnlinkOpenProbePorts } from './platform/sqlite-lock.ts';
+export type { SqliteLockOps, UnlinkOpenProbePorts } from './platform/sqlite-lock.ts';
 export { removeFilesThenRelease } from './platform/holder-file.ts';
 export type { LockFileIdentity } from './platform/file-identity.ts';
-export { CLAIM_POLL_MS, claimWithin } from './platform/claim-within.ts';
-export type { ClaimWithinOutcome, ClaimWithinRequest } from './platform/claim-within.ts';
+export { claimWithin } from './platform/claim-within.ts';
 export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
-export type { ProcessIdentity } from './process-identity.ts';
 export {
   FIRST_GENERATION,
-  GENERATION_JOBS_DIRECTORY,
-  GENERATION_MEMBERS,
-  GENERATION_ROLES,
-  GENERATION_TARGETS_DIRECTORY,
   GenerationDirectoryMissingError,
   MARKER_KINDS,
   MomongaDirectoryError,
-  START_RECORD_FILE,
-  STARTING_LOCK_FILE,
   SessionTmpDirError,
-  adapterSocketPath,
-  createGenerationDirs,
   ensureGenerationDirs,
   ensureMomongaDirs,
   ensureSessionTmpDir,
@@ -174,66 +144,51 @@ export {
   rotatedLogPath,
   scopeToGeneration,
 } from './momonga-paths.ts';
-export type { GenerationLayout, GenerationMember, GenerationProcessRole, GenerationSockets, ManagedInstance, ManagedInstancePaths, MarkerKind, RoleEndpoint } from './momonga-paths.ts';
+export type { GenerationLayout, GenerationProcessRole, ManagedInstance, ManagedInstancePaths, MarkerKind, RoleEndpoint } from './momonga-paths.ts';
 export { GENERATION_ROLE_UNREADABLE_EVENT, createRolePort, fixedRolePort, readGenerationRole, roleOfGeneration } from './generation-role.ts';
-export type { GenerationRole, RolePort, RolePortOptions, UnreadableGenerationRole } from './generation-role.ts';
-export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, GenerationRetiredError, MOVED_CODE } from './generation-codes.ts';
-export { START_RECORD_MODE, formatStartRecord, generationIsLive, listGenerationNumbers, listGenerations, lockReadsHeld, parseStartRecord, probeGenerationLocks, readStartRecord } from './generation-registry.ts';
-export type { GenerationLocks, ListGenerationsOptions, ListedGeneration, LockProbeOptions, StartRecord, StartRecordRead } from './generation-registry.ts';
+export type { GenerationRole, RolePort } from './generation-role.ts';
+export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, MOVED_CODE } from './generation-codes.ts';
+export { formatStartRecord, generationIsLive, listGenerationNumbers, listGenerations, lockReadsHeld, probeGenerationLocks, readStartRecord } from './generation-registry.ts';
 export {
-  ABANDON_REASONS,
   ABANDON_REASON_TEXTS,
   CurrentGenerationUnreadableError,
-  GENERATION_COUNTER_READ_BYTES,
   GenerationCounterError,
   GenerationPrepareError,
   beginGenerationStart,
   claimGeneration,
   decideGenerationStart,
   nodeGenerationStartFiles,
-  parseGenerationCounter,
-  readGenerationCounter,
   starterOutcome,
 } from './generation-start.ts';
 export type {
   AbandonReason,
-  BeginGenerationStartOptions,
-  ClaimGenerationOptions,
-  GenerationClaim,
-  GenerationCounterReason,
   GenerationRef,
   GenerationStartFiles,
   HeldStart,
-  StartDecision,
   StartOutcome,
   StartTrigger,
-  StartView,
-  StarterOutcome,
-  StarterView,
 } from './generation-start.ts';
 export {
   GENERATION_MARKER_LABELS,
-  GENERATION_MARKER_REAP_ORDER,
   GENERATION_REAPER_OCCASION,
   GENERATION_REAPER_STEPS,
   GENERATION_REAPER_STEP_ACTIONS,
   nodeGenerationReaperFiles,
   reapDeadGenerations,
 } from './generation-reaper.ts';
-export type { GenerationMarkerReap, GenerationReaperFiles, GenerationReaperOptions, GenerationReaperResult, GenerationReaperStep } from './generation-reaper.ts';
-export { compareVersions, isAtLeastVersion, orderVersions, tryParseVersion } from './version-order.ts';
-export type { Version, VersionOrder } from './version-order.ts';
-export { PROBE_KEY_COMPONENT_LABELS, createBinaryHashCache, createHeldHostReadings, createHostExec, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
-export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading, ProbeKeyReadings, ReadProbeKeyComponentsRequest } from './host-identity.ts';
-export { CurrentGenerationMalformedError, NoCurrentGenerationError, NoGenerationOfVersionError, currentSocketResolver, formatCurrentGeneration, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor, versionSocketResolver } from './current-generation.ts';
-export type { CurrentGeneration, PublishOptions, PublishOutcome, ResolvedGeneration } from './current-generation.ts';
-export type { MomongaPaths, SessionScratch, SessionScratchClaim } from './momonga-paths.ts';
+export type { GenerationMarkerReap, GenerationReaperFiles, GenerationReaperOptions, GenerationReaperResult } from './generation-reaper.ts';
+export { compareVersions, orderVersions, tryParseVersion } from './version-order.ts';
+export type { Version } from './version-order.ts';
+export { createBinaryHashCache, createHeldHostReadings, createHostExec, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
+export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading } from './host-identity.ts';
+export { NoCurrentGenerationError, currentSocketResolver, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor, versionSocketResolver } from './current-generation.ts';
+export type { CurrentGeneration } from './current-generation.ts';
+export type { MomongaPaths, SessionScratch } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
 export { OperationLimitError, operationLimit, settledOrAborted } from './operation-limit.ts';
 export type { LimitTiming, OperationLimit } from './operation-limit.ts';
 export { SecretStoreAbsentError, SecretStoreAnswerError, StoreCallEndedError, endedStoreCall, limitEndOf, limitEndText } from './secret-store-failures.ts';
-export type { LimitEnd, NamedSecretCall, SecretAction, SecretCall, SecretStoreAbsence } from './secret-store-failures.ts';
-export { createSecretKeyFile, secretKeyFile } from './secret-key-file.ts';
+export { secretKeyFile } from './secret-key-file.ts';
 export {
   KEYCHAIN_SERVICE,
   SECRET_NAME_PATTERN,
@@ -242,7 +197,6 @@ export {
   SecretUnavailableError,
   SecretWriteError,
   createKeychainSecretStore,
-  keychainWriteCommand,
   credentialWriteScript,
   createPlatformSecretStore,
   secretStoreEnvFor,
@@ -257,21 +211,17 @@ export {
   createCredentialManagerStore,
   credentialReadScript,
   SECRET_TOOL_BINARY,
-  nodeSecretStoreFiles,
 } from './secret-store.ts';
-export type { FileKind, Readiness, ReadinessReading, SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore, SecretStoreFiles } from './secret-store.ts';
-export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
+export type { SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export { isAcceptableAddress, isLoopbackAddress } from './global-address.ts';
-export type { AddressAllowance } from './global-address.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
-export type { TransportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
 export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
 export { startSharedCall } from './shared-call.ts';
 export type { SharedCall } from './shared-call.ts';
-export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, openOutboundTunnel, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError, readSystemCertificatesInWorker, trustFailureText } from './outbound.ts';
-export type { InstallTrustOptions, OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, OutboundPlan, OutboundTunnelOptions, OutboundTunnelTarget, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
-export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
+export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, openOutboundTunnel, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError, trustFailureText } from './outbound.ts';
+export type { OutboundFailure, OutboundFetch, OutboundNetwork, OutboundOptions, OutboundPlan, TrustReport } from './outbound.ts';
+export type { NetworkConfig, NetworkEnvName, NetworkSource, Route, SourcedValue } from './network-route.ts';
 export {
   EXIT_ALREADY_RUNNING,
   EXIT_CODES,
@@ -292,24 +242,19 @@ export {
   ENTRY_HARD_EXIT_MARGIN_MS,
   LOCK_FD,
   DEFAULT_STOP_VALUES,
-  MARKER_REAP_GRACE_WINDOWS,
   MAXIMUM_STOP_VALUES,
   ABORT_SETTLE_LIMIT_MS,
   SANDBOX_KILL_GRACE_MS,
-  GROUP_POLL_INTERVAL_MS,
   mcpPoolCloseBoundMs,
-  mcpPoolsStepBoundMs,
   runtimeTeardownBudgetMs,
   runtimeAbortStopBudgetMs,
   orphanReapGraceMs,
-  requirementOfStop,
   STARTUP_TIMEOUT_MS,
   startDeadlineSignal,
   SHUTDOWN_SETTING_LIMITS,
   MCP_CONNECT_TIMEOUT_LIMITS,
   mcpConnectTimeoutProblem,
   STOP_MESSAGE_MAX_BYTES,
-  STOP_MESSAGE_OVERLONG_REASON,
   STOP_VALUE_NAMES,
   STOP_WAIT_WHEN_UNKNOWN_MS,
   daemonStopBoundMs,
@@ -326,8 +271,6 @@ export {
   MINIMAL_CHILD_ENV_LC_PREFIX,
   MINIMAL_CHILD_ENV_NAMES,
   MINIMAL_CHILD_PATH,
-  PLATFORM_CHILD_ENV_NAMES,
-  minimalChildPath,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
@@ -341,9 +284,6 @@ export {
   SHUTDOWN_DRAIN_BOUND_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
-  LOG_ITEM_MAX_CHARS,
-  LOG_LIST_MAX_ITEMS,
-  RESERVED_LOG_KEYS,
   gatewayStopBudgetMs,
   killedChildSettleMs,
   runtimeStopBudgetMs,
@@ -357,35 +297,35 @@ export {
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';
-export type { EventPayload, JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, LogValue, ReadyFields, ReservedLogKey, StopMessage, StopValueName, StopValues, StopValuesParse, TextStream } from './process-contract.ts';
-export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
-export type { FindHoldersOptions, MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
+export type { EventPayload, JsonLogger, LogFields, LogLevel, LogValue, ReadyFields, ReservedLogKey, StopValueName, StopValues, TextStream } from './process-contract.ts';
+export { MarkerReapError, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';
-export type { LiveIdentities, LiveIdentitiesPorts } from './platform/live-identities.ts';
 export { createUninspectableRegistry } from './uninspectable-registry.ts';
-export type { UninspectableRegistry, UninspectableRegistryPorts } from './uninspectable-registry.ts';
+export type { UninspectableRegistry } from './uninspectable-registry.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
-export { PIPE_NAME_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfPlatform, endpointFormsOfSocket, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
+export type { ProcessPort } from './process-port.ts';
+export { HELPER_COMMAND, helperCommandLine } from './executable-helper.ts';
+export type { ExecutableHelpers, HelperHost } from './executable-helper.ts';
+export { SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfPlatform, endpointFormsOfSocket, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, comparableFromParts, containsByComponents, createPathResolver, createSyncPathResolver, hostPaths, setCaseSensitivityProbe, walkPath } from './path-compare.ts';
 export { displayToolPathSync, syncPaths } from './sync-paths.ts';
 export { answeredLater, answeredNow, askedPaths } from './path-asking.ts';
 export type { PathAsking } from './path-asking.ts';
-export type { EndpointForm, SocketBind, SocketBindRefusal } from './socket-path.ts';
-export { createAsyncCapabilityProbe, createCapabilityProbe, unmeasuredBecause } from './capability-probe.ts';
+export type { EndpointForm } from './socket-path.ts';
+export { createCapabilityProbe } from './capability-probe.ts';
 export type { CapabilityResult } from './capability-probe.ts';
-export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, LocatedParts, PathFileSystem, PathParts, PathResolver, StepRead, SyncPathFileSystem, SyncPathResolver, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep, WalkStepResult } from './path-compare.ts';
+export type { LocatedParts, PathFileSystem, PathResolver, StepRead, SyncPathResolver, WalkEntry } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
-export { PRIVATE_MODE, PrivateTreeError, assertPrivateRegularFile, directoryFlag, ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
-export type { OwnerProblem, PrivacyKind } from './platform/privacy.ts';
+export { modeIsPrivate } from './platform/privacy.ts';
 export { BASE_ENTRY_FLAGS, CHILD_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
-export type { FlagKind, FlagSpec, ParsedFlags } from './entry-flags.ts';
+export type { FlagSpec } from './entry-flags.ts';
 export { watchLifeline } from './lifeline.ts';
-export type { LifelineHandlers, LifelineWatch } from './lifeline.ts';
 export { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
-export type { RotatingLogFile, RotatingLogFileOptions } from './rotating-log.ts';
+export type { RotatingLogFile } from './rotating-log.ts';
 export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';
-export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, LogTarget } from './daemon-entry.ts';
+export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
 export { everyAsync, filterAsync, findAsync, mapAsync, someAsync } from './sequential.ts';
 export { displayToolPath, resolveToolPath } from './tool-path.ts';
@@ -395,37 +335,30 @@ export type { GitlinkRead } from './git-index.ts';
 export { programKeysOfConfig } from './git-config-programs.ts';
 export type { ConfigPrograms } from './git-config-programs.ts';
 export { EMPTY_PROTECTED_SET, GIT_DIRECTORY_ENTRIES, MAX_POINTER_FILE_BYTES, WORKSPACE_CONTROL_NAMES, commondirTarget, defaultProtectedPaths, gitFileTarget, isProtectedWrite, protectedSetFor } from './protected-set.ts';
-export type { EntryRead, GitEntryReader, GitPointerIssue, PlaceholderForm, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
-export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseExceptionPattern, parseFilePattern, testFileMatcher } from './file-pattern.ts';
-export type { Expression, FileMatcher, FilePattern, FilePatternContext, GlobSegment, MatcherForm } from './file-pattern.ts';
-export { HOST_FLAVOUR, flavourOf, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
+export type { EntryRead, PlaceholderForm, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
+export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseFilePattern, testFileMatcher } from './file-pattern.ts';
+export type { Expression, FileMatcher, FilePatternContext } from './file-pattern.ts';
+export { HOST_FLAVOUR, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
 export type { PathFlavour } from './path-flavour.ts';
-export { DEFAULT_SANDBOX_NETWORK, NETWORK_SCOPE_KINDS, NO_NETWORK, OPEN_NETWORK, SANDBOX_NETWORK_SETTINGS, backendNetworkScope, describeNetworkScope, enforcedNetworkScope, formatHostEntry, hostEntryCovers, hostEntryProblem, meetNetworkScopes, networkScopeOfRequest, networkScopeWithin, normalizedHosts, parseHostEntry } from './network-scope.ts';
+export { DEFAULT_SANDBOX_NETWORK, NETWORK_SCOPE_KINDS, NO_NETWORK, OPEN_NETWORK, SANDBOX_NETWORK_SETTINGS, describeNetworkScope, enforcedNetworkScope, formatHostEntry, hostEntryCovers, hostEntryProblem, meetNetworkScopes, networkScopeOfRequest, networkScopeWithin, normalizedHosts, parseHostEntry } from './network-scope.ts';
 export type { HostEntry, NetworkRequest, NetworkScope, NetworkScopeKind, SandboxNetworkSetting } from './network-scope.ts';
 export type { RuleEnforcement } from './file-rules.ts';
 export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleBlockingForm, fileRuleFingerprint } from './file-rules.ts';
-export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
+export type { FileRuleAccess, FileRuleEntry, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
 export { nodeCommandRunner } from './platform/command-runner.ts';
 export { discoverGitConfigFiles } from './git-config-files.ts';
-export type { GitConfigDiscovery } from './git-config-files.ts';
 export type { CommandOptions, CommandResult, CommandRunner } from './platform/command-runner.ts';
 export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, probeFailed, valueOrThrow } from './platform/inspector-types.ts';
-export type { MarkerStateOptions, ProbeCause, ProbeEvidence, ProbeFailure, ProbeOptions, ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
-export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts, hostProcessInspector } from './platform/process-inspector.ts';
-export type { InspectorPorts } from './platform/process-inspector.ts';
-export { JOB_GROUP_SIGNALS, POSIX_GROUP_SIGNALS, createAsyncSignalSender, createJobGroupPort, createPosixGroupPort, createProcessGroupPort, groupPortOf, groupSignalsOf, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';
-export { GroupContainmentError, createKeptGroupControl, hostKeptGroups } from './platform/windows-kept-groups.ts';
+export type { ProbeOptions, ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
+export { createProcessInspector, defaultProcessInspector, hostInspectorPorts, hostProcessInspector } from './platform/process-inspector.ts';
+export { createJobGroupPort, createPosixGroupPort, createProcessGroupPort, groupPortOf, groupSignalsOf, hostProcessGroupPort } from './platform/group-port.ts';
+export { GroupContainmentError, createKeptGroupControl } from './platform/windows-kept-groups.ts';
 export { launchApart, launchGroupLeader } from './platform/group-launch.ts';
-export type { ApartOptions, GroupLaunch, GroupLaunchMarker, GroupLaunchRequest, LaunchSlot, LeaderExit } from './platform/group-launch.ts';
-export type { KeptExit, KeptGroupControl, KeptOpenRequest, KeptOpening, KeptProcess } from './platform/windows-kept-groups.ts';
+export type { GroupLaunch, GroupLaunchMarker } from './platform/group-launch.ts';
 export { canStillRun } from './platform/run-state.ts';
-export type { GroupReading, GroupStatesReader } from './platform/run-state.ts';
-export type { AsyncSignalSender, GroupIdentity, GroupKeeper, GroupNames, GroupSignals, PosixGroupHost, ProcessGroupPort } from './platform/group-port.ts';
-export { deadlineSignal, hostProbeTiming, operationSignal } from './platform/probe-timing.ts';
-export type { ProbeTiming } from './platform/probe-timing.ts';
-export { nodeProcFs } from './platform/procfs.ts';
+export type { ProcessGroupPort } from './platform/group-port.ts';
+export { operationSignal } from './platform/probe-timing.ts';
 export type { FileIdentity, ProcFs } from './platform/procfs.ts';
-export type { PlatformDirectoryPorts } from './momonga-paths.ts';
 export { parseChecksumListing } from './checksum-listing.ts';
 export {
   RELEASE_CHECKSUMS_ASSET,
@@ -438,52 +371,36 @@ export {
 } from './release-signature.ts';
 export { RELEASE_ASSETS, releaseTargetOf } from './release-assets.ts';
 export type { ReleaseTargetName } from './release-assets.ts';
-export type { PlaceFile, PlacedFile, ReleaseSignatureVerdict, VerifyReleaseSignatureInput } from './release-signature.ts';
+export type { PlaceFile, ReleaseSignatureVerdict } from './release-signature.ts';
 export {
   SchemaValidatorFailure,
   cleanFailureMessage,
   clearUntrustedSchemaCaches,
   compileUntrustedSchema,
-  recordValidateFailure,
   untrustedSchemaCacheSize,
   untrustedSchemaFailure,
 } from './untrusted-schema.ts';
-export type { RemoteDocuments, UntrustedError, UntrustedValidate, UntrustedVerdict } from './untrusted-schema.ts';
+export type { UntrustedError } from './untrusted-schema.ts';
 export { ataEngine } from './untrusted-engine.ts';
-export type { Engine, EngineValidator, EngineVerdict, RawError } from './untrusted-engine.ts';
+export type { Engine } from './untrusted-engine.ts';
 export { createUntrustedBoundary, validateUntrusted } from './validate-untrusted.ts';
-export * from './pattern-check.ts';
+export { PATTERN_CHECK_LIMIT_MS, checkWithPatterns } from './pattern-check.ts';
 export { patternRefusal, renderInstancePath } from './pattern-refusal.ts';
 export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
-export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';
+export type { ProductSchema, ProductValidator } from './product-schema.ts';
 export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
 export { readStopRecord, writeStopRecord } from './stop-record.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
 export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, WINDOWS_KEEPER_STAGED_INFIX, WINDOWS_KEEPER_STAGED_NAME_BYTES, WindowsKeeperDistributionError, checkedWindowsKeeper, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
-export type { WindowsKeeperDistributionPorts, WindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
-export { KEEPER_EXIT_CODES, KEEPER_JOB_PREFIX, KEEPER_NAME_BYTES, KEEPER_NAME_FORM, KEEPER_PIPE_PREFIX, keeperExitName } from './process-contract.ts';
-export type { KeeperExitName } from './process-contract.ts';
-export { KEEPER_FAILURE_REASONS, KEEPER_OWNER_LOSS, KeeperLostError, KeeperProtocolError, attachKept, confirmByAttach, launchKept, openKeptLaunch, stopKeptGroup } from './platform/windows-keeper.ts';
+export type { WindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
+export { KEEPER_EXIT_CODES, KEEPER_JOB_PREFIX } from './process-contract.ts';
+export { KeeperProtocolError, attachKept, confirmByAttach, launchKept, stopKeptGroup } from './platform/windows-keeper.ts';
 export type {
-  CommandExitAnswer,
-  ConfirmByName,
-  KeeperConnection,
-  KeeperFailureReason,
   KeeperHost,
-  KeeperListener,
-  KeeperOwnerLoss,
   KeeperRun,
-  KeptAttach,
   KeptCommand,
   KeptGroup,
   KeptLaunch,
-  KeptLaunchRequest,
-  KeptStopOptions,
-  KeptStopOutcome,
-  MembersAnswer,
-  OpenedLaunch,
-  NameConfirmation,
 } from './platform/windows-keeper.ts';
-export { createNodeKeeperHost, hostKeeperHost, listenForKeeper, provideCheckedWindowsKeeper, provideWindowsKeeper, startDetachedKeeper } from './platform/windows-keeper-host.ts';
-export type { NodeKeeperHostOptions } from './platform/windows-keeper-host.ts';
+export { createNodeKeeperHost, provideCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';

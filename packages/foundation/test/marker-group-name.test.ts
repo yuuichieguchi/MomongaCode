@@ -1,10 +1,11 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { claimRetry, markIgnored, readAttemptRecord, readMarkerGroup, reapMarkedProcesses, reconcileProcessGroup, recordMarkerGroup } from '../src/index.ts';
 import type { MarkerState, ProcessGroupPort, ProcessInspector } from '../src/index.ts';
-import { parseRecordedGroupName, readMarkerGroupName } from '../src/platform/marker-record.ts';
+import { parseRecordedGroupName } from '../src/platform/marker-record.ts';
 import type { GroupNames } from '../src/platform/group-port.ts';
 
 const NAME = 'c4'.repeat(16);
@@ -35,14 +36,14 @@ describe('the marker records the name of a group whose port names its groups', (
     await recordMarkerGroup(marker, PGID, { names: namesOf({ [PGID]: NAME }) });
     expect(fs.readFileSync(marker, 'utf8')).toBe(`r00000\ng0000004321\nj${NAME}\n`);
     expect(await readMarkerGroup(marker)).toBe(PGID);
-    expect(await readMarkerGroupName(marker)).toBe(NAME);
+    expect(parseRecordedGroupName(fs.readFileSync(marker, 'utf8'))).toBe(NAME);
   });
 
   it('writes no name line for a port that names no groups, and for a group the port has no name for', async () => {
     const unnamed = emptyMarker();
     await recordMarkerGroup(unnamed, PGID, { names: namesOf({}) });
     expect(fs.readFileSync(unnamed, 'utf8')).toBe('r00000\ng0000004321\n');
-    expect(await readMarkerGroupName(unnamed)).toBeUndefined();
+    expect(parseRecordedGroupName(fs.readFileSync(unnamed, 'utf8'))).toBeUndefined();
     const posix = emptyMarker();
     await recordMarkerGroup(posix, PGID);
     expect(fs.readFileSync(posix, 'utf8')).toBe('r00000\ng0000004321\n');
@@ -54,7 +55,7 @@ describe('the marker records the name of a group whose port names its groups', (
     await recordMarkerGroup(marker, PGID, { names: namesOf({ [PGID]: NAME }) });
     await claimRetry(marker, 'sweep', { signal: new AbortController().signal });
     await markIgnored(marker, { signal: new AbortController().signal });
-    expect(await readMarkerGroupName(marker)).toBe(NAME);
+    expect(parseRecordedGroupName(fs.readFileSync(marker, 'utf8'))).toBe(NAME);
     expect(await readMarkerGroup(marker)).toBe(PGID);
     expect(await readAttemptRecord(marker)).toEqual({ spent: { guard: true, sweep: true, startup: false, shutdown: false }, ignored: true });
   });
@@ -87,7 +88,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
       },
     };
     let now = 0;
-    const timing = { now: () => now, sleep: async (ms: number) => void (now += ms) };
+    const timing = sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) });
     await reconcileProcessGroup({ pgid: PGID, marker }, { killGraceMs: 10, groupPort: port, timing, inspector, signal: new AbortController().signal });
     expect(order).toEqual([`recall ${PGID} ${NAME}`, `alive ${PGID}`]);
     const unnamed: string[] = [];
@@ -111,7 +112,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
     let now = 0;
     await reconcileProcessGroup(
       { pgid: 9999, marker },
-      { killGraceMs: 10, groupPort: { names, signal: async () => undefined, alive: async () => false }, timing: { now: () => now, sleep: async (ms: number) => void (now += ms) }, inspector, signal: new AbortController().signal },
+      { killGraceMs: 10, groupPort: { names, signal: async () => undefined, alive: async () => false }, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) }), inspector, signal: new AbortController().signal },
     );
     expect(names.recalled).toEqual([]);
   });
@@ -135,7 +136,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
       alive: async () => false,
     };
     let now = 0;
-    const reaped = await reapMarkedProcesses({ marker, killGraceMs: 10, label: 'test', onWarning: () => undefined, groupPort, timing: { now: () => now, sleep: async (ms: number) => void (now += ms) }, inspector });
+    const reaped = await reapMarkedProcesses({ marker, killGraceMs: 10, label: 'test', onWarning: () => undefined, groupPort, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) }), inspector });
     expect(order.slice(0, 2)).toEqual([`recall ${PGID} ${NAME}`, `groups ${PGID}`]);
     expect(reaped).toEqual({ removed: true });
   });

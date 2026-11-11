@@ -1,26 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { KILL_CONFIRM_MS, forceKillGroup, terminateGroup, waitForGroupGone } from '../src/index.ts';
-import type { GroupTiming, ProcessGroupPort } from '../src/index.ts';
+import type { ProcessGroupPort, Timing } from '../src/index.ts';
+import { createFakeClock, createSteppingTiming } from '@momonga/testkit';
 
 const PGID = 4321;
 const GRACE_MS = 300;
 
-type World = { port: ProcessGroupPort; timing: GroupTiming; sent: Array<{ signal: NodeJS.Signals; at: number }>; probes(): number; now(): number };
+type World = { port: ProcessGroupPort; timing: Timing; sent: Array<{ signal: NodeJS.Signals; at: number }>; probes(): number; now(): number };
 
 const worldOf = (signals: ProcessGroupPort['signals'], diesOn: NodeJS.Signals | undefined): World => {
-  let now = 0;
+  const clock = createFakeClock(0);
   let alive = true;
   let probes = 0;
   const sent: World['sent'] = [];
   return {
     sent,
     probes: () => probes,
-    now: () => now,
-    timing: { now: () => now, sleep: async (ms) => void (now += ms) },
+    now: () => clock.now(),
+    timing: createSteppingTiming(clock),
     port: {
       ...(signals === undefined ? {} : { signals }),
       signal: async (_pgid, signal) => {
-        sent.push({ signal, at: now });
+        sent.push({ signal, at: clock.now() });
         if (signal === diesOn) alive = false;
       },
       alive: async () => {
@@ -69,7 +70,6 @@ describe('T-JO-9: the signals a port reports drive the stop procedure', () => {
 
 describe('a port that can push the end of its group is not polled', () => {
   it('waits for the pushed end and probes once before and once after it', async () => {
-    let now = 0;
     let alive = true;
     let probes = 0;
     let pushEnd: () => void = () => undefined;
@@ -83,7 +83,7 @@ describe('a port that can push the end of its group is not polled', () => {
       },
       ended: () => new Promise<void>((resolve) => (pushEnd = resolve)),
     };
-    const timing: GroupTiming = { now: () => now, sleep: (ms) => new Promise<void>(() => void sleeps.push(ms)) };
+    const timing: Timing = { now: () => 0, monotonicMs: () => 0, setTimeout: (_wake, ms) => void sleeps.push(ms), clearTimeout: () => undefined };
     const waited = waitForGroupGone(PGID, 5000, port, timing);
     for (let round = 0; round < 20; round += 1) await Promise.resolve();
     expect(probes).toBe(1);
@@ -92,13 +92,10 @@ describe('a port that can push the end of its group is not polled', () => {
     pushEnd();
     expect(await waited).toBe(true);
     expect(probes).toBe(2);
-    now = 0;
   });
 
   it('gives up at the deadline when no end is pushed, with one sleep to the deadline and no poll', async () => {
-    let now = 0;
     let probes = 0;
-    const sleeps: number[] = [];
     const port: ProcessGroupPort = {
       signals: ['SIGTERM'],
       signal: async () => undefined,
@@ -108,15 +105,9 @@ describe('a port that can push the end of its group is not polled', () => {
       },
       ended: (_pgid, { signal }) => new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true })),
     };
-    const timing: GroupTiming = {
-      now: () => now,
-      sleep: async (ms) => {
-        sleeps.push(ms);
-        now += ms;
-      },
-    };
+    const timing = createSteppingTiming(createFakeClock(0));
     expect(await waitForGroupGone(PGID, 700, port, timing)).toBe(false);
-    expect(sleeps).toEqual([700]);
+    expect(timing.sleeps).toEqual([700]);
     expect(probes).toBe(2);
   });
 });

@@ -10,6 +10,8 @@ const FILE = '/home/u/.momonga/run/handover/session-1.json';
 
 const recordFor = (toVersion: string, text = ''): StreamRecord => ({ format: HANDOVER_FORMAT, fromVersion: '1.2.3', toVersion, session: 'session-1', lastSeq: { 'run-1': 4 }, kind: 'attach', runId: `run-1${text}`, output: 'text', verbose: false });
 
+const KEPT = { kind: 'run', runId: 'run-1' } as const;
+
 type Faults = { write?: Error; replace?: Error; quietAfterSuspend?: boolean };
 
 const setup = (faults: Faults = {}) => {
@@ -39,6 +41,8 @@ const setup = (faults: Faults = {}) => {
     },
   });
   const surface: MoveSurface = {
+    surface: 'cli',
+    kept: () => KEPT,
     recordFile: () => state.file,
     quiet: () => state.quiet,
     snapshot: (toVersion) => {
@@ -74,13 +78,13 @@ const settled = async (): Promise<void> => {
 describe('the texts of section 7 and 16.4', () => {
   it('are the texts of the design', () => {
     expect(restartingText('1.2.4')).toBe('Restarting into momonga v1.2.4. Your session and unsent input are kept.');
-    expect(handoverFailedText({ toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'disk full', session: 'session-1' })).toBe(
-      'Could not restart into v1.2.4 (disk full). This session stays on v1.2.3 and keeps working until that version finishes its tasks. Your tasks keep running; open them with `momonga attach session-1`. Your unsent input is still in the prompt.',
+    expect(handoverFailedText('tui', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'disk full', kept: { kind: 'sessions', sessionIds: ['session-1'] } })).toBe(
+      'Could not restart into v1.2.4 (disk full). This session stays on v1.2.3 and keeps working until that version finishes its runs. Your runs keep going; open them with `momonga --resume session-1`. Your unsent input is still in the prompt.',
     );
     expect(recordTooLargeText({ toVersion: '1.2.4', fromVersion: '1.2.3' })).toBe(
       'Could not restart into v1.2.4: the unsent input and notes are larger than 1 MiB. This session stays on v1.2.3; send or clear the input and it will restart.',
     );
-    expect(restoreRefusedText({ reason: 'the record is not JSON', session: 'session-1' })).toBe('Could not restore the session (the record is not JSON). Your session is kept: run `momonga attach session-1`.');
+    expect(restoreRefusedText({ reason: 'the record is not JSON', kept: { kind: 'unnamed' } })).toBe('Could not restore the session (the record is not JSON). Your work is kept: run `momonga --resume`.');
   });
 });
 
@@ -148,7 +152,7 @@ describe('a move that fails (16.4, M4)', () => {
     const { mover, log, said } = setup({ write: new Error('ENOSPC: no space left on device') });
     await mover.learned('1.2.4');
     expect(log).toEqual(['snapshot', 'suspend', 'say', 'snapshot', 'write', 'resume', 'say']);
-    expect(said.at(-1)).toBe(handoverFailedText({ toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'ENOSPC: no space left on device', session: 'session-1' }));
+    expect(said.at(-1)).toBe(handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'ENOSPC: no space left on device', kept: KEPT }));
     await mover.check();
     await mover.learned('1.2.4');
     expect(log.filter((step) => step === 'write')).toHaveLength(1);
@@ -160,7 +164,7 @@ describe('a move that fails (16.4, M4)', () => {
     const { mover, log, said } = setup({ replace: new Error('execve EACCES') });
     await mover.learned('1.2.4');
     expect(log).toEqual(['snapshot', 'suspend', 'say', 'snapshot', 'write', 'replace', 'remove', 'resume', 'say']);
-    expect(said.at(-1)).toBe(handoverFailedText({ toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'execve EACCES', session: 'session-1' }));
+    expect(said.at(-1)).toBe(handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'execve EACCES', kept: KEPT }));
     await mover.check();
     expect(log.filter((step) => step === 'replace')).toHaveLength(1);
   });
@@ -184,6 +188,6 @@ describe('a move that fails (16.4, M4)', () => {
     mover.refuse('1.2.4', 'the installed program is still v1.2.3');
     await mover.learned('1.2.4');
     expect(log).toEqual(['say']);
-    expect(said).toEqual([handoverFailedText({ toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'the installed program is still v1.2.3', session: 'session-1' })]);
+    expect(said).toEqual([handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'the installed program is still v1.2.3', kept: KEPT })]);
   });
 });

@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { writeFileAtomically } from './atomic-file.ts';
 import { nodeFileSystem } from './node-file-system.ts';
-import { systemRandom } from './system-random.ts';
 import { createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 import type { FileLockPorts } from './file-lock.ts';
 
@@ -71,7 +70,7 @@ const FILE_MODE = 0o600;
 
 export const credentialFileFor = (directory: string, key: string): string => path.join(directory, `${createHash('sha256').update(key).digest('hex')}.json`);
 
-const readOwnerOnly = (file: string): Promise<string | undefined> => nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`);
+const readOwnerOnly = (file: string): Promise<string | undefined> => nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`, AUTH_DOCUMENT_MAX_BYTES);
 
 export type FileCredentialStoreOptions = { ports?: FileLockPorts; lockTimeoutMs?: number };
 
@@ -81,7 +80,7 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
 
   const writeAtomically = async (key: string, value: string): Promise<void> => {
     await nodeFileSystem.mkdirPrivate(directory);
-    await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, credentialFileFor(directory, key), value, { mode: FILE_MODE });
+    await writeFileAtomically(nodeFileSystem, ports.random, credentialFileFor(directory, key), value, { mode: FILE_MODE });
   };
 
   const locked = <T>(key: string, action: () => Promise<T>, signal: AbortSignal): Promise<T> =>

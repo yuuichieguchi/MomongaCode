@@ -2,13 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createUninspectableRegistry, systemRandom, nodeFileSystem } from '@momonga/foundation';
+import { canonicalJson, createUninspectableRegistry, nodeFileSystem, sha256Hex, systemRandom } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, sleepDrivenTiming } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import type { BackgroundJobRegistry } from '@momonga/runtime';
+import { JOB_END_PROBE_MS } from '../../src/process/constants.ts';
 import { createJobOutput } from '../../src/process/job-output.ts';
 import { createMarkerOwners, unsettledKeys } from '@momonga/tools';
 import { jobGenerationOptions } from './job-fixture.ts';
@@ -98,7 +99,7 @@ const setup = async (probes: Parameters<typeof createBackgroundJobs>[0]['probes'
     ...jobGenerationOptions(root),
     markerFiles: createNodeJobMarkerFiles(),
     killGraceMs: 10,
-    reapTiming: { now: () => clock.now(), sleep: async () => undefined },
+    reapTiming: sleepDrivenTiming({ now: () => clock.now(), sleep: async () => undefined }),
     onWarning: (message) => warnings.push(message),
     report: (error) => reports.push(error),
     uninspectable: createUninspectableRegistry({ isAlive: () => true }),
@@ -400,6 +401,119 @@ describe('background jobs', () => {
     expect(events).toMatchObject([{ jobId: 'bash_orphan000000', status: 'unknown' }]);
     await t.jobs.reconcileOrphans();
     expect(t.reaped).toHaveLength(1);
+  });
+});
+
+describe('a job that is still starting is owned by its starter', () => {
+  it('a reconcile that runs between the row insert and the end of the start leaves the job alone, and the start completes', async () => {
+    const nodeMarkerFiles = createNodeJobMarkerFiles();
+    const hook: { duringStart: () => Promise<void> } = { duringStart: async () => undefined };
+    const t = await setup(
+      {},
+      {
+        markerFiles: {
+          create: async <T>(marker: string, use: Parameters<typeof nodeMarkerFiles.create<T>>[1]): Promise<T> => {
+            await hook.duringStart();
+            return nodeMarkerFiles.create(marker, use);
+          },
+          remove: nodeMarkerFiles.remove,
+        },
+      },
+    );
+    const seenDuringStart: (string | undefined)[] = [];
+    hook.duringStart = async () => {
+      seenDuringStart.push(t.store.jobs.listRunning()[0]?.status);
+      await t.jobs.reconcileOrphans();
+    };
+
+    const { jobId } = await t.start('call-1');
+
+    expect(seenDuringStart).toEqual(['running']);
+    expect(t.reaped).toEqual([]);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running', pgid: 4000 });
+    expect(t.jobs.liveCount()).toBe(1);
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited', exitCode: 0 });
+  });
+});
+
+describe('the output file of a job follows its row', () => {
+  it('a file a crash left with no row does not stop the same call from starting after a restart, and the job does not show the old bytes', async () => {
+    const t = await setup();
+    const jobId = `bash_${sha256Hex(canonicalJson(['call-1', 'background'])).slice(0, 12)}`;
+    const leftover = path.join(t.root, 'jobs', `${jobId}.out`);
+    fs.writeFileSync(leftover, 'bytes of the start that crashed\n', { mode: 0o600 });
+    expect(t.store.jobs.get(jobId)).toBeUndefined();
+
+    const started = await t.start('call-1');
+
+    expect(started.jobId).toBe(jobId);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running', outputPath: leftover });
+    expect(fs.readFileSync(leftover, 'utf8')).toBe('');
+    await t.jobs.stopAll();
+  });
+
+  it('a file that a row names is not removed: the start is refused and the file keeps its bytes', async () => {
+    const t = await setup();
+    const jobId = `bash_${sha256Hex(canonicalJson(['call-1', 'background'])).slice(0, 12)}`;
+    const named = path.join(t.root, 'jobs', `${jobId}.out`);
+    fs.writeFileSync(named, 'bytes of another job\n', { mode: 0o600 });
+    t.store.jobs.start({ id: jobId, idemKey: 'n'.repeat(64), sessionId: t.run.sessionId, runId: t.run.id, callId: 'other', command: 'sleep 99', ownerGeneration: 1, outputPath: named });
+
+    await expect(t.start('call-1')).rejects.toThrow('could not start the background job: its output file could not be created (EEXIST)');
+
+    expect(fs.readFileSync(named, 'utf8')).toBe('bytes of another job\n');
+    expect(t.spawned).toEqual([]);
+  });
+});
+
+describe('the check of the processes at the end of a job has its own bound', () => {
+  it('a listing that never answers is ended at the bound: the job ends as unknown with its exit code and output, the marker is kept and nothing is reported as an error', async () => {
+    let asked: () => void = () => undefined;
+    const listingAsked = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    const probeSignals: AbortSignal[] = [];
+    const t = await setup({
+      findHolders: (_marker, { signal }) => {
+        probeSignals.push(signal);
+        asked();
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+      },
+    });
+    const { jobId } = await t.start('call-1');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    await t.spawned[0]?.stdoutStream.write('some output\n');
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await listingAsked;
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running' });
+
+    t.timers.advance(JOB_END_PROBE_MS - 1);
+    expect(probeSignals[0]?.aborted).toBe(false);
+    t.timers.advance(1);
+    await t.settled(jobId);
+
+    expect(probeSignals[0]?.aborted).toBe(true);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'unknown', exitCode: 0 });
+    const read = await t.jobs.read(t.run.id, jobId, { call: 'read-1' });
+    expect(read.output).toContain('some output');
+    expect(read.output).toContain(`the check of the processes of this job did not end within ${JOB_END_PROBE_MS} ms, so whether one still runs is unknown`);
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(true);
+    expect(t.reports).toEqual([]);
+    expect(t.jobs.liveCount()).toBe(0);
+  });
+
+  it('the bound is the decided 120 s and no timer of it stays after a job that ended in time', async () => {
+    expect(JOB_END_PROBE_MS).toBe(120_000);
+    const t = await setup();
+    const { jobId } = await t.start('call-1');
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited' });
+    expect(t.timers.pending().filter((timer) => timer.delayMs === JOB_END_PROBE_MS)).toEqual([]);
   });
 });
 

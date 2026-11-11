@@ -4,14 +4,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, minimalChildEnv, nodeCommandRunner } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, credentialReadScript, credentialWriteScript, minimalChildEnv, nodeCommandRunner } from '@momonga/foundation';
 import { fakeSecretProgramsBin, productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
 import childProcessDefault, * as childProcessNamespace from '@momonga/testkit/child-process';
 import { exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } from '@momonga/testkit/child-process';
 import { INTERNAL_COMMANDS, MOMONGA_LAUNCHES } from '../packages/cli/src/daemon/launcher.ts';
 import type { MomongaLaunch } from '../packages/cli/src/daemon/launcher.ts';
 import { nodeSpawnDetached } from '../packages/cli/src/node-ports.ts';
-import { secretStoreLaunchRefusal } from './support/child-process-guard.ts';
+import { powershellArgs } from '../packages/foundation/src/platform/windows-scripts.ts';
+import { launchRefusal } from './support/child-process-guard.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
@@ -72,18 +73,87 @@ describe('the worker guard refuses a launch of a real secret store program (i)',
   });
 
   it('decides that /usr/bin/security, by absolute path or by name through a leaking PATH or no PATH, is refused, without launching it', () => {
-    expect(secretStoreLaunchRefusal('execFileSync', ['/usr/bin/security', ['-h'], {}])).toMatch(REAL_PROGRAM);
-    expect(secretStoreLaunchRefusal('spawnSync', ['security', ['-h'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(REAL_PROGRAM);
-    expect(secretStoreLaunchRefusal('spawn', ['security', ['-h'], { env: {} }])).toMatch(REAL_PROGRAM);
-    expect(secretStoreLaunchRefusal('execSync', ['/usr/bin/security -h', {}])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('execFileSync', ['/usr/bin/security', ['-h'], {}])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('spawnSync', ['security', ['-h'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('spawn', ['security', ['-h'], { env: {} }])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('execSync', ['/usr/bin/security -h', {}])).toMatch(REAL_PROGRAM);
   });
 
   it.each(['/bin/sh', 'git', 'sw_vers', process.execPath])('lets the product start %s with MINIMAL_CHILD_PATH', (command) => {
-    expect(secretStoreLaunchRefusal('spawn', [command, [], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
+    expect(launchRefusal('spawn', [command, [], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
   });
 
   it('runs /bin/sh with MINIMAL_CHILD_PATH through the raw module', () => {
     expect(nodeChildProcess.spawnSync('/bin/sh', ['-c', 'true'], { env: { PATH: MINIMAL_CHILD_PATH } }).status).toBe(0);
+  });
+});
+
+describe('the worker guard reads every word a shell or a command-running program would start (i)', () => {
+  const leaking = (d: Decoy): { env: { PATH: string } } => ({ env: { PATH: `${d.dir}:/usr/bin:/bin` } });
+
+  it.each([
+    ['sh -c with the program after a semicolon', (d: Decoy) => nodeChildProcess.spawnSync('sh', ['-c', `true; ${d.program}`])],
+    ['sh -c with the program by name after a semicolon', (d: Decoy) => nodeChildProcess.spawnSync('sh', ['-c', 'true; security -h'], leaking(d))],
+    ['bash -lc', (d: Decoy) => nodeChildProcess.spawnSync('bash', ['-lc', `true && ${d.program}`])],
+    ['env with the program by name', (d: Decoy) => nodeChildProcess.spawnSync('env', ['security'], leaking(d))],
+    ['env with an assignment and the program by path', (d: Decoy) => nodeChildProcess.spawnSync('/usr/bin/env', ['A=1', d.program])],
+    ['a shell string with env', (d: Decoy) => nodeChildProcess.execSync('env security -h', leaking(d))],
+    ['a shell string after a semicolon', (d: Decoy) => execSync(`true; ${d.program}`)],
+    ['a shell string after &&', (d: Decoy) => nodeChildProcess.execSync('true && security -h', leaking(d))],
+    ['a shell string after a pipe', (d: Decoy) => nodeChildProcess.execSync('true | security -h', leaking(d))],
+    ['a shell string with a nested sh -c', (d: Decoy) => execSync(`sh -c 'true; ${d.program}'`)],
+    ['a shell string with a command substitution inside double quotes', (d: Decoy) => execSync(`echo "value: $(${d.program})"`)],
+    ['a shell string with a backquoted command', (d: Decoy) => execSync(`echo \`${d.program}\``)],
+    ['spawn with shell: true and arguments', (d: Decoy) => nodeChildProcess.spawnSync('true', ['&&', d.program], { shell: true })],
+  ])('refuses before exec: %s', async (_route, launch) => {
+    await expectRefusedBeforeLaunch(REAL_PROGRAM, launch);
+  });
+
+  it('decides that /usr/bin/security behind sh -c, env, a semicolon and && is refused, without launching it', () => {
+    expect(launchRefusal('spawn', ['sh', ['-c', 'x; /usr/bin/security'], {}])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('spawn', ['env', ['security'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('execSync', ["sh -c 'x; /usr/bin/security'", {}])).toMatch(REAL_PROGRAM);
+    expect(launchRefusal('exec', ['x && env /usr/bin/security -h', {}])).toMatch(REAL_PROGRAM);
+  });
+
+  it.each([
+    ['an argument that is a sentence', ['git', ['commit', '-m', 'fix the security model'], { env: { PATH: MINIMAL_CHILD_PATH } }]],
+    ['a quoted sentence in a shell string', ['echo "the security model" \'and security\'', { env: { PATH: MINIMAL_CHILD_PATH } }]],
+    ['a word that only contains the name', ['echo security-model insecurity', { env: { PATH: MINIMAL_CHILD_PATH } }]],
+    ['an argument too long to be a file name', ['/bin/echo', [`/${'x'.repeat(5000)}`, 'a\0b/c'], {}]],
+  ] as const)('does not refuse %s', (_case, args) => {
+    expect(launchRefusal(args.length === 2 ? 'execSync' : 'spawn', [...args])).toBeUndefined();
+  });
+
+  it('lets a shell string run the fake by name', () => {
+    expect(execSync('true; security find-generic-password -s momonga -a absent-item -w || echo refused-by-the-fake', { encoding: 'utf8' })).toContain('refused-by-the-fake');
+  });
+});
+
+const CREDENTIAL_SCRIPT = /\(iv\) it carries the Credential Manager script of the product, and no fake of the Credential Manager exists/;
+
+describe('the worker guard refuses a launch that carries the Credential Manager script (iv)', () => {
+  const POWERSHELL = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+
+  it.each([
+    ['the read script as the product encodes it', powershellArgs(credentialReadScript('momonga/anthropic'))],
+    ['the write script as the product encodes it', powershellArgs(credentialWriteScript('momonga/anthropic', 'momonga'))],
+    ['the read script as plain text', ['-Command', credentialReadScript('momonga/anthropic')]],
+  ])('decides that powershell.exe with %s is refused', (_case, args) => {
+    expect(launchRefusal('spawn', [POWERSHELL, args, {}])).toMatch(CREDENTIAL_SCRIPT);
+    expect(launchRefusal('execFile', ['pwsh', args, { env: { PATH: MINIMAL_CHILD_PATH } }])).toMatch(CREDENTIAL_SCRIPT);
+  });
+
+  it('refuses before exec a program started with the encoded script', async () => {
+    await expectRefusedBeforeLaunch(CREDENTIAL_SCRIPT, (d) => {
+      const powershell = path.join(d.dir, 'powershell.exe');
+      fs.writeFileSync(powershell, `#!/bin/sh\n: > '${d.marker}'\n`, { mode: 0o755 });
+      return nodeChildProcess.spawnSync(powershell, powershellArgs(credentialReadScript('momonga/anthropic')));
+    });
+  });
+
+  it('lets powershell.exe run another encoded script', () => {
+    expect(launchRefusal('spawn', [POWERSHELL, powershellArgs("Write-Output 'CredReadW is only a word here'"), {}])).toBeUndefined();
   });
 });
 
@@ -118,8 +188,8 @@ describe('the worker guard classifies the real file behind a symbolic link', () 
     try {
       const link = path.join(dir, 'security');
       fs.symlinkSync(path.join(fakeSecretProgramsBin(), 'security'), link);
-      expect(secretStoreLaunchRefusal('spawn', [link, ['find-generic-password'], {}])).toBeUndefined();
-      expect(secretStoreLaunchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toBeUndefined();
+      expect(launchRefusal('spawn', [link, ['find-generic-password'], {}])).toBeUndefined();
+      expect(launchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toBeUndefined();
       expect(nodeChildProcess.spawnSync(link, ['find-generic-password', '-s', 'momonga', '-a', 'absent-item', '-w']).status).toBe(44);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -131,8 +201,8 @@ describe('the worker guard classifies the real file behind a symbolic link', () 
     try {
       const link = path.join(dir, 'security');
       fs.symlinkSync(path.join(dir, 'gone'), link);
-      expect(secretStoreLaunchRefusal('spawn', [link, [], {}])).toBeUndefined();
-      expect(secretStoreLaunchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toMatch(/\(ii\)/);
+      expect(launchRefusal('spawn', [link, [], {}])).toBeUndefined();
+      expect(launchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toMatch(/\(ii\)/);
       expect((nodeChildProcess.spawnSync(link, []).error as NodeJS.ErrnoException).code).toBe('ENOENT');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -218,11 +288,11 @@ describe('the worker guard refuses a product launch of a MomongaCode binary that
   });
 
   it.each(GIVEN_OR_NO_STORE)('%s, which chooses no store from PATH, is not judged by its PATH', (_name, launch) => {
-    expect(secretStoreLaunchRefusal('spawn', [process.execPath, [...launch.args], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
+    expect(launchRefusal('spawn', [process.execPath, [...launch.args], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
   });
 
   it('a program whose arguments only mention the words later is not a MomongaCode launch', () => {
-    expect(secretStoreLaunchRefusal('spawn', ['/bin/echo', ['say', 'the', 'daemon', 'start'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
+    expect(launchRefusal('spawn', ['/bin/echo', ['say', 'the', 'daemon', 'start'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
   });
 });
 
@@ -262,8 +332,78 @@ describe('the child_process facade puts the fake secret programs first on every 
   });
 });
 
+const VALUE_IMPORT = /(?:^|\n)\s*(?:import|export)\s+(?!type\b)(?:[^'";]*?\sfrom\s*)?['"]([^'"]+)['"]/g;
+
+const exportedFileOf = (packageName: string, subpath: string): string => {
+  const manifest: unknown = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages', packageName, 'package.json'), 'utf8'));
+  const exported: unknown = typeof manifest === 'object' && manifest !== null && 'exports' in manifest && typeof manifest.exports === 'object' && manifest.exports !== null ? (manifest.exports as Record<string, unknown>)[subpath] : undefined;
+  if (typeof exported !== 'string') throw new Error(`@momonga/${packageName} does not export ${subpath}`);
+  return path.join('packages', packageName, exported);
+};
+
+const importedFileOf = (importer: string, specifier: string): string | undefined => {
+  if (specifier.startsWith('.')) return path.relative(ROOT, path.resolve(ROOT, path.dirname(importer), specifier));
+  const workspace = /^@momonga\/([^/]+)(\/.+)?$/.exec(specifier);
+  return workspace === null ? undefined : exportedFileOf(workspace[1] as string, workspace[2] === undefined ? '.' : `.${workspace[2]}`);
+};
+
+const sourcesLoadedBy = (entry: string): string[] => {
+  const loaded = new Set<string>();
+  const load = (file: string): void => {
+    if (loaded.has(file)) return;
+    loaded.add(file);
+    for (const match of fs.readFileSync(path.join(ROOT, file), 'utf8').matchAll(VALUE_IMPORT)) {
+      const imported = importedFileOf(file, match[1] as string);
+      if (imported !== undefined) load(imported);
+    }
+  };
+  load(entry);
+  return [...loaded].sort();
+};
+
+describe('the modules every worker loads before its test file', () => {
+  it('the guard loads these sources of the repository and no package index, so a module a test mocks is not loaded before the mock', () => {
+    const loaded = sourcesLoadedBy('test/support/child-process-guard.ts');
+    expect(loaded).toEqual([
+      'packages/cli/src/daemon/launcher.ts',
+      'packages/foundation/src/json-depth.ts',
+      'packages/foundation/src/node-file-system.ts',
+      'packages/foundation/src/open-browser.ts',
+      'packages/foundation/src/operation-limit.ts',
+      'packages/foundation/src/platform/privacy.ts',
+      'packages/foundation/src/platform/probe-timing.ts',
+      'packages/foundation/src/platform/windows-scripts.ts',
+      'packages/foundation/src/process-contract.ts',
+      'packages/foundation/src/program-search.ts',
+      'packages/foundation/src/secret-store-failures.ts',
+      'packages/foundation/src/secret-store.ts',
+      'packages/foundation/src/system-timing.ts',
+      'packages/testkit/src/secret-store-env-check.ts',
+      'test/support/child-process-guard.ts',
+    ]);
+    expect(loaded.filter((file) => /^packages\/[^/]+\/src\/index\.ts$/.test(file))).toEqual([]);
+  });
+
+  it('the temp entry recorder loads only the ledger', () => {
+    expect(sourcesLoadedBy('test/support/temp-entry-recorder.ts')).toEqual(['test/support/temp-entry-recorder.ts', 'test/support/temp-ledger.ts']);
+  });
+
+  it('reads an import that would load a package index', () => {
+    expect(importedFileOf('test/support/child-process-guard.ts', '@momonga/foundation')).toBe('packages/foundation/src/index.ts');
+    expect(importedFileOf('test/support/child-process-guard.ts', '@momonga/foundation/program-search')).toBe('packages/foundation/src/program-search.ts');
+    expect(importedFileOf('test/support/child-process-guard.ts', 'node:fs')).toBeUndefined();
+  });
+});
+
 const IMPORT_OF_CHILD_PROCESS = /(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"](?:node:)?child_process['"]|['"]node-pty['"]/;
-const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set(['packages/testkit/src/child-process.ts', 'test/support/child-process-guard.ts', 'test/child-process-guard.test.ts']);
+const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set([
+  'packages/cli/test/port-scan.test.ts',
+  'packages/testkit/src/child-process.ts',
+  'test/child-process-guard.test.ts',
+  'test/fake-programs.test.ts',
+  'test/ports-bypass.test.ts',
+  'test/support/child-process-guard.ts',
+]);
 
 const testSources = (): string[] => {
   const walk = (dir: string): string[] =>

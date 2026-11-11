@@ -30,7 +30,7 @@ export type {
   RecordedRequest,
 } from './fake-chat-completions.ts';
 export { inlinedSubsetRefusalOf, strictClosedRefusalOf } from './dialect-checkers.ts';
-export { UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS } from './outbound-network.ts';
+export { UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS, hostTimers } from './outbound-network.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
 export { CLAIM_HOLDER_MAIN, LOCK_HOLDER_MAIN, startClaimHolder, startLockHolder } from './lock-holder.ts';
@@ -63,9 +63,11 @@ export {
   usageChargedRun,
 } from './run-event-fixtures.ts';
 export type { RecordedRun } from './run-event-fixtures.ts';
-export { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, drivenReapTiming, fakeReapTiming, pacedReapTiming } from './fake-reap-timing.ts';
-export type { PacedReapTiming } from './fake-reap-timing.ts';
+export { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, drivenReapTiming, fakeReapTiming, pacedReapTiming, sleepDrivenTiming } from './fake-reap-timing.ts';
+export type { PacedReapTiming, SleepSource } from './fake-reap-timing.ts';
 export { createFakeTimers } from './fake-timers.ts';
+export { createSteppingTiming } from './stepping-timing.ts';
+export type { SteppingTiming } from './stepping-timing.ts';
 export { DEFAULT_DRIVE_MAX_STEPS, driveFakeTime } from './drive-fake-time.ts';
 export type { DriveFakeTimeOptions } from './drive-fake-time.ts';
 export type { FakeTimers, PendingTimer } from './fake-timers.ts';
@@ -240,7 +242,7 @@ export {
 } from './fake-plan-responses.ts';
 export type { BearerVerdict, FakePlanResponses, PlanResponsesOptions } from './fake-plan-responses.ts';
 export { FAKE_KEYCHAIN_PATH, READY_CONTROL, createFakeSecretFiles, createFakeSecretStore, createFakeSecurityPort, fakeReadinessAnswer } from './fake-secrets.ts';
-export type { FakeSecretPrograms } from './fake-secret-programs.ts';
+export type { FakePrograms, OpenerCall } from './fake-programs.ts';
 export type { FakeCallMode, FakeControl, FakeReadiness, FakeSecretStore, FakeSecretStoreOptions, FakeSecurityPort, FakeSecurityPortOptions } from './fake-secrets.ts';
 export { readBody, sendJson, startLoopbackServer } from './loopback-http.ts';
 export type { LoopbackHandler, LoopbackServer } from './loopback-http.ts';
@@ -265,17 +267,22 @@ export { firstGeneration, prepareGenerationForTest, startGenerationForTest } fro
 export type { StartedGenerationForTest } from './first-generation.ts';
 export { PROPERTY_TIMEOUT_MS } from './property-timeout.ts';
 export {
+  TEST_OPENER_RECORD_ENV,
   TEST_SECRET_PROGRAMS_ENV,
-  createFakeSecretPrograms,
+  createFakePrograms,
+  fakeBrowserOf,
+  fakeOpenerRecordOf,
   fakeSecretProgramsBin,
   getFakeSecretEnded,
   getFakeSecretHanging,
-  installFakeSecretPrograms,
-  removeFakeSecretPrograms,
+  installFakePrograms,
+  posixEnvLine,
+  readOpenerRecord,
+  removeFakePrograms,
   resetFakeSecretControl,
   setFakeSecretControl,
   testHostPath,
-} from './fake-secret-programs.ts';
+} from './fake-programs.ts';
 export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
 export { productTestEnv } from './product-spawn.ts';
 export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } from './model-settings.ts';

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAXIMUM_STOP_VALUES, findHolders, isTransientFailure, markerReapClockBoundMs, readAttemptRecord, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
-import type { JsonLogger, ReapTiming, RetryKind, StopValues, UninspectableRegistry } from '@momonga/foundation';
+import type { JsonLogger, Timing, RetryKind, StopValues, UninspectableRegistry } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import type { ChildRole } from './launcher.ts';
@@ -46,7 +46,7 @@ export type OrphanReapOptions = {
   timers: SupervisorTimers;
   signal: AbortSignal;
   logger: JsonLogger;
-  reapTiming: ReapTiming;
+  reapTiming: Timing;
   markerPorts?: MarkerPorts;
   uninspectable?: UninspectableRegistry;
   occasion?: RetryKind;

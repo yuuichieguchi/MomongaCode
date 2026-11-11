@@ -23,9 +23,9 @@ import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/f
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { harnessOutputToolsOf } from '@momonga/tools';
-import { BUDGET_EXCEEDED_CODE, DETERMINISTIC_SUMMARY_TEXT, LOWEST_REASONING_EFFORT, SUMMARY_PROMPT_TOKENS, marginFloorFor, outputTokensFor, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
+import { BUDGET_EXCEEDED_CODE, DETERMINISTIC_SUMMARY_TEXT, LOWEST_REASONING_EFFORT, marginFloorFor, outputTokensFor, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
 import { billedDetailOf } from './model-stream.ts';
-import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
+import type { Capabilities, CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { AdmissionRefusedError, ceilingOf, compactAdmitted, overCeiling, withAdmission } from './admitted-request.ts';
@@ -240,15 +240,29 @@ export const contextInputOf = async (
   trailing: readonly InputItem[] = [],
 ): Promise<BuildContextInput> => (await offeredInputOf(ctx, wrapUp, level, scan, trailing)).input;
 
-const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
-  meter: ctx.meter,
-  fallbackMeters: ctx.fallbackMeters,
-  blobs: {
-    handleFor: (content) => ctx.options.blobs.handleFor(content),
-    put: (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
-  },
-  instructions: ctx.options.instructionReader,
-});
+const roleCapabilities = new WeakMap<ClaimContext, Promise<Capabilities>>();
+
+const compactionRoleCapabilitiesOf = (ctx: ClaimContext, roleModel: string): Promise<Capabilities> => {
+  const known = roleCapabilities.get(ctx);
+  if (known !== undefined) return known;
+  const read = ctx.control.recordingRaised(ctx.options.gateway.capabilities(roleModel, { signal: ctx.control.signal }));
+  roleCapabilities.set(ctx, read);
+  return read;
+};
+
+const portsOf = (ctx: ClaimContext): BuildContextPorts => {
+  const roleModel = ctx.roles.compaction;
+  return {
+    meter: ctx.meter,
+    fallbackMeters: ctx.fallbackMeters,
+    blobs: {
+      handleFor: (content) => ctx.options.blobs.handleFor(content),
+      put: (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
+    },
+    instructions: ctx.options.instructionReader,
+    ...(roleModel === undefined ? {} : { compactionTarget: () => compactionRoleCapabilitiesOf(ctx, roleModel) }),
+  };
+};
 
 export const measurePinnedFor = async (ctx: ClaimContext): Promise<PinnedMeasure> => {
   await advanceTouched(ctx);
@@ -331,7 +345,7 @@ const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, le
 
 type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
 type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
-type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText' | 'notices' | 'tokens'>;
+type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'focus' | 'pinnedText' | 'notices' | 'tokens'>;
 type CompactionCounts = Required<Pick<CompactedPayload, 'tokensBefore' | 'tokensAfter'>>;
 
 const noticeOf = (code: string, message: string): RunEventPayload => ({ type: 'notice', level: 'warning', message, code });
@@ -377,36 +391,35 @@ const deterministicCompaction = async (ctx: ClaimContext, plan: CompactionSource
 
 const FIRST_REQUEST_ATTEMPT = 1;
 
-export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource, focus?: string): Promise<void> => {
+export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
   const { journal, options } = ctx;
   const roleModel = ctx.roles.compaction;
+  const model = roleModel ?? ctx.model;
   const request: CompactRequest = {
-    model: roleModel ?? ctx.model,
+    model,
     input: plan.input,
     momonga: {
       max_summary_tokens: plan.summaryTokenCap,
       retains_user_request: true,
       ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }),
-      ...(focus === undefined ? {} : { instructions: focus }),
+      ...(plan.focus === undefined ? {} : { instructions: plan.focus }),
       ...EXACT_MODEL,
     },
   };
   const guidelineVersion = ctx.guideline?.version ?? NO_ADOPTED_GUIDELINE;
-  const model = roleModel ?? ctx.model;
-  const capabilities = roleModel === undefined ? ctx.capabilities : await ctx.control.recordingRaised(options.gateway.capabilities(roleModel, { signal: ctx.control.signal }));
+  const capabilities = roleModel === undefined ? ctx.capabilities : await compactionRoleCapabilitiesOf(ctx, roleModel);
   const summaryOutput = outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, plan.summaryTokenCap);
-  let startedAt = options.clock.now();
+  const idempotencyKey = requestKey(ctx.run.id, 'compact', request);
   const sent = await withAdmission(
     ctx.budget,
-    { model, size: { inputTokens: plan.tokens.input + SUMMARY_PROMPT_TOKENS, marginTokens: marginFloorFor(capabilities.contextWindow), maxOutputTokens: summaryOutput, outputFloor: summaryOutput } },
-    async ({ admitted, proof }): Promise<CompactResource | 'summarised_by_code'> => {
+    { model, size: { inputTokens: plan.tokens.request, marginTokens: marginFloorFor(capabilities.contextWindow), maxOutputTokens: summaryOutput, outputFloor: summaryOutput } },
+    async ({ admitted, proof }): Promise<{ resource: CompactResource; startedAt: number } | 'summarised_by_code'> => {
       const admittedRequest: CompactRequest = { ...request, momonga: { ...request.momonga, ...ceilingOf(admitted) } };
-      const idempotencyKey = requestKey(ctx.run.id, 'compact', admittedRequest);
       journal.append([{ type: 'context.compacting', step: journal.state.step, attempt: FIRST_REQUEST_ATTEMPT }]);
       ctx.control.inFlight.compactionKey = idempotencyKey;
-      startedAt = options.clock.now();
+      const startedAt = options.clock.now();
       try {
-        return await ctx.control.recordingRaised(
+        const resource = await ctx.control.recordingRaised(
           compactAdmitted(options.gateway, proof, admittedRequest, {
             idempotencyKey,
             deadlineAt: ctx.run.deadlineAt,
@@ -415,6 +428,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource, 
             runId: ctx.run.id,
           }),
         );
+        return { resource, startedAt };
       } catch (error) {
         if (error instanceof GatewayRequestError && error.code === BUDGET_EXCEEDED_CODE) {
           delete ctx.control.inFlight.compactionKey;
@@ -437,7 +451,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource, 
   );
   if (sent.kind !== 'sent') throw new AdmissionRefusedError(sent);
   if (sent.value === 'summarised_by_code') return;
-  const resource = sent.value;
+  const { resource, startedAt } = sent.value;
   delete ctx.control.inFlight.compactionKey;
   const compaction = resource.output.find((item) => item.type === 'compaction');
   if (compaction === undefined) throw new Error(`the compaction response for run ${ctx.run.id} holds no compaction item`);
@@ -772,7 +786,7 @@ export const compactOnly = async (ctx: ClaimContext, focus: string | undefined):
     try {
       await advanceTouched(ctx);
       await prepareRecall(ctx);
-      plan = (await buildContext({ ...(await contextInputOf(ctx, undefined, 0)), compactNow: true }, portsOf(ctx))).compaction;
+      plan = (await buildContext({ ...(await contextInputOf(ctx, undefined, 0)), compactNow: true, ...(focus === undefined ? {} : { compactionFocus: focus }) }, portsOf(ctx))).compaction;
     } catch (error) {
       if (error instanceof PinnedOverflowError) {
         await ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
@@ -792,7 +806,7 @@ export const compactOnly = async (ctx: ClaimContext, focus: string | undefined):
       return;
     }
     try {
-      await compactThrough(ctx, plan, focus);
+      await compactThrough(ctx, plan);
     } catch (error) {
       if (!(error instanceof GatewayRequestError)) {
         await stopIfRefused(ctx, error);

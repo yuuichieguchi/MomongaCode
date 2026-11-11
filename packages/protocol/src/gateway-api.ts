@@ -1,6 +1,7 @@
 import type { ErrorShape } from './budget-constants.ts';
 import type { Capabilities, ChainCapabilities, HealthResult, ProbingCapabilities, TargetAnswers, TargetBilling, UnavailableCapabilities } from './capabilities.ts';
 import type { FunctionTool, InputItem, ToolChoice } from './open-responses.ts';
+import type { PlanAccountRef } from './plan-account.ts';
 
 export const MOMONGA_EVENT_PREFIX = 'momonga:' as const;
 
@@ -90,6 +91,10 @@ export const TARGET_PROBING = 'target_probing';
 
 export const TARGET_PROBE_FAILED = 'target_probe_failed';
 
+export const SERVICE_UNAVAILABLE_STATUS = 503;
+
+export const isTargetProbing = (answer: { status: number; code: string | null }): boolean => answer.status === SERVICE_UNAVAILABLE_STATUS && answer.code === TARGET_PROBING;
+
 export const TARGET_PROBING_MESSAGE = 'measuring this model (once per model and OS build)';
 
 export type ChainMemberEntry = {
@@ -100,7 +105,7 @@ export type ChainMemberEntry = {
   adapter: string;
   answers: TargetAnswers;
   upstream: string;
-  plan?: { profile: string; account?: string };
+  plan?: PlanAccountRef;
   key?: { group: string };
   capabilities: Capabilities | ProbingCapabilities | UnavailableCapabilities;
 };

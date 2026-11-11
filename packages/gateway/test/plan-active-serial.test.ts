@@ -95,7 +95,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     await signedIn(h, 'third');
     const since = gated.recorded.slice(mark).filter((call) => call.path === h.paths.active);
     expect(since.filter((call) => call.method === 'rename')).toHaveLength(3);
-    expect(since.filter((call) => call.method === 'readTextFile')).toEqual([]);
+    expect(since.filter((call) => call.method === 'readTextFile' || call.method === 'readOwnerOnlyTextFile')).toEqual([]);
   });
 
   it('two pointer writes go through the one serializer and queue behind each other', { timeout: 60_000 }, async () => {
@@ -137,7 +137,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
   it('with a damaged pointer at open, begin rejects PLAN_STORE_UNREADABLE_CODE naming the file before anything is done', async () => {
     const h = await harness();
     fs.mkdirSync(h.paths.active.slice(0, h.paths.active.lastIndexOf('/')), { recursive: true });
-    fs.writeFileSync(h.paths.active, NOT_AN_OBJECT);
+    fs.writeFileSync(h.paths.active, NOT_AN_OBJECT, { mode: 0o600 });
     await h.reopen();
     const failure = await failureOf(signInFor(h).begin({ profile: PROFILE_ID, account: 'work', port: PORT }, new AbortController().signal));
     expect(failure).toEqual({ code: PLAN_STORE_UNREADABLE_CODE, message: notAnObjectCause(h) });
@@ -152,7 +152,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     const { attemptId, authorizationUrl } = await signIn.begin({ profile: PROFILE_ID, account: 'work', port: PORT }, new AbortController().signal);
     const browsed = await siwcBrowse(authorizationUrl);
     if (browsed.redirect === undefined) throw new Error(`the fake refused the authorization: ${JSON.stringify(browsed.body)}`);
-    fs.writeFileSync(h.paths.active, NOT_AN_OBJECT);
+    fs.writeFileSync(h.paths.active, NOT_AN_OBJECT, { mode: 0o600 });
     await h.reopen();
     const failure = await failureOf(signIn.complete(attemptId, browsed.redirect.href, new AbortController().signal));
     expect(failure).toEqual({ code: PLAN_STORE_UNREADABLE_CODE, message: notAnObjectCause(h) });
@@ -182,7 +182,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
   it('repairing the file between two writes: the heal read clears the problem, listProblems loses the entry, and the write is built from the file\'s entries', async () => {
     const h = await harness();
     await signedIn(h, 'work');
-    fs.writeFileSync(h.paths.active, NOT_AN_OBJECT);
+    fs.writeFileSync(h.paths.active, NOT_AN_OBJECT, { mode: 0o600 });
     await h.reopen({ accounts: [work] });
     expect(h.sessions.listProblems()).toEqual([{ file: 'plan-active.json', cause: notAnObjectCause(h) }]);
     fs.writeFileSync(h.paths.active, JSON.stringify({ other: 'z' }));

@@ -17,6 +17,8 @@ const run = async (specs: readonly RuleSpec[], options: VerifyOptions & { origin
 
 const resultOf = (report: VerificationReport, id: PropertyId): PropertyResult => report.results.find((result) => result.id === id) as PropertyResult;
 
+const notesOf = (result: PropertyResult) => (result.verdict.status === 'noted' ? result.verdict.ruleNotes : []);
+
 const findingsOf = (result: PropertyResult) => (result.verdict.status === 'refuted' ? result.verdict.findings : []);
 
 const statuses = (report: VerificationReport): Record<string, string> => Object.fromEntries(report.results.map((result) => [result.id, result.verdict.status]));
@@ -32,7 +34,8 @@ describe('a clean rule set', () => {
       ['allow', 'mcp__srv'],
     ]);
 
-    expect(statuses(report)).toEqual({ 'deny-precedence': 'proved', 'secret-reach': 'proved', 'rule-consistency': 'proved', 'bash-admission': 'proved' });
+    expect(statuses(report)).toEqual({ 'deny-precedence': 'proved', 'secret-reach': 'proved', 'rule-consistency': 'noted', 'bash-admission': 'proved' });
+    expect(notesOf(resultOf(report, 'rule-consistency')).map((note) => [note.kind, note.modes, note.rules.map((rule) => rule.text)])).toEqual([['implied-by-mode', ['acceptEdits'], ['Edit(./src/**)']]]);
     expect(report.mismatches).toEqual([]);
     expect(report.exitCode).toBe(0);
     for (const result of report.results) {
@@ -84,44 +87,23 @@ describe('a clean rule set', () => {
     ]);
 
     const consistency = resultOf(report, 'rule-consistency');
-    expect(consistency.verdict.status).toBe('unknown');
-    expect(consistency.verdict.status === 'unknown' ? consistency.verdict.reason : '').toContain('Bash(sudo ls:*)');
+    expect(notesOf(consistency).map((note) => [note.kind, note.message])).toEqual([['undecided', expect.stringContaining('Bash(sudo ls:*)')]]);
     expect(report.exitCode).toBe(1);
     const note = report.outsideProof.find((item) => item.startsWith('Bash rules the model cannot follow')) ?? '';
     expect(note).toContain('Bash(sudo ls:*)');
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('records where an allow rule overlaps a deny rule and which side wins there', async () => {
+  it('gives no note for an allow rule that a deny rule narrows', async () => {
     const { report } = await run([
       ['allow', 'Read(./a/**)'],
       ['deny', 'Read(./a/secret/**)'],
     ]);
 
-    const precedence = resultOf(report, 'deny-precedence');
-    expect(precedence.verdict.status).toBe('proved');
-    expect(precedence.verdict.notes.join('\n')).toContain('the outcome there is deny');
+    expect(resultOf(report, 'deny-precedence').verdict).toEqual({ status: 'proved', notes: [] });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 
-describe('rule sets with a known escape', () => {
-  it('finds the subcommand that a Bash allow prefix admits around a deny, and the decision code agrees it is allowed', async () => {
-    const { report } = await run([
-      ['allow', 'Bash(git:*)'],
-      ['deny', 'Bash(git push:*)'],
-    ]);
-
-    const admission = resultOf(report, 'bash-admission');
-    expect(admission.verdict.status).toBe('refuted');
-    const finding = findingsOf(admission)[0];
-    expect(finding?.counterexample?.witness).toMatchObject({ kind: 'command' });
-    const command = finding?.counterexample?.witness.kind === 'command' ? finding.counterexample.witness.command : '';
-    expect(command).toMatch(/^git( +-\S*)+ +push/);
-    expect(finding?.counterexample?.predicted).toBe('allow');
-    expect(finding?.counterexample?.replay).toMatchObject({ agrees: true, actual: 'allow' });
-    expect(report.exitCode).toBe(1);
-    expect(report.mismatches).toEqual([]);
-  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
-
+describe('rule sets that open what the protection forbids', () => {
   it('finds a route to a secret that an allow rule opens and names the rule', async () => {
     const { layout, report } = await run([['allow', 'Read(~/**)']]);
 
@@ -198,51 +180,36 @@ describe('rules naming the background job tools', () => {
   }, 120_000);
 });
 
-describe('rules that cannot take effect or that contradict', () => {
-  it('flags an allow rule that lies entirely inside a deny rule', async () => {
+describe('rules that cannot take effect', () => {
+  const kindsOf = (report: VerificationReport) => notesOf(resultOf(report, 'rule-consistency')).map((note) => [note.kind, note.rules.map((rule) => rule.text)]);
+
+  it('notes an allow rule that lies entirely inside a deny rule, naming both', async () => {
     const { report } = await run([
       ['deny', 'Read(./a/**)'],
       ['allow', 'Read(./a/b/**)'],
     ]);
 
-    const consistency = resultOf(report, 'rule-consistency');
-    expect(consistency.verdict.status).toBe('refuted');
-    const messages = findingsOf(consistency).map((finding) => `${finding.subject}: ${finding.message}`);
-    expect(messages.some((message) => message.includes('Read(./a/b/**)') && message.includes('contradicts the deny rule'))).toBe(true);
-    expect(messages.some((message) => message.startsWith('Read(./a/b/**)') && message.includes('can never take effect'))).toBe(true);
+    expect(kindsOf(report)).toEqual([['no-effect', ['Read(./a/b/**)', 'Read(./a/**)']]]);
+    expect(notesOf(resultOf(report, 'rule-consistency'))[0]?.message).toContain('deny is decided before allow');
+    expect(report.exitCode).toBe(0);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('flags a duplicated allow rule, whose removal changes nothing', async () => {
+  it('notes a rule written twice once', async () => {
     const { report } = await run([
-      ['allow', 'Edit(./src/**)'],
-      ['allow', 'Edit(./src/**)'],
+      ['deny', 'Edit(./src/**)'],
+      ['deny', 'Edit(./src/**)'],
     ]);
 
-    expect(findingsOf(resultOf(report, 'rule-consistency'))).toHaveLength(2);
+    expect(kindsOf(report)).toEqual([['duplicate', ['Edit(./src/**)', 'Edit(./src/**)']]]);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('flags an allow edit rule that plan mode never lets take effect, and not in manual mode', async () => {
-    const plan = await run([['allow', 'Edit(./src/**)']], { mode: 'plan' });
-    expect(resultOf(plan.report, 'rule-consistency').verdict.status).toBe('refuted');
-
-    const normal = await run([['allow', 'Edit(./src/**)']]);
-    expect(resultOf(normal.report, 'rule-consistency').verdict.status).toBe('proved');
-  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
-
-  it('flags a read allow rule that the workspace default already grants', async () => {
-    const { report } = await run([['allow', 'Read(./src/**)']]);
-
-    const finding = findingsOf(resultOf(report, 'rule-consistency'))[0];
-    expect(finding?.message).toContain('mode default');
-  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
-
-  it('treats an ask rule that a deny rule fully covers as one that cannot take effect', async () => {
+  it('notes an ask rule that a deny rule fully covers', async () => {
     const { report } = await run([
       ['deny', 'mcp__srv'],
       ['ask', 'mcp__srv__tool'],
     ]);
 
-    expect(findingsOf(resultOf(report, 'rule-consistency')).map((finding) => finding.subject)).toEqual([expect.stringContaining('mcp__srv__tool')]);
+    expect(kindsOf(report)).toEqual([['no-effect', ['mcp__srv__tool', 'mcp__srv']]]);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 

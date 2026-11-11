@@ -1,6 +1,6 @@
-import { HOOK_STOPPED_CODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, PRECONDITION_FAILED_CODE, SIGN_IN_REQUIRED_CODE, TARGET_NOT_READY, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
-import type { PlanAccountRef } from '@momonga/protocol';
-import type { PermissionDenial, PermissionDenialSource, PublicRunEvent, RunReport } from '@momonga/protocol';
+import { HOOK_STOPPED_CODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, PRECONDITION_FAILED_CODE, SIGN_IN_COMMAND, SIGN_IN_REQUIRED_CODE, TARGET_NOT_READY, TUI_SIGN_IN_COMMAND, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
+import type { PlanAccountRef, Surface } from '@momonga/protocol';
+import type { PermissionDenial, PermissionDenialSource, PublicRunEvent, ResidualRiskCode, RunReport } from '@momonga/protocol';
 
 type HookCompleted = Extract<PublicRunEvent, { type: 'hook.completed' }>;
 type Classified = Extract<PublicRunEvent, { type: 'tool.permission.classified' }>;
@@ -49,7 +49,9 @@ export const verificationLevel = (event: Verified): Level => (event.outcome === 
 export const describeVerification = (event: Verified, agent?: string): string =>
   `completion condition${agent === undefined ? '' : ` of subagent ${agent}`} ${VERIFICATION_WORDS[event.outcome]}${event.exitCode === undefined || event.outcome === 'passed' ? '' : ` (exit ${event.exitCode})`}: ${event.command}`;
 
-const UNMET_STATE_WORDS: Readonly<Record<Exclude<ReportedCondition['state'], 'passed' | 'not_needed'>, string>> = {
+export const CONDITION_STATE_WORDS: Readonly<Record<ReportedCondition['state'], string>> = {
+  passed: 'passed',
+  not_needed: 'was not needed',
   failed: 'failed',
   timed_out: 'timed out',
   cancelled: 'was cancelled',
@@ -58,12 +60,22 @@ const UNMET_STATE_WORDS: Readonly<Record<Exclude<ReportedCondition['state'], 'pa
   not_run: 'was not run',
 };
 
+export const RESIDUAL_RISK_WORDS: Readonly<Record<ResidualRiskCode, string>> = {
+  no_condition_declared_after_mutation: 'the run changed files and no completion condition was declared',
+  mutation_without_known_paths: 'changes whose files are not known',
+  unknown_effect_calls: 'calls whose effect is not known',
+  permission_denials: 'calls that were denied',
+  child_runs_not_completed: 'child runs that did not complete',
+  output_truncated: 'tool outputs that were cut short',
+  requirements_unchecked: 'requirements that have no mechanical check',
+};
+
 export const unmetConditionLines = (report: RunReport): string[] => {
   if (report.conditions.length === 0) return ['  no completion condition was declared for a run that changed the workspace'];
   return report.conditions.flatMap((condition) =>
     condition.state === 'passed' || condition.state === 'not_needed'
       ? []
-      : [`  unmet: ${condition.command} ${UNMET_STATE_WORDS[condition.state]}${condition.last?.exitCode === undefined || condition.state !== 'failed' ? '' : ` (exit ${condition.last.exitCode})`}`],
+      : [`  unmet: ${condition.command} ${CONDITION_STATE_WORDS[condition.state]}${condition.last?.exitCode === undefined || condition.state !== 'failed' ? '' : ` (exit ${condition.last.exitCode})`}`],
   );
 };
 
@@ -95,14 +107,13 @@ export const describeDenial = (denial: PermissionDenial): string => `denied by $
 
 const PRODUCT_COMPOSED_CODES: ReadonlySet<string> = new Set([PRECONDITION_FAILED_CODE, TARGET_NOT_READY]);
 
-export type MessageSurface = 'tui' | 'headless';
-
-export const signInCommandOf = (surface: MessageSurface, plan: PlanAccountRef | undefined): string => {
-  if (surface === 'tui') return '/login';
-  return plan === undefined ? 'momonga auth login' : `momonga auth login ${plan.profile} --account ${plan.account}`;
+export const signInCommandOf = (surface: Surface, plan: PlanAccountRef | undefined): string => {
+  if (surface === 'tui') return TUI_SIGN_IN_COMMAND;
+  if (plan === undefined) return SIGN_IN_COMMAND;
+  return plan.account === undefined ? `${SIGN_IN_COMMAND} ${plan.profile}` : `${SIGN_IN_COMMAND} ${plan.profile} --account ${plan.account}`;
 };
 
-export const reconsentCommand = (profile: string, account: string): string => `momonga auth login ${profile} --account ${account} --reconsent`;
+export const reconsentCommand = (plan: PlanAccountRef): string => `${signInCommandOf('cli', plan)} --reconsent`;
 
 const defaultRunErrorLines = (error: { code: string; message: string }): string[] => {
   const [first = '', ...rest] = PRODUCT_COMPOSED_CODES.has(error.code) ? error.message.split('\n') : [error.message];
@@ -112,16 +123,16 @@ const defaultRunErrorLines = (error: { code: string; message: string }): string[
 const planRunErrorLines = (error: { code: string; message: string }, plan: PlanAccountRef): string[] | undefined => {
   switch (error.code) {
     case PLAN_USE_NOT_ENABLED_CODE:
-      return [`${error.message} · Run ${reconsentCommand(plan.profile, plan.account)} to enable it`, `cause: ${error.code}`];
+      return [`${error.message} · Run ${reconsentCommand(plan)} to enable it`, `cause: ${error.code}`];
     case PLAN_NOT_ELIGIBLE_CODE:
-      return [error.message, `cause: ${error.code}`, `Run momonga auth login ${plan.profile} --account <new label> to use another account, or use an API key.`];
+      return [error.message, `cause: ${error.code}`, `Run ${SIGN_IN_COMMAND} ${plan.profile} --account <new label> to use another account, or use an API key.`];
     default:
       return undefined;
   }
 };
 
-export const describeRunError = (error: { code: string; message: string; plan?: PlanAccountRef }, surface: MessageSurface): string[] => {
-  const planLines = surface === 'headless' && error.plan !== undefined ? planRunErrorLines(error, error.plan) : undefined;
+export const describeRunError = (error: { code: string; message: string; plan?: PlanAccountRef }, surface: Surface): string[] => {
+  const planLines = surface !== 'tui' && error.plan !== undefined ? planRunErrorLines(error, error.plan) : undefined;
   if (planLines !== undefined) return planLines;
   switch (error.code) {
     case SIGN_IN_REQUIRED_CODE:

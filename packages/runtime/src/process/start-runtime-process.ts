@@ -124,7 +124,7 @@ import type { TeardownStep } from './teardown.ts';
 import { sweepSessionTmp, sweepSpawnTmp } from './tmp-sweep.ts';
 import { reapToolMarkers } from './tool-markers.ts';
 import { createToolRuntime } from './tool-runtime.ts';
-import type { ToolRuntime } from './tool-runtime.ts';
+import type { ToolRuntime, ToolRuntimeOptions } from './tool-runtime.ts';
 
 export type StartRuntimeProcessOptions = {
   home: string;
@@ -146,6 +146,7 @@ export type StartRuntimeProcessOptions = {
   ruleSolver?: RuleSolverSource;
   role?: RolePort;
   requestShutdown?: () => void;
+  createAdminPool?: ToolRuntimeOptions['createAdminPool'];
 };
 
 export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>) => BundledRipgrepResolver;
@@ -458,6 +459,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       retire: (binding) => binding.sandbox.sweep?.(),
       onWarning,
     });
+    cleanups.push({ name: 'sandbox', run: () => sandboxes.retireAll() });
     await step('sandbox', async () => {
       (await sandboxes.admit(startDeadlineSignal(signal))).release();
     });
@@ -467,7 +469,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const bound = timers.setTimeout(() => reapStop.abort(), markerReapClockBoundMs(MARKER_REAP_KILL_GRACE_MS));
       const reapSignal = signal === undefined ? reapStop.signal : AbortSignal.any([signal, reapStop.signal]);
       try {
-        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal });
+        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal, occasion: 'startup' });
       } finally {
         timers.clearTimeout(bound);
       }
@@ -593,6 +595,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, signal: lifetime.signal });
       const mcpNetwork = await outboundNetworkOf(settings.network, startDeadlineSignal(undefined));
       const runtime: ToolRuntime = createToolRuntime({
+        version,
         owners: markerOwners,
         lockCapability,
         kernelLock,
@@ -602,6 +605,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         generation: options.generation,
         role: rolePort,
         onJobSettled: () => onWorkEnded(),
+        onAuthorizationEnded: () => onWorkEnded(),
+        ...(options.createAdminPool === undefined ? {} : { createAdminPool: options.createAdminPool }),
         home: canonicalHome,
         store,
         notifier,
@@ -955,6 +960,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
               } catch (error) {
                 failures.push(error);
               }
+              const tickStop = new AbortController();
+              const tickBound = timers.setTimeout(() => tickStop.abort(new Error(`the tool marker sweep did not end within ${TOOL_MARKER_SWEEP_MS} ms`)), TOOL_MARKER_SWEEP_MS);
               try {
                 await reapToolMarkers({
                   dir: paths.markers.tools,
@@ -962,12 +969,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                   killGraceMs: MARKER_REAP_KILL_GRACE_MS,
                   onWarning,
                   timing: reapTiming,
-                  signal: sweepStop.signal,
+                  signal: AbortSignal.any([sweepStop.signal, tickStop.signal]),
                   event: 'sweep',
                   owners: toolRuntime.owners,
                 });
               } catch (error) {
                 failures.push(error);
+              } finally {
+                timers.clearTimeout(tickBound);
               }
               if (failures.length === 1) throw failures[0];
               if (failures.length > 1) throw new AggregateError(failures, 'the sandbox sweep and the tool marker sweep both failed');
@@ -999,7 +1008,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       let announcedRetiring = false;
       const checkRetireExit = (): void => {
         if (phase !== 'running' || lifecycle !== undefined || rolePort.current() !== 'retiring') return;
-        if (stepsInFlight() > 0 || toolRuntime.jobs.liveCount() > 0 || requireService().openRequests() > 0) return;
+        if (stepsInFlight() > 0 || toolRuntime.jobs.liveCount() > 0 || toolRuntime.mcpAdmin.pendingAuthorizations() > 0 || requireService().openRequests() > 0) return;
         requireService().stopListening();
         logger.info('generation.retired', { data: { generation: options.generation } });
         lifecycle = retire(sharedPaths);
@@ -1054,7 +1063,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       announceReady(fields, stdout);
       logger.info('runtime ready');
       phase = 'running';
-      if (fatalError !== undefined) void abort();
       return fields;
     });
 

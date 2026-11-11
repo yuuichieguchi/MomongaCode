@@ -67,9 +67,6 @@ const keychainsOf = (home: string, platform: NodeJS.Platform, env: Readonly<Reco
   return flavor.join(absoluteOrUndefined(env['XDG_DATA_HOME'], flavor) ?? flavor.join(home, '.local', 'share'), 'keyrings');
 };
 
-export const adapterSocketPath = (home: string, name: string, platform: NodeJS.Platform = process.platform): string =>
-  platform === 'win32' ? pipePathFor(home, name) : pathFor(platform).join(home, '.momonga', 'run', `${name}.sock`);
-
 export const FIRST_GENERATION = 1;
 
 export type GenerationProcessRole = 'gateway' | 'runtime' | 'supervisor';

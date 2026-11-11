@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, orphanReapGraceMs, probeFailed, runtimeMaxCloseMs, scopeToGeneration, supervisorMaxCloseMs, syncPaths } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, orphanReapGraceMs, probeFailed, runtimeMaxCloseMs, scopeToGeneration, supervisorMaxCloseMs, syncPaths, sleep } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -205,7 +205,7 @@ describe('reapOrphans', () => {
     const { ports } = recorded({
       findHolders: async () => [HOLDER_PID],
       reapMarkerDirectory: async (reapOptions) => {
-        await reapOptions.timing?.sleep(markerReapClockBoundMs(reapOptions.killGraceMs));
+        if (reapOptions.timing !== undefined) await sleep(reapOptions.timing, markerReapClockBoundMs(reapOptions.killGraceMs));
         return { reaped: 0, kept: 1 };
       },
     });
@@ -414,7 +414,7 @@ describe('orphan reap at supervisor start', () => {
   it('reap shutdown bound relation', () => {
     const noDrain = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0 };
     expect(orphanReapGraceMs(noDrain) + SHUTDOWN_RELEASE_BOUND_MS).toBeLessThan(supervisorMaxCloseMs(noDrain));
-    expect(orphanReapGraceMs(DEFAULT_STOP_VALUES)).toBe(34_095);
+    expect(orphanReapGraceMs(DEFAULT_STOP_VALUES)).toBe(34_125);
   });
 
   it('start reaps only the daemon markers of its own generation, before the first spawn, and reads no other generation (20.29)', async (context) => {

@@ -155,7 +155,10 @@ const rejectForbiddenKeys = (value: unknown, pointer: string, source: string): v
   }
 };
 
-export const parseJsonText = (text: string, source: string): unknown => {
+const BYTE_ORDER_MARK = '\uFEFF';
+
+export const parseJsonText = (written: string, source: string): unknown => {
+  const text = written.startsWith(BYTE_ORDER_MARK) ? written.slice(BYTE_ORDER_MARK.length) : written;
   let value: unknown;
   try {
     value = parseOutsideJson(text);

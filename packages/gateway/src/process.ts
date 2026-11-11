@@ -22,8 +22,8 @@ import {
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
-import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, displayMapOf } from '@momonga/protocol';
-import type { ManagedServerDescription, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
+import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
+import type { ManagedServerDescription, PlanAccountRef, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
 import {
   acquireProcessLock,
   JsonDepthError,
@@ -176,6 +176,8 @@ export type StartGatewayProcessOptions = {
   timers?: GatewayTimers;
   random?: () => number;
   files?: ProcessFilePorts;
+  platform?: NodeJS.Platform;
+  pid?: number;
   exec?: ExecFn;
   execWithStdin?: ExecWithStdinFn;
   secretStore?: SecretStore;
@@ -418,6 +420,8 @@ type ManagedAdapterWiring = {
   autoProbe: AutoProbe;
   probeServers: Set<ManagedServer>;
   timers: ManagedServerTimers;
+  timeoutSignal: GatewayTimers['timeoutSignal'];
+  platform: NodeJS.Platform;
   role: RolePort;
   home: string;
   hostForms: readonly EndpointForm[];
@@ -445,8 +449,8 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   const serving = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }));
   const probing = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }));
   const host = createHeldHostReadings();
-  const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes, host });
-  const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes });
+  const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: wiring.platform, hashes: wiring.hashes, host });
+  const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: wiring.platform, hashes: wiring.hashes });
   const currency = managedCurrencyOf(description, { userDialects: wiring.userDialects });
   const spawnPort = wiring.spawn === undefined ? {} : { spawn: wiring.spawn };
   let managed: ManagedTarget | undefined;
@@ -493,7 +497,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     precondition: managedPrecondition(description, display, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
     probeRecordDir: paths.probe,
     readKey: freshKey,
-    keySignal: () => AbortSignal.timeout(wiring.requestLimitMs),
+    keySignal: () => wiring.timeoutSignal(wiring.requestLimitMs),
     measure,
     currency,
   });
@@ -711,8 +715,8 @@ const HEALTH_REASON_OF_PLAN: Readonly<Record<PlanHealthReason, TargetHealthReaso
   [SIGN_IN_REQUIRED_CODE]: SIGN_IN_REQUIRED_CODE,
   [PLAN_USE_NOT_ENABLED_CODE]: SIGN_IN_REQUIRED_CODE,
   [USAGE_PAUSED_CODE]: SIGN_IN_REQUIRED_CODE,
-  store_unreadable: 'store_unreadable',
-  store_unwritable: 'store_unwritable',
+  [PLAN_STORE_UNREADABLE_STATE]: PLAN_STORE_UNREADABLE_STATE,
+  [PLAN_STORE_UNWRITABLE_STATE]: PLAN_STORE_UNWRITABLE_STATE,
 };
 
 const healthResultOf = (health: PlanHealth): HealthResult => ({
@@ -787,8 +791,10 @@ const keyGroupOf = (target: ResolvedTarget): { keyGroup?: string } => {
   return { keyGroup: typeof baseUrl === 'string' ? new URL(baseUrl).origin : target.provider };
 };
 
-const planRefOf = (target: ResolvedTarget): { plan?: { profile: string; account?: string } } =>
-  'plan' in target ? { plan: { profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) } } : {};
+const planRefOf = (target: ResolvedTarget): { plan?: PlanAccountRef } => {
+  const plan = 'plan' in target ? planAccountRefOf(target.plan) : undefined;
+  return plan === undefined ? {} : { plan };
+};
 
 const requiredCounter = (counters: Readonly<Record<string, string>>, name: string): string => {
   const counter = counters[name];
@@ -872,25 +878,27 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const timers = options.timers ?? systemProcessPorts.timers;
   const random = options.random ?? systemProcessPorts.random;
   const files = options.files ?? systemProcessPorts.files;
+  const platform = options.platform ?? systemProcessPorts.platform;
+  const pid = options.pid ?? systemProcessPorts.pid;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const { signal } = options;
-  const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, process.platform, {}), generation: options.generation, logger });
+  const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, platform, {}), generation: options.generation, logger });
   const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
-  const paths = momongaPaths(options.home, process.platform, {});
+  const paths = momongaPaths(options.home, platform, {});
   signal?.throwIfAborted();
   const own = generationLayout(options.home, options.generation);
   await requireGenerationDirs(paths, options.generation);
   signal?.throwIfAborted();
   const lock = await (options.acquireLock ?? acquireProcessLock)(own.locks.gateway);
-  const cleanups: Array<() => void | Promise<void>> = [() => lock.release()];
+  const cleanups: Array<(values: StopValues | undefined) => void | Promise<void>> = [() => lock.release()];
   const lifetime = new AbortController();
-  const unwind = async (): Promise<Error[]> => {
+  const unwind = async (values: StopValues | undefined): Promise<Error[]> => {
     lifetime.abort(new Error('the gateway is closing'));
     const failures: Error[] = [];
     for (const cleanup of cleanups.splice(0).reverse()) {
       try {
-        await cleanup();
+        await cleanup(values);
       } catch (error) {
         failures.push(...failuresOf(error));
       }
@@ -904,18 +912,18 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const fatal = new Promise<Error>((resolve) => {
     resolveFatal = resolve;
   });
-  let requestGatewayAbort: () => void = () => undefined;
+  let requestGatewayAbort: (values: StopValues) => void = () => undefined;
   let gatewayAbandonedRuns: () => number = () => 0;
   let abortRequested = false;
-  let lifecycle: Promise<GatewayCloseResult> | undefined;
-  let closeValues: StopValues | undefined;
+  type Shutdown = { readonly values: StopValues; result(): Promise<GatewayCloseResult> };
+  let closing: Shutdown | undefined;
+  const closingValues = (): StopValues | undefined => closing?.values;
   let retired = false;
   const stopValues = options.stopValues ?? createStopValuesReader({ load: () => readUserStopValues(options.home), onNotice: (message) => logger.warn(message) });
 
   const shutdown = async (values: StopValues): Promise<GatewayCloseResult> => {
     phase = 'closing';
-    closeValues = values;
-    const failures = await unwind();
+    const failures = await unwind(values);
     phase = 'closed';
     const abandonedRuns = gatewayAbandonedRuns();
     if (abandonedRuns > 0) logger.warn('close.abandoned_runs', { count: abandonedRuns });
@@ -929,16 +937,21 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
   };
 
+  const shutdownWith = (values: StopValues): Shutdown => {
+    let result: Promise<GatewayCloseResult> | undefined;
+    return { values, result: () => (result ??= shutdown(values)) };
+  };
+
   const close = (values?: StopValues): Promise<GatewayCloseResult> => {
-    lifecycle ??= shutdown(values ?? stopValues.read());
-    return lifecycle;
+    closing ??= shutdownWith(values ?? stopValues.read());
+    return closing.result();
   };
 
   const abort = (values?: StopValues): Promise<GatewayCloseResult> => {
     abortRequested = true;
-    if (lifecycle === undefined) lifecycle = shutdown(values ?? stopValues.read());
-    else requestGatewayAbort();
-    return lifecycle;
+    if (closing === undefined) return close(values);
+    requestGatewayAbort(closing.values);
+    return closing.result();
   };
 
   const latchFatal = (error: Error): void => {
@@ -1027,8 +1040,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       },
     });
     const probeServers = new Set<ManagedServer>();
-    const closeProbes = async (): Promise<void> => {
-      await Promise.all([autoProbe.close(), ...[...probeServers].map((server) => server.stop(closeValues === undefined ? undefined : { stopGraceMs: closeValues.managedServerStopGraceMs }))]);
+    const closeProbes = async (values: StopValues | undefined): Promise<void> => {
+      await Promise.all([autoProbe.close(), ...[...probeServers].map((server) => server.stop(values === undefined ? undefined : { stopGraceMs: values.managedServerStopGraceMs }))]);
     };
     cleanups.push(closeProbes);
     const probePorts: Omit<ProbeWiring, 'outputPolicy'> = {
@@ -1198,7 +1211,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         return;
       }
       holds.delete(closable);
-      await closable.close(closeValues);
+      await closable.close(closingValues());
     };
     const closablesOf = (epoch: ProcessEpoch): Closable[] => [...epoch.parts.values()].flatMap((part) => part.closables);
     const liveEpochs = new Set<ProcessEpoch>();
@@ -1241,6 +1254,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               autoProbe,
               probeServers,
               timers: managedTimers,
+              timeoutSignal: timers.timeoutSignal,
+              platform,
               role,
               home: options.home,
               hostForms: endpointFormsOfSocket(own.sockets.gateway),
@@ -1467,6 +1482,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       clock,
       timers,
       random,
+      pid,
       dbPath: paths.databases.gateway,
       hmacKey,
       socketPath: own.sockets.gateway,
@@ -1494,11 +1510,11 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
     cleanups.splice(cleanups.indexOf(closeProbes), 1);
     cleanups.splice(cleanups.indexOf(retireEpochsAtFailedStart), 1);
-    cleanups.push(() => closeTogether([abortRequested ? gateway.abort(closeValues) : gateway.close(closeValues), closeProbes()]));
-    requestGatewayAbort = () => void gateway.abort(closeValues);
+    cleanups.push((values) => closeTogether([abortRequested ? gateway.abort(values) : gateway.close(values), closeProbes(values)]));
+    requestGatewayAbort = (values) => void gateway.abort(values);
     gatewayAbandonedRuns = () => gateway.abandonedRuns;
     signal?.throwIfAborted();
-    const ready: ReadyFields = { service: 'gateway', pid: process.pid, version: options.version, socketPath: gateway.socketPath, startedAt: gateway.startedAt };
+    const ready: ReadyFields = { service: 'gateway', pid, version: options.version, socketPath: gateway.socketPath, startedAt: gateway.startedAt };
     announceReady(ready, stdout);
     phase = 'running';
     if (fatalError !== undefined) void abort();
@@ -1516,7 +1532,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const leaveWhenUnheld = async (): Promise<void> => {
       gateway.releaseIdleConnections();
       if (retired || !holdsNothing()) return;
-      const standing = await runtimeHealth(AbortSignal.any([lifetime.signal, AbortSignal.timeout(CONTROL_REQUEST_TIMEOUT_MS)]));
+      const standing = await runtimeHealth(AbortSignal.any([lifetime.signal, timers.timeoutSignal(CONTROL_REQUEST_TIMEOUT_MS)]));
       if (standing === 'busy' || phase !== 'running' || role.current() !== 'retiring' || !holdsNothing()) return;
       retired = true;
       logger.info('generation.retired', { data: { generation: options.generation } });
@@ -1545,7 +1561,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     return { ready, socketPath: gateway.socketPath, close, abort, role: () => role.current(), fatal };
   } catch (error) {
     phase = 'closing';
-    for (const cleanupFailure of await unwind()) logger.error('startup.cleanup_failed', { err: cleanupFailure });
+    for (const cleanupFailure of await unwind(undefined)) logger.error('startup.cleanup_failed', { err: cleanupFailure });
     phase = 'closed';
     throw error;
   }

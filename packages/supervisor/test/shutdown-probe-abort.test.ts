@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, SHUTDOWN_DRAIN_BOUND_MS } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, POLL_INTERVAL_MS, SHUTDOWN_DRAIN_BOUND_MS } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, waitFor, sleepDrivenTiming } from '@momonga/testkit';
 import type { ChildManager } from '../src/child-manager.ts';
 import { SHUTDOWN_REAP_BOUND_MS } from '../src/constants.ts';
 import type { ChildRole } from '../src/launcher.ts';
@@ -65,7 +65,7 @@ const world = () => {
   const clock = createFakeClock(0);
   const timers = createFakeTimers(clock);
   const log = createLogBuffer(clock);
-  const reapTiming = { now: () => clock.now(), sleep: (ms: number) => new Promise<void>((resolve) => void timers.setTimeout(resolve, ms)) };
+  const reapTiming = sleepDrivenTiming({ now: () => clock.now(), sleep: (ms: number) => new Promise<void>((resolve) => void timers.setTimeout(resolve, ms)) });
   return { clock, timers, log, reapTiming };
 };
 
@@ -100,9 +100,9 @@ describe('T6 shutdown aborts the probes it waits for', () => {
       onFatal: () => undefined,
     });
     const closing = settled<SupervisorCloseResult>(controller.close(DEFAULT_STOP_VALUES));
-    timers.advance(REAP_POLL_INTERVAL_MS);
+    timers.advance(POLL_INTERVAL_MS);
     await waitFor(() => log.events('shutdown.step').some((line) => line['shutdownStep'] === 2), { description: 'step 2 begins within one poll interval of the drain', maxTurns: 20_000 });
-    expect(clock.now()).toBeLessThanOrEqual(REAP_POLL_INTERVAL_MS);
+    expect(clock.now()).toBeLessThanOrEqual(POLL_INTERVAL_MS);
     expect(clock.now()).toBeLessThan(SHUTDOWN_DRAIN_BOUND_MS);
     expect(log.events('shutdown.step.bound').filter((line) => line['detail'] === 'step 1 bound reached')).toEqual([]);
     expect(seen[0]).toBeInstanceOf(AbortSignal);

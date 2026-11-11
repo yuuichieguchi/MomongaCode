@@ -158,3 +158,43 @@ describe('gateway client malformed replies', () => {
     expectGatewayError(await settle(collect(client.stream(streamBody(), callOptions(clock)))), INVALID);
   });
 });
+
+const DEEP_LEVELS = 200;
+
+const nested = (levels: number): string => `${'{"a":'.repeat(levels)}1${'}'.repeat(levels)}`;
+
+const TOO_DEEP = { ...INVALID, message: expect.stringContaining('JSON depth exceeds the limit') };
+
+describe('gateway client replies nested too deep (the one bounded parse of text from another process)', () => {
+  it('refuses a unary reply nested 200 levels deep with the typed malformed-reply error', async () => {
+    const { client } = await clientReplying(jsonReply(200, nested(DEEP_LEVELS)));
+    expectGatewayError(await settle(client.health()), TOO_DEEP);
+  });
+
+  it('refuses a compact reply nested 200 levels deep', async () => {
+    const { clock, client } = await clientReplying(jsonReply(200, nested(DEEP_LEVELS)));
+    expectGatewayError(await settle(client.compact(COMPACT_REQUEST, callOptions(clock))), TOO_DEEP);
+  });
+
+  it('refuses a compact stream frame nested 200 levels deep', async () => {
+    const { clock, client } = await clientReplying((_request, response) => {
+      openSse(response);
+      response.end(`event: response.in_progress\ndata: ${nested(DEEP_LEVELS)}\n\n`);
+    });
+    expectGatewayError(await settle(client.compact(COMPACT_REQUEST, callOptions(clock))), TOO_DEEP);
+  });
+
+  it('refuses a stream frame nested 200 levels deep although it has a string type', async () => {
+    const { clock, client } = await clientReplying((_request, response) => {
+      openSse(response);
+      response.end(`data: {"type":"response.created","sequence_number":0,"response":${nested(DEEP_LEVELS)}}\n\n`);
+    });
+    expectGatewayError(await settle(collect(client.stream(streamBody(), callOptions(clock)))), TOO_DEEP);
+  });
+
+  it('answers an error body nested 200 levels deep by its HTTP status, without reading the body as an error', async () => {
+    const body = `{"error":{"message":"taken from the body","code":"from_the_body","type":"invalid_request"},"extra":${nested(DEEP_LEVELS)}}`;
+    const { client } = await clientReplying(jsonReply(400, body));
+    expectGatewayError(await settle(client.health()), { status: 400, code: 'http_400' });
+  });
+});

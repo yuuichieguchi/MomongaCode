@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Runs, Jobs, Clients, Sessions, Lifeline, MaxV, MaxGen, MaxSteps, MaxStarts, MaxExecFails, MaxModals, MaxCrash, MaxOut, MaxCalls, Extended, Gateway, Upkeep, Variant
 
-ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath", "scanAlloc", "noJoin", "releaseEarly", "failSetsNone", "publishNoCheck", "staleStarter", "claimUnchecked", "killWithoutRequest", "readOwnGenOnly", "reconcileLive", "jobRetiring", "sweepRetiring", "pruneAll", "gwAcceptsWhileRetiring", "gwExitEarly", "gwGraceAbort", "gwSilentRefuse", "killDropped", "gwRefuseNoYield", "userStopNeverEnds", "noReconcile", "noTakeover"}
+ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath", "scanAlloc", "noJoin", "releaseEarly", "failSetsNone", "publishNoCheck", "staleStarter", "claimUnchecked", "killWithoutRequest", "readOwnGenOnly", "reconcileLive", "jobRetiring", "sweepRetiring", "pruneAll", "gwAcceptsWhileRetiring", "gwExitEarly", "gwExitWithStep", "gwGraceAbort", "gwSilentRefuse", "killDropped", "gwRefuseNoYield", "userStopNeverEnds", "noReconcile", "noTakeover"}
 ASSUME MaxV \in Nat \ {0, 1}
 ASSUME MaxGen \in Nat \ {0}
 ASSUME MaxSteps \in Nat \ {0}
@@ -665,6 +665,7 @@ GwRetire(g) ==
 GwExit(g) ==
     /\ g \in Gens /\ gw[g] = "retiring" /\ gwProbe[g] = 0
     /\ (gwOpen[g] = 0 \/ Variant \in {"gwExitEarly", "gwGraceAbort"})
+    /\ (StepsAt(g) = {} \/ Variant \in {"gwExitWithStep", "gwExitEarly", "gwGraceAbort"})
     /\ gw' = [gw EXCEPT ![g] = "gone"]
     /\ gwOpen' = [gwOpen EXCEPT ![g] = IF Variant = "gwGraceAbort" THEN 0 ELSE @]
     /\ gwUnanswered' = IF Variant = "gwGraceAbort" THEN gwUnanswered + gwOpen[g] ELSE gwUnanswered
@@ -786,6 +787,8 @@ NoNewJobWhileRetiring == [][\A j \in Jobs : (job[j] = "none" /\ job'[j] = "live"
 SweepServingOnly == [][swept' # "retiring"]_vars
 
 PruneBelowLive == [][pb' # pb => (\A h \in Gens : sup[h] => ver[h] >= pb')]_vars
+
+GwNoExitWhileStepping == [][\A g \in Gens : (gw[g] = "retiring" /\ gw'[g] = "gone") => StepsAt(g) = {}]_vars
 
 GwNoNewCallWhileRetiring == [][\A g \in Gens : gwOpen'[g] > gwOpen[g] => gw[g] = "serving"]_vars
 

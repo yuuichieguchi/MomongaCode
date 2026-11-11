@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GroupMembersReader, ProcessGroupPort } from '@momonga/foundation';
-import { forceKillGroup, groupAlive, procGroupMembers, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { forceKillGroup, groupAlive, procGroupMembers, systemWaitTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createSteppingTiming, killGroupsForCleanup } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -135,7 +135,7 @@ describe('groupAlive', () => {
     expect(await groupAlive(group.pgid)).toBe(true);
     process.kill(-group.pgid, 'SIGKILL');
     await group.exited;
-    expect(await waitForGroupGone(group.pgid, Date.now() + 5000)).toBe(true);
+    expect(await waitForGroupGone(group.pgid, systemWaitTiming.monotonicMs() + 5000)).toBe(true);
     expect(await groupAlive(group.pgid)).toBe(false);
   });
 
@@ -158,7 +158,7 @@ describe('signalGroup', () => {
     const group = await spawnGroup('normal');
     await signalGroup(group.pgid, 'SIGTERM');
     expect(await group.exited).toEqual({ code: null, signal: 'SIGTERM' });
-    expect(await waitForGroupGone(group.pgid, Date.now() + 5000)).toBe(true);
+    expect(await waitForGroupGone(group.pgid, systemWaitTiming.monotonicMs() + 5000)).toBe(true);
     expect(pidAlive(group.grandchildPid)).toBe(false);
   });
 
@@ -199,7 +199,7 @@ describe('signalGroupExceptLeader', () => {
   it('delivers the signal to every member of the group but its leader', async () => {
     const group = await spawnGroup('normal');
     signalGroupExceptLeader(group.pgid, 'SIGTERM', psGroupMembers);
-    expect(await waitForGroupGone(group.pgid, Date.now() + 50)).toBe(false);
+    expect(await waitForGroupGone(group.pgid, systemWaitTiming.monotonicMs() + 50)).toBe(false);
     const deadline = Date.now() + 5000;
     while (pidAlive(group.grandchildPid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
     expect(pidAlive(group.grandchildPid)).toBe(false);
@@ -251,12 +251,12 @@ describe.skipIf(process.platform !== 'linux')('procGroupMembers (Linux /proc)', 
 describe('waitForGroupGone', () => {
   it('returns false when the deadline passes while the group is still alive', async () => {
     const group = await spawnGroup('normal');
-    expect(await waitForGroupGone(group.pgid, Date.now() + 50)).toBe(false);
+    expect(await waitForGroupGone(group.pgid, systemWaitTiming.monotonicMs() + 50)).toBe(false);
     expect(await groupAlive(group.pgid)).toBe(true);
   });
 
   it('returns true immediately for a group that is already gone', async () => {
-    expect(await waitForGroupGone(reapedGroupId(), Date.now())).toBe(true);
+    expect(await waitForGroupGone(reapedGroupId(), systemWaitTiming.monotonicMs())).toBe(true);
   });
 });
 
@@ -331,7 +331,7 @@ describe('forceKillGroup', () => {
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < FORK_LOOP_ITERATIONS; iteration += 1) {
       const { pgid, exited } = await spawnForkLoopGroup();
-      const gone = await forceKillGroup(pgid, { deadline: Date.now() + 1000 });
+      const gone = await forceKillGroup(pgid, { deadline: systemWaitTiming.monotonicMs() + 1000 });
       const reaped = await settlesWithin(exited, LEADER_REAP_WAIT_MS);
       outcomes.push(`gone=${gone} alive=${reaped ? await groupAlive(pgid) : 'leader not reaped'}`);
     }
@@ -340,26 +340,23 @@ describe('forceKillGroup', () => {
 
   it('signals a live group at least once even when the deadline has already passed', async () => {
     const group = await spawnGroup('normal');
-    await forceKillGroup(group.pgid, { deadline: Date.now() - 1 });
+    await forceKillGroup(group.pgid, { deadline: systemWaitTiming.monotonicMs() - 1 });
     expect(await settlesWithin(group.exited, LEADER_REAP_WAIT_MS)).toBe(true);
     expect(await group.exited).toEqual({ code: null, signal: 'SIGKILL' });
-    expect(await waitForGroupGone(group.pgid, Date.now() + 5000)).toBe(true);
+    expect(await waitForGroupGone(group.pgid, systemWaitTiming.monotonicMs() + 5000)).toBe(true);
   });
 
   it('returns true without signalling for a group that is already gone', async () => {
-    expect(await forceKillGroup(reapedGroupId(), { deadline: Date.now() })).toBe(true);
+    expect(await forceKillGroup(reapedGroupId(), { deadline: systemWaitTiming.monotonicMs() })).toBe(true);
   });
 
   it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', async (pgid) => {
-    await expect(forceKillGroup(pgid, { deadline: Date.now() + 100 })).rejects.toThrow(/refusing to signal process group/);
+    await expect(forceKillGroup(pgid, { deadline: systemWaitTiming.monotonicMs() + 100 })).rejects.toThrow(/refusing to signal process group/);
   });
 });
 
 describe('terminateGroup answers only whether the group ended, by the group probe, and makes no holder listing', () => {
-  const instantTiming = () => {
-    let now = 0;
-    return { now: () => now, sleep: async (ms: number) => void (now += ms) };
-  };
+  const instantTiming = () => createSteppingTiming(createFakeClock(0));
 
   const groupDyingOn = (fatal: NodeJS.Signals | undefined, events: string[]): ProcessGroupPort => {
     let alive = fatal !== undefined;

@@ -6,26 +6,35 @@ import { TEST_SECRET_PROGRAMS_ENV } from './secret-store-env-check.ts';
 export type * from 'node:child_process';
 
 type Launch = (...args: unknown[]) => unknown;
-type EnvOptions = { env?: Readonly<Record<string, string | undefined>> };
+type ProcessEnv = Readonly<Record<string, string | undefined>>;
+type EnvOptions = { env?: ProcessEnv };
 
-const withFakeProgramsFirst = (env: Readonly<Record<string, string | undefined>>): Readonly<Record<string, string | undefined>> => {
-  const bin = process.env[TEST_SECRET_PROGRAMS_ENV];
+const withFakeProgramsFirst = (bin: string, env: ProcessEnv): ProcessEnv => {
   const current = env['PATH'];
-  if (bin === undefined || bin === '' || current === undefined) return env;
+  if (current === undefined) return env;
   if (current.split(path.delimiter)[0] === bin) return env;
   return { ...env, PATH: current === '' ? bin : `${bin}${path.delimiter}${current}` };
 };
 
-const withFakeProgramsInOptions = (args: readonly unknown[]): unknown[] =>
-  args.map((arg, index) => {
-    if (index === 0 || typeof arg !== 'object' || arg === null || Array.isArray(arg)) return arg;
-    const options = arg as EnvOptions;
-    return options.env === undefined ? arg : { ...options, env: withFakeProgramsFirst(options.env) };
-  });
+const isOptions = (arg: unknown): arg is EnvOptions => typeof arg === 'object' && arg !== null && !Array.isArray(arg);
+
+const withFakeProgramsInChildEnv = (args: readonly unknown[]): readonly unknown[] => {
+  const bin = process.env[TEST_SECRET_PROGRAMS_ENV];
+  if (bin === undefined || bin === '') return args;
+  const optionsAt = args.findIndex((arg, index) => index > 0 && isOptions(arg));
+  if (optionsAt !== -1) {
+    const options = args[optionsAt] as EnvOptions;
+    return args.with(optionsAt, { ...options, env: withFakeProgramsFirst(bin, options.env ?? process.env) });
+  }
+  const inherited: EnvOptions = { env: withFakeProgramsFirst(bin, process.env) };
+  const freeAt = args.findIndex((arg, index) => index > 0 && (arg === undefined || arg === null || typeof arg === 'function'));
+  if (freeAt === -1) return [...args, inherited];
+  return typeof args[freeAt] === 'function' ? args.toSpliced(freeAt, 0, inherited) : args.with(freeAt, inherited);
+};
 
 const facadeOf = <T extends Launch>(launch: T, withPromisified = true): T => {
   const facade = function launchWithFakeSecretPrograms(this: unknown, ...args: unknown[]): unknown {
-    return launch.apply(this, withFakeProgramsInOptions(args));
+    return launch.apply(this, [...withFakeProgramsInChildEnv(args)]);
   } as T;
   const custom = (launch as T & { [promisify.custom]?: Launch })[promisify.custom];
   if (withPromisified && custom !== undefined) Object.defineProperty(facade, promisify.custom, { value: facadeOf(custom, false) });

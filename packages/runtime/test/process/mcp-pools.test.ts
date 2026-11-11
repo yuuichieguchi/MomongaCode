@@ -12,6 +12,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_LEASE, UNCONFIGURED_NETWORK, MCP_MOD
 import { nodeShellHost } from '@momonga/tools';
 import type { ToolSource } from '@momonga/tools';
 import {
+  FIXTURE_RUNTIME_VERSION,
   POOL_IDLE_CLOSE_MS,
   POOL_REFERENCE_AUDIT_MS,
   createRun,
@@ -113,6 +114,15 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect((f.counting.created[0]?.closeGraceMs as () => number)()).toBe(1000);
     expect(f.counting.created[0]?.markers?.dir).toBe(f.temp.paths.markers.mcp);
     expect(f.counting.created[0]?.projectDir).toBe(f.temp.project);
+  });
+
+  it('gives the pool of a run the version of the runtime as the version its MCP client reports', async () => {
+    const f = await realFixture();
+    writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
+
+    await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
+
+    expect(f.counting.created[0]?.clientVersion).toBe(FIXTURE_RUNTIME_VERSION);
   });
 
   it('G2: passes mcp.toolIdleTimeoutMs and mcp.toolTotalTimeoutMs from the user settings to the pool and its tools', async () => {
@@ -397,6 +407,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     let error: unknown;
     try {
       runtime.createToolRuntime({
+        version: '0.0.0-test',
         network: UNCONFIGURED_NETWORK,
         paths: f.temp.paths,
         sharedPaths: f.temp.paths,

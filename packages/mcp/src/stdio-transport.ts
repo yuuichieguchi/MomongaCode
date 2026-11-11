@@ -6,16 +6,16 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type GroupTiming, type GroupLaunch, type TerminateOutcome } from '@momonga/foundation';
+import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
-export const DEFAULT_CLOSE_GRACE_MS = 2000;
 const NEWLINE = 0x0a;
+const CLOSE_REAP_OCCASION: RetryKind = 'shutdown';
 
 export type CloseGrace = number | (() => number);
 
-export const closeGraceOf = (grace: CloseGrace | undefined): number => (typeof grace === 'function' ? grace() : (grace ?? DEFAULT_CLOSE_GRACE_MS));
+export const closeGraceOf = (grace: CloseGrace | undefined): number => (typeof grace === 'function' ? grace() : (grace ?? SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.default));
 
 export type McpMarkerOptions = { dir: string; onWarning(message: string): void };
 
@@ -26,8 +26,8 @@ export interface StdioTransportOptions {
   baseEnv: Record<string, string>;
   closeGraceMs?: CloseGrace;
   markers?: McpMarkerOptions;
-  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal; timing?: GroupTiming }) => Promise<TerminateOutcome>;
-  timing?: DeadlineTiming;
+  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal; timing?: Timing }) => Promise<TerminateOutcome>;
+  timing?: Timing;
 }
 
 export interface StdioTransportExit {
@@ -106,20 +106,12 @@ class StdioTransportImpl implements StdioTransport {
   private group: number | undefined;
 
   private readonly options: StdioTransportOptions;
-  private readonly timing: DeadlineTiming;
-  private readonly sleepTiming: GroupTiming;
+  private readonly timing: Timing;
 
   constructor(options: StdioTransportOptions) {
     this.options = options;
     const timing = options.timing ?? systemTiming;
     this.timing = timing;
-    this.sleepTiming = {
-      now: () => timing.now(),
-      sleep: (ms) =>
-        new Promise((resolve) => {
-          timing.setTimeout(resolve, ms);
-        }),
-    };
   }
 
   get pgid(): number | undefined {
@@ -168,7 +160,7 @@ class StdioTransportImpl implements StdioTransport {
       if (markerPath !== undefined) fs.rmSync(markerPath, { force: true });
       throw error;
     }
-    if (markerPath !== undefined) fs.writeFileSync(markerPath, `${launched.pgid}\n`);
+    if (markerPath !== undefined && launched.pgid !== undefined) await recordMarkerGroup(markerPath, launched.pgid);
     this.exited = new Promise<void>((resolve) => {
       const ended = (exit: StdioTransportExit): void => {
         this.exit = exit;
@@ -241,7 +233,7 @@ class StdioTransportImpl implements StdioTransport {
         const stopBound = Deadline.after(groupTerminationBoundMs(graceMs), this.timing);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          const outcome = await (this.options.terminate ?? terminateGroup)(group, { graceMs, signal: stopBound.signal, timing: this.sleepTiming });
+          const outcome = await (this.options.terminate ?? terminateGroup)(group, { graceMs, signal: stopBound.signal, timing: this.timing });
           if (outcome !== 'unconfirmed') await this.exitRecordedWithin(stopBound.signal);
         } catch (error) {
           terminateFailure = { error };
@@ -253,15 +245,19 @@ class StdioTransportImpl implements StdioTransport {
         if (this.markerPath !== undefined && this.options.markers !== undefined) {
           const sweep = operationSignal(undefined);
           try {
-            await reapMarkedProcesses({
-              marker: this.markerPath,
-              pgid: group,
-              killGraceMs: graceMs,
-              label: 'mcp',
-              onWarning: this.options.markers.onWarning,
-              timing: this.sleepTiming,
-              signal: sweep.signal,
-            });
+            const claim = await claimRetry(this.markerPath, CLOSE_REAP_OCCASION, { signal: sweep.signal });
+            if (claim === 'failed') throw new Error(`the ${CLOSE_REAP_OCCASION} retry of the MCP marker ${this.markerPath} could not be recorded, so its processes were not reaped`);
+            if (claim === 'claimed') {
+              await reapMarkedProcesses({
+                marker: this.markerPath,
+                pgid: group,
+                killGraceMs: graceMs,
+                label: 'mcp',
+                onWarning: this.options.markers.onWarning,
+                timing: this.timing,
+                signal: sweep.signal,
+              });
+            }
           } catch (error) {
             sweepFailure = { error };
           } finally {

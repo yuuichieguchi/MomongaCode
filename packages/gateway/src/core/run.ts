@@ -20,11 +20,18 @@ export type SharedRun = {
   readonly settled: Promise<void>;
 };
 
+export type SharedWorkHold = {
+  subscribers(count: number): void;
+  end(): void;
+};
+
+export type WorkRegistry = { beginWork(): SharedWorkHold };
+
 type Produce = (control: RunControl) => AsyncGenerator<StreamEvent>;
 
 const DONE: IteratorResult<StreamEvent> = { done: true, value: undefined };
 
-export const startDirectRun = (produce: Produce, onSettled: () => void): SharedRun => {
+export const startDirectRun = (produce: Produce, onSettled: () => void, onSubscribers: (count: number) => void): SharedRun => {
   const controller = new AbortController();
   const generator = produce({ signal: controller.signal, abort: (reason) => controller.abort(reason), frames: () => undefined });
   let finished = false;
@@ -47,9 +54,14 @@ export const startDirectRun = (produce: Produce, onSettled: () => void): SharedR
     subscribe: (signal) => {
       if (subscribed) throw new Error('a run without an idempotency key accepts exactly one subscriber');
       subscribed = true;
+      onSubscribers(1);
       let closed = false;
-      const onAbort = (): void => {
+      const leave = (): void => {
         closed = true;
+        onSubscribers(0);
+      };
+      const onAbort = (): void => {
+        leave();
         controller.abort(new ClientDisconnectedError());
       };
       signal.addEventListener('abort', onAbort, { once: true });
@@ -83,7 +95,7 @@ export const startDirectRun = (produce: Produce, onSettled: () => void): SharedR
           return step;
         },
         return: async () => {
-          closed = true;
+          leave();
           signal.removeEventListener('abort', onAbort);
           if (!finished) {
             controller.abort(new ClientDisconnectedError());
@@ -104,6 +116,7 @@ export type BufferedRunOptions = {
   readerStallMs: number;
   detachedMaxMs: number;
   onAborted: () => void;
+  onSubscribers: (count: number) => void;
   timers: GatewayTimers;
 };
 
@@ -223,16 +236,20 @@ export const startBufferedRun = (produce: Produce, onSettled: () => void, option
         evict: () => {
           evicted = true;
           cursors.delete(cursor);
+          options.onSubscribers(cursors.size);
           evictedController.abort(readerStalledError());
         },
       };
       cursors.add(cursor);
+      options.onSubscribers(cursors.size);
       clearDetachTimer();
       const close = (): void => {
         if (closed) return;
         closed = true;
         signal.removeEventListener('abort', onAbort);
-        if (cursors.delete(cursor) && cursors.size === 0) onLastSubscriberGone();
+        const left = cursors.delete(cursor);
+        options.onSubscribers(cursors.size);
+        if (left && cursors.size === 0) onLastSubscriberGone();
         trim();
         wake();
       };

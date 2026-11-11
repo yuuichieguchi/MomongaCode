@@ -3,12 +3,11 @@ import type { CommandOptions, CommandResult, CommandRunner } from '../../src/pla
 import type { FileLockOps } from '../../src/platform/kernel-lock.ts';
 import { nodeFileLockOps } from '../../src/platform/kernel-lock.ts';
 import type { LockCapability, LockCapabilityProbe } from '../../src/platform/lock-capability.ts';
+import type { Timing } from '../../src/timing.ts';
 
 export const LOCK_FLAG_BITS = 0x10 | 0x20;
 
-export type VirtualTiming = {
-  now(): number;
-  sleep(ms: number): Promise<void>;
+export type VirtualTiming = Timing & {
   advanceTo(time: number): Promise<void>;
 };
 
@@ -19,12 +18,19 @@ export const flushAsync = async (rounds = 20): Promise<void> => {
 export const virtualTiming = (): VirtualTiming => {
   let current = 0;
   const waiters: Array<{ at: number; wake: () => void }> = [];
+  const wakeAfter = (ms: number, wake: () => void): { at: number; wake: () => void } => {
+    const waiter = { at: current + ms, wake };
+    waiters.push(waiter);
+    return waiter;
+  };
   return {
     now: () => current,
-    sleep: (ms) =>
-      new Promise<void>((resolve) => {
-        waiters.push({ at: current + ms, wake: resolve });
-      }),
+    monotonicMs: () => current,
+    setTimeout: (callback, ms) => wakeAfter(ms, callback),
+    clearTimeout: (handle) => {
+      const index = waiters.findIndex((waiter) => waiter === handle);
+      if (index >= 0) waiters.splice(index, 1);
+    },
     advanceTo: async (time) => {
       for (;;) {
         await flushAsync();

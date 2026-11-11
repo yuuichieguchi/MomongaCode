@@ -62,7 +62,7 @@ const createReconnector = (policy: ReconnectPolicy): Reconnector => {
       if (policy.clock.now() - stalledSince >= policy.reconnectBoundMs) throw policy.boundExceeded(policy.reconnectBoundMs, failure);
       policy.onReconnecting?.(attempt);
       await policy.clock.sleep(
-        computeBackoff({ attempt, baseMs: RECONNECT_FIRST_RETRY_MS, maxMs: RECONNECT_MAX_INTERVAL_MS, random: policy.random }),
+        computeBackoff({ attempt, baseMs: RECONNECT_FIRST_RETRY_MS, maxMs: RECONNECT_MAX_INTERVAL_MS, random: { float: policy.random } }),
         policy.signal,
       );
       attempt += 1;

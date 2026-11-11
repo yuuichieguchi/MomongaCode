@@ -2,18 +2,20 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ProcessLockHeldError, acquireProcessLock, createKeyedSerializer, inspectProcessLock, withFileLock } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, withTempDir, sleepDrivenTiming, createFakeRandom } from '@momonga/testkit';
 
 const NEVER_ABORTED = new AbortController().signal;
 
 const steppedPorts = (): FileLockPorts => {
   let now = 1_000_000;
   return {
-    clock: { now: () => now },
-    sleep: async (ms) => {
-      now += ms;
-    },
-    randomHex: () => 'deadbeef',
+    timing: sleepDrivenTiming({
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+    }),
+    random: { ...createFakeRandom(1), hex: () => 'deadbeef' },
   };
 };
 

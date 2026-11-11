@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { systemClock } from './clock.ts';
+import { systemClock } from './system-timing.ts';
 import type { Clock } from './clock.ts';
 import { EntryUsageError, parseFlags } from './entry-flags.ts';
 import type { FlagSpec, ParsedFlags } from './entry-flags.ts';
@@ -12,7 +12,10 @@ import type { DescribeHolder, ProcessLock } from './process-lock.ts';
 import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
 import type { RotatingLogFile } from './rotating-log.ts';
-import { syncPaths } from './sync-paths.ts';
+import { answeredLater, askedPaths } from './path-asking.ts';
+import { hostPaths } from './path-compare.ts';
+import type { PathResolver } from './path-compare.ts';
+import { unresolvableReasonOf } from './path-resolution.ts';
 
 export type EntrySignal = 'SIGTERM' | 'SIGINT';
 
@@ -29,6 +32,7 @@ export type EntryIo = {
   onSignal(signal: EntrySignal, handler: () => void): () => void;
   onUncaught(handler: (error: Error) => void): () => void;
   watchLifeline(fd: number, handlers: LifelineHandlers): LifelineWatch;
+  paths(signal: AbortSignal): PathResolver;
   logFile(path: string): RotatingLogFile;
   holdOpen(): () => void;
   lockMechanism?: KernelLockMechanism;
@@ -68,6 +72,27 @@ export type DaemonDefinition<F extends FlagSpec> = {
   start(context: DaemonStartContext<F>): Promise<DaemonHandle>;
 };
 
+const toError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
+
+const errnoCodeOf = (error: unknown): string | undefined => (error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : undefined);
+
+export class HomeUnresolvedError extends Error {
+  readonly home: string;
+  readonly code: string | undefined;
+
+  constructor(home: string, cause: unknown) {
+    const code = errnoCodeOf(cause);
+    super(`the home ${home} cannot be resolved${code === undefined ? '' : ` (${code})`}: ${toError(cause).message}`, { cause });
+    this.name = 'HomeUnresolvedError';
+    this.home = home;
+    this.code = code;
+  }
+
+  get hostFailure(): string | undefined {
+    return unresolvableReasonOf(this.cause) === undefined ? this.code : undefined;
+  }
+}
+
 export class StartupCancelled extends Error {
   constructor(message = 'startup cancelled') {
     super(message);
@@ -88,8 +113,6 @@ const HOLD_OPEN_INTERVAL_MS = 3_600_000;
 const MALFORMED_STOP_MESSAGE = 'the stop message was malformed and was ignored';
 const STOP_MESSAGE_ALREADY_RECEIVED = 'a stop message was already received';
 const STOP_VALUES_ALREADY_TAKEN = 'the stop had already taken its values';
-
-const toError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 export const exitCodeForStartError = (input: { error: unknown; ownLockPath: string; isConfigError(error: unknown): boolean }): number => {
   const { error, ownLockPath, isConfigError } = input;
@@ -125,10 +148,18 @@ type ResolvedEntry<F extends FlagSpec> = {
   lifelineFd: number | undefined;
 };
 
-const resolveEntry = <F extends FlagSpec>(io: EntryIo, definition: DaemonDefinition<F>): ResolvedEntry<F> => {
+const resolvedHome = async (io: EntryIo, given: string, signal: AbortSignal): Promise<string> => {
+  try {
+    return await answeredLater(askedPaths.canonicalPath(given), io.paths(signal), signal);
+  } catch (error) {
+    throw new HomeUnresolvedError(given, error);
+  }
+};
+
+const resolveEntry = async <F extends FlagSpec>(io: EntryIo, definition: DaemonDefinition<F>, signal: AbortSignal): Promise<ResolvedEntry<F>> => {
   const flags = parseFlags(io.argv, definition.flags);
   const common = commonFlagsOf(flags);
-  const home = syncPaths.canonicalPath(common.home ?? io.home);
+  const home = await resolvedHome(io, common.home ?? io.home, signal);
   const logTarget = parseLogTarget(common.logTarget);
   return { flags, home, logPath: definition.logPath(home), ownLockPath: definition.ownLockPath(home, flags), logTarget, lifelineFd: common.lifelineFd };
 };
@@ -137,6 +168,12 @@ const reportUsageError = (io: EntryIo, service: string, error: unknown): number 
   createJsonLogger({ service, clock: io.clock, stream: io.stderr }).error('entry.usage_error', { err: toError(error) });
   io.exit(EXIT_CONFIG);
   return EXIT_CONFIG;
+};
+
+const reportHomeUnresolved = (io: EntryIo, service: string, error: HomeUnresolvedError, code: string): number => {
+  createJsonLogger({ service, clock: io.clock, stream: io.stderr }).error('entry.home_unresolved', { err: error, data: { home: error.home, code } });
+  io.exit(EXIT_FAILURE);
+  return EXIT_FAILURE;
 };
 
 type LogSink = { logger: JsonLogger; effectiveTarget: LogTarget; droppedLogLines(): number; close(): void };
@@ -171,17 +208,18 @@ const openLogSink = (io: EntryIo, service: string, logPath: string, requested: L
 
 export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition: DaemonDefinition<F>): Promise<number> => {
   const releaseHold = io.holdOpen();
+  const controller = new AbortController();
   let resolved: ResolvedEntry<F>;
   try {
-    resolved = resolveEntry(io, definition);
+    resolved = await resolveEntry(io, definition, controller.signal);
   } catch (error) {
     releaseHold();
+    if (error instanceof HomeUnresolvedError && error.hostFailure !== undefined) return reportHomeUnresolved(io, definition.service, error, error.hostFailure);
     return reportUsageError(io, definition.service, error);
   }
   const { flags, home, ownLockPath, logTarget, lifelineFd } = resolved;
   const sink = openLogSink(io, definition.service, resolved.logPath, logTarget);
   const { logger } = sink;
-  const controller = new AbortController();
   const outcome = Promise.withResolvers<number>();
 
   let phase: Phase = 'starting';
@@ -501,6 +539,7 @@ export const nodeEntryIo = (host: NodeJS.Process = process): EntryIo => {
       };
     },
     watchLifeline,
+    paths: hostPaths,
     holdOpen: () => {
       const hold = setInterval(noop, HOLD_OPEN_INTERVAL_MS);
       return () => clearInterval(hold);

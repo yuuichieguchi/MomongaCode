@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import * as network from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
@@ -32,7 +33,7 @@ const homeWithProxy = () => {
     fs.writeFileSync(temporary, `${JSON.stringify({ network: { httpsProxy: proxy } })}${' '.repeat(writes)}`, { mode: 0o600 });
     fs.renameSync(temporary, path.join(root, 'settings.json'));
   };
-  const ports = { home, env: {}, files: nodeFiles, stdout: { write: () => undefined }, stderr: { write: () => undefined } } as unknown as CliPorts;
+  const ports = { home, env: {}, timers: systemTiming, files: nodeFiles, stdout: { write: () => undefined }, stderr: { write: () => undefined } } as unknown as CliPorts;
   return { ports, writeProxy };
 };
 

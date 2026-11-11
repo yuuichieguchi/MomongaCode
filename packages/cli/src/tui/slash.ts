@@ -93,9 +93,10 @@ export const parseSlash = (line: string): ParsedSlash | undefined => {
 
 const NEWLINE: ActionId = 'prompt.newline';
 const KEY_JOIN = ' or ';
+const HELP_GAP = '  ';
 const HELP_CONTEXTS: Readonly<Record<ScreenMode, readonly KeyContext[]>> = { fullscreen: ['chat', 'viewport', 'global'], scrollback: ['chat', 'global'] };
 const MOUSE_HELP: Readonly<Record<ScreenMode, readonly string[]>> = {
-  fullscreen: ['wheel: scroll', 'drag: select', 'double click: select a word', 'triple click: select a line', 'click on a link: open it', 'click in the input: place the caret', 'click on a menu row: complete it'],
+  fullscreen: ['wheel  scroll', 'drag  select', 'double click  select a word', 'triple click  select a line', 'click on a link  open it', 'click in the input  place the caret', 'click on a menu row  complete it'],
   scrollback: [],
 };
 
@@ -109,9 +110,9 @@ export const newlineHelpLines = (keys: KeyTable, negotiation: NegotiationState):
   const actingKeys = keys.hintFor(NEWLINE, acting);
   const submit = keys.hintFor('prompt.submit');
   return [
-    ...(actingKeys === '' && unproven.length === 0 ? [] : [`${actingKeys}: ${description}${unproven.length === 0 ? '' : ` (${unproven.map(shownKey).join(KEY_JOIN)} works only if this terminal reports it; this one has not)`}`]),
-    ...escaped.map((spec) => `${shownKey(spec)}: ${description} where the terminal sends Alt as Escape`),
-    ...(submit === '' ? [] : [`\\ then ${submit}: ${description}`]),
+    ...(actingKeys === '' && unproven.length === 0 ? [] : [`${actingKeys}${HELP_GAP}${description}${unproven.length === 0 ? '' : ` (${unproven.map(shownKey).join(KEY_JOIN)} works only if this terminal reports it; this one has not)`}`]),
+    ...escaped.map((spec) => `${shownKey(spec)}${HELP_GAP}${description} where the terminal sends Alt as Escape`),
+    ...(submit === '' ? [] : [`\\ then ${submit}${HELP_GAP}${description}`]),
   ];
 };
 
@@ -124,7 +125,7 @@ export const helpText = ({ commands, keys, negotiation, screen, status }: HelpFa
   const keyLines = keys
     .rows()
     .filter((row) => contexts.includes(row.context))
-    .flatMap((row) => (row.id === NEWLINE ? newlineHelpLines(keys, negotiation) : keys.keysFor(row.id).length === 0 ? [] : [`${keys.hintFor(row.id)}: ${row.description}`]));
+    .flatMap((row) => (row.id === NEWLINE ? newlineHelpLines(keys, negotiation) : keys.keysFor(row.id).length === 0 ? [] : [`${keys.hintFor(row.id)}${HELP_GAP}${row.description}`]));
   const mouse = MOUSE_HELP[screen];
   return [
     'Commands',

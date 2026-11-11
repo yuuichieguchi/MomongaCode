@@ -12,24 +12,31 @@ describe('the one text module of plan answers, for both surfaces (P-C8)', () => 
   });
 
   it('tryAgainLine names the command of each surface', () => {
-    expect(texts.tryAgainLine('headless', plan)).toBe('Run momonga auth login chatgpt --account work to try again.');
+    expect(texts.tryAgainLine('cli', plan)).toBe('Run momonga auth login chatgpt --account work to try again.');
     expect(texts.tryAgainLine('tui', plan)).toBe('Run /login to try again.');
   });
 
   it('codeNotAcceptedLine names the identity and the try-again line of each surface', () => {
-    expect(texts.codeNotAcceptedLine('headless', CHATGPT, 'work')).toBe(
+    expect(texts.codeNotAcceptedLine('cli', CHATGPT, 'work')).toBe(
       'ChatGPT did not accept the sign-in code (invalid_grant). Run momonga auth login chatgpt --account work to try again.',
     );
     expect(texts.codeNotAcceptedLine('tui', CHATGPT, 'work')).toBe('ChatGPT did not accept the sign-in code (invalid_grant). Run /login to try again.');
   });
 
   it('planDisabledLines names the reconsent command in the shell only', () => {
-    expect(texts.planDisabledLines('headless', CHATGPT, 'work')).toEqual([`${CHATGPT.messages.planNotEnabledMessage} · Run momonga auth login chatgpt --account work --reconsent to enable it`]);
+    expect(texts.planDisabledLines('cli', CHATGPT, 'work')).toEqual([`${CHATGPT.messages.planNotEnabledMessage} · Run momonga auth login chatgpt --account work --reconsent to enable it`]);
     expect(texts.planDisabledLines('tui', CHATGPT, 'work')).toEqual([CHATGPT.messages.planNotEnabledMessage]);
   });
 
   it('reconsentCommand is the one spelling of the reconsent command', () => {
-    expect(policyMessages.reconsentCommand('chatgpt', 'work')).toBe('momonga auth login chatgpt --account work --reconsent');
+    expect(policyMessages.reconsentCommand({ profile: 'chatgpt', account: 'work' })).toBe('momonga auth login chatgpt --account work --reconsent');
+  });
+
+  it('a plan that names no account gives the profile-only commands', () => {
+    expect(policyMessages.signInCommandOf('cli', { profile: 'chatgpt' })).toBe('momonga auth login chatgpt');
+    expect(policyMessages.signInCommandOf('tui', { profile: 'chatgpt' })).toBe('/login');
+    expect(policyMessages.reconsentCommand({ profile: 'chatgpt' })).toBe('momonga auth login chatgpt --reconsent');
+    expect(texts.tryAgainLine('cli', { profile: 'chatgpt' })).toBe('Run momonga auth login chatgpt to try again.');
   });
 
   it('signedOutLines says whether the remote revocation was confirmed', () => {

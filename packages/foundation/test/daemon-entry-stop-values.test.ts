@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, formatStopMessage, runDaemonEntry } from '@momonga/foundation';
+import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, formatStopMessage, runDaemonEntry, hostPaths } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, StopValues } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 
@@ -27,6 +27,7 @@ const launch = async () => {
     argv: ARGV,
     env: { HOME },
     home: HOME,
+    paths: hostPaths,
     stdout: { write: () => true },
     stderr: { write: (chunk) => (stderr.push(chunk), true) },
     clock,

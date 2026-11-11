@@ -91,7 +91,7 @@ export type ReviewOptions = { kind: 'sample'; size: number; seed: string } | { k
 
 export const reviewPermissions = async (ports: CliPorts, paths: MomongaPaths, options: ReviewOptions): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     ports.stdout.write(options.kind === 'sample' ? await reviewSampleText(client, options) : await storeReviewText(client, options));
     return 0;

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { bsdFileLock, sqliteFileLock } from '@momonga/foundation';
 import type { KernelLockMechanism, LockCapability } from '@momonga/foundation';
-import { HEAVY_STEPS, LIGHT_STEPS, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
+import { HEAVY_STEPS, LIGHT_STEPS, RUN_LOCK_DEFAULT_WAIT_SECONDS, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
 import { createTempRoot, removeTempRoot } from './temp.ts';
 
 const STARTED = '2026-11-10T00:00:00.000Z';
@@ -175,6 +175,34 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
 
     expect(outcome.kind).toBe('acquired');
     expect(said).toEqual([`run-lock: heavy run waits up to 3 s for heavy pid 111 started ${STARTED} in /w: cmd1`, 'run-lock: heavy run starts after waiting 3 s']);
+  });
+
+  it('a light run whose caller named no limit waits for the heavy holder and is not refused at once', async () => {
+    const holder = await hold();
+    let clock = 0;
+    let sleeps = 0;
+    const said: string[] = [];
+
+    const outcome = await acquireRunLock(
+      request({
+        runClass: 'light',
+        pid: 999,
+        command: 'cmd9',
+        waitSeconds: parseWaitSeconds(undefined, 'env'),
+        say: (line) => said.push(line),
+        monotonic: () => clock,
+        sleep: async () => {
+          sleeps += 1;
+          clock += 1000;
+          if (sleeps === 2) await holder.release();
+        },
+      }),
+    );
+    if (outcome.kind === 'acquired') releases.push(() => outcome.release());
+
+    expect(outcome.kind).toBe('acquired');
+    expect(said).toEqual([`run-lock: light run waits up to ${RUN_LOCK_DEFAULT_WAIT_SECONDS} s for heavy pid 111 started ${STARTED} in /w: cmd1`, 'run-lock: light run starts after waiting 2 s']);
+    expect(RUN_LOCK_DEFAULT_WAIT_SECONDS).toBeGreaterThan(0);
   });
 
   it('TB11 gives up when the limit passes with the holder still there, after exactly two sleeps', async () => {
@@ -447,10 +475,10 @@ describe('acquireRunLock chooses its mechanism by capability', () => {
 
 describe('parseWaitSeconds', () => {
   it.each([
-    [undefined, 'env', 0],
+    [undefined, 'env', RUN_LOCK_DEFAULT_WAIT_SECONDS],
     ['0', 'env', 0],
     ['30', 'env', 30],
-    ['', 'env', 0],
+    ['', 'env', RUN_LOCK_DEFAULT_WAIT_SECONDS],
   ] as const)('TB19 reads %j from %s as %d', (text, source, expected) => {
     expect(parseWaitSeconds(text, source)).toBe(expected);
   });

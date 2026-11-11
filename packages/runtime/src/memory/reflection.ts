@@ -312,7 +312,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
           store.reflection.fail(job.runId, reason, ledger.unrecorded, ledger.facts);
         } else {
           recordUnrecorded(ledger, error);
-          retryAt.set(job.runId, clock.now() + computeBackoff({ attempt: attempts - 1, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random }));
+          retryAt.set(job.runId, clock.now() + computeBackoff({ attempt: attempts - 1, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: { float: options.random } }));
         }
         throw error;
       } finally {

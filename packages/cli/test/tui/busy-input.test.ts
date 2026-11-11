@@ -44,6 +44,9 @@ describe('the busy keys (design 5.3)', () => {
     expect(busyHint(DEFAULT_KEY_TABLE, true)).toBe('enter: steer after the next tool call · tab: queue for after this run · esc: stop · up: take back waiting messages');
     expect(busyHint(rebound, false)).toBe('ctrl+s: steer after the next tool call · ctrl+q: queue for after this run · ctrl+x: stop');
     expect(completionHint(DEFAULT_KEY_TABLE)).toBe('tab: complete · esc: close the list');
+    const keyless = createKeyTable(KEYS.map((entry) => (entry.id === 'prompt.queue' || entry.id === 'editor.up' || entry.id === 'menu.close' ? { ...entry, default: [] } : entry)));
+    expect(busyHint(keyless, true)).toBe('enter: steer after the next tool call · esc: stop');
+    expect(completionHint(keyless)).toBe('tab: complete');
     expect(INBOX_FULL_HINT).toBe(`${INBOX_MAX_PENDING} messages are already waiting`);
   });
 });

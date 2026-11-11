@@ -130,20 +130,22 @@ export const syncDirectorySync = <Handle>(fs: Pick<AtomicWriteFileSystemSync<Han
   }
 };
 
-type Write<Handle> = {
+type OpenFile = { write(content: FileContent): unknown; sync(): unknown; close(): unknown };
+
+type Write = {
   readonly form: LockForm;
   readonly temporary: string;
   held: HeldKernelLock | undefined;
-  handle: Handle | undefined;
+  open: OpenFile | undefined;
   ownsTemporary: boolean;
   created: boolean;
 };
 
-const startWrite = <Handle>(mechanism: KernelLockMechanism, random: Random, file: string): Write<Handle> => ({
+const startWrite = (mechanism: KernelLockMechanism, random: Random, file: string): Write => ({
   form: lockFormOf(mechanism, 'file'),
   temporary: temporaryOf(random, file),
   held: undefined,
-  handle: undefined,
+  open: undefined,
   ownsTemporary: false,
   created: true,
 });
@@ -155,18 +157,10 @@ export class ClaimedDescriptorUnwritableError extends Error {
   }
 }
 
-type SyncHandle = { write(content: FileContent): void; sync(): void; close(): void };
-
 const descriptorHandle = (writer: DescriptorWriter, descriptor: number): AtomicWriteFileHandle => ({
   writeFile: (content) => writer.write(descriptor, content),
   sync: () => writer.sync(descriptor),
   close: async () => undefined,
-});
-
-const descriptorHandleSync = (writer: DescriptorWriterSync, descriptor: number): SyncHandle => ({
-  write: (content) => writer.write(descriptor, content),
-  sync: () => writer.sync(descriptor),
-  close: () => undefined,
 });
 
 export const openClaimedEntry = async (fs: Pick<AtomicWriteFileSystem, 'open' | 'descriptors'>, held: HeldKernelLock, entry: string, mode: number): Promise<AtomicWriteFileHandle> => {
@@ -176,18 +170,22 @@ export const openClaimedEntry = async (fs: Pick<AtomicWriteFileSystem, 'open' | 
   return descriptorHandle(fs.descriptors, held.descriptor);
 };
 
-const openClaimedEntrySync = <Handle>(fs: AtomicWriteFileSystemSync<Handle>, held: HeldKernelLock, entry: string, mode: number): SyncHandle => {
-  if (held.descriptor === undefined) return pathHandleSync(fs, fs.openSync(entry, EXCLUSIVE_CREATE, mode));
-  if (fs.descriptorsSync === undefined) throw new ClaimedDescriptorUnwritableError(entry);
-  fs.descriptorsSync.chmod(held.descriptor, mode);
-  return descriptorHandleSync(fs.descriptorsSync, held.descriptor);
-};
+const openFileOf = (handle: AtomicWriteFileHandle): OpenFile => ({ write: (content) => handle.writeFile(content), sync: () => handle.sync(), close: () => handle.close() });
 
-const pathHandleSync = <Handle>(fs: AtomicWriteFileSystemSync<Handle>, handle: Handle): SyncHandle => ({
+const pathFileSync = <Handle>(fs: AtomicWriteFileSystemSync<Handle>, handle: Handle): OpenFile => ({
   write: (content) => fs.writeFileSync(handle, content),
   sync: () => fs.fsyncSync(handle),
   close: () => fs.closeSync(handle),
 });
+
+const openClaimedEntrySync = <Handle>(fs: AtomicWriteFileSystemSync<Handle>, held: HeldKernelLock, entry: string, mode: number): OpenFile => {
+  if (held.descriptor === undefined) return pathFileSync(fs, fs.openSync(entry, EXCLUSIVE_CREATE, mode));
+  const writer = fs.descriptorsSync;
+  const { descriptor } = held;
+  if (writer === undefined) throw new ClaimedDescriptorUnwritableError(entry);
+  writer.chmod(descriptor, mode);
+  return { write: (content) => writer.write(descriptor, content), sync: () => writer.sync(descriptor), close: () => undefined };
+};
 
 export class ClaimedEntryReplacedError extends Error {
   constructor(entry: string) {
@@ -196,28 +194,199 @@ export class ClaimedEntryReplacedError extends Error {
   }
 }
 
-const assertStillClaimed = <Handle>(write: Write<Handle>): void => {
+const assertStillClaimed = (write: Write): void => {
   if (heldOf(write).stillNamed?.() !== false) return;
   write.ownsTemporary = false;
   throw new ClaimedEntryReplacedError(write.temporary);
 };
 
-const heldOf = <Handle>(write: Write<Handle>): HeldKernelLock => {
+const heldOf = (write: Write): HeldKernelLock => {
   if (write.held === undefined) throw new Error(`${write.temporary} has no lock at a step that needs it`);
   return write.held;
 };
 
-const handleOf = <Handle>(write: Write<Handle>): Handle => {
-  if (write.handle === undefined) throw new Error(`${write.temporary} is not open at the write step`);
-  return write.handle;
+const openOf = (write: Write): OpenFile => {
+  if (write.open === undefined) throw new Error(`${write.temporary} is not open at the write step`);
+  return write.open;
 };
 
-const releaseAfterFailure = <Handle>(write: Write<Handle>): void => {
+const releaseAfterFailure = (write: Write): void => {
   const held = write.held;
   write.held = undefined;
   if (held === undefined) return;
   if (write.form === 'sidecar') held.dispose();
   else held.release();
+};
+
+export type AtomicWriteOperation =
+  | { run: 'claim'; entry: string; form: LockForm }
+  | { run: 'openClaimed'; held: HeldKernelLock; entry: string; mode: number }
+  | { run: 'create'; file: string; mode: number }
+  | { run: 'write'; open: OpenFile; content: FileContent }
+  | { run: 'sync'; open: OpenFile }
+  | { run: 'close'; open: OpenFile }
+  | { run: 'beforePublish' }
+  | { run: 'rename'; from: string; to: string }
+  | { run: 'link'; from: string; to: string }
+  | { run: 'afterPublish' }
+  | { run: 'remove'; file: string }
+  | { run: 'syncDirectory'; directory: string };
+
+export type AtomicWriteSequence<Answer> = Generator<AtomicWriteOperation, Answer, unknown>;
+
+export type AtomicWriteSequenceOptions = WriterLock & { mode: number; publish?: PublishMode };
+
+function* run<Answer = void>(operation: AtomicWriteOperation): AtomicWriteSequence<Answer> {
+  return (yield operation) as Answer;
+}
+
+function* stepsOf(write: Write, file: string, content: FileContent, options: AtomicWriteSequenceOptions, publish: PublishMode, step: AtomicWriteStep): AtomicWriteSequence<void> {
+  const { temporary } = write;
+  switch (step) {
+    case 'createLocked':
+      write.held = yield* run<HeldKernelLock>({ run: 'claim', entry: temporary, form: 'entry' });
+      write.ownsTemporary = true;
+      write.open = yield* run<OpenFile>({ run: 'openClaimed', held: write.held, entry: temporary, mode: options.mode });
+      return;
+    case 'lockSidecar':
+      write.held = yield* run<HeldKernelLock>({ run: 'claim', entry: temporary, form: 'sidecar' });
+      return;
+    case 'createTemporary':
+      write.open = yield* run<OpenFile>({ run: 'create', file: temporary, mode: options.mode });
+      write.ownsTemporary = true;
+      return;
+    case 'write': {
+      const open = openOf(write);
+      try {
+        yield* run({ run: 'write', open, content });
+        yield* run({ run: 'sync', open });
+      } finally {
+        write.open = undefined;
+        yield* run({ run: 'close', open });
+      }
+      return;
+    }
+    case 'publish':
+      yield* run({ run: 'beforePublish' });
+      assertStillClaimed(write);
+      if (publish === 'replace') yield* run({ run: 'rename', from: temporary, to: file });
+      else {
+        try {
+          yield* run({ run: 'link', from: temporary, to: file });
+        } catch (error) {
+          if (!isAlreadyExists(error)) throw error;
+          write.created = false;
+        }
+      }
+      if (write.created) yield* run({ run: 'afterPublish' });
+      return;
+    case 'unlinkStaged':
+      yield* run({ run: 'remove', file: temporary });
+      return;
+    case 'unlinkSidecar': {
+      const held = heldOf(write);
+      write.held = undefined;
+      held.dispose();
+      return;
+    }
+    case 'release': {
+      const held = write.held;
+      write.held = undefined;
+      held?.release();
+      return;
+    }
+  }
+}
+
+export function* atomicWriteSequence(mechanism: KernelLockMechanism, random: Random, file: string, content: FileContent, options: AtomicWriteSequenceOptions): AtomicWriteSequence<CreateOutcome | undefined> {
+  const publish = options.publish ?? 'replace';
+  const write = startWrite(mechanism, random, file);
+  try {
+    for (const step of atomicWriteSteps(write.form, publish)) {
+      options.onStep?.(step);
+      yield* stepsOf(write, file, content, options, publish, step);
+    }
+  } catch (error) {
+    const open = write.open;
+    write.open = undefined;
+    if (open !== undefined) yield* run({ run: 'close', open });
+    if (write.held !== undefined && write.ownsTemporary) yield* run({ run: 'remove', file: write.temporary });
+    releaseAfterFailure(write);
+    throw error;
+  }
+  yield* run({ run: 'syncDirectory', directory: path.dirname(file) });
+  return publish === 'create' ? { created: write.created } : undefined;
+}
+
+type AtomicWriteHost = {
+  claim(entry: string, form: LockForm): unknown;
+  openClaimed(held: HeldKernelLock, entry: string, mode: number): unknown;
+  create(file: string, mode: number): unknown;
+  beforePublish(): unknown;
+  rename(from: string, to: string): unknown;
+  link(from: string, to: string): unknown;
+  afterPublish(): unknown;
+  remove(file: string): unknown;
+  syncDirectory(directory: string): unknown;
+};
+
+const performed = (host: AtomicWriteHost, operation: AtomicWriteOperation): unknown => {
+  switch (operation.run) {
+    case 'claim':
+      return host.claim(operation.entry, operation.form);
+    case 'openClaimed':
+      return host.openClaimed(operation.held, operation.entry, operation.mode);
+    case 'create':
+      return host.create(operation.file, operation.mode);
+    case 'write':
+      return operation.open.write(operation.content);
+    case 'sync':
+      return operation.open.sync();
+    case 'close':
+      return operation.open.close();
+    case 'beforePublish':
+      return host.beforePublish();
+    case 'rename':
+      return host.rename(operation.from, operation.to);
+    case 'link':
+      return host.link(operation.from, operation.to);
+    case 'afterPublish':
+      return host.afterPublish();
+    case 'remove':
+      return host.remove(operation.file);
+    case 'syncDirectory':
+      return host.syncDirectory(operation.directory);
+  }
+};
+
+const performedNow = <Answer>(work: AtomicWriteSequence<Answer>, host: AtomicWriteHost): Answer => {
+  let turn = work.next();
+  while (turn.done !== true) {
+    let answer: unknown;
+    try {
+      answer = performed(host, turn.value);
+    } catch (error) {
+      turn = work.throw(error);
+      continue;
+    }
+    turn = work.next(answer);
+  }
+  return turn.value;
+};
+
+const performedLater = async <Answer>(work: AtomicWriteSequence<Answer>, host: AtomicWriteHost): Promise<Answer> => {
+  let turn = work.next();
+  while (turn.done !== true) {
+    let answer: unknown;
+    try {
+      answer = await performed(host, turn.value);
+    } catch (error) {
+      turn = work.throw(error);
+      continue;
+    }
+    turn = work.next(answer);
+  }
+  return turn.value;
 };
 
 export function writeFileAtomically(
@@ -228,81 +397,19 @@ export function writeFileAtomically(
   options: AtomicWriteOptions & { publish: 'create' },
 ): Promise<CreateOutcome>;
 export function writeFileAtomically(fs: AtomicWriteFileSystem, random: Random, file: string, content: FileContent, options: AtomicWriteOptions): Promise<CreateOutcome | undefined>;
-export async function writeFileAtomically(
-  fs: AtomicWriteFileSystem,
-  random: Random,
-  file: string,
-  content: FileContent,
-  options: AtomicWriteOptions,
-): Promise<CreateOutcome | undefined> {
-  const publish = options.publish ?? 'replace';
+export function writeFileAtomically(fs: AtomicWriteFileSystem, random: Random, file: string, content: FileContent, options: AtomicWriteOptions): Promise<CreateOutcome | undefined> {
   const mechanism = options.lock ?? hostKernelLock();
-  const write = startWrite<AtomicWriteFileHandle>(mechanism, random, file);
-  const { temporary } = write;
-  const perform: Record<AtomicWriteStep, () => Promise<void>> = {
-    createLocked: async () => {
-      write.held = await claimNewEntry(mechanism, temporary, 'entry');
-      write.ownsTemporary = true;
-      write.handle = await openClaimedEntry(fs, write.held, temporary, options.mode);
-    },
-    lockSidecar: async () => {
-      write.held = await claimNewEntry(mechanism, temporary, 'sidecar');
-    },
-    createTemporary: async () => {
-      write.handle = await fs.open(temporary, EXCLUSIVE_CREATE, options.mode);
-      write.ownsTemporary = true;
-    },
-    write: async () => {
-      const handle = handleOf(write);
-      try {
-        await handle.writeFile(content);
-        await handle.sync();
-      } finally {
-        write.handle = undefined;
-        await handle.close();
-      }
-    },
-    publish: async () => {
-      await options.beforePublish?.();
-      assertStillClaimed(write);
-      if (publish === 'replace') await fs.rename(temporary, file);
-      else {
-        try {
-          await fs.link(temporary, file);
-        } catch (error) {
-          if (!isAlreadyExists(error)) throw error;
-          write.created = false;
-        }
-      }
-      if (write.created) await options.afterPublish?.();
-    },
-    unlinkStaged: () => fs.rm(temporary),
-    unlinkSidecar: async () => {
-      const held = heldOf(write);
-      write.held = undefined;
-      held.dispose();
-    },
-    release: async () => {
-      const held = write.held;
-      write.held = undefined;
-      held?.release();
-    },
-  };
-  try {
-    for (const step of atomicWriteSteps(write.form, publish)) {
-      options.onStep?.(step);
-      await perform[step]();
-    }
-  } catch (error) {
-    const handle = write.handle;
-    write.handle = undefined;
-    if (handle !== undefined) await handle.close();
-    if (write.held !== undefined && write.ownsTemporary) await fs.rm(temporary);
-    releaseAfterFailure(write);
-    throw error;
-  }
-  await syncDirectory(fs, path.dirname(file));
-  return publish === 'create' ? { created: write.created } : undefined;
+  return performedLater(atomicWriteSequence(mechanism, random, file, content, options), {
+    claim: (entry, form) => claimNewEntry(mechanism, entry, form),
+    openClaimed: async (held, entry, mode) => openFileOf(await openClaimedEntry(fs, held, entry, mode)),
+    create: async (created, mode) => openFileOf(await fs.open(created, EXCLUSIVE_CREATE, mode)),
+    beforePublish: () => options.beforePublish?.(),
+    rename: (from, to) => fs.rename(from, to),
+    link: (from, to) => fs.link(from, to),
+    afterPublish: () => options.afterPublish?.(),
+    remove: (removed) => fs.rm(removed),
+    syncDirectory: (directory) => syncDirectory(fs, directory),
+  });
 }
 
 export function writeFileAtomicallySync<Handle>(
@@ -326,72 +433,16 @@ export function writeFileAtomicallySync<Handle>(
   content: FileContent,
   options: AtomicWriteOptionsSync,
 ): CreateOutcome | undefined {
-  const publish = options.publish ?? 'replace';
   const mechanism = options.lock ?? hostKernelLock();
-  const write = startWrite<SyncHandle>(mechanism, random, file);
-  const { temporary } = write;
-  const perform: Record<AtomicWriteStep, () => void> = {
-    createLocked: () => {
-      write.held = claimNewEntrySync(mechanism, temporary, 'entry');
-      write.ownsTemporary = true;
-      write.handle = openClaimedEntrySync(fs, write.held, temporary, options.mode);
-    },
-    lockSidecar: () => {
-      write.held = claimNewEntrySync(mechanism, temporary, 'sidecar');
-    },
-    createTemporary: () => {
-      write.handle = pathHandleSync(fs, fs.openSync(temporary, EXCLUSIVE_CREATE, options.mode));
-      write.ownsTemporary = true;
-    },
-    write: () => {
-      const handle = handleOf(write);
-      try {
-        handle.write(content);
-        handle.sync();
-      } finally {
-        write.handle = undefined;
-        handle.close();
-      }
-    },
-    publish: () => {
-      options.beforePublish?.();
-      assertStillClaimed(write);
-      if (publish === 'replace') fs.renameSync(temporary, file);
-      else {
-        try {
-          fs.linkSync(temporary, file);
-        } catch (error) {
-          if (!isAlreadyExists(error)) throw error;
-          write.created = false;
-        }
-      }
-      if (write.created) options.afterPublish?.();
-    },
-    unlinkStaged: () => fs.rmSync(temporary),
-    unlinkSidecar: () => {
-      const held = heldOf(write);
-      write.held = undefined;
-      held.dispose();
-    },
-    release: () => {
-      const held = write.held;
-      write.held = undefined;
-      held?.release();
-    },
-  };
-  try {
-    for (const step of atomicWriteSteps(write.form, publish)) {
-      options.onStep?.(step);
-      perform[step]();
-    }
-  } catch (error) {
-    const handle = write.handle;
-    write.handle = undefined;
-    if (handle !== undefined) handle.close();
-    if (write.held !== undefined && write.ownsTemporary) fs.rmSync(temporary);
-    releaseAfterFailure(write);
-    throw error;
-  }
-  syncDirectorySync(fs, path.dirname(file));
-  return publish === 'create' ? { created: write.created } : undefined;
+  return performedNow(atomicWriteSequence(mechanism, random, file, content, options), {
+    claim: (entry, form) => claimNewEntrySync(mechanism, entry, form),
+    openClaimed: (held, entry, mode) => openClaimedEntrySync(fs, held, entry, mode),
+    create: (created, mode) => pathFileSync(fs, fs.openSync(created, EXCLUSIVE_CREATE, mode)),
+    beforePublish: () => options.beforePublish?.(),
+    rename: (from, to) => fs.renameSync(from, to),
+    link: (from, to) => fs.linkSync(from, to),
+    afterPublish: () => options.afterPublish?.(),
+    remove: (removed) => fs.rmSync(removed),
+    syncDirectory: (directory) => syncDirectorySync(fs, directory),
+  });
 }

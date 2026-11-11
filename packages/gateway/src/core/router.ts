@@ -9,13 +9,13 @@ import {
   applyCapabilityOverride,
   displayMapOf,
   imageCapability,
+  largestSummaryCapFor,
   isUnavailableCapabilities,
   modelRefErrorOf,
   resolveStoredModelRef,
   resolveTypedModelRef,
   sizingRatioFor,
   storedModelRef,
-  summaryTokenCapFor,
   typedModelText,
 } from '@momonga/protocol';
 import type {
@@ -78,7 +78,7 @@ export type TargetRuntime = {
   gate: AdmissionGate;
   capabilityOverride: CapabilityOverride | undefined;
   idempotencyKeyHeader: string | undefined;
-  plan: { profile: string; account?: string } | undefined;
+  plan: PlanAccountRef | undefined;
   keyGroup: string | undefined;
   lastFailure: { code: string | null; message: string } | undefined;
   servedAccount: () => PlanAccountRef | undefined;
@@ -125,11 +125,11 @@ export const resolveRequestModel = (text: string, exact: boolean, views: ModelVi
   if (exact) {
     const stored = resolveStoredModelRef(storedModelRef(text), views);
     if (stored !== undefined) return stored;
-    throw notFound('model_not_found', modelRefErrorOf(text, { kind: 'not_found' }, views).message, 'model');
+    throw notFound('model_not_found', modelRefErrorOf(text, { kind: 'not_found' }, views, 'gateway').message, 'model');
   }
   const resolution = resolveTypedModelRef(typedModelText(text), views);
   if (resolution.kind === 'found') return resolution.model;
-  const { message } = modelRefErrorOf(text, resolution, views);
+  const { message } = modelRefErrorOf(text, resolution, views, 'gateway');
   throw resolution.kind === 'ambiguous' ? invalidRequest('ambiguous_model', message, 'model') : notFound('model_not_found', message, 'model');
 };
 
@@ -403,7 +403,7 @@ export const createRouter = (options: RouterOptions): Router => {
         }
       }
       const { summaryCap } = requirements;
-      if (summaryCap !== undefined && Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens) < summaryCap) {
+      if (summaryCap !== undefined && largestSummaryCapFor(capabilities) < summaryCap) {
         return {
           stage: REFUSAL_STAGES.summaryCap,
           error: invalidRequest(

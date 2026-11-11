@@ -1,4 +1,5 @@
 import { EXIT_FAILURE } from '@momonga/foundation';
+import type { KeptWork } from '@momonga/protocol';
 import type { SelfExecutable, Sink } from '../ports.ts';
 import { HANDOVER_TERMINAL_ENV } from '../tui/terminal/constants.ts';
 import { handoverTerminalValue, takeHandoverTerminal } from '../tui/terminal/handover.ts';
@@ -7,7 +8,7 @@ import { LEAVE_EVERY_MODE, leaveSequenceOf } from '../tui/terminal/modes.ts';
 import { parseRecord, sessionOfRecordFile } from './record.ts';
 import type { HandoverKind, HandoverRecord, ParsedRecord } from './record.ts';
 import type { ReplaceTarget } from './replace-process.ts';
-import { restoreRefusedText } from './texts.ts';
+import { keptWorkOf, restoreRefusedText } from './texts.ts';
 
 export const HANDOVER_FLAG = '--handover';
 
@@ -33,7 +34,7 @@ export const takeHandoverStart = (args: readonly string[], env: Record<string, s
   return { args: [...args.slice(0, at), ...args.slice(at + 2)], started: { file, session: sessionOfRecordFile(file), parsed: readRecord(file, read), terminal } };
 };
 
-export type Refusal = { reason: string; session: string; terminal: HandoverTerminal | undefined };
+export type Refusal = { reason: string; kept: KeptWork; terminal: HandoverTerminal | undefined };
 
 export type Adoption<K extends HandoverKind> = { kind: 'none' } | { kind: 'record'; record: Extract<HandoverRecord, { kind: K }>; file: string } | ({ kind: 'refused' } & Refusal);
 
@@ -43,9 +44,9 @@ const isOfKind = <K extends HandoverKind>(record: HandoverRecord, kinds: readonl
 
 export const adoptionOf = <K extends HandoverKind>(started: HandoverStart | undefined, kinds: readonly K[]): Adoption<K> => {
   if (started === undefined) return { kind: 'none' };
-  const { parsed, session, terminal, file } = started;
-  if (parsed.kind === 'refused') return { kind: 'refused', reason: parsed.reason, session, terminal };
-  if (!isOfKind(parsed.record, kinds)) return { kind: 'refused', reason: `the record is of ${KIND_NAMES[parsed.record.kind]} session`, session, terminal };
+  const { parsed, terminal, file } = started;
+  if (parsed.kind === 'refused') return { kind: 'refused', reason: parsed.reason, kept: { kind: 'unnamed' }, terminal };
+  if (!isOfKind(parsed.record, kinds)) return { kind: 'refused', reason: `the record is of ${KIND_NAMES[parsed.record.kind]} session`, kept: keptWorkOf(parsed.record), terminal };
   return { kind: 'record', record: parsed.record, file };
 };
 

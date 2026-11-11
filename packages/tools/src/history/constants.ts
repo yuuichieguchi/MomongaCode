@@ -1,6 +1,4 @@
-export const HISTORY_SEARCH_TOOL_NAME = 'HistorySearch';
-
-export const HISTORY_READ_TOOL_NAME = 'HistoryRead';
+export { HISTORY_SEARCH_TOOL_NAME, HISTORY_READ_TOOL_NAME } from '@momonga/protocol';
 
 export const HISTORY_QUERY_MAX_CHARS = 200;
 

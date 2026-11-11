@@ -1,3 +1,4 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -23,7 +24,7 @@ const recordingKill = () => {
   return { kill, signals: () => sent.filter(([, signal]) => signal !== 0) };
 };
 
-const timing = { now: () => 0, sleep: async () => undefined };
+const timing = sleepDrivenTiming({ now: () => 0, sleep: async () => undefined });
 
 describe('T5 the reap paths still refuse when the holder state is unknown (invariant I2)', () => {
   it('reconcileProcessGroup resolves with could not check on a failing listing and signals nothing', async () => {

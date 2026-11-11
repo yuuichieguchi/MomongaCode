@@ -61,7 +61,7 @@ const MATRIX: Record<string, PackageRule> = {
   agents: rule(['protocol', 'foundation', 'skills', 'tools']),
   runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'memory', 'skills', 'agents', 'reliability'], ['verify']),
   supervisor: rule(['protocol', 'foundation', 'config']),
-  cli: rule(['protocol', 'foundation', 'config', 'eval', 'reliability'], ['runtime', 'gateway', 'supervisor', 'verify']),
+  cli: rule(['protocol', 'foundation', 'config', 'eval', 'reliability'], ['runtime', 'gateway', 'supervisor', 'verify', 'tools']),
   eval: rule(['protocol', 'foundation', 'config', 'memory', 'reliability']),
   testkit: rule(['protocol', 'foundation']),
   verify: rule(['protocol', 'foundation', 'config', 'policy']),

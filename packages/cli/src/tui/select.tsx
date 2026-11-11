@@ -7,7 +7,7 @@ import type { KeyEvent } from './terminal/events.ts';
 import { styleOf as styleOfTokens } from './screen/theme.ts';
 import { withoutTabs, wrapLine } from './screen/wrap.ts';
 
-export type SelectRow = { readonly label: string; readonly disabled?: boolean; readonly separator?: boolean };
+export type SelectRow = { readonly label: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean };
 
 export type SelectLine = string | { readonly text: string; readonly color?: string; readonly dim?: boolean; readonly bold?: boolean; readonly first?: string };
 
@@ -21,8 +21,13 @@ export type SelectSpec = {
   readonly interrupt: 'exit' | 'cancel-run' | 'back';
   readonly filter: boolean;
   readonly confirm?: (row: SelectRow, decideKey: string) => string;
-  readonly alt?: { readonly label: string };
+  readonly alt?: { readonly label: string; readonly key?: SecondKey };
+  readonly enterOff?: true;
 };
+
+export type SecondKey = Extract<ActionId, 'select.alt' | 'select.delete'>;
+
+const secondKeyOf = (spec: SelectSpec): SecondKey | undefined => (spec.alt === undefined ? undefined : (spec.alt.key ?? 'select.alt'));
 
 export type SelectState = { readonly index: number; readonly top: number; readonly scrolled: boolean; readonly filter: string; readonly confirming: number | undefined };
 
@@ -77,7 +82,7 @@ export const SELECT_CONTEXTS: readonly KeyContext[] = ['select'];
 export const selectHint = (spec: SelectSpec, keys: KeyTable): string => {
   const decide = keys.keyHint('select.decide');
   const digits = spec.decideOn === 'immediate' && !spec.filter ? ['1-9'] : [];
-  const choosers = [...digits, ...(decide === '' ? [] : [decide])];
+  const choosers = [...digits, ...(decide === '' || spec.enterOff === true ? [] : [decide])];
   const choose = choosers.length === 0 ? [] : [`${choosers.join(' or ')} to choose`];
   const move = keyed(keyPair(keys, 'select.up', 'select.down'), (key) => `${key} to move`);
   const escapeKey = keys.keyHint('select.escape');
@@ -86,7 +91,7 @@ export const selectHint = (spec: SelectSpec, keys: KeyTable): string => {
   return joinHint([
     ...(spec.decideOn === 'enter' ? [...move, ...choose] : [...choose, ...move]),
     ...(spec.filter ? ['type to filter'] : []),
-    ...(alt === undefined ? [] : keyed(keys.keyHint('select.alt'), (key) => `${key}: ${alt.label}`)),
+    ...(alt === undefined ? [] : keyed(keys.keyHint(alt.key ?? 'select.alt'), (key) => `${key}: ${alt.label}`)),
     ...(spec.escape === 'back' ? keyed(escapeKey, (key) => `${key}: go back`) : []),
     ...(escapeRow === undefined ? [] : keyed(escapeKey, (key) => `${key}: ${escapeRow.label}`)),
     ...(spec.interrupt === 'cancel-run' ? keyed(keys.keyHint('select.interrupt'), (key) => `${key}: cancel the run`) : []),
@@ -166,13 +171,15 @@ export const selectAct = (spec: SelectSpec, state: SelectState, action: ActionId
     case 'select.last':
       return moved(spec, state, capacity, (_, count) => count - 1);
     case 'select.decide':
+      if (spec.enterOff === true) return { state };
       return stopsOf(spec, state.filter).includes(state.index) ? chosen(spec, state, state.index, capacity) : { state };
     case 'select.escape':
       if (state.filter !== '') return filtered(spec, state, '', capacity);
       if (spec.escape === 'back') return { state, outcome: { kind: 'back' } };
       return spec.escape === 'inactive' ? { state } : { state, outcome: { kind: 'decide', index: spec.escape } };
     case 'select.alt':
-      return spec.alt !== undefined && spec.rows[state.index]?.disabled !== true && stopsOf(spec, state.filter).includes(state.index) ? { state, outcome: { kind: 'alt', index: state.index } } : { state };
+    case 'select.delete':
+      return action === secondKeyOf(spec) && spec.rows[state.index]?.disabled !== true && stopsOf(spec, state.filter).includes(state.index) ? { state, outcome: { kind: 'alt', index: state.index } } : { state };
     case 'select.filterBack':
       return spec.filter ? filtered(spec, state, state.filter.slice(0, -1), capacity) : { state };
     default:
@@ -189,7 +196,8 @@ export const selectKey = (spec: SelectSpec, state: SelectState, event: KeyEvent,
   if (DIGIT.test(typed)) {
     const index = stopsOf(spec, state.filter)[Number(typed) - 1];
     if (index === undefined) return { state };
-    return spec.decideOn === 'immediate' ? chosen(spec, state, index, capacity) : { state: { ...highlighted(spec, state, index, capacity), confirming: undefined } };
+    const waitsForEnter = spec.rows[index]?.opensBrowser === true && spec.enterOff !== true;
+    return spec.decideOn === 'immediate' && !waitsForEnter ? chosen(spec, state, index, capacity) : { state: { ...highlighted(spec, state, index, capacity), confirming: undefined } };
   }
   return { state };
 };
@@ -304,11 +312,11 @@ export function MoreRow({ direction, count }: { direction: 'up' | 'down'; count:
   return <Text dimColor wrap="truncate">{moreRowText(direction, count, screenReader)}</Text>;
 }
 
-export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; keys: KeyTable; error?: string };
+export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; settling: boolean; keys: KeyTable; error?: string };
 
-export function SelectView({ spec, state, layout, border, sending, keys, error }: SelectViewProps) {
+export function SelectView({ spec, state, layout, border, sending, settling, keys, error }: SelectViewProps) {
   const { screenReader } = currentA11y();
-  const stops = spec.rows.flatMap((row, index) => (row.separator === true ? [] : [index]));
+  const stops = stopsOf(spec, state.filter);
   const confirming = state.confirming === undefined ? undefined : spec.rows[state.confirming];
   const highlightedRow = spec.rows[state.index];
   return (
@@ -328,7 +336,7 @@ export function SelectView({ spec, state, layout, border, sending, keys, error }
       {layout.below > 0 ? <MoreRow direction="down" count={layout.below} /> : null}
       {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming, keys.keyHint('select.decide')))}</Text>}
       {error === undefined ? null : <Text {...styleOfTokens(['error'])} wrap="truncate">{escapeTerminalLine(error)}</Text>}
-      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : selectHint(spec, keys)}</Text>
+      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : settling ? ' ' : selectHint(spec, keys)}</Text>
     </Panel>
   );
 }

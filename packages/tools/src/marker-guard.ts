@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { RETRY_KINDS, claimRetry, commandMayStillRun, readAttemptRecord, readMarkerGroup, reapMarkedProcessesWithReport } from '@momonga/foundation';
-import type { AttemptRecord, CommandLiveness, GroupLiveness, MarkerState, ProcessGroupPort, ProcessInspector, ReapTiming, RetryKind, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import type { AttemptRecord, CommandLiveness, GroupLiveness, MarkerState, ProcessGroupPort, ProcessInspector, Timing, RetryKind, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { createMarkerSettle, listingOf } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { MarkerOwners } from './marker-owners.ts';
@@ -45,7 +45,7 @@ export type MarkerGuardOptions = {
   inspector?: ProcessInspector;
   kill?: SignalSender;
   groupPort?: ProcessGroupPort;
-  timing?: ReapTiming;
+  timing?: Timing;
   killGraceMs: number;
   uninspectable?: UninspectableRegistry;
 };

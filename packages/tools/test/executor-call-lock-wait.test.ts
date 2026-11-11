@@ -1,7 +1,8 @@
+import { sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { ReapTiming } from '@momonga/foundation';
+import type { Timing } from '@momonga/foundation';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor } from './helpers.ts';
@@ -15,15 +16,15 @@ const FIXED_CAP_MS = 30_000;
 
 const lockPathOf = (harness: Harness): string => path.join(harness.callLockDir, `${KEY}.lock`);
 
-const advancingTiming = (onAdvance: (now: number) => void = () => undefined): ReapTiming => {
+const advancingTiming = (onAdvance: (now: number) => void = () => undefined): Timing => {
   let current = 0;
-  return {
+  return sleepDrivenTiming({
     now: () => current,
     sleep: async (ms) => {
       current += ms;
       onAdvance(current);
     },
-  };
+  });
 };
 
 const reconcilingEdit = () =>

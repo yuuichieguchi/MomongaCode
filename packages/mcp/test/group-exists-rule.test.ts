@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createProcessGroupPort, terminateGroup } from '@momonga/foundation';
-import type { CommandRunner, GroupTiming } from '@momonga/foundation';
-import { createFakeClock } from '@momonga/testkit';
+import type { CommandRunner } from '@momonga/foundation';
+import { createFakeClock, createSteppingTiming } from '@momonga/testkit';
 import { groupExists as harnessGroupExists, pidAlive } from './mcp-harness.ts';
 import { groupExists as rawGroupExists } from './raw-transport.ts';
 
@@ -23,8 +23,7 @@ describe('the test harness asks whether a group exists by the product rule: aliv
       return true;
     });
     const ps: CommandRunner = async () => ({ exitCode: 0, stdout: `${PGID} ${memberStat}\n`, stderr: '' });
-    const clock = createFakeClock(0);
-    const timing: GroupTiming = { now: () => clock.now(), sleep: async (ms) => void clock.advance(ms) };
+    const timing = createSteppingTiming(createFakeClock(0));
     const port = createProcessGroupPort('darwin', { run: ps, env: {} });
     expect(await terminateGroup(PGID, { graceMs: 100, port, timing, signal: new AbortController().signal })).toBe('killed');
     expect(memberStat).toBe('?E');
@@ -43,8 +42,7 @@ describe('the test harness asks whether a group exists by the product rule: aliv
       return true;
     });
     const ps: CommandRunner = async () => ({ exitCode: 0, stdout: `${PGID} ${memberStat}\n`, stderr: '' });
-    const clock = createFakeClock(0);
-    const timing: GroupTiming = { now: () => clock.now(), sleep: async (ms) => void clock.advance(ms) };
+    const timing = createSteppingTiming(createFakeClock(0));
     const port = createProcessGroupPort('darwin', { run: ps, env: {} });
     expect(await terminateGroup(PGID, { graceMs: 100, port, timing, signal: new AbortController().signal })).toBe('killed');
     expect(pidAlive(member)).toBe(true);

@@ -9,6 +9,7 @@ import type { ConnectionResponses } from './input.ts';
 import { executeResponse } from './respond.ts';
 import type { ResponseJob } from './respond.ts';
 import { NEVER_EVICTED, startBufferedRun, startDirectRun } from './run.ts';
+import type { WorkRegistry } from './run.ts';
 import type { RunSubscription } from './run.ts';
 import type { SharedRun } from './run.ts';
 import { pinnedServices } from './services.ts';
@@ -33,7 +34,6 @@ export type ResponsesService = {
   cancel(idempotencyKey: string | undefined): boolean;
   abortUnkeyed(reason: unknown): void;
   abortAll(reason: unknown): void;
-  settled(): Promise<void>;
   activeCount(): number;
 };
 
@@ -97,7 +97,7 @@ const subscribeWithOwnDeadline = (
   };
 };
 
-export const createResponsesService = (services: GatewayServices, validator: RequestValidator): ResponsesService => {
+export const createResponsesService = (services: GatewayServices, validator: RequestValidator, inFlight: WorkRegistry, admitNewCall: () => void): ResponsesService => {
   const registry = createIdempotencyRegistry(services);
   const active = new Set<SharedRun>();
   const keyedRuns = new Set<SharedRun>();
@@ -127,6 +127,7 @@ export const createResponsesService = (services: GatewayServices, validator: Req
         return { stream, events: replay(found.frames) };
       }
     }
+    admitNewCall();
 
     const parent =
       pinned.telemetry === undefined || headers.traceparent === undefined
@@ -148,7 +149,9 @@ export const createResponsesService = (services: GatewayServices, validator: Req
       step: parseStep(body.metadata?.['step']),
       role: headers.role,
     };
+    const work = inFlight.beginWork();
     const onSettled = (): void => {
+      work.end();
       releaseEpoch();
       active.delete(run);
       keyedRuns.delete(run);
@@ -156,7 +159,7 @@ export const createResponsesService = (services: GatewayServices, validator: Req
     };
     const run: SharedRun =
       key === undefined
-        ? startDirectRun((control) => executeResponse(pinned, job, control), onSettled)
+        ? startDirectRun((control) => executeResponse(pinned, job, control), onSettled, work.subscribers)
         : startBufferedRun(
             (control) => executeResponse(pinned, job, control),
             onSettled,
@@ -165,6 +168,7 @@ export const createResponsesService = (services: GatewayServices, validator: Req
               readerStallMs: services.config.limits.readerStallMs,
               detachedMaxMs: services.config.detachedMaxMs,
               onAborted: () => registry.end(key, run),
+              onSubscribers: work.subscribers,
               timers: services.timers,
             },
           );
@@ -200,9 +204,6 @@ export const createResponsesService = (services: GatewayServices, validator: Req
     },
     abortAll: (reason) => {
       for (const run of active) run.abort(reason);
-    },
-    settled: async () => {
-      await Promise.all([...active].map((run) => run.settled));
     },
     activeCount: () => active.size,
   };

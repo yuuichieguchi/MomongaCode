@@ -42,7 +42,7 @@ const writeAgent = (env: Env): void => {
 const delegate = (callId: string): ScriptStep => callsStep([{ callId, name: 'Agent', args: { description: 'work', prompt: 'Do it', subagent_type: 'worker' } }]);
 
 const silentMcpTool = async (): Promise<AnyTool> => {
-  const tool: Tool = { name: 'long_job', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } };
+  const tool: Tool = { name: 'long_job', inputSchema: { type: 'object', properties: {} } };
   const connection: McpServerConnection = {
     name: 'jobs',
     transportKind: 'network',
@@ -115,7 +115,9 @@ describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G
     expect(JSON.stringify(env.ofType(child.id, 'tool.reconciled'))).toContain(JSON.stringify(MCP_IDLE_TEXT));
     expect(env.run(child.id).status).toBe('COMPLETED');
     await untilTerminal(env, worker, parent.id);
-    expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([{ status: 'completed', output: 'the job did not answer' }]);
+    expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([
+      { status: 'completed', output: 'the job did not answer\nResidual risk:\n- no_condition_declared_after_mutation: 1\n- mutation_without_known_paths: 1\n- unknown_effect_calls: 1' },
+    ]);
   });
 
   it('test 3: depth 1 by behaviour: a child that calls Agent is refused, so no grandchild run exists', async () => {

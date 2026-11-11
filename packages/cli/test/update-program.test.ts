@@ -9,6 +9,7 @@ import { assetNameFor } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { NEW_BINARY, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions } from './update-harness.ts';
+import { NO_HELPER } from './no-helper.ts';
 
 const programFor = async (context: TestContext, options: HarnessOptions = {}) => {
   const harness = await setupUpdate(context, options);
@@ -35,6 +36,7 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
     entries,
     update: () => harness.wiring,
     interrupt: new AbortController().signal,
+    helper: NO_HELPER,
     entryIo: (args) => ({ argv: [...args] }) as unknown as EntryIo,
     complete: (code) => completed.push(code),
   });

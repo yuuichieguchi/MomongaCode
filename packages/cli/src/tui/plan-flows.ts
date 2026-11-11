@@ -1,6 +1,5 @@
-import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { NO_MODEL_CONNECTED_TEXT, SIGN_IN_REQUIRED_CODE } from '@momonga/protocol';
-import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
+import { PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
+import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
 import { displayMapOf } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { isLocalServer, offeredServers } from '../commands/models.ts';
@@ -19,6 +18,7 @@ import type { SignInShown } from '../plan/sign-in.ts';
 import { codeNotAcceptedLine, listProblemLine, planDisabledLines, resumeLine, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
+import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
 
 export type PlanFlowPorts = OverlayPorts & {
   readonly backend: TuiBackend;
@@ -30,6 +30,7 @@ export type PlanFlowPorts = OverlayPorts & {
   readonly found: FoundServers;
   readonly model: () => string | undefined;
   wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
+  invitationAnswered(): void;
 };
 
 export type PlanFlows = {
@@ -40,13 +41,11 @@ export type PlanFlows = {
   catalogPicker(profile: PlanProfileView, account: string): Promise<void>;
   welcome(profiles: readonly PlanProfileView[]): Promise<void>;
   usageLimit(profile: PlanProfileView): Promise<void>;
-  planUseNotEnabled(profile: PlanProfileView, account: string): Promise<void>;
+  planUseNotEnabled(profile: PlanProfileView, account: string | undefined): Promise<void>;
   notEligible(profile: PlanProfileView): Promise<void>;
 };
 
 type Choice = { row: PickRow; act(): Promise<void> };
-
-const NAME_SHAPE = new RegExp(SECRET_NAME_PATTERN);
 
 const API_KEY_HELP = [
   'MomongaCode takes an API key in one of two ways:',
@@ -56,6 +55,7 @@ const API_KEY_HELP = [
 ].join('\n');
 
 const USE_API_KEY = 'Use an API key';
+const CONNECT_TITLE = 'Connect a model';
 
 const SANDBOX_OFF_ROWS = [{ label: 'Continue' }, { label: 'Cancel' }] as const;
 const SANDBOX_OFF_CONTINUE = 0;
@@ -183,15 +183,15 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       ports.closeWaiting();
     }
     switch (answer.outcome) {
-      case 'retry':
+      case RETRY_OUTCOME:
         ports.info(codeNotAcceptedLine('tui', profile, account));
         await sentence(profile, account, reconsent);
         return;
-      case 'plan_disabled':
+      case PLAN_DISABLED_STATE:
         for (const line of planDisabledLines('tui', profile, account)) ports.info(line);
         await sentence(profile, account, true);
         return;
-      case 'signed_in':
+      case SIGNED_IN_OUTCOME:
         ports.info(signedInLine(answer.account));
         await afterSignIn(profile, answer.account, answer.firstSignIn);
         await ports.signedIn();
@@ -202,7 +202,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const sentence = async (profile: PlanProfileView, account: string, reconsent: boolean): Promise<void> => {
     ports.info(profile.messages.description);
     await chooseFrom({}, [
-      { row: { label: reconsent ? `Enable ${profile.messages.identityLabel} plan use` : profile.loginLabel }, act: () => signInFlow(profile, account, reconsent) },
+      { row: { label: reconsent ? `Enable ${profile.messages.identityLabel} plan use` : profile.loginLabel, opensBrowser: true }, act: () => signInFlow(profile, account, reconsent) },
       { row: { label: profile.messages.apiKeyLabel }, act: apiKeyHelp },
     ]);
   };
@@ -215,7 +215,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         await ports.refreshConnection();
         return;
       case 'sign-in':
-        await sentence(profile, account.label, account.state === 'plan_disabled');
+        await sentence(profile, account.label, account.state === PLAN_DISABLED_STATE);
         return;
       case 'none':
         ports.info(`${accountRowLabel(account)}${account.cause === undefined ? '' : `: ${account.cause}`}`);
@@ -230,7 +230,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       lines: ['The workspace is chosen in the browser; each account or workspace is saved under its own label.'],
       initial: nextAccountLabel(profile.id, listed.accounts),
       validate: (text) => {
-        if (!NAME_SHAPE.test(text)) return `a label must match ${SECRET_NAME_PATTERN}`;
+        if (!isPlanLabel(text)) return PLAN_LABEL_REFUSAL;
         if (taken.has(text)) return `${text} is already saved; choose another label`;
         return undefined;
       },
@@ -295,17 +295,27 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     ]);
   };
 
+  const invitedProfiles = (listed: PlanAccountsResponse, dismissed: Readonly<Record<string, unknown>>): PlanProfileView[] =>
+    listed.profiles.filter((profile) => accountsOf(profile.id, listed.accounts).length === 0 && !Object.hasOwn(dismissed, invitationKeyOf(profile.id)));
+
+  const answerNotNow = async (invited: readonly PlanProfileView[]): Promise<void> => {
+    for (const profile of invited) await backend.dismissNotice(invitationKeyOf(profile.id));
+    ports.invitationAnswered();
+  };
+
   const login = async (args: string): Promise<void> => {
-    ports.loading('Connect a model');
-    const listed = await backend.plan.accounts();
     if (args !== '') {
-      await providerFlowOf(profileOf(listed.profiles, args), listed);
+      const read = await ports.loading(CONNECT_TITLE, () => backend.plan.accounts());
+      if (read.kind === 'read') await providerFlowOf(profileOf(read.value.profiles, args), read.value);
       return;
     }
-    const [entries, health] = await Promise.all([backend.models(), backend.health()]);
+    const read = await ports.loading(CONNECT_TITLE, () => Promise.all([backend.plan.accounts(), backend.models(), backend.health(), backend.dismissedNotices()]));
+    if (read.kind === 'cancelled') return;
+    const [listed, entries, health, dismissed] = read.value;
+    const invited = invitedProfiles(listed, dismissed);
     const displays = displayMapOf(listingViewsOf(entries));
     const local = entries.filter((entry) => entry.billing === 'local');
-    await chooseFrom({ title: 'Connect a model' }, [
+    await chooseFrom({ title: CONNECT_TITLE }, [
       ...listed.profiles.map((profile) => ({ row: { label: `${profile.messages.pickerLabel} [subscription] · ${profileStateText(profile, listed.accounts)}` }, act: () => providerFlowOf(profile, listed) })),
       { row: { label: 'Add an API key' }, act: apiKeyHelp },
       ...local.map((entry) => {
@@ -313,12 +323,14 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         return { row: { label: `${display} [local server] · ${healthText(health.models[entry.id])}` }, act: async () => ports.info(configuredSwitchText(display)) };
       }),
       { row: { label: 'Add a local server' }, act: addLocalServer },
+      ...(invited.length === 0 ? [] : [{ row: { label: NOT_NOW_LABEL }, act: () => answerNotNow(invited) }]),
     ]);
   };
 
   const logout = async (): Promise<void> => {
-    ports.loading('Sign out');
-    const listed = await backend.plan.accounts();
+    const read = await ports.loading('Sign out', () => backend.plan.accounts());
+    if (read.kind === 'cancelled') return;
+    const listed = read.value;
     if (listed.accounts.length === 0) {
       ports.info('no subscription account is saved');
       return;
@@ -331,7 +343,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     for (const line of signedOutLines(profile, chosen.label, report)) ports.info(line);
   };
 
-  const targetSignIn = async (listed: PlanAccountsResponse, plan: { profile: string; account?: string }): Promise<void> => {
+  const targetSignIn = async (listed: PlanAccountsResponse, plan: PlanAccountRef): Promise<void> => {
     const profile = profileOf(listed.profiles, plan.profile);
     const records = accountsOf(profile.id, listed.accounts);
     const label = plan.account ?? records.find((record) => record.active)?.label;
@@ -356,13 +368,18 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const modelPicker = async (current: string | undefined): Promise<void> => {
-    ports.loading('Models');
     const context = flowContext();
-    const [listing, health, listed] = await Promise.all([backend.modelList(), backend.health(), backend.plan.accounts()]);
+    const read = await ports.loading('Models', async () => {
+      const [readListing, readHealth, readListed] = await Promise.all([backend.modelList(), backend.health(), backend.plan.accounts()]);
+      const signedIn = readListed.accounts.filter((account) => account.state === 'active');
+      const readCatalogs = await Promise.all(signedIn.map(async (account) => ({ account, profile: profileOf(readListed.profiles, account.profile), catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) })));
+      const remembered = ports.found.servers();
+      return { listing: readListing, health: readHealth, listed: readListed, catalogs: readCatalogs, remembered, opened: remembered.length === 0 ? undefined : await openEdit(context) };
+    });
+    if (read.kind === 'cancelled') return;
+    const { listing, health, listed, catalogs, remembered, opened } = read.value;
     const entries = listing.data;
     const served = new Set(entries.flatMap((entry) => entry.chain.map((member) => member.upstream)));
-    const signedIn = listed.accounts.filter((account) => account.state === 'active');
-    const catalogs = await Promise.all(signedIn.map(async (account) => ({ account, profile: profileOf(listed.profiles, account.profile), catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) })));
     const catalogChoices = catalogs.flatMap(({ account, profile, catalog }) =>
       catalog.models
         .filter((entry) => !served.has(entry.slug))
@@ -378,12 +395,10 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
             : { row: { label: `${entry.slug} · ${entry.reason} · ${profile.messages.pickerLabel}`, disabled: true }, act: async () => undefined },
         ),
     );
-    const remembered = ports.found.servers();
-    const opened = remembered.length === 0 ? undefined : await openEdit(context);
     const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
     const { rows, listed: listedRows } = modelListRows({ listing, current, health, found });
     if (rows.length + catalogChoices.length === 0) {
-      ports.info(NO_MODEL_CONNECTED_TEXT);
+      ports.info(messageOf('noModelConnected', 'tui'));
       return;
     }
     const displays = displayMapOf(listingViewsOf(entries));
@@ -400,7 +415,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {
     await chooseFrom({ title: 'Connect a model to start' }, [
-      ...profiles.map((profile) => ({ row: { label: profile.loginLabel }, act: () => providerFlow(profile) })),
+      ...profiles.map((profile) => ({ row: { label: profile.loginLabel, opensBrowser: true }, act: () => providerFlow(profile) })),
       { row: { label: USE_API_KEY }, act: apiKeyHelp },
       { row: { label: 'Use a local server' }, act: addLocalServer },
     ]);
@@ -408,16 +423,16 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const usageLimit = async (profile: PlanProfileView): Promise<void> => {
     await chooseFrom({}, [
-      { row: { label: profile.messages.manageUsageLabel }, act: async () =>
+      { row: { label: profile.messages.manageUsageLabel, opensBrowser: true }, act: async () =>
           backend.openUrl(new URL(profile.usageUrl), undefined, (message) => ports.info(`${couldNotOpenBrowser(message)} ${profile.messages.manageUsageLabel}: ${profile.usageUrl}`)),
       },
       { row: { label: 'Dismiss' }, act: async () => undefined },
     ]);
   };
 
-  const planUseNotEnabled = async (profile: PlanProfileView, account: string): Promise<void> => {
+  const planUseNotEnabled = async (profile: PlanProfileView, account: string | undefined): Promise<void> => {
     await chooseFrom({}, [
-      { row: { label: `Enable ${profile.messages.identityLabel} plan use` }, act: () => sentence(profile, account, true) },
+      { row: { label: `Enable ${profile.messages.identityLabel} plan use`, opensBrowser: true }, act: () => (account === undefined ? providerFlow(profile) : sentence(profile, account, true)) },
       { row: { label: USE_API_KEY }, act: apiKeyHelp },
     ]);
   };

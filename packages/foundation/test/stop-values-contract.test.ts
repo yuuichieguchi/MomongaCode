@@ -18,7 +18,6 @@ import {
   orphanReapGraceMs,
   parseStopMessage,
   parseStopValues,
-  requirementOfStop,
   runtimeMaxCloseMs,
   runtimeStopBudgetMs,
   runtimeTeardownBudgetMs,
@@ -59,7 +58,7 @@ describe('the four stop values and their limits', () => {
   });
 });
 
-describe('the derived MCP and runtime bounds (K = KILL_CONFIRM_MS = 5000, RUNTIME_ABORT_BUDGET_MS = 8020)', () => {
+describe('the derived MCP and runtime bounds (K = KILL_CONFIRM_MS = 5000, RUNTIME_ABORT_BUDGET_MS = 8050)', () => {
   it.each([
     [0, 10_075, 20_075],
     [1, 10_081, 20_081],
@@ -70,58 +69,56 @@ describe('the derived MCP and runtime bounds (K = KILL_CONFIRM_MS = 5000, RUNTIM
     expect(runtimeTeardownBudgetMs(grace)).toBe(teardown);
   });
 
-  it('gives 64095, 69095, 34095 and 98190 at the defaults', () => {
-    expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_095);
-    expect(runtimeStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(69_095);
-    expect(orphanReapGraceMs(DEFAULT_STOP_VALUES)).toBe(34_095);
-    expect(requirementOfStop(DEFAULT_STOP_VALUES)).toBe(98_190);
+  it('gives 64125, 69125 and 34125 at the defaults', () => {
+    expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_125);
+    expect(runtimeStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(69_125);
+    expect(orphanReapGraceMs(DEFAULT_STOP_VALUES)).toBe(34_125);
   });
 
-  it('gives 508095, 208095 and 716190 at the maxima', () => {
-    expect(runtimeMaxCloseMs(MAXIMA)).toBe(508_095);
-    expect(orphanReapGraceMs(MAXIMA)).toBe(208_095);
-    expect(requirementOfStop(MAXIMA)).toBe(716_190);
+  it('gives 508125 and 208125 at the maxima', () => {
+    expect(runtimeMaxCloseMs(MAXIMA)).toBe(508_125);
+    expect(orphanReapGraceMs(MAXIMA)).toBe(208_125);
   });
 
   it('takes the drain and the MCP grace from the values, and neither gateway value', () => {
     const runtime = { drainTimeoutMs: 7, mcpCloseGraceMs: 3 };
-    expect(runtimeMaxCloseMs({ closeGraceMs: 0, managedServerStopGraceMs: 0, ...runtime })).toBe(7 + 8020 + 10_000 + 18 + 10_075);
-    expect(runtimeMaxCloseMs({ closeGraceMs: 300_000, managedServerStopGraceMs: 60_000, ...runtime })).toBe(7 + 8020 + 10_000 + 18 + 10_075);
-    expect(orphanReapGraceMs({ closeGraceMs: 0, managedServerStopGraceMs: 0, ...runtime })).toBe(8020 + 10_000 + 18 + 10_075);
+    expect(runtimeMaxCloseMs({ closeGraceMs: 0, managedServerStopGraceMs: 0, ...runtime })).toBe(7 + 8050 + 10_000 + 18 + 10_075);
+    expect(runtimeMaxCloseMs({ closeGraceMs: 300_000, managedServerStopGraceMs: 60_000, ...runtime })).toBe(7 + 8050 + 10_000 + 18 + 10_075);
+    expect(orphanReapGraceMs({ closeGraceMs: 0, managedServerStopGraceMs: 0, ...runtime })).toBe(8050 + 10_000 + 18 + 10_075);
   });
 
-  it('gives 20075 teardown, 28095 runtime close and 33095 runtime stop at drain 0 and grace 0', () => {
+  it('gives 20075 teardown, 28125 runtime close and 33125 runtime stop at drain 0 and grace 0', () => {
     expect(runtimeTeardownBudgetMs(0)).toBe(20_075);
-    expect(runtimeMaxCloseMs(ZERO_RUNTIME)).toBe(28_095);
-    expect(runtimeStopBudgetMs(ZERO_RUNTIME)).toBe(33_095);
+    expect(runtimeMaxCloseMs(ZERO_RUNTIME)).toBe(28_125);
+    expect(runtimeStopBudgetMs(ZERO_RUNTIME)).toBe(33_125);
   });
 });
 
 describe('one formula over the values of a stop', () => {
-  it('gives 32075, 37075, 143245 and 146245 at the defaults', () => {
+  it('gives 32075, 37075, 143275 and 146275 at the defaults', () => {
     expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(32_075);
     expect(gatewayStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(37_075);
-    expect(supervisorMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(143_245);
-    expect(daemonStopBoundMs(DEFAULT_STOP_VALUES)).toBe(146_245);
+    expect(supervisorMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(143_275);
+    expect(daemonStopBoundMs(DEFAULT_STOP_VALUES)).toBe(146_275);
   });
 
-  it('gives 107245 and 110245 at drain 0 and MCP grace 0 with the default gateway values', () => {
-    expect(supervisorMaxCloseMs(ZERO_RUNTIME)).toBe(107_245);
-    expect(daemonStopBoundMs(ZERO_RUNTIME)).toBe(110_245);
+  it('gives 107275 and 110275 at drain 0 and MCP grace 0 with the default gateway values', () => {
+    expect(supervisorMaxCloseMs(ZERO_RUNTIME)).toBe(107_275);
+    expect(daemonStopBoundMs(ZERO_RUNTIME)).toBe(110_275);
   });
 
-  it('gives 1276245 and 1279245 at the allowed maxima, and the unknown-values stop wait is the latter', () => {
+  it('gives 1276275 and 1279275 at the allowed maxima, and the unknown-values stop wait is the latter', () => {
     expect(gatewayMaxCloseMs(MAXIMA)).toBe(550_075);
-    expect(supervisorMaxCloseMs(MAXIMA)).toBe(1_276_245);
-    expect(daemonStopBoundMs(MAXIMA)).toBe(1_279_245);
-    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(1_279_245);
+    expect(supervisorMaxCloseMs(MAXIMA)).toBe(1_276_275);
+    expect(daemonStopBoundMs(MAXIMA)).toBe(1_279_275);
+    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(1_279_275);
   });
 
-  it('gives 76245 and 79245 at all-zero values', () => {
+  it('gives 76275 and 79275 at all-zero values', () => {
     expect(gatewayMaxCloseMs(ZERO)).toBe(10_075);
     expect(gatewayStopBudgetMs(ZERO)).toBe(15_075);
-    expect(supervisorMaxCloseMs(ZERO)).toBe(76_245);
-    expect(daemonStopBoundMs(ZERO)).toBe(79_245);
+    expect(supervisorMaxCloseMs(ZERO)).toBe(76_275);
+    expect(daemonStopBoundMs(ZERO)).toBe(79_275);
   });
 
   it('bounds the managed-server reap by the bound of the marker reaper it calls: three windows of the grace plus K', () => {
@@ -141,19 +138,19 @@ describe('one formula over the values of a stop', () => {
   });
 
   it.each([
-    [{ closeGraceMs: 1, managedServerStopGraceMs: 0, drainTimeoutMs: 0, mcpCloseGraceMs: 0 }, 76_246],
-    [{ closeGraceMs: 0, managedServerStopGraceMs: 1, drainTimeoutMs: 0, mcpCloseGraceMs: 0 }, 76_252],
-    [{ closeGraceMs: 0, managedServerStopGraceMs: 0, drainTimeoutMs: 1, mcpCloseGraceMs: 0 }, 76_246],
-    [{ closeGraceMs: 0, managedServerStopGraceMs: 0, drainTimeoutMs: 0, mcpCloseGraceMs: 1 }, 76_251],
-    [{ closeGraceMs: 2000, managedServerStopGraceMs: 500, drainTimeoutMs: 30_000, mcpCloseGraceMs: 250 }, 113_245],
-  ])('supervisor close with %o is %d (drain + close grace + 7 x stop grace + 6 x MCP grace + 76245)', (values, expected) => {
+    [{ closeGraceMs: 1, managedServerStopGraceMs: 0, drainTimeoutMs: 0, mcpCloseGraceMs: 0 }, 76_276],
+    [{ closeGraceMs: 0, managedServerStopGraceMs: 1, drainTimeoutMs: 0, mcpCloseGraceMs: 0 }, 76_282],
+    [{ closeGraceMs: 0, managedServerStopGraceMs: 0, drainTimeoutMs: 1, mcpCloseGraceMs: 0 }, 76_276],
+    [{ closeGraceMs: 0, managedServerStopGraceMs: 0, drainTimeoutMs: 0, mcpCloseGraceMs: 1 }, 76_281],
+    [{ closeGraceMs: 2000, managedServerStopGraceMs: 500, drainTimeoutMs: 30_000, mcpCloseGraceMs: 250 }, 113_275],
+  ])('supervisor close with %o is %d (drain + close grace + 7 x stop grace + 6 x MCP grace + 76275)', (values, expected) => {
     expect(supervisorMaxCloseMs(values)).toBe(expected);
   });
 
   it('the daemon stop bound is the supervisor close of the same values plus the hard-exit margin', () => {
     const values = { closeGraceMs: 2000, managedServerStopGraceMs: 500, drainTimeoutMs: 1234, mcpCloseGraceMs: 7 };
     expect(daemonStopBoundMs(values)).toBe(supervisorMaxCloseMs(values) + 3000);
-    expect(daemonStopBoundMs(values)).toBe(1234 + 2000 + 3500 + 42 + 76_245 + 3000);
+    expect(daemonStopBoundMs(values)).toBe(1234 + 2000 + 3500 + 42 + 76_275 + 3000);
   });
 });
 

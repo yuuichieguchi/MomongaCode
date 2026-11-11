@@ -1,6 +1,6 @@
 import type { spawn } from 'node:child_process';
-import { SANDBOX_KILL_GRACE_MS, closeMarkerDescriptor, deadlineSignal, groupSignalsOf, groupTerminationBoundMs, hostProbeTiming, hostProcessGroupPort, launchGroupLeader, signalGroup, terminateGroup } from '@momonga/foundation';
-import type { GroupLaunch, GroupLaunchMarker, ProbeTiming, ProcessGroupPort, TerminateOutcome } from '@momonga/foundation';
+import { Deadline, SANDBOX_KILL_GRACE_MS, closeMarkerDescriptor, groupSignalsOf, groupTerminationBoundMs, hostProcessGroupPort, launchGroupLeader, signalGroup, sleep, systemTiming, systemWaitTiming, terminateGroup } from '@momonga/foundation';
+import type { GroupLaunch, GroupLaunchMarker, ProcessGroupPort, TerminateOutcome, Timing } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
 export { SANDBOX_KILL_GRACE_MS };
@@ -23,13 +23,14 @@ export interface LaunchOptions {
   spawnProcess?: typeof spawn;
   signalTerm?: (pgid: number, stop: AbortSignal) => Promise<void> | void;
   groupPort?: ProcessGroupPort;
-  timing?: ProbeTiming;
+  timing?: Timing;
 }
 
 export function launch(options: LaunchOptions): SandboxedProcess {
   const stdinMode = options.stdin === undefined ? 'ignore' : 'pipe';
   const { signal, killGraceMs } = options;
-  const timing = options.timing ?? hostProbeTiming;
+  const timing = options.timing ?? systemWaitTiming;
+  const stopBoundOf = (ms: number): AbortSignal => Deadline.after(ms, options.timing ?? systemTiming).signal;
   const groupPort = options.groupPort ?? hostProcessGroupPort();
   const [firstSignal, ...laterSignals] = groupSignalsOf(groupPort);
   const lastSignal = laterSignals[laterSignals.length - 1];
@@ -91,8 +92,8 @@ export function launch(options: LaunchOptions): SandboxedProcess {
   const onAbort = (): void => {
     if (killedBy !== undefined) return;
     killedBy = 'abort';
-    termDeadline = timing.now() + killGraceMs;
-    const bound = deadlineSignal(timing, groupTerminationBoundMs(killGraceMs));
+    termDeadline = timing.monotonicMs() + killGraceMs;
+    const bound = stopBoundOf(groupTerminationBoundMs(killGraceMs));
     stopBound = bound;
     bound.addEventListener(
       'abort',
@@ -103,7 +104,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     );
     Promise.resolve(signalTerm(pid, bound)).catch(reportStopFailure);
     if (lastSignal === undefined) return;
-    void timing.sleep(killGraceMs).then(() => {
+    void sleep(timing, killGraceMs).then(() => {
       if (graceCancelled) return;
       if (!leaderExited) killedBy = 'grace-kill';
       return signalGroup(pid, lastSignal, groupPort, bound);
@@ -112,7 +113,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
 
   const reapGroup = async (): Promise<TerminateOutcome> => {
     graceCancelled = true;
-    const stop = stopBound ?? deadlineSignal(timing, groupTerminationBoundMs(killGraceMs));
+    const stop = stopBound ?? stopBoundOf(groupTerminationBoundMs(killGraceMs));
     return terminateGroup(pid, {
       graceMs: killGraceMs,
       ...(termDeadline === undefined ? {} : { termDeadline }),
