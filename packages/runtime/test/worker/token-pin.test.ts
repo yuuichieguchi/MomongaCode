@@ -6,6 +6,7 @@ import { readPins } from '../../src/worker/pins.ts';
 import type { RunPins } from '../../src/worker/pins.ts';
 import { tokenPinFor } from '../../src/worker/token-pin.ts';
 import type { TokenPin } from '../../src/worker/token-pin.ts';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 
@@ -88,8 +89,9 @@ describe('reading pins.token', () => {
 });
 
 describe('the token pin recorded at run start', () => {
-  it('records an all-off pin on run.started with the default settings', async () => {
+  it('records an all-off pin on run.started with every token setting off', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = TOKEN_SETTINGS_OFF;
     env.gateway.script.push(textStep('Done.'));
     const run = await env.enqueue('say done');
     await env.runOnce(env.worker());
@@ -99,7 +101,7 @@ describe('the token pin recorded at run start', () => {
 
   it('records the settings that are on when the root run starts', async () => {
     const env = await makeEnv();
-    env.settings.contextValue = { ...env.settings.contextValue, cachePrefix: true, outputFormatters: ['log'], observedCapacity: true };
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF, cachePrefix: true, outputFormatters: ['log'], observedCapacity: true };
     env.gateway.script.push(textStep('Done.'));
     const run = await env.enqueue('say done');
     await env.runOnce(env.worker());

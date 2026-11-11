@@ -6,8 +6,8 @@ export { attestedTokens, checkSummary, claimedTokens } from './summary-fidelity.
 export type { FidelityRecord, FidelitySource } from './summary-fidelity.ts';
 export { WORKING_STATE_MESSAGE_MIN_TOKENS, criticalIdentifiersOf, renderWorkingState, widestMandatoryWorkingStateMessage, workingStateCapFor, workingStateMessage } from './working-state.ts';
 export type { WorkingStateOptions } from './working-state.ts';
-export { buildContext, maxInputFor, measureLayers, measurePinned } from './build-context.ts';
-export type { MaxInputBounds } from './build-context.ts';
+export { buildContext, evictionPassFor, maxInputFor, measureLayers, measurePinned } from './build-context.ts';
+export type { EvictionPass, MaxInputBounds } from './build-context.ts';
 export { FORMATTER_VERSIONS, formatGrep, formatJson, formatLog, formatToolOutput, formattedHeader, formattingViolations } from './formatters/index.ts';
 export type { FormattedOutput, FormattingViolation } from './formatters/index.ts';
 export { fitToTokens, outputRenderOf, readClauseOf } from './tool-output.ts';

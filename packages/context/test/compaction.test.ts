@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ContextOverflowError, buildContext } from '@momonga/context';
+import { ContextOverflowError, buildContext, evictionPassFor } from '@momonga/context';
 import type { CompactionInputItem } from '@momonga/protocol';
 import {
   TASK,
@@ -194,5 +194,35 @@ describe('overflow handling', () => {
     expect(overflow.ceiling).toBe(I);
     expect(overflow.inputTokens).toBeGreaterThan(I);
     expect(overflow.inputTokens).toBeGreaterThanOrEqual(3500);
+  });
+});
+
+describe('the one eviction pass that the build runs and that sizing reads', () => {
+  it('evicts every unprotected output at once under the cache prefix layout and to the low mark otherwise', () => {
+    expect(evictionPassFor('cachePrefix', { floorTokens: 1000, highMark: 3000 })).toEqual({ kind: 'batch' });
+    expect(evictionPassFor(undefined, { floorTokens: 1000, highMark: 3000 })).toEqual({ kind: 'toLowMark', lowMark: 2000 });
+    expect(evictionPassFor(undefined, { floorTokens: 1001, highMark: 3000 })).toEqual({ kind: 'toLowMark', lowMark: 1001 + 999 });
+  });
+
+  it('plans a proactive compaction over the region the batch pass leaves, with the product layout', async () => {
+    const capabilities = capabilitiesFor(W);
+    const { ports } = harness(capabilities);
+    const history = [
+      user(1, 'q1'),
+      call(2, 'c1'),
+      output(3, 'c1', 'o'.repeat(3000)),
+      assistant(4, 'x'.repeat(4400)),
+      user(5, 'q2'),
+      call(6, 'c2'),
+      output(7, 'c2', 'p'.repeat(3000)),
+      assistant(8, 'y'.repeat(4400)),
+      user(9, 'now'),
+    ];
+    const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1, layout: 'cachePrefix' }), ports);
+    expect(result.evictions.filter((eviction) => eviction.kind === 'omitted').map((eviction) => eviction.callId)).toEqual(['c1', 'c2']);
+    expect(result.compaction).toBeDefined();
+    const planned = JSON.stringify(result.compaction?.input);
+    expect(planned).not.toContain('o'.repeat(3000));
+    expect(planned).toContain('tool output omitted');
   });
 });

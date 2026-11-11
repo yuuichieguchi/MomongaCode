@@ -595,6 +595,11 @@ export const measurePinned = async (input: BuildContextInput, ports: BuildContex
   };
 };
 
+export type EvictionPass = { kind: 'batch' } | { kind: 'toLowMark'; lowMark: number };
+
+export const evictionPassFor = (layout: BuildContextInput['layout'], marks: { floorTokens: number; highMark: number }): EvictionPass =>
+  layout === 'cachePrefix' ? { kind: 'batch' } : { kind: 'toLowMark', lowMark: marks.floorTokens + floorRatio(EVICT_LOW_WATER, marks.highMark - marks.floorTokens) };
+
 export const buildContext = async (input: BuildContextInput, suppliedPorts: BuildContextPorts): Promise<BuiltContext> => {
   let ports = suppliedPorts;
   const { capabilities, sources, evicted } = input;
@@ -1029,22 +1034,20 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     throw await pinnedBoundError(undefined, boundOfBuild(0));
   };
   let highMark = await highMarkNow();
-  const lowMark = (): number => floorTokens + floorRatio(EVICT_LOW_WATER, highMark - floorTokens);
   const loadOf = (counted: MeterCount): number => counted.inputTokens + counted.underAt(counted.inputTokens);
   if (total.inputTokens > highMark || !fits(total)) {
     const unevicted = total;
     const snapshot = passSnapshot();
-    if (cachePrefix) {
+    const pass = evictionPassFor(input.layout, { floorTokens, highMark });
+    if (pass.kind === 'batch') {
       while (await evictOldest()) continue;
+      if (firstEvicted !== undefined && (input.forms !== undefined || input.renderedFull !== undefined)) await rerenderFrom(firstEvicted);
+      total = await measureAssembled();
     } else {
-      while ((total.inputTokens > lowMark() || !fits(total)) && (await evictOldest())) {
+      while ((total.inputTokens > pass.lowMark || !fits(total)) && (await evictOldest())) {
         if (input.forms !== undefined || input.renderedFull !== undefined) await rerenderFrom(firstEvicted as number);
         total = await measureAssembled();
       }
-    }
-    if (cachePrefix) {
-      if (firstEvicted !== undefined && (input.forms !== undefined || input.renderedFull !== undefined)) await rerenderFrom(firstEvicted);
-      total = await measureAssembled();
     }
     const kept = fits(total) || (!fits(unevicted) && loadOf(total) < loadOf(unevicted));
     if (!kept) {

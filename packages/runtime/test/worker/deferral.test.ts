@@ -5,6 +5,7 @@ import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { defineTool } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { toolUsageWindowOf } from '../../src/worker/tool-usage-window.ts';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -44,7 +45,7 @@ const workToolsOf = (env: Env, extra: readonly AnyTool[] = []) => (): AnyTool[] 
 const deferralEnv = async (context: Partial<ResolvedContextSettings> = {}, capabilities?: Capabilities) => {
   const env = await makeEnv(capabilities === undefined ? {} : { capabilities });
   env.settings.toolsValue = { ...env.settings.toolsValue, deferral: true };
-  env.settings.contextValue = { ...env.settings.contextValue, ...context };
+  env.settings.contextValue = { ...TOKEN_SETTINGS_OFF, ...context };
   return env;
 };
 

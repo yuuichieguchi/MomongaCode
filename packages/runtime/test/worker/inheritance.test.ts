@@ -121,6 +121,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
 
   it('closes calls of a run cancelled between model.responded and recordCalls', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...env.settings.contextValue, outputFormatters: [] };
     const first = await env.enqueue('Write both');
     await env.seed(first.id, [startedPayload(), requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1')), functionCallItem(writeCall(env, 'call_w_2'))])], 'release');
     expect((await env.cancelToEnd(first.id)).status).toBe('CANCELLED');
@@ -146,6 +147,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
 
   it('closes the repeated call of a run stopped by the loop check', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...env.settings.contextValue, loopGuidance: false };
     env.gateway.script.push(callsStep([echo('call_l_1', 'same')]), callsStep([echo('call_l_1', 'same')]), callsStep([echo('call_l_1', 'same')]));
     const first = await env.enqueue('Loop', { limits: { loopThreshold: 3 } });
     expect((await settle(env, first.id)).stopReason).toBe('loop');
@@ -304,6 +306,7 @@ describe('run-local limits and loop detection', () => {
 
   it('still stops a genuine loop inside run 2 at its own third repetition', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...env.settings.contextValue, loopGuidance: false };
     env.gateway.script.push(callsStep([echo('call_s_1', 'same')]), callsStep([echo('call_s_1', 'same')]), textStep('Stopped repeating.'));
     const first = await env.enqueue('Echo', { limits: { loopThreshold: 3 } });
     await settle(env, first.id);
