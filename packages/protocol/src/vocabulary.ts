@@ -256,6 +256,7 @@ export type MessageInputs = {
   aboutModel: [given: { readonly model: string; readonly text: string }];
   modelNotReady: [given: { readonly model: string; readonly reason: string }];
   modelIdChanged: [given: { readonly server: string; readonly model: string; readonly listed: string; readonly entry: string }];
+  serverSocketPathTooLong: [given: { readonly model: string; readonly byteLength: number; readonly directory: string; readonly code: string }];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -279,6 +280,11 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   modelNotReady: (_surface, given) => `the ${WORDS.model} "${given.model}" is not ready: ${given.reason}`,
   modelIdChanged: (_surface, given) =>
     `The ${WORDS.server} ${given.server} of the ${WORDS.model} ${given.model} lists "${given.listed}", not "${given.entry}". Run /models add to add the ${WORDS.model} it serves now.`,
+  serverSocketPathTooLong: (surface, given) =>
+    MESSAGES.aboutModel(surface, {
+      model: given.model,
+      text: `its ${WORDS.server} socket path is ${given.byteLength} bytes, and the system refused to bind a socket path of that length in ${given.directory} (${given.code}); choose a shorter ${WORDS.server} name`,
+    }),
 };
 
 export const MESSAGE_KEYS = Object.keys(MESSAGES) as readonly MessageKey[];

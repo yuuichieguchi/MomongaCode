@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, startSharedCall, systemClock } from '@momonga/foundation';
 import type { GenerationRole, ProcessLock, SharedCall, UdsClient } from '@momonga/foundation';
-import { SOCKET_PLACEHOLDER } from '@momonga/protocol';
+import { SOCKET_PLACEHOLDER, messageOf } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { realTimers } from '../process-ports.ts';
 import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
@@ -204,11 +204,9 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     const refusal = await socketBindRefusalOf(options.socketPath);
     if (refusal === undefined) return undefined;
     return new TargetNotReadyError(
-      said(
-        refusal.kind === 'unsupported'
-          ? `its server socket path is ${refusal.byteLength} bytes, and the system refused to bind a socket path of that length in ${refusal.directory} (${refusal.code}); choose a shorter server name`
-          : `a socket path of ${refusal.byteLength} bytes could not be tested in ${refusal.directory}: ${refusal.reason}`,
-      ),
+      refusal.kind === 'unsupported'
+        ? messageOf('serverSocketPathTooLong', 'gateway', { model: target, byteLength: refusal.byteLength, directory: refusal.directory, code: refusal.code })
+        : said(`a socket path of ${refusal.byteLength} bytes could not be tested in ${refusal.directory}: ${refusal.reason}`),
     );
   };
 
