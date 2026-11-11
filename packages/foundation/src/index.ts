@@ -138,6 +138,7 @@ export {
   generationSpawnScratch,
   leftoverDirectories,
   managedInstancePaths,
+  layoutEnvOf,
   homeLayout,
   momongaLayout,
   momongaPaths,

@@ -55,6 +55,13 @@ const pathFor = (platform: NodeJS.Platform): path.PlatformPath => (platform === 
 const absoluteOrUndefined = (candidate: string | undefined, flavor: path.PlatformPath): string | undefined =>
   candidate === undefined || !flavor.isAbsolute(candidate) ? undefined : candidate;
 
+const LAYOUT_ENV_NAMES = ['XDG_CACHE_HOME', 'XDG_DATA_HOME', 'LOCALAPPDATA', 'APPDATA'] as const;
+
+type LayoutEnvName = (typeof LAYOUT_ENV_NAMES)[number];
+
+export const layoutEnvOf = (env: Readonly<Record<string, string | undefined>>): Partial<Record<LayoutEnvName, string>> =>
+  Object.fromEntries(LAYOUT_ENV_NAMES.flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])));
+
 const cacheBaseOf = (home: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): string => {
   const flavor = pathFor(platform);
   if (platform === 'darwin') return flavor.join(home, 'Library', 'Caches', 'momonga');
