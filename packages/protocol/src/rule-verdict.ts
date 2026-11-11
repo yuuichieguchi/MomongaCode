@@ -4,9 +4,13 @@ export const POLICY_VERDICT_NOTICE_CODE = 'policy_verdict';
 
 export const RULE_VERIFY_BUDGET_MS = 60_000;
 
-export const RULE_VERDICTS = ['proved', 'refuted', 'unknown'] as const;
+export const RULE_VERDICTS = ['proved', 'refuted', 'unknown', 'failed'] as const;
 
 export type RuleVerdictKind = (typeof RULE_VERDICTS)[number];
+
+export const FINAL_RULE_VERDICTS = ['proved', 'refuted'] as const satisfies readonly RuleVerdictKind[];
+
+export const isFinalRuleVerdict = (verdict: { verdict: string }): boolean => FINAL_RULE_VERDICTS.some((kind) => kind === verdict.verdict);
 
 export type RuleRefutation = { property: string; subject: string; message: string; counterexample?: string };
 

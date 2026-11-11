@@ -59,6 +59,7 @@
     {"name":"OMISSION_RESERVE_CHARS","file":"packages/runtime/src/memory/reflection-input.ts","kind":"stated","owner":"runtime","row":"context.md"},
     {"name":"JOB_IDEMPOTENCY_TTL_MS","file":"packages/runtime/src/process/constants.ts","kind":"C","owner":"runtime","row":"runtime-store.md"},
     {"name":"JOB_OUTPUT_WINDOW_BYTES","file":"packages/runtime/src/process/constants.ts","kind":"stated","owner":"runtime","row":"runtime-store.md"},
+    {"name":"RULE_VERIFY_LOAD_ALLOWANCE_MS","file":"packages/runtime/src/process/rule-verifier.ts","kind":"P","owner":"policy-verify-sandbox","row":"verify.md"},
     {"name":"DEFAULT_IDLE_POLL_MS","file":"packages/runtime/src/worker/worker.ts","kind":"C","owner":"runtime","row":"runtime-store.md"},
     {"name":"HISTORY_INDEX_BATCH_CHARS","file":"packages/store/src/search-constants.ts","kind":"stated","owner":"store","row":"context.md"},
     {"name":"HISTORY_READ_PAGE_CHARS","file":"packages/store/src/search-constants.ts","kind":"stated","owner":"store","row":"context.md"},

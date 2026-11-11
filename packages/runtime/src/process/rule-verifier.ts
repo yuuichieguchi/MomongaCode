@@ -22,6 +22,8 @@ export type RuleSolverHost = {
 
 export type RuleSolverSource = (paths: Pick<MomongaPaths, 'executables'>) => RuleSolverHost;
 
+export const RULE_VERIFY_LOAD_ALLOWANCE_MS = 10_000;
+
 const INSTALLED_PACKAGE = `${path.sep}node_modules${path.sep}z3-solver${path.sep}`;
 
 const installedVersionOf = async (entry: string): Promise<string> => {
@@ -73,7 +75,7 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers }
       signal.throwIfAborted();
       const verifier = await host.loadVerifier();
       return verifyInThread(
-        { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers },
+        { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers, loadAllowanceMs: RULE_VERIFY_LOAD_ALLOWANCE_MS },
         { input: request, solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS },
         signal,
       );

@@ -5,6 +5,7 @@ import { verifyInThread } from '../../src/process/rule-verifier-thread-client.ts
 import type { RuleVerifyJob } from '../../src/process/rule-verifier-thread.ts';
 
 const HANG_GUARD_MS = 60_000;
+const LOAD_ALLOWANCE_MS = 77;
 
 vi.setConfig({ testTimeout: HANG_GUARD_MS });
 
@@ -36,7 +37,7 @@ const unknownWith = (reason: string | RegExp) => ({ verdict: 'unknown', solver: 
 
 describe('a verification in its own thread', () => {
   it('gives the verdict of the thread, which is not the calling thread and receives the job', async () => {
-    const verdict = await verifyInThread({ code: REPLYING, timers: systemTimers }, job, new AbortController().signal);
+    const verdict = await verifyInThread({ code: REPLYING, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal);
     expect(verdict).toEqual({ verdict: 'proved', solver: 'z3 1', refuted: [], unknown: [], notProved: ['false', '/work'] });
     expect(runningWorkerCount()).toBe(0);
   });
@@ -45,7 +46,7 @@ describe('a verification in its own thread', () => {
     let turns = 0;
     const ticking = setInterval(() => (turns += 1), 10);
     try {
-      await verifyInThread({ code: BLOCKING_THEN_REPLYING, timers: systemTimers }, job, new AbortController().signal);
+      await verifyInThread({ code: BLOCKING_THEN_REPLYING, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal);
     } finally {
       clearInterval(ticking);
     }
@@ -53,35 +54,37 @@ describe('a verification in its own thread', () => {
   });
 
   it('is unknown with the reason when the thread reports a failure', async () => {
-    expect(await verifyInThread({ code: REFUSING, timers: systemTimers }, job, new AbortController().signal)).toEqual(
+    expect(await verifyInThread({ code: REFUSING, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal)).toEqual(
       unknownWith('the verification thread failed: the Z3 solver at /nowhere/z3.js cannot be used'),
     );
   });
 
   it('is unknown with the reason when the thread throws', async () => {
-    expect(await verifyInThread({ code: THROWING, timers: systemTimers }, job, new AbortController().signal)).toEqual(unknownWith('the verification thread failed: no memory for the solver'));
+    expect(await verifyInThread({ code: THROWING, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal)).toEqual(unknownWith('the verification thread failed: no memory for the solver'));
   });
 
   it('is unknown with the reason when the thread exits without a verdict', async () => {
-    expect(await verifyInThread({ code: EXITING, timers: systemTimers }, job, new AbortController().signal)).toEqual(unknownWith('the verification thread exited with code 3 before it gave a verdict'));
+    expect(await verifyInThread({ code: EXITING, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal)).toEqual(unknownWith('the verification thread exited with code 3 before it gave a verdict'));
   });
 
   it('is unknown with the reason when the reply is not a verdict', async () => {
-    expect(await verifyInThread({ code: MALFORMED, timers: systemTimers }, job, new AbortController().signal)).toEqual(unknownWith('the verification thread gave a reply that is not a verdict'));
+    expect(await verifyInThread({ code: MALFORMED, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, new AbortController().signal)).toEqual(unknownWith('the verification thread gave a reply that is not a verdict'));
   });
 
   it('is unknown with the reason when the job cannot be given to a thread', async () => {
     const uncloneable = { ...job, input: { ...job.input, protectedSet: { probe: () => true } as never } };
-    expect(await verifyInThread({ code: REPLYING, timers: systemTimers }, uncloneable, new AbortController().signal)).toEqual(unknownWith(/^the verification thread could not be started: /));
+    expect(await verifyInThread({ code: REPLYING, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, uncloneable, new AbortController().signal)).toEqual(unknownWith(/^the verification thread could not be started: /));
   });
 
-  it('is cut at the budget of the job: unknown with the budget sentence, and the thread is ended', async () => {
+  it('is bounded by one timer of its own, the budget of the job and the load allowance, which the solver budget inside the thread never equals: unknown with that bound, and the thread is ended', async () => {
     const timers = createFakeTimers(createFakeClock(0));
-    const pending = verifyInThread({ code: SILENT, timers }, { ...job, budgetMs: 1234 }, new AbortController().signal);
+    const pending = verifyInThread({ code: SILENT, timers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, { ...job, budgetMs: 1234 }, new AbortController().signal);
     expect(runningWorkerCount()).toBe(1);
-    expect(timers.pending().map((timer) => timer.delayMs)).toEqual([1234]);
+    expect(timers.pending().map((timer) => timer.delayMs)).toEqual([1234 + LOAD_ALLOWANCE_MS]);
     timers.advance(1234);
-    expect(await pending).toEqual(unknownWith('the verification budget of 1234 ms was spent'));
+    expect(runningWorkerCount()).toBe(1);
+    timers.advance(LOAD_ALLOWANCE_MS);
+    expect(await pending).toEqual(unknownWith('the verification thread gave no verdict within 1311 ms, the verification budget of 1234 ms and 77 ms to load the solver'));
     expect(runningWorkerCount()).toBe(0);
     expect(timers.pending()).toEqual([]);
   });
@@ -89,7 +92,7 @@ describe('a verification in its own thread', () => {
   it('ends with the reason of the signal of its asker, and the thread is ended', async () => {
     const asker = new AbortController();
     const timers = createFakeTimers(createFakeClock(0));
-    const pending = verifyInThread({ code: SILENT, timers }, job, asker.signal);
+    const pending = verifyInThread({ code: SILENT, timers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, asker.signal);
     expect(runningWorkerCount()).toBe(1);
     asker.abort(new Error('the run was cancelled'));
     await expect(pending).rejects.toThrow('the run was cancelled');
@@ -100,7 +103,7 @@ describe('a verification in its own thread', () => {
   it('starts no thread for an asker that is already gone', async () => {
     const asker = new AbortController();
     asker.abort(new Error('gone'));
-    await expect(verifyInThread({ code: REPLYING, timers: systemTimers }, job, asker.signal)).rejects.toThrow('gone');
+    await expect(verifyInThread({ code: REPLYING, timers: systemTimers, loadAllowanceMs: LOAD_ALLOWANCE_MS }, job, asker.signal)).rejects.toThrow('gone');
     expect(runningWorkerCount()).toBe(0);
   });
 });

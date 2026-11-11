@@ -4,7 +4,7 @@ import { PERMISSION_MODES, RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, withTempDir, NEVER_CANCELLED } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 import { parseRule } from '@momonga/config';
-import { createRuleVerifier, installedRuleSolver } from '../../src/process/rule-verifier.ts';
+import { RULE_VERIFY_LOAD_ALLOWANCE_MS, createRuleVerifier, installedRuleSolver } from '../../src/process/rule-verifier.ts';
 import type { RuleSolverHost } from '../../src/process/rule-verifier.ts';
 import { systemTimers } from '../../src/service/timers.ts';
 import { policyRefusal } from '../../src/worker/rule-verdict.ts';
@@ -26,7 +26,7 @@ describe('the rule verifier of the runtime process', () => {
     expect(await verifier.inputOf(request, NEVER_CANCELLED)).toMatchObject({ ...request, secretLocations: [{ directory: '/home/u/.ssh' }], protectedSet: expect.any(Object) });
   });
 
-  it('verifies in a thread that runs the code of its host, under the budget of the design and with the version of the solver', async () => {
+  it('verifies in a thread that runs the code of its host, with the version of the solver, under one thread timer that is the budget of the design and the load allowance', async () => {
     const timers = createFakeTimers(createFakeClock(0));
     const waits: number[] = [];
     const verifier = createRuleVerifier({
@@ -36,7 +36,8 @@ describe('the rule verifier of the runtime process', () => {
       timers: { setTimeout: (callback, ms) => (waits.push(ms), timers.setTimeout(callback, ms)), clearTimeout: timers.clearTimeout },
     });
     expect(await verifier.verify(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).toEqual({ verdict: 'proved', solver: FAKE_SOLVER_VERSION, refuted: [], unknown: [], notProved: [] });
-    expect(waits).toEqual([RULE_VERIFY_BUDGET_MS]);
+    expect(RULE_VERIFY_LOAD_ALLOWANCE_MS).toBeGreaterThan(0);
+    expect(waits).toEqual([RULE_VERIFY_BUDGET_MS + RULE_VERIFY_LOAD_ALLOWANCE_MS]);
   });
 
   it('gives verdict unknown with the reason when its thread fails', async () => {

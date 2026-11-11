@@ -34,13 +34,14 @@ const sourceOf = async (verifier: VerifyModule, recipe: RuleSolverRecipe): Promi
   });
 };
 
-const THREAD_LIFETIME: AbortSignal = new AbortController().signal;
+export type RuleVerifyAbort = { readonly abort: string };
 
-export const runRuleVerifyJob = async (job: RuleVerifyJob): Promise<RuleVerdict> => {
+export const runRuleVerifyJob = async (job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerdict> => {
+  signal.throwIfAborted();
   const verifier = await import('@momonga/verify');
   const engine = await verifier.openZ3(await sourceOf(verifier, job.solver));
   try {
-    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createPolicyFilesystem(), exemptDirectory: null, budgetMs: job.budgetMs, signal: THREAD_LIFETIME });
+    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createPolicyFilesystem(), exemptDirectory: null, budgetMs: job.budgetMs, signal });
     return verifier.verdictOfReport(report, job.solverVersion);
   } finally {
     await engine.close();
@@ -50,10 +51,16 @@ export const runRuleVerifyJob = async (job: RuleVerifyJob): Promise<RuleVerdict>
 const isRuleVerifyJob = (value: unknown): value is RuleVerifyJob =>
   typeof value === 'object' && value !== null && 'input' in value && 'solver' in value && 'solverVersion' in value && typeof value.solverVersion === 'string' && 'budgetMs' in value && typeof value.budgetMs === 'number';
 
+const isRuleVerifyAbort = (value: unknown): value is RuleVerifyAbort => typeof value === 'object' && value !== null && 'abort' in value && typeof value.abort === 'string';
+
 if (!isMainThread && parentPort !== null && isRuleVerifyJob(workerData)) {
   const port = parentPort;
+  const asker = new AbortController();
+  port.on('message', (message: unknown) => {
+    if (isRuleVerifyAbort(message)) asker.abort(new Error(message.abort));
+  });
   const post = (reply: RuleVerifyReply): void => port.postMessage(reply);
-  void runRuleVerifyJob(workerData).then(
+  void runRuleVerifyJob(workerData, asker.signal).then(
     (verdict) => post({ ok: true, verdict }),
     (error: unknown) => post({ ok: false, reason: error instanceof Error ? error.message : String(error) }),
   );

@@ -2,9 +2,9 @@ import { Worker } from 'node:worker_threads';
 import { isRuleVerdict } from '@momonga/protocol';
 import type { RuleVerdict } from '@momonga/protocol';
 import type { ServiceTimers } from '../service/timers.ts';
-import type { RuleVerifyJob } from './rule-verifier-thread.ts';
+import type { RuleVerifyAbort, RuleVerifyJob } from './rule-verifier-thread.ts';
 
-export type RuleVerifierThreadOptions = { readonly code: string; readonly timers: ServiceTimers };
+export type RuleVerifierThreadOptions = { readonly code: string; readonly timers: ServiceTimers; readonly loadAllowanceMs: number };
 
 export const WHOLE_VERIFICATION = 'verification';
 
@@ -20,7 +20,7 @@ const verdictOfReply = (job: RuleVerifyJob, reply: unknown): RuleVerdict => {
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const verifyInThread = ({ code, timers }: RuleVerifierThreadOptions, job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerdict> =>
+export const verifyInThread = ({ code, timers, loadAllowanceMs }: RuleVerifierThreadOptions, job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerdict> =>
   new Promise<RuleVerdict>((resolve, reject) => {
     if (signal.aborted) {
       reject(signal.reason);
@@ -37,12 +37,20 @@ export const verifyInThread = ({ code, timers }: RuleVerifierThreadOptions, job:
     const end = (settle: () => void): void => {
       if (ended) return;
       ended = true;
-      timers.clearTimeout(budget);
+      timers.clearTimeout(bound);
       signal.removeEventListener('abort', onAbort);
       worker.terminate().then(settle, reject);
     };
-    const onAbort = (): void => end(() => reject(signal.reason));
-    const budget = timers.setTimeout(() => end(() => resolve(undecided(job, `the verification budget of ${job.budgetMs} ms was spent`))), job.budgetMs);
+    const onAbort = (): void => {
+      const told: RuleVerifyAbort = { abort: messageOf(signal.reason) };
+      worker.postMessage(told);
+      end(() => reject(signal.reason));
+    };
+    const boundMs = job.budgetMs + loadAllowanceMs;
+    const bound = timers.setTimeout(
+      () => end(() => resolve(undecided(job, `the verification thread gave no verdict within ${boundMs} ms, the verification budget of ${job.budgetMs} ms and ${loadAllowanceMs} ms to load the solver`))),
+      boundMs,
+    );
     signal.addEventListener('abort', onAbort, { once: true });
     worker.on('message', (reply: unknown) => end(() => resolve(verdictOfReply(job, reply))));
     worker.on('error', (error: unknown) => end(() => resolve(undecided(job, `the verification thread failed: ${messageOf(error)}`))));
