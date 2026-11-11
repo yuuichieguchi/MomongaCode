@@ -122,13 +122,13 @@ export type ListedTargetCapabilities = Capabilities | ProbingCapabilities | Unav
 
 export type PlanRelay = { planRelaySocket: string; listed: Readonly<Record<string, ListedTargetCapabilities>> };
 
-export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal | undefined): Promise<PlanRelay> => {
+export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal): Promise<PlanRelay> => {
   const gateway = createGatewayClient({ resolveSocket: fixedSocket(planRelaySocket) });
   try {
     const entries = await gateway.models(signal);
     return { planRelaySocket, listed: Object.fromEntries(entries.flatMap((entry) => entry.chain.map((member) => [member.model, member.capabilities]))) };
   } catch (error) {
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
     throw error;
   } finally {
     await gateway.close();
@@ -188,12 +188,12 @@ const describedEntryOf = (display: string, canon: string, relay: PlanRelay): Cap
 
 const relayedCapabilitiesOf = (display: string, resolved: ResolvedModel & ResolvedPlanTarget, relay: PlanRelay): RelayedCapabilities => {
   const entry = describedEntryOf(display, resolved.canon, relay);
-  const { maxConcurrency: _maxConcurrency, contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, imageInput, imageTokens, ...core } = resolved.capabilities;
+  const { maxConcurrency: _maxConcurrency, contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, imageInput: _imageInput, imageTokens: _imageTokens, ...core } = resolved.capabilities;
   const capabilities: RelayedCapabilities = {
     ...core,
     contextWindow: entry.contextWindow,
     maxOutputTokens: entry.maxOutputTokens,
-    ...imagePairOf(entry.imageInput === undefined ? { imageInput, imageTokens } : { imageInput: entry.imageInput, imageTokens: entry.imageTokens }),
+    ...imagePairOf({ imageInput: entry.imageInput, imageTokens: entry.imageTokens }),
   };
   const listed: Partial<Pick<RelayedCapabilities, ListedField>> = entry;
   for (const field of Object.keys(LISTED_FIELDS).filter(isListedField)) {

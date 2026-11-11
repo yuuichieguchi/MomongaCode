@@ -411,7 +411,10 @@ const decideResolvingOnce = async (input: DecideInput): Promise<Decision> => {
       kind: 'deny',
       denial: 'superseded',
       source: 'mode',
-      reason: `Not run: this run has a mandate, and ${verdict.form.argv.join(' ')} is replaced by a dedicated operation; use ${verdict.form.operation}`,
+      reason:
+        verdict.form.refusal === undefined
+          ? `Not run: this run has a mandate, and ${verdict.form.argv.join(' ')} is replaced by a dedicated operation; use ${verdict.form.operation}`
+          : `Not run: this run has a mandate, and ${verdict.form.argv.join(' ')} ${verdict.form.refusal.word} is refused: ${verdict.form.refusal.reason}`,
     };
   }
   const decided = withNetworkRequest(input, await decideWithoutNetwork(input));

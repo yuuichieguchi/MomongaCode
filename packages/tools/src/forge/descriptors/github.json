@@ -43,14 +43,21 @@
       "path": "/repos/{owner}/{name}/commits/{headSha}/check-runs",
       "success": [200],
       "items": "check_runs",
-      "result": { "name": "name", "status": "status" }
+      "result": { "name": "name", "status": "status", "conclusion": "conclusion" }
     },
     "listComments": {
       "method": "GET",
       "path": "/repos/{owner}/{name}/issues/{number}/comments",
       "success": [200],
       "items": "",
-      "result": { "body": "body" }
+      "result": { "id": "id", "body": "body" }
+    },
+    "listReviewComments": {
+      "method": "GET",
+      "path": "/repos/{owner}/{name}/pulls/{number}/comments",
+      "success": [200],
+      "items": "",
+      "result": { "id": "id", "path": "path", "line": "line", "body": "body" }
     },
     "createComment": {
       "method": "POST",

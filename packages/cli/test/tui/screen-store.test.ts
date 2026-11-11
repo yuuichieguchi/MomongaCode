@@ -3,11 +3,11 @@ import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { appendEntry, foldEvent, sessionTokens, subagentEnded, subagentStarted } from '../../src/tui/transcript.ts';
-import { eventOf, fold, foldChild, plainOf, seeded, storeOf, ROW_RENDERERS } from './screen-fakes.ts';
+import { eventOf, fold, foldChild, plainOf, seeded, storeOf, ROW_RENDERERS, ROW_SCHEDULE } from './screen-fakes.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
-const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers, ROW_SCHEDULE);
 
 const call = { type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Read', kind: 'read', title: 'Read /a', rawInput: {} };
 const delta = (itemId: string, text: string) => ({ type: 'agent.message.delta', attempt: 0, itemId, text });

@@ -1,6 +1,6 @@
 {
   "name": "GitFetch",
-  "description": "Fetches one branch from a remote into its remote-tracking branch. The checked-out branch and the working tree do not change; use GitUpdate to bring the checked-out branch up to the fetched commits. The result is checked against the remote: the remote-tracking branch must be at the commit the remote has.",
+  "description": "Fetches one branch from a remote into its remote-tracking branch. The checked-out branch and the working tree do not change; use GitUpdate to bring the checked-out branch up to the fetched commits. The result is checked against the remote: the remote-tracking branch must be at the commit the remote has. A remote written for SSH (git@host:path or ssh://) on a forge declared in settings is reached through the HTTPS place of that forge with the credential of the forge; the remote itself is not changed. A remote reached over SSH on no declared forge is not fetched from.",
   "kind": "execute",
   "sideEffect": "exec",
   "title": "Fetch {input.branch} from {input.remote}",

@@ -1,6 +1,6 @@
 import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import { isRecord } from '@momonga/foundation';
-import { unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import { heldEndOf, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
 import type { ElicitationRequestView, PublicRunEvent } from '@momonga/protocol';
 import { classificationLevel, describeClassification, describeDenial, describeHook, describeVerification, hookLevel, verificationLevel } from '../policy-messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
@@ -119,6 +119,8 @@ export const mapChildEvent = (event: PublicRunEvent, agent: string, state: Mappe
 
 export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, features: ClientFeatures): Effect[] => {
   if ('seq' in event && !state.firstSeq.has(event.runId)) state.firstSeq.set(event.runId, event.seq);
+  const ended = heldEndOf(event);
+  if (ended !== undefined && 'runId' in event) state.held.delete(toolCallIdOf(event.runId, ended.callId));
   switch (event.type) {
     case 'user.message':
       return phase === 'history' && isPrompt(event, state.firstSeq.get(event.runId)) ? [message('user_message_chunk', messageIdOf(event.runId, 'user'), event.text)] : [];
@@ -187,11 +189,8 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
       state.held.set(toolCallId, held);
       return [heldUpdate(toolCallId, held, HELD_GOES_ON)];
     }
-    case 'tool.held.resolved': {
-      const toolCallId = toolCallIdOf(event.runId, event.callId);
-      state.held.delete(toolCallId);
-      return [toolUpdate(toolCallId, { status: event.status, content: outputContent(event.output), rawOutput: event.output })];
-    }
+    case 'tool.held.resolved':
+      return [toolUpdate(toolCallIdOf(event.runId, event.callId), { status: event.status, content: outputContent(event.output), rawOutput: event.output })];
     case 'run.quiescent':
       return event.held.map((entry) => heldUpdate(toolCallIdOf(event.runId, entry.callId), { approvalId: entry.approvalId, reason: entry.reason }, HELD_QUIESCENT));
     case 'tool.completed': {

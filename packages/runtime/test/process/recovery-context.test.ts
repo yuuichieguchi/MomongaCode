@@ -44,3 +44,27 @@ describe('recoveryContextFor needs no protected set (3.15 (a) Recovery)', () => 
     expect(touched).toEqual([]);
   });
 });
+
+describe('an abort while the session scratch directory is prepared', () => {
+  it('leaves recoveryContextFor as the abort reason of the asker, not as a ConfigError', async () => {
+    const temp = await makeTempHome();
+    const { store, clock } = openStore(temp);
+    const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
+    const session = createSession(store, temp.project, {});
+    const asker = new AbortController();
+    const reason = new Error('the client left');
+    const recoveryContextFor = runtime.createRecoveryContextFor({
+      lock: testKernelLock(),
+      paths: temp.paths,
+      home: temp.home,
+      sessionStates,
+      fs: fakePolicyFilesystem(),
+      ensureSessionTmpDir: async () => {
+        asker.abort(reason);
+        throw new Error('the directory could not be prepared');
+      },
+    });
+
+    await expect(recoveryContextFor(session, { signal: asker.signal, env: {} })).rejects.toBe(reason);
+  });
+});

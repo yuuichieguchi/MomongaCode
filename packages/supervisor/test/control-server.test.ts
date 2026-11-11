@@ -11,7 +11,7 @@ import type { SupervisorHealth } from '@momonga/protocol';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration, realProcessTestSignal, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createControlRequestHandler, respondShutdown, startControlServer } from '../src/control-server.ts';
-import type { ControlServer } from '../src/control-server.ts';
+import type { ControlHandlerOptions, ControlServer } from '../src/control-server.ts';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { createRealWorkScope, httpOver, phaseChanges, pumpUntil, quiesce, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
@@ -22,7 +22,6 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const SAMPLE_HEALTH: SupervisorHealth = {
   status: 'ok',
   version: '9.9.9-test',
-  apiVersion: 1,
   pid: process.pid,
   startedAt: '2026-01-01T00:00:00.000Z',
   phase: 'running',
@@ -81,6 +80,7 @@ const runDir = (context: CleanupContext): string => {
 const startServer = async (
   context: CleanupContext,
   health: () => SupervisorHealth = () => SAMPLE_HEALTH,
+  credential: ControlHandlerOptions['credential'] = async () => ({ kind: 'refused' }),
 ) => {
   const socketPath = path.join(runDir(context), 'supervisor.sock');
   const clock = createFakeClock(0);
@@ -93,7 +93,7 @@ const startServer = async (
     socketPath,
     timers,
     health,
-    credential: () => ({ kind: 'refused' }),
+    credential,
     onShutdownRequested: () => {
       shutdowns += 1;
     },
@@ -107,6 +107,17 @@ const startServer = async (
 };
 
 const envelopeOf = (text: string): unknown => JSON.parse(text);
+
+const rawExchange = (context: CleanupContext, socketPath: string, request: string): Promise<string> =>
+  new Promise<string>((resolve, reject) => {
+    const raw = net.connect(socketPath);
+    registerCleanup(context, () => void raw.destroy());
+    const chunks: Buffer[] = [];
+    raw.on('data', (chunk: Buffer) => chunks.push(chunk));
+    raw.once('error', reject);
+    raw.once('close', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    raw.once('connect', () => raw.write(request));
+  });
 
 describe('startControlServer', () => {
   it('GET /v1/health answers the health snapshot', async (context) => {
@@ -141,6 +152,34 @@ describe('startControlServer', () => {
     expect(getShutdown.status).toBe(405);
     expect(getShutdown.headers['allow']).toBe('POST');
     expect(envelopeOf(getShutdown.text)).toMatchObject({ error: { code: 'method_not_allowed' } });
+  });
+
+  it.for([
+    ['a request target that is no path', 'GET // HTTP/1.1'],
+    ['a credential name with a broken percent escape', 'GET /v1/credentials/% HTTP/1.1'],
+    ['a credential name whose escape is not UTF-8', 'GET /v1/credentials/%E0%A4%A HTTP/1.1'],
+  ] as const)('%s is refused with 400 invalid_request, and the server keeps answering', async ([, requestLine], context) => {
+    const { socketPath, realWork, errors } = await startServer(context);
+    const answer = await realWork.run(() => rawExchange(context, socketPath, `${requestLine}\r\nHost: localhost\r\nConnection: close\r\n\r\n`));
+    expect(answer.split('\r\n')[0]).toBe('HTTP/1.1 400 Bad Request');
+    expect(envelopeOf(answer.slice(answer.indexOf('\r\n\r\n') + 4))).toEqual({ error: { message: expect.any(String), type: 'invalid_request', param: null, code: 'invalid_request' } });
+    expect((await httpOver(context, socketPath, 'GET', '/v1/health')).status).toBe(200);
+    expect(errors).toEqual([]);
+  });
+
+  it('a credential request whose settings cannot be loaded is answered 500 with the cause, the asker\'s signal reaches the load, and the server keeps answering', async (context) => {
+    const signals: AbortSignal[] = [];
+    const { socketPath, errors } = await startServer(context, undefined, async (_name, _capability, signal) => {
+      signals.push(signal);
+      throw new Error('settings.json: permission denied');
+    });
+    const answered = await httpOver(context, socketPath, 'GET', '/v1/credentials/SOME_KEY');
+    expect(answered.status).toBe(500);
+    expect(envelopeOf(answered.text)).toEqual({ error: { message: 'the credential request could not be answered: settings.json: permission denied', type: 'server_error', param: null, code: 'credential_unanswered' } });
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(false);
+    expect((await httpOver(context, socketPath, 'GET', '/v1/health')).status).toBe(200);
+    expect(errors).toEqual([]);
   });
 
   it('shutdown request body', async (context) => {
@@ -199,7 +238,7 @@ describe('startControlServer', () => {
       socketPath,
       timers: createFakeTimers(clock),
       health: () => SAMPLE_HEALTH,
-      credential: () => ({ kind: 'refused' }),
+      credential: async () => ({ kind: 'refused' }),
       onShutdownRequested: () => undefined,
       onError: () => undefined,
     });
@@ -272,8 +311,8 @@ describe('control API through the supervisor', () => {
     expect(response.status).toBe(200);
     const body = JSON.parse(response.text) as Record<string, unknown> & SupervisorHealth;
     expect(body).not.toHaveProperty('state');
-    expect(Object.keys(body).sort()).toEqual(['apiVersion', 'children', 'env', 'generation', 'logs', 'phase', 'pid', 'role', 'startedAt', 'status', 'version']);
-    expect(body).toMatchObject({ status: 'ok', version: '9.9.9-test', apiVersion: 1, pid: process.pid, phase: 'running', env: 'frozen at supervisor start', logs: { droppedLines: 0 }, generation: 1 });
+    expect(Object.keys(body).sort()).toEqual(['children', 'env', 'generation', 'logs', 'phase', 'pid', 'role', 'startedAt', 'status', 'version']);
+    expect(body).toMatchObject({ status: 'ok', version: '9.9.9-test', pid: process.pid, phase: 'running', env: 'frozen at supervisor start', logs: { droppedLines: 0 }, generation: 1 });
     expect(body.startedAt).toMatch(ISO);
     expect(body.children.map((child) => child.role)).toEqual(['gateway', 'runtime']);
     for (const child of body.children) {

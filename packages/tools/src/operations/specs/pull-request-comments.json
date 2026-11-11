@@ -1,0 +1,35 @@
+{
+  "name": "PullRequestComments",
+  "description": "Reads the comments of a pull request: every review comment with its id, file and line (a comment whose line is no longer in the diff shows the file alone), and every conversation comment with its id, each followed by its text. The text is what people wrote on the forge. Nothing is changed.",
+  "kind": "fetch",
+  "sideEffect": "read_only",
+  "title": "Read the comments of pull request #{input.number}",
+  "subject": { "kind": "none" },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": {
+      "number": { "type": "integer", "minimum": 1, "description": "The pull request number" },
+      "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote whose forge is asked; origin when left out" }
+    },
+    "required": ["number"],
+    "additionalProperties": false
+  },
+  "timeoutMs": 30000,
+  "observe": [
+    {
+      "id": "review",
+      "via": {
+        "forge": "listReviewComments",
+        "args": { "number": "{input.number}" },
+        "shape": "lines",
+        "lines": ["review comment {item.id} on {item.path} line {item.line}:\n{item.body}", "review comment {item.id} on {item.path}:\n{item.body}"]
+      }
+    },
+    { "id": "conversation", "via": { "forge": "listComments", "args": { "number": "{input.number}" }, "shape": "lines", "lines": ["comment {item.id}:\n{item.body}"] } }
+  ],
+  "applied": [],
+  "unchanged": [],
+  "supersedes": [],
+  "report": "Pull request #{input.number} has {after.review.count} review comments:\n{after.review.text}\n{after.conversation.count} conversation comments:\n{after.conversation.text}"
+}

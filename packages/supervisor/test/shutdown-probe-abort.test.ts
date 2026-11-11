@@ -94,6 +94,7 @@ describe('T6 shutdown aborts the probes it waits for', () => {
       recordStop: async () => undefined,
       timers,
       logger: log.logger,
+      stopReason: () => 'shutdown',
       beginDraining: () => launchController.abort(),
       awaitBackground: async () => void (await background.catch(() => undefined)),
       closeControl: async () => undefined,
@@ -128,6 +129,7 @@ describe('T6 shutdown aborts the probes it waits for', () => {
             signals.push(options.signal);
           }),
       },
+      stopReason: () => 'shutdown',
       beginDraining: () => undefined,
       awaitBackground: async () => undefined,
       closeControl: async () => undefined,

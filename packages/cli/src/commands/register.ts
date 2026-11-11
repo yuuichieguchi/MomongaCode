@@ -86,7 +86,8 @@ const registerAuth: CommandGroup = (program, deps) => {
     .option('--account <label>', 'the label of the account; the first free label by default')
     .option('--no-browser', 'print the authorization URL without opening the browser')
     .option('--reconsent', 'sign in again to enable plan use for the account')
-    .action(async (provider: string | undefined, options: { account?: string; browser: boolean; reconsent?: true }) => {
+    .option('--yes', 'save a first sign-in without asking whether the account is the one meant')
+    .action(async (provider: string | undefined, options: { account?: string; browser: boolean; reconsent?: true; yes?: true }) => {
       deps.complete(
         await runAuthLogin(
           deps.ports,
@@ -96,6 +97,7 @@ const registerAuth: CommandGroup = (program, deps) => {
             ...(options.account === undefined ? {} : { account: options.account }),
             browser: options.browser,
             reconsent: options.reconsent === true,
+            yes: options.yes === true,
           },
           deps.interrupt,
         ),

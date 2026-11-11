@@ -34,8 +34,8 @@ describe('a run under a mandate is quiescent when every call the model tries is 
     await env.resolveApproval(run.id, 'allow_once');
     await env.runOnce(env.worker('worker-2'));
 
-    expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.ofType(run.id, 'tool.held.resolved')).toEqual([expect.objectContaining({ outcome: 'executed', status: 'completed' })]);
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
+    expect(env.ofType(run.id, 'tool.completed').filter((event) => event.held !== undefined)).toEqual([expect.objectContaining({ status: 'completed' })]);
     expect(env.ofType(run.id, 'run.quiescent')).toHaveLength(1);
   });
 
@@ -84,8 +84,8 @@ describe('a worker that stops right after the approval of a held call was record
     await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('All done.'));
     await env.runOnce(env.worker('worker-3'));
-    expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.ofType(run.id, 'tool.held.resolved')).toEqual([expect.objectContaining({ outcome: 'executed', status: 'completed' })]);
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
+    expect(env.ofType(run.id, 'tool.completed').filter((event) => event.held !== undefined)).toEqual([expect.objectContaining({ status: 'completed' })]);
   });
 });
 

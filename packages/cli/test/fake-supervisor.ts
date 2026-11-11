@@ -86,7 +86,6 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
       const health: SupervisorHealth = {
         status: 'ok',
         version: options.version,
-        apiVersion: 1,
         pid: options.pid ?? process.pid,
         startedAt: '2026-01-01T00:00:00.000Z',
         phase,

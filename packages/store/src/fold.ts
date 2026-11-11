@@ -6,6 +6,7 @@ import {
   completionMutates,
   emptyWorkingFacts,
   findDanglingOutput,
+  heldEndOf,
   initialVerificationState,
   nanoOfCost,
   reconciliationMutates,
@@ -249,6 +250,14 @@ const completeCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.co
     workingFacts: withToolFacts(finished.workingFacts, call, event),
     lastMutationSeq: completionMutates(mutationFactsOf(call), event) ? event.seq : finished.lastMutationSeq,
   };
+};
+
+const withoutHold = (state: RunState, event: RunEvent): RunState => {
+  const ended = heldEndOf(event);
+  if (ended === undefined) return state;
+  const { [ended.callId]: _settled, ...rest } = state.heldCalls ?? {};
+  const { lastResponse: _answered, quiescent: _waiting, ...moving } = state;
+  return { ...moving, heldCalls: rest };
 };
 
 const withoutInFlight = (state: RunState): RunState => {
@@ -549,10 +558,10 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return { ...state, verification: withVerificationCompleted(state.verification, event) };
     case 'tool.completed': {
       const completed = completeCall(state, event);
-      return { ...completed, callResults: { ...completed.callResults, [event.callId]: event.status } };
+      return withoutHold({ ...completed, callResults: { ...completed.callResults, [event.callId]: event.status } }, event);
     }
     case 'tool.reconciled':
-      return reconcileCall(state, event);
+      return withoutHold(reconcileCall(state, event), event);
     case 'context.compacted':
       return { ...withCompactionRecorded(compact(state, event), event, true), ownCompactionEventSeq: event.seq };
     case 'context.compaction_rejected':
@@ -622,11 +631,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       const again = state.heldCalls?.[event.callId] !== undefined;
       return { ...state, pendingCalls: { ...state.pendingCalls, [event.callId]: again ? { ...settled, status: 'completed' } : settled }, heldCalls: { ...state.heldCalls, [event.callId]: held } };
     }
-    case 'tool.held.resolved': {
-      const { [event.callId]: _settled, ...rest } = state.heldCalls ?? {};
-      const { lastResponse: _answered, quiescent: _waiting, ...moving } = state;
-      return withEventItems(state, event, { ...moving, heldCalls: rest });
-    }
+    case 'tool.held.resolved':
+      return withoutHold(withEventItems(state, event), event);
     case 'approval.rule.persisted': {
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);

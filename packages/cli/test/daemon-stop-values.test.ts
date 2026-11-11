@@ -109,7 +109,6 @@ describe('daemon stop carries the values it read', () => {
 const healthReporting = (stopBoundMs: number | undefined): SupervisorHealth => ({
   status: 'ok',
   version: VERSION,
-  apiVersion: 1,
   pid: 1,
   startedAt: '2026-01-01T00:00:00.000Z',
   phase: 'draining',

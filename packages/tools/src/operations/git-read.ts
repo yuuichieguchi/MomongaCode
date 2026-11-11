@@ -31,6 +31,20 @@ const urlsOf = async (read: GitReader, remote: string, direction: readonly strin
     .filter((line) => line !== '');
 };
 
+const NO_VALUE_EXIT = 1;
+
+const valuesOf = async (read: GitReader, key: string, options: GitReadOptions): Promise<string[]> => {
+  const result = await read(['config', '--get-all', key], options);
+  if (result.exitCode === NO_VALUE_EXIT) return [];
+  if (result.exitCode !== 0) throw new ToolExecutionError(`the configuration key ${key} could not be read: ${result.stderr.trim()}`);
+  return result.stdout.split('\n').filter((line) => line !== '');
+};
+
+export const writtenUrls = async (read: GitReader, remote: string, direction: 'push' | 'fetch', options: GitReadOptions): Promise<string[]> => {
+  const pushUrls = direction === 'push' ? await valuesOf(read, `remote.${remote}.pushurl`, options) : [];
+  return pushUrls.length > 0 ? pushUrls : valuesOf(read, `remote.${remote}.url`, options);
+};
+
 export const resolveRepository = async (read: GitReader, options: GitReadOptions): Promise<string> => {
   const result = await read(['rev-parse', '--show-toplevel'], options);
   const top = result.stdout.replace(/\r?\n$/, '');

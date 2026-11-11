@@ -48,7 +48,7 @@ const write = (callId: string, file: string, sha256: string): RunEventPayload[] 
 const bash = (callId: string, command: string, exitCode: number, basis = 'rule'): RunEventPayload[] => [
   asPayload({ type: 'tool.call', callId, providerCallId: callId, name: 'Bash', kind: 'execute', sideEffect: 'exec', title: command, rawInput: { command } }),
   asPayload({ type: 'tool.started', callId, idemKey: `k-${callId}`, basis }),
-  asPayload({ type: 'tool.completed', callId, status: 'completed', output: '', exitCode }),
+  asPayload({ type: 'tool.completed', callId, status: 'completed', output: '', exitCode, command }),
 ];
 
 const read = (callId: string): RunEventPayload[] => [
@@ -104,6 +104,16 @@ describe('buildRunReport on a golden journal', () => {
     const report = buildRunReport(golden());
     expect(report.notRun).toEqual([{ what: 'the docs mention the fix', reason: 'no_mechanical_check' }]);
     expect(report.residualRisk).toEqual(expect.arrayContaining([{ code: 'requirements_unchecked', count: 1 }]));
+  });
+
+  it('reads the command of a model check from the completion the boundary recorded, whatever the tool is named', () => {
+    const viaOtherTool: RunEventPayload[] = [
+      asPayload({ type: 'tool.call', callId: 'x1', providerCallId: 'x1', name: 'mcp__remote__shell', kind: 'other', sideEffect: 'exec', title: 'shell', rawInput: { script: 'npm test' } }),
+      asPayload({ type: 'tool.started', callId: 'x1', idemKey: 'k-x1', basis: 'rule' }),
+      asPayload({ type: 'tool.completed', callId: 'x1', status: 'completed', output: '', exitCode: 0, command: 'npm test' }),
+    ];
+    const report = buildRunReport(journal([...started([TEST]), ...viaOtherTool]));
+    expect(report.modelChecks.map((entry) => entry.command)).toEqual(['npm test']);
   });
 
   it('lists a command the model ran that equals a condition as an informational model check, which never changes the condition state', () => {

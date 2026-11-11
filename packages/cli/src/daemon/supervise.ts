@@ -17,15 +17,18 @@ export type SuperviseOptions = {
   successor: SuccessorSpawn;
 };
 
+export type SuccessorStart = { home: string; env: EntryIo['env'] };
+
+export const successorLauncherOf = (start: SuccessorStart, successor: SuccessorSpawn): NonNullable<EntryDeps['successorLauncher']> => ({
+  launch: (generation) => {
+    const invocation = superviseInvocation(successor.self, start.home, generation, undefined);
+    const { exit } = successor.spawnDetached({ command: invocation.command, args: invocation.args, env: start.env, cwd: start.home });
+    return { pid: undefined, exit };
+  },
+});
+
 export const runSupervise = async (io: EntryIo, options: SuperviseOptions): Promise<number> => {
   const { runSupervisorEntry, createSpawnPort, SUPERVISE_ENTRY_FLAGS } = await import('@momonga/supervisor');
-  const successorLauncher: NonNullable<EntryDeps['successorLauncher']> = {
-    launch: (generation) => {
-      const home = parseFlags(io.argv, SUPERVISE_ENTRY_FLAGS).home ?? io.home;
-      const invocation = superviseInvocation(options.successor.self, home, generation, undefined);
-      options.successor.spawnDetached({ command: invocation.command, args: invocation.args, env: io.env, cwd: home });
-      return { pid: undefined };
-    },
-  };
-  return runSupervisorEntry(io, { ...options.deps, launcher: options.launcher, spawn: createSpawnPort(), successorLauncher });
+  const home = parseFlags(io.argv, SUPERVISE_ENTRY_FLAGS).home ?? io.home;
+  return runSupervisorEntry(io, { ...options.deps, launcher: options.launcher, spawn: createSpawnPort(), successorLauncher: successorLauncherOf({ home, env: io.env }, options.successor) });
 };

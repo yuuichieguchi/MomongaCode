@@ -1,6 +1,6 @@
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { TARGET_NOT_READY, WORDS, agentReadiness, attachRunCommand, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
+import { TARGET_NOT_READY, WORDS, agentReadiness, attachRunCommand, heldEndOf, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -206,6 +206,8 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
 
   const present = (event: PublicRunEvent, agent: string | undefined): void => {
     const by = agent === undefined ? '' : ` (subagent ${agent})`;
+    const ended = heldEndOf(event);
+    if (ended !== undefined) note([`momonga: held call ${titles.get(ended.callId) ?? ended.callId} ${HELD_OUTCOME_WORDS[ended.outcome]}${ended.outcome === 'executed' ? ` (${ended.status})` : ''}`]);
     switch (event.type) {
       case 'tool.call':
         titles.set(event.callId, event.title);
@@ -238,9 +240,6 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
           `  momonga approve ${event.approvalId} allow_once`,
           `  momonga approve ${event.approvalId} reject_once`,
         ]);
-        break;
-      case 'tool.held.resolved':
-        note([`momonga: held call ${titles.get(event.callId) ?? event.callId} ${HELD_OUTCOME_WORDS[event.outcome]}${event.outcome === 'executed' ? ` (${event.status})` : ''}`]);
         break;
       case 'budget.exhausted':
         note([`momonga: budget exhausted: ${event.dimension} (${BUDGET_CAUSE_WORDS[event.cause]}); ${budgetFigure(event.dimension, event.spent)} of ${budgetFigure(event.dimension, event.limit)} used or reserved`]);
@@ -329,6 +328,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
       case 'instructions.loaded':
       case 'skill.activated':
       case 'approval.rule.persisted':
+      case 'tool.held.resolved':
         break;
       default:
         noEventTypeLeft(event);

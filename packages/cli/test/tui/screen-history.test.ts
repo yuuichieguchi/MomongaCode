@@ -5,9 +5,9 @@ import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-c
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { sourceOf } from '../../src/tui/screen/viewport.ts';
 import { appendEntry, foldEvent } from '../../src/tui/transcript.ts';
-import { eventOf, ROW_RENDERERS } from './screen-fakes.ts';
+import { eventOf, ROW_RENDERERS, ROW_SCHEDULE } from './screen-fakes.ts';
 
-const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers, ROW_SCHEDULE);
 
 describe('the history feed', () => {
   it('hands the settled rows over once, in order, in chunks of at most 200 rows', () => {

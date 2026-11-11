@@ -3,7 +3,9 @@ import type { CommandSpecs } from './command-specs.ts';
 import { analyzeCommand } from './shell.ts';
 import type { Analysis, Segment } from './shell.ts';
 
-export type SupersededForm = { operation: string; argv: readonly string[] };
+export type FormRefusal = { readonly word: string; readonly reason: string };
+
+export type SupersededForm = { operation: string; argv: readonly string[]; refusal?: FormRefusal };
 
 export type SupersededVerdict = { kind: 'superseded'; form: SupersededForm } | { kind: 'undecided'; form: SupersededForm };
 
@@ -77,7 +79,15 @@ const coveredVerdict = (segment: Segment, covered: CoveredProgram, forms: readon
   return { kind: 'undecided', form: own[0] ?? { operation: covered.program, argv: [covered.program] } };
 };
 
-const segmentVerdict = (segment: Segment, forms: readonly SupersededForm[], programs: readonly CoveredProgram[]): SupersededVerdict | undefined => {
+const carries = (segment: Segment, word: string): boolean => segment.words.slice(segment.effectiveIndex + 1).some((candidate) => candidate.literal && candidate.value === word);
+
+const formsFor = (segment: Segment, forms: readonly SupersededForm[]): SupersededForm[] => {
+  const refused = forms.filter((form) => form.refusal !== undefined && carries(segment, form.refusal.word));
+  return [...refused, ...forms.filter((form) => form.refusal === undefined)];
+};
+
+const segmentVerdict = (segment: Segment, given: readonly SupersededForm[], programs: readonly CoveredProgram[]): SupersededVerdict | undefined => {
+  const forms = formsFor(segment, given);
   const program = segment.words[segment.effectiveIndex];
   if (program !== undefined && program.literal) {
     const covered = programs.find((candidate) => candidate.program === path.basename(program.value));

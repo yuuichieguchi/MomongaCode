@@ -5,13 +5,13 @@ import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-c
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { displayWidth, logicalText, wrapLine, wrapText } from '../../src/tui/screen/wrap.ts';
 import { appendEntry, foldEvent } from '../../src/tui/transcript.ts';
-import { eventOf, randomText, seeded, storeOf, ROW_FACTS, ROW_RENDERERS } from './screen-fakes.ts';
+import { eventOf, randomText, seeded, storeOf, ROW_FACTS, ROW_RENDERERS, ROW_SCHEDULE } from './screen-fakes.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const rowsOfEntry = (entry: Parameters<typeof rowsOfEntryWith>[0], width: number) => rowsOfEntryWith(entry, width, ROW_FACTS);
 const assistantTextRows = (text: string, width: number) => assistantTextRowsWith(text, width, ROW_FACTS);
-const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers, ROW_SCHEDULE);
 
 const delta = (itemId: string, text: string) => ({ type: 'agent.message.delta', attempt: 0, itemId, text });
 
@@ -65,10 +65,12 @@ describe('the row cache', () => {
         calls.push({ kind: entry.kind, width, characters: 0 });
         return rowsOfEntry(entry, width);
       },
-      assistantRows: (text, width) => {
-        calls.push({ kind: 'assistant', width, characters: text.length });
-        return assistantTextRows(text, width);
+      answerRows: (text, from, width, reading) => {
+        calls.push({ kind: 'assistant', width, characters: text.length - from.characters });
+        return ROW_RENDERERS.answerRows(text, from, width, reading);
       },
+      plainRows: ROW_RENDERERS.plainRows,
+      openThoughtRows: ROW_RENDERERS.openThoughtRows,
     });
     return { cache, calls };
   };

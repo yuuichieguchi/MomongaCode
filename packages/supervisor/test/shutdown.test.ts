@@ -37,6 +37,7 @@ const running = async (context: CleanupContext, options: HarnessOptions = {}): P
   const h = await startHarness(context, options);
   await h.waitForState('gateway', 'ready', 10_000);
   await h.waitForState('runtime', 'ready', 10_000);
+  await pumpUntil(h.timers, () => h.supervisor.role() === 'serving', { realWork: h.realWork, maxMs: 5000, description: 'the generation to serve' });
   return h;
 };
 
@@ -544,7 +545,6 @@ describe('shutdown during the orphan reap', () => {
   const inPhase2 = (onReap: (options: ReapMarkerDirectoryOptions) => Promise<{ reaped: number; kept: number }>): HarnessOptions => ({
     prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
     markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: onReap },
-    overrides: { orphanGraceMs: 250 },
   });
 
   const untilAborted = (options: ReapMarkerDirectoryOptions, seen: { aborted?: boolean }): Promise<{ reaped: number; kept: number }> => {
@@ -581,7 +581,6 @@ describe('shutdown during the orphan reap', () => {
         if (options.timing !== undefined) await sleep(options.timing, options.killGraceMs);
         return { reaped: 0, kept: 1 };
       }),
-      overrides: { orphanGraceMs: 250, orphanReapGraceMs: 200 },
     });
     await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     const triggerAt = h.clock.now();
@@ -598,7 +597,6 @@ describe('shutdown during the orphan reap', () => {
     const seen: { aborted?: boolean } = {};
     const h = await startHarness(context, {
       ...inPhase2((options) => untilAborted(options, seen)),
-      overrides: { orphanGraceMs: 250, orphanReapGraceMs: 1000 },
     });
     await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     await pump(h.timers, h.realWork, 100);

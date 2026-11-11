@@ -7,6 +7,7 @@ export const canonicalProject = async (raw: string, param: string, signal: Abort
   try {
     return await hostPaths(signal).canonicalPath(raw);
   } catch (error) {
+    signal.throwIfAborted();
     if (isTransientErrno(error)) throw error;
     throw invalidRequest(`${param} ${raw} cannot be resolved: ${(error as Error).message}`, param);
   }

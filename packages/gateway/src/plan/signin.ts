@@ -173,7 +173,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
 
   const beginAttempt = async (profile: PlanProfile, request: PlanSignInBeginRequest, signal: AbortSignal): Promise<Attempt> => {
     await options.sessions.pointerReady();
-    const saved = await options.sessions.registration({ profile: profile.id, account: request.account }, signal);
+    const saved = await options.sessions.registrationToReplace({ profile: profile.id, account: request.account }, signal);
     if (saved?.state === 'signing_out') throw invalidRequest(PLAN_SIGN_OUT_IN_PROGRESS_CODE, `${request.account} is still signing out. Try again in a moment.`, null, CONFLICT_STATUS);
     const accountsExist = saved !== undefined || (await options.sessions.known(signal)).length > 0;
     const { hostId } = await ensureHostIdentity(options.fileSystem, options.hostFile, { accountsExist, lock: options.lock }).catch((error: unknown) => {

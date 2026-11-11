@@ -18,6 +18,23 @@ export const parseRemoteUrl = (url: string): RemoteLocation => {
   throw new ToolExecutionError(`the remote URL ${trimmed} is a local path, not a hosted repository`);
 };
 
+export type HostedRemote = { hostname: string; repo: string };
+
+const URL_FORM = /^[a-z][a-z0-9+.-]*:\/\//i;
+const LOCAL_SCHEME = 'file:';
+
+const hostnameOf = (host: string): string => new URL(`https://${host}`).hostname;
+
+export const hostedRemoteOf = (url: string): HostedRemote | undefined => {
+  const trimmed = url.trim();
+  if (URL_FORM.test(trimmed)) {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === LOCAL_SCHEME || parsed.hostname === '' ? undefined : { hostname: hostnameOf(parsed.host), repo: repoOf(decodeURIComponent(parsed.pathname)) };
+  }
+  const scp = SCP_FORM.exec(trimmed);
+  return scp === null ? undefined : { hostname: hostnameOf(scp[1] as string), repo: repoOf(scp[2] as string) };
+};
+
 export const splitRepository = (repo: string): { owner: string; name: string } => {
   const index = repo.lastIndexOf('/');
   if (index <= 0 || index === repo.length - 1) throw new ToolExecutionError(`the repository path ${repo} needs an owner and a name`);

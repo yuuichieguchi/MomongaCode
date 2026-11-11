@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { KILL_CONFIRM_MS, formatStopMessage, managedServerStopBoundMs } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, formatStopMessage, managedServerReapBoundMs } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
-import { afterMicrotasks } from '@momonga/testkit';
+import { afterMicrotasks, waitFor } from '@momonga/testkit';
 import type { FakeChild } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
 import type { ManagerHarness, ManagerHarnessOptions } from './support/p2-manager-harness.ts';
+import { DEFAULT_RESTART_POLICY } from '../src/restart-policy.ts';
 
 const VALUES: StopValues = { closeGraceMs: 1200, managedServerStopGraceMs: 300, drainTimeoutMs: 300_000, mcpCloseGraceMs: 30_000 };
 const TERM_BUDGET_MS = 1200 + 4 * 300 + 10_075 + 5000;
@@ -186,8 +187,8 @@ describe('a gone gateway child has its managed servers reaped before it counts a
   });
 });
 
-describe('the reap of the managed servers of a gone gateway child is bounded by the managed server stop', () => {
-  it('passes a signal that aborts when the managed server stop bound has passed', async (testContext) => {
+describe('the reap of the managed servers of a gone gateway child is bounded by the term the stop formula reserves for it', () => {
+  it('passes a signal that aborts when the managed server reap bound has passed', async (testContext) => {
     const { harness, child, write, signals, finishReap } = reapingHarness(testContext);
     const stopped = harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
@@ -198,11 +199,48 @@ describe('the reap of the managed servers of a gone gateway child is bounded by 
     expect(signals).toHaveLength(1);
     const [signal] = signals;
     expect(signal?.aborted).toBe(false);
-    harness.timers.advance(managedServerStopBoundMs(VALUES.managedServerStopGraceMs) - 1);
+    harness.timers.advance(managedServerReapBoundMs(VALUES) - 1);
     expect(signal?.aborted).toBe(false);
     harness.timers.advance(1);
     expect(signal?.aborted).toBe(true);
     finishReap();
     await stopped;
+  });
+});
+
+describe('a reap of the managed servers that fails does not end the exit handling of the gone gateway child', () => {
+  const failingReapHarness = (context: Parameters<typeof createManagerHarness>[0]) =>
+    gatewayHarness(context, {
+      overrides: {
+        markerPorts: {
+          reapMarkedProcesses: async () => ({ removed: true }),
+          reapMarkerDirectory: async () => {
+            throw new Error('the marker listing failed');
+          },
+        },
+      },
+    });
+
+  it('a gateway that crashed is still recorded and restarted', async (testContext) => {
+    const { harness, child } = failingReapHarness(testContext);
+    child.exit(1, null);
+    await waitFor(() => harness.manager.state() === 'backoff', { description: 'the crashed gateway to wait for its restart' });
+    expect(harness.manager.health().lastExit).toMatchObject({ code: 1, reason: 'failure' });
+    expect(harness.backgroundErrors).toEqual([]);
+    expect(harness.events('orphans.warning')).toMatchObject([{ detail: 'the managed servers of the child that ended were not reaped: the marker listing failed', err: { message: 'the marker listing failed' } }]);
+    harness.timers.advance(DEFAULT_RESTART_POLICY.maxMs);
+    await waitFor(() => harness.spawnCount() === 2, { description: 'the gateway to be spawned again' });
+  });
+
+  it('a stop of the gateway still settles', async (testContext) => {
+    const { harness, child, write } = failingReapHarness(testContext);
+    const stopped = harness.manager.stop('shutdown', 'term', VALUES);
+    await afterMicrotasks();
+    write.complete();
+    await afterMicrotasks();
+    child.exit(0, null);
+    await expect(stopped).resolves.toEqual({ killed: false, leaked: false });
+    expect(harness.manager.state()).toBe('stopped');
+    expect(harness.backgroundErrors).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
-import { PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
-import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
+import { PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
+import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetHealth } from '@momonga/protocol';
 import { displayMapOf } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { isLocalServer, offeredServers } from '../commands/models.ts';
@@ -13,9 +13,9 @@ import { writeStart } from './models/order.ts';
 import { ADD_WITH_MODELS_ADD, ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, configuredSwitchText, startingModelSetText } from './models/texts.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
-import { SignInAttemptNotFoundError, SignInExpiredError, SignInGatewayStoppedError, SignInListenerError, SignInListenerFailedError, signIn, waitForPaste } from '../plan/sign-in.ts';
+import { SignInListenerError, SignInListenerFailedError, SignInNotFinishedError, signIn, waitForPaste } from '../plan/sign-in.ts';
 import type { SignInShown } from '../plan/sign-in.ts';
-import { codeNotAcceptedLine, listProblemLine, planDisabledLines, resumeLine, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
+import { NO_ACCOUNT_SAVED_TEXT, IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, cancelledText, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, recordUnreadableLine, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
 import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
@@ -151,7 +151,19 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         ports.waiting({ title: profile.loginLabel, lines: [...lines, `${couldNotOpenBrowser(message)} Copy the URL and continue manually.`], url, state }, handlers);
       });
     };
-    let answer;
+    const confirmIdentity = async (identity: PlanSignInIdentity, waiting: AbortSignal): Promise<boolean> => {
+      const chosen = await ports.pick({
+        title: profile.loginLabel,
+        lines: [identityQuestion('tui', profile, account, identity)],
+        rows: IDENTITY_CHOICES.map((label) => ({ label })),
+        initial: IDENTITY_CANCEL,
+        decideOn: 'enter',
+        escape: IDENTITY_CANCEL,
+      });
+      waiting.throwIfAborted();
+      return chosen === IDENTITY_SAVE;
+    };
+    let answer: PlanSignInCompleteResponse;
     try {
       answer = await signIn(
         {
@@ -159,6 +171,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
           startListener: backend.startSignInListener,
           authorize,
           pasted: (_state, signal) => waitForPaste(deliveries, signal),
+          confirmIdentity,
           signal: cancel.signal,
           timers: backend.signInTimers,
           delivered: () => ports.delivered(),
@@ -167,15 +180,15 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       );
     } catch (error) {
       if (cancel.signal.aborted && error === cancel.signal.reason) {
-        ports.info('sign-in cancelled');
+        ports.info(cancelledText(SIGN_IN_WORD));
         return;
       }
-      if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError || error instanceof SignInGatewayStoppedError) {
+      if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError) {
         ports.info(error.message);
         return;
       }
-      if (error instanceof SignInExpiredError || error instanceof SignInAttemptNotFoundError) {
-        ports.info(`${error.message} ${tryAgainLine('tui', { profile: profile.id, account })}`);
+      if (error instanceof SignInNotFinishedError) {
+        ports.info(signInFailureLine('tui', { profile: profile.id, account }, error));
         return;
       }
       throw error;
@@ -187,9 +200,12 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         ports.info(codeNotAcceptedLine('tui', profile, account));
         await sentence(profile, account, reconsent);
         return;
+      case IDENTITY_UNCONFIRMED_OUTCOME:
+        ports.info(identityNotConfirmedLine('tui', { profile: profile.id, account }, answer.identity));
+        return;
       case PLAN_DISABLED_STATE:
-        for (const line of planDisabledLines('tui', profile, account)) ports.info(line);
-        await sentence(profile, account, true);
+        for (const line of planDisabledLines('tui', profile, answer.account.label)) ports.info(line);
+        await sentence(profile, answer.account.label, true);
         return;
       case SIGNED_IN_OUTCOME:
         ports.info(signedInLine(answer.account));
@@ -216,6 +232,10 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         return;
       case 'sign-in':
         await sentence(profile, account.label, account.state === PLAN_DISABLED_STATE);
+        return;
+      case 'replace':
+        ports.info(recordUnreadableLine('tui', account));
+        await sentence(profile, account.label, false);
         return;
       case 'none':
         ports.info(`${accountRowLabel(account)}${account.cause === undefined ? '' : `: ${account.cause}`}`);
@@ -332,7 +352,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     if (read.kind === 'cancelled') return;
     const listed = read.value;
     if (listed.accounts.length === 0) {
-      ports.info('no subscription account is saved');
+      ports.info(NO_ACCOUNT_SAVED_TEXT);
       return;
     }
     const index = await ports.pick({ title: 'Sign out', rows: listed.accounts.map((account) => ({ label: accountRowLabel(account) })), confirm: (row, decideKey) => `press ${decideKey} again to sign out ${row.label}` });

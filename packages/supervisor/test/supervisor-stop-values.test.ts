@@ -104,7 +104,7 @@ describe('POST /v1/shutdown carries the four requester values', () => {
       health: () => {
         throw new Error('health is not read here');
       },
-      credential: () => ({ kind: 'refused' }),
+      credential: async () => ({ kind: 'refused' }),
       onShutdownRequested: (values?: StopValues) => requested.push(values),
       onError: () => undefined,
     });

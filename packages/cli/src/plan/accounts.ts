@@ -13,14 +13,14 @@ const STATE_WORDS: Readonly<Record<PlanAccountState, string>> = {
 
 const PAUSED_WORD = 'paused by limit';
 
-export type SavedAccountAction = 'activate' | 'sign-in' | 'none';
+export type SavedAccountAction = 'activate' | 'sign-in' | 'replace' | 'none';
 
 const SAVED_ACCOUNT_ACTIONS: Readonly<Record<PlanAccountState, SavedAccountAction>> = {
   active: 'activate',
   needs_sign_in: 'sign-in',
   registered: 'sign-in',
   [PLAN_DISABLED_STATE]: 'sign-in',
-  [PLAN_STORE_UNREADABLE_STATE]: 'none',
+  [PLAN_STORE_UNREADABLE_STATE]: 'replace',
   [PLAN_STORE_UNWRITABLE_STATE]: 'none',
   signing_out: 'none',
 };

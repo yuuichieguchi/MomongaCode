@@ -40,7 +40,7 @@ export { CHILD_ROLES, childStdio, contractArgs, resolveLaunch } from './launcher
 export type { ChildRole, GatewayTuning, LaunchSpec, Launcher, ResolvedLaunch, RuntimeTuning } from './launcher.ts';
 export { COLLIDING_CREDENTIAL_DETAIL, COLLIDING_CREDENTIAL_PREFIXES, definedEnv, gatewayEnv, runtimeEnv } from './child-env.ts';
 export type { CredentialSettings, SourceEnv } from './child-env.ts';
-export { DEFAULT_RESTART_POLICY, backoffDelay, childRestartBoundMs, classifyExit, decideAfterExit, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from './restart-policy.ts';
+export { DEFAULT_RESTART_POLICY, backoffDelay, childRestartBoundMs, classifyExit, decideAfterExit, failureWithoutProcess, resolveRestartPolicy, stopReasonRank, stopsAStart } from './restart-policy.ts';
 export type { ExitClass, ExitClassification, ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';
 export { createChildManager } from './child-manager.ts';
 export type {
@@ -57,7 +57,7 @@ export type {
 } from './child-manager.ts';
 export { createSpawnPort } from './spawn-port.ts';
 export { createSuccessor } from './successor.ts';
-export type { Successor, SuccessorLauncher, SuccessorOptions, SuccessorOutcome } from './successor.ts';
+export type { Successor, SuccessorLaunch, SuccessorLauncher, SuccessorOptions, SuccessorOutcome } from './successor.ts';
 export { readChildCounts } from './child-counts.ts';
 export type { ChildCountsReader, GenerationCounts } from './child-counts.ts';
 export { createLineSplitter } from './line-splitter.ts';
@@ -74,7 +74,7 @@ export { openDaemonMarker, orphanPhaseOneBoundMs, orphanReapBoundMs, reapDaemonM
 export type { DaemonMarker, MarkerFiles, MarkerPorts, OrphanReapOptions, OrphanReapResult } from './orphans.ts';
 export { runLaunchTask } from './launch.ts';
 export type { LaunchTaskOptions } from './launch.ts';
-export { childCloseBudgetMs, createShutdownController } from './shutdown.ts';
+export { childCloseBudgetMs, createShutdownController, shutdownStepBoundsMs } from './shutdown.ts';
 export type { ShutdownController, ShutdownControllerOptions, ShutdownMode } from './shutdown.ts';
 export {
   SUPERVISOR_EVENTS,
@@ -96,6 +96,7 @@ export {
   defineEvent,
   generationEnded,
   generationMany,
+  generationReaped,
   generationPromoted,
   generationRetiring,
   generationSuccessor,

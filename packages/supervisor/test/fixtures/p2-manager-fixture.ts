@@ -21,7 +21,7 @@ const paths = momongaPaths(home, process.platform, {});
 const layout = prepareGenerationForTest(home, FIRST_GENERATION, '0.0.0-fixture');
 const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, stream: process.stderr });
 const settings = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords });
-await settings.load(new AbortController().signal);
+const loaded = await settings.load(new AbortController().signal);
 const manager = createChildManager({
   inspector: testProcessInspector(),
   lockMechanism: testKernelLock(),
@@ -41,6 +41,7 @@ const manager = createChildManager({
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
   spawn: createSpawnPort(),
   settings,
+  signal: new AbortController().signal,
   logger,
   clock: systemClock,
   timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },
@@ -63,7 +64,7 @@ process.on('SIGTERM', () => {
   void manager.stop('shutdown', 'term').then(() => process.exit(0));
 });
 
-manager.spawnFresh('initial');
+manager.spawnWith(loaded, 'initial');
 const pid = manager.health().pid;
 process.stdout.write(`${JSON.stringify({ childPid: pid })}\n`);
 setInterval(() => undefined, 60_000);

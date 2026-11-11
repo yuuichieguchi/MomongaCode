@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, EXIT_RETIRED, gatewayAbortBudgetMs, gatewayStopBudgetMs, runtimeAbortStopBudgetMs, runtimeStopBudgetMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, EXIT_RETIRED, MAXIMUM_STOP_VALUES, gatewayAbortBudgetMs, gatewayStopBudgetMs, runtimeAbortStopBudgetMs, runtimeStopBudgetMs } from '@momonga/foundation';
 import { afterMicrotasks, createFakeKernelLock, waitFor, firstGeneration } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
@@ -47,8 +47,10 @@ describe('ready parsing', () => {
     expect(health.lastExit?.reason).toBe('protocol-violation');
     expect(health.consecutiveFailures).toBe(1);
     harness.timers.advance(249);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
     harness.timers.advance(1);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
   });
 
@@ -73,6 +75,7 @@ describe('ready parsing', () => {
     harness.timers.advance(HELD_RETRY_MS + STARTUP_TIMEOUT_MS);
     harness.manager.spawnFresh('backoff');
     harness.manager.retryHeld();
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
   });
 
@@ -87,6 +90,7 @@ describe('ready parsing', () => {
     expect(harness.retiredExits).toBe(1);
     expect(harness.manager.health().lastExit).toMatchObject({ code: EXIT_RETIRED, reason: 'retired' });
     expect(harness.events('child.backoff')).toEqual([]);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
   });
 
@@ -103,6 +107,7 @@ describe('ready parsing', () => {
     await waitFor(() => harness.manager.state() === 'stopped');
     expect(harness.manager.health().lastExit).toMatchObject({ code: 1, reason: 'failure' });
     harness.timers.advance(HELD_RETRY_MS);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
     expect(harness.manager.hasEnded()).toBe(true);
   });
@@ -176,6 +181,7 @@ describe('startup timeout', () => {
     await exitAndWait(harness, 'backoff', 0);
     expect(harness.manager.health().lastExit?.reason).toBe('startup-timeout');
     harness.timers.advance(250);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     expect(harness.manager.state()).toBe('starting');
 
@@ -200,8 +206,10 @@ describe('exit classification in the manager', () => {
     await exitAndWait(harness, 'backoff', 1);
     expect(harness.manager.health()).toMatchObject({ consecutiveFailures: 1, lastExit: { code: 1, signal: null, reason: 'failure', at: new Date(T0).toISOString() } });
     harness.timers.advance(249);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
     harness.timers.advance(1);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     expect(harness.manager.health().restarts).toBe(1);
     expect(spawnReasons(harness)).toEqual(['initial', 'backoff']);
@@ -214,6 +222,22 @@ describe('exit classification in the manager', () => {
     await exitAndWait(harness, 'stopped', 1);
     await expect(stopped).resolves.toEqual({ killed: false, leaked: false });
     expect(harness.timers.pending()).toEqual([]);
+    expect(harness.manager.health().lastExit?.reason).toBe('requested');
+  });
+
+  it.for(['superseded', 'unpromoted'] as const)('the stop of a %s start gives the child the startup kill grace, and its exit is a requested one', async (reason, context) => {
+    const harness = createManagerHarness(context);
+    harness.spawnInitial();
+    harness.port.last().ready();
+    await waitFor(() => harness.manager.state() === 'ready');
+    void harness.manager.stop(reason, 'term', MAXIMUM_STOP_VALUES);
+    await stopLineWritten();
+    expect(harness.port.last().signals).toEqual(['SIGTERM']);
+    harness.timers.advance(STARTUP_KILL_GRACE_MS - 1);
+    expect(harness.port.last().groupKills).toBe(0);
+    harness.timers.advance(1);
+    expect(harness.port.last().groupKills).toBe(1);
+    await exitAndWait(harness, 'stopped', null, 'SIGKILL');
     expect(harness.manager.health().lastExit?.reason).toBe('requested');
   });
 
@@ -241,6 +265,7 @@ describe('exit classification in the manager', () => {
       harness.timers.advance(5000);
       await afterMicrotasks();
     }
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
     expect(harness.manager.state()).toBe('waiting-lock');
     expect(harness.manager.health().consecutiveFailures).toBe(0);
@@ -271,6 +296,7 @@ describe('exit classification in the manager', () => {
     lock.holdExternally(firstGeneration(harness.paths).locks.runtime, process.pid);
     harness.spawnInitial();
     expect(harness.manager.state()).toBe('waiting-lock');
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(0);
     lock.releaseExternally(firstGeneration(harness.paths).locks.runtime);
     await waitFor(() => harness.timers.pending().some((timer) => timer.delayMs === DEFAULT_INTERVALS.lockWatchIntervalMs), { description: 'the lock poll is armed' });
@@ -308,8 +334,10 @@ describe('exit classification in the manager', () => {
     expect(harness.manager.health().heldReason).toBe('child exited 78 (see runtime.log)');
     expect(harness.events('child.held')).toEqual([expect.objectContaining({ source: 'child-exit', heldReason: 'child exited 78 (see runtime.log)' })]);
     harness.timers.advance(HELD_RETRY_MS - 1);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
     harness.manager.retryHeld();
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     expect(spawnReasons(harness)).toEqual(['initial', 'settings-change']);
     harness.port.last().stderrLine('{"msg":"entry.usage_error","detail":"unknown flag --x"}');
@@ -334,11 +362,14 @@ describe('exit classification in the manager', () => {
     await exitAndWait(harness, 'held-config', 78);
     for (let retry = 1; retry <= 12; retry += 1) {
       harness.timers.advance(HELD_RETRY_MS - 1);
+      await afterMicrotasks();
       expect(harness.spawnCount()).toBe(retry);
       harness.timers.advance(1);
+      await afterMicrotasks();
       expect(harness.spawnCount()).toBe(retry + 1);
       await exitAndWait(harness, 'held-config', 78);
     }
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(13);
     expect(harness.events('child.held')).toHaveLength(1);
     expect(spawnReasons(harness).slice(1)).toEqual(Array.from({ length: 12 }, () => 'held-retry'));
@@ -350,6 +381,7 @@ describe('exit classification in the manager', () => {
     harness.spawnInitial();
     await exitAndWait(harness, 'held-config', 78);
     harness.timers.advance(HELD_RETRY_MS);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     harness.port.last().ready();
     await waitFor(() => harness.manager.state() === 'ready');
@@ -357,6 +389,7 @@ describe('exit classification in the manager', () => {
     expect(harness.manager.health().heldReason).toBeUndefined();
     expect(harness.timers.pending().some((timer) => timer.delayMs === HELD_RETRY_MS)).toBe(false);
     harness.timers.advance(HELD_RETRY_MS * 2);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
   });
 
@@ -366,11 +399,14 @@ describe('exit classification in the manager', () => {
     await exitAndWait(harness, 'held-config', 78);
     harness.timers.advance(HELD_RETRY_MS / 2);
     harness.manager.retryHeld();
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     await exitAndWait(harness, 'held-config', 78);
     harness.timers.advance(HELD_RETRY_MS - 1);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     harness.timers.advance(1);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(3);
   });
 
@@ -379,11 +415,14 @@ describe('exit classification in the manager', () => {
     harness.spawnInitial();
     await exitAndWait(harness, 'backoff', 1);
     harness.timers.advance(250);
+    await waitFor(() => harness.spawnCount() === 2, { description: 'the second spawn' });
     await exitAndWait(harness, 'backoff', 1);
     expect(harness.manager.health().consecutiveFailures).toBe(2);
     harness.timers.advance(499);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     harness.timers.advance(1);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(3);
     harness.port.last().ready();
     await waitFor(() => harness.manager.state() === 'ready');
@@ -393,8 +432,10 @@ describe('exit classification in the manager', () => {
     expect(harness.manager.health().consecutiveFailures).toBe(0);
     await exitAndWait(harness, 'backoff', 1);
     harness.timers.advance(249);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(3);
     harness.timers.advance(1);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(4);
   });
 
@@ -404,6 +445,7 @@ describe('exit classification in the manager', () => {
     await exitAndWait(harness, 'backoff', null, 'SIGKILL');
     expect(harness.manager.health().lastExit).toMatchObject({ code: null, signal: 'SIGKILL', reason: 'signal' });
     harness.timers.advance(250);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
   });
 
@@ -413,6 +455,7 @@ describe('exit classification in the manager', () => {
     await exitAndWait(harness, 'backoff', 0);
     expect(harness.manager.health()).toMatchObject({ consecutiveFailures: 1, lastExit: { reason: 'unexpected-clean' } });
     harness.timers.advance(250);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
   });
 
@@ -425,6 +468,7 @@ describe('exit classification in the manager', () => {
     await exitAndWait(harness, 'stopped', 0);
     expect(harness.timers.pending()).toEqual([]);
     harness.timers.advance(HELD_RETRY_MS);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
   });
 
@@ -436,6 +480,7 @@ describe('exit classification in the manager', () => {
     expect(harness.manager.state()).toBe('stopped');
     expect(harness.timers.pending()).toEqual([]);
     harness.timers.advance(HELD_RETRY_MS);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
   });
 
@@ -458,6 +503,7 @@ describe('spawn failures', () => {
     expect(markerFds).toHaveLength(1);
     expect(() => fs.fstatSync(markerFds[0] as number)).toThrow(expect.objectContaining({ code: 'EBADF' }));
     harness.timers.advance(250);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
   });
 
@@ -485,6 +531,7 @@ describe('spawn failures', () => {
     });
     launcherThrows.spawnInitial();
     await waitFor(() => launcherThrows.manager.state() === 'backoff');
+    await afterMicrotasks();
     expect(launcherThrows.spawnCount()).toBe(0);
     expect(launcherThrows.manager.health().lastExit?.reason).toBe('spawn-failed');
     expect(launcherThrows.markers()).toEqual([]);
@@ -493,6 +540,7 @@ describe('spawn failures', () => {
     fs.chmodSync(markerFails.paths.markers.daemons, 0o500);
     markerFails.spawnInitial();
     await waitFor(() => markerFails.manager.state() === 'backoff');
+    await afterMicrotasks();
     expect(markerFails.spawnCount()).toBe(0);
     expect(markerFails.manager.health().lastExit?.reason).toBe('spawn-failed');
     fs.chmodSync(markerFails.paths.markers.daemons, 0o700);
@@ -502,6 +550,7 @@ describe('spawn failures', () => {
     spawnThrows.port.nextFailure = { kind: 'throw', error: new TypeError('The argument stdio is invalid') };
     spawnThrows.spawnInitial();
     await waitFor(() => spawnThrows.manager.state() === 'backoff');
+    await afterMicrotasks();
     expect(spawnThrows.spawnCount()).toBe(1);
     expect(spawnThrows.markers()).toEqual([]);
     for (const harness of [launcherThrows, markerFails, spawnThrows]) expect(harness.backgroundErrors).toEqual([]);
@@ -599,6 +648,7 @@ describe('stop', () => {
     harness.port.last().exit(null, 'SIGKILL');
     await afterMicrotasks();
     expect(harness.manager.state()).toBe('stopped');
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
   });
 
@@ -690,22 +740,24 @@ describe('draining is enforced by the manager', () => {
   };
 
   describe.each(Object.entries(beginDraining))('after %s', (_name, drain) => {
-    it('a direct spawnWith spawns nothing', (context) => {
+    it('a direct spawnWith spawns nothing', async (context) => {
       const harness = createManagerHarness(context);
       drain(harness);
       harness.manager.spawnWith(harness.settings.snapshot(), 'initial');
       harness.timers.advance(HELD_RETRY_MS);
+      await afterMicrotasks();
       expect(harness.spawnCount()).toBe(0);
       expect(harness.events('child.spawn')).toEqual([]);
       expect(harness.markers()).toEqual([]);
       expect(harness.manager.state()).not.toBe('starting');
     });
 
-    it('a direct spawnFresh spawns nothing', (context) => {
+    it('a direct spawnFresh spawns nothing', async (context) => {
       const harness = createManagerHarness(context);
       drain(harness);
       harness.manager.spawnFresh('backoff');
       harness.timers.advance(HELD_RETRY_MS);
+      await afterMicrotasks();
       expect(harness.spawnCount()).toBe(0);
       expect(harness.events('child.spawn')).toEqual([]);
       expect(harness.markers()).toEqual([]);
@@ -718,6 +770,7 @@ describe('draining is enforced by the manager', () => {
       drain(harness);
       harness.manager.retryHeld();
       harness.timers.advance(HELD_RETRY_MS);
+      await afterMicrotasks();
       expect(harness.spawnCount()).toBe(1);
       expect(spawnReasons(harness)).toEqual(['initial']);
       expect(harness.manager.state()).not.toBe('starting');
@@ -754,6 +807,7 @@ describe('a life without a process', () => {
     expect(harness.timers.pending()).toEqual([]);
     expect(harness.manager.health().lastExit?.reason).toBe('spawn-failed');
     harness.timers.advance(STARTUP_TIMEOUT_MS * 2);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
     expect(harness.backgroundErrors).toEqual([]);
   });
@@ -770,6 +824,7 @@ describe('a life without a process', () => {
     const backoffDelay = harness.events('child.backoff')[0]?.['delayMs'];
     expect(typeof backoffDelay).toBe('number');
     harness.timers.advance(backoffDelay as number);
+    await afterMicrotasks();
     await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     expect(spawnReasons(harness)).toEqual(['initial', 'backoff']);
@@ -806,6 +861,7 @@ describe('stops of a life whose exit is still being handled', () => {
     await afterMicrotasks();
     const stopping = harness.manager.stop('shutdown', 'term');
     harness.manager.spawnWith(harness.settings.snapshot(), 'initial');
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     harness.timers.advance(STDIO_FLUSH_MS);
     const outcome = await settledWithin(stopping);
@@ -863,12 +919,14 @@ describe('consecutiveFailures across held-config retries', () => {
     await exitAndWait(harness, 'held-config', 78);
     expect(harness.manager.health().consecutiveFailures).toBe(2);
     harness.timers.advance(HELD_RETRY_MS);
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(4);
     expect(spawnReasons(harness).at(-1)).toBe('held-retry');
     expect(harness.manager.health().consecutiveFailures).toBe(2);
     await exitAndWait(harness, 'held-config', 78);
     expect(harness.manager.health().consecutiveFailures).toBe(2);
     harness.manager.retryHeld();
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(5);
     expect(spawnReasons(harness).at(-1)).toBe('settings-change');
     expect(harness.manager.health().consecutiveFailures).toBe(0);

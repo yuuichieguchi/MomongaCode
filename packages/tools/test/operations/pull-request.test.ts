@@ -233,6 +233,60 @@ describe.each(['hub', 'lab'] as const)('pull request operations against the %s f
       expect((read as { output: string }).output).toContain(HEAD_SHA);
       expect(forge.requests.every((request) => request.method === 'GET')).toBe(true);
     });
+
+    it('lists every check of the head commit by name with its conclusion, and with its status while it has none', async () => {
+      const { forge, world, tool } = await setup(shape);
+      forge.pulls.push({ number: 1, head: 'feature/x', base: 'main', headSha: HEAD_SHA, title: 't', state: 'open', merged: false });
+      forge.checks.set(HEAD_SHA, [
+        { name: 'ci', status: 'completed', conclusion: 'failure' },
+        { name: 'lint', status: 'in_progress' },
+      ]);
+      forge.checks.set(OTHER_SHA, [{ name: 'other', status: 'completed', conclusion: 'success' }]);
+      const parts = partsOf(tool('PullRequestStatus'), { number: 1 }, contextFor(world.work, world.env));
+      const read = await parts.execute(await parts.prepare());
+      expect(read).toMatchObject({ status: 'completed' });
+      const output = (read as { output: string }).output;
+      expect(output).toContain('2 checks');
+      expect(output).toContain('ci: failure');
+      expect(output).toContain('lint: in_progress');
+      expect(output).not.toContain('other');
+      expect(forge.requests.every((request) => request.method === 'GET')).toBe(true);
+    });
+
+    it('says that the head commit has no check when the forge lists none', async () => {
+      const { forge, world, tool } = await setup(shape);
+      forge.pulls.push({ number: 1, head: 'feature/x', base: 'main', headSha: HEAD_SHA, title: 't', state: 'open', merged: false });
+      const parts = partsOf(tool('PullRequestStatus'), { number: 1 }, contextFor(world.work, world.env));
+      const read = await parts.execute(await parts.prepare());
+      expect((read as { output: string }).output).toContain('0 checks');
+    });
+  });
+
+  describe('PullRequestComments', () => {
+    it('lists the review comments with id, file and line, and the conversation comments with id, each with its text, and changes nothing', async () => {
+      const { forge, world, tool } = await setup(shape);
+      forge.pulls.push({ number: 1, head: 'feature/x', base: 'main', headSha: HEAD_SHA, title: 't', state: 'open', merged: false });
+      forge.reviewComments.set(1, [
+        { path: 'src/a.ts', line: 12, body: 'Rename this' },
+        { path: 'src/b.ts', body: 'This line is gone' },
+      ]);
+      forge.comments.set(1, ['Looks good overall']);
+      const parts = partsOf(tool('PullRequestComments'), { number: 1 }, contextFor(world.work, world.env));
+      const read = await parts.execute(await parts.prepare());
+      expect(read).toMatchObject({ status: 'completed' });
+      const output = (read as { output: string }).output;
+      expect(output).toContain('2 review comments');
+      expect(output).toContain('review comment 1 on src/a.ts line 12:\nRename this');
+      expect(output).toContain('review comment 2 on src/b.ts:\nThis line is gone');
+      expect(output).toContain('1 conversation comments');
+      expect(output).toContain('comment 1:\nLooks good overall');
+      expect(forge.requests.every((request) => request.method === 'GET')).toBe(true);
+    });
+
+    it('needs no approval of a person: its subject is the tool alone', async () => {
+      const { world, tool } = await setup(shape);
+      expect(await subjectFor(tool('PullRequestComments'), { number: 1 }, world)).toEqual({ kind: 'none', tool: 'PullRequestComments' });
+    });
   });
 
   describe('the credential (G8)', () => {
