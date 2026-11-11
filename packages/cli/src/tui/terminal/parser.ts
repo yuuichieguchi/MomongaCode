@@ -1,6 +1,6 @@
 import { MAX_SEQUENCE_BYTES, PASTE_ABANDON_BYTES, PASTE_MAX_BYTES } from './constants.ts';
-import { MOUSE_BUTTONS, NO_MODIFIERS, WHEEL_BUTTONS } from './events.ts';
-import type { KeyEvent, KeyName, Modifiers, TerminalEvent } from './events.ts';
+import { MOUSE_BUTTONS, NO_KEY_MODIFIERS, WHEEL_BUTTONS } from './events.ts';
+import type { KeyEvent, KeyModifiers, KeyName, TerminalEvent } from './events.ts';
 
 export type InputParser = { push(bytes: Uint8Array): TerminalEvent[]; holdsLoneEscape(): boolean; settle(): TerminalEvent[] };
 
@@ -79,19 +79,22 @@ const unitsOf = (codePoint: number): number => (codePoint > 0xffff ? 2 : 1);
 
 const isScalar = (codePoint: number): boolean => Number.isInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff);
 
-const namedKey = (name: KeyName, modifiers: Modifiers): KeyEvent => ({ type: 'key', name, ...modifiers });
+const namedKey = (name: KeyName, modifiers: KeyModifiers): KeyEvent => ({ type: 'key', name, ...modifiers });
 
-const textKey = (text: string, modifiers: Modifiers): KeyEvent => ({ type: 'key', text, ...modifiers });
+const textKey = (text: string, modifiers: KeyModifiers): KeyEvent => ({ type: 'key', text, ...modifiers });
 
-const textKeys = (text: string): TerminalEvent[] => Array.from(text, (character) => textKey(character, NO_MODIFIERS));
+const textKeys = (text: string): TerminalEvent[] => Array.from(text, (character) => textKey(character, NO_KEY_MODIFIERS));
 
-const modifiersOf = (parameter: number): Modifiers => {
+const MODIFIER_BITS = { shift: 1, alt: 2, ctrl: 4, super: 8, hyper: 16, meta: 32 } as const satisfies Record<keyof KeyModifiers, number>;
+
+const modifiersOf = (parameter: number): KeyModifiers => {
   const bits = parameter - 1;
-  return { shift: (bits & 1) !== 0, alt: (bits & 2) !== 0, ctrl: (bits & 4) !== 0 };
+  const held = (modifier: keyof KeyModifiers): boolean => (bits & MODIFIER_BITS[modifier]) !== 0;
+  return { shift: held('shift'), alt: held('alt'), ctrl: held('ctrl'), super: held('super'), hyper: held('hyper'), meta: held('meta') };
 };
 
 const plainKey = (codePoint: number, alt: boolean): KeyEvent => {
-  const modifiers = { ...NO_MODIFIERS, alt };
+  const modifiers = { ...NO_KEY_MODIFIERS, alt };
   if (codePoint === 0x0d) return namedKey('enter', modifiers);
   if (codePoint === 0x09) return namedKey('tab', modifiers);
   if (codePoint === 0x7f || codePoint === 0x08) return namedKey('backspace', modifiers);
@@ -112,10 +115,10 @@ const numbersOf = (text: string, separator: string): number[] | undefined => {
   return numbers;
 };
 
-type Modified = { modifiers: Modifiers; released: boolean };
+type Modified = { modifiers: KeyModifiers; released: boolean };
 
 const modifiedOf = (field: string | undefined): Modified | undefined => {
-  if (field === undefined || field === '') return { modifiers: NO_MODIFIERS, released: false };
+  if (field === undefined || field === '') return { modifiers: NO_KEY_MODIFIERS, released: false };
   const [modifierText = '', eventText] = field.split(':');
   const parameter = modifierText === '' ? 1 : numberOf(modifierText);
   if (parameter === undefined || parameter < 1) return undefined;
@@ -124,7 +127,7 @@ const modifiedOf = (field: string | undefined): Modified | undefined => {
   return event === undefined ? undefined : { modifiers: modifiersOf(parameter), released: event === KITTY_RELEASE };
 };
 
-const codePointKey = (codePoint: number, shifted: number | undefined, modifiers: Modifiers): Interpreted => {
+const codePointKey = (codePoint: number, shifted: number | undefined, modifiers: KeyModifiers): Interpreted => {
   const name = CODE_POINT_KEYS[codePoint];
   if (name !== undefined) return [namedKey(name, modifiers)];
   if (codePoint >= PRIVATE_USE_FIRST && codePoint <= PRIVATE_USE_LAST) return [];
@@ -287,10 +290,10 @@ const parseEscape = (buffer: string, start: number, held: boolean): Step => {
   if (after === undefined) return 'incomplete';
   const sequence = INTRODUCERS[after];
   if (sequence !== undefined) return sequence(buffer, start);
-  if (held) return parsed([namedKey('escape', NO_MODIFIERS)], start + 1);
+  if (held) return parsed([namedKey('escape', NO_KEY_MODIFIERS)], start + 1);
   if (after === ESC) {
     const inner = INTRODUCERS[buffer[start + 2] ?? ''];
-    if (inner === undefined) return parsed([namedKey('escape', NO_MODIFIERS)], start + 1);
+    if (inner === undefined) return parsed([namedKey('escape', NO_KEY_MODIFIERS)], start + 1);
     const step = inner(buffer, start + 1);
     return step === 'incomplete' ? step : withAlt(step);
   }
@@ -363,7 +366,7 @@ export const createInputParser = (): InputParser => {
     if (!holdsLoneEscape()) return [];
     pending = '';
     readEndedWithEscape = false;
-    return [namedKey('escape', NO_MODIFIERS)];
+    return [namedKey('escape', NO_KEY_MODIFIERS)];
   };
 
   const push = (bytes: Uint8Array): TerminalEvent[] => {

@@ -8,7 +8,10 @@
       "text": "j",
       "ctrl": true,
       "alt": false,
-      "shift": false
+      "shift": false,
+      "super": false,
+      "hyper": false,
+      "meta": false
     }
   ]
 }

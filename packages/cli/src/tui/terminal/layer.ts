@@ -84,7 +84,7 @@ export type TerminalLayer = {
 
 export const isTooSmall = (size: TerminalSize): boolean => size.columns < MIN_COLUMNS || size.rows < MIN_ROWS;
 
-const isCtrl = (event: TerminalEvent, letter: string): boolean => event.type === 'key' && 'text' in event && event.text === letter && event.ctrl && !event.alt && !event.shift;
+const isCtrl = (event: TerminalEvent, letter: string): boolean => event.type === 'key' && 'text' in event && event.text === letter && event.ctrl && !event.alt && !event.shift && !event.super && !event.hyper && !event.meta;
 
 export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLayer => {
   const { input, output, process: host, timers } = options;

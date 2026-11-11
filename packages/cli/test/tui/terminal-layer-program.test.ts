@@ -56,7 +56,7 @@ describe('leaving the screen for a program that takes the terminal', () => {
     expect(flow.at(-1)).toBe('resume');
     expect(requests).toEqual([{ type: 'redraw' }]);
     feed('a');
-    expect(events).toEqual([{ type: 'key', text: 'a', ctrl: false, alt: false, shift: false }]);
+    expect(events).toEqual([{ type: 'key', text: 'a', ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false }]);
     layer.close();
   });
 

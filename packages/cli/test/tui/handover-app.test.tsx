@@ -15,7 +15,7 @@ const IDLE = /^(?![\s\S]*esc to cancel)(?![\s\S]*steer after)[\s\S]*mode: \w+ \(
 
 const read = (shown: string): boolean => IDLE.test(shown) && shown.includes('All green.');
 const SESSION_ID = 'aaaaaaaa11111111';
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 
 const framesOf = (runId: string, events: readonly Record<string, unknown>[]): RunEventFrame[] =>
   events.map((event, index) => ({ id: index + 1, event: String(event['type']), data: { runId, sessionId: SESSION_ID, step: 1, createdAt: 1000, id: index + 1, seq: index + 1, ...event } as PublicRunEvent }));
@@ -341,7 +341,7 @@ describe('the fullscreen view across the move (16.6, red tests 21, 22 and 23)', 
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(old.app.frames.length).toBe(written);
     old.move.surface().resume();
-    old.terminal.emit({ type: 'key', name: 'end', ctrl: true, alt: false, shift: false });
+    old.terminal.emit({ type: 'key', name: 'end', ctrl: true, alt: false, shift: false, super: false, hyper: false, meta: false });
     await untilFrame(old.app, restartingText('1.2.4'));
     old.app.unmount();
   });

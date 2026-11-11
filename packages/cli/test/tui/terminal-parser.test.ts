@@ -21,7 +21,8 @@ const fixtureOf = (file: string): Fixture => {
 const fixtures: Fixture[] = readdirSync(FIXTURE_DIRECTORY).sort().map(fixtureOf);
 
 const ESC = '\u001b';
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
+const unmodified = { ctrl: false, alt: false, shift: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', name, ...plain, ...mods });
 const text = (value: string, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', text: value, ...plain, ...mods });
 const textOf = (value: string): TerminalEvent[] => [...value].map((character) => text(character));
@@ -104,6 +105,17 @@ describe('keys', () => {
     ['kitty backspace', `${ESC}[127u`, [named('backspace')]],
     ['kitty modifier-only key', `${ESC}[57441;2u`, []],
     ['kitty text of two code points', `${ESC}[97;;12354:12356u`, [text('あい')]],
+    ['kitty super+z, the Cmd+Z of a terminal that reports it', `${ESC}[122;9u`, [text('z', { super: true })]],
+    ['kitty hyper+a', `${ESC}[97;17u`, [text('a', { hyper: true })]],
+    ['kitty meta+a', `${ESC}[97;33u`, [text('a', { meta: true })]],
+    ['kitty with every modifier', `${ESC}[97;64u`, [text('a', { shift: true, alt: true, ctrl: true, super: true, hyper: true, meta: true })]],
+    ['kitty super+shift+z with its shifted alternate', `${ESC}[122:90;10u`, [text('Z', { shift: true, super: true })]],
+    ['kitty ctrl+enter', `${ESC}[13;5u`, [named('enter', { ctrl: true })]],
+    ['kitty shift+enter', `${ESC}[13;2u`, [named('enter', { shift: true })]],
+    ['kitty super+enter', `${ESC}[13;9u`, [named('enter', { super: true })]],
+    ['super+up in the legacy form', `${ESC}[1;9A`, [named('up', { super: true })]],
+    ['super+delete in the legacy form', `${ESC}[3;9~`, [named('delete', { super: true })]],
+    ['xterm modifyOtherKeys super+z', `${ESC}[27;9;122~`, [text('z', { super: true })]],
     ['xterm modifyOtherKeys ctrl+i', `${ESC}[27;5;105~`, [text('i', { ctrl: true })]],
     ['focus in', `${ESC}[I`, [{ type: 'focus', direction: 'in' }]],
     ['focus out', `${ESC}[O`, [{ type: 'focus', direction: 'out' }]],
@@ -111,11 +123,11 @@ describe('keys', () => {
     ['kitty flags reply', `${ESC}[?7u`, [{ type: 'report', kind: 'kitty-keys', flags: 7 }]],
     ['DECRQM reply not recognised', `${ESC}[?1049;0$y`, [{ type: 'report', kind: 'mode', mode: 1049, value: 0 }]],
     ['OSC 11 reply ended by BEL', `${ESC}]11;rgb:ffff/ffff/ffff\u0007`, [{ type: 'report', kind: 'background-color', color: 'rgb:ffff/ffff/ffff' }]],
-    ['mouse middle press', `${ESC}[<1;2;3M`, [{ type: 'mouse', kind: 'press', button: 'middle', col: 2, row: 3, ...plain }]],
-    ['mouse right press', `${ESC}[<2;2;3M`, [{ type: 'mouse', kind: 'press', button: 'right', col: 2, row: 3, ...plain }]],
-    ['mouse drag', `${ESC}[<32;3;4M`, [{ type: 'mouse', kind: 'move', button: 'left', col: 3, row: 4, ...plain }]],
-    ['mouse move without a button', `${ESC}[<35;3;4M`, [{ type: 'mouse', kind: 'move', button: 'none', col: 3, row: 4, ...plain }]],
-    ['mouse wheel down', `${ESC}[<65;1;1M`, [{ type: 'mouse', kind: 'wheel', button: 'wheel-down', col: 1, row: 1, ...plain }]],
+    ['mouse middle press', `${ESC}[<1;2;3M`, [{ type: 'mouse', kind: 'press', button: 'middle', col: 2, row: 3, ...unmodified }]],
+    ['mouse right press', `${ESC}[<2;2;3M`, [{ type: 'mouse', kind: 'press', button: 'right', col: 2, row: 3, ...unmodified }]],
+    ['mouse drag', `${ESC}[<32;3;4M`, [{ type: 'mouse', kind: 'move', button: 'left', col: 3, row: 4, ...unmodified }]],
+    ['mouse move without a button', `${ESC}[<35;3;4M`, [{ type: 'mouse', kind: 'move', button: 'none', col: 3, row: 4, ...unmodified }]],
+    ['mouse wheel down', `${ESC}[<65;1;1M`, [{ type: 'mouse', kind: 'wheel', button: 'wheel-down', col: 1, row: 1, ...unmodified }]],
     ['mouse press with ctrl and shift', `${ESC}[<20;1;1M`, [{ type: 'mouse', kind: 'press', button: 'left', col: 1, row: 1, ctrl: true, alt: false, shift: true }]],
     ['mouse press with alt', `${ESC}[<8;1;1M`, [{ type: 'mouse', kind: 'press', button: 'left', col: 1, row: 1, ctrl: false, alt: true, shift: false }]],
     ['a paste end marker without a paste', `${ESC}[201~`, []],
@@ -246,7 +258,7 @@ describe('sequences that are not recognised', () => {
   it('keeps a sequence of exactly the bound', () => {
     const longest = `${ESC}[<${'0'.repeat(MAX_SEQUENCE_BYTES - 8)};1;1M`;
     expect(Buffer.byteLength(longest)).toBe(MAX_SEQUENCE_BYTES);
-    expect(parseText(longest)).toEqual([{ type: 'mouse', kind: 'press', button: 'left', col: 1, row: 1, ...plain }]);
+    expect(parseText(longest)).toEqual([{ type: 'mouse', kind: 'press', button: 'left', col: 1, row: 1, ...unmodified }]);
   });
 });
 

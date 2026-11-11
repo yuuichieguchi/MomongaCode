@@ -1,4 +1,4 @@
-import type { KeyEvent } from '../terminal/events.ts';
+import type { KeyEvent, KeyModifiers } from '../terminal/events.ts';
 import { NEWLINE_HINT } from '../terminal/negotiation.ts';
 import type { NegotiationState } from '../terminal/negotiation.ts';
 
@@ -89,11 +89,25 @@ export const RESERVED_KEYS: readonly KeySpec[] = ['ctrl+c', 'ctrl+d', 'ctrl+z', 
 const SPACE = 'space';
 const CHORD_JOIN = ' ';
 
+const MODIFIER_WORDS = [
+  ['super', 'cmd'],
+  ['hyper', 'hyper'],
+  ['meta', 'meta'],
+  ['ctrl', 'ctrl'],
+  ['alt', 'alt'],
+  ['shift', 'shift'],
+] as const satisfies readonly (readonly [keyof KeyModifiers, string])[];
+
+export const MODIFIER_ORDER: readonly string[] = MODIFIER_WORDS.map(([, word]) => word);
+
+const REPORTED_ONLY_BY_PROTOCOL: readonly string[] = ['cmd', 'hyper', 'meta'];
+
+const typedTextOf = (event: KeyEvent): string | undefined => ('text' in event && !event.ctrl && !event.alt && !event.super && !event.hyper && !event.meta ? event.text : undefined);
+
 export const keySpecOf = (event: KeyEvent): KeySpec | undefined => {
-  const named = 'name' in event;
-  if (!named && !event.ctrl && !event.alt) return undefined;
-  const key = named ? event.name : event.text === ' ' ? SPACE : event.text.toLowerCase();
-  return `${event.ctrl ? 'ctrl+' : ''}${event.alt ? 'alt+' : ''}${event.shift ? 'shift+' : ''}${key}`;
+  if (typedTextOf(event) !== undefined) return undefined;
+  const key = 'name' in event ? event.name : event.text === ' ' ? SPACE : event.text.toLowerCase();
+  return `${MODIFIER_WORDS.map(([held, word]) => (event[held] ? `${word}+` : '')).join('')}${key}`;
 };
 
 export const pressedSpecOf = (event: KeyEvent): KeySpec => keySpecOf(event) ?? ('text' in event && event.text !== ' ' ? event.text : SPACE);
@@ -118,7 +132,6 @@ export const shownKey = (spec: KeySpec): string =>
 
 const HINT_JOIN = ' or ';
 
-const UNREPORTED_MODIFIER = 'cmd';
 const LEGACY_NAMED = ['enter', 'tab', 'backspace', 'escape', 'space'];
 const LEGACY_BACKTAB = 'shift+tab';
 
@@ -126,20 +139,18 @@ const partNeedsReport = (part: KeySpec): boolean => {
   const words = part.split('+');
   const key = words.at(-1) ?? '';
   const modifiers = words.slice(0, -1);
-  if (modifiers.includes(UNREPORTED_MODIFIER)) return true;
+  if (modifiers.some((modifier) => REPORTED_ONLY_BY_PROTOCOL.includes(modifier))) return true;
   if (LEGACY_NAMED.includes(key)) return part !== LEGACY_BACKTAB && (modifiers.includes('ctrl') || modifiers.includes('shift'));
   return [...key].length === 1 && modifiers.includes('ctrl') && modifiers.includes('shift');
 };
 
 export const needsReport = (spec: KeySpec): boolean => chordParts(spec).some(partNeedsReport);
 
-export const neverReported = (spec: KeySpec): boolean => chordParts(spec).some((part) => part.split('+').slice(0, -1).includes(UNREPORTED_MODIFIER));
-
 export const sentAsEscape = (spec: KeySpec): boolean => chordParts(spec).some((part) => part.split('+').slice(0, -1).includes('alt'));
 
 export const reportsModifiedKeys = (negotiation: NegotiationState): boolean => needsReport(NEWLINE_HINT[negotiation]);
 
-export const keyReported = (spec: KeySpec, negotiation: NegotiationState): boolean => !neverReported(spec) && (!needsReport(spec) || reportsModifiedKeys(negotiation));
+export const keyReported = (spec: KeySpec, negotiation: NegotiationState): boolean => !needsReport(spec) || reportsModifiedKeys(negotiation);
 
 export type ChordStep = { readonly kind: 'none' } | { readonly kind: 'pending'; readonly prefix: KeySpec } | { readonly kind: 'action'; readonly id: ActionId } | { readonly kind: 'dropped' };
 
@@ -180,7 +191,7 @@ export const createKeyTable = (rows: readonly ActionRow[] = KEYS): KeyTable => {
       const spec = plain === undefined ? keySpecOf(event) : pressedSpecOf(event);
       return spec === undefined ? undefined : rowOf(contexts, spec)?.id;
     },
-    typedOf: (event) => ('text' in event && !event.ctrl && !event.alt ? event.text : undefined),
+    typedOf: typedTextOf,
     chordStep: (contexts, pending, event) => {
       const pressed = pressedSpecOf(event);
       if (pending === undefined) return startsWith(contexts, pressed) ? { kind: 'pending', prefix: pressed } : { kind: 'none' };

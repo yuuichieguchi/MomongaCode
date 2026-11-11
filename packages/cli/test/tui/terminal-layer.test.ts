@@ -20,7 +20,7 @@ const ENTER_MOUSE = `${ESC}[?1000;1002;1006h`;
 const ENTER_MODIFY_OTHER_KEYS = `${ESC}[>4;2m`;
 const LEAVE_ALL = `${ESC}[?1049l${ESC}[?1000;1002;1006l${ESC}[?2004l${ESC}[?1004l${ESC}[<u${ESC}[>4m${ESC}[23;2t`;
 
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 
 type Fakes = ReturnType<typeof fakes>;
 
@@ -178,7 +178,7 @@ describe('negotiation', () => {
     expect(t.layer.state().enabled).toContain('modify-other-keys');
     t.feed(`${ESC}[27;2;13~`);
     expect(t.layer.state()).toMatchObject({ negotiation: 'proven', newlineHint: 'shift+enter' });
-    expect(t.delivered).toContainEqual({ type: 'key', name: 'enter', ctrl: false, alt: false, shift: true });
+    expect(t.delivered).toContainEqual({ type: 'key', name: 'enter', ctrl: false, alt: false, shift: true, super: false, hyper: false, meta: false });
   });
 
   it('stays unknown and working when the terminal never replies, and a received Shift+Enter proves it', () => {
@@ -432,8 +432,8 @@ describe('resize and the size limits', () => {
     t.resize(19, 24);
     t.feed(`a\r${ESC}[200~p${ESC}[201~${ESC}[<0;1;1M\u001a\u0003${ESC}[99;5u${KITTY_REPLY}`);
     expect(t.delivered).toEqual([
-      { type: 'key', text: 'c', ctrl: true, alt: false, shift: false },
-      { type: 'key', text: 'c', ctrl: true, alt: false, shift: false },
+      { type: 'key', text: 'c', ctrl: true, alt: false, shift: false, super: false, hyper: false, meta: false },
+      { type: 'key', text: 'c', ctrl: true, alt: false, shift: false, super: false, hyper: false, meta: false },
     ]);
     expect(t.kills).toEqual([]);
     expect(t.layer.state().negotiation).toBe('kitty');

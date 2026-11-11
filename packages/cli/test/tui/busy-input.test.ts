@@ -6,8 +6,8 @@ import { emptyEditor, insertText, placeCaret } from '../../src/tui/editor.ts';
 import { BUSY_KEYS, DEFAULT_KEY_TABLE, KEYS, createKeyTable } from '../../src/tui/keys/table.ts';
 import type { KeyEvent } from '../../src/tui/terminal/events.ts';
 
-const named = (name: string): KeyEvent => ({ type: 'key', name, ctrl: false, alt: false, shift: false }) as KeyEvent;
-const ctrl = (text: string): KeyEvent => ({ type: 'key', text, ctrl: true, alt: false, shift: false }) as KeyEvent;
+const named = (name: string): KeyEvent => ({ type: 'key', name, ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false }) as KeyEvent;
+const ctrl = (text: string): KeyEvent => ({ type: 'key', text, ctrl: true, alt: false, shift: false, super: false, hyper: false, meta: false }) as KeyEvent;
 
 const row = (seq: number, delivery: 'steer' | 'queue', text: string): InboxRowView => ({ id: `row-${seq}`, sessionId: 's', delivery, text, seq, state: 'pending', createdAt: 1, settledAt: null });
 
