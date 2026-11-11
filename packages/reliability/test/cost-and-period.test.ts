@@ -75,11 +75,11 @@ describe('the period of a report (2.2, gap B)', () => {
     expect([...added.withinPeriod(paged, period(30)).tasks.keys()].sort()).toEqual(['run-edge', 'run-recent']);
   });
 
-  it('keeps a task whose root row is not there, as pending facts, and an unavailable root that has no row', () => {
+  it('lists a task whose root row is not there as unavailable, beside an unavailable root that has no row', () => {
     const orphan = row('run-orphan-child', { rootRunId: 'run-orphan', endedAt: NOW - 90 * DAY });
     const windowed = added.withinPeriod(aggregate([orphan, old], { groupBy: 'model', unavailableRoots: ['poison', 'run-old'] }), period(30));
     const { buckets } = indicatorsOf(windowed).total;
-    expect(buckets).toMatchObject({ counted: 0, pendingFacts: 1, factsUnavailable: 1 });
+    expect(buckets).toMatchObject({ counted: 0, pendingFacts: 0, factsUnavailable: 2 });
   });
 
   it('is printed in the population block of a real report and survives the codec', () => {

@@ -22,6 +22,7 @@
     {"name":"HOLD_OPEN_INTERVAL_MS","file":"packages/foundation/src/daemon-entry.ts","kind":"C","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"WRITE_FAILURE_INTERVAL_MS","file":"packages/foundation/src/daemon-entry.ts","kind":"C","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"NONCE_BYTES","file":"packages/foundation/src/encrypted-credential-store.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
+    {"name":"GIT_CONFIG_FINGERPRINT_BYTES","file":"packages/foundation/src/git-config-files.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"HEADER_BYTES","file":"packages/foundation/src/git-index.ts","kind":"stated","owner":"foundation","row":"gateway-config.md"},
     {"name":"HISTORY_OUTPUT_HEAD_CHARS","file":"packages/foundation/src/history-output.ts","kind":"stated","owner":"foundation","row":"context.md"},
     {"name":"HISTORY_OUTPUT_TAIL_CHARS","file":"packages/foundation/src/history-output.ts","kind":"stated","owner":"foundation","row":"context.md"},

@@ -1,4 +1,4 @@
-import { INDICATOR_DEFINITIONS_VERSION, MIN_RATE_POPULATION, RELIABILITY_FORMAT, modelKindOf } from '@momonga/protocol';
+import { INDICATOR_DEFINITIONS_VERSION, MIN_RATE_POPULATION, RELIABILITY_FORMAT, escapeTerminalLine, modelKindOf } from '@momonga/protocol';
 import type { AnsweredByView } from '@momonga/protocol';
 import { indicatorsOf } from './aggregate.ts';
 import type { Aggregate, Period } from './aggregate.ts';
@@ -106,14 +106,14 @@ const harnessLines = (harness: Harness | null): string[] =>
   harness === null
     ? []
     : [
-        `Suite: ${harness.suite.name} (${harness.suite.digest}); code ${harness.codeDigest}`,
-        `Answered by: ${harness.answeredBy.map((answerer) => `${answerer.target} (${answerer.answers})`).join(', ') || 'nobody recorded'}; unrecorded ${harness.unrecordedAnswers}; model kind ${modelKindOf(harness.answeredBy, harness.unrecordedAnswers)}`,
+        `Suite: ${escapeTerminalLine(harness.suite.name)} (${harness.suite.digest}); code ${harness.codeDigest}`,
+        `Answered by: ${harness.answeredBy.map((answerer) => `${escapeTerminalLine(answerer.target)} (${answerer.answers})`).join(', ') || 'nobody recorded'}; unrecorded ${harness.unrecordedAnswers}; model kind ${modelKindOf(harness.answeredBy, harness.unrecordedAnswers)}`,
       ];
 
 const rowLines = (report: ReliabilityReport): string[] => [
-  ...(report.population?.notRun ?? []).map((entry) => `Not run: ${entry.id}: ${entry.reason}`),
-  ...(report.tasks ?? []).map((row) => `Task ${row.task} (${row.taskType}, ${row.difficulty}): met ${row.met}/${row.trials}`),
-  ...(report.scenarios ?? []).map((row) => `Scenario ${row.scenario}: recovered ${row.recovered}/${row.episodes} episodes in ${row.trials} trials`),
+  ...(report.population?.notRun ?? []).map((entry) => `Not run: ${escapeTerminalLine(entry.id)}: ${escapeTerminalLine(entry.reason)}`),
+  ...(report.tasks ?? []).map((row) => `Task ${escapeTerminalLine(row.task)} (${escapeTerminalLine(row.taskType)}, ${escapeTerminalLine(row.difficulty)}): met ${row.met}/${row.trials}`),
+  ...(report.scenarios ?? []).map((row) => `Scenario ${escapeTerminalLine(row.scenario)}: recovered ${row.recovered}/${row.episodes} episodes in ${row.trials} trials`),
   ...(report.witnessed === undefined ? [] : [`Duplicate Side Effect Rate (witnessed): ${describeRate(report.witnessed)}`]),
 ];
 
@@ -126,7 +126,7 @@ export const formatReliabilityReport = (report: ReliabilityReport): string => {
     ...indicatorLines(report.total, report.cost?.total),
   ];
   for (const [name, indicators] of Object.entries(report.groups)) {
-    lines.push('', `[${report.groupBy}=${name}]`, populationLine(indicators), ...indicatorLines(indicators, report.cost?.groups[name]));
+    lines.push('', `[${report.groupBy}=${escapeTerminalLine(name)}]`, populationLine(indicators), ...indicatorLines(indicators, report.cost?.groups[name]));
   }
   const rows = rowLines(report);
   if (rows.length > 0) lines.push('', ...rows);

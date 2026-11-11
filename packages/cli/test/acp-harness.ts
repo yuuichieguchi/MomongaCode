@@ -357,6 +357,7 @@ export const fakeRuntime = (): FakeRuntime => {
     reportReviews: unexpected('reportReviews'),
     storeReview: unexpected('storeReview'),
     reportCost: unexpected('reportCost'),
+    reportRecompute: unexpected('reportRecompute'),
     traceContent: unexpected('traceContent'),
     cost: unexpected('cost'),
     costText: unexpected('costText'),

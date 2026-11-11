@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { credentialEnvNames, stopValuesOfSettings } from '@momonga/config';
+import { credentialNamesOf, stopValuesOfSettings } from '@momonga/config';
 import {
   canonicalJson,
   createEncryptedCredentialStore,
@@ -19,7 +19,7 @@ import {
   layoutProcessInspector,
   systemRandom,
 } from '@momonga/foundation';
-import type { Clock, CredentialSecretStore, HelperSelf, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, OutboundNetwork, ProcessInspector, Timing, RolePort, RuleEnforcement, SandboxNetworkSetting, SecretStore, SessionScratch } from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, HelperSelf, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, Timing, RolePort, RuleEnforcement, SandboxNetworkSetting, SecretStore, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
@@ -38,6 +38,7 @@ import { SANDBOX_KILL_GRACE_MS } from './constants.ts';
 import { createMcpAdmin, loadSessionMcpServers } from './mcp-admin.ts';
 import type { McpAdmin } from './mcp-admin.ts';
 import { createMcpPoolCache } from './mcp-pool-cache.ts';
+import type { NetworkOf } from './network-derivation.ts';
 import type { McpPoolCache } from './mcp-pool-cache.ts';
 import { createSessionStates } from './session-states.ts';
 import type { SessionStates } from './session-states.ts';
@@ -66,7 +67,6 @@ export type ToolRuntimeOptions = {
   report(error: unknown): void;
   sandboxes: SandboxBindings;
   forgeSecretStore?: () => SecretStore;
-  forgeEnvironment?: Readonly<Record<string, string | undefined>>;
   forgeFetch?: ForgeFetch;
   helperSelf?: HelperSelf;
   shellHost: ShellHost;
@@ -76,8 +76,8 @@ export type ToolRuntimeOptions = {
   heartbeatMs: number;
   createPool?: (options: McpPoolOptions) => McpPool;
   createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
-  mcpRemote?: McpRemotePorts;
-  network: OutboundNetwork;
+  mcpRemote?: Omit<McpRemotePorts, 'network'>;
+  network: NetworkOf;
   credentialSecretStore?: CredentialSecretStore;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
   policyFilesystem?: PolicyHostFilesystem;
@@ -102,7 +102,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const { paths, home, store, notifier, clock, timers, logger, report, sandboxes, settings, reapTiming } = options;
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
   const createPool = options.createPool ?? createMcpPool;
-  const mcpRemote: McpRemotePorts = options.mcpRemote ?? {
+  const mcpRemote: Omit<McpRemotePorts, 'network'> = options.mcpRemote ?? {
     credentials: createEncryptedCredentialStore({
       directory: mcpCredentialDirectory(paths),
       stateDirectory: paths.state,
@@ -111,7 +111,6 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       lock: options.kernelLock,
     }),
     randomToken: () => randomBytes(32).toString('base64url'),
-    network: options.network,
     openAuthorizationUrl: () => Promise.reject(new Error('the daemon never opens a browser; authorization URLs are handed to the client through the Run API')),
   };
 
@@ -141,7 +140,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   });
   const executor = createToolExecutor({
     jobs,
-    outboundNetwork: options.network,
+    outboundNetwork: async (signal) => (await options.network(signal)).outbound,
     fs: policyFilesystem,
     leaseMs: options.leaseMs,
     heartbeatMs: options.heartbeatMs,
@@ -174,6 +173,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     report,
     settings,
     remote: mcpRemote,
+    network: options.network,
     createPool: options.createAdminPool ?? createMcpPool,
     clientVersion: options.version,
     readCloseGraceMs,
@@ -202,7 +202,6 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     owners,
     inspector,
     ...(options.forgeSecretStore === undefined ? {} : { secretStore: options.forgeSecretStore }),
-    ...(options.forgeEnvironment === undefined ? {} : { environment: options.forgeEnvironment }),
     ...(options.forgeFetch === undefined ? {} : { forgeFetch: options.forgeFetch }),
     ...(options.helperSelf === undefined ? {} : { helperSelf: options.helperSelf }),
   });
@@ -214,6 +213,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     if (session === undefined) throw new Error(`session ${run.sessionId} does not exist`);
     const snapshot = await settings.userSnapshot(signal);
     const trust = (await store.trust.decisionAsked(session.cwd, signal)).decision;
+    const network = await options.network(signal);
 
     let acquiredHere = false;
     try {
@@ -229,8 +229,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
           ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
         };
         const { credentials } = loaded.settings;
-        const credentialNames = credentialEnvNames(loaded.settings.models);
-        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames, ...(Object.keys(callBounds).length === 0 ? {} : { callBounds }) }));
+        const credentialNames = credentialNamesOf(loaded.settings);
+        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames, network: network.identity, ...(Object.keys(callBounds).length === 0 ? {} : { callBounds }) }));
         const acquired = mcpPools.acquire(runId, {
           key,
           create: () =>
@@ -243,7 +243,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               credentials,
               credentialNames,
               timers,
-              remote: mcpRemote,
+              remote: { ...mcpRemote, network: network.outbound },
               markers: { dir: paths.markers.mcp, inspector, onWarning: (message) => logger.warn(message) },
               closeGraceMs: readCloseGraceMs,
               ...callBounds,
@@ -279,7 +279,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const recoveryToolSet: ToolRuntimePort['recoveryToolSet'] = async ({ signal, additionalTools }) => {
     const registry = createToolRegistry();
     for (const tool of createBuiltinTools()) registry.register(tool);
-    for (const tool of operationTools(settings.takeUserSnapshot())) registry.register(tool);
+    for (const tool of operationTools(await settings.userSnapshot(signal))) registry.register(tool);
     for (const tool of additionalTools ?? []) registry.register(tool);
     return registry.snapshot({ signal });
   };

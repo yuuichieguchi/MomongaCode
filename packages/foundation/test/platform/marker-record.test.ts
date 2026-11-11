@@ -56,16 +56,30 @@ describe('T17 the attempt record in the marker file (decision 12)', () => {
     expect(outcomes.sort()).toEqual(['claimed', 'spent']);
   });
 
-  it('(c) a write that fails claims nothing and leaves the record unchanged', async () => {
+  it('(c) a write that fails with EIO claims nothing, leaves the record unchanged and rejects with that error', async () => {
     const marker = await markerIn();
+    const eio = Object.assign(new Error('EIO: injected'), { code: 'EIO' });
     const failing: RecordFiles = {
       read: (file: string) => fs.promises.readFile(file, 'utf8'),
       writeByte: async () => {
-        throw Object.assign(new Error('EIO: injected'), { code: 'EIO' });
+        throw eio;
       },
     };
-    expect(await claimRetry(marker, 'sweep', { ...live(), files: failing })).toBe('failed');
+    await expect(claimRetry(marker, 'sweep', { ...live(), files: failing })).rejects.toBe(eio);
     expect(fs.readFileSync(marker, 'utf8')).toBe('r00000\n');
+  });
+
+  it('(c) a read that fails with EACCES rejects with that error, and only ENOENT answers absent', async () => {
+    const marker = await markerIn();
+    const eacces = Object.assign(new Error('EACCES: injected'), { code: 'EACCES' });
+    const denied: RecordFiles = {
+      read: async () => {
+        throw eacces;
+      },
+      writeByte: async () => undefined,
+    };
+    await expect(claimRetry(marker, 'sweep', { ...live(), files: denied })).rejects.toBe(eacces);
+    expect(await claimRetry(`${marker}-gone`, 'sweep', live())).toBe('absent');
   });
 
   it('(c) the byte is written in place: the inode is unchanged', async () => {

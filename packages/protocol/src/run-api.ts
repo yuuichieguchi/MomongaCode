@@ -1783,6 +1783,15 @@ export const RUN_API_SCHEMAS = {
       ['rows', 'unavailable', 'nextCursor'],
     ),
   ),
+  ReportRecomputePage: root(
+    closed(
+      {
+        rows: { type: 'array', items: runFactsView, maxItems: REPORT_PAGE_ROWS },
+        refused: { type: 'array', items: string, maxItems: REPORT_PAGE_ROWS },
+      },
+      ['rows', 'refused'],
+    ),
+  ),
 } as const satisfies Record<string, JsonSchema>;
 
 type ReducedEventType =

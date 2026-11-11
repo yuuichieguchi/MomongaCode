@@ -45,8 +45,8 @@ export {
   writeAutoFitRecord,
 } from './auto-fit.ts';
 export type { AutoFitFailedBound, AutoFitKey, AutoFitKeyResult, AutoFitMeasurement, AutoFitProportion, AutoFitRecord, ClassifierCode, ClassifierIdentity, ClassifierKeyPorts, ClassifierProbeKeys } from './auto-fit.ts';
-export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
-export type { CredentialRules } from './credential-env.ts';
+export { credentialNamesOf, forgeCredentialNamesOf, isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
+export type { CredentialNaming, CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_THEMES } from './settings-schema.ts';
 export { editSettings, readSettingsSnapshot } from './edit-settings.ts';

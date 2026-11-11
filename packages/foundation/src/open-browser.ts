@@ -1,9 +1,11 @@
-import { findProgramOnPath } from './program-search.ts';
-import type { SearchEnv } from './program-search.ts';
+import { findProgramOnPath, findProgramOnPathSync } from './program-search.ts';
+import type { ProgramSearchFiles, ProgramSearchFilesSync, SearchEnv } from './program-search.ts';
 
 export type OpenCommand = { file: string; args: readonly string[] };
 
-const OPENERS: readonly { program: string; argsFor(url: URL): readonly string[] }[] = [
+type Opener = { program: string; argsFor(url: URL): readonly string[] };
+
+const OPENERS: readonly Opener[] = [
   { program: 'xdg-open', argsFor: (url) => [url.toString()] },
   { program: 'open', argsFor: (url) => [url.toString()] },
   { program: 'rundll32', argsFor: (url) => ['url.dll,FileProtocolHandler', url.toString()] },
@@ -11,26 +13,33 @@ const OPENERS: readonly { program: string; argsFor(url: URL): readonly string[] 
 
 export const URL_OPENER_PROGRAMS: readonly string[] = OPENERS.map((opener) => opener.program);
 
+const OPENED_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:']);
+
+const ONLY_WEB_ADDRESSES = 'only http and https addresses can be opened';
+
 const browserOf = (env: SearchEnv): string | undefined => {
   const browser = env['BROWSER'];
   return browser === undefined || browser === '' ? undefined : browser;
 };
 
-const openerOnPath = (env: SearchEnv): { file: string; argsFor(url: URL): readonly string[] } | undefined => {
+const openerOnPath = async (env: SearchEnv, files: ProgramSearchFiles): Promise<{ file: string; opener: Opener } | undefined> => {
   for (const opener of OPENERS) {
-    const file = findProgramOnPath(opener.program, env);
-    if (file !== undefined) return { file, argsFor: opener.argsFor };
+    const file = await findProgramOnPath(opener.program, env, files);
+    if (file !== undefined) return { file, opener };
   }
   return undefined;
 };
 
-export const urlOpenerFileFor = (env: SearchEnv): string | undefined => browserOf(env) ?? openerOnPath(env)?.file;
+export const urlOpenerFileFor = async (env: SearchEnv, files: ProgramSearchFiles): Promise<string | undefined> => browserOf(env) ?? (await openerOnPath(env, files))?.file;
 
-export const openCommandFor = (url: URL, env: SearchEnv): OpenCommand => {
+export const urlOpenerFileForSync = (env: SearchEnv, files: ProgramSearchFilesSync): string | undefined =>
+  browserOf(env) ?? URL_OPENER_PROGRAMS.map((program) => findProgramOnPathSync(program, env, files)).find((file) => file !== undefined);
+
+export const openCommandFor = async (url: URL, env: SearchEnv, files: ProgramSearchFiles): Promise<OpenCommand> => {
   const browser = browserOf(env);
   if (browser !== undefined) return { file: browser, args: [url.toString()] };
-  const opener = openerOnPath(env);
-  if (opener !== undefined) return { file: opener.file, args: opener.argsFor(url) };
+  const found = await openerOnPath(env, files);
+  if (found !== undefined) return { file: found.file, args: found.opener.argsFor(url) };
   throw new Error(`no program to open a URL was found on PATH; looked for ${URL_OPENER_PROGRAMS.join(', ')}, and BROWSER is not set`);
 };
 
@@ -38,7 +47,7 @@ export type ProgramEnd = { readonly exitCode: number | null; readonly signal: No
 
 export type LaunchProgram = (file: string, args: readonly string[]) => Promise<ProgramEnd>;
 
-export type BrowserOpenerPorts = { env: SearchEnv; launch: LaunchProgram };
+export type BrowserOpenerPorts = { env: SearchEnv; launch: LaunchProgram; files: ProgramSearchFiles };
 
 export type OpenUrl = (url: URL, watch: AbortSignal, onFailure: (message: string) => void) => void;
 
@@ -49,34 +58,22 @@ const unsuccessfulEndOf = (file: string, end: ProgramEnd): string | undefined =>
   return end.exitCode === null ? `${file} was ended by signal ${end.signal}` : `${file} exited with code ${end.exitCode}`;
 };
 
-const commandOrProblem = (url: URL, env: SearchEnv): { command: OpenCommand } | { problem: string } => {
-  try {
-    return { command: openCommandFor(url, env) };
-  } catch (error) {
-    return { problem: messageOf(error) };
-  }
+const launched = async (ports: BrowserOpenerPorts, url: URL, watch: AbortSignal): Promise<string | undefined> => {
+  if (!OPENED_SCHEMES.has(url.protocol)) return ONLY_WEB_ADDRESSES;
+  const { file, args } = await openCommandFor(url, ports.env, ports.files);
+  if (watch.aborted) return undefined;
+  const end = await ports.launch(file, args).catch((error: unknown) => {
+    throw new Error(`${file} could not be started: ${messageOf(error)}`);
+  });
+  return unsuccessfulEndOf(file, end);
 };
 
 export const createBrowserOpener =
   (ports: BrowserOpenerPorts): OpenUrl =>
   (url, watch, onFailure) => {
-    let reported = false;
-    const report = (message: string): void => {
-      if (reported || watch.aborted) return;
-      reported = true;
-      onFailure(message);
+    if (watch.aborted) return;
+    const report = (message: string | undefined): void => {
+      if (message !== undefined && !watch.aborted) onFailure(message);
     };
-    const found = commandOrProblem(url, ports.env);
-    if ('problem' in found) {
-      queueMicrotask(() => report(found.problem));
-      return;
-    }
-    const { file, args } = found.command;
-    void ports.launch(file, args).then(
-      (end) => {
-        const problem = unsuccessfulEndOf(file, end);
-        if (problem !== undefined) report(problem);
-      },
-      (error: unknown) => report(`${file} could not be started: ${messageOf(error)}`),
-    );
+    void launched(ports, url, watch).then(report, (error: unknown) => report(messageOf(error)));
   };

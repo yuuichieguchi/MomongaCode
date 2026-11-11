@@ -560,7 +560,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 20;
+export const SNAPSHOT_STATE_VERSION = 21;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -619,6 +619,7 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     isArrayOf(state['loadedTools'], (name) => typeof name === 'string') &&
     (state['offeredTools'] === undefined || isArrayOf(state['offeredTools'], (name) => typeof name === 'string')) &&
     (state['loopWarned'] === undefined || isLoopWarned(state['loopWarned'])) &&
+    (state['rejectedCalls'] === undefined || isArrayOf(state['rejectedCalls'], (digest) => typeof digest === 'string')) &&
     (state['streaming'] === undefined || isStreaming(state['streaming'])) &&
     (state['mode'] === undefined || PERMISSION_MODES.some((mode) => mode === state['mode'])) &&
     Number.isInteger(state['taskSeq']) &&

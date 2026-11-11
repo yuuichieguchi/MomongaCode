@@ -1,4 +1,4 @@
-import type { RunCallView, RunFactsRecord, RunFactsView } from '@momonga/protocol';
+import type { ReportRecomputePage, RunCallView, RunFactsRecord, RunFactsView } from '@momonga/protocol';
 import { FactsRefusedError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import type { ServiceTimers } from './timers.ts';
@@ -10,6 +10,20 @@ export type FactsSweeperOptions = {
   intervalMs: number;
   batchSize: number;
   onError: (error: unknown) => void;
+};
+
+export const recomputeFactsOf = async (thread: FactsSweeperOptions['thread'], runIds: readonly string[], signal: AbortSignal): Promise<ReportRecomputePage> => {
+  const page: ReportRecomputePage = { rows: [], refused: [] };
+  for (const runId of runIds) {
+    signal.throwIfAborted();
+    try {
+      page.rows.push((await thread.runFacts(runId)).facts);
+    } catch (error) {
+      if (!(error instanceof FactsRefusedError)) throw error;
+      page.refused.push(runId);
+    }
+  }
+  return page;
 };
 
 export const startFactsSweeper = (options: FactsSweeperOptions): { close(): Promise<void> } => {
