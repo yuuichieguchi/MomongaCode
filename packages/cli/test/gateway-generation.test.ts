@@ -143,7 +143,7 @@ describe('a headless run reads the capabilities of its model from the gateway of
     const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
     const sink = { write: () => true };
     const interrupt = new AbortController().signal;
-    const ports = { version: '9.9.9', interrupt, home: freshHome(), cwd: '/c', stdout: sink, stderr: sink } as unknown as CliPorts;
+    const ports = { version: '9.9.9', interrupt, home: freshHome(), cwd: '/c', env: {}, platform: process.platform, stdout: sink, stderr: sink } as unknown as CliPorts;
     const program = buildProgram(
       {
         ports,

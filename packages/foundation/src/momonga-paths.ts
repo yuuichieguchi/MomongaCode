@@ -1,14 +1,14 @@
-import fsSync from 'node:fs';
-import fs from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 import path from 'node:path';
 import util from 'node:util';
 import { ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, directoryFlag, ownerProblem } from './platform/privacy.ts';
 import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandRunner } from './platform/command-runner.ts';
 import { isAtomicWriteTemporary } from './atomic-file.ts';
+import { OPEN_FLAGS, nodeFileSystem } from './node-file-system.ts';
+import type { FileSystem, ReadHandle } from './node-file-system.ts';
 import { handoverLeftovers } from './handover-leftovers.ts';
 import type { LeftoverDirectory } from './leftover-sweep.ts';
-import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
 import { SocketPathUnsupportedError, assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
@@ -134,11 +134,11 @@ export const generationLayout = (home: string, generation: number, platform: Nod
   };
 };
 
-export const momongaLayout = (
-  home: string,
-  platform: NodeJS.Platform = process.platform,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): MomongaPaths => {
+export type LayoutEnvironment = Readonly<Record<string, string | undefined>>;
+
+export type HomePaths = Omit<MomongaPaths, 'keychains' | 'cacheBase' | 'executables' | 'tmp'>;
+
+export const homeLayout = (home: string, platform: NodeJS.Platform = process.platform): HomePaths => {
   const flavor = pathFor(platform);
   const join = flavor.join;
   const root = join(home, '.momonga');
@@ -146,8 +146,6 @@ export const momongaLayout = (
   const state = join(root, 'state');
   const markers = join(run, 'markers');
   const traces = join(state, 'traces');
-  const cacheBase = cacheBaseOf(home, platform, env);
-  const tmp = join(cacheBase, 'tmp');
   return {
     home,
     root,
@@ -187,6 +185,15 @@ export const momongaLayout = (
     skills: join(root, 'skills'),
     agents: join(root, 'agents'),
     launcher: platform === 'win32' ? join(home, 'AppData', 'Local', 'Programs', 'momonga', 'momonga.exe') : join(home, '.local', 'bin', 'momonga'),
+  };
+};
+
+export const momongaLayout = (home: string, platform: NodeJS.Platform, env: LayoutEnvironment): MomongaPaths => {
+  const join = pathFor(platform).join;
+  const cacheBase = cacheBaseOf(home, platform, env);
+  const tmp = join(cacheBase, 'tmp');
+  return {
+    ...homeLayout(home, platform),
     keychains: keychainsOf(home, platform, env),
     cacheBase,
     executables: join(cacheBase, 'executables'),
@@ -243,18 +250,13 @@ export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInsta
 
 export const rotatedLogPath = (file: string, generation: number): string => `${file}.${generation}`;
 
-export const momongaPaths = (
-  home: string,
-  platform: NodeJS.Platform = process.platform,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): MomongaPaths => momongaLayout(home, platform, env);
+export const momongaPaths = (home: string, platform: NodeJS.Platform, env: LayoutEnvironment): MomongaPaths => momongaLayout(home, platform, env);
 
 export type PlatformDirectoryPorts = {
   platform?: NodeJS.Platform;
   run?: CommandRunner;
   env?: Readonly<Record<string, string | undefined>>;
   signal?: AbortSignal | undefined;
-  lock?: KernelLockMechanism;
 };
 
 export class MomongaDirectoryError extends Error {
@@ -269,9 +271,12 @@ export class MomongaDirectoryError extends Error {
 const reasonOf = (error: NodeJS.ErrnoException): string =>
   error.errno === undefined || error.code === undefined ? error.message : `${util.getSystemErrorMessage(error.errno)} (${error.code})`;
 
+const files: Pick<FileSystem, 'mkdir' | 'makeDirectory' | 'chmod' | 'openRead' | 'lstat' | 'stat' | 'realpath'> = nodeFileSystem;
+
 const createDirectory = async (directory: string, options: { mode: number } | { recursive: true }): Promise<void> => {
   try {
-    await fs.mkdir(directory, options);
+    if ('recursive' in options) await files.mkdir(directory);
+    else await files.makeDirectory(directory, options.mode);
   } catch (error) {
     const failure = error as NodeJS.ErrnoException;
     if (failure.code === 'EEXIST' && !('recursive' in options)) return;
@@ -283,7 +288,7 @@ const ensurePrivateDirectory = async (directory: string, platform: NodeJS.Platfo
   let stat = await lstatIfPresent(directory);
   if (stat === undefined) {
     await createDirectory(directory, { mode: 0o700 });
-    stat = await fs.lstat(directory);
+    stat = await files.lstat(directory);
   }
   if (stat.isSymbolicLink()) throw new Error(`${directory} is a symlink; refusing to use it`);
   if (!stat.isDirectory()) throw new Error(`${directory} exists and is not a directory`);
@@ -291,7 +296,7 @@ const ensurePrivateDirectory = async (directory: string, platform: NodeJS.Platfo
   if (owner !== undefined) {
     throw new Error(`${directory} is owned by uid ${owner.found}, but the current user is uid ${owner.expected}; the directory must be owned by the current user`);
   }
-  if (!modeIsPrivate(stat, 'directory', platform)) await fs.chmod(directory, 0o700);
+  if (!modeIsPrivate(stat, 'directory', platform)) await files.chmod(directory, 0o700);
 };
 
 export type RoleEndpoint = { socketPath: string; lockPath: string };
@@ -397,7 +402,7 @@ export const scopeToGeneration = (paths: MomongaPaths, generation: number): Momo
 export const createGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   const platform = ports.platform ?? process.platform;
   const scoped = scopeToGeneration(paths, generation);
-  await fs.mkdir(path.join(paths.run, generationDirectoryName(generation)), { mode: 0o700 });
+  await files.makeDirectory(path.join(paths.run, generationDirectoryName(generation)), 0o700);
   for (const directory of [paths.markers.root, scoped.markers.root, ...MARKER_KINDS.map((kind) => scoped.markers[kind])]) {
     await ensurePrivateDirectory(directory, platform);
   }
@@ -472,7 +477,7 @@ const assertSessionId = (sessionId: string): void => {
   }
 };
 
-const assertOwnedDirectory = (directory: string, stat: fsSync.Stats, uid: number): void => {
+const assertOwnedDirectory = (directory: string, stat: Stats, uid: number): void => {
   if (stat.isSymbolicLink()) throw new SessionTmpDirError(`${directory} is a symlink; refusing to use it`);
   if (!stat.isDirectory()) throw new SessionTmpDirError(`${directory} exists and is not a directory`);
   if (stat.uid !== uid) {
@@ -480,11 +485,11 @@ const assertOwnedDirectory = (directory: string, stat: fsSync.Stats, uid: number
   }
 };
 
-const sameInode = (left: fsSync.Stats, right: fsSync.Stats): boolean => left.dev === right.dev && left.ino === right.ino;
+const sameInode = (left: Stats, right: Stats): boolean => left.dev === right.dev && left.ino === right.ino;
 
-const openDirectoryNoFollow = async (target: string, flags: number): Promise<fs.FileHandle> => {
+const openDirectoryNoFollow = async (target: string, flags: number): Promise<ReadHandle> => {
   try {
-    return await fs.open(target, flags);
+    return await files.openRead(target, flags);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ELOOP' || code === 'ENOTDIR') {
@@ -501,16 +506,16 @@ const ensureSessionTmpDirWindows = async (paths: MomongaPaths, sessionId: string
     throw new SessionTmpDirError(`${paths.tmp.sessions} is missing, a link, or not a directory; refusing to use it`);
   }
   try {
-    await fs.mkdir(directory);
+    await files.makeDirectory(directory);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
-  const child = await fs.lstat(directory);
+  const child = await files.lstat(directory);
   if (child.isSymbolicLink() || !child.isDirectory()) {
     throw new SessionTmpDirError(`${directory} is a link or not a directory; refusing to use it`);
   }
-  const canonicalRoot = await fs.realpath(paths.tmp.sessions);
-  const canonicalDirectory = await fs.realpath(directory);
+  const canonicalRoot = await files.realpath(paths.tmp.sessions);
+  const canonicalDirectory = await files.realpath(directory);
   if (path.dirname(canonicalDirectory).toLowerCase() !== canonicalRoot.toLowerCase()) {
     throw new SessionTmpDirError(`${directory} does not live directly in the sessions root ${paths.tmp.sessions}`);
   }
@@ -547,11 +552,13 @@ const assertSessionsRootIsDirectory = async (root: string): Promise<void> => {
   }
 };
 
-export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<SessionScratch> => {
+export type SessionScratchPorts = PlatformDirectoryPorts & { lock: KernelLockMechanism };
+
+export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: SessionScratchPorts): Promise<SessionScratch> => {
   assertSessionId(sessionId);
   const directory = path.join(paths.tmp.sessions, sessionId);
   await assertSessionsRootIsDirectory(paths.tmp.sessions);
-  const { claimedNow, claim } = await claimSessionScratch(directory, ports.lock ?? hostKernelLock());
+  const { claimedNow, claim } = await claimSessionScratch(directory, ports.lock);
   try {
     return { dir: await ensureClaimedSessionTmpDir(paths, sessionId, ports), claim };
   } catch (error) {
@@ -565,30 +572,30 @@ const ensureClaimedSessionTmpDir = async (paths: MomongaPaths, sessionId: string
   if (platform === 'win32') return ensureSessionTmpDirWindows(paths, sessionId);
   const uid = process.getuid?.();
   if (uid === undefined) throw new Error('process.getuid is required to verify directory ownership');
-  const openFlags = fsSync.constants.O_RDONLY | directoryFlag(platform) | noFollowFlag(platform);
+  const openFlags = OPEN_FLAGS.readOnly | directoryFlag(platform) | noFollowFlag(platform);
   const directory = path.join(paths.tmp.sessions, sessionId);
-  let rootHandle: fs.FileHandle | undefined;
-  let childHandle: fs.FileHandle | undefined;
+  let rootHandle: ReadHandle | undefined;
+  let childHandle: ReadHandle | undefined;
   try {
     rootHandle = await openDirectoryNoFollow(paths.tmp.sessions, openFlags);
     const rootStat = await rootHandle.stat();
     assertOwnedDirectory(paths.tmp.sessions, rootStat, uid);
     try {
-      await fs.mkdir(directory, { mode: 0o700 });
+      await files.makeDirectory(directory, 0o700);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
     childHandle = await openDirectoryNoFollow(directory, openFlags);
     const childStat = await childHandle.stat();
     assertOwnedDirectory(directory, childStat, uid);
-    if (!sameInode(await fs.lstat(paths.tmp.sessions), rootStat)) {
+    if (!sameInode(await files.lstat(paths.tmp.sessions), rootStat)) {
       throw new SessionTmpDirError(`${paths.tmp.sessions} was replaced while preparing ${directory}`);
     }
-    const canonicalDirectory = await fs.realpath(directory);
-    if (!sameInode(await fs.stat(canonicalDirectory), childStat)) {
+    const canonicalDirectory = await files.realpath(directory);
+    if (!sameInode(await files.stat(canonicalDirectory), childStat)) {
       throw new SessionTmpDirError(`${directory} was replaced while it was being prepared`);
     }
-    if (!sameInode(await fs.stat(path.dirname(canonicalDirectory)), rootStat)) {
+    if (!sameInode(await files.stat(path.dirname(canonicalDirectory)), rootStat)) {
       throw new SessionTmpDirError(`${directory} does not live directly in the sessions root ${paths.tmp.sessions}`);
     }
     if ((childStat.mode & 0o777) !== 0o700) await childHandle.chmod(0o700);
@@ -599,9 +606,9 @@ const ensureClaimedSessionTmpDir = async (paths: MomongaPaths, sessionId: string
   return directory;
 };
 
-const lstatIfPresent = async (target: string): Promise<fsSync.Stats | undefined> => {
+const lstatIfPresent = async (target: string): Promise<Stats | undefined> => {
   try {
-    return await fs.lstat(target);
+    return await files.lstat(target);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;

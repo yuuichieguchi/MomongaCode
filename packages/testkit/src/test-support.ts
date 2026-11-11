@@ -120,18 +120,35 @@ export const withTempDir = (context: CleanupContext | undefined, options: TempDi
 
 type Closable = { close: () => Promise<unknown> };
 
-export const closeOnceStarted =
-  <Handle extends Closable>(started: Promise<Handle>): (() => Promise<void>) =>
-  async () => {
-    const handle = await started.catch(() => undefined);
-    await handle?.close();
-  };
+export type SettledBeforeCleanup<Result> = Result extends PromiseLike<unknown> ? never : Result;
 
-export const ownedStart = <Handle extends Closable>(context: CleanupContext | undefined, started: Promise<Handle>): Promise<Handle> => {
-  started.catch(() => undefined);
-  registerCleanup(context, closeOnceStarted(started), REAL_PROCESS_TEST_TIMEOUT_MS);
+export type CleanupRegistrar = (cleanup: () => Promise<void>) => void;
+
+export type CleanupOwner = CleanupContext | CleanupRegistrar | undefined;
+
+const isCleanupContext = (owner: CleanupOwner): owner is CleanupContext => typeof (owner as Partial<CleanupContext> | undefined)?.onTestFinished === 'function';
+
+export function registerOwned<Handle extends Closable>(owner: CleanupOwner, start: () => Promise<Handle>): Promise<Handle>;
+export function registerOwned<Handle>(owner: CleanupOwner, start: () => Promise<Handle>, close: (handle: Handle) => Promise<unknown>): Promise<Handle>;
+export function registerOwned<Handle>(
+  owner: CleanupOwner,
+  start: () => Promise<Handle>,
+  close: (handle: Handle) => Promise<unknown> = (handle) => (handle as Closable).close(),
+): Promise<Handle> {
+  let outcome: Promise<{ handle: Handle } | undefined> | undefined;
+  const closeWhatStarted = async (): Promise<void> => {
+    const settled = await outcome;
+    if (settled !== undefined) await close(settled.handle);
+  };
+  if (isCleanupContext(owner) || typeof owner !== 'function') registerCleanup(owner, closeWhatStarted, REAL_PROCESS_TEST_TIMEOUT_MS);
+  else owner(closeWhatStarted);
+  const started = (async () => start())();
+  outcome = started.then(
+    (handle) => ({ handle }),
+    () => undefined,
+  );
   return started;
-};
+}
 
 export type TrackedChild = ChildProcess & { readonly pid: number };
 

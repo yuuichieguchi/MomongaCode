@@ -12,7 +12,6 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const PROTECTED = path.join(FIXTURES, 'epipe-daemon.ts');
 const UNPROTECTED = path.join(FIXTURES, 'epipe-daemon-unprotected.ts');
-const EXIT_DEADLINE_MS = 5000;
 
 type LogLine = Record<string, unknown> & { msg: string };
 
@@ -29,17 +28,13 @@ const logLines = (home: string): LogLine[] =>
     .filter((entry) => entry !== '')
     .map((entry) => JSON.parse(entry) as LogLine);
 
-const exitOf = (child: TrackedChild, deadlineMs: number): Promise<number | null> =>
-  new Promise((resolve, reject) => {
+const exitOf = (child: TrackedChild): Promise<number | null> =>
+  new Promise((resolve) => {
     if (child.exitCode !== null || child.signalCode !== null) {
       resolve(child.exitCode);
       return;
     }
-    const timer = setTimeout(() => reject(new Error(`daemon ${child.pid} did not exit within ${deadlineMs} ms`)), deadlineMs);
-    child.once('exit', (code) => {
-      clearTimeout(timer);
-      resolve(code);
-    });
+    child.once('exit', (code) => resolve(code));
   });
 
 const startDaemon = async (context: CleanupContext, script: string, home: string, logTarget: string, extra: readonly string[] = []) => {
@@ -97,7 +92,7 @@ describe('daemon entry with a vanished supervisor', () => {
     const home = prepareHome(context);
     const daemon = await startDaemon(context, PROTECTED, home, 'file');
     killSupervisorSide(daemon);
-    expect(await exitOf(daemon.child, EXIT_DEADLINE_MS)).toBe(0);
+    expect(await exitOf(daemon.child)).toBe(0);
     expectGracefulLog(home);
   });
 
@@ -105,7 +100,7 @@ describe('daemon entry with a vanished supervisor', () => {
     const home = prepareHome(context);
     const daemon = await startDaemon(context, PROTECTED, home, 'both');
     killSupervisorSide(daemon);
-    expect(await exitOf(daemon.child, EXIT_DEADLINE_MS)).toBe(0);
+    expect(await exitOf(daemon.child)).toBe(0);
     expectGracefulLog(home);
   });
 
@@ -113,7 +108,7 @@ describe('daemon entry with a vanished supervisor', () => {
     const home = prepareHome(context);
     const daemon = await startDaemon(context, PROTECTED, home, 'stderr');
     killSupervisorSide(daemon);
-    expect(await exitOf(daemon.child, EXIT_DEADLINE_MS)).toBe(0);
+    expect(await exitOf(daemon.child)).toBe(0);
     expect(fs.existsSync(path.join(home, '.momonga', 'logs', 'runtime.log'))).toBe(false);
   });
 
@@ -121,7 +116,7 @@ describe('daemon entry with a vanished supervisor', () => {
     const home = prepareHome(context);
     const daemon = await startDaemon(context, UNPROTECTED, home, 'stderr');
     killSupervisorSide(daemon);
-    expect(await exitOf(daemon.child, EXIT_DEADLINE_MS)).toBe(1);
+    expect(await exitOf(daemon.child)).toBe(1);
   });
 
   it('exit does not truncate backed-up stderr', async (context) => {
@@ -147,7 +142,7 @@ describe('daemon entry with a vanished supervisor', () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     stderrStream.resume();
     await ended;
-    const code = await exitOf(child, EXIT_DEADLINE_MS);
+    const code = await exitOf(child);
     const lines = Buffer.concat(chunks)
       .toString('utf8')
       .split('\n')

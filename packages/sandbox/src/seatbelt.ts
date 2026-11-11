@@ -4,12 +4,14 @@ import { buildSeatbeltProfile } from './profile.ts';
 import { createOwnedDirectorySync, hostPaths, nodeFileSystem, settledOrAborted } from '@momonga/foundation';
 import { assertExistingDirectory } from './scratch.ts';
 import type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxPolicy, SandboxedProcess } from './types.ts';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 const DEFAULT_SANDBOX_EXEC_PATH = '/usr/bin/sandbox-exec';
 
 export interface SeatbeltSandboxOptions {
   sandboxExecPath?: string;
   tmpRoot: string;
+  lock: KernelLockMechanism;
   killGraceMs: number;
 }
 
@@ -41,7 +43,7 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
         });
       }
       const tmpRoot = await settledOrAborted(nodeFileSystem.realpath(options.tmpRoot), signal);
-      const scratch = createOwnedDirectorySync({ parent: tmpRoot, prefix: 'sandbox-' });
+      const scratch = createOwnedDirectorySync({ parent: tmpRoot, prefix: 'sandbox-', lock: options.lock });
       const tmpDir = scratch.path;
       try {
         const scratchDir = await paths.canonicalPath(tmpDir);

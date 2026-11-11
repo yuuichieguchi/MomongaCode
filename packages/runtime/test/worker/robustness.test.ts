@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
 import type { ExecutionBatchInput } from '@momonga/tools';
-import { waitUntil, within } from './deferred.ts';
+
 import { EXTRA_ROOT, START_MS, makeEnv, toolKey } from './harness.ts';
 import { pinnedStart } from './cancel-fixture.ts';
 import { callsStep, functionCallItem, requestedOffering, textStep } from './scripts.ts';
@@ -105,8 +105,8 @@ describe('worker onError and notices', () => {
     const reported: unknown[] = [];
     const worker = env.worker('worker-1', { store, idlePollMs: 10, onError: (error) => reported.push(error) });
     worker.start();
-    await waitUntil(() => reported.length === 1, 3_000, 'the error to be reported');
-    await within(worker.stop(), 3_000, 'the worker to stop');
+    await env.passTime(() => reported.length === 1, 'the error to be reported');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(reported).toEqual([failure]);
     expect(env.ofType(failing.id, 'notice').map((event) => event.message)).toEqual(['The worker failed on this run: load exploded']);

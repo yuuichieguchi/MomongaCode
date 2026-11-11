@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { reapMarkedProcesses } from '@momonga/foundation';
 import type { SignalSender } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from '../../../tools/test/harness.ts';
 import type { HarnessOptions } from '../../../tools/test/harness.ts';
 import { keyFor } from '../../../tools/test/helpers.ts';
@@ -54,7 +54,7 @@ describe.runIf(process.platform === 'darwin')('T15 a lost call whose leader surv
       return reapWithEperm(options);
     };
     const sweep = (event: 'startup' | 'sweep') =>
-      reapToolMarkers({ dir: harness.markerDir, store, killGraceMs: 100, onWarning: () => undefined, reap: counted as never, event, owners: createMarkerOwners(), signal: new AbortController().signal } as never);
+      reapToolMarkers({ dir: harness.markerDir, inspector: testProcessInspector(), store, killGraceMs: 100, onWarning: () => undefined, reap: counted as never, event, owners: createMarkerOwners(), signal: new AbortController().signal } as never);
 
     await sweep('startup');
     expect(fs.existsSync(marker)).toBe(true);

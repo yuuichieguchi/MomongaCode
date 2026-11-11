@@ -6,7 +6,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { globalErrorHandler } from '@opentelemetry/core';
 import { runRuntimeEntry } from '@momonga/runtime';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeEntryIo, parseJsonLines, prepareGenerationForTest, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, prepareGenerationForTest, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration, registerOwned, testLocks, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
@@ -46,7 +46,7 @@ const validHome = async (context: CleanupContext): Promise<Home> => {
   const paths = momongaPaths(home, process.platform, {});
   await ensureMomongaDirs(paths);
   prepareGenerationForTest(home, FIRST_GENERATION, VERSION);
-  await publishCurrentGeneration(paths, { generation: FIRST_GENERATION, version: VERSION, sockets: generationLayout(home, FIRST_GENERATION).sockets });
+  await publishCurrentGeneration(paths, { generation: FIRST_GENERATION, version: VERSION, sockets: generationLayout(home, FIRST_GENERATION).sockets }, { lock: testKernelLock() });
   return { home, paths, aux };
 };
 
@@ -147,7 +147,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(launched.io.exits).toEqual([0]);
     expect(launched.io.stdoutLines()).toHaveLength(1);
     expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'runtime', version: VERSION, socketPath: firstGeneration(paths).sockets.runtime });
-    expect(await inspectProcessLock(firstGeneration(paths).locks.runtime)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(paths).locks.runtime, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(launched.io.logFilePaths).toEqual([paths.logFiles.runtime]);
     const log = roleLog(launched.io, paths);
     expect(log[0]).toMatchObject({ msg: 'entry.start', service: 'runtime' });
@@ -160,7 +160,8 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'fake.sock') });
     registerCleanup(context, () => fake.close());
     writeUserSettings(home, { sandbox: 'none', runtime: { drainTimeoutMs: 300_000 }, ...modelSettings(fake.socketPath) });
-    const gateway = await ownedStart(context, startGatewayProcess({
+    const gateway = await registerOwned(context, () => startGatewayProcess({
+      locks: testLocks(),
       generation: FIRST_GENERATION,
       home,
       env: { PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux },

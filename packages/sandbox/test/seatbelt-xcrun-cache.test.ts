@@ -6,7 +6,7 @@ import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -39,7 +39,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt keeps the xcrun cache un
     root = makeTempDir();
     const tmpRoot = makeTempDir();
     created.push(root, tmpRoot);
-    sandbox = createSeatbeltSandbox({ tmpRoot, killGraceMs: 300 });
+    sandbox = createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300 });
   });
 
   afterEach(async () => {

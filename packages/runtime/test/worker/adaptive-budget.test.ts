@@ -3,7 +3,7 @@ import { createMemoryPort } from '@momonga/runtime';
 import type { Worker } from '@momonga/runtime';
 import type { RunEventPayload, RunStatus } from '@momonga/protocol';
 import type { Session } from '@momonga/store';
-import { within } from './deferred.ts';
+
 import { DEADLINE_MS, LEASE_MS, capabilitiesFor, createdRun, makeEnv, textOf, unavailableEvidenceRun } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, gated, textStep } from './scripts.ts';
@@ -192,16 +192,16 @@ describe('a pinned share', () => {
     env.gateway.script.push(blocked);
     const run = await env.enqueue('Work', { history: 'fresh' });
     const abandoned = env.runOnce(memoryWorker(env, 'worker-a'));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     const sibling = env.store.createSession({ cwd: env.project, env: {}, permissionMode: 'manual', model: env.session.model });
     for (let index = 0; index < 20; index += 1) await finishPast(env, { injected: 1, used: 1, dropped: true }, sibling);
     env.clock.advance(LEASE_MS + 1);
     const recovering = env.runOnce(memoryWorker(env, 'worker-b'));
-    await within(env.gateway.nthStream(before + 1), 5_000, 'the recovery re-send');
+    await env.settled(env.gateway.nthStream(before + 1), 'the recovery re-send');
     blocked.gate.release.resolve();
-    await within(recovering, 5_000, 'the recovering worker');
-    await within(abandoned, 5_000, 'the abandoned worker to stop');
+    await env.settled(recovering, 'the recovering worker');
+    await env.settled(abandoned, 'the abandoned worker to stop');
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'run.started').map((event) => event.pins['memoryShare'])).toEqual([1 / 8, 1 / 8]);

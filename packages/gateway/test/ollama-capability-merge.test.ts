@@ -2,7 +2,7 @@ import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget, runProbe } from '@momonga/gateway';
 import type { AdapterRequest, Capabilities, ReasoningEffort } from '@momonga/protocol';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { startFakeChatCompletions, testKernelLock } from '@momonga/testkit';
 import { buildOllamaBody } from '../src/adapters/ollama/request.ts';
 import type { DeclaredCapabilities } from '../src/probe/decide.ts';
 import { createProbedEndpointTarget } from '../src/probe/endpoint-target.ts';
@@ -20,7 +20,7 @@ const showWith = (capabilities: readonly string[]) => ({ ...RECORDED_SHOW, capab
 const probedTarget = async (showCapabilities: readonly string[], declared: DeclaredCapabilities, cacheProbe: 'automatic' | 'none' = 'none') => {
   const fake = await startFakeOllama({ show: showWith(showCapabilities), cacheProbe });
   const dir = makeDir();
-  const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 12288 });
+  const result = await probeOllamaTarget({ lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 12288 });
   const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
   return createProbedOllamaTarget({
     targetName: 'local',

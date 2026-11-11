@@ -7,7 +7,7 @@ import type { McpStdioServerConfig } from '@momonga/config';
 import { groupAlive, groupTerminationBoundMs } from '@momonga/foundation';
 import { createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
-import { LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup, testProcessInspector } from '@momonga/testkit';
 import { closeGraceOf } from '../src/stdio-transport.ts';
 
 export const transportCloseBoundMs = (closeGraceMs: number): number => closeGraceMs + groupTerminationBoundMs(closeGraceMs) + closeGraceMs + 2 * closeGraceMs;
@@ -103,7 +103,7 @@ export const createTransport = (options: {
     projectDir: options.projectDir ?? makeDir(),
     baseEnv: options.baseEnv ?? BASE_ENV,
     ...(options.closeGraceMs === undefined ? {} : { closeGraceMs: options.closeGraceMs }),
-    ...(options.markers === undefined ? {} : { markers: options.markers }),
+    ...(options.markers === undefined ? {} : { markers: { inspector: testProcessInspector(), ...options.markers } }),
     ...(options.terminate === undefined ? {} : { terminate: options.terminate }),
   } as StdioTransportOptions);
   onCleanup(async () => {

@@ -8,7 +8,7 @@ import type { Probing } from '@momonga/protocol';
 import type { KnownProbeKey } from '@momonga/config';
 import * as gatewayModule from '@momonga/gateway';
 import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { FakeClock, FakeFmConfig } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
@@ -126,7 +126,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
       expectProbing(response);
       expect(raw.headers['retry-after']).toBe('120');
       await probeStarted(gateway);
-      const free = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm');
+      const free = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm', testKernelLock());
       free.release();
     });
   });
@@ -199,6 +199,8 @@ describe('the automatic probe of an fm target with no probe record', () => {
       const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'fm' });
 
       const outcome = await probeManagedFm({
+        inspector: testProcessInspector(),
+        lock: testKernelLock(),
         platform: process.platform,
         paths,
         instance,
@@ -225,7 +227,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
 
     it('starts the gateway flight while another process holds the key lock, and writes the record only after the lock is released', async () => {
       const gateway = await setup({ probe: 'complete' });
-      const held = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm');
+      const held = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm', testKernelLock());
 
       expectProbing(await gateway.send(true));
       await probeStarted(gateway);
@@ -238,9 +240,9 @@ describe('the automatic probe of an fm target with no probe record', () => {
 
     it('refuses a second holder of the same key in the same process', async () => {
       const gateway = await setup();
-      const held = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm');
+      const held = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm', testKernelLock());
 
-      await expect(acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm')).rejects.toBeInstanceOf(ProbeInProgressError);
+      await expect(acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm', testKernelLock())).rejects.toBeInstanceOf(ProbeInProgressError);
       held.release();
     });
   });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAXIMUM_STOP_VALUES, findHolders, isTransientFailure, markerReapClockBoundMs, readAttemptRecord, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
-import type { JsonLogger, Timing, RetryKind, StopValues, UninspectableRegistry } from '@momonga/foundation';
+import type { JsonLogger, Timing, RetryKind, StopValues, UninspectableRegistry, ProcessInspector } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import type { ChildRole } from './launcher.ts';
@@ -47,6 +47,7 @@ export type OrphanReapOptions = {
   signal: AbortSignal;
   logger: JsonLogger;
   reapTiming: Timing;
+  inspector: ProcessInspector;
   markerPorts?: MarkerPorts;
   uninspectable?: UninspectableRegistry;
   occasion?: RetryKind;
@@ -83,7 +84,7 @@ export const openDaemonMarker = (directory: string, role: ChildRole, files: Mark
   };
 };
 
-export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogger; signal?: AbortSignal; markerPorts?: MarkerPorts }): Promise<{ removed: boolean }> => {
+export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogger; inspector: ProcessInspector; signal?: AbortSignal; markerPorts?: MarkerPorts }): Promise<{ removed: boolean }> => {
   const reap = input.markerPorts?.reapMarkedProcesses ?? reapMarkedProcesses;
   try {
     return await reap({
@@ -91,6 +92,7 @@ export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogg
       killGraceMs: DAEMON_MARKER_KILL_GRACE_MS,
       label: 'daemon',
       onWarning: (detail) => writeEvent(input.logger, orphansWarning({ detail, marker: input.marker })),
+      inspector: input.inspector,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
     });
   } catch (error) {
@@ -156,7 +158,7 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
   const warn = (detail: string): void => writeEvent(logger, orphansWarning({ detail }));
 
   const countHolders = async (markers: readonly string[], probeSignal: AbortSignal): Promise<number> => {
-    const lists = await Promise.all(markers.map((marker) => holdersOf(marker, { signal: probeSignal, onUninspectable: reportUninspectableOnce(warn, `marker ${marker}`, options.uninspectable) })));
+    const lists = await Promise.all(markers.map((marker) => holdersOf(marker, { signal: probeSignal, inspector: options.inspector, onUninspectable: reportUninspectableOnce(warn, `marker ${marker}`, options.uninspectable) })));
     return lists.reduce((total, list) => total + list.length, 0);
   };
 
@@ -234,6 +236,7 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     onWarning: warn,
     signal,
     timing: options.reapTiming,
+    inspector: options.inspector,
     ...(options.occasion === undefined ? {} : { occasion: options.occasion }),
   });
   return { reaped: result.reaped, kept: result.kept, aborted: signal.aborted };

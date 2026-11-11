@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { defineTool } from '@momonga/tools';
-import { deferred, waitUntil, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { START_MS, bodyDigest, makeEnv, toolKey } from './harness.ts';
 import { assistantMessage, callsStep, functionCallItem, textStep } from './scripts.ts';
 
@@ -61,7 +61,7 @@ describe('per-call completion events', () => {
     const env = await makeEnv();
     const releaseSlow = deferred<void>();
     env.toolbox.hooks['Echo'] = async (input) => {
-      if (input['value'] === 'slow') await within(releaseSlow.promise, 10_000, 'the slow call release');
+      if (input['value'] === 'slow') await env.settled(releaseSlow.promise, 'the slow call release');
     };
     env.gateway.script.push(
       callsStep([
@@ -74,16 +74,12 @@ describe('per-call completion events', () => {
     const running = env.runOnce(env.worker());
 
     try {
-      await waitUntil(
-        () => env.ofType(run.id, 'tool.completed').some((event) => event.callId === env.gateway.callId('call_fast')),
-        3_000,
-        'the fast call to be recorded while the slow call is blocked',
-      );
+      await env.passTime(() => env.ofType(run.id, 'tool.completed').some((event) => event.callId === env.gateway.callId('call_fast')), 'the fast call to be recorded while the slow call is blocked');
       expect(env.ofType(run.id, 'tool.completed').map((event) => event.callId)).toEqual([env.gateway.callId('call_fast')]);
     } finally {
       releaseSlow.resolve();
     }
-    await within(running, 5_000, 'the run to finish');
+    await env.settled(running, 'the run to finish');
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'tool.completed').map((event) => event.callId)).toEqual([env.gateway.callId('call_fast'), env.gateway.callId('call_slow')]);
   });

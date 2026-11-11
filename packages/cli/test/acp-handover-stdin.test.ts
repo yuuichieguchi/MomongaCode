@@ -117,7 +117,7 @@ const serve = (home: string, started: HandoverHost['started']): Served => {
       if (attached === undefined) throw new Error('no surface is attached to the mover');
       return attached;
     },
-    done: serveAcp(ports, momongaPaths(home), interrupt.signal),
+    done: serveAcp(ports, momongaPaths(home, process.platform, process.env), interrupt.signal),
   };
 };
 
@@ -130,7 +130,7 @@ const acpRecordOf = (surface: MoveSurface): AcpRecord => {
 describe('the standard input of an ACP connection across a handover', () => {
   it('carries the bytes no message was made of in the record, and the new process answers the request they begin', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    await ensureMomongaDirs(momongaPaths(home));
+    await ensureMomongaDirs(momongaPaths(home, process.platform, process.env));
     const request = line(SET_MODE(2));
     const old = serve(home, undefined);
     old.input.arrive(`${line(INITIALIZE)}${request.slice(0, 20)}`);
@@ -163,7 +163,7 @@ describe('the standard input of an ACP connection across a handover', () => {
 
   it('delivers no message while the connection is held for the handover, and goes on when the handover did not happen', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    await ensureMomongaDirs(momongaPaths(home));
+    await ensureMomongaDirs(momongaPaths(home, process.platform, process.env));
     const served = serve(home, undefined);
     served.input.arrive(line(INITIALIZE));
     await served.output.until(answers(1));

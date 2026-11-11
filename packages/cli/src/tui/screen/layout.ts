@@ -1,6 +1,6 @@
 import { INPUT_BOX_FRAME_ROWS, SUBAGENT_ROWS_MAX } from './constants.ts';
 
-export type RowRequests = { waiting: number; inputRows: number; menu: number; subagents: number; footerSecond: number; lines: number; panel: number | undefined };
+export type RowRequests = { waiting: number; inputRows: number; invitation: number; menu: number; subagents: number; footerSecond: number; lines: number; panel: number | undefined };
 
 export type RowAllocation = { viewport: number; menu: number; waiting: number; lines: number; input: number; footer: number; subagents: number };
 
@@ -9,7 +9,7 @@ export const REGIONS = ['viewport', 'menu', 'waiting', 'lines', 'input', 'footer
 export type Region = (typeof REGIONS)[number];
 
 const FOOTER_ROWS = 1;
-const VIEWPORT_ROWS = 1;
+export const VIEWPORT_ROWS = 1;
 const PANEL_KEEPS_ROWS = 4;
 
 export const inputRowsCap = (height: number): number => Math.max(1, Math.floor(height / 3));
@@ -29,14 +29,23 @@ export const allocate = (height: number, requests: RowRequests): RowAllocation =
     left -= given;
     return given;
   };
+  const invitation = panel === undefined ? take(requests.invitation) : 0;
   const waiting = take(requests.waiting);
   const inputExtra = panel === undefined ? take(Math.min(requests.inputRows, inputRowsCap(height)) - 1) : 0;
-  const menu = panel === undefined ? take(Math.min(requests.menu, menuRowsCap(height))) : 0;
+  const menu = invitation + (panel === undefined ? take(Math.min(requests.menu, menuRowsCap(height))) : 0);
   const subagents = take(Math.min(requests.subagents, subagentRowsCap(height)));
   const footerSecond = take(requests.footerSecond);
   const lines = panel === undefined ? take(requests.lines) : 0;
   return { viewport: VIEWPORT_ROWS + left, menu, waiting, lines, input: reservedInput + inputExtra, footer: FOOTER_ROWS + footerSecond, subagents };
 };
+
+export const drawnTranscriptRows = (viewport: number, held: number): number => Math.max(VIEWPORT_ROWS, Math.min(viewport, held));
+
+export type RowsAboveInput = Pick<RowAllocation, 'viewport' | 'menu' | 'waiting' | 'lines'>;
+
+export const naturalRows = (transcript: number, requests: Pick<RowRequests, 'waiting' | 'invitation' | 'menu' | 'lines'>): RowsAboveInput => ({ viewport: transcript, menu: requests.invitation + requests.menu, waiting: requests.waiting, lines: requests.lines });
+
+export const inputTopOf = (rows: RowsAboveInput): number => rows.viewport + rows.menu + rows.waiting + rows.lines;
 
 export const regionAt = (rows: RowAllocation, screenRow: number): { region: Region; row: number } | undefined => {
   let top = 1;

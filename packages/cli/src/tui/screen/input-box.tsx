@@ -1,6 +1,4 @@
-import { Box, Text, useBoxMetrics, useCursor } from 'ink';
-import type { DOMElement } from 'ink';
-import { useRef } from 'react';
+import { Box, Text, useCursor } from 'ink';
 import { characterEndAfter } from '../editor.ts';
 import type { EditorState } from '../editor.ts';
 import { currentA11y } from './a11y.ts';
@@ -117,18 +115,16 @@ export function PanelInputBox({ editor }: { editor: EditorState }) {
 
 export const CHAT_MARK = '>';
 
-export type InputBoxProps = { editor: EditorState; columns: number; rows: number | undefined; top: number | undefined; framed: boolean; mark: string };
+export type InputBoxProps = { editor: EditorState; columns: number; rows: number | undefined; top: number; framed: boolean; mark: string };
 
 export function InputBox({ editor, columns, rows, top, framed, mark }: InputBoxProps) {
-  const box = useRef<DOMElement>(null);
-  const measured = useBoxMetrics(box);
   const { setCursorPosition } = useCursor();
   const layout = layoutInput(editor.text, editor.cursor, columns);
   const visible = rows ?? layout.rows.length;
   const first = windowTopOf(layout, visible);
-  setCursorPosition({ x: (framed ? BOX_LEFT_COLUMNS : 0) + FIRST_PREFIX.length + layout.caretCol, y: (top ?? measured.top) + (framed ? BOX_TOP_ROWS : 0) + layout.caretRow - first });
+  setCursorPosition({ x: (framed ? BOX_LEFT_COLUMNS : 0) + FIRST_PREFIX.length + layout.caretCol, y: top + (framed ? BOX_TOP_ROWS : 0) + layout.caretRow - first });
   return (
-    <Box ref={box} flexDirection="column" {...(framed ? { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 } : {})}>
+    <Box flexDirection="column" {...(framed ? { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 } : {})}>
       {layout.rows.slice(first, first + visible).map((row, index) => (
         <Text key={first + index} wrap="truncate">{`${first + index === 0 ? `${mark} ` : REST_PREFIX}${row.drawn}`}</Text>
       ))}

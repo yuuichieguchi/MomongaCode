@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createUdsClient, createJsonLogger, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir, registerOwned, testLocks } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, writeSettings, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -20,7 +20,8 @@ const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | 
     models: modelsOf({ local: { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: CAPABILITIES, ...(billing === undefined ? {} : { billing }) } }),
     ...(pricing === undefined ? {} : { pricing }),
   });
-  const handle = await ownedStart(context, startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({
+    locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),

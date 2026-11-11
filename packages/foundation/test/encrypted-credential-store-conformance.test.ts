@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { CREDENTIAL_KEY_CREATION_STEPS, CREDENTIAL_KEY_MARKER_FILE, createEncryptedCredentialStore, systemFileLockPorts } from '@momonga/foundation';
 import { createFakeKeyStore, recordFileOf } from './support/credential-key-fakes.ts';
 import { makeTemporaryDirectory as makeDir } from './support/temporary-directory.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const MODEL_STEP_OF_EVENT: Readonly<Record<string, string>> = {
   marker_absent_at_os_write: 'read_marker_again',
@@ -35,6 +36,7 @@ describe('encrypted credential store conforms to CredentialKey.tla (Reread, Crea
     };
     const ports = { ...systemFileLockPorts, random: { ...systemFileLockPorts.random, hex } };
     const store = createEncryptedCredentialStore({
+      lock: testKernelLock(),
       directory,
       stateDirectory,
       secretStore: { kind: 'available', store: keys },
@@ -51,7 +53,7 @@ describe('encrypted credential store conforms to CredentialKey.tla (Reread, Crea
     const stateDirectory = path.join(home, 'state');
     const directory = path.join(stateDirectory, 'plan-sessions');
     const keys = createFakeKeyStore();
-    const options = { directory, stateDirectory, secretStore: { kind: 'available' as const, store: keys }, plaintextTokenFiles: () => false };
+    const options = { directory, stateDirectory, secretStore: { kind: 'available' as const, store: keys }, plaintextTokenFiles: () => false, lock: testKernelLock() };
     const writers = Array.from({ length: 4 }, () => createEncryptedCredentialStore(options));
     await Promise.all(writers.map((writer, index) => writer.write(`plan/p/${index}`, `token-${index}`, new AbortController().signal)));
     expect(keys.writes.filter((name) => name.startsWith('credential-key-'))).toHaveLength(1);

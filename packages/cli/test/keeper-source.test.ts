@@ -120,7 +120,7 @@ describe('outside a single executable the composition root provides the keeper b
     const home = rootOf();
     const provided: Array<() => string> = [];
     const embedded: string[] = [];
-    await provideEmbeddedWindowsKeeper({ home, platform: process.platform, interrupt: new AbortController().signal }, undefined, (file) => void embedded.push(file), (executable) => void provided.push(executable), () => true);
+    await provideEmbeddedWindowsKeeper({ env: {}, home, platform: process.platform, interrupt: new AbortController().signal }, undefined, (file) => void embedded.push(file), (executable) => void provided.push(executable), () => true);
     expect(embedded).toEqual([]);
     expect(provided).toHaveLength(1);
   });
@@ -128,7 +128,7 @@ describe('outside a single executable the composition root provides the keeper b
   it('provides nothing from source in a single executable that carries no keeper', async () => {
     const provided: Array<() => string> = [];
     await provideEmbeddedWindowsKeeper(
-      { home: rootOf(), platform: process.platform, interrupt: new AbortController().signal },
+      { env: {}, home: rootOf(), platform: process.platform, interrupt: new AbortController().signal },
       { present: () => false, raw: () => new Uint8Array() },
       () => undefined,
       (executable) => void provided.push(executable),

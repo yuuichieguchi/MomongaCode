@@ -39,7 +39,7 @@ const portsOf = (stdout: string[], stderr: string[]): CliPorts =>
 
 describe('an interrupt of attach', () => {
   it('ends the follow, leaves the run running and says how to follow or cancel it', async (context) => {
-    const paths = momongaPaths(withTempDir(context, { asHome: true }));
+    const paths = momongaPaths(withTempDir(context, { asHome: true }), process.platform, process.env);
     const watched = liveRun();
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -58,7 +58,7 @@ describe('an interrupt of attach', () => {
   });
 
   it('prints the result with the state of the run in a JSON format', async (context) => {
-    const paths = momongaPaths(withTempDir(context, { asHome: true }));
+    const paths = momongaPaths(withTempDir(context, { asHome: true }), process.platform, process.env);
     const watched = liveRun();
     const stdout: string[] = [];
     const interrupt = new AbortController();
@@ -75,7 +75,7 @@ describe('an interrupt of attach', () => {
 
 describe('an interrupt of a headless run', () => {
   it('cancels the run', async (context) => {
-    const paths = momongaPaths(withTempDir(context, { asHome: true }));
+    const paths = momongaPaths(withTempDir(context, { asHome: true }), process.platform, process.env);
     const cancelled: string[] = [];
     const ended = Promise.withResolvers<void>();
     const following = Promise.withResolvers<void>();

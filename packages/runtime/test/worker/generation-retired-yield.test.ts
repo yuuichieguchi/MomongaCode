@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fixedRolePort } from '@momonga/foundation';
 import { GatewayRequestError } from '@momonga/runtime';
 import { mutableRole } from '../shared/mutable-role.ts';
-import { within } from './deferred.ts';
+
 import { makeEnv } from './harness.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { callsStep, gated, textStep } from './scripts.ts';
@@ -98,11 +98,11 @@ describe('a step in flight when the role becomes retiring (17.1, 20.31)', () => 
     const run = await env.enqueue('Work');
     const role = mutableRole('serving');
     const running = env.runOnce(env.worker('w1', { role: role.port }));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     role.set('retiring');
     blocked.gate.release.resolve();
-    expect(await within(running, 10_000, 'the retiring worker to finish its step')).toBe('yielded');
+    expect(await env.settled(running, 'the retiring worker to finish its step')).toBe('yielded');
 
     expect(env.ofType(run.id, 'model.responded')).toHaveLength(1);
     expect(env.gateway.streams).toHaveLength(1);

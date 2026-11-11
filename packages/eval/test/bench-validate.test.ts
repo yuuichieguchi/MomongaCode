@@ -6,11 +6,13 @@ import { GATE_NAMES, nodeWorkspaceFiles } from '@momonga/eval';
 import type { WorkspaceFiles } from '@momonga/eval';
 import { ADD_FIXED, ADD_TEST, CHEATING_TEST, benchmarkDir, exported, nodeProbe } from './bench-fixtures.ts';
 import type { WorkspaceProbe } from './bench-fixtures.ts';
+import { testKernelLock } from '@momonga/testkit';
+import type { KernelLockMechanism } from '@momonga/foundation';
 
 type Validation = { tasks: { id: string; problems: string[] }[] };
 
 const validate = (file: string, probe: WorkspaceProbe): Promise<Validation> =>
-  exported<(benchmarkFile: string, ports: { probe: WorkspaceProbe; files: WorkspaceFiles; tmpdir: string }) => Promise<Validation>>('validateBenchmark')(file, { probe, files: nodeWorkspaceFiles, tmpdir: os.tmpdir() });
+  exported<(benchmarkFile: string, ports: { probe: WorkspaceProbe; files: WorkspaceFiles; tmpdir: string; lock: KernelLockMechanism }) => Promise<Validation>>('validateBenchmark')(file, { probe, files: nodeWorkspaceFiles, tmpdir: os.tmpdir(), lock: testKernelLock() });
 
 const problemsOf = async (dir: string): Promise<Record<string, string[]>> =>
   Object.fromEntries((await validate(path.join(dir, 'benchmark.json'), nodeProbe)).tasks.map((task) => [task.id, task.problems]));

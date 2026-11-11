@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, orphanReapGraceMs, probeFailed, runtimeMaxCloseMs, scopeToGeneration, supervisorMaxCloseMs, syncPaths, sleep } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, spawnTracked, waitFor, withTempDir, firstGeneration, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { DAEMON_MARKER_KILL_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
 import { orphanPhaseOneBoundMs, orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
@@ -37,6 +37,7 @@ const reapSetup = (dir: string, overrides: Partial<OrphanReapOptions> = {}) => {
   const controller = new AbortController();
   const realWork = createRealWorkScope();
   const options: OrphanReapOptions = {
+    inspector: testProcessInspector(),
     markersDir: dir,
     orphanGraceMs: 10_000,
     orphanReapGraceMs: 200,

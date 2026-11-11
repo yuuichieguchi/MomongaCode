@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { answeredLater, canonicalJson, isRecord, systemFileLockPorts } from '@momonga/foundation';
-import type { FileLockPorts } from '@momonga/foundation';
+import type { FileLockPorts, KernelLockMechanism } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
 import type { Asker } from './asker.ts';
 import { editUserSettings } from './edit-user-settings.ts';
@@ -27,7 +27,7 @@ export type SettingsOperation =
 
 export type SettingsPlace = { readonly home: string; readonly projectDir: string };
 
-export type EditSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
+export type EditSettingsOptions = { lock: KernelLockMechanism; ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
 
 export type SettingsLayerView = { readonly layer: SettingsLayer; readonly file: string; readonly document: Readonly<Record<string, unknown>> };
 
@@ -151,6 +151,7 @@ export const editSettings = async (settingsPlace: SettingsPlace, layer: Settings
           projectDir: settingsPlace.projectDir,
           rule: operation.rule,
           effect: operation.effect,
+        lock: options.lock,
           ports: options.ports ?? systemFileLockPorts,
           signal: options.signal,
           ...(options.lockTimeoutMs === undefined ? {} : { lockTimeoutMs: options.lockTimeoutMs }),

@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createKernelLockMechanism } from '@momonga/foundation';
 import { EVENT_TYPES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, UNKNOWN_VALUE } from '@momonga/protocol';
 import { moduleOf, readManifest } from './formal/manifest.ts';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from '@momonga/store';
+import { resolveKernelLock } from '../packages/foundation/src/platform/kernel-lock.ts';
+import { fixedLockCapability } from '@momonga/testkit';
 
 const specPath = path.resolve(import.meta.dirname, '..', 'specs', 'tla', 'RunRecovery.tla');
 const spec = fs.readFileSync(specPath, 'utf8');
@@ -261,9 +262,10 @@ describe('the checked configurations against the repaired recovery design', () =
   });
 
   describe('the call lock of the model, against the code', () => {
-    it('takes exclusion from the kernel lock mechanism the code selects on each platform, and the model holds the lock in Held', () => {
-      expect(createKernelLockMechanism('linux').name).toBe('sqlite-lock');
-      expect(createKernelLockMechanism('win32').name).toBe('sqlite-lock');
+    it('takes exclusion from the kernel lock mechanism the proof of the directory selects, and the model holds the lock in Held', () => {
+      expect(resolveKernelLock('/unused', { capability: fixedLockCapability('proved') }).name).toBe('file-lock');
+      expect(resolveKernelLock('/unused', { capability: fixedLockCapability('unenforced') }).name).toBe('sqlite-lock');
+      expect(resolveKernelLock('/unused', { capability: fixedLockCapability('unmeasured') }).name).toBe('sqlite-lock');
       expect(definitionOf('Held')).toContain('wlock[x]');
     });
 

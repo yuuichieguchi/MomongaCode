@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { isProtectedWrite, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
+import { isProtectedWrite, protectedSetFor, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs, askedBy } from '@momonga/policy';
 import type { SandboxedProcess } from '@momonga/sandbox';
@@ -215,6 +215,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       const sandboxTmp = path.join(root, 'sandbox-tmp');
       fs.mkdirSync(sandboxTmp, { recursive: true });
       const policy = await buildSandboxPolicy({
+        layout: momongaLayout(path.join(root, 'home'), process.platform, process.env),
         roots: [repositoryRoot],
         home: path.join(root, 'home'),
         tmpDir,
@@ -254,6 +255,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       const sandboxTmp = path.join(root, `sandbox-${path.basename(repositoryRoot)}`);
       fs.mkdirSync(sandboxTmp, { recursive: true });
       const policy = await buildSandboxPolicy({
+        layout: momongaLayout(path.join(root, 'home'), process.platform, process.env),
         roots: [repositoryRoot],
         home: path.join(root, 'home'),
         tmpDir,

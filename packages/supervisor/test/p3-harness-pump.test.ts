@@ -119,10 +119,10 @@ describe('pumpUntil', () => {
     const clock = createFakeClock(0);
     const timers = createFakeTimers(clock);
     const advances: number[] = [];
-    const originalAdvance = timers.advance;
-    timers.advance = (ms) => {
+    const originalAdvance = timers.advanceAsync;
+    timers.advanceAsync = (ms) => {
       advances.push(ms);
-      originalAdvance(ms);
+      return originalAdvance(ms);
     };
     let fired = false;
     timers.setTimeout(() => {

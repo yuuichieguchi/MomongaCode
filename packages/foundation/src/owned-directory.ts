@@ -1,12 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
-import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import { claimNewEntry, claimNewEntrySync } from './platform/lock-form.ts';
 import type { Random } from './random.ts';
 import { systemRandom } from './system-random.ts';
 
-export type OwnedDirectoryOptions = { parent: string; lock?: KernelLockMechanism } & ({ prefix: string; random?: Random } | { name: string });
+export type OwnedDirectoryOptions = { parent: string; lock: KernelLockMechanism } & ({ prefix: string; random?: Random } | { name: string });
 
 export type OwnedDirectory = { readonly path: string; dispose(): Promise<void> };
 
@@ -35,7 +34,7 @@ const disposeOnce = (held: HeldKernelLock, removeDirectory: () => void): (() => 
 
 export const createOwnedDirectory = async (options: OwnedDirectoryOptions): Promise<OwnedDirectory> => {
   const directory = ownedPathOf(options);
-  const held = await claimNewEntry(options.lock ?? hostKernelLock(), directory, 'sidecar');
+  const held = await claimNewEntry(options.lock, directory, 'sidecar');
   try {
     await fs.promises.mkdir(directory, { mode: OWNED_DIRECTORY_MODE });
   } catch (error) {
@@ -60,7 +59,7 @@ export const createOwnedDirectory = async (options: OwnedDirectoryOptions): Prom
 
 export const createOwnedDirectorySync = (options: OwnedDirectoryOptions): OwnedDirectorySync => {
   const directory = ownedPathOf(options);
-  const held = claimNewEntrySync(options.lock ?? hostKernelLock(), directory, 'sidecar');
+  const held = claimNewEntrySync(options.lock, directory, 'sidecar');
   try {
     fs.mkdirSync(directory, { mode: OWNED_DIRECTORY_MODE });
   } catch (error) {

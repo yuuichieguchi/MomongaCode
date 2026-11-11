@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeFileRules } from '@momonga/policy';
@@ -47,7 +47,7 @@ describe('sandbox policy entries that cannot be canonicalised', () => {
 });
 
 describe('relative sandbox policy entries', () => {
-  const options = (dir: string) => ({ roots: [path.join(dir, 'project')], home: path.join(dir, 'home'), tmpDir: path.join(dir, 'sessions', 's'), sessionsTmpRoot: path.join(dir, 'sessions') });
+  const options = (dir: string) => ({ roots: [path.join(dir, 'project')], home: path.join(dir, 'home'), layout: momongaLayout(path.join(dir, 'home'), process.platform, process.env), tmpDir: path.join(dir, 'sessions', 's'), sessionsTmpRoot: path.join(dir, 'sessions') });
 
   it('make buildSandboxPolicy throw for a relative extraReadDenied entry', async () => {
     const tools = await makeBuiltins();

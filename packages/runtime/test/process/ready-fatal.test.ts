@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { RUNTIME_VERSION, captureStream, hookLogger, isLockFree, startRuntimeProcess, startStack } from './run-helpers.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, firstGeneration, registerOwned } from '@momonga/testkit';
 import type { RuntimeProcess } from './run-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+import { onCleanup } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -53,7 +54,7 @@ describe('fatal at the ready line (system timers, in-process gateway)', () => {
         else queueMicrotask(fire);
         return written;
       };
-      const outcome = await outcomeOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout }));
+      const outcome = await outcomeOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout })));
       if ('error' in outcome) {
         expect(outcome.error).toBe(fatal);
         expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);

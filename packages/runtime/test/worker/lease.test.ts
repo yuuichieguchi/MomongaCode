@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { within } from './deferred.ts';
+
 import { LEASE_MS, makeEnv } from './harness.ts';
 import { gated, textStep } from './scripts.ts';
 
@@ -10,7 +10,7 @@ describe('worker lease loss', () => {
     env.gateway.script.push(blocked);
     const run = await env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a'));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
     const [started] = env.ofType(run.id, 'run.started');
     if (started === undefined) throw new Error('expected run.started');
 
@@ -19,7 +19,7 @@ describe('worker lease loss', () => {
     expect(thief?.runId).toBe(run.id);
     const stolenAtSeq = env.run(run.id).lastSeq;
     blocked.gate.release.resolve();
-    await within(running, 5_000, 'the first worker to stop after losing its lease');
+    await env.settled(running, 'the first worker to stop after losing its lease');
 
     const lateWrites = env.events(run.id).filter((event) => event.leaseToken === started.leaseToken && event.seq > stolenAtSeq);
     expect(lateWrites).toEqual([]);
@@ -34,12 +34,12 @@ describe('worker lease loss', () => {
     env.gateway.script.push(blocked);
     const run = await env.enqueue('Work');
     const running = env.runOnce(env.worker('worker-a', { heartbeatMs: 10 }));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     const stolenAtSeq = env.run(run.id).lastSeq;
-    await within(running, 3_000, 'the heartbeat to detect the lost lease');
+    await env.settled(running, 'the heartbeat to detect the lost lease');
 
     expect(env.gateway.streams[0]?.signal.aborted).toBe(true);
     expect(env.run(run.id)).toMatchObject({ status: 'RUNNING', leaseOwner: 'worker-thief', lastSeq: stolenAtSeq });

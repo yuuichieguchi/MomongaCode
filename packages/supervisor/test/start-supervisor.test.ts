@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, parseReadyLine, inspectProcessLock, runtimeMaxCloseMs } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, driveFakeTime, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerOwned, createFakeKernelLock, createFakeClock, createFakeTimers, driveFakeTime, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { ORPHAN_POLL_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
 import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
@@ -90,7 +90,9 @@ describe('startSupervisor', () => {
     const spawned = createFakeSpawn();
     const timers = createFakeTimers(clock);
     let settled = false;
-    const starting = startSupervisor({
+    const starting = registerOwned(context, () => startSupervisor({
+      inspector: testProcessInspector(),
+      lockMechanism: testKernelLock(),
       home: h.home,
       version: TEST_VERSION,
       generation: HARNESS_GENERATION,
@@ -102,7 +104,7 @@ describe('startSupervisor', () => {
       stdout: captureText(),
       watchSettings: false,
       markerPorts: recordingMarkerPorts().ports,
-    }).finally(() => {
+    }), (supervisor) => supervisor.abort()).finally(() => {
       settled = true;
     });
     await driveFakeTime(timers, { done: () => settled, horizonAt: clock.now() + STARTUP_TIMEOUT_MS, description: 'the second supervisor to end its start' });
@@ -111,7 +113,7 @@ describe('startSupervisor', () => {
     expect(await second.closed).toEqual({ clean: true, killed: [], leaked: [] });
     expect(spawned.spawnCount()).toBe(0);
     expect(log.withMsg('start.abandoned')).toMatchObject([{ generation: HARNESS_GENERATION, reason: 'lock-held' }]);
-    expect((await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).state).toBe('held');
+    expect((await inspectProcessLock(firstGeneration(h.paths).locks.supervisor, { mechanism: testKernelLock() })).state).toBe('held');
   });
 
   it('a supervisor.sock.lock left behind by a dead holder does not block the start', async (context) => {
@@ -134,7 +136,9 @@ describe('startSupervisor', () => {
     const clock = createFakeClock(0);
     const stdout = captureText();
     const fake = createFakeSpawn();
-    const attempt = startSupervisor({
+    const attempt = registerOwned(context, () => startSupervisor({
+      inspector: testProcessInspector(),
+      lockMechanism: testKernelLock(),
       home,
       version: TEST_VERSION,
       generation: HARNESS_GENERATION,
@@ -146,10 +150,10 @@ describe('startSupervisor', () => {
       stdout,
       watchSettings: false,
       markerPorts: recordingMarkerPorts().ports,
-    });
+    }), (supervisor) => supervisor.abort());
     await expect(attempt).rejects.toThrow(/not a socket/);
-    expect(await inspectProcessLock(firstGeneration(paths).locks.supervisor)).toEqual({ state: 'free' });
-    expect(await inspectProcessLock(`${firstGeneration(paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(paths).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${firstGeneration(paths).sockets.supervisor}.lock`, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(stdout.text()).toBe('');
     expect(fake.spawnCount()).toBe(0);
   });

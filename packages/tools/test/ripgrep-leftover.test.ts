@@ -3,10 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createKernelLockMechanism, hostKernelLock, nodeFileSystem, sha256Hex } from '@momonga/foundation';
+import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { HeldKernelLock, KernelLockMechanism } from '@momonga/foundation';
 import { RIPGREP_BINARY_ASSET, RIPGREP_MANIFEST_ASSET, RIPGREP_NOTICES_ASSET, RIPGREP_STAGED_PREFIX, ensureBundledRipgrep, ripgrepDirectoryName } from '../src/ripgrep-distribution.ts';
 import type { RipgrepDistributionPorts } from '../src/ripgrep-distribution.ts';
+import { expectedKernelLockOn, testKernelLock } from '@momonga/testkit';
 
 const BINARY = new TextEncoder().encode('#!rg-binary-bytes');
 const NOTICES = new TextEncoder().encode('COPYING\n');
@@ -37,13 +38,13 @@ const executablesRoot = (): string => {
 };
 
 const holdEntry = async (entry: string): Promise<void> => {
-  const outcome = await hostKernelLock().claim(entry);
+  const outcome = await testKernelLock().claim(entry);
   if (outcome.kind !== 'claimed') throw new Error(`${entry} could not be claimed by the test`);
   held.push(outcome.lock);
   if (!fs.existsSync(entry)) fs.writeFileSync(entry, BINARY, { mode: 0o700 });
 };
 
-const portsOf = (root: string, lock: KernelLockMechanism = hostKernelLock()): RipgrepDistributionPorts => {
+const portsOf = (root: string, lock: KernelLockMechanism = testKernelLock()): RipgrepDistributionPorts => {
   let counter = 0;
   return {
     asset: (name) => {
@@ -76,7 +77,7 @@ describe('ripgrep-distribution.ts:138-144: the staged files are judged by their 
 
   for (const platform of ['darwin', 'linux'] as const) {
     it(`${platform} mechanism: removes a staged file whose lock no one holds, with its sidecar, whatever owner its name carries`, async () => {
-      const lock = createKernelLockMechanism(platform);
+      const lock = expectedKernelLockOn(platform);
       const root = executablesRoot();
       const directory = path.join(root, ripgrepDirectoryName(MANIFEST));
       fs.mkdirSync(directory, { recursive: true, mode: 0o700 });

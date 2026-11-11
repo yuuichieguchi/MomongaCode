@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { EXIT_RETIRED, FIRST_GENERATION, SWEEP_INTERVAL_MS, inspectProcessLock } from '@momonga/foundation';
 import type { RuntimeStanding } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeExec, testKernelLock } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, switchableRole, userInput } from '../gateway-helpers.ts';
 import { CC_MODEL, PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
@@ -96,7 +96,7 @@ describe('a retiring gateway leaves only when it holds nothing and its runtime i
     const closed = await gateway.handle.close();
     expect(closed).toMatchObject({ clean: true, exitCode: EXIT_RETIRED });
     expect(fs.existsSync(gateway.handle.socketPath)).toBe(false);
-    expect((await inspectProcessLock(homePaths(gateway.home).lock)).state).toBe('free');
+    expect((await inspectProcessLock(homePaths(gateway.home).lock, { mechanism: testKernelLock() })).state).toBe('free');
   });
 
   it('does not leave while an accepted call is open, even with its runtime gone, and leaves after the call ended', async () => {
@@ -148,7 +148,7 @@ describe('a retiring gateway leaves only when it holds nothing and its runtime i
     gateway.role.become('retiring');
 
     await gateway.tick().catch(() => undefined);
-    await until(async () => (await inspectProcessLock(homePaths(gateway.home).lock)).state === 'free', 'the gateway to release its lock');
+    await until(async () => (await inspectProcessLock(homePaths(gateway.home).lock, { mechanism: testKernelLock() })).state === 'free', 'the gateway to release its lock');
 
     expect(await gateway.handle.close()).toMatchObject({ clean: true, exitCode: EXIT_RETIRED });
   });

@@ -51,7 +51,7 @@ const headless = (context: Parameters<typeof withTempDir>[0], toolCalling: ToolC
 const headlessReading = async (context: Parameters<typeof withTempDir>[0], capabilities: unknown, format: HeadlessOptions['format']) => {
   log.length = 0;
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const stderr: string[] = [];
   const stdout: string[] = [];

@@ -69,7 +69,7 @@ const scene = (survives: boolean) => {
 
 const runEvidence = async (context: Parameters<typeof withTempDir>[0], survives: boolean) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const project = fs.realpathSync(withTempDir(context));
   const { timing, groupPort, inspector, sandbox } = scene(survives);

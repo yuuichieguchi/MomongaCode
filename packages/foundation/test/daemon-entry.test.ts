@@ -17,7 +17,7 @@ import {
   hostPaths,
 } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, RotatingLogFile } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, waitFor, withTempDir, testLocks } from '@momonga/testkit';
 
 const HOME = '/Users/alice';
 const OWN_LOCK = path.join(HOME, '.momonga', 'run', 'runtime.lock');
@@ -71,6 +71,7 @@ const fakeIo = (argv: readonly string[]) => {
     argv,
     env: { HOME },
     home: HOME,
+    locks: testLocks,
     paths: hostPaths,
     stdout: { write: (chunk) => (stdoutChunks.push(chunk), true) },
     stderr: { write: (chunk) => (stderrChunks.push(chunk), true) },
@@ -197,6 +198,7 @@ const launch = async (argv: readonly string[] = ARGV_FILE, overrides: Partial<Da
 
 const launchRunning = async (argv: readonly string[] = ARGV_FILE, overrides: Partial<DaemonDefinition<Flags>> = {}) => {
   const launched = await launch(argv, overrides);
+  await waitFor(() => launched.contexts.length === 1 || launched.entryError() !== undefined || launched.exitCode() !== undefined, { description: 'the start of the daemon or the end of the entry' });
   expect(launched.contexts, `start was not called: ${String(launched.entryError())}`).toHaveLength(1);
   launched.run();
   await settle();

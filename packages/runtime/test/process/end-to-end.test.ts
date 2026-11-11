@@ -31,7 +31,7 @@ describe('runtime end to end over runtime.sock (system timers, in-process gatewa
     const session = await launched.createSession();
     const run = await launched.createRun(session.id, { input: 'Say hello' });
     const stream = await launched.stream(`/v1/runs/${run.id}/events`);
-    const frames = await stream.toEnd(30_000);
+    const frames = await stream.toEnd();
     expect(frames.at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
     expect(frames.filter((event) => event.type === 'agent.message.delta').map((event) => event.text).join('')).toBe(FAKE_DETERMINISTIC_REPLY);
     expect((await launched.http('GET', `/v1/runs/${run.id}`)).json.run).toMatchObject({ status: 'COMPLETED' });
@@ -71,7 +71,7 @@ describe('runtime end to end over runtime.sock (system timers, in-process gatewa
     const session = await launched.createSession();
     const run = await launched.createRun(session.id);
     const stream = await launched.stream(`/v1/runs/${run.id}/events`);
-    expect((await stream.toEnd(30_000)).at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
+    expect((await stream.toEnd()).at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
     const result = await launched.handle.close();
     expect(result).toEqual({ clean: true, abandoned: [], stragglers: [] });
     expect(control.serviceNames.slice(namesBefore)).toEqual(['momonga-runtime']);

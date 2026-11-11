@@ -60,10 +60,10 @@ const CHAIN_LENGTHS = [1, 10, 100] as const;
 const chainOf = async (steps: number) => {
   const h = referenceHarness();
   const b = chainBuilder(h);
-  await answeredRun(h, b, 'base task', (claim) => {
+  await answeredRun(h, b, 'base task', async (claim) => {
     for (let step = 0; step < steps; step += 1) {
       if (step % 2 === 0) b.text(claim, 200);
-      else b.tool(claim, { outputChars: 400 });
+      else await b.tool(claim, { outputChars: 400 });
     }
   }, { fresh: true });
   const links: string[] = [];

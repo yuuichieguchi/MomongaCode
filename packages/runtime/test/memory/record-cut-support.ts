@@ -12,6 +12,8 @@ import { eventsOf } from '../../../store/test/support/reference.ts';
 import type { ReferenceHarness } from '../../../store/test/support/reference.ts';
 import { mustRun } from '../../../store/test/helpers.ts';
 import type { FidelityReply } from './fidelity-fixture.ts';
+import { testKernelLock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const clients: JournalThreadClient[] = [];
 
@@ -33,7 +35,7 @@ const requestOf = (h: ReferenceHarness, request: FidelityRequest) => ({
 
 export const threadOf = async (h: ReferenceHarness): Promise<JournalThreadClient> => {
   const { dev, ino } = fs.statSync(h.dbPath);
-  const client = await startJournalThread({ databasePath: h.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS, blobsDir: blobDirectoryOf(h.dbPath) } as Parameters<typeof startJournalThread>[0]);
+  const client = await startJournalThread({ lock: testKernelLock(), busyTimeoutMs: BUSY_WAIT_LIMIT_MS, databasePath: h.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS, blobsDir: blobDirectoryOf(h.dbPath) } as Parameters<typeof startJournalThread>[0]);
   clients.push(client);
   return client;
 };
@@ -48,7 +50,7 @@ const NO_CLOCK = {
 };
 
 export const directFidelity = async (h: ReferenceHarness, request: FidelityRequest): Promise<{ reply: FidelityReply; stepped: number }> => {
-  const db = openJournalConnection(h.dbPath);
+  const db = openJournalConnection(h.dbPath, BUSY_WAIT_LIMIT_MS);
   let stepped = 0;
   try {
     const reader = createJournalReader(db, {
@@ -56,7 +58,7 @@ export const directFidelity = async (h: ReferenceHarness, request: FidelityReque
         stepped += rows;
       },
     });
-    const handler = fidelityHandler({ reader, blobs: createBlobStore(db, NO_CLOCK, blobDirectoryOf(h.dbPath), { fileSystem: nodeFileSystem, random: systemRandom }), current: { progress: undefined }, gateFor: () => ({ unit: () => undefined }) });
+    const handler = fidelityHandler({ reader, blobs: createBlobStore(db, NO_CLOCK, blobDirectoryOf(h.dbPath), { fileSystem: nodeFileSystem, random: systemRandom, lock: testKernelLock() }), current: { progress: undefined }, gateFor: () => ({ unit: () => undefined }) });
     const reply = (await handler(requestOf(h, request), () => undefined)) as unknown as FidelityReply;
     return { reply, stepped };
   } finally {

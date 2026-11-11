@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { defineTool } from '@momonga/tools';
-import { waitUntil, within } from './deferred.ts';
 import { DEADLINE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
 import { MODEL_ID, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
@@ -94,8 +93,8 @@ describe('worker reporter with a throwing onError hook', () => {
         },
       });
       worker.start();
-      await waitUntil(() => env.run(healthy.id).status === 'COMPLETED', 2_000, 'the healthy run to complete');
-      await expect(within(worker.stop(), 1_000, 'the worker to stop')).resolves.toBeUndefined();
+      await env.passTime(() => env.run(healthy.id).status === 'COMPLETED', 'the healthy run to complete');
+      await expect(env.settled(worker.stop(), 'the worker to stop')).resolves.toBeUndefined();
     } finally {
       process.off('unhandledRejection', onUnhandled);
     }

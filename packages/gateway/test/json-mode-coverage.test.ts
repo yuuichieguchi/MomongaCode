@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PROBE_METHOD_VERSION, endpointKeyOf, probeOllamaTarget, runProbe } from '@momonga/gateway';
 import type { Capabilities, ProbeReport } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, startFakeChatCompletions } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, startFakeChatCompletions, testKernelLock } from '@momonga/testkit';
 import { createReasoningOriginCodec } from '../src/core/reasoning-origin.ts';
 import { createRedactor } from '../src/core/redaction.ts';
 import { createRouter } from '../src/core/router.ts';
@@ -35,6 +35,7 @@ describe('the Ollama probe measures the JSON-only mode through the same item', (
   const probeOllama = async (jsonModeProbe: 'accepts' | 'rejects' | 'ignores' | 'fails'): Promise<unknown> => {
     const fake = await startFakeOllama({ jsonModeProbe });
     const result = await probeOllamaTarget({
+      lock: testKernelLock(),
       probeRecordDir: makeDir(),
       upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK },
       key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL },

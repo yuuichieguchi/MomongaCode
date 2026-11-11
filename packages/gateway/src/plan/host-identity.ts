@@ -3,7 +3,7 @@ import type { JsonWebKey } from 'node:crypto';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { AUTH_DOCUMENT_MAX_BYTES, isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
-import type { FileSystem } from '@momonga/foundation';
+import type { FileSystem, KernelLockMechanism } from '@momonga/foundation';
 import { parsePlanJson } from './plan-json.ts';
 import { describeError } from '../core/describe-error.ts';
 
@@ -61,22 +61,22 @@ const parseHostFile = (file: string, text: string): HostIdentity => {
   return { hostId: parsed['hostId'] };
 };
 
-export const ensureHostIdentity = async (fileSystem: FileSystem, file: string, { accountsExist }: { accountsExist: boolean }): Promise<HostIdentity> => {
+export const ensureHostIdentity = async (fileSystem: FileSystem, file: string, { accountsExist, lock }: { accountsExist: boolean; lock: KernelLockMechanism }): Promise<HostIdentity> => {
   const existing = await readHostFile(fileSystem, file);
   if (existing !== undefined) return parseHostFile(file, existing);
   if (accountsExist) throw hostFileError(file, 'is missing while plan accounts exist');
   await fileSystem.mkdirPrivate(path.dirname(file));
   const created = await newHostFile();
-  const outcome = await writeFileAtomically(fileSystem, systemRandom, file, created.text, { mode: FILE_MODE, publish: 'create' });
+  const outcome = await writeFileAtomically(fileSystem, systemRandom, file, created.text, { mode: FILE_MODE, publish: 'create', lock });
   if (outcome.created) return { hostId: created.hostId };
   const raced = await readHostFile(fileSystem, file);
   if (raced === undefined) throw hostFileError(file, 'disappeared while it was being created');
   return parseHostFile(file, raced);
 };
 
-export const resetHostIdentity = async (fileSystem: FileSystem, file: string): Promise<HostIdentity> => {
+export const resetHostIdentity = async (fileSystem: FileSystem, file: string, lock: KernelLockMechanism): Promise<HostIdentity> => {
   await fileSystem.mkdirPrivate(path.dirname(file));
   const created = await newHostFile();
-  await writeFileAtomically(fileSystem, systemRandom, file, created.text, { mode: FILE_MODE });
+  await writeFileAtomically(fileSystem, systemRandom, file, created.text, { mode: FILE_MODE, lock });
   return { hostId: created.hostId };
 };

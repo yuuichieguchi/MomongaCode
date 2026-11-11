@@ -11,7 +11,7 @@ import {
   daemonStopBoundMs,
   fixedSocket,
   generationLayout,
-  hostKernelLock,
+  resolveLayoutLocks,
   listGenerations,
   lockReadsHeld,
   nodeFileSystem,
@@ -125,7 +125,7 @@ export const waitForGenerationsGone = async (
   stopMs: number,
   options: { signal?: AbortSignal; lock?: KernelLockMechanism } = {},
 ): Promise<void> => {
-  const lock = options.lock ?? hostKernelLock();
+  const lock = options.lock ?? resolveLayoutLocks(paths).mechanism;
   await pollUntil(
     ports.clock,
     async () => {
@@ -207,7 +207,7 @@ export const stopDaemon = async (
   paths: MomongaPaths,
   bounds?: DaemonBounds,
   onNotice: StopNotice = NO_NOTICE_CHANNEL,
-  lock: KernelLockMechanism = hostKernelLock(),
+  lock: KernelLockMechanism = resolveLayoutLocks(paths).mechanism,
   onInterrupting?: (work: InterruptedWork) => void,
 ): Promise<{ stopped: boolean }> => {
   const snapshot = await liveGenerationsUnderLock(ports, paths, lock, bounds?.stopMs ?? STOP_WAIT_WHEN_UNKNOWN_MS);
@@ -395,7 +395,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
   const { signal } = options;
   signal?.throwIfAborted();
   const readyMs = options.bounds?.readyMs ?? (await daemonReadyBoundMs());
-  const lock = options.lock ?? hostKernelLock();
+  const lock = options.lock ?? resolveLayoutLocks(paths).mechanism;
   const start: { own: OwnStart | undefined } = { own: undefined };
   let draining: number | undefined;
   let allocation: 'allowed' | 'withheld' = 'withheld';
@@ -520,7 +520,7 @@ export const ensureSessionDaemon = async (ports: DaemonPorts, paths: MomongaPath
   const newer = await newerVersionOf(ports, paths, daemonOptions);
   if (newer === undefined) return;
   await onNewer?.(newer);
-  const own = await resolveGenerationFor(paths, ports.version, { lock: options.lock ?? hostKernelLock() });
+  const own = await resolveGenerationFor(paths, ports.version, { lock: options.lock ?? resolveLayoutLocks(paths).mechanism });
   if (own === undefined) throw new DaemonStartError(reopenSessionMessage(newer), paths.logFiles.supervisor, notPointingAtLog);
 };
 

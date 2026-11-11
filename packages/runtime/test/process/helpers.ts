@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
-import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, hostKernelLock, momongaPaths, nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, momongaPaths, nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { JsonLogger, LogFields, MomongaPaths, Timing, RolePort, SessionScratch } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
@@ -11,7 +11,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, UNCONFIGURED_NETWORK, createFakeClock, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir, NEVER_CANCELLED, testKernelLock, testLocks } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -41,11 +41,6 @@ afterEach(async () => {
 });
 
 export const onCleanup = (cleanup: Cleanup): void => void cleanups.push(cleanup);
-
-export const closedAtCleanup = <Handle extends { close: () => Promise<unknown> }>(started: Promise<Handle>): Promise<Handle> => {
-  onCleanup(closeOnceStarted(started));
-  return started;
-};
 
 export type TempHome = { root: string; home: string; paths: MomongaPaths; project: string; dbPath: string };
 
@@ -91,7 +86,7 @@ export const chatTargetSettings = (apiKeyEnv: string): Record<string, unknown> =
 export type CountingCache = UserSettingsCache & { snapshots: number };
 
 export const makeCache = (home: string): CountingCache => {
-  const inner = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(home)) });
+  const inner = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(home), testKernelLock()) });
   const cache: CountingCache = {
     snapshots: 0,
     get: () => inner.get(),
@@ -114,7 +109,7 @@ export type StoreFixture = { store: RuntimeStore; notifier: RunNotifier; clock: 
 
 export const openStore = (temp: TempHome, clock: FakeClock = createFakeClock(START_MS)): StoreFixture => {
   const notifier = runtime.createRunNotifier();
-  const store = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: temp.dbPath,
     home: temp.home,
     clock,
@@ -271,9 +266,11 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const reporter = makeReporter();
   const pools = makeFakePoolFactory();
   const reapTiming = recordingReapTiming(fixture.clock, fixture.timers);
-  const composition = runtime.createSettingsComposition({ signal: new AbortController().signal, home: temp.home, platform: process.platform, cache, store: fixture.store });
+  const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: temp.home, platform: process.platform, cache, store: fixture.store });
   fs.mkdirSync(temp.paths.jobs, { recursive: true, mode: 0o700 });
   const toolRuntime = runtime.createToolRuntime({
+    kernelLock: testKernelLock(),
+    lockCapability: testLocks().capability,
     version: FIXTURE_RUNTIME_VERSION,
     network: UNCONFIGURED_NETWORK,
     paths: temp.paths,
@@ -380,7 +377,7 @@ export const runBashThroughPort = async (
 };
 
 export const makeAbandonedDirectory = (directory: string): string => {
-  const lock = hostKernelLock();
+  const lock = testKernelLock();
   const claimed = lock.claimSync?.(claimPathOf(lock, directory, 'sidecar'));
   if (claimed?.kind !== 'claimed') throw new Error(`the sidecar of ${directory} could not be claimed by the test`);
   fs.mkdirSync(directory, { recursive: true });

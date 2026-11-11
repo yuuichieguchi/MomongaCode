@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import { HOUR_MS, entriesNamed, launchRuntime, passServingTime, settledState, startStack } from './run-helpers.ts';
 
@@ -104,8 +104,7 @@ const expectLoggedOnly = async (launched: Awaited<ReturnType<typeof launchFake>>
 const sweepSource = async (launched: Awaited<ReturnType<typeof launchFake>>, error: Error): Promise<void> => {
   makeAbandonedDirectory(path.join(launched.stack.temp.paths.tmp.sessions, 'unknown-session'));
   control.sessionActivity = { error, frame: 'tmp-sweep' };
-  launched.timers.advance(HOUR_MS);
-  await waitFor(() => control.injected > 0, { description: 'the hourly session sweep to reach sessionActivity' });
+  await passServingTime(launched.timers, HOUR_MS, () => control.injected > 0, 'the hourly session sweep to reach sessionActivity');
   await afterMicrotasks();
 };
 
@@ -115,8 +114,7 @@ const poolCheckSource = async (launched: Awaited<ReturnType<typeof launchFake>>,
   await launched.createRun(session.id);
   await hold.waitForRequest();
   control.getRun = { error, frame: 'mcp-pool-cache' };
-  launched.timers.advance(POOL_REFERENCE_AUDIT_MS);
-  await waitFor(() => control.injected > 0, { description: 'the pool reference audit to reach getRun' });
+  await passServingTime(launched.timers, POOL_REFERENCE_AUDIT_MS, () => control.injected > 0, 'the pool reference audit to reach getRun');
   await afterMicrotasks();
 };
 
@@ -127,7 +125,7 @@ describe('error routing of composition-owned callbacks through report (fake time
     const launched = await launchFake();
     const error = fatalStoreError();
     control.purge = { error, frame: '' };
-    launched.timers.advance(HOUR_MS);
+    await passServingTime(launched.timers, HOUR_MS, () => control.injected > 0, 'the purge at the first serving tick after the hour');
     await afterMicrotasks();
     await expectLatched(launched, error);
   });
@@ -136,7 +134,7 @@ describe('error routing of composition-owned callbacks through report (fake time
     const launched = await launchFake();
     const error = new Error('purge failed');
     control.purge = { error, frame: '' };
-    launched.timers.advance(HOUR_MS);
+    await passServingTime(launched.timers, HOUR_MS, () => control.injected > 0, 'the purge at the first serving tick after the hour');
     await afterMicrotasks();
     await expectLoggedOnly(launched, error);
     await passServingTime(launched.timers, HOUR_MS, () => control.injected === 2, 'the purge at the first serving tick after the next hour');

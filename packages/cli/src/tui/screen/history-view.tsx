@@ -8,20 +8,12 @@ import type { Row } from './wrap.ts';
 
 const HANDED: readonly Row[] = [];
 
-const rowsFrom = (source: ViewSource, entryIndex: number, rowOffset: number): Row[] => {
-  const rows: Row[] = [];
-  for (let index = entryIndex; index < source.count(); index += 1) rows.push(...(index === entryIndex ? source.rowsOf(source.at(index)).slice(rowOffset) : source.rowsOf(source.at(index))));
-  return rows;
-};
-
 export type HistoryViewProps = { store: Pick<TranscriptStore, 'settledCount'>; source: ViewSource; feed: HistoryFeed };
 
 export function HistoryView({ store, source, feed }: HistoryViewProps) {
   const [chunks, setChunks] = useState<readonly (readonly Row[])[]>([]);
-  const [caughtUp, setCaughtUp] = useState(false);
   const settled = store.settledCount();
   const pending = feed.pending(settled);
-  if (!pending && !caughtUp) setCaughtUp(true);
   const handNext = useEffectEvent((): void => {
     const chunk = feed.next(source, store.settledCount());
     setChunks((handed) => [...handed.map(() => HANDED), chunk]);
@@ -31,8 +23,7 @@ export function HistoryView({ store, source, feed }: HistoryViewProps) {
     const turn = setImmediate(handNext);
     return () => clearImmediate(turn);
   }, [pending, settled, chunks.length]);
-  const cursor = feed.cursor();
-  const live = caughtUp ? rowsFrom(source, cursor.entryIndex, cursor.rowOffset) : rowsFrom(source, settled, 0);
+  const live = feed.live(source, settled);
   return (
     <>
       <Static items={[...chunks]}>

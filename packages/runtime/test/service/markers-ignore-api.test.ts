@@ -9,7 +9,7 @@ const NAME = 'a'.repeat(64);
 describe('T17 (d) POST /v1/markers/:name/ignore (decision 45 A)', () => {
   it('sets the ignored byte of an unsettled marker in place', async () => {
     const env = await startService({ fakeTimers: true });
-    const dir = momongaLayout(env.layout.home).markers.tools;
+    const dir = momongaLayout(env.layout.home, process.platform, process.env).markers.tools;
     fs.mkdirSync(dir, { recursive: true });
     const marker = path.join(dir, NAME);
     fs.writeFileSync(marker, 'r10000\n');

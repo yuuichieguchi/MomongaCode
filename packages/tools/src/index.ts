@@ -82,6 +82,8 @@ export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
 export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
 export { gitEnvironment, gitProxyEnvironment, readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
 export type { GitEnvironmentRequest } from './read-only-call.ts';
+export { REPOSITORY_KEY_RULES, repositoryKeyRuleOf } from './git-config-table.ts';
+export type { RepositoryKeyRule } from './git-config-table.ts';
 export { directoryEntriesOn, fileCandidatesOn } from './file-listing.ts';
 export type { FileListingOptions, FileListingPorts } from './file-listing.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
@@ -154,7 +156,7 @@ export { OPERATION_CRASH_POINTS, OPERATION_GUARDS, OperationSpecError, describeC
 export type { Clause, ClauseItem, Guard, OperationSpec } from './operations/spec.ts';
 export type { GateCall, GateFacts, OperationEffect, ProbeContext } from './types.ts';
 export { openGitCredentialChannel } from './operations/git-credential.ts';
-export type { GitCredentialChannel, GitCredentialChannelOptions, GitHostCredential } from './operations/git-credential.ts';
+export type { GitCredentialChannel, GitCredentialChannelOptions, GitOriginCredential } from './operations/git-credential.ts';
 export { createOperationTools } from './operations/runner.ts';
 export type { OperationDeps, OperationSettings } from './operations/runner.ts';
 export { createSandboxedArgvRunner, networkScopeOfDestinations } from './operations/argv.ts';

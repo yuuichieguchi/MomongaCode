@@ -43,5 +43,5 @@ export const watchedRun = (home: string, frames: readonly RunEventFrame[], ended
     childRuns: async () => [],
   } as unknown as RuntimeClient;
   const raw = { version: '1.2.3', clock: virtualClock(), random: () => 0.5, stdout: { write: (text: string) => void stdout.push(text) }, stderr: { write: (text: string) => void stderr.push(text) } } as unknown as CliPorts;
-  return { paths: momongaPaths(home), client, ports: terminalPorts(raw), stdout, stderr, cancelled };
+  return { paths: momongaPaths(home, process.platform, process.env), client, ports: terminalPorts(raw), stdout, stderr, cancelled };
 };

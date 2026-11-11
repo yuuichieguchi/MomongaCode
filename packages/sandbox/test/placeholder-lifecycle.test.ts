@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createBubblewrapSandbox, createPlaceholderJournal, nodeFilesystemPort, recoverPlaceholders } from '@momonga/sandbox';
 import type { PlaceholderJournal, SandboxPolicy } from '@momonga/sandbox';
@@ -63,7 +63,7 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
   });
 
   const sandboxWith = (journal: PlaceholderJournal) =>
-    createBubblewrapSandbox({ bwrapPath: path.join(base, 'bwrap'), tmpRoot, killGraceMs: 300, journal, holders: () => held });
+    createBubblewrapSandbox({ lock: testKernelLock(), bwrapPath: path.join(base, 'bwrap'), tmpRoot, killGraceMs: 300, journal, holders: () => held });
 
   const start = (journal: PlaceholderJournal, script: string) =>
     sandboxWith(journal).spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal);
@@ -217,16 +217,17 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       const journal = real();
       let failure: Error | undefined;
       const sandbox = createBubblewrapSandbox({
+        lock: testKernelLock(),
         bwrapPath: path.join(base, 'bwrap'),
         tmpRoot,
         killGraceMs: 300,
         journal,
         holders: () => held,
         filesystem: {
-          ...nodeFilesystemPort,
+          ...nodeFilesystemPort(testKernelLock()),
           removePlaceholder: (target, identity, form) => {
             if (failure !== undefined) throw failure;
-            nodeFilesystemPort.removePlaceholder(target, identity, form);
+            nodeFilesystemPort(testKernelLock()).removePlaceholder(target, identity, form);
           },
         },
       });
@@ -250,16 +251,17 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       const journal = real();
       let failing = false;
       const sandbox = createBubblewrapSandbox({
+        lock: testKernelLock(),
         bwrapPath: path.join(base, 'bwrap'),
         tmpRoot,
         killGraceMs: 300,
         journal,
         holders: () => held,
         filesystem: {
-          ...nodeFilesystemPort,
+          ...nodeFilesystemPort(testKernelLock()),
           removePlaceholder: (target, identity, form) => {
             if (failing) throw new Error('the placeholder could not be removed');
-            nodeFilesystemPort.removePlaceholder(target, identity, form);
+            nodeFilesystemPort(testKernelLock()).removePlaceholder(target, identity, form);
           },
         },
       });
@@ -285,16 +287,17 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       const failure = new Error('the placeholder could not be removed');
       let failing = false;
       const sandbox = createBubblewrapSandbox({
+        lock: testKernelLock(),
         bwrapPath: path.join(base, 'bwrap'),
         tmpRoot,
         killGraceMs: 300,
         journal,
         holders: () => held,
         filesystem: {
-          ...nodeFilesystemPort,
+          ...nodeFilesystemPort(testKernelLock()),
           removePlaceholder: (target, identity, form) => {
             if (failing) throw failure;
-            nodeFilesystemPort.removePlaceholder(target, identity, form);
+            nodeFilesystemPort(testKernelLock()).removePlaceholder(target, identity, form);
           },
         },
       });

@@ -149,10 +149,10 @@ describe('session credential stripping', () => {
 
     expect(created.status).toBe(201);
     expect(created.json.strippedEnvKeys).toEqual(
-      ['AWS_SESSION_TOKEN', 'DATABASE_URL', 'DB_PASS', DECLARED_CREDENTIAL, 'GPG_PASSPHRASE', 'MYSQL_PWD', 'PGPASSWORD', 'SSH_AUTH_SOCK', 'STRIPE_SECRET_KEY', 'TERM_SESSION_ID', 'XDG_SESSION_TYPE'].sort(),
+      ['AWS_SESSION_TOKEN', 'DATABASE_URL', 'DB_PASS', DECLARED_CREDENTIAL, 'GPG_PASSPHRASE', 'MYSQL_PWD', 'PGPASSWORD', 'REPO_URL', 'SSH_AUTH_SOCK', 'STRIPE_SECRET_KEY', 'TERM_SESSION_ID', 'XDG_SESSION_TYPE'].sort(),
     );
     expect([...created.json.session.envKeys].sort()).toEqual(
-      ['GIT_AUTHOR_NAME', 'HOME', 'LANG', 'OLDPWD', 'PATH', 'PWD', 'REPO_URL', 'TOOL_SETTING'].sort(),
+      ['GIT_AUTHOR_NAME', 'HOME', 'LANG', 'OLDPWD', 'PATH', 'PWD', 'TOOL_SETTING'].sort(),
     );
     expect(created.text).not.toContain(SECRET);
     expect(created.text).not.toContain('/home/me');
@@ -170,7 +170,6 @@ describe('session credential stripping', () => {
       PATH: '/usr/bin:/bin',
       HOME: '/home/me',
       LANG: 'C',
-      REPO_URL: 'https://example.test/repo.git',
     });
   });
 

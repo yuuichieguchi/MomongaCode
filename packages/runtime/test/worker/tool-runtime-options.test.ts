@@ -3,7 +3,7 @@ import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { ConfigError } from '@momonga/runtime';
 import type { ToolEnv } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
-import { within } from './deferred.ts';
+
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { seedStartedCalls } from './cancel-fixture.ts';
@@ -99,7 +99,7 @@ describe('worker tool runtime options', () => {
       },
     });
 
-    expect(await within(cancelled.runOnce(recoveryWorker), 10_000, 'the cancel recovery')).toBe('yielded');
+    expect(await env.settled(cancelled.runOnce(recoveryWorker), 'the cancel recovery')).toBe('yielded');
 
     expect(recoverySeen.map((options) => options?.env)).toEqual([recoveryStripped]);
     expect(cancelled.batches).toHaveLength(1);

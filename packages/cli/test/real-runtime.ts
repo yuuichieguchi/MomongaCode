@@ -1,5 +1,6 @@
 import { ensureMomongaDirs, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { testKernelLock } from '@momonga/testkit';
 import path from 'node:path';
 import { startService } from '../../runtime/test/service/helpers.ts';
 import { createRuntimeClient } from '../src/client/runtime-client.ts';
@@ -22,13 +23,10 @@ export type RealRuntime = {
 export const startRealRuntime = async (overrides: Parameters<typeof startService>[0] = {}): Promise<RealRuntime> => {
   const service = await startService(overrides);
   const { layout } = service;
-  const paths = momongaPaths(layout.home);
+  const paths = momongaPaths(layout.home, process.platform, {});
   await ensureMomongaDirs(paths);
-  const published = await publishCurrentGeneration(paths, {
-    generation: 1,
-    version: REAL_RUNTIME_VERSION,
-    sockets: { runtime: layout.socketPath, gateway: path.join(layout.runDir, 'g.sock'), supervisor: path.join(layout.runDir, 's.sock') },
-  });
+  const sockets = { runtime: layout.socketPath, gateway: path.join(layout.runDir, 'g.sock'), supervisor: path.join(layout.runDir, 's.sock') };
+  const published = await publishCurrentGeneration(paths, { generation: 1, version: REAL_RUNTIME_VERSION, sockets }, { lock: testKernelLock() });
   if (published !== 'published') throw new Error(`the generation of the test runtime was not published: ${published}`);
   const client = createRuntimeClient({ resolveSocket: async () => layout.socketPath, clock: { now: () => service.clock.now(), sleep: async () => undefined } });
   const stdout: string[] = [];

@@ -1,6 +1,6 @@
 import { FIRST_GENERATION, momongaPaths, systemClock } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { prepareGenerationForTest, registerCleanup, withTempDir } from '@momonga/testkit';
+import { prepareGenerationForTest, registerOwned, withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import type { SupervisorOptions, SupervisorProcess } from '../../src/start-supervisor.ts';
@@ -33,7 +33,18 @@ export const startSupervisorHarness = async (
   const port = createFakeSpawnPort();
   const log = createLogBuffer(systemClock);
   const reapCalls: string[] = [];
-  const supervisor = await startSupervisor({
+  const abortAtCleanup = async (process: SupervisorProcess): Promise<void> => {
+    const exited = new Set<FakeChild>();
+    port.onSignal = (child, signal) => {
+      if (exited.has(child)) return;
+      exited.add(child);
+      queueMicrotask(() => child.exit(null, signal === 'group' ? 'SIGKILL' : signal));
+    };
+    await process.abort();
+  };
+  const supervisor = await registerOwned(context, () => startSupervisor({
+    lockMechanism: testKernelLock(),
+    inspector: testProcessInspector(),
     home,
     version: '1.2.3',
     generation: FIRST_GENERATION,
@@ -57,15 +68,6 @@ export const startSupervisorHarness = async (
       ...options.markerPorts,
     },
     ...options.overrides,
-  });
-  registerCleanup(context, async () => {
-    const exited = new Set<FakeChild>();
-    port.onSignal = (child, signal) => {
-      if (exited.has(child)) return;
-      exited.add(child);
-      queueMicrotask(() => child.exit(null, signal === 'group' ? 'SIGKILL' : signal));
-    };
-    await supervisor.abort();
-  });
+  }), abortAtCleanup);
   return { home, paths, port, log, reapCalls, supervisor };
 };

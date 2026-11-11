@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createOwnedDirectorySync, fileRuleBlocks, hostPaths, mapAsync, procGroupMembers, settledOrAborted, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
-import type { Awaitable, FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectorySync, PlaceholderForm } from '@momonga/foundation';
+import type { Awaitable, FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectorySync, PlaceholderForm, KernelLockMechanism } from '@momonga/foundation';
 import { SANDBOX_STOP_BOUND_MS, launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
@@ -41,9 +41,9 @@ const inspected = <T>(absent: T, read: () => T): T | Unreachable => {
   }
 };
 
-export const nodeFilesystemPort: FilesystemPort = {
+export const nodeFilesystemPort = (lock: KernelLockMechanism): FilesystemPort => ({
   requireExecutable: (file) => fs.accessSync(file, fs.constants.X_OK),
-  makeScratchDirectory: (parent, prefix) => createOwnedDirectorySync({ parent, prefix }),
+  makeScratchDirectory: (parent, prefix) => createOwnedDirectorySync({ parent, prefix, lock }),
   kindOf: (target) =>
     inspected<EntryKind | undefined>(undefined, () => {
       const stat = fs.statSync(target, { throwIfNoEntry: false });
@@ -75,7 +75,7 @@ export const nodeFilesystemPort: FilesystemPort = {
         kind: entry.isSymbolicLink() ? 'other' : entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
       })),
     ),
-};
+});
 
 export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd: string; heldPlaceholders?: ReadonlySet<string> };
 
@@ -130,7 +130,7 @@ const blockedPaths = (set: FileRuleSet, entry: FileRuleEntry, port: Inspector): 
   return unique(found);
 };
 
-export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions, signal: AbortSignal, port: FilesystemPort = nodeFilesystemPort): Promise<BubblewrapPlan> {
+export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions, signal: AbortSignal, port: FilesystemPort): Promise<BubblewrapPlan> {
   const paths = hostPaths(signal);
   const realpath = (target: string): Promise<string> => settledOrAborted((async () => port.realpath(target))(), signal);
   await validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir }, paths);
@@ -370,6 +370,7 @@ export const probeBubblewrap = async (bwrapPath: string, shell: string, { signal
 export interface BubblewrapSandboxOptions {
   bwrapPath?: string;
   tmpRoot: string;
+  lock: KernelLockMechanism;
   killGraceMs: number;
   filesystem?: FilesystemPort;
   journal: PlaceholderJournal;
@@ -380,7 +381,7 @@ export interface BubblewrapSandboxOptions {
 
 export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sandbox {
   const bwrapPath = options.bwrapPath ?? DEFAULT_BWRAP_PATH;
-  const filesystem = options.filesystem ?? nodeFilesystemPort;
+  const filesystem = options.filesystem ?? nodeFilesystemPort(options.lock);
   const groupMembers = options.groupMembers ?? procGroupMembers;
   const signalSandboxTerm = async (pgid: number, stop: AbortSignal): Promise<void> => {
     if (signalGroupExceptLeader(pgid, 'SIGTERM', groupMembers) === 0) await signalGroup(pgid, 'SIGTERM', undefined, stop);

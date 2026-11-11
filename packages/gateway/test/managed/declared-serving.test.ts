@@ -8,7 +8,7 @@ import type { KnownProbeKey } from '@momonga/config';
 import { managedCurrencyOf, saveProbeRecord } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, createFakeManagedServer, fakeExec, firstRefusedSocketPathBytes, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, createFakeManagedServer, fakeExec, firstRefusedSocketPathBytes, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
@@ -119,7 +119,7 @@ const served = async (kind: Kind, target: Record<string, unknown> = {}) => {
   const description = await descriptionIn(home, kind.server);
   const saveRecord = async (): Promise<KnownProbeKey> => {
     const key = keyOf(description, binary, kind.model);
-    await saveProbeRecord(probeDir(home), key, recordOf(kind.model), managedCurrencyOf(description, { userDialects: {} }));
+    await saveProbeRecord(probeDir(home), key, recordOf(kind.model), managedCurrencyOf(description, { userDialects: {} }), testKernelLock());
     return key;
   };
   return { dir, binary, dumpFile, home, description, saveRecord };
@@ -224,7 +224,7 @@ describe.skipIf(process.platform === 'win32')('a declared server socket path too
       models: modelsOf({ [name]: { adapter: 'managed', server: 'loom', model: 'fake-1', ...DECLARED_BOUNDS, toolCalling: 'auto' } }, { servers: { loom: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
     });
     const description = await descriptionIn(home, 'loom');
-    await saveProbeRecord(probeDir(home), keyOf(description, fake.binaryPath, 'fake-1'), recordOf('fake-1'), managedCurrencyOf(description, { userDialects: {} }));
+    await saveProbeRecord(probeDir(home), keyOf(description, fake.binaryPath, 'fake-1'), recordOf('fake-1'), managedCurrencyOf(description, { userDialects: {} }), testKernelLock());
     const handle = await launch(home);
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask(`${name}/fake-1`)));
     expect(answered.status).toBe(412);
@@ -243,9 +243,9 @@ const declaredFake = async () => {
   registerCleanup(() => killGroupsForCleanup(readDump(dumpFile).map((record) => record.pid)));
   const home = makeHome();
   writeSettings(home, {
-    models: modelsOf({ workbench: { adapter: 'managed', server: 'bench', model: 'fake-1', toolCalling: 'auto' } }, { servers: { bench: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
+    models: modelsOf({ workbench: { adapter: 'managed', server: 'anvil', model: 'fake-1', toolCalling: 'auto' } }, { servers: { anvil: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
   });
-  return { binary: fake.binaryPath, dumpFile, home, description: await descriptionIn(home, 'bench') };
+  return { binary: fake.binaryPath, dumpFile, home, description: await descriptionIn(home, 'anvil') };
 };
 
 describe('the probe of a declared server records under the key of 19.4 on the instance places of 18.2.1 (R-S19-20)', () => {
@@ -254,7 +254,7 @@ describe('the probe of a declared server records under the key of 19.4 on the in
     const handle = await launch(home);
     expect((await postJson(clientFor(handle.socketPath), '/v1/responses', ask())).status).toBe(503);
     const key = keyOf(description, binary, 'fake-1');
-    expect(JSON.parse(key.canonical)).toEqual({ subject: 'bench', model: 'fake-1', binarySha256: sha256OfFile(binary), hostOsBuild: FAKE_OS_BUILD });
+    expect(JSON.parse(key.canonical)).toEqual({ subject: 'anvil', model: 'fake-1', binarySha256: sha256OfFile(binary), hostOsBuild: FAKE_OS_BUILD });
     await until(() => recordFiles(home).includes(`${key.digest}.json`), 'the probe record');
     const probeRuns = serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1]);
     expect(probeRuns).toContain(path.join(targetsDir(home), '_probe-workbench.sock'));
@@ -267,7 +267,7 @@ describe('the running instance reads its record under the start key captured whe
   it('keeps answering from the start key record after the binary bytes change, and starts no probe of the new key', async () => {
     const { binary, home, description } = await declaredFake();
     const startKey = keyOf(description, binary, 'fake-1');
-    await saveProbeRecord(probeDir(home), startKey, recordOf('fake-1'), managedCurrencyOf(description, { userDialects: {} }));
+    await saveProbeRecord(probeDir(home), startKey, recordOf('fake-1'), managedCurrencyOf(description, { userDialects: {} }), testKernelLock());
     const handle = await launch(home);
     const client = clientFor(handle.socketPath);
     expect((await readJson(await postJson(client, '/v1/responses', ask()))).status).toBe(200);
@@ -284,7 +284,7 @@ describe('the running instance reads its record under the start key captured whe
     fs.appendFileSync(binary, '\n');
     const keyAtChildStart = keyOf(description, binary, 'fake-1');
     expect(keyAtChildStart.digest).not.toBe(keyAtGatewayStart.digest);
-    await saveProbeRecord(probeDir(home), keyAtChildStart, recordOf('fake-1'), managedCurrencyOf(description, { userDialects: {} }));
+    await saveProbeRecord(probeDir(home), keyAtChildStart, recordOf('fake-1'), managedCurrencyOf(description, { userDialects: {} }), testKernelLock());
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()));
     expect(answered.status).toBe(200);
     expect(serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1])).toEqual([path.join(targetsDir(home), 'workbench-1.sock')]);
