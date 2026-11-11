@@ -50,7 +50,7 @@ export const nodeEvalFiles: EvalFiles = {
   listFiles: async (directory) => (await fs.readdir(directory)).sort().map((name) => path.join(directory, name)),
   exists: async (file) => {
     try {
-      await fs.lstat(file);
+      await nodeFileSystem.lstat(file);
       return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
