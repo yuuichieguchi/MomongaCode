@@ -35,6 +35,17 @@ export const ensureJobOutputDirectory = async (jobsDirectory: string): Promise<v
   }
 };
 
+export const removeLeftoverJobOutputFile = async (filePath: string): Promise<void> => {
+  let entry: fs.Stats;
+  try {
+    entry = await fs.promises.lstat(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  if (entry.isFile()) await fs.promises.rm(filePath, { force: true });
+};
+
 export const openJobOutputFile = async ({ path: filePath, maxBytes, onFailure }: JobOutputFileOptions): Promise<JobOutputFile> => {
   const { O_WRONLY, O_CREAT, O_EXCL, O_APPEND, O_NOFOLLOW } = fs.constants;
   const handle = await fs.promises.open(filePath, O_WRONLY | O_CREAT | O_EXCL | O_APPEND | O_NOFOLLOW, JOB_OUTPUT_FILE_MODE);

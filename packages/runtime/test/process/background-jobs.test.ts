@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createUninspectableRegistry } from '@momonga/foundation';
+import { canonicalJson, createUninspectableRegistry, sha256Hex } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
@@ -399,6 +399,70 @@ describe('background jobs', () => {
     expect(events).toMatchObject([{ jobId: 'bash_orphan000000', status: 'unknown' }]);
     await t.jobs.reconcileOrphans();
     expect(t.reaped).toHaveLength(1);
+  });
+});
+
+describe('a job that is still starting is owned by its starter', () => {
+  it('a reconcile that runs between the row insert and the end of the start leaves the job alone, and the start completes', async () => {
+    const nodeMarkerFiles = createNodeJobMarkerFiles();
+    const hook: { duringStart: () => Promise<void> } = { duringStart: async () => undefined };
+    const t = setup(
+      {},
+      {
+        markerFiles: {
+          create: async <T>(marker: string, use: Parameters<typeof nodeMarkerFiles.create<T>>[1]): Promise<T> => {
+            await hook.duringStart();
+            return nodeMarkerFiles.create(marker, use);
+          },
+          remove: nodeMarkerFiles.remove,
+        },
+      },
+    );
+    const seenDuringStart: (string | undefined)[] = [];
+    hook.duringStart = async () => {
+      seenDuringStart.push(t.store.jobs.listRunning()[0]?.status);
+      await t.jobs.reconcileOrphans();
+    };
+
+    const { jobId } = await t.start('call-1');
+
+    expect(seenDuringStart).toEqual(['running']);
+    expect(t.reaped).toEqual([]);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running', pgid: 4000 });
+    expect(t.jobs.liveCount()).toBe(1);
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited', exitCode: 0 });
+  });
+});
+
+describe('the output file of a job follows its row', () => {
+  it('a file a crash left with no row does not stop the same call from starting after a restart, and the job does not show the old bytes', async () => {
+    const t = setup();
+    const jobId = `bash_${sha256Hex(canonicalJson(['call-1', 'background'])).slice(0, 12)}`;
+    const leftover = path.join(t.root, 'jobs', `${jobId}.out`);
+    fs.writeFileSync(leftover, 'bytes of the start that crashed\n', { mode: 0o600 });
+    expect(t.store.jobs.get(jobId)).toBeUndefined();
+
+    const started = await t.start('call-1');
+
+    expect(started.jobId).toBe(jobId);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running', outputPath: leftover });
+    expect(fs.readFileSync(leftover, 'utf8')).toBe('');
+    await t.jobs.stopAll();
+  });
+
+  it('a file that a row names is not removed: the start is refused and the file keeps its bytes', async () => {
+    const t = setup();
+    const jobId = `bash_${sha256Hex(canonicalJson(['call-1', 'background'])).slice(0, 12)}`;
+    const named = path.join(t.root, 'jobs', `${jobId}.out`);
+    fs.writeFileSync(named, 'bytes of another job\n', { mode: 0o600 });
+    t.store.jobs.start({ id: jobId, idemKey: 'n'.repeat(64), sessionId: t.run.sessionId, runId: t.run.id, callId: 'other', command: 'sleep 99', ownerGeneration: 1, outputPath: named });
+
+    await expect(t.start('call-1')).rejects.toThrow('could not start the background job: its output file could not be created (EEXIST)');
+
+    expect(fs.readFileSync(named, 'utf8')).toBe('bytes of another job\n');
+    expect(t.spawned).toEqual([]);
   });
 });
 

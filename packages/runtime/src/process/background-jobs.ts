@@ -9,7 +9,7 @@ import { toJobView as viewOf } from '../service/views.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
 import { JOB_ID_HEX_CHARS, JOB_IDEMPOTENCY_TTL_MS, JOB_KILL_OWNER_WAKE_MS, JOB_OUTPUT_FILE_MAX_BYTES, JOB_OUTPUT_WINDOW_BYTES, JOB_RECONCILE_BATCH_JOBS, JOB_STREAM_DRAIN_MS, MAX_RUNNING_JOBS_PER_SESSION } from './constants.ts';
-import { jobOutputFileErrorCode, jobOutputPathOf, openJobOutputFile, readJobFileWindow, removeJobOutputFile } from './job-output-file.ts';
+import { jobOutputFileErrorCode, jobOutputPathOf, openJobOutputFile, readJobFileWindow, removeJobOutputFile, removeLeftoverJobOutputFile } from './job-output-file.ts';
 import type { JobOutputFile } from './job-output-file.ts';
 import { createJobOutput } from './job-output.ts';
 import type { JobMarkerFiles } from './job-marker-files.ts';
@@ -277,6 +277,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     let fileFailure: ((code: string) => void) | undefined;
     let file: JobOutputFile;
     try {
+      if (store.jobs.get(jobId) === undefined) await removeLeftoverJobOutputFile(outputPath);
       file = await openJobOutputFile({ path: outputPath, maxBytes: JOB_OUTPUT_FILE_MAX_BYTES, onFailure: (code) => fileFailure?.(code) });
     } catch (error) {
       throw new ToolExecutionError(`could not start the background job: its output file could not be created (${jobOutputFileErrorCode(error)})`);
@@ -306,12 +307,12 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       await discardFile();
       throw error;
     }
+    ownedKeys.add(idemKey);
+    owners.register(idemKey, { alive: () => ownedKeys.has(idemKey) });
     const marker = path.join(markerDir, idemKey);
     const controller = new AbortController();
     let process: SandboxedProcess;
     let created = false;
-    ownedKeys.add(idemKey);
-    owners.register(idemKey, { alive: () => ownedKeys.has(idemKey) });
     try {
       process = await markerFiles.create(marker, (markerFd, mode) => {
         created = true;
@@ -417,7 +418,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       const batch = batchOptions === undefined ? ordered : ordered.slice(0, batchOptions.batch);
       for (const job of batch) {
         reconcileCursor = job.id;
-        if (live.has(job.id)) continue;
+        if (ownedKeys.has(job.idemKey)) continue;
         if (await ownerLives(job)) continue;
         await reconcileOrphan(job);
       }
