@@ -103,11 +103,16 @@ export const probeEndpointText = (name: string, endpoint: string, recordPath: st
     `  structured output: ${report.constrained.accepted ? 'json_schema' : 'none'}, stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report, declaredOutputBound)}`,
     `  parallel tool calls: ${parallel === undefined ? 'not measured' : `${parallel.accepted && parallel.multiCallRate >= 0.9} (${parallel.multiCallRate} of replies carried several calls)`}`,
     `  reasoning: ${reasoning === undefined ? 'not measured' : reasoning.control === 'reasoning_effort' ? `reasoning_effort, lowest ${reasoning.lowest}` : `cannot be controlled${reasoning.headroomTokens === undefined ? '' : `, leaves room for ${reasoning.headroomTokens} tokens`}`}`,
-    `  max concurrency: ${report.maxConcurrency}`,
+    `  max concurrency: ${concurrencyText(report.maxConcurrency)}`,
     `  schema dialect: ${dialectText(report.schemaDialect)}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
 };
+
+const concurrencyText = (measured: EndpointProbe['report']['maxConcurrency']): string =>
+  measured === undefined
+    ? 'not measured (the server refused no request; maxConcurrency in the settings declares it, one request at a time otherwise)'
+    : `${measured.value} (the server refused more at once)`;
 
 type OllamaProbe = Awaited<ReturnType<typeof import('@momonga/gateway').probeOllamaTarget>>;
 
@@ -130,7 +135,7 @@ export const probeFmText = (target: string, recordPath: string, report: Endpoint
   `${escapedLines([
     `probed ${target}: model ${report.modelId}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
     `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
-    `  stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report, declaredOutputBound)}, max concurrency: ${report.maxConcurrency}`,
+    `  stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report, declaredOutputBound)}, max concurrency: ${concurrencyText(report.maxConcurrency)}`,
     `  schema dialect: ${dialectText(report.schemaDialect)}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
