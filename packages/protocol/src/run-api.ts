@@ -748,6 +748,17 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     },
     required: ['summary', 'replacedThroughSeq'],
   },
+  'context.inherited_compacted': {
+    properties: {
+      fromRunId: string,
+      summary: string,
+      replacedThroughSeq: nonNegativeInteger,
+      tokensBefore: nonNegativeInteger,
+      tokensAfter: nonNegativeInteger,
+      tokensAfterEstimated: { type: 'boolean', const: true },
+    },
+    required: ['fromRunId', 'summary', 'replacedThroughSeq'],
+  },
   'context.governing_loaded': {
     properties: {
       active: { type: 'array', items: closed({ id: string, textSha256: string }, ['id', 'textSha256']) },
@@ -1818,6 +1829,7 @@ type ReducedEventType =
   | 'run.started'
   | 'context.compacted'
   | 'context.compaction_rejected'
+  | 'context.inherited_compacted'
   | 'context.inherited'
   | 'instructions.loaded'
   | 'skill.activated';
@@ -1829,6 +1841,7 @@ type PublicPayload =
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number; tokensBefore?: number; tokensAfter?: number; tokensAfterEstimated?: true }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
+  | { type: 'context.inherited_compacted'; fromRunId: string; summary: string; replacedThroughSeq: number; tokensBefore?: number; tokensAfter?: number; tokensAfterEstimated?: true }
   | {
       type: 'context.inherited';
       fromRunId: string;
@@ -1939,6 +1952,17 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
       };
     case 'context.compaction_rejected':
       return { ...envelope, type: event.type, ...(event.attempt === undefined ? {} : { attempt: event.attempt }) };
+    case 'context.inherited_compacted':
+      return {
+        ...envelope,
+        type: event.type,
+        fromRunId: event.fromRunId,
+        summary: event.summary,
+        replacedThroughSeq: event.replacedThroughSeq,
+        ...(event.tokensBefore === undefined ? {} : { tokensBefore: event.tokensBefore }),
+        ...(event.tokensAfter === undefined ? {} : { tokensAfter: event.tokensAfter }),
+        ...(event.tokensAfterEstimated === undefined ? {} : { tokensAfterEstimated: event.tokensAfterEstimated }),
+      };
     case 'context.inherited':
       return {
         ...envelope,
