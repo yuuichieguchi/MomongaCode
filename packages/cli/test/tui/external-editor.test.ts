@@ -38,19 +38,19 @@ const hostOf = (env: ExternalEditorHost['env'], edit: (text: string) => string =
 describe('the external editor', () => {
   it('opens $VISUAL on a private file holding the draft, between leaving and re-entering the screen, and reads the file back', async () => {
     const { host, steps } = hostOf({ VISUAL: 'code -w', EDITOR: 'vi' }, (text) => `${text} and more\n`);
-    expect(await createExternalEditor(host).edit('the draft')).toEqual({ kind: 'edited', text: 'the draft and more' });
+    expect(await createExternalEditor(host).edit('the draft', 'draft')).toEqual({ kind: 'edited', text: 'the draft and more' });
     expect(steps).toEqual(['write /tmp/draft-1/draft.md', 'leave the screen', 'launch code -w /tmp/draft-1/draft.md', 'return to the screen', 'read /tmp/draft-1/draft.md', 'remove /tmp/draft-1']);
   });
 
   it('uses $EDITOR when $VISUAL is not set', async () => {
     const { host, steps } = hostOf({ EDITOR: 'vi' });
-    await createExternalEditor(host).edit('x');
+    await createExternalEditor(host).edit('x', 'draft');
     expect(steps).toContain('launch vi /tmp/draft-1/draft.md');
   });
 
   it('starts nothing when neither variable is set', async () => {
     const { host, steps } = hostOf({ VISUAL: ' ' });
-    expect(await createExternalEditor(host).edit('x')).toEqual({ kind: 'unset' });
+    expect(await createExternalEditor(host).edit('x', 'draft')).toEqual({ kind: 'unset' });
     expect(steps).toEqual([]);
     expect(editorUnsetHint(DEFAULT_KEY_TABLE)).toBe('Set $EDITOR to use ctrl+g.');
   });
@@ -60,7 +60,7 @@ describe('the external editor', () => {
     host.launch = async () => {
       throw new Error('spawn missing ENOENT');
     };
-    await expect(createExternalEditor(host).edit('x')).rejects.toThrow('spawn missing ENOENT');
+    await expect(createExternalEditor(host).edit('x', 'draft')).rejects.toThrow('spawn missing ENOENT');
     expect(steps).toEqual(['write /tmp/draft-1/draft.md', 'leave the screen', 'return to the screen', 'remove /tmp/draft-1']);
   });
 });

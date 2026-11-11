@@ -5,7 +5,7 @@ import { emptyEditor } from '../../src/tui/editor.ts';
 import type { EditorState } from '../../src/tui/editor.ts';
 import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import { TAB_COLUMNS } from '../../src/tui/screen/constants.ts';
-import { InputBox, PanelInputBox, inputOffsetAt, layoutInput } from '../../src/tui/screen/input-box.tsx';
+import { EditorView, InputBox, inputOffsetAt, layoutInput } from '../../src/tui/screen/input-box.tsx';
 import { ElicitationFields } from '../../src/tui/screen/prompt-panel.tsx';
 import { displayWidth, inertText } from '../../src/tui/screen/wrap.ts';
 import { untilFrame } from '../ink-helpers.ts';
@@ -78,7 +78,7 @@ describe('the draft in the input box', () => {
 
 describe('the value in a prompt panel', () => {
   it('is drawn with no control character, with the caret on its character', () => {
-    const { lastFrame, unmount } = render(<PanelInputBox editor={editorWith(`${HOSTILE}\nsecond`, 1)} />);
+    const { lastFrame, unmount } = render(<EditorView editor={editorWith(`${HOSTILE}\nsecond`, 1)} columns={200} rows={undefined} hidden={false} framed />);
     const drawn = drawnOf(lastFrame());
     expect(drawn).toContain(`> ${SHOWN}`);
     expect(drawn).toContain('  second');
@@ -87,7 +87,7 @@ describe('the value in a prompt panel', () => {
   });
 
   it('keeps a NUL and a SOH of the value as visible text beside the caret', () => {
-    const { lastFrame, unmount } = render(<PanelInputBox editor={editorWith('a\u0000b\u0001c', 1)} />);
+    const { lastFrame, unmount } = render(<EditorView editor={editorWith('a\u0000b\u0001c', 1)} columns={200} rows={undefined} hidden={false} framed />);
     expect(drawnOf(lastFrame())).toContain('> a\\u0000b\\u0001c');
     unmount();
   });
@@ -96,7 +96,7 @@ describe('the value in a prompt panel', () => {
 describe('the field panel of an MCP server', () => {
   it('expands the tabs of the texts the server sent and shows their control characters as text', () => {
     const flow = startFlow([{ key: 'k', mode: 'form', message: `fill\t${OSC_52}in`, requestedSchema: { type: 'object', properties: { name: { type: 'string', title: `Na\tme`, description: `the\t${UNKNOWN_CSI}name` } }, required: ['name'] } }], 'fx');
-    const { lastFrame, unmount } = render(<ElicitationFields elicitation={{ inputId: 'i1', callId: 'c1', server: 'fx', flow, submitted: false }} title={'ti\ttle'} editor={editorWith('')} waiting={0} settling={false} keys={DEFAULT_KEY_TABLE} />);
+    const { lastFrame, unmount } = render(<ElicitationFields elicitation={{ inputId: 'i1', callId: 'c1', server: 'fx', flow, submitted: false }} title={'ti\ttle'} editor={editorWith('')} columns={80} waiting={0} settling={false} keys={DEFAULT_KEY_TABLE} />);
     const drawn = drawnOf(lastFrame());
     expect(drawn).toContain(`fill${' '.repeat(TAB_COLUMNS)}\\u001b]52;c;AA==\\u0007in`);
     expect(drawn).toContain(`Na${' '.repeat(TAB_COLUMNS)}me`);

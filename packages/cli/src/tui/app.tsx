@@ -289,8 +289,8 @@ export function App(props: AppProps) {
         hint: NEWLINE_HINT[state.negotiation],
         size: state.size,
         ...(state.screen === 'fullscreen' ? { view: viewOf(facts.current.position, origins), toggles: togglesOf(store) } : { printed: feedRef.current.handed() }),
-        input: { text: current.text, cursor: current.cursor, historyIndex: current.historyIndex ?? null, draft: current.draft, pastes: current.pastes.map((paste) => ({ ...paste })), pasteCount: current.pasteCount },
-        attachments: heldAttachments(attachmentsRef.current, current.text).map((attachment) => ({ file: attachment.file, sha256: attachmentDigest(attachment.image) })),
+        input: { text: current.text, cursor: current.cursor, historyIndex: current.historyIndex ?? null, draft: current.draft, draftPastes: current.draftPastes.map((paste) => ({ ...paste })), pastes: current.pastes.map((paste) => ({ ...paste })), pasteCount: current.pasteCount },
+        attachments: heldAttachments(attachmentsRef.current, current.pastes).map((attachment) => ({ file: attachment.file, sha256: attachmentDigest(attachment.image) })),
         notes: origins.notes(),
       };
     };
@@ -600,6 +600,7 @@ export function App(props: AppProps) {
     append,
     decideTrust,
     replayKeys: (events) => replayHeldKeys(events),
+    externalEditor,
   });
   const { overlayPorts, overlay } = prompts;
 
@@ -842,7 +843,7 @@ export function App(props: AppProps) {
   const resumePorts = { backend, pick: overlayPorts.pick, info: note, resume: resumeSession, now, columns: () => terminal.state().size.columns };
 
   const restoreInput = (input: HandoverInput): void => {
-    replaceEditor({ ...editorRef.current, text: input.text, cursor: input.cursor, historyIndex: input.historyIndex ?? undefined, draft: input.draft ?? '', pastes: input.pastes ?? [], pasteCount: input.pasteCount ?? 0 });
+    replaceEditor({ ...editorRef.current, text: input.text, cursor: input.cursor, historyIndex: input.historyIndex ?? undefined, draft: input.draft ?? '', draftPastes: input.draftPastes ?? [], pastes: input.pastes ?? [], pasteCount: input.pasteCount ?? 0 });
   };
 
   const readRecordedImage = async (file: string): Promise<{ image: ImageAttachment } | { reason: string }> => {
@@ -930,7 +931,7 @@ export function App(props: AppProps) {
   const sendWhileBusy = (delivery: InboxDelivery): void => {
     const draft = draftOf(editorRef.current);
     if (draft === undefined) return;
-    const sent = heldAttachments(attachmentsRef.current, draft.text);
+    const sent = heldAttachments(attachmentsRef.current, editorRef.current.pastes);
     replaceEditor(draft.state);
     setAttachments([]);
     backend.recordHistory(draft.text).catch(reportError);
@@ -988,7 +989,7 @@ export function App(props: AppProps) {
 
   const runPrompt = (text: string, options: StartRunOptions = {}): Promise<void> =>
     runStarted(() => {
-      const sent = heldAttachments(attachmentsRef.current, text);
+      const sent = attachmentsRef.current;
       setAttachments([]);
       for (const attachment of sent) note(`attached ${describeAttachment(attachment.file, attachment.image)}`);
       const runOptions: StartRunOptions = {
@@ -1280,7 +1281,7 @@ export function App(props: AppProps) {
   };
 
   const editExternally = async (): Promise<void> => {
-    const outcome = await externalEditor.edit(expandedText(editorRef.current));
+    const outcome = await externalEditor.edit(expandedText(editorRef.current), 'draft');
     if (outcome.kind === 'unset') setHint(editorUnsetHint(keys));
     else replaceEditor(placeText(editorRef.current, outcome.text));
   };
@@ -1311,6 +1312,7 @@ export function App(props: AppProps) {
       note(NO_MODEL_NOTE);
       return;
     }
+    setAttachments(heldAttachments(attachmentsRef.current, editorRef.current.pastes));
     replaceEditor(outcome.state);
     backend.recordHistory(outcome.text).catch(reportError);
     submitSafely(outcome.text);
@@ -1465,7 +1467,7 @@ export function App(props: AppProps) {
   const inputShown = (phase.kind === 'starting' || phase.kind === 'ready' || phase.kind === 'unconnected') && panel === undefined;
   const completionOpen = slashMenu.open || atMenu.open;
   const menuShown = inputShown && (invitationShown || completionOpen);
-  const shownAttachments = heldAttachments(attachments, editor.text);
+  const shownAttachments = heldAttachments(attachments, editor.pastes);
   const shownEditor = shellDraft ? { ...editor, text: editor.text.slice(SHELL_MARK.length), cursor: Math.max(0, editor.cursor - SHELL_MARK.length) } : editor;
   const waitingLines = inputShown ? waitingRows(waitingMessages, columns) : [];
   const busyHintRow = !inputShown || phase.kind !== 'ready' ? undefined : shellDraft ? shellHint(keys) : !busy ? undefined : slashMenu.open || atMenu.open ? completionHint(keys) : busyHint(keys, waitingMessages.length > 0);

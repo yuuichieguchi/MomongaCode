@@ -11,7 +11,7 @@ import type { SelectLine, SelectSpec } from '../select.tsx';
 import { HELD_PANEL_LINE } from '../transcript.ts';
 import type { PendingApproval, PendingElicitation, ToolEntry } from '../transcript.ts';
 import { currentA11y } from './a11y.ts';
-import { PanelInputBox } from './input-box.tsx';
+import { EditorView } from './input-box.tsx';
 import { inertText } from './wrap.ts';
 
 export const TRUST_CHOICES = [
@@ -111,7 +111,7 @@ export const fieldHint = (keys: KeyTable): string => {
   return joinHint([...(confirm === '' ? [] : [`${confirm} to confirm the value`]), ...(leave === '' ? [] : [`${leave}: decline or cancel instead`])]);
 };
 
-export function ElicitationFields({ elicitation, title, editor, waiting, settling, keys }: { elicitation: PendingElicitation; title: string; editor: EditorState; waiting: number; settling: boolean; keys: KeyTable }) {
+export function ElicitationFields({ elicitation, title, editor, columns, waiting, settling, keys }: { elicitation: PendingElicitation; title: string; editor: EditorState; columns: number; waiting: number; settling: boolean; keys: KeyTable }) {
   const { flow } = elicitation;
   const request = currentRequest(flow);
   const field = currentField(flow);
@@ -133,7 +133,7 @@ export function ElicitationFields({ elicitation, title, editor, waiting, settlin
         {flow.error === undefined ? null : <Text color="red">{inertText(flow.error)}</Text>}
         <Text dimColor>{settling ? ' ' : fieldHint(keys)}</Text>
       </Box>
-      <PanelInputBox editor={editor} />
+      <EditorView editor={editor} columns={columns} rows={undefined} hidden={false} framed={!currentA11y().screenReader} />
     </Box>
   );
 }

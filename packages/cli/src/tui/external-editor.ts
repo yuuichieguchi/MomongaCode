@@ -10,7 +10,9 @@ export const editorUnsetHint = (keys: KeyTable): string => {
 
 export type ExternalEdit = { kind: 'edited'; text: string } | { kind: 'unset' };
 
-export type ExternalEditorPort = { edit(draft: string): Promise<ExternalEdit> };
+export type EditedText = 'draft' | 'json';
+
+export type ExternalEditorPort = { edit(draft: string, kind: EditedText): Promise<ExternalEdit> };
 
 export type ExternalEditorHost = {
   env: Readonly<Record<string, string | undefined>>;
@@ -22,7 +24,7 @@ export type ExternalEditorHost = {
   launch(argv: readonly string[]): Promise<void>;
 };
 
-const DRAFT_FILE = 'draft.md';
+const EDITED_FILES: Readonly<Record<EditedText, string>> = { draft: 'draft.md', json: 'value.json' };
 
 const commandOf = (env: ExternalEditorHost['env']): string[] | undefined => {
   for (const name of EDITOR_VARIABLES) {
@@ -33,12 +35,12 @@ const commandOf = (env: ExternalEditorHost['env']): string[] | undefined => {
 };
 
 export const createExternalEditor = (host: ExternalEditorHost): ExternalEditorPort => ({
-  edit: async (draft) => {
+  edit: async (draft, kind) => {
     const command = commandOf(host.env);
     if (command === undefined) return { kind: 'unset' };
     const directory = await host.temporaryDirectory();
     try {
-      const file = path.join(directory, DRAFT_FILE);
+      const file = path.join(directory, EDITED_FILES[kind]);
       await host.writePrivate(file, draft);
       const returnToScreen = host.leaveScreen();
       try {
