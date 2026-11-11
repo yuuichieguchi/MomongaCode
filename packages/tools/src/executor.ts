@@ -535,6 +535,8 @@ const settleWithin = async (timers: ToolTimers, pending: Promise<unknown>, ms: n
   }
 };
 
+const NO_SANDBOX_REASON = 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval';
+
 export const createToolExecutor = (options: ToolExecutorOptions): InspectableToolExecutor => {
   const { idempotency, blobs, clock } = options;
   const timers: ToolTimers = options.shellHost.child;
@@ -805,9 +807,15 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const { subject, input } = target;
     const unenforceable = unenforceableNetwork(subject, batch.sandbox);
     if (unenforceable !== undefined) return deniedOutcome(call.callId, { source: 'sandbox', reason: unenforceable });
-    const unsandboxedExec = decision.kind === 'allow' && tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
+    const unsandboxedExec = tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
+    if (unsandboxedExec) {
+      decision =
+        decision.kind === 'ask'
+          ? { ...decision, humanOnly: true, reason: `${decision.reason}; ${NO_SANDBOX_REASON}` }
+          : { kind: 'ask', source: 'mode', humanOnly: true, reason: NO_SANDBOX_REASON };
+    }
     const { approval } = call;
-    if ((decision.kind === 'ask' || unsandboxedExec)) {
+    if (decision.kind === 'ask') {
       let subjectDigest: string;
       try {
         const asked = askedBy(options.fs, batch.signal);
@@ -816,17 +824,14 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return failedOutcome(call.callId, `Permission check failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (approval?.subjectDigest !== subjectDigest) {
-        const effective: Decision = unsandboxedExec
-          ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval' }
-          : decision;
-        if (batch.mode === 'auto' && effective.source === 'mode' && effective.humanOnly !== true) {
+        if (batch.mode === 'auto' && decision.source === 'mode' && decision.humanOnly !== true) {
           if (batch.classifier === undefined) throw new Error('auto mode needs a classifier');
           const classified = await batch.classifier.classify({
             callId: call.callId,
             toolName: tool.name,
             title: await tool.title(input, displayContextOf(batch)),
             input,
-            reason: effective.reason,
+            reason: decision.reason,
             subjectDigest,
           });
           if (classified === 'allow') {
@@ -843,7 +848,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return {
           callId: call.callId,
           kind: 'needs_approval',
-          decision: effective,
+          decision,
           subjectDigest,
           ...(suggestedRule === undefined ? {} : { suggestedRule }),
           title: await tool.title(input, displayContextOf(batch)),
