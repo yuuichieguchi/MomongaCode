@@ -221,6 +221,14 @@ describe('session permission mode rules', () => {
     expect(patched.json.session.permissionMode).toBe('bypassPermissions');
   });
 
+  it('keeps the network of a sandboxed command the command line gave, and refuses a value the setting does not take', async () => {
+    const env = await startService();
+    const session = await env.createSession({ sandboxNetwork: 'deny' });
+    expect(env.store.getSession(session.id)?.sandboxNetwork).toBe('deny');
+    const refused = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, sandboxNetwork: 'open' } });
+    expect(refused.status).toBe(400);
+  });
+
   it('rejects an explicit bypass without bypassAllowed with 403', async () => {
     const env = await startService();
     expectError(

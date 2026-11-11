@@ -1,5 +1,8 @@
 {
   "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "paths": { "highlight.js/lib/core": ["./packages/cli/src/tui/screen/highlight-core.d.ts"] }
+  },
   "include": [
     "packages/*/src/**/*.ts",
     "packages/*/src/**/*.tsx",

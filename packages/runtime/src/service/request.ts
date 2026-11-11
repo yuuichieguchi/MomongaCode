@@ -1,5 +1,5 @@
 import { JsonDepthError, defineProductSchema, parseOutsideJson, productErrorsText } from '@momonga/foundation';
-import type { ProductValidator } from '@momonga/foundation';
+import type { ProductValidator, SandboxNetworkSetting } from '@momonga/foundation';
 import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
 import type { ImageAttachment, InboxDelivery, JsonSchema, PermissionMode, Mandate } from '@momonga/protocol';
 import { bodyTooLarge, invalidRequest, unsupportedMediaType } from './errors.ts';
@@ -10,6 +10,7 @@ export type CreateSessionBody = {
   permissionMode?: PermissionMode;
   model?: string;
   bypassAllowed?: boolean;
+  sandboxNetwork?: SandboxNetworkSetting;
   mcpServers?: Record<string, Record<string, unknown>>;
 };
 

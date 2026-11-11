@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ESTIMATED_ERROR } from '@momonga/protocol';
-import { proofArith } from '../../src/proofs/arith.ts';
-import type { ErrorBound, ProofArith, ProofInt } from '../../src/proofs/arith.ts';
-import { expectRefuted, prove } from '../../src/proofs/prove.ts';
+import { proofArith } from '../support/proofs/arith.ts';
+import type { ErrorBound, ProofArith, ProofInt } from '../support/proofs/arith.ts';
+import { expectRefuted, prove } from '../support/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 import {
   b1Goal,

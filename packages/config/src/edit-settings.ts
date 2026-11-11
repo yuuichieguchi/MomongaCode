@@ -196,7 +196,7 @@ export const readSettingsSnapshot = async (settingsPlace: SettingsSnapshotReques
     }
     return {
       layers,
-      targets: repository && settingsPlace.trusted ? ['user', 'project', 'local'] : ['user'],
+      targets: shown,
       defaults: await defaultUserSettings(settingsPlace.home, asker),
       mcpFile: repository ? path.join(settingsPlace.projectDir, '.mcp.json') : undefined,
     };

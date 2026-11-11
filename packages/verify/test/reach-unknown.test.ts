@@ -1,5 +1,5 @@
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
-import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { checkRuleConsistency } from '../src/properties.ts';
 import type { SolveResult } from '../src/smt.ts';
@@ -13,7 +13,7 @@ describe('rule-consistency when the last probe of a rule cannot be decided', () 
     const layout = makeLayout();
     const roots = [layout.project];
     const fileSystem = caseSensitiveFs();
-    const context = await buildQueryContext(z3.engine().api, { signal: NEVER_CANCELLED,
+    const context = await buildQueryContext(z3.engine().api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
       rules: rulesOf(layout, [['allow', 'Read(./a/**)']]),
       roots,
       mode: 'manual',

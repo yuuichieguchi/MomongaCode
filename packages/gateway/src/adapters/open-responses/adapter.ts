@@ -11,7 +11,7 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { gatewayOutputCeilingOf, watchContent, watchedPostOf } from '../shared/content-idle.ts';
 import type { ContentWatch } from '../shared/content-idle.ts';
-import { createEndpointPool } from '../shared/http-client.ts';
+import { createEndpointPool, routeReportOf } from '../shared/http-client.ts';
 import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { CHAT_COMPLETIONS_VOCABULARY } from '../chat-completions/vocabulary.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
@@ -73,7 +73,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const auth = options.authSource(ctx.target);
       const response = await sendAuthorized(auth, signal, (bearer) =>
-        pool.clientFor(endpoint).post({
+        pool.clientFor(endpoint).post({ ...routeReportOf(ctx),
           headers: {
             ...idempotencyHeaderOf(ctx),
             'content-type': 'application/json',

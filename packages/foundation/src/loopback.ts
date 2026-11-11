@@ -14,14 +14,19 @@ export const isLoopbackHost = (host: string): boolean => {
 
 export type TransportUrlProblem = 'unparseable' | 'userinfo' | 'cleartext';
 
+const SHOWN_SCHEMES: readonly string[] = ['http:', 'https:', 'socks4:', 'socks5:', 'socks5h:'];
+
+const UNPARSEABLE_URL = '<unparseable URL>';
+
 export const redactedUrl = (raw: string): string => {
   let url: URL;
   try {
-    url = new URL(raw);
+    url = new URL(raw.includes('://') ? raw : `http://${raw}`);
   } catch {
-    return '<unparseable URL>';
+    return UNPARSEABLE_URL;
   }
-  return `${url.protocol}//${url.host}${url.pathname}`;
+  if (!SHOWN_SCHEMES.includes(url.protocol) || url.hostname === '') return UNPARSEABLE_URL;
+  return `${url.protocol}//${url.hostname}${url.port === '' ? '' : `:${url.port}`}`;
 };
 
 export const transportUrlProblem = (raw: string): TransportUrlProblem | undefined => {

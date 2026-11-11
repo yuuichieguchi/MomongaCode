@@ -4,8 +4,6 @@ import { describe, expect, it } from 'vitest';
 import { SETTINGS_SCHEMA, loadSettings, loadUserSettings } from '@momonga/config';
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
-const UNSUPPORTED = 'unix socket allow-lists are not supported by the Linux sandbox; all Unix sockets are denied';
-
 describe('sandboxUnixSockets setting', () => {
   it('is declared in the settings schema as an object with a list of paths', () => {
     const properties = SETTINGS_SCHEMA.properties as Record<string, unknown>;
@@ -77,12 +75,14 @@ describe('sandboxUnixSockets setting', () => {
     expect(fs.existsSync(file)).toBe(true);
   });
 
-  it('applies no entry under the bubblewrap sandbox and says so', async () => {
+  it('is honoured under the bubblewrap sandbox as under seatbelt, with no warning, and an entry in a folder momonga owns is dropped there too', async () => {
     const tree = makeTree();
-    const file = writeJson(userSettingsPath(tree), { sandbox: 'bubblewrap', sandboxUnixSockets: { allow: ['/var/run/agent'] } });
+    const owned = path.join(tree.home, '.momonga', 'run');
+    const file = writeJson(userSettingsPath(tree), { sandbox: 'bubblewrap', sandboxUnixSockets: { allow: ['/var/run/agent', owned] } });
     const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
-    expect(result.settings.sandboxUnixSockets).toEqual({ allow: [] });
-    expect(result.warnings).toEqual([`${file}: ${UNSUPPORTED}`]);
+    expect(result.settings.sandboxUnixSockets).toEqual({ allow: ['/var/run/agent'] });
+    expect(result.warnings).toEqual([`${file}: sandboxUnixSockets.allow entry ${JSON.stringify(owned)} is inside a directory momonga owns; its sockets are always denied; discarded`]);
+    expect(result.warnings.join('\n')).not.toContain('not supported by the Linux sandbox');
   });
 
   it('says nothing under the bubblewrap sandbox when the list is empty', async () => {

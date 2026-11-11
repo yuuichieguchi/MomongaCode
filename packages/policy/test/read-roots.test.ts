@@ -1,3 +1,4 @@
+import { testSecretLocations } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -18,7 +19,7 @@ const setup = async () => {
   fs.writeFileSync(path.join(skill, 'scripts', 'run.py'), 'print(1)\n');
   fs.writeFileSync(path.join(layout.outside, 'other.txt'), 'x\n');
   const fileRules = await fileRulesFor([], [layout.project]);
-  const base = (mode: PermissionMode): Omit<DecideInput, 'tool' | 'subject'> => ({
+  const base = (mode: PermissionMode): Omit<DecideInput, 'tool' | 'subject'> => ({ secretLocations: testSecretLocations(layout.home),
     mode,
     rules: [],
     roots: [layout.project],

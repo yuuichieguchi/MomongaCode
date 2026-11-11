@@ -9,11 +9,11 @@ describe('runtime lifecycle exports (system timers, none used)', () => {
   });
 
   it.each([
-    [0, 0, 28_125],
-    [1, 0, 28_126],
-    [30_000, 1000, 64_125],
-    [0, 30_000, 208_125],
-  ])('runtimeMaxCloseMs at drain %i and MCP grace %i is d + 8050 + 10000 + 6g + 75 + 2K = %i', (drainTimeoutMs, mcpCloseGraceMs, expected) => {
+    [0, 0, 28_175],
+    [1, 0, 28_176],
+    [30_000, 1000, 64_175],
+    [0, 30_000, 208_175],
+  ])('runtimeMaxCloseMs at drain %i and MCP grace %i is d + 8050 + 10000 + 6g + 125 + 2K = %i', (drainTimeoutMs, mcpCloseGraceMs, expected) => {
     expect(runtimeMaxCloseMs({ closeGraceMs: 300_000, managedServerStopGraceMs: 60_000, drainTimeoutMs, mcpCloseGraceMs })).toBe(expected);
   });
 

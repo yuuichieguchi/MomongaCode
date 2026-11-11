@@ -99,6 +99,7 @@ describe('a markdown entry larger than one unit', () => {
     let point = START_OF_TEXT;
     for (;;) {
       const parsed = parseMarkdown(text.slice(0, 200_000), point, 47, { tables: 'grid', references: NOTHING_SCANNED.references, settled: true, unit: true });
+      rows.length -= parsed.retract;
       rows.push(...parsed.rows);
       point = parsed.point;
       if (parsed.tail !== undefined) {

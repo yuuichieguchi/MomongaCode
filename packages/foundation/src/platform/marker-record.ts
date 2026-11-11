@@ -77,7 +77,8 @@ export const claimRetry = (marker: string, kind: RetryKind, { signal, files = no
       await files.writeByte(marker, RETRY_KINDS.indexOf(kind) + 1, '1');
       return 'claimed';
     } catch (error) {
-      return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'absent' : 'failed';
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'absent';
+      throw error;
     }
   });
 

@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { EMPTY_FILE_RULES, defaultProtectedPaths, momongaLayout } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, defaultProtectedPaths, momongaLayout, standardSecretLocations } from '@momonga/foundation';
 import { protectedSetWith, NEVER_CANCELLED } from '@momonga/testkit';
 import type { ProtectedSet } from '@momonga/foundation';
 import { describe, expect, expectTypeOf, it } from 'vitest';
@@ -161,7 +160,7 @@ describe('buildSandboxPolicy', () => {
     expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
       writableRoots: ['/w/a', '/w/b', '/s/sessions/one'],
       writeDenied: [...protectedSet.paths, '/Users/me/.momonga', momongaLayout('/Users/me', process.platform, process.env).keychains, momongaLayout('/Users/me', process.platform, process.env).executables, '/s/sessions'].sort(),
-      readDenied: [path.join('/Users/me', '.momonga'), momongaLayout('/Users/me', process.platform, process.env).keychains, '/s/sessions'],
+      readDenied: [...standardSecretLocations(momongaLayout('/Users/me', process.platform, process.env)).map((location) => location.directory), '/s/sessions'],
       writeDeniedLiterals: ['/Users/me/.local/bin/momonga'],
       fileRules: EMPTY_FILE_RULES,
       protectedSet,
@@ -202,7 +201,7 @@ describe('buildSandboxPolicy', () => {
     expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
       writableRoots: ['/w/a', '/s/sessions/one', '/cache'],
       writeDenied: [...defaultProtectedPaths('/w/a'), '/h/.momonga', momongaLayout('/h', process.platform, process.env).keychains, momongaLayout('/h', process.platform, process.env).executables, '/s/sessions'].sort(),
-      readDenied: ['/h/.momonga', momongaLayout('/h', process.platform, process.env).keychains, '/s/sessions', '/h/.ssh'],
+      readDenied: [...standardSecretLocations(momongaLayout('/h', process.platform, process.env)).map((location) => location.directory), '/s/sessions', '/h/.ssh'],
       writeDeniedLiterals: ['/h/.local/bin/momonga'],
       fileRules: EMPTY_FILE_RULES,
       protectedSet,

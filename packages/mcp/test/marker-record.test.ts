@@ -65,7 +65,7 @@ describe('the marker of an MCP stdio server is a group record written by the one
 
     const outcome = await reapMarkerDirectory({ inspector: testProcessInspector(), dir: deadGeneration, killGraceMs: 200, label: 'mcp', onWarning: () => undefined, signal: new AbortController().signal, occasion: 'sweep' });
 
-    expect(outcome).toEqual({ reaped: 1, kept: 0 });
+    expect(outcome).toEqual({ reaped: 1, kept: 0, unreaped: [] });
     expect(fs.readdirSync(deadGeneration)).toEqual([]);
   });
 

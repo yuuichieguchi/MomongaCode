@@ -1,6 +1,6 @@
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
-import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND } from '@momonga/foundation';
-import type { EntryIo } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
+import type { EntryIo, SandboxNetworkSetting } from '@momonga/foundation';
 import { PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION, messageOf } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
 import { serveAcp } from './acp/serve.ts';
@@ -37,6 +37,7 @@ type RootOptions = {
   permissionMode?: PermissionMode;
   model?: string;
   dangerouslySkipPermissions?: true;
+  sandboxNetwork?: SandboxNetworkSetting;
   skill?: string;
   image: string[];
   until: string[];
@@ -164,6 +165,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .addOption(new Option('--permission-mode <mode>', 'permission mode of the session').choices(PERMISSION_MODES))
     .option('--model <model>', 'the model of the session, for example devstral-small-2 (momonga models lists them; /model switches it in an interactive session)')
     .option('--dangerously-skip-permissions', 'run in bypassPermissions mode')
+    .addOption(new Option('--sandbox-network <setting>', 'the network of a sandboxed command in this session: deny, ask or allow; wins over the setting sandboxNetwork').choices(SANDBOX_NETWORK_SETTINGS))
     .option('--skill <name>', 'run the prompt with this skill activated')
     .option('--image <path>', 'attach an image to the prompt; repeat for several (needs a model that declares image input)', collectValues, [])
     .option('--until <command>', 'a shell command that must exit 0 before the run counts as complete; repeat for several. The runtime runs it after the model stops, never the model, so it must only check and change nothing', collectValues, [])
@@ -186,6 +188,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         ...(permissionMode === undefined ? {} : { permissionMode }),
         ...(options.model === undefined ? {} : { model: options.model }),
         ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
+        ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       };
       const bounds = { ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }) };
       if (options.print !== undefined) {

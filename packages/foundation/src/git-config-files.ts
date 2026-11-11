@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { nodeFileSystem } from './node-file-system.ts';
+import { sha256Hex } from './canonical-json.ts';
+import { nodeFileSystem, readFileHead } from './node-file-system.ts';
 import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandResult, CommandRunner } from './platform/command-runner.ts';
 
@@ -84,9 +85,13 @@ export const discoverGitConfigFiles = async (options: GitConfigDiscovery): Promi
   return kept;
 };
 
-export type GitConfigFileStat = { isFile(): boolean; size: number; mtimeMs: number };
+export const GIT_CONFIG_DISCOVERY_ATTEMPTS = 3;
 
-export type GitConfigDiscoveryPorts = { run?: CommandRunner; stat?: (file: string) => Promise<GitConfigFileStat> };
+export const GIT_CONFIG_FINGERPRINT_BYTES = 1024 * 1024;
+
+export type GitConfigFileStat = { isFile(): boolean };
+
+export type GitConfigDiscoveryPorts = { run?: CommandRunner; stat?: (file: string) => Promise<GitConfigFileStat>; readHead?: (file: string, maxBytes: number) => Promise<Uint8Array> };
 
 export type GitConfigDiscoveryRequest = Pick<GitConfigDiscovery, 'workingDirectory' | 'env' | 'signal'>;
 
@@ -94,33 +99,65 @@ export type GitConfigDiscoveryCache = { discover(request: GitConfigDiscoveryRequ
 
 type Watched = { readonly file: string; readonly content: boolean };
 
-const fingerprintOf = async (watched: readonly Watched[], stat: (file: string) => Promise<GitConfigFileStat>): Promise<string> => {
-  const parts: string[] = [];
-  for (const { file, content } of watched) {
-    try {
-      const facts = await stat(file);
-      parts.push(content ? `${file}\0${facts.size}\0${facts.mtimeMs}` : `${file}\0present`);
-    } catch (error) {
-      if (errnoOf(error) !== 'ENOENT') throw error;
-      parts.push(`${file}\0absent`);
-    }
-  }
-  return parts.join('\n');
-};
-
 const requestKeyOf = (request: GitConfigDiscoveryRequest): string => JSON.stringify([request.workingDirectory, Object.entries(request.env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))]);
 
+type Readers = { stat: (file: string) => Promise<GitConfigFileStat>; readHead: (file: string, maxBytes: number) => Promise<Uint8Array> };
+
+const watchedOf = (workingDirectory: string, files: readonly string[]): Watched[] => [...files.map((file) => ({ file, content: true })), { file: path.join(workingDirectory, '.git'), content: false }];
+
+const sameSet = (a: readonly Watched[], b: readonly Watched[]): boolean => a.length === b.length && a.every((entry, index) => entry.file === b[index]?.file && entry.content === b[index]?.content);
+
 export const createGitConfigDiscovery = (ports: GitConfigDiscoveryPorts = {}): GitConfigDiscoveryCache => {
-  const stat = ports.stat ?? ((file: string) => nodeFileSystem.stat(file));
+  const readers: Readers = { stat: ports.stat ?? ((file: string) => nodeFileSystem.stat(file)), readHead: ports.readHead ?? readFileHead };
+  let oversized = 0;
+
+  const identityOf = async ({ file, content }: Watched): Promise<string> => {
+    try {
+      if (!content) {
+        await readers.stat(file);
+        return `${file}\0present`;
+      }
+      const head = await readers.readHead(file, GIT_CONFIG_FINGERPRINT_BYTES + 1);
+      if (head.byteLength > GIT_CONFIG_FINGERPRINT_BYTES) {
+        oversized += 1;
+        return `${file}\0oversized\0${oversized}`;
+      }
+      return `${file}\0${sha256Hex(head)}`;
+    } catch (error) {
+      const code = errnoOf(error);
+      if (code !== 'ENOENT' && code !== 'EISDIR') throw error;
+      return `${file}\0${code}`;
+    }
+  };
+
+  const fingerprintOf = async (watched: readonly Watched[]): Promise<string> => {
+    const parts: string[] = [];
+    for (const entry of watched) parts.push(await identityOf(entry));
+    return parts.join('\n');
+  };
+
   const known = new Map<string, { files: string[]; watched: Watched[]; fingerprint: string }>();
   return {
     discover: async (request) => {
       const key = requestKeyOf(request);
       const entry = known.get(key);
-      if (entry !== undefined && (await fingerprintOf(entry.watched, stat)) === entry.fingerprint) return [...entry.files];
-      const files = await discoverGitConfigFiles({ ...request, ...(ports.run === undefined ? {} : { run: ports.run }), stat });
-      const watched: Watched[] = [...files.map((file) => ({ file, content: true })), { file: path.join(request.workingDirectory, '.git'), content: false }];
-      known.set(key, { files, watched, fingerprint: await fingerprintOf(watched, stat) });
+      if (entry !== undefined && (await fingerprintOf(entry.watched)) === entry.fingerprint) return [...entry.files];
+      known.delete(key);
+      let candidate = entry?.watched;
+      let files: string[] = [];
+      for (let attempt = 0; attempt < GIT_CONFIG_DISCOVERY_ATTEMPTS; attempt += 1) {
+        const before = candidate === undefined ? undefined : await fingerprintOf(candidate);
+        files = await discoverGitConfigFiles({ ...request, ...(ports.run === undefined ? {} : { run: ports.run }), stat: readers.stat });
+        const watched = watchedOf(request.workingDirectory, files);
+        if (candidate !== undefined && before !== undefined && sameSet(candidate, watched)) {
+          const after = await fingerprintOf(watched);
+          if (after === before) {
+            known.set(key, { files, watched, fingerprint: after });
+            return [...files];
+          }
+        }
+        candidate = watched;
+      }
       return [...files];
     },
   };

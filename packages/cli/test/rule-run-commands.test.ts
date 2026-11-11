@@ -1,7 +1,7 @@
 import { protectedSetOf } from '@momonga/verify';
 import fs from 'node:fs';
 import http from 'node:http';
-import { ensureMomongaDirs, momongaPaths, ruleFingerprint } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaPaths, verdictKey } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { GoverningFactView, MemoryView, PolicyGovernanceResponse } from '@momonga/protocol';
 import { fakePolicyFilesystem, hostFilesystemOf, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
@@ -223,7 +223,7 @@ describe('momonga policy verify', () => {
     const { paths, ports, seen, out } = await setup(context, answering(governance));
     const { host, requests } = hostCapturing();
     expect(await policyVerify(ports, paths, host, { json: false, secrets: [] })).toBe(0);
-    const fingerprint = ruleFingerprint({ input: { rules: ['Bash(git push:*)'], mode: 'manual', secretLocations: [] }, solverVersion: 'z3 9' });
+    const fingerprint = verdictKey({ rules: ['Bash(git push:*)'], mode: 'manual', secretLocations: [] } as never, 'z3 9');
     expect(seen.map((entry) => `${entry.method} ${entry.url}`)).toEqual([
       `GET /v1/trust?path=${encodeURIComponent(ports.cwd)}`,
       `GET /v1/policy/governance?project=${encodeURIComponent(ports.cwd)}`,

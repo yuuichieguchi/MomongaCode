@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import type { Clock } from '@momonga/foundation';
 import { checkGoverningFact, normalizeTarget, overlappingEnforced, resolveGoverning, ruleSizeReport } from '@momonga/memory';
-import { RULE_FINGERPRINT_PATTERN, displayOf, enforcedBehaviorOf, tokensForText } from '@momonga/protocol';
+import { RULE_FINGERPRINT_PATTERN, displayOf, enforcedBehaviorOf, isFinalRuleVerdict, tokensForText } from '@momonga/protocol';
 import type { AddRuleRequest, Capabilities, GoverningFactView, ModelView, ModelViews, PolicyGovernanceResponse, PutRuleVerdictRequest, RuleAddResponse } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
@@ -129,7 +129,7 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     const fingerprint = context.req.param('fingerprint') ?? '';
     if (!RULE_FINGERPRINT_PATTERN.test(fingerprint)) throw invalidRequest('the fingerprint must be a sha256 in lower-case hexadecimal', 'fingerprint');
     const body = validateBody<PutRuleVerdictRequest>('PutRuleVerdictRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    deps.store.ruleVerdicts.put(fingerprint, body.verdict);
+    if (isFinalRuleVerdict(body.verdict)) deps.store.ruleVerdicts.put(fingerprint, body.verdict);
     return new Response(null, { status: 204 });
   };
 

@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { BUILTIN_DIALECTS } from '@momonga/protocol';
 import type { DialectDefinition } from '@momonga/protocol';
 import { SchemaRenderError, renderSchema } from '../../gateway/src/dialect/render.ts';
-import { BUILTINS, resolveRules, type Definition } from '../src/dialect-model/definition.ts';
-import type { CaseInput } from '../src/dialect-model/harness.ts';
-import { resolvePointer, type Json } from '../src/dialect-model/json.ts';
-import type { FailureReason } from '../src/dialect-model/primitives.ts';
-import { runSubject, SUBJECTS } from '../src/dialect-model/subjects.ts';
+import { BUILTINS, resolveRules, type Definition } from './support/dialect-model/definition.ts';
+import type { CaseInput } from './support/dialect-model/harness.ts';
+import { resolvePointer, type Json } from './support/dialect-model/json.ts';
+import type { FailureReason } from './support/dialect-model/primitives.ts';
+import { runSubject, SUBJECTS } from './support/dialect-model/subjects.ts';
 
 const SCHEMAS_PER_SUBJECT = Number(process.env['DIALECT_PRODUCT_SCHEMAS'] ?? '300');
 const TIMEOUT_MS = 60 * 60 * 1000;

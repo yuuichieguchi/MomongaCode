@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
-import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
+import { hostFilesystemOf, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
 import { verifyPermissions } from '../src/index.ts';
 import type { PropertyResult, VerificationReport, VerifyRequest } from '../src/index.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, caseSensitiveFs, makeLayout, rulesOf, sshLocation, useZ3 } from './harness.ts';
@@ -22,6 +22,7 @@ const verifyWith = async (specs: readonly RuleSpec[]): Promise<VerificationRepor
     rules: rulesOf(layout, specs),
     roots,
     mode: 'manual',
+    deniedLocations: testSecretLocations(layout.home),
     home: layout.home,
     cwd: layout.project,
     protectedSet: await protectedSetFor(roots, fileSystem),

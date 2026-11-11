@@ -4,9 +4,13 @@ export const POLICY_VERDICT_NOTICE_CODE = 'policy_verdict';
 
 export const RULE_VERIFY_BUDGET_MS = 60_000;
 
-export const RULE_VERDICTS = ['proved', 'refuted', 'unknown'] as const;
+export const RULE_VERDICTS = ['proved', 'refuted', 'unknown', 'failed', 'not-needed'] as const;
 
 export type RuleVerdictKind = (typeof RULE_VERDICTS)[number];
+
+export const FINAL_RULE_VERDICTS = ['proved', 'refuted'] as const satisfies readonly RuleVerdictKind[];
+
+export const isFinalRuleVerdict = (verdict: { verdict: string }): boolean => FINAL_RULE_VERDICTS.some((kind) => kind === verdict.verdict);
 
 export type RuleRefutation = { property: string; subject: string; message: string; counterexample?: string };
 
@@ -20,14 +24,16 @@ export type RuleNoteRule = { text: string; origin: string; source: string };
 
 export type RuleNote = { kind: RuleNoteKind; rules: RuleNoteRule[]; modes: string[]; message: string };
 
+export type RuleVerdictPhase = { phase: string; ms: number };
+
 export type RuleVerdict = {
   verdict: RuleVerdictKind;
   solver: string;
   refuted: RuleRefutation[];
   notes?: RuleNote[];
-  byModeDefault?: RuleRefutation[];
   unknown: { property: string; reason: string }[];
   notProved: string[];
+  phases?: RuleVerdictPhase[];
 };
 
 export type PutRuleVerdictRequest = { verdict: RuleVerdict };
@@ -63,16 +69,19 @@ const isRuleNotes = (value: unknown): value is RuleNote[] =>
       typeof entry['message'] === 'string',
   );
 
+const isPhases = (value: unknown): value is RuleVerdictPhase[] =>
+  Array.isArray(value) && value.every((entry) => isObject(entry) && typeof entry['phase'] === 'string' && typeof entry['ms'] === 'number');
+
 export const isRuleVerdict = (value: unknown): value is RuleVerdict =>
   isObject(value) &&
   RULE_VERDICTS.some((kind) => kind === value['verdict']) &&
   typeof value['solver'] === 'string' &&
   isRefutations(value['refuted']) &&
   (value['notes'] === undefined || isRuleNotes(value['notes'])) &&
-  (value['byModeDefault'] === undefined || isRefutations(value['byModeDefault'])) &&
   Array.isArray(value['unknown']) &&
   value['unknown'].every((entry) => isObject(entry) && typeof entry['property'] === 'string' && typeof entry['reason'] === 'string') &&
-  isStrings(value['notProved']);
+  isStrings(value['notProved']) &&
+  (value['phases'] === undefined || isPhases(value['phases']));
 
 export const isPinnedRuleVerdict = (value: unknown): value is PinnedRuleVerdict => isRuleVerdict(value) && typeof (value as Record<string, unknown>)['fingerprint'] === 'string';
 
@@ -88,12 +97,10 @@ export const policyRefutedMessage = (verdict: RuleVerdict): string =>
 export const policyVerdictNotice = (verdict: PinnedRuleVerdict): string => {
   const head = `The permission rules changed during the run and were verified again (${verdict.solver}, fingerprint ${verdict.fingerprint}): ${verdict.verdict}.`;
   const refuted = verdict.refuted.map(refutationText);
-  const byModeDefault = (verdict.byModeDefault ?? []).map(refutationText);
   const unknown = verdict.unknown.map((entry) => `${entry.property}: ${entry.reason}`);
   return [
     head,
     ...(refuted.length === 0 ? [] : [`Refuted: ${refuted.join(' | ')}.`]),
-    ...(byModeDefault.length === 0 ? [] : [`By the mode default, not by a rule: ${byModeDefault.join(' | ')}.`]),
     ...(unknown.length === 0 ? [] : [`Not decided: ${unknown.join(' | ')}.`]),
     `Not proved: ${verdict.notProved.join(' ')}`,
   ].join(' ');

@@ -62,7 +62,7 @@ const VIEW = filesIn(sectionOf('readers that start no new work', 'the kept copy'
 
 const ADMIT_CALL = /\badmitUserSnapshot\(/;
 const SESSION_CREATE_CALL = /\bsessionCreateSettings\(/;
-const CACHE_CALL = /\bcache\.(snapshot|read)\(/;
+const CACHE_CALL = /\bcache\.(snapshot|read|load|loadOrKeep)\(/;
 
 const configOf = (name: string): string => fs.readFileSync(path.join(specDir, `${name}.cfg`), 'utf8');
 const constantOf = (cfg: string, name: string): string => {
@@ -115,7 +115,11 @@ describe('the code follows SettingsHealth.tla (one rule for every settings file)
     const start = app.indexOf('const createRun: Handler');
     const end = app.indexOf('\n  };\n', start);
     expect(start).toBeGreaterThan(-1);
-    expect(app.slice(start, end)).toMatch(/await sessionSettingsOf\(session\.cwd, context\.req\.raw\.signal\)/);
+    expect(app.slice(start, end)).toMatch(/await admittedTermsOf\(\s*session,[\s\S]*?,\s*context\.req\.raw\.signal,?\s*\)/);
+    const termsStart = app.indexOf('const admittedTermsOf = async (session: Session, request: RunTermsRequest, signal: AbortSignal)');
+    const termsEnd = app.indexOf('\n  };\n', termsStart);
+    expect(termsStart).toBeGreaterThan(-1);
+    expect(app.slice(termsStart, termsEnd)).toMatch(/=> \{\n\s*await sessionSettingsOf\(session\.cwd, signal\);/);
   });
 
   it('the readers that start no new work go through the read use: sessionViewOf and patchSession never call sessionSettingsOf (View)', () => {
@@ -135,10 +139,10 @@ describe('the code follows SettingsHealth.tla (one rule for every settings file)
     expect(textOf('config/src/layers.ts')).toMatch(/kept\.store\.(recall|remember)\(/);
   });
 
-  it('only the settings composition reads the user settings cache in the runtime, through snapshot for admission and read in a Run', () => {
+  it('only the settings composition reads the user settings cache in the runtime, through a load from disk for admission and read in a Run', () => {
     expect(filesMatching(CACHE_CALL).filter((file) => file.startsWith('runtime/'))).toEqual(['runtime/src/process/settings-port.ts']);
     const port = textOf('runtime/src/process/settings-port.ts');
-    expect(port).toMatch(/\bcache\.snapshot\(\)/);
+    expect(port).toMatch(/const admitUserSnapshot = async \(signal: AbortSignal\): Promise<UserSnapshot> => \{\n\s*const snapshot = await cache\.load\(signal\);/);
     expect(port).toMatch(/\bcache\.read\(\)/);
   });
 

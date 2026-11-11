@@ -23,7 +23,7 @@ describe('the reap of a gone gateway takes only the managed servers of its own g
           reapMarkedProcesses: async () => ({ removed: true }),
           reapMarkerDirectory: async (options) => {
             reaped.push(options.dir);
-            return { reaped: 0, kept: 0 };
+            return { reaped: 0, kept: 0, unreaped: [] };
           },
         },
       },

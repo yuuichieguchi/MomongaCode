@@ -2,8 +2,8 @@ import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from '
 import type { CallBilling } from './cost.ts';
 import type { CallPrice } from './money-line.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
-import { SPAN_ATTRIBUTE_RENAMES, isFallbackCauseList, isLegacyPrecisionCost, unitsOfCost, withCurrentNames } from '@momonga/protocol';
-import type { FallbackCause, RecordedPrice } from '@momonga/protocol';
+import { SPAN_ATTRIBUTE_RENAMES, isLegacyPrecisionCost, isSpanFallbackCauseList, unitsOfCost, withCurrentNames } from '@momonga/protocol';
+import type { RecordedPrice, SpanFallbackCause } from '@momonga/protocol';
 
 const A = GENAI_SEMCONV.attributes;
 
@@ -19,7 +19,7 @@ export type BilledCall = {
   billing: CallBilling;
   startMs: number;
   usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
-  fallbackCauses?: FallbackCause[];
+  fallbackCauses?: SpanFallbackCause[];
 };
 
 export type BilledCallWire = Omit<BilledCall, 'spanId'>;
@@ -62,11 +62,11 @@ const billingOf = (span: SpanRecord): CallBilling => {
   return value === 'metered' || value === 'local' || value === 'plan' ? value : UNKNOWN_BILLING;
 };
 
-const fallbackCausesOf = (span: SpanRecord): FallbackCause[] | undefined => {
+const fallbackCausesOf = (span: SpanRecord): SpanFallbackCause[] | undefined => {
   const value = optionalString(span, MOMONGA_ATTRIBUTES.fallbackCauses);
   if (value === undefined) return undefined;
   const parsed: unknown = JSON.parse(value);
-  if (!isFallbackCauseList(parsed)) throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must hold a list of fallback causes`);
+  if (!isSpanFallbackCauseList(parsed)) throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must hold a list of fallback causes`);
   return parsed;
 };
 

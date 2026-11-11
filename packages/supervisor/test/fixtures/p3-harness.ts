@@ -335,7 +335,7 @@ export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: strin
     reapMarkerDirectory: async (options) => {
       calls.reapMarkerDirectory.push(options);
       record?.push('reapMarkerDirectory');
-      return overrides.reapMarkerDirectory === undefined ? { reaped: 0, kept: 0 } : overrides.reapMarkerDirectory(options);
+      return overrides.reapMarkerDirectory === undefined ? { reaped: 0, kept: 0, unreaped: [] } : overrides.reapMarkerDirectory(options);
     },
     reapMarkedProcesses: async (options) => {
       calls.reapMarkedProcesses.push(options);

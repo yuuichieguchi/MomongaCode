@@ -35,3 +35,7 @@ export { EMPTY_GLOB_TABLE, createGlobDeadline, globBudgetMs, settleGlobs } from 
 export type { GlobTable } from './glob-expansion.ts';
 export { prepareGlobs } from './glob-preparation.ts';
 export type { GlobPreparation } from './glob-preparation.ts';
+export { ShellNotFoundError, resolveBashPath, resolveBashPathNow } from './bash-path.ts';
+export type { ExecutableCheck, ShellPorts, ShellPortsNow } from './bash-path.ts';
+export { createHostFilesystem, createHostGlobExpander, nodeGlobPorts } from './host-filesystem.ts';
+export type { GlobChild, GlobEnvironment, GlobPorts } from './host-filesystem.ts';

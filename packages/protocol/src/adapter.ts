@@ -41,7 +41,14 @@ export type AdapterRequest = {
   unknownFields?: Record<string, unknown>;
 };
 
+export type UpstreamRoute =
+  | { kind: 'direct' }
+  | { kind: 'bypass' }
+  | { kind: 'proxy'; proxy: string }
+  | { kind: 'unsupported'; proxy: string };
+
 export type AdapterContext = {
+  route?: (route: UpstreamRoute) => void;
   signal: AbortSignal;
   target: AdapterTarget;
   attempt: number;
