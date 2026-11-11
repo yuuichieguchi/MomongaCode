@@ -3,14 +3,23 @@ import {
   recordChatRequestContent,
   recordChatResponse,
   recordChatResponseContent,
+  recordChatUsage,
   recordError,
   recordFallbackCauses,
   startChatSpan,
 } from '@momonga/observability';
 import type { ChatBilling, Telemetry } from '@momonga/observability';
-import { MOMONGA_EVENTS } from '@momonga/protocol';
-import type { AdapterInputItem, FallbackCause, FunctionTool, ItemField, Usage, UsageSource } from '@momonga/protocol';
+import { MOMONGA_ATTRIBUTES, MOMONGA_EVENTS } from '@momonga/protocol';
+import type { AdapterInputItem, UpstreamRoute, FallbackCause, FunctionTool, ItemField, Usage, UsageSource } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
+import { GatewayError } from './errors.ts';
+import { UpstreamFailure } from './retry.ts';
+
+const errorCodeOf = (error: unknown): string | null | undefined => {
+  if (error instanceof UpstreamFailure) return error.classified.error.code;
+  if (error instanceof GatewayError) return error.body.code;
+  return undefined;
+};
 
 export type TraceParent = ReturnType<Telemetry['propagation']['extract']>;
 
@@ -32,9 +41,20 @@ export type AttemptSpanInput = {
   request: { input: readonly AdapterInputItem[]; instructions: string | null | undefined; tools: readonly FunctionTool[] | null | undefined };
 };
 
+export type BilledUsage = { usage: Usage; usageSource: UsageSource; cacheWriteInputTokens: number | undefined };
+
+const chatUsageOf = (billed: BilledUsage) => ({
+  inputTokens: billed.usage.input_tokens,
+  outputTokens: billed.usage.output_tokens,
+  ...(billed.usage.input_tokens_details.cached_tokens === undefined ? {} : { cachedInputTokens: billed.usage.input_tokens_details.cached_tokens }),
+  ...(billed.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
+  reasoningTokens: billed.usage.output_tokens_details.reasoning_tokens,
+});
+
 export type AttemptSpan = {
   readonly startedAtMs: number;
   note(name: string, message: string): void;
+  route(route: UpstreamRoute): void;
   committed(): void;
   succeed(info: {
     responseModel: string;
@@ -46,11 +66,11 @@ export type AttemptSpan = {
     output: readonly ItemField[];
     fallbackCauses: readonly FallbackCause[];
   }): void;
-  fail(errorType: string, error: unknown, message: string): void;
+  fail(errorType: string, error: unknown, message: string, billed?: BilledUsage): void;
 };
 
 export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
-  if (input.telemetry === undefined) return { startedAtMs: input.startedAtMs, note: () => undefined, committed: () => undefined, succeed: () => undefined, fail: () => undefined };
+  if (input.telemetry === undefined) return { startedAtMs: input.startedAtMs, note: () => undefined, route: () => undefined, committed: () => undefined, succeed: () => undefined, fail: () => undefined };
   const span = startChatSpan(
     input.telemetry.tracer,
     {
@@ -82,7 +102,12 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
   return {
     startedAtMs: input.startedAtMs,
     note: (name, message) => {
-      if (!ended) span.addEvent(name, { message });
+      if (!ended) span.addEvent(name, telemetry.captureMessageContent ? { message } : {});
+    },
+    route: (route) => {
+      if (ended) return;
+      span.setAttribute(MOMONGA_ATTRIBUTES.route, route.kind);
+      if (route.kind === 'proxy' || route.kind === 'unsupported') span.setAttribute(MOMONGA_ATTRIBUTES.routeProxy, route.proxy);
     },
     committed: () => {
       if (!ended) span.addEvent(MOMONGA_EVENTS.responseCommitted);
@@ -94,22 +119,23 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
         responseId: info.responseId,
         finishReasons: [info.finishReason],
         usageSource: info.usageSource,
-        usage: {
-          inputTokens: info.usage.input_tokens,
-          outputTokens: info.usage.output_tokens,
-          ...(info.usage.input_tokens_details.cached_tokens === undefined ? {} : { cachedInputTokens: info.usage.input_tokens_details.cached_tokens }),
-          ...(info.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: info.cacheWriteInputTokens }),
-          reasoningTokens: info.usage.output_tokens_details.reasoning_tokens,
-        },
+        usage: chatUsageOf({ usage: info.usage, usageSource: info.usageSource, cacheWriteInputTokens: info.cacheWriteInputTokens }),
       });
       recordFallbackCauses(span, info.fallbackCauses);
       if (telemetry.captureMessageContent) recordChatResponseContent(span, chatResponseMessagesOf(info.output, info.finishReason));
       end();
     },
-    fail: (errorType, error, message) => {
+    fail: (errorType, error, message, billed) => {
       if (ended) return;
-      recordError(span, error, errorType, message);
-      recordChatFailure(span, message);
+      if (billed !== undefined) recordChatUsage(span, chatUsageOf(billed), billed.usageSource);
+      const code = errorCodeOf(error);
+      if (code !== undefined && code !== null) span.setAttribute(MOMONGA_ATTRIBUTES.errorCode, code);
+      if (telemetry.captureMessageContent) {
+        recordError(span, error, errorType, message);
+        recordChatFailure(span, message);
+      } else {
+        recordError(span, error, errorType);
+      }
       end();
     },
   };

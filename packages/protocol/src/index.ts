@@ -768,6 +768,7 @@ export type {
   AdapterCompactRequest,
   AdapterCompactResult,
   AdapterContext,
+  UpstreamRoute,
   AdapterCountTokensResult,
   AdapterInputItem,
   AdapterRequest,

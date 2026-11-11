@@ -12,7 +12,7 @@ import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../
 import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import { gatewayOutputCeilingOf, watchContent, watchedPostOf } from '../shared/content-idle.ts';
 import type { ContentWatch } from '../shared/content-idle.ts';
-import { createEndpointPool } from '../shared/http-client.ts';
+import { createEndpointPool, routeReportOf } from '../shared/http-client.ts';
 import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
@@ -118,7 +118,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         const body: AnthropicRequestBody =
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
         const response = await sendAuthorized(auth, signal, (key) =>
-          pool.clientFor(endpoint).post({ headers: { ...idempotencyHeaderOf(ctx, continuation), ...headersFor(key, 'text/event-stream') }, body: JSON.stringify(body), signal, ...watchedPostOf(options.liveness) }),
+          pool.clientFor(endpoint).post({ ...routeReportOf(ctx), headers: { ...idempotencyHeaderOf(ctx, continuation), ...headersFor(key, 'text/event-stream') }, body: JSON.stringify(body), signal, ...watchedPostOf(options.liveness) }),
         );
         if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
         watch?.dispose();
@@ -168,8 +168,8 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const response = await sendAuthorized(options.authSource(ctx.target), signal, (key) =>
-        pool.clientFor(endpoint).post({
-          headers: headersFor(key, 'application/json'),
+        pool.clientFor(endpoint).post({ ...routeReportOf(ctx),
+          headers: { ...idempotencyHeaderOf(ctx), ...headersFor(key, 'application/json') },
           body: JSON.stringify(body),
           signal,
           subpath: ANTHROPIC_COUNT_TOKENS_SUBPATH,

@@ -125,23 +125,23 @@ export const recordFallbackCauses = (span: Span, causes: readonly FallbackCause[
   if (causes.length > 0) span.setAttribute(MOMONGA_ATTRIBUTES.fallbackCauses, JSON.stringify(causes));
 };
 
+export const recordChatUsage = (span: Span, usage: ChatUsage, usageSource: UsageSource): void => {
+  span.setAttributes({
+    [A.ATTR_GEN_AI_USAGE_INPUT_TOKENS]: usage.inputTokens,
+    [A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS]: usage.outputTokens,
+    [MOMONGA_ATTRIBUTES.usageSource]: usageSource,
+    ...(usage.cachedInputTokens === undefined ? {} : { [A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS]: usage.cachedInputTokens }),
+    ...(usage.cacheWriteInputTokens === undefined ? {} : { [A.ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS]: usage.cacheWriteInputTokens }),
+    ...(usage.reasoningTokens === undefined ? {} : { [A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS]: usage.reasoningTokens }),
+  });
+};
+
 export const recordChatResponse = (span: Span, response: ChatResponse): void => {
+  recordChatUsage(span, response.usage, response.usageSource);
   span.setAttributes({
     ...(response.responseModel === undefined ? {} : { [A.ATTR_GEN_AI_RESPONSE_MODEL]: response.responseModel }),
     ...(response.responseId === undefined ? {} : { [A.ATTR_GEN_AI_RESPONSE_ID]: response.responseId }),
     [A.ATTR_GEN_AI_RESPONSE_FINISH_REASONS]: [...response.finishReasons],
-    [A.ATTR_GEN_AI_USAGE_INPUT_TOKENS]: response.usage.inputTokens,
-    [A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS]: response.usage.outputTokens,
-    [MOMONGA_ATTRIBUTES.usageSource]: response.usageSource,
-    ...(response.usage.cachedInputTokens === undefined
-      ? {}
-      : { [A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS]: response.usage.cachedInputTokens }),
-    ...(response.usage.cacheWriteInputTokens === undefined
-      ? {}
-      : { [A.ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS]: response.usage.cacheWriteInputTokens }),
-    ...(response.usage.reasoningTokens === undefined
-      ? {}
-      : { [A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS]: response.usage.reasoningTokens }),
     ...(response.timeToFirstChunkMs === undefined
       ? {}
       : { [A.ATTR_GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK]: response.timeToFirstChunkMs / 1000 }),
