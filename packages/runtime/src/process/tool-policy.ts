@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
-import { discoverGitConfigFiles, ensureSessionTmpDir as defaultEnsureSessionTmpDir, filterAsync, hostPaths, isTransientErrno, protectedSetFor, sessionRootsOf } from '@momonga/foundation';
+import { createGitConfigDiscovery, ensureSessionTmpDir as defaultEnsureSessionTmpDir, filterAsync, hostPaths, isTransientErrno, protectedSetFor, sessionRootsOf } from '@momonga/foundation';
 import type { MomongaPaths, RuleEnforcement, SessionScratch, KernelLockMechanism } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PolicyHostPorts } from '@momonga/policy';
@@ -88,11 +88,12 @@ export const toolSandboxPolicyOf = async ({ paths, home, fs, ruleEnforcement }: 
 export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor => {
   const { paths, home, fs, ruleEnforcement } = options;
   const contextFor = contextBuilder(options);
+  const gitConfig = createGitConfigDiscovery();
 
   return async (session, { env, rules, readableDirectories, unixSocketAllow, signal, discoverGitConfig }) => {
     const { roots, tmpDir, wrap } = await contextFor(session, signal);
     try {
-      const gitConfigFiles = discoverGitConfig === true ? await discoverGitConfigFiles({ workingDirectory: session.cwd, env, signal }) : [];
+      const gitConfigFiles = discoverGitConfig === true ? await gitConfig.discover({ workingDirectory: session.cwd, env, signal }) : [];
       const sandboxPolicy = await toolSandboxPolicyOf({ paths, home, fs, ruleEnforcement }, { roots, tmpDir, rules, gitConfigFiles, readableDirectories: readableDirectories ?? [], ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }) }, signal);
       return { roots, sandboxPolicy, tmpDir, env };
     } catch (error) {

@@ -83,3 +83,45 @@ export const discoverGitConfigFiles = async (options: GitConfigDiscovery): Promi
   }
   return kept;
 };
+
+export type GitConfigFileStat = { isFile(): boolean; size: number; mtimeMs: number };
+
+export type GitConfigDiscoveryPorts = { run?: CommandRunner; stat?: (file: string) => Promise<GitConfigFileStat> };
+
+export type GitConfigDiscoveryRequest = Pick<GitConfigDiscovery, 'workingDirectory' | 'env' | 'signal'>;
+
+export type GitConfigDiscoveryCache = { discover(request: GitConfigDiscoveryRequest): Promise<string[]> };
+
+type Watched = { readonly file: string; readonly content: boolean };
+
+const fingerprintOf = async (watched: readonly Watched[], stat: (file: string) => Promise<GitConfigFileStat>): Promise<string> => {
+  const parts: string[] = [];
+  for (const { file, content } of watched) {
+    try {
+      const facts = await stat(file);
+      parts.push(content ? `${file}\0${facts.size}\0${facts.mtimeMs}` : `${file}\0present`);
+    } catch (error) {
+      if (errnoOf(error) !== 'ENOENT') throw error;
+      parts.push(`${file}\0absent`);
+    }
+  }
+  return parts.join('\n');
+};
+
+const requestKeyOf = (request: GitConfigDiscoveryRequest): string => JSON.stringify([request.workingDirectory, Object.entries(request.env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))]);
+
+export const createGitConfigDiscovery = (ports: GitConfigDiscoveryPorts = {}): GitConfigDiscoveryCache => {
+  const stat = ports.stat ?? ((file: string) => nodeFileSystem.stat(file));
+  const known = new Map<string, { files: string[]; watched: Watched[]; fingerprint: string }>();
+  return {
+    discover: async (request) => {
+      const key = requestKeyOf(request);
+      const entry = known.get(key);
+      if (entry !== undefined && (await fingerprintOf(entry.watched, stat)) === entry.fingerprint) return [...entry.files];
+      const files = await discoverGitConfigFiles({ ...request, ...(ports.run === undefined ? {} : { run: ports.run }), stat });
+      const watched: Watched[] = [...files.map((file) => ({ file, content: true })), { file: path.join(request.workingDirectory, '.git'), content: false }];
+      known.set(key, { files, watched, fingerprint: await fingerprintOf(watched, stat) });
+      return [...files];
+    },
+  };
+};
