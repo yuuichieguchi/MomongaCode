@@ -3,6 +3,7 @@ import {
   recordChatRequestContent,
   recordChatResponse,
   recordChatResponseContent,
+  recordChatUsage,
   recordError,
   recordFallbackCauses,
   startChatSpan,
@@ -32,6 +33,16 @@ export type AttemptSpanInput = {
   request: { input: readonly AdapterInputItem[]; instructions: string | null | undefined; tools: readonly FunctionTool[] | null | undefined };
 };
 
+export type BilledUsage = { usage: Usage; usageSource: UsageSource; cacheWriteInputTokens: number | undefined };
+
+const chatUsageOf = (billed: BilledUsage) => ({
+  inputTokens: billed.usage.input_tokens,
+  outputTokens: billed.usage.output_tokens,
+  ...(billed.usage.input_tokens_details.cached_tokens === undefined ? {} : { cachedInputTokens: billed.usage.input_tokens_details.cached_tokens }),
+  ...(billed.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
+  reasoningTokens: billed.usage.output_tokens_details.reasoning_tokens,
+});
+
 export type AttemptSpan = {
   readonly startedAtMs: number;
   note(name: string, message: string): void;
@@ -46,7 +57,7 @@ export type AttemptSpan = {
     output: readonly ItemField[];
     fallbackCauses: readonly FallbackCause[];
   }): void;
-  fail(errorType: string, error: unknown, message: string): void;
+  fail(errorType: string, error: unknown, message: string, billed?: BilledUsage): void;
 };
 
 export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
@@ -94,20 +105,15 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
         responseId: info.responseId,
         finishReasons: [info.finishReason],
         usageSource: info.usageSource,
-        usage: {
-          inputTokens: info.usage.input_tokens,
-          outputTokens: info.usage.output_tokens,
-          ...(info.usage.input_tokens_details.cached_tokens === undefined ? {} : { cachedInputTokens: info.usage.input_tokens_details.cached_tokens }),
-          ...(info.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: info.cacheWriteInputTokens }),
-          reasoningTokens: info.usage.output_tokens_details.reasoning_tokens,
-        },
+        usage: chatUsageOf({ usage: info.usage, usageSource: info.usageSource, cacheWriteInputTokens: info.cacheWriteInputTokens }),
       });
       recordFallbackCauses(span, info.fallbackCauses);
       if (telemetry.captureMessageContent) recordChatResponseContent(span, chatResponseMessagesOf(info.output, info.finishReason));
       end();
     },
-    fail: (errorType, error, message) => {
+    fail: (errorType, error, message, billed) => {
       if (ended) return;
+      if (billed !== undefined) recordChatUsage(span, chatUsageOf(billed), billed.usageSource);
       recordError(span, error, errorType, message);
       recordChatFailure(span, message);
       end();

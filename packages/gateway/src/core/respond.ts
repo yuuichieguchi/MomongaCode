@@ -24,12 +24,12 @@ import { modelCostOf, pricingFieldsOf } from './model-cost.ts';
 import { requireWithinCostCeiling } from './quote.ts';
 import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort, wireUsageOf } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
-import type { AttemptSpan, TraceParent } from './attempt-span.ts';
+import type { AttemptSpan, BilledUsage, TraceParent } from './attempt-span.ts';
 import { breakerVerdictOf } from './breaker-verdict.ts';
 import type { BreakerVerdict } from './breaker-verdict.ts';
 import { armDeadline } from './deadline.ts';
 import { ClientDisconnectedError, GatewayError, isGatewayClosed, isRunCancelled } from './errors.ts';
-import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
+import { estimateInputTokens, estimateOutputTokens, estimatedUsage, tokensForText } from './estimate.ts';
 import { inputHasImages, inputKindsOf, resolveInput } from './input.ts';
 import { StreamFailure } from './stream-failure.ts';
 import type { ConnectionResponses, ResolvedInput } from './input.ts';
@@ -353,6 +353,7 @@ async function* relaySteps(
   };
 
   const doneItems = new Map<number, ItemField>();
+  const arrivingText = new Map<number, string>();
   let upstreamTerminal: TerminalEvent | undefined;
   let interruption: Interruption | undefined;
   let iteratorOpen = false;
@@ -404,7 +405,12 @@ async function* relaySteps(
         let forwarded: StreamEvent = event;
         if (forwarded.type === 'response.output_item.added' || forwarded.type === 'response.output_item.done') {
           forwarded = { ...forwarded, item: rewriteItem(forwarded.item) };
-          if (forwarded.type === 'response.output_item.done') doneItems.set(forwarded.output_index, forwarded.item);
+          if (forwarded.type === 'response.output_item.done') {
+            doneItems.set(forwarded.output_index, forwarded.item);
+            arrivingText.delete(forwarded.output_index);
+          }
+        } else if ('delta' in forwarded && typeof forwarded.delta === 'string' && 'output_index' in forwarded && typeof forwarded.output_index === 'number') {
+          arrivingText.set(forwarded.output_index, `${arrivingText.get(forwarded.output_index) ?? ''}${forwarded.delta}`);
         }
         yield { ...forwarded, sequence_number: nextSequence() };
       }
@@ -425,7 +431,7 @@ async function* relaySteps(
   const momongaFor = (
     usageSource: UsageSource,
     contextInputTokens?: number,
-    billed?: { usage: Usage; usageSource: UsageSource; cacheWriteInputTokens: number | undefined },
+    billed?: BilledUsage,
     retryable?: boolean,
     schemaNarrowings?: SchemaNarrowing[],
     jsonReply?: JsonReplyPath,
@@ -462,15 +468,24 @@ async function* relaySteps(
   };
   const completedAt = Math.floor(clock.now() / 1000);
 
-  const failedTerminal = (error: ResponseError, output: ItemField[], retryable: boolean): StreamEvent => {
+  const billedOf = (reported: Usage | null, output: readonly ItemField[], cacheWriteInputTokens: number | undefined): BilledUsage => {
+    if (reported !== null) return { usage: reported, usageSource: 'reported', cacheWriteInputTokens };
+    const arrived = estimateOutputTokens(output) + [...arrivingText.values()].reduce((sum, text) => sum + tokensForText(text), 0);
+    const input = estimateInputTokens({ input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools ?? undefined }, opened.capabilities.imageTokens);
+    return { usage: estimatedUsage(input, arrived), usageSource: 'estimated', cacheWriteInputTokens };
+  };
+
+  const failedTerminal = (error: ResponseError, output: ItemField[], retryable: boolean, billed: BilledUsage): StreamEvent => {
     const plan = target.servedAccount();
+    const wire = wireUsageOf(billed.usage);
     const response: FailedResponseResource = {
       ...base,
       status: 'failed',
       completed_at: completedAt,
       output,
+      usage: wire.usage,
       error: plan === undefined ? error : { ...error, plan },
-      momonga: momongaFor('estimated', undefined, undefined, retryable),
+      momonga: momongaFor(billed.usageSource, undefined, billed, retryable, undefined, undefined, wire.cacheReadNotReported),
     };
     return { type: 'response.failed', sequence_number: nextSequence(), response };
   };
@@ -478,9 +493,11 @@ async function* relaySteps(
   if (interruption !== undefined) {
     outcome.settle(interruption.verdict);
     if (interruption.verdict === 'failure') target.lastFailure = { code: interruption.code, message: interruption.message };
-    opened.span.fail(interruption.spanType, interruption.error, interruption.message);
+    const arrived = orderedItems(doneItems);
+    const billed = billedOf(null, arrived, undefined);
+    opened.span.fail(interruption.spanType, interruption.error, interruption.message, billed);
     progress.concluded = true;
-    yield failedTerminal({ code: interruption.code, message: interruption.message, type: interruption.type }, orderedItems(doneItems), interruption.retryable);
+    yield failedTerminal({ code: interruption.code, message: interruption.message, type: interruption.type }, arrived, interruption.retryable, billed);
     return;
   }
 
@@ -493,23 +510,15 @@ async function* relaySteps(
     const classified = classifiedFailure(target.adapter, upstreamError);
     const { error } = classified;
     outcome.settle(classified.verdict ?? breakerVerdictOf(error.type, error.code));
-    opened.span.fail(error.type, new Error(error.message), error.message);
+    const billed = billedOf(upstream.usage, upstreamOutput, upstream.cacheWriteInputTokens);
+    opened.span.fail(error.type, new Error(error.message), error.message, billed);
     progress.concluded = true;
-    yield failedTerminal({ code: error.code ?? upstreamError.code, message: error.message, type: error.type }, upstreamOutput, classified.retryable);
+    yield failedTerminal({ code: error.code ?? upstreamError.code, message: error.message, type: error.type }, upstreamOutput, classified.retryable, billed);
     return;
   }
 
-  const reported = upstream.usage;
-  const usage =
-    reported ??
-    estimatedUsage(
-      estimateInputTokens(
-        { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools ?? undefined },
-        opened.capabilities.imageTokens,
-      ),
-      estimateOutputTokens(upstreamOutput),
-    );
-  const usageSource: UsageSource = reported === null ? 'estimated' : 'reported';
+  const billed = billedOf(upstream.usage, upstreamOutput, upstream.cacheWriteInputTokens);
+  const { usage, usageSource } = billed;
   const wire = wireUsageOf(usage);
   const status = terminalEvent.type === 'response.completed' ? 'completed' : 'incomplete';
   const resource: ResponseResource = {
@@ -522,7 +531,7 @@ async function* relaySteps(
     momonga: momongaFor(
       usageSource,
       upstream.contextInputTokens,
-      { usage, usageSource, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
+      billed,
       undefined,
       upstream.schemaNarrowings,
       upstream.jsonReply,
@@ -538,9 +547,9 @@ async function* relaySteps(
   if (isRunCancelled(signal.reason)) {
     const cancelled = signal.reason as GatewayError;
     outcome.settle('neutral');
-    opened.span.fail('cancelled', cancelled, cancelled.message);
+    opened.span.fail('cancelled', cancelled, cancelled.message, billed);
     progress.concluded = true;
-    yield failedTerminal({ code: 'run_cancelled', message: cancelled.message, type: 'server_error' }, resource.output, false);
+    yield failedTerminal({ code: 'run_cancelled', message: cancelled.message, type: 'server_error' }, resource.output, false, billed);
     return;
   }
 
@@ -564,9 +573,9 @@ async function* relaySteps(
   if (commitFailure !== undefined) {
     const message = `the gateway could not persist the response: ${redactedError(services.redactor, commitFailure).message}`;
     outcome.settle('neutral');
-    opened.span.fail('server_error', commitFailure, message);
+    opened.span.fail('server_error', commitFailure, message, billed);
     progress.concluded = true;
-    yield failedTerminal({ code: 'internal_error', message, type: 'server_error' }, resource.output, false);
+    yield failedTerminal({ code: 'internal_error', message, type: 'server_error' }, resource.output, false, billed);
     return;
   }
   job.connection?.remember(responseId, { input: resolved.stored, output: resource.output });
