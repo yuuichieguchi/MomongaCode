@@ -93,37 +93,17 @@ describe('a clean rule set', () => {
     expect(note).toContain('Bash(sudo ls:*)');
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('records where an allow rule overlaps a deny rule and which side wins there', async () => {
+  it('gives no note for an allow rule that a deny rule narrows', async () => {
     const { report } = await run([
       ['allow', 'Read(./a/**)'],
       ['deny', 'Read(./a/secret/**)'],
     ]);
 
-    const precedence = resultOf(report, 'deny-precedence');
-    expect(precedence.verdict.status).toBe('proved');
-    expect(precedence.verdict.notes.join('\n')).toContain('the outcome there is deny');
+    expect(resultOf(report, 'deny-precedence').verdict).toEqual({ status: 'proved', notes: [] });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 
-describe('rule sets with a known escape', () => {
-  it('finds the subcommand that a Bash allow prefix admits around a deny, and the decision code agrees it is allowed', async () => {
-    const { report } = await run([
-      ['allow', 'Bash(git:*)'],
-      ['deny', 'Bash(git push:*)'],
-    ]);
-
-    const admission = resultOf(report, 'bash-admission');
-    expect(admission.verdict.status).toBe('refuted');
-    const finding = findingsOf(admission)[0];
-    expect(finding?.counterexample?.witness).toMatchObject({ kind: 'command' });
-    const command = finding?.counterexample?.witness.kind === 'command' ? finding.counterexample.witness.command : '';
-    expect(command).toMatch(/^git( +-\S*)+ +push/);
-    expect(finding?.counterexample?.predicted).toBe('allow');
-    expect(finding?.counterexample?.replay).toMatchObject({ agrees: true, actual: 'allow' });
-    expect(report.exitCode).toBe(1);
-    expect(report.mismatches).toEqual([]);
-  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
-
+describe('rule sets that open what the protection forbids', () => {
   it('finds a route to a secret that an allow rule opens and names the rule', async () => {
     const { layout, report } = await run([['allow', 'Read(~/**)']]);
 

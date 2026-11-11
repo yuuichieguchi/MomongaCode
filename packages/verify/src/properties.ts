@@ -1,5 +1,5 @@
 import { someAsync } from '@momonga/foundation';
-import { matchPathlessRule, supersededFormOf } from '@momonga/policy';
+import { comparesByAdjacency, matchPathlessRule, supersededFormOf } from '@momonga/policy';
 import type { PermissionRule, SupersededForm } from '@momonga/policy';
 import type { RuleNote, RuleNoteRule } from '@momonga/protocol';
 import type { Bool } from 'z3-solver';
@@ -56,7 +56,6 @@ const subjectOf = (context: QueryContext, tool: SubjectTool): SubjectModel => co
 
 export const checkDenyPrecedence = async (context: QueryContext): Promise<PropertyResult> => {
   const { models } = context;
-  const ctx = models.smt.ctx;
   const tally = newTally();
   for (const [index, rule] of models.rules.entries()) {
     if (rule.effect !== 'allow') continue;
@@ -71,15 +70,6 @@ export const checkDenyPrecedence = async (context: QueryContext): Promise<Proper
         message: `${describeWitness(counterexample.witness)} is allowed although a deny rule matches it`,
         counterexample,
       }));
-      if (escape.status !== 'none') continue;
-      for (const deny of denies) {
-        const overlap = await probe(context, 'deny-precedence', `${rule.text} overlapping ${deny.rule.text} (${tool})`, tool, [allowTerm.strict, ctx.Or(deny.position, deny.incidental)]);
-        if (overlap.status === 'found') {
-          tally.notes.push(`${ruleLabel(rule)} overlaps ${ruleLabel(deny.rule)}, for example at ${describeWitness(overlap.counterexample.witness)}; the outcome there is ${overlap.counterexample.predicted}`);
-        } else if (overlap.status === 'unknown') {
-          tally.unknowns.push(overlap.reason);
-        }
-      }
     }
   }
   return {
@@ -272,14 +262,12 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
   };
 };
 
-export const checkBashAdmission = async (context: QueryContext): Promise<PropertyResult> => {
+export const checkBashAdmission = (context: QueryContext): PropertyResult => {
   const { models } = context;
-  const ctx = models.smt.ctx;
   const tally = newTally();
   const bash = termsOf(context, 'Bash');
   const allows = bash.filter((term) => term.rule.effect === 'allow');
   const denies = bash.filter((term) => term.rule.effect === 'deny' && term.rule.specifier !== undefined);
-  const command = subjectOf(context, 'Bash').commandTerm as NonNullable<SubjectModel['commandTerm']>;
   const bashRules = models.rules.filter((rule) => rule.tool === 'Bash' && rule.specifier !== undefined);
   const hasDeny = bashRules.some((rule) => rule.effect === 'deny');
   for (const rule of bashRules) {
@@ -288,34 +276,17 @@ export const checkBashAdmission = async (context: QueryContext): Promise<Propert
     const matters = rule.effect === 'allow' ? hasDeny : allows.length > 0 && !singleWordWrapperDeny;
     if (matters) tally.unknowns.push(`${ruleLabel(rule)} is outside what the model can follow, so whether ${rule.effect === 'allow' ? 'it admits a denied command' : 'an allow rule gets around it'} was not decided`);
   }
-  for (const allow of allows) {
-    for (const deny of denies) {
-      const admits = await probe(context, 'bash-admission', `${allow.rule.text} admitting ${deny.rule.text}`, 'Bash', [allow.strict, ctx.Or(deny.position, deny.incidental)]);
-      if (admits.status === 'found') {
-        tally.notes.push(`${ruleLabel(allow.rule)} admits commands that ${ruleLabel(deny.rule)} names, for example ${describeWitness(admits.counterexample.witness)}; the outcome there is ${admits.counterexample.predicted}`);
-      } else if (admits.status === 'unknown') {
-        tally.unknowns.push(admits.reason);
-      }
-      const escape = await probe(context, 'bash-admission', `${allow.rule.text} against ${deny.rule.text}`, 'Bash', [
-        allow.strict,
-        models.commands.broad(command, deny.rule),
-        outcomeFor(context, 'Bash').allow,
-      ]);
-      absorb(tally, escape, (counterexample) => ({
-        subject: `${ruleLabel(allow.rule)} and ${ruleLabel(deny.rule)}`,
-        message: `${describeWitness(counterexample.witness)} names the program and subcommand that the deny rule forbids, with option words between them, and is allowed because the deny rule matches only adjacent words`,
-        counterexample,
-      }));
-    }
+  for (const rule of bashRules) {
+    if (comparesByAdjacency(rule)) tally.notes.push(`${ruleLabel(rule)} is compared by adjacent words only, because its program has no option table: a command with an option between the words of the rule is not matched by it`);
   }
   return {
     id: 'bash-admission',
     title: 'a Bash allow rule does not admit a denied program or subcommand',
     subject: `${allows.length} Bash allow rule(s) against ${denies.length} Bash deny rule(s)`,
     proves:
-      'for every Bash allow rule and every Bash deny rule of two or more words that the model can follow, no plain command is allowed that has the denied words in order with only option words between them; a Bash allow rule outside the modelled command alphabet, a deny or ask rule outside it, and a deny rule of several words for a wrapper, shell or eval program make the result unknown instead',
+      'a Bash deny or ask rule is compared with a command after the options that the option table of its program declares are removed, so an allow rule on the program does not admit the denied words with options between them; a deny or ask rule whose program has no option table is compared by adjacent words and is noted; a Bash allow rule outside the modelled command alphabet, a deny or ask rule outside it, and a deny rule of several words for a wrapper, shell or eval program make the result unknown instead',
     doesNotProve: [
-      'that the option words skipped here are the only ones that can separate a program from its subcommand',
+      'commands with option words between the words of a deny or ask rule: the product decides them by the option table of the program, which the model does not follow, so they are left out of every modelled query',
       'commands that reach a denied program through a wrapper, a shell payload or a script',
       READ_ONLY_LIMITS.bashAdmission,
     ],

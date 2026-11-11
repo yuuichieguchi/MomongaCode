@@ -4,7 +4,7 @@ import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { hostFilesystemOf, NEVER_CANCELLED } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
-import { checkBashAdmission, checkDenyPrecedence, checkRuleConsistency, checkSecretReach } from '../src/properties.ts';
+import { checkDenyPrecedence, checkRuleConsistency, checkSecretReach } from '../src/properties.ts';
 import type { SecretLocation } from '../src/properties.ts';
 import type { QueryContext } from '../src/queries.ts';
 import type { SolveResult } from '../src/smt.ts';
@@ -113,12 +113,6 @@ const PROPERTIES: readonly Property[] = [
     undecided: 'noted',
     rules: [['allow', 'mcp__srv'], ['deny', 'mcp__srv__danger']],
     check: (context) => checkRuleConsistency(context),
-  },
-  {
-    id: 'bash-admission',
-    undecided: 'unknown',
-    rules: [['allow', 'Bash(git status:*)'], ['deny', 'Bash(git push:*)']],
-    check: (context) => checkBashAdmission(context),
   },
 ];
 

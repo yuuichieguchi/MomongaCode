@@ -7,7 +7,7 @@ export { matchPathlessRule, matchRule, ruleCoversSubject, wildcardMatches } from
 export type { RuleResolution } from './match-rule.ts';
 export { supersededFormOf, supersededVerdictOf } from './superseded.ts';
 export type { CoveredProgram, SupersededForm, SupersededVerdict } from './superseded.ts';
-export { commandPatternOf } from './command-match.ts';
+export { commandPatternOf, comparesByAdjacency } from './command-match.ts';
 export { inertPrinterSet } from './command-specs.ts';
 export type { CommandPattern } from './command-match.ts';
 export { RESERVED_WORDS, allWriteTargets, analyzeCommand, programNameOf, readPathsOfCommand } from './shell.ts';

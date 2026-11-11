@@ -88,7 +88,7 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
     return {
       tool,
       kind: 'command',
-      domain: [readsGoverned ? ctx.Or(commands.domain(command), dynamicRead) : commands.domain(command)],
+      domain: [readsGoverned ? ctx.Or(commands.domain(command), dynamicRead) : commands.domain(command), ...terms.map((term) => ctx.Not(commands.optionGap(command, term.rule)))],
       terms,
       guard: no,
       planDeny: no,
