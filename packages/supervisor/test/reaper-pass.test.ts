@@ -36,7 +36,7 @@ const setup = (context: CleanupContext, overrides: Partial<ReaperPassOptions> = 
       findHolders: async () => [],
       reapMarkerDirectory: async (request) => {
         reaps.push(request);
-        return { reaped: 0, kept: 0 };
+        return { reaped: 0, kept: 0, unreaped: [] };
       },
     },
     ...overrides,
@@ -164,7 +164,7 @@ describe('the wait of the reaper pass for a dead generation takes the values of 
         findHolders: async () => [HELD_FOREVER],
         reapMarkerDirectory: async (request) => {
           if (request.label === 'daemon') daemonReapAt.push(s.clock.now());
-          return { reaped: 0, kept: 0 };
+          return { reaped: 0, kept: 0, unreaped: [] };
         },
       },
     };
@@ -213,7 +213,7 @@ describe('the wait of the reaper pass for a dead generation takes the values of 
             findHolders: async () => [HELD_FOREVER],
             reapMarkerDirectory: async (request) => {
               if (request.label === 'daemon') daemonReapAt.push(s.clock.now());
-              return { reaped: 0, kept: 0 };
+              return { reaped: 0, kept: 0, unreaped: [] };
             },
           },
         },
