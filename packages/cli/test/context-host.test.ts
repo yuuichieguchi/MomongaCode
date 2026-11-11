@@ -230,6 +230,7 @@ const harness = (behaviour: Behaviour = {}) => {
         signal.addEventListener('abort', () => reject(signal.reason), { once: true });
       }),
     now: () => 0,
+    random: () => 0,
   };
   for (const stale of behaviour.staleRoots ?? []) {
     files.set(`${stale.root}/.momonga-eval-owner`, JSON.stringify({ pid: stale.owner, home: stale.home ?? OWNER_HOME }));

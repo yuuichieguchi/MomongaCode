@@ -94,14 +94,22 @@ const dialectText = (dialect: ProbeReportDialect): string => {
   return `none accepted${tried === '' ? '' : ` (${tried})`}`;
 };
 
-export const probeEndpointText = (name: string, endpoint: string, recordPath: string, report: EndpointProbe['report'], toolCalling: EndpointProbe['toolCalling'], declaredOutputBound?: string): string => {
+export const probeEndpointText = (
+  name: string,
+  endpoint: string,
+  recordPath: string,
+  report: EndpointProbe['report'],
+  toolCalling: EndpointProbe['toolCalling'],
+  parallelToolCalls: boolean | undefined,
+  declaredOutputBound?: string,
+): string => {
   const reasoning = report.reasoning;
   const parallel = report.parallelToolCalls;
   return `${escapedLines([
     `probed ${name}: model ${report.modelId} at ${endpoint}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
     `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
     `  structured output: ${report.constrained.accepted ? 'json_schema' : 'none'}, stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report, declaredOutputBound)}`,
-    `  parallel tool calls: ${parallel === undefined ? 'not measured' : `${parallel.accepted && parallel.multiCallRate >= 0.9} (${parallel.multiCallRate} of replies carried several calls)`}`,
+    `  parallel tool calls: ${parallel === undefined || parallelToolCalls === undefined ? 'not measured' : `${parallelToolCalls} (${parallel.multiCallRate} of replies carried several calls)`}`,
     `  reasoning: ${reasoning === undefined ? 'not measured' : reasoning.control === 'reasoning_effort' ? `reasoning_effort, lowest ${reasoning.lowest}` : `cannot be controlled${reasoning.headroomTokens === undefined ? '' : `, leaves room for ${reasoning.headroomTokens} tokens`}`}`,
     `  max concurrency: ${concurrencyText(report.maxConcurrency)}`,
     `  schema dialect: ${dialectText(report.schemaDialect)}`,
@@ -155,7 +163,7 @@ const probeChatCompletions = async (
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
 ): Promise<number> => {
-  const { DEFAULT_SAMPLES, isMeteredTarget, measurementBoundOf, probeEndpointTarget, reachableEndpoint, saveMeasurementConsent } = await import('@momonga/gateway');
+  const { DEFAULT_SAMPLES, capabilitiesFromProbe, decideToolCalling, isMeteredTarget, measurementBoundOf, probeEndpointTarget, reachableEndpoint, saveMeasurementConsent } = await import('@momonga/gateway');
   const key = endpointRecordKeyOf(subject, target);
   const metered = isMeteredTarget(target) ? { display: subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   if (metered !== undefined && options.consented) {
@@ -176,7 +184,7 @@ const probeChatCompletions = async (
     stepTimeoutMs: options.stepTimeoutMs,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
-  ports.stdout.write(probeEndpointText(subject.display, key.endpoint, paths.probe, report, toolCalling, target.capabilities.outputBoundField));
+  ports.stdout.write(probeEndpointText(subject.display, key.endpoint, paths.probe, report, toolCalling, capabilitiesFromProbe(report, decideToolCalling(report)).parallelToolCalls, target.capabilities.outputBoundField));
   await restartDaemon(ports, paths);
   return 0;
 };

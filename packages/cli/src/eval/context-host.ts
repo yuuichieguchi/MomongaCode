@@ -17,12 +17,12 @@ import { ADAPTERS, planModelsEdit, probeRecordKeyOf, registeredServer } from '@m
 import type { ConnectionDraft, EndpointProbeKey, ModelEntry, ModelsOperation, ModelsOperations, ModelsSettings, OpenResponsesTarget, ResolvedModel, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { FIRST_GENERATION, claimPathOf, fixedSocket, generationLayout, isRecord, momongaLayout, SecretEmptyError, SecretUnavailableError, SocketPathUnsupportedError } from '@momonga/foundation';
+import { FIRST_GENERATION, STARTUP_TIMEOUT_MS, claimPathOf, fixedSocket, generationLayout, isRecord, momongaLayout, SecretEmptyError, SecretUnavailableError, SocketPathUnsupportedError } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { commandStoreFailureOf, withinCommandLimit } from '../command-limit.ts';
-import type { ReflectionSettle } from '../client/golden-run-api.ts';
+import type { EventFollow, ReflectionSettle } from '../client/golden-run-api.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 
 export class ContextHostError extends Error {
@@ -55,6 +55,7 @@ export type ContextHostEffects = {
   applyStep(cwd: string, step: WorkspaceStep): Promise<void>;
   after(milliseconds: number, signal: AbortSignal): Promise<void>;
   now(): number;
+  random(): number;
   ownerPid: number;
   ownerHome: string;
   readSecret(name: string, signal: AbortSignal): Promise<string>;
@@ -402,7 +403,7 @@ export type ReflectionBounds = Pick<ReflectionSettle, 'pendingBoundMs' | 'attemp
 
 export type HomeSpec = { label: string; settings: Record<string, unknown>; files?: Readonly<Record<string, string>> };
 
-export type OpenedHome<Runtime extends ContextRuntime = ContextRuntime> = { cwd: string; env: Record<string, string>; runtime: Runtime; api: ContextCaseHost['api']; close(): Promise<void> };
+export type OpenedHome<Runtime extends ContextRuntime = ContextRuntime> = { cwd: string; env: Record<string, string>; runtime: Runtime; api: ContextCaseHost['api']; follow: EventFollow; close(): Promise<void> };
 
 export type Homes<Runtime extends ContextRuntime = ContextRuntime> = {
   open(spec: HomeSpec): Promise<OpenedHome<Runtime>>;
@@ -458,7 +459,8 @@ export const createHomes = <Runtime extends ContextRuntime = ContextRuntime>(eff
     for (const [name, content] of Object.entries(spec.files ?? {})) await effects.writeFile(path.join(workspace, name), content);
     const cwd = await effects.canonical(workspace);
     if (record.released) throw new ContextInterrupted();
-    await effects.startDaemon(root, paths, { ...caseEnvironment(effects.env, root, effects.platform), ...options.credentialValues });
+    const daemonEnv = { ...caseEnvironment(effects.env, root, effects.platform), ...options.credentialValues };
+    await effects.startDaemon(root, paths, daemonEnv);
     if (record.released) {
       await effects.terminate(paths);
       throw new ContextInterrupted();
@@ -468,16 +470,28 @@ export const createHomes = <Runtime extends ContextRuntime = ContextRuntime>(eff
     await runtime.setTrust(cwd, 'trusted');
     if (options.guideline !== undefined) await runtime.adoptGuideline({ text: options.guideline, parent: null, report: { ...BENCHMARK_GUIDELINE_REPORT } });
     const env = await effects.sessionEnv(root);
+    const follow: EventFollow = {
+      clock: { now: () => effects.now(), sleep: (milliseconds, signal) => effects.after(milliseconds, signal ?? options.interrupt) },
+      random: () => effects.random(),
+      reconnectBoundMs: STARTUP_TIMEOUT_MS,
+      restoreConnection: () => effects.startDaemon(root, paths, daemonEnv),
+    };
     return {
       cwd,
       env,
       runtime,
-      api: goldenRunApi(runtime, env, {
-        ...options.reflection,
-        now: () => effects.now(),
-        wait: (milliseconds) => effects.after(milliseconds, options.interrupt),
-        signal: options.interrupt,
-      }),
+      follow,
+      api: goldenRunApi(
+        runtime,
+        env,
+        {
+          ...options.reflection,
+          now: () => effects.now(),
+          wait: (milliseconds) => effects.after(milliseconds, options.interrupt),
+          signal: options.interrupt,
+        },
+        follow,
+      ),
       close: () => release(record),
     };
   };

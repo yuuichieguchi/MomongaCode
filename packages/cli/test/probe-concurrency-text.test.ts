@@ -18,13 +18,13 @@ const reportWith = (maxConcurrency: Report['maxConcurrency']): Report =>
 describe('the probe output names how the max concurrency is known', () => {
   it('prints a measured value with the refusal it comes from', () => {
     const measured = reportWith({ value: 3, evidence: 'refused' });
-    expect(probeEndpointText('t', 'http://e', '/r', measured, 'native')).toContain('max concurrency: 3 (the server refused more at once)');
+    expect(probeEndpointText('t', 'http://e', '/r', measured, 'native', undefined)).toContain('max concurrency: 3 (the server refused more at once)');
     expect(probeFmText('t', '/r', measured, 'native')).toContain('max concurrency: 3 (the server refused more at once)');
   });
 
   it('prints an unmeasured value as not measured, with the way to declare it', () => {
     const unmeasured = reportWith(undefined);
-    expect(probeEndpointText('t', 'http://e', '/r', unmeasured, 'native')).toContain('max concurrency: not measured (the server refused no request; maxConcurrency in the settings declares it, one request at a time otherwise)');
+    expect(probeEndpointText('t', 'http://e', '/r', unmeasured, 'native', undefined)).toContain('max concurrency: not measured (the server refused no request; maxConcurrency in the settings declares it, one request at a time otherwise)');
     expect(probeFmText('t', '/r', unmeasured, 'native')).toContain('max concurrency: not measured');
   });
 });

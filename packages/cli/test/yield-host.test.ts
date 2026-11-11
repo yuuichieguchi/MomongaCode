@@ -150,6 +150,7 @@ const harness = (behaviour: Behaviour = {}) => {
         signal.addEventListener('abort', () => reject(signal.reason), { once: true });
       }),
     now: () => 0,
+    random: () => 0,
     copyWorkspace: async (from, to) => {
       if (behaviour.failCopyTo === to) throw new Error('the workspace could not be copied');
       copies.push({ from, to });

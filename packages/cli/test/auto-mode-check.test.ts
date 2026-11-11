@@ -138,6 +138,7 @@ const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }
     applyStep: async () => undefined,
     after: (_milliseconds, signal) => waitForAbort(signal),
     now: () => 0,
+    random: () => 0,
     ownerPid: 7,
     ownerHome: '/home/person',
     readSecret: async () => {
