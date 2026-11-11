@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NO_MODEL_TARGET, agentReadiness } from '@momonga/protocol';
+import { messageOf } from '@momonga/protocol';
 import type { ModelViews } from '@momonga/protocol';
 import { startService } from './helpers.ts';
 
@@ -73,7 +73,7 @@ describe('the model of a session (design-model-names 3.1, 2.2, 12.1 N2.4)', () =
     const env = await serviceListing([]);
     const created = await createWith(env);
     expect(created.status).toBe(409);
-    expect(created.json.error).toMatchObject({ type: 'conflict', code: 'target_not_ready', message: agentReadiness({ unavailable: NO_MODEL_TARGET }).message });
+    expect(created.json.error).toMatchObject({ type: 'conflict', code: 'target_not_ready', message: messageOf('noModelConnected', 'cli') });
   });
 
   it('stores the full reference on a patch and records model.changed with model and previousModel', async () => {

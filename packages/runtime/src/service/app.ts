@@ -8,7 +8,7 @@ import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
@@ -312,7 +312,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (cwdArea !== undefined) throw invalidRequest(`cwd ${body.cwd} is inside ${cwdArea} and cannot be a session root`, 'cwd');
     const { views, start } = await gatewayListing(context.req.raw.signal);
     const startModel = startModelOf({ count: views.length, start });
-    if (startModel === undefined) throw targetNotReady(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
+    if (startModel === undefined) throw targetNotReady(messageOf('noModelConnected', 'cli'));
     const model = body.model === undefined ? startModel : requestedModelOf(body.model, views);
     const settings = await sessionSettingsOf(cwd, context.req.raw.signal);
     const additionalDirectories: string[] = [];

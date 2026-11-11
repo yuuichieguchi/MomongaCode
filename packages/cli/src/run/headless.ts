@@ -2,7 +2,6 @@ import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isR
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
 import { TARGET_NOT_READY, WORDS, agentReadiness, approvalShownLines, attachRunCommand, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
-import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
@@ -562,7 +561,7 @@ export const resumeStream = async (ports: CliPorts, paths: MomongaPaths, adopted
 export type RefusedResult = { type: 'result'; subtype: 'error'; is_error: true; result: ''; error: { code: string; message: string } };
 
 const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, error: { reason: string }): number => {
-  ports.stderr.write(`${escapedLines(leadWith('momonga: ', noTargetLines(error.reason, paths)))}\n`);
+  ports.stderr.write(`${escapedLines(leadWith('momonga: ', error.reason.split('\n')))}\n`);
   if (format !== 'text') {
     const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message: error.reason } };
     ports.stdout.write(`${JSON.stringify(refused)}\n`);
@@ -598,7 +597,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
     if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
     if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {
       const message = readinessShownText(readiness, 'shell');
-      ports.stderr.write(`${escapedLines(leadWith(`momonga: ${TARGET_NOT_READY}: `, message.split('\n')))}\n`);
+      ports.stderr.write(`${escapedLines(leadWith('momonga: ', message.split('\n')))}\n`);
       if (options.format !== 'text') {
         const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message } };
         ports.stdout.write(`${JSON.stringify(refused)}\n`);
