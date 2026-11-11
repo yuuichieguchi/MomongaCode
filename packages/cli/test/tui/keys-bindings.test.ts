@@ -5,14 +5,14 @@ import type { BindingReport } from '../../src/tui/keys/bindings.ts';
 import { capturedOf, captureTitle } from '../../src/tui/keys/capture.ts';
 import { createKeyBindings, ignoredNotice, KEY_FILE_MODE, KEY_FILE_STAT_MS } from '../../src/tui/keys/store.ts';
 import type { KeyFiles } from '../../src/tui/keys/store.ts';
-import { chordPressOf, createKeyTable, DEFAULT_KEY_TABLE, KEYS, keyReported, needsReport, neverReported, newlineKeyHint } from '../../src/tui/keys/table.ts';
+import { chordPressOf, createKeyTable, DEFAULT_KEY_TABLE, KEYS, keyReported, needsReport, newlineKeyHint } from '../../src/tui/keys/table.ts';
 import type { ActionId, KeyContext } from '../../src/tui/keys/table.ts';
 import type { KeyEvent, KeyName } from '../../src/tui/terminal/events.ts';
 import { seeded } from './screen-fakes.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', name, ...plain, ...mods });
 const text = (value: string, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', text: value, ...plain, ...mods });
 
@@ -31,6 +31,11 @@ describe('the written form of a key', () => {
     ['meta+f', 'alt+f'],
     ['shift+ctrl+k', 'ctrl+shift+k'],
     ['cmd+k', 'cmd+k'],
+    ['cmd+c', 'cmd+c'],
+    ['Cmd+Shift+Z', 'cmd+shift+z'],
+    ['super+k', 'cmd+k'],
+    ['hyper+k', 'hyper+k'],
+    ['shift+ctrl+hyper+cmd+k', 'cmd+hyper+ctrl+shift+k'],
     ['esc', 'escape'],
     ['escape', 'escape'],
     ['space', 'space'],
@@ -46,7 +51,7 @@ describe('the written form of a key', () => {
     expect(parseKey(written)).toBe(spec);
   });
 
-  it.each(['', 'ctrl+', 'hyper+k', 'ctrl+enterr', 'ctrl+ab', 'ctrl+x  ctrl+', 'foo'])('cannot read %j', (written) => {
+  it.each(['', 'ctrl+', 'fn+k', 'ctrl+enterr', 'ctrl+ab', 'ctrl+x  ctrl+', 'foo'])('cannot read %j', (written) => {
     expect(parseKey(written)).toBeUndefined();
   });
 
@@ -104,7 +109,7 @@ describe('a key-binding file resolved against the table', () => {
     ['an unknown context', ['editor', { 'ctrl+e': 'editor.lineEnd' }], 'editor ctrl+e: unknown context editor'],
     ['an unknown action', ['chat', { 'ctrl+e': 'editor.fly' }], 'chat ctrl+e: unknown action editor.fly'],
     ['an action of another context', ['chat', { 'ctrl+e': 'select.up' }], 'chat ctrl+e: select.up belongs to the context select'],
-    ['a key that cannot be read', ['chat', { 'hyper+e': 'editor.lineEnd' }], 'chat hyper+e: cannot read the key hyper+e'],
+    ['a key that cannot be read', ['chat', { 'fn+e': 'editor.lineEnd' }], 'chat fn+e: cannot read the key fn+e'],
     ['a reserved key', ['chat', { 'ctrl+c': 'editor.lineEnd' }], 'chat ctrl+c: ctrl+c is reserved'],
     ['a reserved key unbound', ['chat', { 'ctrl+d': null }], 'chat ctrl+d: ctrl+d is reserved'],
     ['a reserved key inside a chord', ['chat', { 'ctrl+x ctrl+z': 'editor.undo' }], 'chat ctrl+x ctrl+z: ctrl+x ctrl+z is reserved'],
@@ -153,7 +158,7 @@ describe('a key-binding file resolved against the table', () => {
   it('never throws and never leaves two actions of one context on one key, for any generated file (P12)', () => {
     const random = seeded(16);
     const contexts = ['chat', 'select', 'menu', 'viewer', 'nowhere'];
-    const keys = ['ctrl+k', 'ctrl+e', 'ctrl+x', 'ctrl+x enter', 'ctrl+x ctrl+k', 'escape', 'enter', 'ctrl+c', 'k', 'alt+s', 'hyper+q', 'up'];
+    const keys = ['ctrl+k', 'ctrl+e', 'ctrl+x', 'ctrl+x enter', 'ctrl+x ctrl+k', 'escape', 'enter', 'ctrl+c', 'k', 'alt+s', 'fn+q', 'up'];
     const actions = [...KEYS.map((row) => row.id), 'nothing.here', null];
     const pick = <T,>(from: readonly T[]): T => from[Math.floor(random() * from.length)] as T;
     for (let round = 0; round < 300; round += 1) {
@@ -290,12 +295,13 @@ describe('a table built from a file', () => {
   });
 
   it('knows which keys a terminal reports only with the keyboard protocol', () => {
-    for (const key of ['shift+enter', 'ctrl+enter', 'ctrl+shift+k', 'cmd+k']) expect(needsReport(key)).toBe(true);
+    for (const key of ['shift+enter', 'ctrl+enter', 'ctrl+shift+k', 'cmd+k', 'hyper+k', 'cmd+enter', 'ctrl+x cmd+k']) expect(needsReport(key)).toBe(true);
     for (const key of ['ctrl+k', 'shift+tab', 'alt+enter', 'enter', 'f5']) expect(needsReport(key)).toBe(false);
-    expect(neverReported('cmd+k')).toBe(true);
     expect(keyReported('shift+enter', 'unknown')).toBe(false);
     expect(keyReported('shift+enter', 'kitty')).toBe(true);
-    expect(keyReported('cmd+k', 'kitty')).toBe(false);
+    for (const state of ['unknown', 'plain', 'modify-other-keys'] as const) expect(keyReported('cmd+k', state)).toBe(false);
+    for (const state of ['kitty', 'proven'] as const) expect(keyReported('cmd+k', state)).toBe(true);
+    expect(keyReported('hyper+k', 'kitty')).toBe(true);
     expect(keyReported('ctrl+j', 'unknown')).toBe(true);
   });
 
@@ -369,7 +375,7 @@ describe('the key-binding file on disk', () => {
   });
 
   it('applies the file at startup and names the count of ignored entries in one notice', async () => {
-    const { store, notices } = await opened(JSON.stringify(file(['chat', { 'ctrl+s': 'history.search', 'ctrl+c': 'editor.undo', 'hyper+x': 'editor.undo' }])));
+    const { store, notices } = await opened(JSON.stringify(file(['chat', { 'ctrl+s': 'history.search', 'ctrl+c': 'editor.undo', 'fn+x': 'editor.undo' }])));
     expect(store.table().keysFor('history.search')).toEqual(['ctrl+s', 'ctrl+r']);
     expect(notices).toEqual(['2 key bindings in ~/.momonga/keybindings.json were ignored; /keybindings shows why']);
   });

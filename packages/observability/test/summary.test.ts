@@ -47,6 +47,7 @@ describe('summarizeRun', () => {
     expect(summarizeRun(h.store, RUN_ID)).toEqual({
       steps: 2,
       chatCalls: 3,
+      sideCalls: 0,
       toolCalls: 1,
       inputTokens: 300,
       outputTokens: 40,
@@ -67,6 +68,7 @@ describe('summarizeRun', () => {
     expect(summarizeRun(h.store, 'missing')).toEqual({
       steps: 0,
       chatCalls: 0,
+      sideCalls: 0,
       toolCalls: 0,
       inputTokens: 0,
       outputTokens: 0,

@@ -1,4 +1,6 @@
 import type { Stored } from './stored-value.ts';
+import { anything, boolean, boundedInteger, closed, constant, enumOf, integer, nonNegativeInteger, nullable, root, storedEnumOf, string } from './schema-helpers.ts';
+import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
 import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
@@ -25,33 +27,9 @@ import type { ReflectionJobView } from './memory.ts';
 import { UNPRICED_CODES } from './token-anatomy.ts';
 import type { BilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
 
-const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const DAY_MS = 86_400_000;
-
-export type JsonSchema = Readonly<Record<string, unknown>>;
-
-const closed = (properties: Record<string, JsonSchema>, required: readonly string[]): JsonSchema => ({
-  type: 'object',
-  properties,
-  required,
-  additionalProperties: false,
-});
-
-const root = (schema: JsonSchema): JsonSchema => ({ $schema: DRAFT_2020_12, ...schema });
-
-const nullable = (schema: JsonSchema): JsonSchema => ({ anyOf: [schema, { type: 'null' }] });
-
-const string: JsonSchema = { type: 'string' };
-const integer: JsonSchema = { type: 'integer' };
-const nonNegativeInteger: JsonSchema = { type: 'integer', minimum: 0 };
-const boolean: JsonSchema = { type: 'boolean' };
-const anything: JsonSchema = {};
-const enumOf = (values: readonly string[]): JsonSchema => ({ type: 'string', enum: values });
-const storedEnumOf = (values: readonly string[]): JsonSchema => enumOf([...values, UNKNOWN_VALUE]);
-const constant = (value: string): JsonSchema => ({ type: 'string', const: value });
 const operationEffect: JsonSchema = closed({ operation: string, target: string, outcome: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['operation', 'target', 'outcome']);
 const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
-const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
 const permissionMode = enumOf(PERMISSION_MODES);
 const storedPermissionMode = storedEnumOf(PERMISSION_MODES);
@@ -1184,6 +1162,7 @@ export type RunTraceSpan = {
 export type RunTraceSummary = {
   steps: number;
   chatCalls: number;
+  sideCalls: number;
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
@@ -1337,9 +1316,9 @@ export type RunHealth = {
   pid: number;
   startedAt: string;
   state: 'running' | 'retiring' | 'draining';
-  role?: 'starting' | 'serving' | 'retiring';
-  steps?: number;
-  jobs?: number;
+  role: 'starting' | 'serving' | 'retiring';
+  steps: number;
+  jobs: number;
   sandbox: 'seatbelt' | 'bubblewrap' | 'none';
 };
 
@@ -1525,7 +1504,7 @@ export const RUN_API_SCHEMAS = {
         jobs: integer,
         sandbox: enumOf(['seatbelt', 'bubblewrap', 'none']),
       },
-      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'sandbox'],
+      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'role', 'steps', 'jobs', 'sandbox'],
     ),
   ),
   SessionView: root(
@@ -1591,6 +1570,7 @@ export const RUN_API_SCHEMAS = {
           {
             steps: nonNegativeInteger,
             chatCalls: nonNegativeInteger,
+            sideCalls: nonNegativeInteger,
             toolCalls: nonNegativeInteger,
             inputTokens: nonNegativeInteger,
             outputTokens: nonNegativeInteger,
@@ -1603,7 +1583,7 @@ export const RUN_API_SCHEMAS = {
               items: closed({ step: nonNegativeInteger, attempt: integer, finishReasons: { type: 'array', items: string } }, ['step', 'attempt', 'finishReasons']),
             },
           },
-          ['steps', 'chatCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheReadNotReportedCalls', 'errorCount', 'durationMs', 'chatResults'],
+          ['steps', 'chatCalls', 'sideCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheReadNotReportedCalls', 'errorCount', 'durationMs', 'chatResults'],
         ),
         spans: {
           type: 'array',

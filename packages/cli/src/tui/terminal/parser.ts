@@ -1,8 +1,8 @@
 import { MAX_SEQUENCE_BYTES, PASTE_ABANDON_BYTES, PASTE_MAX_BYTES } from './constants.ts';
-import { MOUSE_BUTTONS, NO_MODIFIERS, WHEEL_BUTTONS } from './events.ts';
-import type { KeyEvent, KeyName, Modifiers, TerminalEvent } from './events.ts';
+import { MOUSE_BUTTONS, NO_KEY_MODIFIERS, WHEEL_BUTTONS } from './events.ts';
+import type { KeyEvent, KeyModifiers, KeyName, TerminalEvent } from './events.ts';
 
-export type InputParser = { push(bytes: Uint8Array): TerminalEvent[] };
+export type InputParser = { push(bytes: Uint8Array): TerminalEvent[]; holdsLoneEscape(): boolean; settle(): TerminalEvent[] };
 
 const ESC = '\u001b';
 const BEL = '\u0007';
@@ -12,7 +12,7 @@ type Parsed = { events: TerminalEvent[]; next: number; pasteStarts: boolean };
 type Step = Parsed | 'incomplete';
 type Interpreted = TerminalEvent[] | 'paste-start' | 'unknown';
 
-type OpenPaste = { pieces: string[]; seen: number; overflow: boolean };
+type OpenPaste = { pieces: string[]; seen: number; overflow: boolean; abandoned: boolean };
 
 const LETTER_KEYS: Readonly<Record<string, KeyName>> = { A: 'up', B: 'down', C: 'right', D: 'left', H: 'home', F: 'end', P: 'f1', Q: 'f2', R: 'f3', S: 'f4' };
 
@@ -79,19 +79,26 @@ const unitsOf = (codePoint: number): number => (codePoint > 0xffff ? 2 : 1);
 
 const isScalar = (codePoint: number): boolean => Number.isInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff);
 
-const namedKey = (name: KeyName, modifiers: Modifiers): KeyEvent => ({ type: 'key', name, ...modifiers });
+const isC1Control = (codePoint: number): boolean => codePoint >= 0x80 && codePoint <= 0x9f;
 
-const textKey = (text: string, modifiers: Modifiers): KeyEvent => ({ type: 'key', text, ...modifiers });
+const isControl = (codePoint: number): boolean => codePoint < 0x20 || codePoint === 0x7f || isC1Control(codePoint);
 
-const textKeys = (text: string): TerminalEvent[] => Array.from(text, (character) => textKey(character, NO_MODIFIERS));
+const isPrintable = (codePoint: number): boolean => isScalar(codePoint) && !isControl(codePoint);
 
-const modifiersOf = (parameter: number): Modifiers => {
+const namedKey = (name: KeyName, modifiers: KeyModifiers): KeyEvent => ({ type: 'key', name, ...modifiers });
+
+const textKey = (text: string, modifiers: KeyModifiers): KeyEvent => ({ type: 'key', text, ...modifiers });
+
+const MODIFIER_BITS = { shift: 1, alt: 2, ctrl: 4, super: 8, hyper: 16, meta: 32 } as const satisfies Record<keyof KeyModifiers, number>;
+
+const modifiersOf = (parameter: number): KeyModifiers => {
   const bits = parameter - 1;
-  return { shift: (bits & 1) !== 0, alt: (bits & 2) !== 0, ctrl: (bits & 4) !== 0 };
+  const held = (modifier: keyof KeyModifiers): boolean => (bits & MODIFIER_BITS[modifier]) !== 0;
+  return { shift: held('shift'), alt: held('alt'), ctrl: held('ctrl'), super: held('super'), hyper: held('hyper'), meta: held('meta') };
 };
 
 const plainKey = (codePoint: number, alt: boolean): KeyEvent => {
-  const modifiers = { ...NO_MODIFIERS, alt };
+  const modifiers = { ...NO_KEY_MODIFIERS, alt };
   if (codePoint === 0x0d) return namedKey('enter', modifiers);
   if (codePoint === 0x09) return namedKey('tab', modifiers);
   if (codePoint === 0x7f || codePoint === 0x08) return namedKey('backspace', modifiers);
@@ -112,10 +119,10 @@ const numbersOf = (text: string, separator: string): number[] | undefined => {
   return numbers;
 };
 
-type Modified = { modifiers: Modifiers; released: boolean };
+type Modified = { modifiers: KeyModifiers; released: boolean };
 
 const modifiedOf = (field: string | undefined): Modified | undefined => {
-  if (field === undefined || field === '') return { modifiers: NO_MODIFIERS, released: false };
+  if (field === undefined || field === '') return { modifiers: NO_KEY_MODIFIERS, released: false };
   const [modifierText = '', eventText] = field.split(':');
   const parameter = modifierText === '' ? 1 : numberOf(modifierText);
   if (parameter === undefined || parameter < 1) return undefined;
@@ -124,12 +131,12 @@ const modifiedOf = (field: string | undefined): Modified | undefined => {
   return event === undefined ? undefined : { modifiers: modifiersOf(parameter), released: event === KITTY_RELEASE };
 };
 
-const codePointKey = (codePoint: number, shifted: number | undefined, modifiers: Modifiers): Interpreted => {
+const codePointKey = (codePoint: number, shifted: number | undefined, modifiers: KeyModifiers): Interpreted => {
   const name = CODE_POINT_KEYS[codePoint];
   if (name !== undefined) return [namedKey(name, modifiers)];
   if (codePoint >= PRIVATE_USE_FIRST && codePoint <= PRIVATE_USE_LAST) return [];
-  if (codePoint < 0x20 || !isScalar(codePoint)) return 'unknown';
-  const shown = modifiers.shift && shifted !== undefined && isScalar(shifted) ? shifted : codePoint;
+  if (!isPrintable(codePoint)) return 'unknown';
+  const shown = modifiers.shift && shifted !== undefined && isPrintable(shifted) ? shifted : codePoint;
   return [textKey(String.fromCodePoint(shown), modifiers)];
 };
 
@@ -142,7 +149,7 @@ const kittyKey = (parameters: string): Interpreted => {
   if (modified.released) return [];
   if (textField !== '') {
     const codePoints = numbersOf(textField, ':');
-    if (codePoints === undefined || !codePoints.every(isScalar)) return 'unknown';
+    if (codePoints === undefined || !codePoints.every(isPrintable)) return 'unknown';
     return [textKey(String.fromCodePoint(...codePoints), modified.modifiers)];
   }
   return codePointKey(code, shiftedText === undefined ? undefined : numberOf(shiftedText), modified.modifiers);
@@ -217,11 +224,11 @@ const interpretCsi = (parameters: string, intermediates: string, final: string):
 
 const parsed = (events: TerminalEvent[], next: number): Parsed => ({ events, next, pasteStarts: false });
 
-const abandoned = (buffer: string, start: number, next: number): Parsed => parsed(textKeys(buffer.slice(start, next)), next);
+const dropped = (next: number): Parsed => parsed([], next);
 
-const interpreted = (buffer: string, start: number, next: number, result: Interpreted): Parsed => {
+const interpreted = (next: number, result: Interpreted): Parsed => {
   if (result === 'paste-start') return { events: [], next, pasteStarts: true };
-  return result === 'unknown' ? abandoned(buffer, start, next) : parsed(result, next);
+  return result === 'unknown' ? dropped(next) : parsed(result, next);
 };
 
 const isParameter = (code: number): boolean => code >= 0x30 && code <= 0x3f;
@@ -235,11 +242,11 @@ const parseCsi = (buffer: string, start: number): Step => {
     const code = buffer.charCodeAt(index);
     if (isFinal(code)) {
       const split = parametersEnd ?? index;
-      return interpreted(buffer, start, index + 1, interpretCsi(buffer.slice(start + 2, split), buffer.slice(split, index), buffer.charAt(index)));
+      return interpreted(index + 1, interpretCsi(buffer.slice(start + 2, split), buffer.slice(split, index), buffer.charAt(index)));
     }
     if (isIntermediate(code)) parametersEnd ??= index;
-    else if (!isParameter(code) || parametersEnd !== undefined) return abandoned(buffer, start, index);
-    if (index - start + 1 >= MAX_SEQUENCE_BYTES) return abandoned(buffer, start, index + 1);
+    else if (!isParameter(code) || parametersEnd !== undefined) return dropped(index);
+    if (index - start + 1 >= MAX_SEQUENCE_BYTES) return dropped(index + 1);
   }
   return 'incomplete';
 };
@@ -247,9 +254,9 @@ const parseCsi = (buffer: string, start: number): Step => {
 const parseSs3 = (buffer: string, start: number): Step => {
   for (let index = start + 2; index < buffer.length; index += 1) {
     const code = buffer.charCodeAt(index);
-    if (isFinal(code)) return interpreted(buffer, start, index + 1, letterKey(buffer.slice(start + 2, index), buffer.charAt(index)));
-    if (code !== 0x3b && !(code >= 0x30 && code <= 0x39)) return abandoned(buffer, start, index);
-    if (index - start + 1 >= MAX_SEQUENCE_BYTES) return abandoned(buffer, start, index + 1);
+    if (isFinal(code)) return interpreted(index + 1, letterKey(buffer.slice(start + 2, index), buffer.charAt(index)));
+    if (code !== 0x3b && !(code >= 0x30 && code <= 0x39)) return dropped(index);
+    if (index - start + 1 >= MAX_SEQUENCE_BYTES) return dropped(index + 1);
   }
   return 'incomplete';
 };
@@ -263,17 +270,17 @@ const parseOsc = (buffer: string, start: number): Step => {
   let index = start + 2;
   while (index < buffer.length) {
     const character = buffer.charAt(index);
-    if (character === BEL) return interpreted(buffer, start, index + 1, interpretOsc(buffer.slice(start + 2, index)));
+    if (character === BEL) return interpreted(index + 1, interpretOsc(buffer.slice(start + 2, index)));
     if (character === ESC) {
       const after = buffer[index + 1];
       if (after === undefined) return 'incomplete';
-      if (after !== '\\') return abandoned(buffer, start, index);
-      return interpreted(buffer, start, index + 2, interpretOsc(buffer.slice(start + 2, index)));
+      if (after !== '\\') return dropped(index);
+      return interpreted(index + 2, interpretOsc(buffer.slice(start + 2, index)));
     }
     const codePoint = buffer.codePointAt(index) ?? 0;
     bytes += utf8Length(codePoint);
     index += unitsOf(codePoint);
-    if (bytes >= MAX_SEQUENCE_BYTES) return abandoned(buffer, start, index);
+    if (bytes >= MAX_SEQUENCE_BYTES) return dropped(index);
   }
   return 'incomplete';
 };
@@ -287,15 +294,15 @@ const parseEscape = (buffer: string, start: number, held: boolean): Step => {
   if (after === undefined) return 'incomplete';
   const sequence = INTRODUCERS[after];
   if (sequence !== undefined) return sequence(buffer, start);
-  if (held) return parsed([namedKey('escape', NO_MODIFIERS)], start + 1);
+  if (held) return parsed([namedKey('escape', NO_KEY_MODIFIERS)], start + 1);
   if (after === ESC) {
     const inner = INTRODUCERS[buffer[start + 2] ?? ''];
-    if (inner === undefined) return parsed([namedKey('escape', NO_MODIFIERS)], start + 1);
+    if (inner === undefined) return parsed([namedKey('escape', NO_KEY_MODIFIERS)], start + 1);
     const step = inner(buffer, start + 1);
     return step === 'incomplete' ? step : withAlt(step);
   }
   const codePoint = buffer.codePointAt(start + 1) ?? 0;
-  return parsed([plainKey(codePoint, true)], start + 1 + unitsOf(codePoint));
+  return parsed(isC1Control(codePoint) ? [] : [plainKey(codePoint, true)], start + 1 + unitsOf(codePoint));
 };
 
 const heldEndPrefix = (buffer: string, from: number): number => {
@@ -303,18 +310,6 @@ const heldEndPrefix = (buffer: string, from: number): number => {
     if (PASTE_END.startsWith(buffer.slice(buffer.length - length))) return length;
   }
   return 0;
-};
-
-const unitsWithin = (text: string, byteBudget: number): number => {
-  let bytes = 0;
-  let index = 0;
-  while (index < text.length) {
-    const codePoint = text.codePointAt(index) ?? 0;
-    if (bytes + utf8Length(codePoint) > byteBudget) return index;
-    bytes += utf8Length(codePoint);
-    index += unitsOf(codePoint);
-  }
-  return index;
 };
 
 const OVERFLOWED_PASTE: TerminalEvent = { type: 'paste', text: '', overflow: true };
@@ -341,25 +336,35 @@ export const createInputParser = (): InputParser => {
   const pasteStep = (open: OpenPaste, buffer: string, at: number, events: TerminalEvent[]): number | undefined => {
     const end = buffer.indexOf(PASTE_END, at);
     const stop = end === -1 ? buffer.length - heldEndPrefix(buffer, at) : end;
-    const piece = buffer.slice(at, stop);
-    if (open.seen + Buffer.byteLength(piece, 'utf8') >= PASTE_ABANDON_BYTES) {
-      paste = undefined;
-      events.push(OVERFLOWED_PASTE);
-      return at + unitsWithin(piece, PASTE_ABANDON_BYTES - open.seen);
+    if (!open.abandoned) {
+      const piece = buffer.slice(at, stop);
+      if (open.seen + Buffer.byteLength(piece, 'utf8') >= PASTE_ABANDON_BYTES) {
+        open.abandoned = true;
+        open.pieces = [];
+        events.push(OVERFLOWED_PASTE);
+      } else collect(open, piece);
     }
-    collect(open, piece);
     if (end === -1) {
       pending = buffer.slice(stop);
       return undefined;
     }
     paste = undefined;
-    events.push(closed(open));
+    if (!open.abandoned) events.push(closed(open));
     return end + PASTE_END.length;
+  };
+
+  const holdsLoneEscape = (): boolean => pending === ESC && readEndedWithEscape && paste === undefined;
+
+  const settle = (): TerminalEvent[] => {
+    if (!holdsLoneEscape()) return [];
+    pending = '';
+    readEndedWithEscape = false;
+    return [namedKey('escape', NO_KEY_MODIFIERS)];
   };
 
   const push = (bytes: Uint8Array): TerminalEvent[] => {
     const events: TerminalEvent[] = [];
-    const heldEscape = pending === ESC && readEndedWithEscape && paste === undefined;
+    const heldEscape = holdsLoneEscape();
     const buffer = pending + decoder.decode(bytes, { stream: true });
     pending = '';
     let at = 0;
@@ -372,7 +377,7 @@ export const createInputParser = (): InputParser => {
       }
       const codePoint = buffer.codePointAt(at) ?? 0;
       if (codePoint !== 0x1b) {
-        events.push(plainKey(codePoint, false));
+        if (!isC1Control(codePoint)) events.push(plainKey(codePoint, false));
         at += unitsOf(codePoint);
         continue;
       }
@@ -382,12 +387,12 @@ export const createInputParser = (): InputParser => {
         break;
       }
       for (const event of step.events) events.push(event);
-      if (step.pasteStarts) paste = { pieces: [], seen: 0, overflow: false };
+      if (step.pasteStarts) paste = { pieces: [], seen: 0, overflow: false, abandoned: false };
       at = step.next;
     }
     if (bytes.length > 0) readEndedWithEscape = bytes[bytes.length - 1] === 0x1b;
     return events;
   };
 
-  return { push };
+  return { push, holdsLoneEscape, settle };
 };

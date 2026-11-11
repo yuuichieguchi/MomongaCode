@@ -232,11 +232,11 @@ describe('exit classification in the manager', () => {
     expect(harness.timers.pending()).toEqual([]);
   });
 
-  it('exit 75 does not respawn on a timer', async (context) => {
+  it('exit 77 does not respawn on a timer', async (context) => {
     const harness = createManagerHarness(context);
     harness.lock.holdExternally(firstGeneration(harness.paths).locks.runtime, process.pid);
     harness.spawnInitial();
-    await exitAndWait(harness, 'waiting-lock', 75);
+    await exitAndWait(harness, 'waiting-lock', 77);
     for (let step = 0; step < 120; step += 1) {
       harness.timers.advance(5000);
       await afterMicrotasks();

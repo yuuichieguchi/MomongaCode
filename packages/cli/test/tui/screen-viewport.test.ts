@@ -20,7 +20,7 @@ const filled = (count: number, text = (index: number) => `line ${index}`): Trans
 
 const texts = (store: TranscriptStore, position: Position, height: number, width = 40): string[] => windowOf(sourceOf(store, createRowCache(), width), position, height).rows.map((row) => row.row.text);
 
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 
 describe('the viewport', () => {
   it('follows the end: the last rows are shown and new entries move into view', () => {

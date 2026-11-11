@@ -1,6 +1,7 @@
 export const MAX_SEQUENCE_BYTES = 256;
 export const PASTE_MAX_BYTES = 1024 * 1024;
 export const PASTE_ABANDON_BYTES = 8 * 1024 * 1024;
+export const KEY_SETTLE_MS = 150;
 export const KITTY_FLAGS = 7;
 export const MIN_COLUMNS = 20;
 export const MIN_ROWS = 6;

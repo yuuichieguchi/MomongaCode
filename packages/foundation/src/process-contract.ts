@@ -2,11 +2,32 @@ import type { Clock } from './clock.ts';
 import { REAP_POLL_INTERVAL_MS } from './platform/probe-timing.ts';
 import { parseOutsideJson } from './json-depth.ts';
 
-export const EXIT_OK = 0;
-export const EXIT_FAILURE = 1;
-export const EXIT_ALREADY_RUNNING = 75;
-export const EXIT_CONFIG = 78;
-export const EXIT_RETIRED = 79;
+export const EXIT_CODES = {
+  ok: { code: 0, meaning: 'success' },
+  failure: { code: 1, meaning: 'general failure, refused, not restored' },
+  usage: { code: 2, meaning: 'usage error' },
+  keeperCompilerMissing: { code: 3, meaning: 'the Windows keeper build found no compiler' },
+  waitingForApproval: { code: 75, meaning: 'headless run waiting for approval' },
+  versionMismatchReserved: { code: 76, meaning: 'reserved: version mismatch' },
+  alreadyRunning: { code: 77, meaning: 'daemon already running (lock held)' },
+  config: { code: 78, meaning: 'config error or entry usage error' },
+  retired: { code: 79, meaning: 'retired generation exited clean' },
+  signalBase: { code: 128, meaning: 'killed by signal n: this value plus n' },
+  interrupted: { code: 130, meaning: 'interrupted or cancelled' },
+  signatureRejected: { code: 255, meaning: 'release signature rejected' },
+} as const satisfies Record<string, { code: number; meaning: string }>;
+
+export const EXIT_OK = EXIT_CODES.ok.code;
+export const EXIT_FAILURE = EXIT_CODES.failure.code;
+export const EXIT_USAGE = EXIT_CODES.usage.code;
+export const WINDOWS_KEEPER_COMPILER_MISSING_EXIT = EXIT_CODES.keeperCompilerMissing.code;
+export const EXIT_WAITING_FOR_APPROVAL = EXIT_CODES.waitingForApproval.code;
+export const EXIT_ALREADY_RUNNING = EXIT_CODES.alreadyRunning.code;
+export const EXIT_CONFIG = EXIT_CODES.config.code;
+export const EXIT_RETIRED = EXIT_CODES.retired.code;
+export const EXIT_SIGNAL_BASE = EXIT_CODES.signalBase.code;
+export const EXIT_INTERRUPTED = EXIT_CODES.interrupted.code;
+export const SIGNATURE_REJECTED_EXIT_CODE = EXIT_CODES.signatureRejected.code;
 
 export const SWEEP_INTERVAL_MS = 1000;
 export const GENERATION_POLL_INTERVAL_MS = SWEEP_INTERVAL_MS;

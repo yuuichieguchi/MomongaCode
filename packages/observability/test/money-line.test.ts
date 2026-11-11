@@ -3,20 +3,18 @@ import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import { UNPRICED_CODES } from '@momonga/protocol';
 import {
   UNPRICED_CODE_TEXT,
-  billedCallsOfRun,
   buildCostBreakdown,
   buildCostReport,
   definePriceTable,
   formatCostBreakdown,
   formatCostReport,
-  moneyLine,
   priceCall,
   recordChatResponse,
   startAgentSpan,
   startChatSpan,
 } from '@momonga/observability';
 import type { CallBilling, ChatBilling, PricedCall } from '@momonga/observability';
-import { harness } from './helpers.ts';
+import { harness, billedCallsOfRun, moneyLine } from './helpers.ts';
 
 const AT = Date.parse('2026-07-10T00:00:00Z');
 const TABLE = definePriceTable([{ provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 1, outputPerMTok: 4, currency: 'USD' }]);

@@ -1,5 +1,6 @@
 import { NO_MODEL_CONNECTED_TEXT, PLAN_LABEL_REFUSAL, displayMapOf, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
 import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
+import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE } from '@momonga/foundation';
 import type { OpenUrl } from '@momonga/foundation';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import { listingViewsOf } from '../client/gateway-client.ts';
@@ -20,14 +21,12 @@ import {
 import type { SandboxKind, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
 import { codeNotAcceptedLine, listProblemLine, noBrowserHintLine, planDisabledLines, resumeLine, sensitiveUrlLines, signedInLine, signedOutLines, tryAgainLine } from '../plan/texts.ts';
 import { escapedLines } from '../terminal-writer.ts';
+import { UsageError } from '../usage-error.ts';
 
 export { nextAccountLabel };
 
 type Writer = { write(text: string): void };
 
-const EXIT_USAGE = 2;
-const EXIT_NOT_SIGNED_IN = 1;
-const EXIT_INTERRUPTED = 130;
 
 const print = (writer: Writer, lines: readonly string[]): void => writer.write(`${escapedLines(lines)}\n`);
 
@@ -152,10 +151,7 @@ const outcomeLines = (profile: PlanProfileView, account: string, answer: PlanSig
 };
 
 export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions): Promise<number> => {
-  if (options.account !== undefined && !isPlanLabel(options.account)) {
-    print(ports.stderr, [`momonga: ${PLAN_LABEL_REFUSAL}`]);
-    return EXIT_USAGE;
-  }
+  if (options.account !== undefined && !isPlanLabel(options.account)) throw new UsageError(PLAN_LABEL_REFUSAL);
   const listed = await ports.plan.accounts();
   const profile = await chosenProfile(ports, listed, options.provider);
   if (profile === undefined) return EXIT_USAGE;
@@ -163,7 +159,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
   const unfixable = unfixableAccount(listed, profile.id, account);
   if (unfixable !== undefined) {
     print(ports.stderr, [`${unfixable.label}: ${accountStateWord(unfixable)}`, ...(unfixable.cause === undefined ? [] : [`cause: ${unfixable.cause}`])]);
-    return EXIT_NOT_SIGNED_IN;
+    return EXIT_FAILURE;
   }
   if ((await ports.sandbox()) === 'none') print(ports.stderr, SANDBOX_OFF_NOTICE);
   print(ports.stdout, [profile.messages.description]);
@@ -205,16 +201,16 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
     }
     if (error instanceof SignInExpiredError || error instanceof SignInAttemptNotFoundError) {
       print(ports.stderr, [`${error.message} ${tryAgain}`]);
-      return EXIT_NOT_SIGNED_IN;
+      return EXIT_FAILURE;
     }
     if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError || error instanceof SignInGatewayStoppedError) {
       print(ports.stderr, [error.message]);
-      return EXIT_NOT_SIGNED_IN;
+      return EXIT_FAILURE;
     }
     throw error;
   }
   print(ports.stdout, outcomeLines(profile, account, answer));
-  return answer.outcome === SIGNED_IN_OUTCOME ? 0 : EXIT_NOT_SIGNED_IN;
+  return answer.outcome === SIGNED_IN_OUTCOME ? EXIT_OK : EXIT_FAILURE;
 };
 
 export type AuthLogoutPorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient } & TerminalPorts;
@@ -252,7 +248,7 @@ export const authResume = async (ports: AuthResumePorts, options: { account: str
   const listed = await ports.plan.accounts();
   if (!listed.accounts.some((account) => account.label === options.account)) {
     print(ports.stderr, [`no saved account is labelled ${JSON.stringify(options.account)}; momonga auth status lists them`]);
-    return EXIT_NOT_SIGNED_IN;
+    return EXIT_FAILURE;
   }
   const chosen = accountNamed(listed.accounts, options.account);
   const answer = await ports.plan.resume(chosen.label, { profile: chosen.profile });

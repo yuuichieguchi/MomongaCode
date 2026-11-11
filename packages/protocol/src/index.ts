@@ -353,7 +353,9 @@ export {
   COST_CURRENCY,
   COST_UNIT_DIGITS,
   MAX_TRACE_CONTENT_PAGE,
+  RELIABILITY_DERIVATIONS,
   REPORT_SCHEMAS,
+  TRACE_CONTENT_PAGE_OPTION,
   REVIEW_LABELS,
 } from './reliability.ts';
 export type {
@@ -403,7 +405,6 @@ export type {
   CostTotalsView,
   RoleCostView,
   GatewayCostReportView,
-  JsonSchema,
   McpAuthState,
   McpAuthorizationView,
   McpServerView,
@@ -426,7 +427,7 @@ export type {
 } from './run-api.ts';
 export { assistantTextOf, jsonReplyOf } from './assistant-text.ts';
 export { jsonReplyPathFor } from './json-reply-path.ts';
-export { BUDGET_CAUSES, BUDGET_DIMENSIONS, BUDGET_EXCEEDED_CODE, QUOTE_ROUTE, fitsCostCeiling, tokenPriceOfQuote, worstCaseUnits, HELD_OUTCOMES, MAX_COST_USD, NANO_PER_USD, PRICE_UNITS_PER_NANO, QUIESCENT_EXIT_CODE, admitRequest, composeBudget, nanoOfAmount, nanoOfCost, nanoOfDecimal, nanoOfUnits, usdOfNano } from './budget.ts';
+export { BUDGET_CAUSES, BUDGET_DIMENSIONS, BUDGET_EXCEEDED_CODE, QUOTE_ROUTE, fitsCostCeiling, tokenPriceOfQuote, worstCaseUnits, HELD_OUTCOMES, MAX_COST_USD, NANO_PER_USD, PRICE_UNITS_PER_NANO, admitRequest, composeBudget, nanoOfAmount, nanoOfCost, nanoOfDecimal, nanoOfUnits, usdOfNano } from './budget.ts';
 export type { Admission, AdmissionAsk, CallFootprint, BudgetCause, BudgetDimension, BudgetExhausted, ComposedBudget, HeldCallView, HeldOutcome, ModelQuote, RequestBudget, RunUsage, TokenPrice, TreeSpend } from './budget.ts';
 export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
@@ -740,7 +741,9 @@ export type {
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';
-export { OPEN_RESPONSES_OPENAPI } from './open-responses-spec.ts';
+export { MIN_REQUEST_OUTPUT_TOKENS, OPEN_RESPONSES_OPENAPI } from './open-responses-spec.ts';
+export { PRICE_CURRENCY, PRICE_DECIMAL_PLACES, priceEffectiveFromMs, priceRowIdentity, priceTableProblem, validatePriceTable } from './price-table.ts';
+export type { PriceField, PriceRow, PriceTableProblem } from './price-table.ts';
 export { OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_REGISTRY_ID, OPEN_RESPONSES_REMOTE_DOCUMENTS, OPEN_RESPONSES_SCHEMA_REGISTRY, openResponsesComponentSchema, openResponsesSchemaRegistry } from './open-responses-registry.ts';
 export { SUPERVISOR_API_VERSION } from './supervisor-api.ts';
 export type {
@@ -755,3 +758,4 @@ export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED,
 export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
 export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';
 export type { NamedPlanAccountRef } from './plan-account.ts';
+export type { JsonSchema } from './schema-helpers.ts';

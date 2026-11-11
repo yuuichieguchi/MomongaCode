@@ -12,7 +12,7 @@ const linesOf = (text: string | undefined): string[] => (text ?? '').split('\n')
 
 const CTRL_O = '\u000f';
 
-const keyX: TerminalEvent = { type: 'key', text: 'x', ctrl: false, alt: false, shift: false };
+const keyX: TerminalEvent = { type: 'key', text: 'x', ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 
 const settle = async (): Promise<void> => {
   for (let count = 0; count < 10; count += 1) await new Promise<void>((resolve) => setImmediate(resolve));

@@ -7,6 +7,7 @@ import type { SelectSpec } from '../select.tsx';
 import { namesOf } from '../slash.ts';
 import type { SlashCommand } from '../slash.ts';
 import { menuRowsCap } from './layout.ts';
+import { inertText } from './wrap.ts';
 
 export type Invitation = { profile: PlanProfileView };
 
@@ -121,7 +122,7 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
     },
     view: (rows) => {
       if (shown === undefined) return null;
-      if (shown.length === 0) return <Text dimColor wrap="truncate">{noCommandsMatch(host.text)}</Text>;
+      if (shown.length === 0) return <Text dimColor wrap="truncate">{noCommandsMatch(inertText(host.text))}</Text>;
       const span = spanAt(shown.length, state.top, windowRows(rows));
       return (
         <Box flexDirection="column">

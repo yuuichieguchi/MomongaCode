@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { systemTiming } from '@momonga/foundation';
+import { EXIT_USAGE, systemTiming } from '@momonga/foundation';
 import { PLAN_LABEL_REFUSAL } from '@momonga/protocol';
 import type { PlanAccountRef } from '@momonga/protocol';
 import { authLogin, authLogout, authStatus, nextAccountLabel } from '../src/commands/auth.ts';
 import { describeRunError } from '../src/policy-messages.ts';
+import { exitOfFailure } from '../src/program.ts';
+import { UsageError } from '../src/usage-error.ts';
 import { resultOf } from '../src/run/headless.ts';
 import type { RunResult } from '../src/run/headless.ts';
 import { SHELL_SLASH_COMMANDS } from '../src/tui/commands/shell-commands.ts';
@@ -218,7 +220,9 @@ describe('momonga auth login', () => {
     const err = writer();
     const backend = fakePlanBackend({ accounts: [] });
     const { ports, opened } = loginPorts(backend, out, err);
-    expect(await authLogin(ports, { provider: 'chatgpt', account: label })).toBe(2);
+    const refusal: unknown = await authLogin(ports, { provider: 'chatgpt', account: label }).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(UsageError);
+    expect(exitOfFailure(refusal, err)).toBe(EXIT_USAGE);
     expect(err.written.join('')).toBe(`momonga: ${PLAN_LABEL_REFUSAL}\n`);
     expect(out.written).toEqual([]);
     expect(backend.planCalls).toEqual([]);

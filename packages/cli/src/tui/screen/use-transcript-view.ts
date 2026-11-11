@@ -15,6 +15,7 @@ import { toggleThought } from '../transcript.ts';
 import type { TranscriptStore } from './store.ts';
 import { clamped, FOLLOWING, moved, sourceOf, VIEWPORT_CONTEXTS, viewportMoveOf, viewportMoveOfAction, windowOf } from './viewport.ts';
 import type { Position, ViewportMove, ViewSource, ViewWindow } from './viewport.ts';
+import { parseWebUrl } from './wrap.ts';
 
 export type ViewportKeyFacts = { panelOpen: boolean; menuOpen: boolean; inputEmpty: boolean };
 
@@ -86,12 +87,13 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
     return visible === undefined ? undefined : { entryId: visible.entryId, rowIndex: visible.rowIndex, col: event.col - 1 };
   };
 
-  const linkAt = (point: Point): string | undefined => {
+  const linkAt = (point: Point): URL | undefined => {
     const index = source.indexOfId(point.entryId);
     const row = index === undefined ? undefined : source.rowsOf(source.at(index))[point.rowIndex];
     const range = row === undefined ? undefined : indexRangeOf(row, point.col, point.col);
     if (row === undefined || range === undefined) return undefined;
-    return row.links?.find(([start, end]) => start <= range[0] && range[0] < end)?.[2];
+    const written = row.links?.find(([start, end]) => start <= range[0] && range[0] < end)?.[2];
+    return written === undefined ? undefined : parseWebUrl(written);
   };
 
   const press = (event: MouseEvent): void => {
@@ -135,8 +137,8 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
       toggleThought(store, clicked.itemId);
       return;
     }
-    const url = linkAt(point);
-    if (url !== undefined) host.openLink(new URL(url));
+    const link = linkAt(point);
+    if (link !== undefined) host.openLink(link);
   };
 
   const onMouse = (event: MouseEvent): void => {

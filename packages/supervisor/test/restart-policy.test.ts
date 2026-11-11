@@ -10,7 +10,7 @@ const ANY_EXITS: ExitInput[] = [
   { code: 0, signal: null },
   { code: 1, signal: null },
   { code: 134, signal: null },
-  { code: 75, signal: null },
+  { code: 77, signal: null },
   { code: 78, signal: null },
   { code: null, signal: 'SIGKILL' },
   { code: null, signal: 'SIGTERM' },
@@ -38,7 +38,7 @@ describe('classifyExit', () => {
       [{ code: 126, signal: null }, { class: 'failure', reason: 'failure' }],
       [{ code: 127, signal: null }, { class: 'failure', reason: 'failure' }],
       [{ code: 134, signal: null }, { class: 'failure', reason: 'failure' }],
-      [{ code: 75, signal: null }, { class: 'lock-held', reason: 'lock-held' }],
+      [{ code: 77, signal: null }, { class: 'lock-held', reason: 'lock-held' }],
       [{ code: 78, signal: null }, { class: 'config', reason: 'config' }],
       [{ code: null, signal: 'SIGKILL' }, { class: 'signal', reason: 'signal' }],
       [{ code: null, signal: 'SIGSEGV' }, { class: 'signal', reason: 'signal' }],
@@ -100,8 +100,8 @@ describe('decideAfterExit', () => {
     expect(await decide(classified, 0, () => 0.5)).toEqual({ next: 'backoff', delayMs: 250 });
   });
 
-  it('75 yields waiting-lock only', async () => {
-    const classified = classifyExit({ code: 75, signal: null, stop: undefined });
+  it('77 yields waiting-lock only', async () => {
+    const classified = classifyExit({ code: 77, signal: null, stop: undefined });
     for (const failures of [0, 5, 100]) expect(await decide(classified, failures, () => 0.999)).toEqual({ next: 'waiting-lock' });
   });
 

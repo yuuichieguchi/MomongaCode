@@ -90,31 +90,3 @@ export const stepDocumentOf = (draft: StepDraft, redactor: Redactor): SearchDocu
   if (body === '') return undefined;
   return { level: 'step', step: draft.step, seqFrom: draft.seqFrom, seqTo: draft.seqTo, body, paths: [...new Set(draft.parts.flatMap((part) => part.paths))] };
 };
-
-export type RecordedEvent = { seq: number; step: number; type: string; payload: Record<string, unknown> };
-
-export const buildDocuments = (events: Iterable<RecordedEvent>, outcome: string, redactor: Redactor): SearchDocument[] => {
-  const steps = new Map<number, StepDraft>();
-  const touched = new Set<string>();
-  let firstSeq: number | undefined;
-  let lastSeq = 0;
-  let task = '';
-  let finalText = '';
-  for (const event of events) {
-    firstSeq ??= event.seq;
-    lastSeq = event.seq;
-    const draft = eventDraftOf(event);
-    if (draft.task !== undefined && task === '') task = draft.task;
-    if (draft.finalText !== undefined) finalText = draft.finalText;
-    if (event.step === 0) continue;
-    const step = steps.get(event.step) ?? { step: event.step, seqFrom: event.seq, seqTo: event.seq, parts: [] };
-    steps.set(event.step, step);
-    step.seqTo = event.seq;
-    if (draft.part === undefined) continue;
-    step.parts.push(draft.part);
-    for (const path of draft.part.paths) touched.add(path);
-  }
-  if (firstSeq === undefined) throw new Error('a terminal run has no recorded events');
-  const run = runDocumentOf({ task, finalText, paths: [...touched], seqFrom: firstSeq, seqTo: lastSeq }, outcome, redactor);
-  return [run, ...[...steps.values()].flatMap((step) => stepDocumentOf(step, redactor) ?? [])];
-};

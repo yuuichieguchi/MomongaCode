@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { billedCallsOfRun, buildCostBreakdown, buildCostReport } from '@momonga/observability';
-import { harness } from './helpers.ts';
+import { buildCostBreakdown, buildCostReport } from '@momonga/observability';
+import { harness, billedCallsOfRun } from './helpers.ts';
 import { seededRandom } from './seeded-random.ts';
 import type { Random } from './seeded-random.ts';
 import { TABLE, asBreakdownCall, recordCalls } from './cache-read-fixtures.ts';

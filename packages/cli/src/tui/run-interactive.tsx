@@ -155,6 +155,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     input: terminal.stdin,
     output: hostTerminalOutput(terminal.stdout),
     process: hostProcess,
+    timers: systemTiming,
     screen: readerAtStart ? 'scrollback' : tuiSettings.initial.screen,
     screenSetByUser: readerAtStart,
     mouse: tuiSettings.initial.mouse,

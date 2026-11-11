@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import {
-  billedCallsOfRun,
   buildCostBreakdown,
   buildCostReport,
   definePriceTable,
@@ -12,7 +11,7 @@ import {
   startChatSpan,
 } from '@momonga/observability';
 import type { SpanRecord } from '@momonga/observability';
-import { harness } from './helpers.ts';
+import { harness, billedCallsOfRun } from './helpers.ts';
 
 const AT = Date.parse('2026-07-10T00:00:00Z');
 const TABLE = definePriceTable([{ provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 1, cachedInputPerMTok: 0.5, outputPerMTok: 4, currency: 'USD' }]);

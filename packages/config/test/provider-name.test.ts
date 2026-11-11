@@ -23,7 +23,7 @@ const hash8 = (text: string): string => createHash('sha256').update(text).digest
 
 const duplicateSentence = (name: string): string => `models.connections[0] and models.connections[1] both resolve to the server name "${name}"; write "provider" on one of them`;
 
-const anthropic = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({ adapter: 'anthropic', apiKeyEnv: 'ANTHROPIC_API_KEY', ...extra, models: [{ id: 'claude-x', capabilities: CAPABILITIES }] });
+const anthropic = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({ adapter: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', ...extra, models: [{ id: 'claude-x', capabilities: CAPABILITIES }] });
 
 describe('providerNameOf: the server name of a connection', () => {
   it('a written name is the name', () => {

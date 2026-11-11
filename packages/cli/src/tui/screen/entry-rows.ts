@@ -2,12 +2,12 @@ import { escapeTerminalLine } from '@momonga/protocol';
 import { describeDenial } from '../../policy-messages.ts';
 import { bannerRows, textLines } from '../startup.tsx';
 import type { Entry, ToolEntry } from '../transcript.ts';
-import { inertText, markdownRowsWith } from './markdown.ts';
+import { markdownRowsWith } from './markdown.ts';
 import type { StyleToken } from './tokens.ts';
 import { thoughtRows } from './thought.ts';
 import { runningToolText, toolBlockRows } from './tool-view.ts';
 import type { RowFacts } from './tool-view.ts';
-import { withoutTabs, wrapText } from './wrap.ts';
+import { inertText, withoutTabs, wrapText } from './wrap.ts';
 import type { Row } from './wrap.ts';
 
 export const shown = inertText;
