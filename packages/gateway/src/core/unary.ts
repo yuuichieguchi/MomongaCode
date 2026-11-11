@@ -385,7 +385,7 @@ const compactOnce = async (
   };
 };
 
-export const createUnaryService = (services: GatewayServices, validator: RequestValidator, inFlight: WorkRegistry): UnaryService => {
+export const createUnaryService = (services: GatewayServices, validator: RequestValidator, inFlight: WorkRegistry, admitNewCall: () => void): UnaryService => {
   const inflight = new Map<string, InflightCompaction>();
   const active = new Set<InflightCompaction>();
 
@@ -462,6 +462,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
       else if (stored.digest !== digest) throw reusedError(key);
       else return Promise.resolve(stored.resource);
     }
+    admitNewCall();
     const controller = new AbortController();
     const entry: InflightCompaction = {
       digest,
@@ -499,10 +500,14 @@ export const createUnaryService = (services: GatewayServices, validator: Request
   };
 
   return {
-    countTokens: (rawBody, signal, deadlineHeader) => withPinnedServices(services, signal, (pinned) => countTokens(pinned, validator, rawBody, signal, deadlineHeader)),
+    countTokens: (rawBody, signal, deadlineHeader) => {
+      admitNewCall();
+      return withPinnedServices(services, signal, (pinned) => countTokens(pinned, validator, rawBody, signal, deadlineHeader));
+    },
     compact: (rawBody, signal, deadlineHeader, idempotencyKeyHeader, trace) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);
       if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader, trace);
+      admitNewCall();
       const request = validator.parseCompact(rawBody);
       const unknownFields = validator.unknownCompactFields(rawBody);
       const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());

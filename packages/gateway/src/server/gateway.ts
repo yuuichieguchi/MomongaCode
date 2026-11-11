@@ -6,7 +6,7 @@ import { listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
 import { createReasoningOriginCodec } from '../core/reasoning-origin.ts';
-import { GatewayError, gatewayClosedError } from '../core/errors.ts';
+import { GatewayError, gatewayClosedError, generationRetiredError } from '../core/errors.ts';
 import { createResponsesService } from '../core/responses-service.ts';
 import { createRedactor } from '../core/redaction.ts';
 import { createRouter } from '../core/router.ts';
@@ -146,11 +146,14 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     };
     const errors = createErrorExit(redactor, options.onError);
     const tracker = createRequestTracker();
-    const responses = createResponsesService(services, validator, tracker);
-    const unary = createUnaryService(services, validator, tracker);
+    const isRetiring = (): boolean => options.role.current() === 'retiring';
+    const admitNewCall = (): void => {
+      if (isRetiring()) throw generationRetiredError();
+    };
+    const responses = createResponsesService(services, validator, tracker, admitNewCall);
+    const unary = createUnaryService(services, validator, tracker, admitNewCall);
     const startedAtMs = clock.now();
     const startedAt = new Date(startedAtMs).toISOString();
-    const isRetiring = (): boolean => options.role.current() === 'retiring';
     const activeRequests = (): number => tracker.active() + (options.probeFlights?.() ?? 0);
     const app = createApp({
       services,

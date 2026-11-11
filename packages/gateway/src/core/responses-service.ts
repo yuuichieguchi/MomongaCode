@@ -97,7 +97,7 @@ const subscribeWithOwnDeadline = (
   };
 };
 
-export const createResponsesService = (services: GatewayServices, validator: RequestValidator, inFlight: WorkRegistry): ResponsesService => {
+export const createResponsesService = (services: GatewayServices, validator: RequestValidator, inFlight: WorkRegistry, admitNewCall: () => void): ResponsesService => {
   const registry = createIdempotencyRegistry(services);
   const active = new Set<SharedRun>();
   const keyedRuns = new Set<SharedRun>();
@@ -127,6 +127,7 @@ export const createResponsesService = (services: GatewayServices, validator: Req
         return { stream, events: replay(found.frames) };
       }
     }
+    admitNewCall();
 
     const parent =
       pinned.telemetry === undefined || headers.traceparent === undefined

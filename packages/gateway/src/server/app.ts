@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { MAX_TRACE_CONTENT_PAGE, QUOTE_ROUTE, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList, TraceContentPage } from '@momonga/protocol';
-import { ClientDisconnectedError, GatewayError, gatewayClosedError, generationRetiredError, invalidRequest, notFound } from '../core/errors.ts';
+import { ClientDisconnectedError, GatewayError, gatewayClosedError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { PlanApi } from '../plan/api.ts';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
@@ -72,9 +72,6 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   const keepAliveMsFor = (idleBoundMs: number): number =>
     Math.min(services.config.sseKeepAliveMs, Math.max(1, Math.floor(idleBoundMs / KEEP_ALIVES_PER_IDLE_BOUND)));
   const app = new Hono();
-  const refuseWhileRetiring = (): void => {
-    if (dependencies.isRetiring()) throw generationRetiredError();
-  };
 
   app.use(async (context, next) => {
     await next();
@@ -89,7 +86,6 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/responses', async (context) => {
-    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
     const submission = await responses.submit(raw, submitHeadersOf(context), context.req.raw.signal);
@@ -112,7 +108,6 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/responses/compact', async (context) => {
-    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
     const work = unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key'), {
@@ -133,7 +128,6 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/momonga/count_tokens', async (context) => {
-    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     return context.json(await unary.countTokens(raw, requestSignalOf(context), context.req.header('momonga-deadline-ms')));
   });
