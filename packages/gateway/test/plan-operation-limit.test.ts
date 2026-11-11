@@ -10,6 +10,8 @@ import { signIn, startPlanGateway } from './plan-signin-support.ts';
 import { CONDITION_WAIT, NEVER_ENDED, PROFILE_ID, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const harnesses: Harness[] = [];
 
 afterEach(async () => {
@@ -75,8 +77,6 @@ describe('a waiter that leaves a shared load by its own limit gets the store cal
 });
 
 describe('every plan route runs under the one plan operation limit (P-106)', () => {
-  vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
-
   it('a route whose store hangs ends at HOST_READ_BOUND_MS with the limit\'s text, while its client still waits', async () => {
     const held: Array<{ fire(): void }> = [];
     let capturing = false;

@@ -6,9 +6,9 @@ const PROJECT = '/work/a';
 
 const VISIBLE = { trusted: true, project: PROJECT } as const;
 
-const started = (store: RuntimeStore, callIds: readonly string[]) => {
+const started = async (store: RuntimeStore, callIds: readonly string[]) => {
   const session = newSession(store, PROJECT);
-  const run = enqueue(store, session.id);
+  const run = await enqueue(store, session.id);
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, callIds.map(callEvent)).kind).toBe('ok');
   return run;
@@ -34,7 +34,7 @@ const ROW_REMOVAL_REFUSED = /memories are retired, not deleted/;
 describe('a memory is retired, never deleted', () => {
   it('DELETE FROM memories is refused by the database', async () => {
     const { store, dbPath } = harness();
-    const run = started(store, ['c1']);
+    const run = await started(store, ['c1']);
     const note = await saveNote(store, run.id, 'c1', 'tests live in test/');
     const db = rawDb(dbPath);
     expect(() => db.prepare('DELETE FROM memories WHERE id = ?').run(note.id)).toThrow(ROW_REMOVAL_REFUSED);
@@ -44,7 +44,7 @@ describe('a memory is retired, never deleted', () => {
 
   it('delete retires: the row, its text and its evidence remain', async () => {
     const { store } = harness();
-    const run = started(store, ['c1']);
+    const run = await started(store, ['c1']);
     const note = await saveNote(store, run.id, 'c1', 'tests live in test/');
     expect('delete' in store.memories).toBe(false);
     const retired = store.memories.retire(note.id);
@@ -55,7 +55,7 @@ describe('a memory is retired, never deleted', () => {
 
   it('a retired note is not recalled, and shown by history with retiredAt', async () => {
     const { store, clock } = harness();
-    const run = started(store, ['c1', 'c2']);
+    const run = await started(store, ['c1', 'c2']);
     const note = await saveNote(store, run.id, 'c1', 'tests live in test/');
     const other = await saveNote(store, run.id, 'c2', 'docs live in docs/');
     clock.advance(500);
@@ -67,7 +67,7 @@ describe('a memory is retired, never deleted', () => {
 
   it('deleting the successor does not revive the note it replaced', async () => {
     const { store, dbPath } = harness();
-    const run = started(store, ['c1', 'c2']);
+    const run = await started(store, ['c1', 'c2']);
     const replaced = await saveNote(store, run.id, 'c1', 'old wording');
     const successor = await saveNote(store, run.id, 'c2', 'new wording', [replaced.id]);
     expect(recalledIds(store)).toEqual([successor.id]);
@@ -80,7 +80,7 @@ describe('a memory is retired, never deleted', () => {
 
   it('deleting the middle of a chain of three keeps the chain in history', async () => {
     const { store, dbPath, clock } = harness();
-    const run = started(store, ['c1', 'c2', 'c3']);
+    const run = await started(store, ['c1', 'c2', 'c3']);
     const first = await saveNote(store, run.id, 'c1', 'first wording');
     clock.advance(1);
     const middle = await saveNote(store, run.id, 'c2', 'second wording', [first.id]);

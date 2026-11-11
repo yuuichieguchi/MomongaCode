@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, closeOnceStarted, createTempDir, removeTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, registerOwned, createTempDir, removeTempDir } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
@@ -33,7 +33,7 @@ type Context = {
 
 let context: Context;
 let suiteHome: string | undefined;
-let startedGateway: Promise<Awaited<ReturnType<typeof startGatewayProcess>>> | undefined;
+let closeGateway: () => Promise<void> = async () => undefined;
 
 beforeAll(async () => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
@@ -50,15 +50,19 @@ beforeAll(async () => {
     { mode: 0o600 },
   );
   await prepareGatewayHome(home);
-  startedGateway = startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
-  const gateway = await startedGateway;
+  const gateway = await registerOwned(
+    (cleanup) => {
+      closeGateway = cleanup;
+    },
+    () => startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' }),
+  );
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   context = { home, fake, gateway, client, restoreStdout: () => stdout.mockRestore() };
 });
 
 afterAll(async () => {
   await context?.client.destroy().catch(() => {});
-  if (startedGateway !== undefined) await closeOnceStarted(startedGateway)();
+  await closeGateway();
   await context?.fake.close();
   context?.restoreStdout();
   if (suiteHome !== undefined) await removeTempDir(suiteHome);

@@ -73,7 +73,7 @@ describe('GitPush with several push urls, or a destination that moves after the 
     const tool = operationTool('GitPush', { runArgv: countingRunner().run });
     const parts = partsOf(tool, { remote: 'origin', branch: 'main' }, contextFor(world.work, world.env));
     const prepared = await parts.prepare();
-    expect(prepared).toMatchObject({ before: { pushUrls: [`file://${second}`, `file://${third}`] } });
+    expect(prepared).toMatchObject({ before: { destinations: [`file://${second}`, `file://${third}`] } });
     const result = await parts.execute(prepared);
     expect(result.status).toBe('completed');
     expect(shaIn(world, second)).toBe(head);

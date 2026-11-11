@@ -64,7 +64,7 @@ describe('the CLI readers resolve a declared server through the registry of the 
     const home = declaredHome(binary);
     const from = momongaPaths(home, process.platform, {}).probe;
     const to = path.join(temporary(), 'probe');
-    const servers = loadUserModels({ home }).resolved.servers;
+    const servers = (await loadUserModels({ home, signal: new AbortController().signal })).resolved.servers;
     if (servers === undefined) throw new Error('the loaded settings carry no server registry');
     expect(await copyProbeRecord(nodeFiles, from, to, { model: 'loom/fake-1', server: 'loom', binary, upstream: 'fake-1' }, servers, process.platform, AbortSignal.timeout(30_000))).toBe(false);
     expect(fs.existsSync(to)).toBe(false);

@@ -1,3 +1,4 @@
+import { messageOf } from '@momonga/protocol';
 import type { ManagedServerDescription, Precondition } from '@momonga/protocol';
 import type { PreconditionVerdict } from '../probe/auto-probe.ts';
 
@@ -50,13 +51,13 @@ export const runPreconditions = async (description: ManagedServerDescription, bi
   return { kind: 'met' };
 };
 
-export const notReadyText = (target: string, message: string): string => `the model "${target}" is not ready: ${message}`;
+export const notReadyText = (target: string, message: string): string => messageOf('modelNotReady', 'gateway', { model: target, reason: message });
 
 export const MISSING_EXECUTABLE_MESSAGE = 'the executable is missing';
 
 export const missingExecutableVerdict = (target: string, binary: string): RefusedVerdict => ({
   kind: 'refused',
   message: MISSING_EXECUTABLE_MESSAGE,
-  detail: `the model "${target}": the executable was not found at ${binary}`,
+  detail: messageOf('aboutModel', 'gateway', { model: target, text: `the executable was not found at ${binary}` }),
   remedy: undefined,
 });

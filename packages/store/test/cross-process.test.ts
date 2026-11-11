@@ -35,7 +35,7 @@ store.close();
 describe('writers in separate processes', () => {
   it('serialize through BEGIN IMMEDIATE and busy_timeout without losing or duplicating seq', async () => {
     const { dbPath, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'parent');
     const scriptDir = makeStoreDir();
     const script = path.join(scriptDir, 'child.mjs');

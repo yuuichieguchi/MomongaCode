@@ -13,13 +13,13 @@ const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 
 const answered = async (env: Env, task: string, answer: string): Promise<string> => {
   env.gateway.script.push(textStep(answer));
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   expect((await settle(env, run.id)).status).toBe('COMPLETED');
   return run.id;
 };
 
 const answeredWithoutRecordedMode = async (env: Env, task: string, answer: string): Promise<string> => {
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   const payloads: RunEventPayload[] = [
     { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {} },
     { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { model: MODEL_ID, input: 'seed' } },
@@ -32,7 +32,7 @@ const answeredWithoutRecordedMode = async (env: Env, task: string, answer: strin
 };
 
 const claimedFirstAsCancelling = async (env: Env, task: string): Promise<string> => {
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   await env.seed(run.id, [], 'crash');
   expect((await env.cancel(run.id)).status).toBe('CANCELLING');
   await env.runOnce(env.worker());
@@ -43,7 +43,7 @@ const claimedFirstAsCancelling = async (env: Env, task: string): Promise<string>
 
 const inheritOnce = async (env: Env, task: string): Promise<string> => {
   env.gateway.script.push(textStep('Answered.'));
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   await env.runOnce(env.worker());
   return run.id;
 };
@@ -166,7 +166,7 @@ describe('mode notice on recovery', () => {
       },
     };
     env.gateway.script.push(textStep('Answered.'));
-    const second = env.enqueue('Plan it');
+    const second = await env.enqueue('Plan it');
     await env.runOnce(env.worker('worker-1', { store: countingStore(env, calls), tools }));
     expect(env.run(second.id).status).toBe('RUNNING');
     const journaled = inheritedEventOf(env, second.id);

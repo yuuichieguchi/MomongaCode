@@ -4,6 +4,8 @@ import { createFakeManagedServer } from '@momonga/testkit';
 import { connectionOf, makeDir, makeTree, modelOf, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
+const NOT_ABORTED = new AbortController().signal;
+
 const declaredHome = async (): Promise<{ tree: Tree; command: string }> => {
   const fake = await createFakeManagedServer({ dir: makeDir() });
   const tree = makeTree();
@@ -23,20 +25,20 @@ const expectWorkbench = (target: unknown, command: string): void => {
 describe('one registry for every reader of the user settings, built from the one file, with no port (design-managed-servers 19.6, 19.12; R-S19-9, R-S19-24)', () => {
   it('loadUserModels resolves a connection that names a declared server', async () => {
     const { tree, command } = await declaredHome();
-    expectWorkbench(modelOf({ models: loadUserModels({ home: tree.home }).resolved }, 'workbench'), command);
+    expectWorkbench(modelOf({ models: (await loadUserModels({ home: tree.home, signal: new AbortController().signal })).resolved }, 'workbench'), command);
   });
 
   it('loadUserSettings without a managedServers port resolves it', async () => {
     const { tree, command } = await declaredHome();
-    expectWorkbench(modelOf((await loadUserSettings({ home: tree.home })).settings, 'workbench'), command);
+    expectWorkbench(modelOf((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings, 'workbench'), command);
   });
 
   it("the supervisor's createUserSettingsCache resolves it and gives no error snapshot", async () => {
     const { tree, command } = await declaredHome();
     const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
-    const snapshot = cache.snapshot();
+    const snapshot = await cache.load(NOT_ABORTED);
     expect('error' in snapshot ? snapshot.error.message : undefined).toBeUndefined();
-    expectWorkbench(modelOf(cache.get(), 'workbench'), command);
+    expectWorkbench(modelOf((await cache.loadOrKeep(NOT_ABORTED)).settings, 'workbench'), command);
   });
 
   it('the layered loader of a session resolves it from the user layer', async () => {
@@ -46,7 +48,7 @@ describe('one registry for every reader of the user settings, built from the one
 
   it("the gateway's pinned inputs cover the declared server it resolved", async () => {
     const { tree } = await declaredHome();
-    const settings = (await loadUserSettings({ home: tree.home })).settings;
+    const settings = (await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings;
     const servers = settings.models.servers ?? {};
     const builtInOnly = Object.fromEntries(Object.entries(servers).filter(([id]) => id !== 'loom'));
     expect(Object.keys(servers).sort()).toEqual(['fm', 'loom']);

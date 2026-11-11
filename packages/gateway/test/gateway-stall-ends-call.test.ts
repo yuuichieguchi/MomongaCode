@@ -19,6 +19,7 @@ const realTimers: FakeTimers = {
   advance: () => {
     throw new Error('real timers cannot be advanced');
   },
+  advanceAsync: () => Promise.reject(new Error('real timers cannot be advanced')),
   pending: () => [],
   now: () => Date.now(),
   monotonicMs: () => performance.now(),

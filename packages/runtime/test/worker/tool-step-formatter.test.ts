@@ -19,7 +19,7 @@ const runEcho = async (formatters: ('log' | 'json' | 'grep' | 'identicalOutput')
   env.settings.contextValue = { ...env.settings.contextValue, outputFormatters: formatters };
   env.gateway.script.push(callsStep([{ callId: 'call_f_1', name: 'Echo', args: { value: 'one' } }]), textStep('Echoed.'));
   const worker = env.worker('worker-1');
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   expect(await env.runOnce(worker)).toBe('yielded');
   expect(env.run(run.id).status).toBe('COMPLETED');
   expect(env.batches).toHaveLength(1);

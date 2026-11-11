@@ -1,5 +1,8 @@
 export { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
-export { foldRunState, initialRunState, itemCountOf } from './fold.ts';
+export { SESSION_PAGE_ROWS } from './runtime-store.ts';
+export { foldRunState, initialRunState } from './fold.ts';
+export { ITEM_EVENT_TYPES, itemCountOf, itemsOfEvent } from './history-items.ts';
+export type { ItemFacts, ProducedItem } from './history-items.ts';
 export { INHERITANCE_ERROR_CODES, InheritanceError, applyInheritance, applyReferenceInheritance, isReferenceInherited, projectInheritance, referenceDigest } from './inherit.ts';
 export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload, ReferencePayload, UnaskedCommands } from './inherit.ts';
 export { lowerBoundTokens } from './inherit-reference.ts';
@@ -21,7 +24,8 @@ export { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSI
 export { FIDELITY_PRUNE_BATCH_ROWS, migrateRuntimeDatabase, openRuntimeStore } from './runtime-store.ts';
 export { FactsRefusedError, JournalThreadError, StalePreparation } from './journal-port.ts';
 export { JOURNAL_SCAN_RANGE_ROWS, createJournalReader } from './journal-reader.ts';
-export { blobDirectoryOf, createBlobStore } from './blobs.ts';
+export { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
+export type { BlobFileSystem, BlobPorts } from './blobs.ts';
 export type { JournalReader, JournalReaderOptions } from './journal-reader.ts';
 export type { RecordVisit, WalkUnits } from './record-walk.ts';
 export type { RecordHopRef } from './inherit-reference.ts';
@@ -131,6 +135,9 @@ export type {
   ModelCallRecord,
   StartedCall,
   Session,
+  SessionPage,
+  SessionPageRequest,
+  ListedSession,
   SessionMcpServers,
   SetModelResult,
   SetPermissionModeResult,

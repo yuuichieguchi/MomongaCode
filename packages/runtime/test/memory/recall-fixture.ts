@@ -6,6 +6,7 @@ import type { MemoryRecord } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { harness, makeStoreDir, newSession, rawDb } from '../../../store/test/helpers.ts';
 import { createMemoryPort } from '../../src/process/memory-port.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 export const RECORDED_SHA = 'c'.repeat(64);
 
@@ -40,10 +41,10 @@ export const portFor = (store: RuntimeStore, counter: CheckCounter) =>
 
 export type Seeded = { store: RuntimeStore; session: Session; project: string; dbPath: string; template: MemoryRecord };
 
-export const seededStore = (count: number, text: (index: number) => string): Seeded => {
+export const seededStore = async (count: number, text: (index: number) => string): Promise<Seeded> => {
   const { store, dbPath } = harness();
   const project = fs.realpathSync.native(makeStoreDir());
-  store.trust.set(project, 'trusted');
+  await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
   const session = newSession(store, project);
   const template = store.memories.addByCommand({
     scope: 'project',

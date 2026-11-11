@@ -53,7 +53,7 @@ describe('context.contribution at every terminal transition of the store', () =>
   it.each(['COMPLETED', 'STOPPED', 'FAILED'] as const)('precedes the status of a worker transition to %s', async (to) => {
     const { hook } = recording();
     const h = harness({ contribution: hook });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     expect((await h.store.transition(claim, ['RUNNING'], to, to === 'STOPPED' ? { stopReason: 'max_steps' } : {})).kind).toBe('ok');
@@ -65,7 +65,7 @@ describe('context.contribution at every terminal transition of the store', () =>
   it('precedes the status when the worker finishes a cancel of a running run', async () => {
     const { hook } = recording();
     const h = harness({ contribution: hook });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     expect((await cancel(h.store, run.id)).status).toBe('CANCELLING');
     expect(countOf(h.store, run.id)).toBe(0);
@@ -90,7 +90,7 @@ describe('context.contribution at every terminal transition of the store', () =>
   it('precedes the status when the deadline stops a queued run', async () => {
     const { hook } = recording();
     const h = harness({ contribution: hook });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
 
     expect((await h.store.expireApprovals(DEADLINE_MS, (error: unknown) => { throw error; }))).toEqual([run.id]);
 
@@ -122,7 +122,7 @@ describe('context.contribution at every terminal transition of the store', () =>
 
   it('precedes the status when the dead-letter sweep ends the run', async () => {
     const h = preparedHarness({ maxAttempts: 1 });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS);
 
@@ -135,9 +135,9 @@ describe('context.contribution at every terminal transition of the store', () =>
 
   it('a queued child run that its parent cancels becomes CANCELLING, and its own sweeper finish writes its contribution before CANCELLED', async () => {
     const h = preparedHarness();
-    const parent = enqueue(h.store, newSession(h.store).id);
+    const parent = await enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
+    const created = await h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
 
     await cancel(h.store, parent.id);
@@ -151,7 +151,7 @@ describe('context.contribution at every terminal transition of the store', () =>
   it('does not run the hook for a transition that is not terminal', async () => {
     const { hook, seen } = recording();
     const h = harness({ contribution: hook });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     expect((await h.store.release(claim, 'QUEUED')).kind).toBe('ok');
@@ -162,7 +162,7 @@ describe('context.contribution at every terminal transition of the store', () =>
 
   it('adds nothing when no hook was given', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     (await h.store.transition(claim, ['RUNNING'], 'COMPLETED'));
@@ -172,7 +172,7 @@ describe('context.contribution at every terminal transition of the store', () =>
 
   it('adds nothing when the hook finds nothing injected', async () => {
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => undefined } });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     (await h.store.transition(claim, ['RUNNING'], 'COMPLETED'));
@@ -208,7 +208,7 @@ describe('measuring over the journal as it stands after the transaction', () => 
     const seen: RunEvent[][] = [];
     const replayed: string[] = [];
     const h = harness({ contribution: citing(seen, replayed) });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     expect((await h.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'input_truncated', message: 'truncated' } }, [finalResponse])).kind).toBe('ok');
@@ -230,7 +230,7 @@ describe('the contributed_at stamp', () => {
       },
     });
     bound = h.store;
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const used = await savedMemory(h, run.id, 'call_1', 'used note');
     const unused = await savedMemory(h, run.id, 'call_2', 'unused note');
     const claim = mustClaim(h.store, 'w2');
@@ -250,7 +250,7 @@ describe('the contributed_at stamp', () => {
   it.each(['STOPPED', 'FAILED'] as const)('leaves contributed_at empty for a run that ends %s, though its terminal records the memory as contributed', async (to) => {
     let named = '';
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const id = await savedMemory(h, run.id, 'call_1', 'used note');
     named = id;
     const claim = mustClaim(h.store, 'w2');
@@ -264,7 +264,7 @@ describe('the contributed_at stamp', () => {
   it('stamps the memory named by the event the hook supplied when the run completes', async () => {
     let named = '';
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     named = await savedMemory(h, run.id, 'call_1', 'used note');
     const claim = mustClaim(h.store, 'w2');
     h.clock.advance(7);
@@ -277,7 +277,7 @@ describe('the contributed_at stamp', () => {
 
   it('moves contributed_at to the terminal time of a later run that contributed again', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const id = await savedMemory(h, run.id, 'call_1', 'used note');
 
     h.store.memories.stampContributed([id], START_MS + 3);
@@ -288,7 +288,7 @@ describe('the contributed_at stamp', () => {
 
   it('keeps the later time when an earlier run is stamped again, and when the same run is stamped twice', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const id = await savedMemory(h, run.id, 'call_1', 'used note');
     h.store.memories.stampContributed([id], START_MS + 10);
 
@@ -301,13 +301,13 @@ describe('the contributed_at stamp', () => {
   it('stamps a memory again with the terminal time of each completed run that contributed', async () => {
     let named = '';
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
-    const first = enqueue(h.store, newSession(h.store).id);
+    const first = await enqueue(h.store, newSession(h.store).id);
     named = await savedMemory(h, first.id, 'call_1', 'used note');
     h.clock.advance(5);
     expect((await h.store.transition(mustClaim(h.store, 'w2'), ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     expect(h.store.memories.get(named)?.contributedAt).toBe(START_MS + 5);
     h.clock.advance(20);
-    enqueue(h.store, newSession(h.store).id);
+    await enqueue(h.store, newSession(h.store).id);
 
     expect((await h.store.transition(mustClaim(h.store, 'w3'), ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
 
@@ -318,7 +318,7 @@ describe('the contributed_at stamp', () => {
 describe('lastTerminalRootRuns', () => {
   const finish = async (h: Harness, cwd: string, started = true): Promise<string> => {
     h.clock.advance(1);
-    const run = enqueue(h.store, newSession(h.store, cwd).id);
+    const run = await enqueue(h.store, newSession(h.store, cwd).id);
     const claim = mustClaim(h.store, `w-${run.id}`);
     if (started) expect(h.store.append(claim, [{ type: 'run.started', attempt: 1, now: h.clock.now(), pins: {} }]).kind).toBe('ok');
     expect((await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
@@ -340,10 +340,10 @@ describe('lastTerminalRootRuns', () => {
   it('leaves out runs that are not terminal and child runs', async () => {
     const h = harness();
     const done = await finish(h, '/work/a');
-    const parent = enqueue(h.store, newSession(h.store, '/work/a').id);
+    const parent = await enqueue(h.store, newSession(h.store, '/work/a').id);
     const claim = mustClaim(h.store, 'w-parent');
     expect(h.store.append(claim, [{ type: 'run.started', attempt: 1, now: h.clock.now(), pins: {} }]).kind).toBe('ok');
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
+    const created = await h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
 
     expect(h.store.lastTerminalRootRuns('/work/a', 10).map((run) => run.id)).toEqual([done]);
@@ -353,7 +353,7 @@ describe('lastTerminalRootRuns', () => {
 describe('notice codes', () => {
   it('stores a stable code and still decodes a notice that has none', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
     expect(

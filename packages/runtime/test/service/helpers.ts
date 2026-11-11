@@ -18,12 +18,11 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, ContributionPreparer, RuntimeStore, Session } from '@momonga/store';
-import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, removeTempDir, testProbes } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, pollUntil, removeTempDir, testProbes } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AnyTool, ToolSessionState } from '@momonga/tools';
-import { within } from '../worker/deferred.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
 import type { FakeGateway } from '../worker/fake-gateway.ts';
 import { createFakeSettings } from '../worker/fake-settings.ts';
@@ -291,10 +290,10 @@ export type EventStream = {
   events: StreamEvent[];
   comments: string[];
   ended: boolean;
-  next(ms?: number): Promise<StreamEvent | undefined>;
-  nextComment(ms?: number): Promise<string>;
-  until(predicate: (event: StreamEvent) => boolean, ms?: number): Promise<StreamEvent[]>;
-  toEnd(ms?: number): Promise<StreamEvent[]>;
+  next(): Promise<StreamEvent | undefined>;
+  nextComment(): Promise<string>;
+  until(predicate: (event: StreamEvent) => boolean): Promise<StreamEvent[]>;
+  toEnd(): Promise<StreamEvent[]>;
   close(): void;
 };
 
@@ -320,9 +319,9 @@ export const openEventStream = async (
     events: [],
     comments: [],
     ended: false,
-    next: async (ms = 5000) => {
+    next: async () => {
       for (;;) {
-        const item = await take(ms);
+        const item = await take();
         if (item === 'end') return undefined;
         if (item.comment !== undefined && item.data === undefined) {
           stream.comments.push(item.comment);
@@ -331,9 +330,9 @@ export const openEventStream = async (
         return accept(item);
       }
     },
-    nextComment: async (ms = 5000) => {
+    nextComment: async () => {
       for (;;) {
-        const item = await take(ms);
+        const item = await take();
         if (item === 'end') throw new Error('stream ended before a comment frame');
         if (item.comment !== undefined && item.data === undefined) {
           stream.comments.push(item.comment);
@@ -342,19 +341,19 @@ export const openEventStream = async (
         accept(item);
       }
     },
-    until: async (predicate, ms = 5000) => {
+    until: async (predicate) => {
       const seen: StreamEvent[] = [];
       for (;;) {
-        const event = await stream.next(ms);
+        const event = await stream.next();
         if (event === undefined) throw new Error(`stream ended before the expected event; saw ${seen.map((item) => item.type).join(', ')}`);
         seen.push(event);
         if (predicate(event)) return seen;
       }
     },
-    toEnd: async (ms = 5000) => {
+    toEnd: async () => {
       const seen: StreamEvent[] = [];
       for (;;) {
-        const event = await stream.next(ms);
+        const event = await stream.next();
         if (event === undefined) return seen;
         seen.push(event);
       }
@@ -370,18 +369,13 @@ export const openEventStream = async (
     stream.events.push(event);
     return event;
   };
-  const take = async (ms: number): Promise<SseFrame | 'end'> => {
-    const deadline = Date.now() + ms;
+  const take = async (): Promise<SseFrame | 'end'> => {
     for (;;) {
       const item = queue.shift();
       if (item instanceof Error) throw item;
       if (item !== undefined) return item;
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) throw new Error(`timed out after ${ms} ms waiting for an SSE frame`);
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, remaining);
         notify = () => {
-          clearTimeout(timer);
           notify = undefined;
           resolve();
         };
@@ -411,13 +405,7 @@ export const openEventStream = async (
   return stream;
 };
 
-export const waitUntil = async (condition: () => boolean, ms: number, label: string): Promise<void> => {
-  const deadline = Date.now() + ms;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error(`timed out after ${ms} ms waiting for ${label}`);
-    await new Promise<void>((resolve) => setTimeout(resolve, 2));
-  }
-};
+export const pollFor = (condition: () => boolean, boundMs: number, description: string): Promise<void> => pollUntil(condition, { description, boundMs });
 
 export type McpAdminPort = Parameters<typeof runtime.createRunService>[0]['mcp'];
 
@@ -498,7 +486,7 @@ export const openStore = (
   clock: FakeClock,
   extra: { notifier?: Notifier; maxAttempts?: number; preparer?: (dbPath: string, store: () => RuntimeStore) => ContributionPreparer; onDecode?: (rows: number, bytes: number) => void } = {},
 ): RuntimeStore => {
-  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,
@@ -782,8 +770,8 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const pendingRuns: Promise<unknown>[] = [];
   onCleanup(async () => {
     gateway.releaseAll();
-    await within(Promise.allSettled(pendingRuns), 10_000, 'worker runs to settle');
-    await within(Promise.allSettled(workers.map((worker) => worker.stop())), 10_000, 'workers to stop');
+    await Promise.allSettled(pendingRuns);
+    await Promise.allSettled(workers.map((worker) => worker.stop()));
   });
   const snapshotToolbox = async (additionalTools: readonly AnyTool[] = [], only?: readonly string[]) => {
     const registry = createToolRegistry();

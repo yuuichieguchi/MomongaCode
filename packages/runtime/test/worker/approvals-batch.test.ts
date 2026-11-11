@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
-import { deferred, waitUntil, within } from './deferred.ts';
+import { deferred } from './deferred.ts';
 import { START_MS, makeEnv } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import { waitFor } from '@momonga/testkit';
@@ -10,7 +10,7 @@ describe('worker approval wait', () => {
     const env = await makeEnv();
     const deadlineAt = START_MS + 60_000;
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: `${env.project}/out.txt`, content: 'x' } }]));
-    const run = env.enqueue('Write the file', { deadlineAt });
+    const run = await env.enqueue('Write the file', { deadlineAt });
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -35,7 +35,7 @@ describe('worker approvals for a whole batch', () => {
       ]),
       textStep('Both planned.'),
     );
-    const run = env.enqueue('Plan twice');
+    const run = await env.enqueue('Plan twice');
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
 
@@ -83,16 +83,16 @@ describe('worker wake hook', () => {
     };
     const worker = env.worker('worker-1', { store, idlePollMs: 60_000, wake });
     worker.start();
-    await within(idle.promise, 2_000, 'the worker to find no run');
+    await env.settled(idle.promise, 'the worker to find no run');
     await waitFor(() => listeners.size === 1, { description: 'the worker to register its wake listener' });
     expect(listeners.size).toBe(1);
 
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
     for (const listener of [...listeners]) listener();
 
-    await waitUntil(() => env.run(run.id).status === 'COMPLETED', 2_000, 'the woken worker to complete the run');
-    await within(worker.stop(), 2_000, 'the worker to stop');
+    await env.passTime(() => env.run(run.id).status === 'COMPLETED', 'the woken worker to complete the run');
+    await env.settled(worker.stop(), 'the worker to stop');
     expect(listeners.size).toBe(0);
   });
 });

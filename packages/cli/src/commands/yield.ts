@@ -19,7 +19,7 @@ export const evaluateYield = async (
 ): Promise<number> => {
   const dataset = await loadYieldDataset(ports.files, path.resolve(ports.cwd, datasetFile));
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
-  const models = shellModelsOf(ports);
+  const models = await shellModelsOf(ports, options.interrupt);
   const runs = await runYieldLive(hostEffects(ports), {
     dataset,
     model: pinnedModelOf(models, options.model),

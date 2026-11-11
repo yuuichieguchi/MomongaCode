@@ -28,7 +28,7 @@ describe('every target meter is folded at claim start and read for C (4.7, M4, M
   it('counts the first build input through the fallback target before that target ever answers', async () => {
     const env = await observedEnv([PRIMARY_TARGET, FALLBACK_TARGET]);
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Echo something');
+    const run = await env.enqueue('Echo something');
 
     await env.runOnce(env.worker());
 
@@ -57,14 +57,14 @@ describe('a fallback meter is restored at claim start from its own counter event
     env.gateway.capabilitiesByTarget.set(FALLBACK_TARGET, estimatedTarget());
     env.gateway.chainsByModel[env.session.model] = [FALLBACK_TARGET];
     env.gateway.script.push(textStep('Done.'), textStep('Again.'));
-    const earlier = env.enqueue('Echo something');
+    const earlier = await env.enqueue('Echo something');
     await env.runOnce(env.worker());
     expect(env.ofType(earlier.id, 'meter.observed')).toMatchObject([{ target: FALLBACK_TARGET, counter: fakeCounterOf(FALLBACK_TARGET) }]);
     const systemItem = canonicalJson(inputOf(env.gateway.streams[0]!.body)[0]);
 
     env.gateway.chainsByModel[env.session.model] = [PRIMARY_TARGET, FALLBACK_TARGET];
     const countsBefore = env.gateway.counts.length;
-    const later = env.enqueue('Echo something else');
+    const later = await env.enqueue('Echo something else');
     await env.runOnce(env.worker('worker-2'));
 
     expect(env.run(later.id).status).toBe('COMPLETED');
@@ -76,14 +76,14 @@ describe('the journaled meter keeps the report with context.observedCapacity (4.
   it('journals kept = reported when the meter counted more than the server reported', async () => {
     const measuring = await observedEnv([PRIMARY_TARGET]);
     measuring.gateway.script.push(textStep('Done.'));
-    measuring.enqueue('Echo something');
+    await measuring.enqueue('Echo something');
     await measuring.runOnce(measuring.worker());
     const counted = inputTokensOf(measuring.gateway.streams[0]!.body);
     const reported = counted - OVER_COUNT;
 
     const env = await observedEnv([PRIMARY_TARGET]);
     env.gateway.script.push(textStep('Done.', { usage: usageOf(reported, 5) }));
-    const run = env.enqueue('Echo something');
+    const run = await env.enqueue('Echo something');
     await env.runOnce(env.worker());
 
     expect(env.ofType(run.id, 'meter.observed')).toMatchObject([{ counted, reported, kept: reported }]);

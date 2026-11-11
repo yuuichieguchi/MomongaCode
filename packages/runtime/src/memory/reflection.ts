@@ -108,7 +108,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const verification = await settings.verification(session);
     const verdict = await store.journalFacts.verdict({ runId, commands: verification.commands, manifests: verification.manifests }, signal);
     const { verified } = verdict;
-    const trusted = settings.trusted(session);
+    const trusted = await settings.trusted(session);
     const knownTexts = (): Set<string> =>
       new Set(
         store.memories

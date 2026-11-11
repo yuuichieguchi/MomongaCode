@@ -1,14 +1,7 @@
 import { execFileSync } from '@momonga/testkit/child-process';
-import { LSOF_PATH } from '@momonga/testkit';
+import { LSOF_PATH, pollUntil as pollOf } from '@momonga/testkit';
 
-export const pollUntil = async (predicate: () => boolean | Promise<boolean>, timeoutMs: number, description: string): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    if (await predicate()) return;
-    if (Date.now() > deadline) throw new Error(`pollUntil: ${description} not met within ${timeoutMs} ms`);
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-  }
-};
+export const pollUntil = (predicate: () => boolean | Promise<boolean>, timeoutMs: number, description: string): Promise<void> => pollOf(predicate, { description, boundMs: timeoutMs });
 
 export const lsofHolders = (file: string): number[] => {
   try {

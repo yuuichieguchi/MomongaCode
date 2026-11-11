@@ -16,7 +16,7 @@ const liveListing = (): Capabilities => capabilitiesFor(2 * WINDOW, { maxOutputT
 const overheadTokens = async (): Promise<number> => {
   const env = await makeEnv({ capabilities: pinned() });
   env.gateway.script.push(textStep('Done.'));
-  env.enqueue('x');
+  await env.enqueue('x');
   await env.runOnce(env.worker());
   const body = env.gateway.streams[0]?.body;
   if (body === undefined) throw new Error('the measuring run made no model call');
@@ -32,7 +32,7 @@ describe('the build ceiling of a claim resumed after the calibration of the mode
     const wanted = Math.floor((pinnedCeiling + liveCeiling) / 2) - (await overheadTokens());
     const env = await makeEnv({ capabilities: pinned() });
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
-    const run = env.enqueue('y'.repeat(4 * wanted));
+    const run = await env.enqueue('y'.repeat(4 * wanted));
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
@@ -62,7 +62,7 @@ describe('the tool floor of a claim resumed after the calibration of the model t
   it('reads the ratio from the claim listing and keeps the pinned window, so the resumed build leaves out tools for room', async () => {
     const env = await makeEnv({ capabilities: pinnedSmall() });
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
-    const run = env.enqueue('Write it');
+    const run = await env.enqueue('Write it');
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');

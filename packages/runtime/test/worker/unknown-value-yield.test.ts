@@ -23,7 +23,7 @@ describe('a held run whose session mode becomes unknown (11.4)', () => {
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'written' } }]),
       textStep('Done.'),
     );
-    const run = env.enqueue('Echo then write');
+    const run = await env.enqueue('Echo then write');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 

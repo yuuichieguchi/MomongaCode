@@ -99,9 +99,9 @@ describe('suggested rule in the fold', () => {
 });
 
 describe('snapshot codec for pins and suggested rules', () => {
-  const stored = () => {
+  const stored = async () => {
     const { dbPath, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     const payloads: RunEventPayload[] = [
       { type: 'run.started', attempt: 1, now: 10, pins: FIRST_PINS },
@@ -137,8 +137,8 @@ describe('snapshot codec for pins and suggested rules', () => {
     return { store, run, state, mutate };
   };
 
-  it('round-trips pins and suggested rules through a snapshot', () => {
-    const { store, run, state } = stored();
+  it('round-trips pins and suggested rules through a snapshot', async () => {
+    const { store, run, state } = await stored();
     expect(state.pins).toEqual(FIRST_PINS);
     expect(state.pendingCalls['c1']?.suggestedRule).toBe(RULE);
     expect(state.pendingCalls['c2']?.resolution?.suggestedRule).toBe(RULE);
@@ -150,8 +150,8 @@ describe('snapshot codec for pins and suggested rules', () => {
     ['pins that are an array', "json_set(state_json, '$.pins', json('[1]'))"],
     ['a non-string suggested rule on a pending call', "json_set(state_json, '$.pendingCalls.c1.suggestedRule', 7)"],
     ['a non-string suggested rule in a resolution', "json_set(state_json, '$.pendingCalls.c2.resolution.suggestedRule', 7)"],
-  ])('reports a snapshot with %s as corrupt', (_label, expression) => {
-    const { store, run, mutate } = stored();
+  ])('reports a snapshot with %s as corrupt', async (_label, expression) => {
+    const { store, run, mutate } = await stored();
     mutate(expression);
     expect(() => store.load(run.id)).toThrow(/corrupt/);
   });

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { isRecord } from '@momonga/foundation';
+import { answeredLater, isRecord } from '@momonga/foundation';
 import {
   PROVIDER_NAME_PATTERN,
   SERVER_ADAPTER_LABELS,
@@ -12,10 +12,13 @@ import {
   withDefaultTag,
 } from '@momonga/protocol';
 import type { ModelView, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
+import { askerOf } from './asker.ts';
+import type { Asker } from './asker.ts';
 import { ConfigError } from './config-error.ts';
 import { editUserSettings } from './edit-user-settings.ts';
 import { settingsWriterPorts } from './file-lock.ts';
 import { userModelsOf } from './layers.ts';
+import { refusingOwnSockets } from './models.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
 import { endpointKeyOf } from './probe-record-key.ts';
 import { providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
@@ -56,7 +59,7 @@ export type ModelsEditPlan = { document: Record<string, unknown>; references: Mo
 
 export type ModelsEditResult = { wrote: boolean; summaries: string[]; model?: string };
 
-export type ModelsEditPorts = { kinds: ServerKinds; planProfiles?: PlanProfiles; home?: string };
+export type ModelsEditPorts = { kinds: ServerKinds; planProfiles?: PlanProfiles };
 
 export class ModelsEditRefused extends Error {
   readonly code: ModelsEditRefusalCode;
@@ -124,7 +127,7 @@ const loadedOf = (document: Json, ports: ModelsEditPorts): Loaded => {
   }
   const warnings: string[] = [];
   try {
-    const resolved = userModelsOf(settings, { source: SOURCE, home: ports.home, warnings, kinds: ports.kinds, ...(ports.planProfiles === undefined ? {} : { planProfiles: ports.planProfiles }) });
+    const resolved = userModelsOf(settings, { source: SOURCE, warnings, kinds: ports.kinds, ...(ports.planProfiles === undefined ? {} : { planProfiles: ports.planProfiles }) });
     return { resolved, warnings: warnings.map(sentenceOf) };
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;
@@ -794,13 +797,25 @@ export const planModelsEdit = (document: unknown, operations: ModelsOperations, 
 
 export type EditModelsSettingsOptions = { signal: AbortSignal; planProfiles?: PlanProfiles };
 
+const refuseOwnSockets = async (document: Json, home: string, { paths, signal }: Asker): Promise<void> => {
+  const connections = writtenConnections(document).map((connection) => ({ socketPath: isRecord(connection) ? writtenText(connection['socketPath']) : undefined }));
+  try {
+    await answeredLater(refusingOwnSockets({ connections }, home, SOURCE), paths, signal);
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    throw new ModelsEditRefused('would_not_load', `${NOT_SAVED}${sentenceOf(error.message)}`);
+  }
+};
+
 export const editModelsSettings = async (home: string, settingsFile: string, operations: ModelsOperations, options: EditModelsSettingsOptions): Promise<ModelsEditResult> => {
   let result: ModelsEditResult | undefined;
+  const asker = askerOf(options.signal);
   await editUserSettings(
     settingsFile,
-    (document) => {
-      const plan = planModelsEdit(document, operations, { kinds: SERVER_KINDS, home, ...(options.planProfiles === undefined ? {} : { planProfiles: options.planProfiles }) });
+    async (document) => {
+      const plan = planModelsEdit(document, operations, { kinds: SERVER_KINDS, ...(options.planProfiles === undefined ? {} : { planProfiles: options.planProfiles }) });
       if ('refused' in plan) throw new ModelsEditRefused(plan.refused.code, plan.refused.message);
+      await refuseOwnSockets(plan.document, home, asker);
       const wrote = JSON.stringify(plan.document) !== JSON.stringify(document);
       result = { wrote, summaries: plan.summaries, ...(plan.model === undefined ? {} : { model: plan.model }) };
       if (!wrote) return false;

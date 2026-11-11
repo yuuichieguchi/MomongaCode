@@ -209,7 +209,7 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths): UpdatePor
   lock: nodeUpdateLock(paths),
   state: nodeUpdateState(paths),
   daemon: nodeDaemonProbe(paths, ports.clock),
-  autoUpdates: async () => (await loadUserSettings({ home: ports.home })).settings.autoUpdates,
+  autoUpdates: async () => (await loadUserSettings({ home: ports.home, signal: ports.interrupt })).settings.autoUpdates,
   spawnDetached: ports.spawnDetached,
   stderr: ports.stderr,
 });

@@ -3,6 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords, writeAppliedRecord } from '@momonga/config';
+import { systemRandom } from '@momonga/foundation';
+
+const NOT_ABORTED = new AbortController().signal;
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -42,26 +45,26 @@ const UNREADABLE: ReadonlyArray<{ label: string; text: string }> = [
 
 describe('S7: an unreadable applied record is no newer copy (design-settings-live 15.6, CorruptRecord)', () => {
   for (const { label, text } of UNREADABLE) {
-    it(`a ${label} record with an invalid file: read() returns the own copy and warns once per record identity`, () => {
+    it(`a ${label} record with an invalid file: loadOrKeep returns the own copy and warns once per record identity`, async () => {
       const tree = makeTree();
       fs.writeFileSync(tree.record, `${JSON.stringify({ seq: 1, settings: settingsWithModel('a') })}\n`, { mode: 0o600 });
       tree.write(JSON.stringify(settingsWithModel('a')));
       const warnings: string[] = [];
       const cache = createUserSettingsCache({ home: tree.home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords, appliedRecord: tree.record });
-      expect(servedModelOf(cache.get())).toBe('a');
+      expect(servedModelOf((await cache.loadOrKeep(NOT_ABORTED)).settings)).toBe('a');
       fs.writeFileSync(tree.record, text, { mode: 0o600 });
       tree.write('{ "models": ');
       const before = warnings.length;
-      expect(() => cache.read()).not.toThrow();
-      expect(servedModelOf(cache.get())).toBe('a');
+      await expect(cache.loadOrKeep(NOT_ABORTED)).resolves.toBeDefined();
+      expect(servedModelOf((await cache.loadOrKeep(NOT_ABORTED)).settings)).toBe('a');
       expect(warnings.slice(before).filter((message) => message.includes(tree.record))).toHaveLength(1);
     });
 
-    it(`a ${label} record is healed by the supervisor's next write, even with unchanged content`, () => {
+    it(`a ${label} record is healed by the supervisor's next write, even with unchanged content`, async () => {
       const tree = makeTree();
       tree.write(JSON.stringify(settingsWithModel('c')));
       fs.writeFileSync(tree.record, text, { mode: 0o600 });
-      expect(() => writeAppliedRecord(tree.home, tree.record)).not.toThrow();
+      await expect(writeAppliedRecord(tree.home, tree.record, undefined, { signal: NOT_ABORTED, random: systemRandom })).resolves.toBeDefined();
       expect(JSON.parse(fs.readFileSync(tree.record, 'utf8'))).toMatchObject({ seq: expect.any(Number), settings: settingsWithModel('c') });
     });
   }

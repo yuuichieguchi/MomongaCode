@@ -6,13 +6,13 @@ import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSetting
 const userResolved = async (settings: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), settings);
-  return (await loadUserSettings({ home: tree.home })).settings;
+  return (await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings;
 };
 
 const userRejected = async (settings: Record<string, unknown>, fragment: string | RegExp): Promise<void> => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), settings);
-  await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(fragment);
+  await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(fragment);
 };
 
 const ABSOLUTE = path.join(path.sep, 'opt', 'tools', 'rg');

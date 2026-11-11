@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
-import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, WORDS } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
@@ -83,6 +83,16 @@ const SOCKET_ERROR_RESENDS = 1;
 const RESENT_SOCKET_CODES: ReadonlySet<string> = new Set(['UND_ERR_SOCKET', 'ECONNRESET', 'EPIPE']);
 
 const REPEATABLE_METHODS: ReadonlySet<string> = new Set(['GET', 'PUT', 'PATCH', 'DELETE']);
+
+export class StreamFailed extends Error {
+  readonly code: string;
+
+  constructor(description: string, code: string, message: string) {
+    super(`the ${WORDS.daemon} could not go on with the event stream (${description}): ${message}`);
+    this.name = 'StreamFailed';
+    this.code = code;
+  }
+}
 
 export class DaemonMoved extends Error {
   readonly generation: number;
@@ -252,6 +262,12 @@ const movedOf = (data: string, description: string): DaemonMoved => {
   return new DaemonMoved(body['generation'], body['version']);
 };
 
+const failedOf = (data: string, description: string): StreamFailed => {
+  const body = parsed(data, description);
+  if (!isRecord(body) || typeof body['code'] !== 'string' || typeof body['message'] !== 'string') throw new ContractViolation(description, `a ${STREAM_FAILED_EVENT} frame without a code and a message: ${data}`);
+  return new StreamFailed(description, body['code'], body['message']);
+};
+
 const socketErrorCodeOf = (error: unknown): string | undefined => {
   for (let current: unknown = error; isRecord(current); current = current['cause']) {
     if (typeof current['code'] === 'string' && RESENT_SOCKET_CODES.has(current['code'])) return current['code'];
@@ -261,6 +277,7 @@ const socketErrorCodeOf = (error: unknown): string | undefined => {
 
 const frameOf = (event: { id?: string; event?: string; data: string }, description: string): RunEventFrame => {
   if (event.id === undefined && event.event === DAEMON_CURRENT_EVENT) throw movedOf(event.data, description);
+  if (event.id === undefined && event.event === STREAM_FAILED_EVENT) throw failedOf(event.data, description);
   if (event.id === undefined) throw new ContractViolation(description, `an event without an id: ${event.data}`);
   const id = Number(event.id);
   if (!Number.isInteger(id)) throw new ContractViolation(description, `an event with a non-integer id ${event.id}`);

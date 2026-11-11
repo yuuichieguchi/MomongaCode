@@ -56,7 +56,7 @@ export const builderOf = (env: Env) => chainBuilder(harnessOf(env));
 
 export const plantOldShapeChild = async (env: Env, input: string): Promise<Run> => {
   const b = builderOf(env);
-  const child = b.createRun(input);
+  const child = await b.createRun(input);
   const payload = oracleProjection(env.store, child, knownValue(env.store.getSession(env.session.id)?.permissionMode ?? 'manual', `the permission mode of session ${env.session.id}`));
   await env.seed(child.id, [payload as unknown as RunEventPayload], 'release');
   return env.run(child.id);

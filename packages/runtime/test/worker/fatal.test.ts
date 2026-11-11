@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
-import { waitUntil, within } from './deferred.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { fatalStoreError } from './cancel-fixture.ts';
@@ -47,8 +46,8 @@ describe('worker fatal store errors', () => {
     const worker = env.worker('worker-1', { store, idlePollMs: 1, onFatal: (error) => fatals.push(error), onError: (error) => errors.push(error) });
 
     worker.start();
-    await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
-    await within(worker.stop(), 10_000, 'the worker to stop');
+    await env.passTime(() => fatals.length > 0, 'onFatal');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(fatals).toEqual([fatal]);
     expect(fatals[0]).toBe(fatal);
@@ -62,7 +61,7 @@ describe('worker fatal store errors', () => {
     const fatal = fatalStoreError();
     const fatals: Error[] = [];
     let failed = false;
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     env.gateway.script.push(textStep('never sent'));
     const store = countingStore(env, {
       append: (claim, payloads) => {
@@ -80,8 +79,8 @@ describe('worker fatal store errors', () => {
     const worker = env.worker('worker-1', { store, idlePollMs: 1, onFatal: (error) => fatals.push(error) });
 
     worker.start();
-    await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
-    await within(worker.stop(), 10_000, 'the worker to stop');
+    await env.passTime(() => fatals.length > 0, 'onFatal');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(fatals).toHaveLength(1);
     expect(fatals[0]).toBe(fatal);
@@ -99,7 +98,7 @@ describe('worker fatal store errors', () => {
     const fatals: Error[] = [];
     const blocked = gated(textStep('never finished'));
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const store = countingStore(env, {
       heartbeat: () => {
         throw fatal;
@@ -109,11 +108,11 @@ describe('worker fatal store errors', () => {
 
     worker.start();
     try {
-      await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
+      await env.passTime(() => fatals.length > 0, 'onFatal');
     } finally {
       blocked.gate.release.resolve();
     }
-    await within(worker.stop(), 10_000, 'the worker to stop');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(fatals).toHaveLength(1);
     expect(fatals[0]).toBe(fatal);
@@ -137,8 +136,8 @@ describe('worker fatal store errors', () => {
     });
 
     worker.start();
-    await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
-    await within(worker.stop(), 10_000, 'the worker to stop');
+    await env.passTime(() => fatals.length > 0, 'onFatal');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(fatals).toEqual([failure]);
   });
@@ -159,12 +158,12 @@ describe('worker fatal store errors', () => {
       },
     });
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { store, idlePollMs: 1, onFatal: (error) => fatals.push(error), onError: (error) => errors.push(error) });
 
     worker.start();
-    await waitUntil(() => env.run(run.id).status === 'COMPLETED', 10_000, 'the run to complete after the transient error');
-    await within(worker.stop(), 10_000, 'the worker to stop');
+    await env.passTime(() => env.run(run.id).status === 'COMPLETED', 'the run to complete after the transient error');
+    await env.settled(worker.stop(), 'the worker to stop');
 
     expect(fatals).toEqual([]);
     expect(errors).toEqual([failure]);

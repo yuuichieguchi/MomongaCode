@@ -32,7 +32,11 @@ const assertPrivateDirectory = (dir: string): void => {
   }
 };
 
-const ensurePrivateFile = (file: string): void => {
+export type DatabaseFileIdentity = { dev: number; ino: number };
+
+export type OpenedDatabase = { db: DatabaseSync; identity: DatabaseFileIdentity };
+
+const ensurePrivateFile = (file: string): DatabaseFileIdentity => {
   let fd: number;
   try {
     fd = fs.openSync(file, 'wx', PRIVATE_FILE_MODE);
@@ -42,23 +46,27 @@ const ensurePrivateFile = (file: string): void => {
     if (!modeIsPrivate(stat, 'file')) {
       throw new Error(`database file ${file} has mode ${formatMode(stat.mode)} but must be 0600; run: chmod 600 ${file}`, { cause: error });
     }
-    return;
+    return { dev: stat.dev, ino: stat.ino };
   }
   try {
     fs.fchmodSync(fd, PRIVATE_FILE_MODE);
+    const { dev, ino } = fs.fstatSync(fd);
+    return { dev, ino };
   } finally {
     fs.closeSync(fd);
   }
 };
 
-export const openDatabase = (file: string, options: OpenDatabaseOptions = {}): DatabaseSync => {
+export const openDatabase = (file: string, options: OpenDatabaseOptions = {}): DatabaseSync => openDatabaseWithIdentity(file, options).db;
+
+export const openDatabaseWithIdentity = (file: string, options: OpenDatabaseOptions = {}): OpenedDatabase => {
   const busyTimeoutMs = options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS;
   if (!Number.isInteger(busyTimeoutMs) || busyTimeoutMs < 0) {
     throw new RangeError(`openDatabase: busyTimeoutMs must be a non-negative integer, got ${busyTimeoutMs}`);
   }
   if (options.createDirectory === true) fs.mkdirSync(path.dirname(file), { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
   assertPrivateDirectory(path.dirname(file));
-  ensurePrivateFile(file);
+  const identity = ensurePrivateFile(file);
   const db = new DatabaseSync(file, { timeout: busyTimeoutMs, enableForeignKeyConstraints: true });
   try {
     const journal = db.prepare('PRAGMA journal_mode = WAL').get();
@@ -71,7 +79,7 @@ export const openDatabase = (file: string, options: OpenDatabaseOptions = {}): D
     db.close();
     throw error;
   }
-  return db;
+  return { db, identity };
 };
 
 const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>

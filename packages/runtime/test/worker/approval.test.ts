@@ -9,7 +9,7 @@ const REJECTED = 'The user rejected this tool call.';
 
 const askToWrite = async (env: Env, target = path.join(env.project, 'out.txt'), limits: Record<string, unknown> = {}) => {
   env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'approved' } }]));
-  const run = env.enqueue('Write the file', { limits });
+  const run = await env.enqueue('Write the file', { limits });
   expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
   return { run, target };
 };
@@ -48,7 +48,7 @@ describe('worker approval request', () => {
   it('offers only the once options when there is no suggested rule', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Bash', args: { command: 'echo $(date)' } }]));
-    const run = env.enqueue('Run it');
+    const run = await env.enqueue('Run it');
 
     await env.runOnce(env.worker());
 
@@ -126,7 +126,7 @@ describe('worker approval resume', () => {
     await env.runOnce(env.worker('worker-2'));
 
     env.gateway.script.push(callsStep([{ callId: 'call_w_2', name: 'Write', args: { file_path: target, content: 'again' } }]), textStep('Written again.'));
-    const second = env.enqueue('Write it again');
+    const second = await env.enqueue('Write it again');
     await env.runOnce(env.worker('worker-3'));
 
     expect(env.run(second.id).status).toBe('COMPLETED');

@@ -73,7 +73,7 @@ describe('a stored model is resolved by its full reference only (I-N4, design-mo
     const env = await startService();
     const kit = attachWorkerKit(env);
     const session = env.store.createSession({ cwd: env.layout.projectReal, env: {}, permissionMode: 'manual', model: LOCAL });
-    const queued = env.store.createRunAndEnqueue(session.id, { input: 'Say hello', timeoutMs: 3_600_000, limits: {}, pins: {}, history: 'inherit' });
+    const queued = await env.store.createRunAndEnqueue(session.id, { input: 'Say hello', timeoutMs: 3_600_000, limits: {}, pins: {}, history: 'inherit' });
     if (queued.kind !== 'created') throw new Error(`the run was not created: ${queued.kind}`);
     kit.gateway.unlisted.add(LOCAL);
     await kit.runOnce(kit.worker('worker-1'));

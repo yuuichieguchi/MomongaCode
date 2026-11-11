@@ -9,7 +9,7 @@ export const createSteppingTiming = (clock: FakeClock): SteppingTiming => {
   return {
     sleeps,
     now: () => clock.now(),
-    monotonicMs: () => clock.now(),
+    monotonicMs: () => clock.monotonicMs(),
     setTimeout: (callback, ms) => {
       const handle = {};
       waiting.add(handle);

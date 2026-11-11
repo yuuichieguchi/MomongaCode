@@ -27,7 +27,7 @@ const offeredTools = async (): Promise<readonly AnyTool[]> => {
     return registry.snapshot();
   };
   env.gateway.script.push(callsStep([{ callId: 'lint-1', name: 'UpdatePlan', args: { entries: [{ content: 'lint', status: 'pending', priority: 'low' }] } }]), textStep('Done.'));
-  env.enqueue('Compose the tools');
+  await env.enqueue('Compose the tools');
   await env.runOnce(
     env.worker('worker-lint', {
       tools: {
@@ -46,7 +46,7 @@ const offeredTools = async (): Promise<readonly AnyTool[]> => {
       agents: createAgentsPort({
         home: env.home,
         fileSystem: createNodeSkillFileSystem(),
-        settings: { trusted: () => env.settings.trustedValue },
+        settings: { trusted: async () => env.settings.trustedValue },
         runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
       }),
     }),

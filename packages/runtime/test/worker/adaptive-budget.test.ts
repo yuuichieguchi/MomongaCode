@@ -3,7 +3,7 @@ import { createMemoryPort } from '@momonga/runtime';
 import type { Worker } from '@momonga/runtime';
 import type { RunEventPayload, RunStatus } from '@momonga/protocol';
 import type { Session } from '@momonga/store';
-import { within } from './deferred.ts';
+
 import { DEADLINE_MS, LEASE_MS, capabilitiesFor, createdRun, makeEnv, textOf, unavailableEvidenceRun } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, gated, textStep } from './scripts.ts';
@@ -24,7 +24,7 @@ const pastItems = ({ injected, used }: Past) => Array.from({ length: injected },
 
 const finishPast = async (env: Env, past: Past, session: Session = env.session, status: RunStatus = 'COMPLETED'): Promise<void> => {
   env.clock.advance(1);
-  const run = createdRun(env.store.createRunAndEnqueue(session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+  const run = await createdRun(await env.store.createRunAndEnqueue(session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
   const claim = await env.seed(run.id, pastEvents(past, env.clock.now()), 'hold');
   env.scriptContribution(run.id, pastItems(past));
   const result = await env.store.transition(claim, ['RUNNING'], status);
@@ -45,7 +45,7 @@ const adaptiveEnv = async (): Promise<Env> => {
 
 const startRun = async (env: Env): Promise<string> => {
   env.gateway.script.push(textStep('Hello.'));
-  const run = env.enqueue('Say hello', { history: 'fresh' });
+  const run = await env.enqueue('Say hello', { history: 'fresh' });
   await env.runOnce(memoryWorker(env, `worker-${run.id}`));
   expect(env.run(run.id).status).toBe('COMPLETED');
   return run.id;
@@ -125,9 +125,9 @@ describe('adaptive memory budget at run start', () => {
     const env = await adaptiveEnv();
     await finishPasts(env, 19, { injected: 1, used: 0 });
     env.clock.advance(1);
-    const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+    const parent = await createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const parentClaim = await env.seed(parent.id, pastEvents({ injected: 1, used: 0 }, env.clock.now()), 'hold');
-    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
+    const created = await env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     const childClaim = await env.seed(created.run.id, pastEvents({ injected: 10, used: 10 }, env.clock.now()), 'hold');
     env.scriptContribution(created.run.id, pastItems({ injected: 10, used: 10 }));
@@ -167,7 +167,7 @@ describe('a window of runs pinned at the current share', () => {
     const env = await adaptiveEnv();
     for (let index = 0; index < 20; index += 1) {
       env.clock.advance(1);
-      const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+      const run = await createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
       const claim = await env.seed(
         run.id,
         [
@@ -190,18 +190,18 @@ describe('a pinned share', () => {
     const before = env.gateway.streams.length;
     const blocked = gated(textStep('Done.'), 1);
     env.gateway.script.push(blocked);
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = await env.enqueue('Work', { history: 'fresh' });
     const abandoned = env.runOnce(memoryWorker(env, 'worker-a'));
-    await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
 
     const sibling = env.store.createSession({ cwd: env.project, env: {}, permissionMode: 'manual', model: env.session.model });
     for (let index = 0; index < 20; index += 1) await finishPast(env, { injected: 1, used: 1, dropped: true }, sibling);
     env.clock.advance(LEASE_MS + 1);
     const recovering = env.runOnce(memoryWorker(env, 'worker-b'));
-    await within(env.gateway.nthStream(before + 1), 5_000, 'the recovery re-send');
+    await env.settled(env.gateway.nthStream(before + 1), 'the recovery re-send');
     blocked.gate.release.resolve();
-    await within(recovering, 5_000, 'the recovering worker');
-    await within(abandoned, 5_000, 'the abandoned worker to stop');
+    await env.settled(recovering, 'the recovering worker');
+    await env.settled(abandoned, 'the abandoned worker to stop');
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'run.started').map((event) => event.pins['memoryShare'])).toEqual([1 / 8, 1 / 8]);
@@ -211,9 +211,9 @@ describe('a pinned share', () => {
   it('is taken from the parent by a child run, even after the setting changed', async () => {
     const env = await adaptiveEnv();
     await finishPasts(env, 20, { injected: 1, used: 0 });
-    const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+    const parent = await createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const claim = await env.seed(parent.id, pastEvents({ injected: 0, used: 0, share: 1 / 8 }, env.clock.now()), 'hold');
-    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
+    const created = await env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     expect((await env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 })).kind).toBe('ok');
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: true };
@@ -229,7 +229,7 @@ describe('a pinned share', () => {
     const recalledIn = async (adaptive: boolean): Promise<number> => {
       const env = await makeEnv({ mode: 'bypassPermissions', capabilities: capabilitiesFor(4000) });
       env.gateway.script.push(...notes.map((text, index) => callsStep([{ callId: `call_m_${index}`, name: 'MemorySave', args: { text, scope: 'user' } }])), textStep('Saved.'));
-      env.enqueue('Remember this', { history: 'fresh' });
+      await env.enqueue('Remember this', { history: 'fresh' });
       await env.runOnce(memoryWorker(env, 'saver'));
       expect(env.store.memories.list()).toHaveLength(4);
       env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: adaptive, autoCompact: true };

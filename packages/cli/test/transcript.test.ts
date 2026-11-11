@@ -121,7 +121,7 @@ describe('foldEvent', () => {
 
   it('writes the row of a counted compaction with the token counts before and after', () => {
     const state = apply([{ type: 'context.compacted', summary: 's', replacedThroughSeq: 3, tokensBefore: 84_000, tokensAfter: 12_000 }]);
-    expect(state.entries).toEqual([{ kind: 'notice', level: 'info', text: 'Compacted: 84.0k -> 12.0k tokens' }]);
+    expect(state.entries).toEqual([{ kind: 'notice', level: 'info', text: 'Compacted: 84k -> 12k tokens' }]);
   });
 
   it('shows the plan live and folds it into the transcript when the run ends', () => {

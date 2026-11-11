@@ -40,7 +40,7 @@ const withoutLastSeq = (reply: FidelityReply): Omit<FidelityReply, 'lastSeq' | '
 const serialized = (value: unknown): number => v8.serialize(value).length;
 
 const answered = async (eventCount: number, blobBytes: number) => {
-  const env = fidelityEnv();
+  const env = await fidelityEnv();
   const page = pageSize();
   const { handle } = await env.store.blobs.put(blobText(page, Math.max(blobBytes, 3 * page)), { mediaType: 'text/plain' } as never);
   const filler: RunEventPayload[] = Array.from({ length: Math.max(0, Math.floor((eventCount - 6) / 3)) }, (_unused, index) => startedCall(`f${index}`, { command: 'ls' })).flat();
@@ -59,7 +59,7 @@ describe('the fidelity request kind of the journal thread', () => {
   });
 
   it('lists a missing blob as unreadable and leaves the tokens found only there unattested', async () => {
-    const env = fidelityEnv();
+    const env = await fidelityEnv();
     const missing = 'f'.repeat(64);
     const run = await env.finished([...startedCall('c1', { command: IN_EVENT }), ...startedCall('c2', { command: 'cat big' }, 'omitted', { handle: missing })]);
     const reply = await env.fidelity(run.id, TOKENS);

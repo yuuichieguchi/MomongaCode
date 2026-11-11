@@ -7,5 +7,5 @@ export type AgentsPortOptions = { home: string; fileSystem: SkillFileSystem; set
 
 export const createAgentsPort = ({ home, fileSystem, settings, runs }: AgentsPortOptions): AgentsPort => {
   const loader = createAgentLoader({ home, fileSystem });
-  return { runs, load: (session) => loader.load({ projectRoot: session.cwd, trusted: settings.trusted(session) }) };
+  return { runs, load: async (session) => loader.load({ projectRoot: session.cwd, trusted: await settings.trusted(session) }) };
 };

@@ -47,6 +47,7 @@ export type BenchRunPorts = {
   groupBy: GroupKey;
   scratch: string;
   onTrial?(trial: { taskId: string; trial: number; met: boolean | 'invalid_setup' }): void;
+  signal?: AbortSignal;
 };
 
 export type InvalidSetup = { taskId: string; trial: number };
@@ -63,8 +64,9 @@ const isFolded = (event: PublicRunEvent): event is FoldedEvent => 'runId' in eve
 
 const factsEventsOf = (events: readonly PublicRunEvent[]): FactsEvent[] => events.filter(isFolded);
 
-const setUp = async (task: BenchTask, workspace: string, probe: WorkspaceProbe): Promise<boolean> => {
+const setUp = async (task: BenchTask, workspace: string, probe: WorkspaceProbe, signal: AbortSignal | undefined): Promise<boolean> => {
   for (const step of task.setup) {
+    signal?.throwIfAborted();
     const outcome = await probe.run(step.run, step.timeoutMs, workspace);
     if (outcome.timedOut || outcome.exitCode !== 0) return false;
   }
@@ -105,7 +107,8 @@ const runTrial = async (task: BenchTask, repository: string, workspace: string, 
     limits: { maxSteps: task.budget.maxSteps, maxTotalTokens: task.budget.maxTotalTokens },
     ...(mandate === undefined ? {} : { mandate }),
   });
-  const driven = await driveRun(api, task, run.id);
+  const driven = await driveRun(api, task, run.id, ports.signal);
+  ports.signal?.throwIfAborted();
   const folded = await factsOfRun(api, run.id, run.id, driven.events);
   const children: RunFactsView[] = [];
   for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events));
@@ -140,13 +143,15 @@ export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts):
     const repository = repositories.get(task.repository);
     if (repository === undefined) throw new EvalError(`task ${task.id} names the repository ${task.repository}, which was not verified`);
     for (let trial = 0; trial < (task.runs ?? BENCH_DEFAULT_RUNS); trial += 1) {
+      ports.signal?.throwIfAborted();
       const workspace = path.join(ports.scratch, `${task.id}-${trial}`);
       await ports.files.cp(repository, workspace);
-      if (!(await setUp(task, workspace, ports.probe))) {
+      if (!(await setUp(task, workspace, ports.probe, ports.signal))) {
         invalidSetup.push({ taskId: task.id, trial });
         ports.onTrial?.({ taskId: task.id, trial, met: 'invalid_setup' });
         continue;
       }
+      ports.signal?.throwIfAborted();
       const outcome = await runTrial(task, repository, workspace, ports);
       trials.push({ taskId: task.id, trial, facts: outcome.facts, children: outcome.children });
       answeredBy.push(...outcome.answeredBy);

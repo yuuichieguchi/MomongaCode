@@ -60,7 +60,7 @@ describe.for([false, true])('the runtime sets the cache controls on every model 
   it('marks the end of S, the end of F and the last history item', async () => {
     const env = await envWithRootAgents(cachePrefix);
     echoThenDone(env);
-    const run = env.enqueue('Echo then finish');
+    const run = await env.enqueue('Echo then finish');
 
     await env.runOnce(env.worker());
 
@@ -76,7 +76,7 @@ describe.for([false, true])('the runtime sets the cache controls on every model 
   it('marks the previous request last history item in the second request of the epoch', async () => {
     const env = await envWithRootAgents(cachePrefix);
     echoThenDone(env);
-    env.enqueue('Echo then finish');
+    await env.enqueue('Echo then finish');
 
     await env.runOnce(env.worker());
 
@@ -88,7 +88,7 @@ describe.for([false, true])('the runtime sets the cache controls on every model 
   it('sends prompt_cache_key = sha256hex(canonicalJson({ tools, S })), equal across requests with the same tools and S', async () => {
     const env = await envWithRootAgents(cachePrefix);
     echoThenDone(env);
-    env.enqueue('Echo then finish');
+    await env.enqueue('Echo then finish');
 
     await env.runOnce(env.worker());
 
@@ -101,7 +101,7 @@ describe.for([false, true])('the runtime sets the cache controls on every model 
   it('records the controls in the journaled request body', async () => {
     const env = await envWithRootAgents(cachePrefix);
     echoThenDone(env);
-    const run = env.enqueue('Echo then finish');
+    const run = await env.enqueue('Echo then finish');
 
     await env.runOnce(env.worker());
 
@@ -151,7 +151,7 @@ describe('a compaction starts a new epoch (4.5)', () => {
   it('sends no previousHistory on the first request after context.compacted, with marks the gateway accepts', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: true };
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     await env.seed(run.id, compactingConversation, 'release');
     env.gateway.script.push(textStep('Done.'));
 
@@ -192,7 +192,7 @@ describe('the marks over generated request sequences (4.5; T2-5 has no formal mo
       env.gateway.script.push(callsStep([{ callId: `g${step}`, name: 'Echo', args: { value: 'v'.repeat(draw(1, 4000)) } }]));
     }
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     if (compacting) await env.seed(run.id, compactingConversation, 'release');
 
     await env.runOnce(env.worker());
@@ -231,7 +231,7 @@ describe('previousHistory survives a new claim (4.5)', () => {
       shutdown = first.abort('shutdown');
     };
     echoThenDone(env);
-    const run = env.enqueue('Echo then finish');
+    const run = await env.enqueue('Echo then finish');
 
     await env.runOnce(first);
     await shutdown;
@@ -251,7 +251,7 @@ describe.for([false, true])('a new arrival ends the epoch (4.5), cachePrefix %s'
     const env = await envWithRootAgents(cachePrefix);
     env.instructions.files.set(`${env.project}/src/AGENTS.md`, 'Nested rule: name things plainly.');
     env.gateway.script.push(callsStep([{ callId: 'c1', name: 'Read', args: { file_path: `${env.project}/src/a.ts` } }]), textStep('Done.'));
-    const run = env.enqueue('Read a file');
+    const run = await env.enqueue('Read a file');
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [readTool()] }));
 

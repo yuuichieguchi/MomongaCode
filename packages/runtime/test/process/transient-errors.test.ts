@@ -29,9 +29,9 @@ const failReadsOf = (target: string, failure: unknown): void => {
 const trustedProject = async () => {
   const f = await makeRuntimeFixture();
   writeUserSettings(f.temp.home, {});
-  f.store.trust.set(f.temp.project, 'trusted');
+  await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
   const session = createSession(f.store, f.temp.project, { env: { PATH: '/usr/bin:/bin' } });
-  const runId = createRun(f.store, session.id);
+  const runId = await createRun(f.store, session.id);
   return { f, session, runId };
 };
 

@@ -1,4 +1,4 @@
-import type { ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, PlanAccountRef, RunStatus, StopReason, ToolKind, RunReport } from '@momonga/protocol';
+import type { ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, PlanAccountRef, RunStatus, StopReason, Stored, ToolKind, RunReport } from '@momonga/protocol';
 
 export type SessionView = {
   readonly id: string;
@@ -66,7 +66,7 @@ export type ApprovalView = {
 
 export type TrustView = {
   readonly path: string;
-  readonly decision: 'trusted' | 'untrusted' | null;
+  readonly decision: Stored<'trusted' | 'untrusted'> | null;
   readonly inheritedFrom?: string;
 };
 

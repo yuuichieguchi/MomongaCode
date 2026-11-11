@@ -46,6 +46,7 @@ const contextFor = (state: RunState) => {
     },
     run: { id: 'run_wrap', sessionId: 'session_wrap' },
     model: 'fm',
+    roles: {},
     capabilities,
     calibration: { tokenCounting: capabilities.tokenCounting },
     systemPrompt: SYSTEM_PROMPT,

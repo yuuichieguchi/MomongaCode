@@ -63,12 +63,18 @@ const setup = (_context: CleanupContext, options: SetupOptions = {}) => {
       recall: () => {
         throw new Error('the kept copy must not be read by the supervisor');
       },
-      remember: () => undefined,
+      remember: async () => undefined,
       report: () => {
         throw new Error('the kept copy must not be reported by the supervisor');
       },
     },
     snapshot: () => {
+      throw new Error('snapshot() must not be used by the launch: it loads');
+    },
+    loadOrKeep: () => {
+      throw new Error('loadOrKeep() must not be used by the supervisor');
+    },
+    load: async () => {
       snapshotCalls += 1;
       calls.push('snapshot');
       return (options.snapshot ?? (() => GOOD_SNAPSHOT))();
@@ -82,7 +88,7 @@ const setup = (_context: CleanupContext, options: SetupOptions = {}) => {
       return options.reapOwnMarkers === undefined ? { reaped: 0, kept: 0 } : options.reapOwnMarkers();
     },
     settings,
-    changeKey: () => {
+    changeKey: async () => {
       calls.push('changeKey');
       return (options.changeKey ?? (() => 'key-1'))();
     },
@@ -92,7 +98,7 @@ const setup = (_context: CleanupContext, options: SetupOptions = {}) => {
       calls.push(`startWatch:${initialKey}`);
       return { stop: () => void calls.push('watchStop') };
     },
-    evaluate: () => void calls.push('evaluate'),
+    evaluate: async () => void calls.push('evaluate'),
   };
   return { calls, log, snapshots, controller, launchOptions, snapshotCalls: () => snapshotCalls };
 };

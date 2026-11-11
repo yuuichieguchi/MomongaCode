@@ -1,6 +1,7 @@
-import { ConfigError, createStopValuesReader, readUserStopValues } from '@momonga/config';
+import { ConfigError, createStopValuesReader } from '@momonga/config';
+import type { StopValuesReader } from '@momonga/config';
 import { CHILD_ENTRY_FLAGS, generationLayout, momongaPaths, runDaemonEntry, runtimeMaxCloseMs } from '@momonga/foundation';
-import type { EntryIo, FlagSpec, HelperSelf } from '@momonga/foundation';
+import type { EntryIo, FlagSpec, HelperSelf, JsonLogger } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startRuntimeProcess } from './start-runtime-process.ts';
 import type { BundledRipgrepSource, StartRuntimeProcessOptions } from './start-runtime-process.ts';
@@ -15,13 +16,18 @@ export const RUNTIME_ENTRY_FLAGS = {
 
 export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource; ruleSolver?: RuleSolverSource; helperSelf?: HelperSelf };
 
-export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<number> =>
-  runDaemonEntry(io, {
+export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<number> => {
+  let stopValues: StopValuesReader | undefined;
+  const stopValuesOf = (logger: JsonLogger): StopValuesReader => {
+    stopValues ??= createStopValuesReader({ onNotice: (message) => logger.warn(message) });
+    return stopValues;
+  };
+  return runDaemonEntry(io, {
     service: 'runtime',
     version: deps.version,
     flags: RUNTIME_ENTRY_FLAGS,
     maxCloseMs: (_flags, values) => runtimeMaxCloseMs(values),
-    readStopValues: ({ home, logger }) => createStopValuesReader({ load: () => readUserStopValues(home), onNotice: (message) => logger.warn(message) }).read(),
+    readStopValues: ({ logger }) => stopValuesOf(logger).read(),
     ownLockPath: (home, flags) => generationLayout(home, flags.generation).locks.runtime,
     logPath: (home) => momongaPaths(home, process.platform, {}).logFiles.runtime,
     isConfigError: (error) => error instanceof ConfigError,
@@ -41,6 +47,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
         signal,
         acquireLock,
         requestShutdown: () => requestShutdown(),
+        stopValues: stopValuesOf(logger),
         ...tuning,
         ...(deps.bundledRipgrep === undefined ? {} : { bundledRipgrep: deps.bundledRipgrep }),
         ...(deps.ruleSolver === undefined ? {} : { ruleSolver: deps.ruleSolver }),
@@ -49,5 +56,6 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
       return { close: handle.close, abort: handle.abort, fatal: handle.fatal };
     },
   });
+};
 
 export { RIPGREP_MANIFEST_ASSET, ensureBundledRipgrep } from '@momonga/tools';

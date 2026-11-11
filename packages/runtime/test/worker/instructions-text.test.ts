@@ -15,7 +15,7 @@ describe('worker instructions.loaded', () => {
       return file;
     };
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 

@@ -67,7 +67,7 @@ describe('I-N19: resolution over the listing equals resolution over the settings
     async () => {
       for (let seed = 1; seed <= SEEDS; seed += 1) {
         const settings = settingsOf(seed);
-        const resolved = resolveModels(settings.models as never, { source: 'settings.json', home: undefined, warnings: [], servers: {} });
+        const resolved = resolveModels(settings.models as never, { source: 'settings.json', warnings: [], servers: {} });
         const views = viewsOf(resolved);
         const listed = await listedViewsOf(resolved);
         expect(listed, `seed ${seed}`).toEqual(views);

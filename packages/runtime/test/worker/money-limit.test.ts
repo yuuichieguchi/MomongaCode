@@ -31,7 +31,7 @@ describe('the money limit of a run is a ceiling held by admission before each mo
     metered(env);
     const scripted = 30;
     for (let index = 0; index < scripted; index += 1) env.gateway.script.push(read(`call_${index}`, env));
-    const run = env.enqueue('Look around', { limits: { maxCostUsd: 0.004, maxSteps: 100 } });
+    const run = await env.enqueue('Look around', { limits: { maxCostUsd: 0.004, maxSteps: 100 } });
 
     await env.runOnce(worker(env));
 
@@ -55,7 +55,7 @@ describe('the money limit of a run is a ceiling held by admission before each mo
     const env = await makeEnv();
     metered(env);
     env.gateway.script.push(read('call_1', env), read('call_2', env), textStep('done'));
-    const run = env.enqueue('Look around', { limits: { maxCostUsd: 0.004 } });
+    const run = await env.enqueue('Look around', { limits: { maxCostUsd: 0.004 } });
 
     await env.runOnce(worker(env));
 
@@ -72,7 +72,7 @@ describe('the money limit of a run is a ceiling held by admission before each mo
     const env = await makeEnv();
     metered(env);
     env.gateway.script.push(textStep('never sent'));
-    const run = env.enqueue('Say hello', { limits: { maxCostUsd: 1 } });
+    const run = await env.enqueue('Say hello', { limits: { maxCostUsd: 1 } });
 
     env.gateway.prices = definePriceTable([]);
 
@@ -89,7 +89,7 @@ describe('the money limit of a run is a ceiling held by admission before each mo
     env.gateway.chainsByModel[env.session.model] = [PRIMARY_TARGET];
     env.gateway.memberFacts = { [PRIMARY_TARGET]: { adapter: FAKE_ADAPTER, upstream: 'local-a', answers: 'model', billing: 'local' } };
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello', { limits: { maxCostUsd: 0.000000001 } });
+    const run = await env.enqueue('Say hello', { limits: { maxCostUsd: 0.000000001 } });
 
     await env.runOnce(worker(env));
 
@@ -101,7 +101,7 @@ describe('the money limit of a run is a ceiling held by admission before each mo
     metered(env);
     env.gateway.billed = 'unpriced';
     env.gateway.script.push(read('call_1', env), textStep('never sent'));
-    const run = env.enqueue('Look around', { limits: { maxCostUsd: 1 } });
+    const run = await env.enqueue('Look around', { limits: { maxCostUsd: 1 } });
 
     await env.runOnce(worker(env));
 
@@ -115,7 +115,7 @@ describe('the money limit of a run is a ceiling held by admission before each mo
     metered(env);
     env.gateway.billed = 'unpriced';
     env.gateway.script.push(read('call_1', env), textStep('done'));
-    const run = env.enqueue('Look around');
+    const run = await env.enqueue('Look around');
 
     await env.runOnce(worker(env));
 
@@ -130,13 +130,13 @@ describe('the gateway is the authority on the price of a request', () => {
     const limited = await makeEnv();
     metered(limited);
     limited.gateway.script.push(read('call_1', limited), textStep('done'));
-    const run = limited.enqueue('Look around', { limits: { maxCostUsd: 1 } });
+    const run = await limited.enqueue('Look around', { limits: { maxCostUsd: 1 } });
     await limited.runOnce(worker(limited));
 
     const free = await makeEnv();
     metered(free);
     free.gateway.script.push(textStep('done'));
-    free.enqueue('Say hello');
+    await free.enqueue('Say hello');
     await free.runOnce(worker(free));
 
     expect(limited.run(run.id).status).toBe('COMPLETED');
@@ -148,7 +148,7 @@ describe('the gateway is the authority on the price of a request', () => {
     const env = await makeEnv();
     metered(env);
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue('Say hello', { limits: { maxCostUsd: 1 } });
+    const run = await env.enqueue('Say hello', { limits: { maxCostUsd: 1 } });
 
     await env.runOnce(worker(env));
 
@@ -166,7 +166,7 @@ describe('the gateway is the authority on the price of a request', () => {
     const env = await makeEnv();
     metered(env);
     env.gateway.script.push(failedStep('budget_exceeded'));
-    const run = env.enqueue('Say hello', { limits: { maxCostUsd: 1 } });
+    const run = await env.enqueue('Say hello', { limits: { maxCostUsd: 1 } });
 
     await env.runOnce(worker(env));
 
@@ -196,7 +196,7 @@ describe('the first request of a run is admitted by the same rule as every other
     const env = await makeEnv();
     metered(env);
     env.gateway.script.push(textStep('never sent'));
-    const run = env.enqueue('Say hello', { limits: { maxCostUsd: 0.000000001 } });
+    const run = await env.enqueue('Say hello', { limits: { maxCostUsd: 0.000000001 } });
 
     await env.runOnce(worker(env));
 

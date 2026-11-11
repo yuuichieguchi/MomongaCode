@@ -33,16 +33,16 @@ const USER_SETTINGS = {
 };
 
 describe('the eval scratch home carries the declaration of each server a copied model is served by (design-managed-servers 19.12; R-S19-25)', () => {
-  it('copies the loom declaration for the model of loom, and not the kiln one no copied model is served by', () => {
-    const live = liveSettingsFor(loadUserModels({ home: scratchHome(USER_SETTINGS) }), ['loom/fake-1']);
+  it('copies the loom declaration for the model of loom, and not the kiln one no copied model is served by', async () => {
+    const live = liveSettingsFor(await loadUserModels({ home: scratchHome(USER_SETTINGS), signal: new AbortController().signal }), ['loom/fake-1']);
     expect(live.models.servers).toEqual({ loom: LOOM });
     expect(live.operations.map((operation) => operation.kind)).toEqual(['declareServer', 'addModel', 'setStart']);
     expect(live.models.connections).toEqual([expect.objectContaining({ adapter: 'managed', server: 'loom', models: [expect.objectContaining({ id: 'fake-1' })] })]);
   });
 
-  it('loads the copied model of a declared server in a scratch home written from the copy', () => {
-    const live = liveSettingsFor(loadUserModels({ home: scratchHome(USER_SETTINGS) }), ['loom/fake-1']);
-    const scratch = loadUserModels({ home: scratchHome({ models: live.models }) });
+  it('loads the copied model of a declared server in a scratch home written from the copy', async () => {
+    const live = liveSettingsFor(await loadUserModels({ home: scratchHome(USER_SETTINGS), signal: new AbortController().signal }), ['loom/fake-1']);
+    const scratch = await loadUserModels({ home: scratchHome({ models: live.models }), signal: new AbortController().signal });
     expect(scratch.resolved.models.get('loom/fake-1')).toMatchObject({ adapter: 'managed', server: 'loom', binary: LOOM.command, model: 'fake-1' });
   });
 });

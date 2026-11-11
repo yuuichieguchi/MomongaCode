@@ -32,7 +32,7 @@ describe('the repository of an operation is the one that contains the working di
     const tool = operationTool('GitPush', { runArgv: countingRunner().run });
     const ctx = sessionIn(world, nested);
     const facts = await gateFactsFor(tool, PUSH, ctx);
-    expect(facts).toMatchObject({ repoRoot: nested, pushUrls: [`file://${nestedBare}`] });
+    expect(facts).toMatchObject({ repoRoot: nested, destinations: [`file://${nestedBare}`] });
     expect(tool.subject(PUSH, ctx, facts)).toMatchObject({ kind: 'repo', destinations: [`file://${nestedBare}`] });
     const parts = partsOf(tool, PUSH, ctx);
     const result = await parts.execute(await parts.prepare(facts));

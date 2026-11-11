@@ -40,9 +40,9 @@ describe('fold: requestedSeq of the in-flight model request', () => {
 });
 
 describe('snapshot codec: requestedSeq', () => {
-  const snapshotWith = (patch: (state: RunState) => RunState) => {
+  const snapshotWith = async (patch: (state: RunState) => RunState) => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'worker-1');
     const appended = store.append(claim, [notice('first'), requested(1)]);
     if (appended.kind !== 'ok') throw new Error('expected the append to succeed');
@@ -52,8 +52,8 @@ describe('snapshot codec: requestedSeq', () => {
     return { store, runId: run.id, state };
   };
 
-  it('round-trips requestedSeq', () => {
-    const { store, runId, state } = snapshotWith((state) => state);
+  it('round-trips requestedSeq', async () => {
+    const { store, runId, state } = await snapshotWith((state) => state);
     const loaded = store.load(runId).snapshot?.state;
     expect(loaded?.inFlightModelRequest).toMatchObject({ requestedSeq: 3 });
     expect(loaded).toEqual(state);
@@ -63,8 +63,8 @@ describe('snapshot codec: requestedSeq', () => {
     ['a missing requestedSeq', undefined],
     ['a string requestedSeq', '3'],
     ['a non-integer requestedSeq', 2.5],
-  ])('rejects a snapshot whose in-flight request holds %s', (_label, value) => {
-    const { store, runId } = snapshotWith((state) => {
+  ])('rejects a snapshot whose in-flight request holds %s', async (_label, value) => {
+    const { store, runId } = await snapshotWith((state) => {
       const inFlight = { ...(state.inFlightModelRequest as Record<string, unknown>) };
       if (value === undefined) delete inFlight['requestedSeq'];
       else inFlight['requestedSeq'] = value;

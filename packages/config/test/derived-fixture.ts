@@ -9,7 +9,7 @@ export type Derivation<T> = {
 };
 
 export type OwnedDerivationOptions<T> = {
-  cache: Pick<UserSettingsCache, 'read'>;
+  cache: Pick<UserSettingsCache, 'loadOrKeep'>;
   signal: AbortSignal;
   inputsOf(settings: ResolvedSettings): unknown;
   derive(settings: ResolvedSettings, previous: T | undefined, signal: AbortSignal): T | Promise<T>;
@@ -46,8 +46,8 @@ export const flush = async (): Promise<void> => {
 export const ownedHarness = () => {
   let version = 1;
   const owner = new AbortController();
-  const cache: Pick<UserSettingsCache, 'read'> = {
-    read: (): UserSettingsLoaded => ({ settings: { version } as unknown as ResolvedSettings, user: { warnings: [] } as unknown as UserSettingsLoaded['user'] }),
+  const cache: Pick<UserSettingsCache, 'loadOrKeep'> = {
+    loadOrKeep: async (): Promise<UserSettingsLoaded> => ({ settings: { version } as unknown as ResolvedSettings, user: { warnings: [] } as unknown as UserSettingsLoaded['user'] }),
   };
   const gates: Gate[] = [];
   const derived: Array<{ version: number; signal: AbortSignal }> = [];

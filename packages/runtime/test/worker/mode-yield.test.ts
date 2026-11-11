@@ -15,7 +15,7 @@ describe('a mode change ends the claim (Q19, 0.2 #20, 4.6)', () => {
       if (changed.kind !== 'ok') throw new Error(`the mode could not be changed: ${changed.kind}`);
     };
     env.gateway.script.push(callsStep([{ callId: 'c1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Echo then finish');
+    const run = await env.enqueue('Echo then finish');
 
     await env.runOnce(env.worker());
 
@@ -32,7 +32,7 @@ describe('a mode change ends the claim (Q19, 0.2 #20, 4.6)', () => {
       if (changed.kind !== 'ok') throw new Error(`the mode could not be changed: ${changed.kind}`);
     };
     env.gateway.script.push(callsStep([{ callId: 'c1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Echo then finish');
+    const run = await env.enqueue('Echo then finish');
 
     await env.runOnce(env.worker());
     await env.runOnce(env.worker());

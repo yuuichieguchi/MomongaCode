@@ -5,7 +5,8 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Readable, Writable } from 'node:stream';
+import { Writable } from 'node:stream';
+import type { Readable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { nodeEvalFiles, nodeWorkspaceFiles } from '@momonga/eval';
 import type { WorkspaceProbe } from '@momonga/eval';
@@ -17,6 +18,7 @@ import {
   createExecWithStdin,
   createHostExec,
   createPlatformSecretStore,
+  guardStandardStreams,
   hostKernelLock,
   minimalChildEnv,
   nodeFileSystem,
@@ -28,13 +30,13 @@ import {
   writeFileAtomicallySync,
   launchApart,
 } from '@momonga/foundation';
-import type { HeldKernelLock, HelperHost, LaunchProgram, ProcessPort } from '@momonga/foundation';
+import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessPort } from '@momonga/foundation';
 import { sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
 import { HANDOVER_RECORD_MAX_BYTES } from './handover/record.ts';
-import type { CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
+import type { AcpInput, CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
 
 const ABSENT_FILE = '\u0001absent';
 
@@ -274,7 +276,49 @@ export const nodeRecordFiles: RecordFiles = {
   },
 };
 
-export const nodePorts = (version: string, interrupt: AbortSignal): CliPorts => {
+type Arrival = { resolve(kind: 'bytes' | 'end'): void; reject(error: unknown): void };
+
+export const acpInputOf = (stdin: Readable): AcpInput => {
+  let ended = false;
+  let failure: { error: unknown } | undefined;
+  let waiting: Arrival[] = [];
+  const settle = (): void => {
+    if (failure === undefined && stdin.readableLength === 0 && !ended) return;
+    const arrivals = waiting;
+    waiting = [];
+    for (const arrival of arrivals) {
+      if (failure !== undefined) arrival.reject(failure.error);
+      else arrival.resolve(stdin.readableLength > 0 ? 'bytes' : 'end');
+    }
+  };
+  stdin.on('readable', () => {
+    if (stdin.readableLength === 0) stdin.read();
+    settle();
+  });
+  stdin.on('end', () => {
+    ended = true;
+    settle();
+  });
+  stdin.on('error', (error) => {
+    failure = { error };
+    settle();
+  });
+  return {
+    take: () => {
+      const chunk: unknown = stdin.read();
+      if (chunk === null) return undefined;
+      if (!(chunk instanceof Uint8Array)) throw new Error('standard input gave text where the Agent Client Protocol reads bytes');
+      return chunk;
+    },
+    arrival: () =>
+      new Promise((resolve, reject) => {
+        waiting.push({ resolve, reject });
+        settle();
+      }),
+  };
+};
+
+export const nodePorts = (version: string, interrupt: AbortSignal, streams: GuardedStandardStreams = guardStandardStreams(process)): CliPorts => {
   const self = nodeSelf(process.argv, isSea);
   return {
     version,
@@ -284,8 +328,8 @@ export const nodePorts = (version: string, interrupt: AbortSignal): CliPorts => 
     cwd: process.cwd(),
     home: process.env['HOME'] ?? os.homedir(),
     stdin: { isTerminal: process.stdin.isTTY === true, bytes: () => process.stdin },
-    stdout: process.stdout,
-    stderr: process.stderr,
+    stdout: streams.stdout,
+    stderr: streams.stderr,
     clock: nodeClock,
     timers: systemTiming,
     random: Math.random,
@@ -301,6 +345,6 @@ export const nodePorts = (version: string, interrupt: AbortSignal): CliPorts => 
     probe: createWorkspaceProbe(minimalChildEnv(process.env)),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
-    acpStdio: () => ({ input: Readable.toWeb(process.stdin), output: Writable.toWeb(process.stdout) }),
+    acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
   };
 };

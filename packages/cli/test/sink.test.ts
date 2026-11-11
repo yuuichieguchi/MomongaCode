@@ -26,10 +26,11 @@ const sinkFor = (format: OutputFormat, verbose = false, throughWriter = false) =
 };
 
 describe('text format', () => {
-  it('streams the assistant text to stdout and separates items with a newline', () => {
+  it('keeps the assistant text until the run has ended, each item on its own line, and writes none of it while the run goes on', () => {
     const { sink, out } = sinkFor('text');
     for (const event of [delta('a', 'Looking'), delta('a', ' around.'), delta('b', 'Found it.')]) sink.handle(event);
-    expect(out.join('')).toBe('Looking around.\nFound it.');
+    expect(out).toEqual([]);
+    expect(sink.texts()).toBe('Looking around.\nFound it.\n');
     expect(sink.finalText()).toBe('Found it.');
   });
 
@@ -126,12 +127,6 @@ describe('text a person did not write', () => {
   const HOSTILE = 'x\u001b]0;pwn\u0007\u009b2J‮y';
   const ESCAPED = 'x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey';
   const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u;
-
-  it('is escaped in the assistant text on stdout, keeping its line breaks', () => {
-    const { sink, out } = sinkFor('text', false, true);
-    sink.handle(delta('a', `first\n${HOSTILE}`));
-    expect(out.join('')).toBe(`first\n${ESCAPED}`);
-  });
 
   it('stays as recorded in the JSON formats', () => {
     const { sink, out } = sinkFor('stream-json');

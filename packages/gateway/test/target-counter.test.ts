@@ -17,7 +17,7 @@ const resolvedTarget = async (target: Record<string, unknown>) => {
   const home = makeDir();
   fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: modelsOf({ only: target }) }), { mode: 0o600 });
-  const { settings } = await loadUserSettings({ home });
+  const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
   const [resolved] = [...settings.models.models.values()];
   if (resolved === undefined) throw new Error('the settings resolved no model');
   return resolved;

@@ -110,7 +110,7 @@ describe('a running instance keeps the key it started with (19.11-a, 19.14 item 
       binary: COMMAND,
       exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
       probeRecordDir: dir,
-      target: 'workbench',
+      serverName: 'workbench',
       requestLimitMs: 300_000,
       isUsableBinary: async () => true,
       readKey: async () => readKey(),
@@ -166,7 +166,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
       binary: description.binary.defaultPath,
       exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
       probeRecordDir: path.join(makeDir(), 'probe'),
-      target: 'workbench',
+      serverName: 'workbench',
       requestLimitMs: 300_000,
       isUsableBinary: async () => true,
       readKey: async () => KEY_A,
@@ -213,7 +213,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
     fake.configure({ scenario, envDumpFile: dumpFile });
     registerCleanup(() => killGroupsForCleanup(dumpedPids(dumpFile)));
     const home = makeHome();
-    const description = await loadedDeclaration('bench', { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' }, home);
+    const description = await loadedDeclaration('anvil', { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' }, home);
     const instance = managedInstancePaths(momongaPaths(home, process.platform, {}), { owner: 'cli', purpose: 'probe', provider: 'workbench' });
     fs.mkdirSync(instance.markerDirectory, { recursive: true, mode: 0o700 });
     const report = await measureManagedServer({

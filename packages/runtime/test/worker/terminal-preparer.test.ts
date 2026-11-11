@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { JournalThreadError } from '@momonga/store';
-import { afterMicrotasks, createFakeTimers, waitFor } from '@momonga/testkit';
+import { waitFor } from '@momonga/testkit';
 import { LEASE_MS, makeEnv, typesOf } from './harness.ts';
 import { MEASURED_ITEM, preparerFake } from './preparer-fake.ts';
 import { textStep } from './scripts.ts';
@@ -16,7 +16,7 @@ describe('a worker terminal awaits the contribution port', () => {
   it('a completed run carries the measurement of the port immediately before its terminal status, measured for that run only', async () => {
     const { env, fake } = await envWithPreparer();
     env.gateway.script.push(textStep('the final answer'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
 
@@ -29,15 +29,13 @@ describe('a worker terminal awaits the contribution port', () => {
   it('P6: while the terminal awaits the preparer the heartbeat keeps the lease, so no other claim takes the run', async () => {
     const { env, fake } = await envWithPreparer();
     env.gateway.script.push(textStep('the final answer'));
-    const run = env.enqueue('Work');
-    const timers = createFakeTimers(env.clock);
+    const run = await env.enqueue('Work');
     const open = fake.hold();
 
-    const running = env.runOnce(env.worker('worker-1', { timers }));
+    const running = env.runOnce(env.worker('worker-1'));
     await waitFor(() => fake.requests.length === 1, { description: 'the terminal to await the preparer' });
     for (let elapsed = 0; elapsed < 3 * LEASE_MS; elapsed += LEASE_MS / 10) {
-      timers.advance(LEASE_MS / 10);
-      await afterMicrotasks();
+      await env.timers.advanceAsync(LEASE_MS / 10);
     }
 
     const held = env.run(run.id);
@@ -55,7 +53,7 @@ describe('a worker terminal awaits the contribution port', () => {
     env.gateway.script.push(textStep('the final answer'));
     env.gateway.script.push(textStep('a second, paid answer'));
     fake.failures.push(new JournalThreadError('the journal thread exited'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
 

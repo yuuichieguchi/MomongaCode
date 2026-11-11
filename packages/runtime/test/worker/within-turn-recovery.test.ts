@@ -10,7 +10,7 @@ describe('recovery inside one turn', () => {
   it('reuses the compaction key for an identical render after a crash between compact and context.compacted', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })), textStep('done'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
     let crashed = false;
     const steals: Promise<void>[] = [];
     const { store } = recordingStore(env, (payloads) => {
@@ -39,7 +39,7 @@ describe('recovery inside one turn', () => {
   it('keeps the same eviction set after a crash between context.truncated and model.requested', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(...[...'abcdefgh'].map((letter, index) => bigStep(`k${index}`, { letter, size: 1800, pad: '' })), textStep('done'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
     let crashed = false;
     const steals: Promise<void>[] = [];
     const { store } = recordingStore(env, (payloads) => {
@@ -79,13 +79,13 @@ describe('recovery inside one turn', () => {
 
     env.setMode('acceptEdits');
     env.gateway.script.push(...script());
-    const straight = env.enqueue('Fill the context', { history: 'fresh' });
+    const straight = await env.enqueue('Fill the context', { history: 'fresh' });
     await env.runOnce(env.worker('worker-1', overrides));
     expect(env.run(straight.id).status).toBe('COMPLETED');
 
     env.setMode('manual');
     env.gateway.script.push(...script());
-    const paused = env.enqueue('Fill the context', { history: 'fresh' });
+    const paused = await env.enqueue('Fill the context', { history: 'fresh' });
     await env.runOnce(env.worker('worker-2', overrides));
     expect(env.run(paused.id).status).toBe('WAITING_HUMAN');
     await env.resolveApproval(paused.id, 'allow_once');

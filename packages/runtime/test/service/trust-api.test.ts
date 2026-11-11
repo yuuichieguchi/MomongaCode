@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { expectError, expectSchema, startService } from './helpers.ts';
 import type { JsonResponse, ServiceEnv } from './helpers.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const query = (target: string): string => `/v1/trust?path=${encodeURIComponent(target)}`;
 
@@ -36,7 +37,7 @@ describe('trust api (fake timers)', () => {
 
     expect(response.status).toBe(200);
     expect(response.json).toEqual({ trust: { path: work, decision: 'trusted' } });
-    expect(env.store.trust.decisionFor(work)).toEqual({ decision: 'trusted' });
+    expect(await env.store.trust.decisionAsked(work, NEVER_CANCELLED)).toEqual({ decision: 'trusted' });
   });
 
   it('GET inherited and exact views', async () => {
@@ -87,7 +88,7 @@ describe('trust api (fake timers)', () => {
 
     const root = await env.http('PUT', '/v1/trust', { body: { path: '/', decision: 'trusted' } });
     expect({ status: root.status, code: root.json?.error?.code, param: root.json?.error?.param }).toEqual({ status: 400, code: 'invalid_request', param: 'decision' });
-    expect(env.store.trust.decisionFor('/')).toEqual({ decision: null });
+    expect(await env.store.trust.decisionAsked('/', NEVER_CANCELLED)).toEqual({ decision: null });
 
     expectPathRejected(await env.http('PUT', '/v1/trust', { body: { path: missing, decision: 'trusted' } }), `path ${missing} does not exist`);
     expectPathRejected(await env.http('PUT', '/v1/trust', { body: { path: file, decision: 'untrusted' } }), `path ${file} is not a directory`);
@@ -102,7 +103,7 @@ describe('trust api (fake timers)', () => {
     const response = await env.http('PUT', '/v1/trust', { body: { path: '/', decision: 'untrusted' } });
     expect(response.status).toBe(200);
     expect(response.json).toEqual({ trust: { path: '/', decision: 'untrusted' } });
-    expect(env.store.trust.decisionFor('/')).toEqual({ decision: 'untrusted' });
+    expect(await env.store.trust.decisionAsked('/', NEVER_CANCELLED)).toEqual({ decision: 'untrusted' });
   });
 
   it('DELETE 204 for an existing, missing or never-set path', async () => {
@@ -153,7 +154,7 @@ describe('trust api (fake timers)', () => {
     expect(put.json).toEqual({ trust: { path: work, decision: 'untrusted' } });
     expect((await env.http('GET', query(work))).json).toEqual({ trust: { path: work, decision: 'untrusted' } });
     expect((await env.http('DELETE', query(work))).status).toBe(204);
-    expect(env.store.trust.decisionFor(work)).toEqual({ decision: null });
+    expect(await env.store.trust.decisionAsked(work, NEVER_CANCELLED)).toEqual({ decision: null });
   });
 
   it('responses validate against TrustResponse', async () => {

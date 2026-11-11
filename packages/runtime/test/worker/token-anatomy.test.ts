@@ -57,7 +57,7 @@ describe('every model call records what its request was made of and what it cost
   it('records on model.requested the anatomy of the very request it sends, summing to that request', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -76,7 +76,7 @@ describe('every model call records what its request was made of and what it cost
   it('records on model.responded the cached input, reasoning and cache write the provider reported, beside the totals', async () => {
     const env = await makeEnv();
     env.gateway.script.push(withExtension(textStep('Hello.', { usage: DETAILED_USAGE }), { cacheWriteInputTokens: 120 }));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -94,7 +94,7 @@ describe('every model call records what its request was made of and what it cost
   it('records the gateway response id on model.responded, which the store hands to the breakdown join', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -108,7 +108,7 @@ describe('every model call records what its request was made of and what it cost
   it('records no cache write when the provider reported none', async () => {
     const env = await makeEnv();
     env.gateway.script.push(withExtension(textStep('Hello.', { usage: DETAILED_USAGE }), {}));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -121,7 +121,7 @@ describe('every model call records what its request was made of and what it cost
   it('times the first stream event and the whole call with the injected clock, not the wall clock', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.', { usage: DETAILED_USAGE }));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker('worker-1', { gateway: pacedGateway(env) }));
 

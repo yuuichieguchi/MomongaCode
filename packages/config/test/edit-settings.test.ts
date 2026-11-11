@@ -18,7 +18,7 @@ describe('editSettings', () => {
     await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['context', 'autoCompact'], value: false }, UNABORTED);
     expect(stored(file)).toEqual({ autoUpdates: false, context: { cachePrefix: true, autoCompact: false } });
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
-    expect((await loadUserSettings({ home: tree.home })).settings.context.autoCompact).toBe(false);
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.context.autoCompact).toBe(false);
   });
 
   it('creates the file and the objects on the way when there are none', async () => {
@@ -120,10 +120,10 @@ describe('editSettings on a file that does not load', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeJson(file, { autoUpdates: false, tui: { theme: 'bogus' } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toBeInstanceOf(ConfigError);
     await editSettings(placeOf(tree), 'user', { kind: 'unset', path: ['tui', 'theme'] }, UNABORTED);
     expect(stored(file)).toEqual({ autoUpdates: false });
-    expect((await loadUserSettings({ home: tree.home })).settings.autoUpdates).toBe(false);
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.autoUpdates).toBe(false);
   });
 
   it('replaces the value that keeps the file from loading by one that loads', async () => {
@@ -149,7 +149,7 @@ describe('editSettings on a file that does not load', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeJson(file, { permissions: { deny: ['Bash(', 'Bash(rm:*)'] } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toBeInstanceOf(ConfigError);
     await editSettings(placeOf(tree), 'user', { kind: 'update', path: ['permissions', 'deny'], update: (current) => (current as string[]).filter((rule) => rule !== 'Bash(') }, UNABORTED);
     expect(stored(file)).toEqual({ permissions: { deny: ['Bash(rm:*)'] } });
   });
@@ -168,7 +168,7 @@ describe('readSettingsSnapshot', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { autoUpdates: false });
     writeJson(projectSettingsPath(tree), { context: { loopGuidance: false } });
-    const snapshot = await readSettingsSnapshot({ ...placeOf(tree), trusted: true });
+    const snapshot = await readSettingsSnapshot({ ...placeOf(tree), trusted: true, ...UNABORTED });
     expect(snapshot.layers).toEqual([
       { layer: 'user', file: userSettingsPath(tree), document: { autoUpdates: false } },
       { layer: 'project', file: projectSettingsPath(tree), document: { context: { loopGuidance: false } } },
@@ -183,7 +183,7 @@ describe('readSettingsSnapshot', () => {
   it('offers only the user file for a project that is not trusted and does not read its project file', async () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { context: { loopGuidance: false } });
-    const snapshot = await readSettingsSnapshot({ ...placeOf(tree), trusted: false });
+    const snapshot = await readSettingsSnapshot({ ...placeOf(tree), trusted: false, ...UNABORTED });
     expect(snapshot.layers.map((view) => view.layer)).toEqual(['user', 'local']);
     expect(snapshot.targets).toEqual(['user']);
   });
@@ -200,15 +200,15 @@ describe('tui.screen, tui.mouse and tui.copyOnSelect', () => {
 
   it('default to fullscreen, true and true and take the value of the user file', async () => {
     const tree = makeTree();
-    expect((await loadUserSettings({ home: tree.home })).settings.tui).toMatchObject({ screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.tui).toMatchObject({ screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
     writeJson(userSettingsPath(tree), { tui: { screen: 'scrollback', mouse: false, copyOnSelect: false } });
-    expect((await loadUserSettings({ home: tree.home })).settings.tui).toMatchObject({ screen: 'scrollback', mouse: false, copyOnSelect: false });
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.tui).toMatchObject({ screen: 'scrollback', mouse: false, copyOnSelect: false });
   });
 
   it('refuses a screen mode that is not one of the two', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { screen: 'default' } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(`${userSettingsPath(tree)}: tui.screen must be one of fullscreen, scrollback; got "default"`);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: tui.screen must be one of fullscreen, scrollback; got "default"`);
   });
 
   it('cannot be set by a project or local file, which keeps its other tui keys', async () => {

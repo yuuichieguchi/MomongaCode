@@ -34,7 +34,7 @@ describe('a usage answer ends the run STOPPED(usage_limit) in the worker (P3c, M
   it('stops a deferred usage answer at a normal step with no requeue and keeps the code in the run error', async () => {
     const env = await makeEnv();
     env.gateway.script.push({ events: [], error: new GatewayRequestError(USAGE) }, textStep('never sent'));
-    const run = env.enqueue('Work', { limits: { maxSteps: 5 } });
+    const run = await env.enqueue('Work', { limits: { maxSteps: 5 } });
 
     await env.runOnce(env.worker());
 
@@ -47,7 +47,7 @@ describe('a usage answer ends the run STOPPED(usage_limit) in the worker (P3c, M
   it('stops a quota answer to a wrap-up request the same way, with no further call', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_u_1', name: 'Echo', args: { value: 'x' } }]), { events: [], error: new GatewayRequestError(USAGE) }, textStep('never sent'));
-    const run = env.enqueue('Work', { limits: { maxSteps: 1 } });
+    const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
 
     await env.runOnce(env.worker());
 

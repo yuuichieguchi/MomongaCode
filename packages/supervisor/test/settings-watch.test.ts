@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
 import { ERROR_KEY_PREFIX, safeChangeKey, watchSettings } from '../src/settings-watch.ts';
 import type { SettingsWatch } from '../src/settings-watch.ts';
 import { pollUntil } from './support/p2-poll.ts';
@@ -51,7 +51,7 @@ const setup = (options: { initialKey?: string; key?: () => string; throws?: bool
     file: 'settings.json',
     debounceMs: options.debounceMs ?? 200,
     pollMs: options.pollMs ?? 2000,
-    changeKey: options.key ?? (() => key),
+    changeKey: async () => (options.key ?? (() => key))(),
     initialKey: options.initialKey ?? 'k1',
     onChange: () => {
       calls += 1;
@@ -76,80 +76,76 @@ const setup = (options: { initialKey?: string; key?: () => string; throws?: bool
 };
 
 describe('safeChangeKey', () => {
-  it('returns the key when changeKey succeeds', () => {
-    expect(safeChangeKey(() => '1:2:3')).toBe('1:2:3');
-    expect(safeChangeKey(() => 'missing')).toBe('missing');
+  it('returns the key when changeKey succeeds', async () => {
+    expect(await safeChangeKey(async () => '1:2:3')).toBe('1:2:3');
+    expect(await safeChangeKey(async () => 'missing')).toBe('missing');
   });
 
-  it('changeKey throw maps to a sentinel key', () => {
+  it('changeKey throw maps to a sentinel key', async () => {
     const eio = Object.assign(new Error('stat EIO'), { code: 'EIO' });
     expect(ERROR_KEY_PREFIX).toBe('error:');
-    expect(
-      safeChangeKey(() => {
-        throw eio;
-      }),
-    ).toBe('error:EIO');
+    expect(await safeChangeKey(() => Promise.reject(eio))).toBe('error:EIO');
   });
 });
 
 describe('watchSettings', () => {
-  it('watches the directory, not the file', () => {
+  it('watches the directory, not the file', async () => {
     const { fake, watcher } = setup();
     expect(fake.directories).toEqual(['/fake/home/.momonga']);
     watcher.stop();
   });
 
-  it('a burst of writes is debounced', () => {
+  it('a burst of writes is debounced', async () => {
     const { fake, timers, calls, watcher } = setup();
     for (let index = 0; index < 10; index += 1) {
       fake.fire('settings.json', index % 2 === 0 ? 'rename' : 'change');
-      timers.advance(15);
+      await timers.advanceAsync(15);
     }
     expect(calls()).toBe(0);
-    timers.advance(184);
+    await timers.advanceAsync(184);
     expect(calls()).toBe(0);
-    timers.advance(1);
+    await timers.advanceAsync(1);
     expect(calls()).toBe(1);
-    timers.advance(200);
+    await timers.advanceAsync(200);
     expect(calls()).toBe(1);
     watcher.stop();
   });
 
-  it('unrelated files are ignored', () => {
+  it('unrelated files are ignored', async () => {
     const { fake, timers, calls, watcher } = setup();
     fake.fire('other.json');
     fake.fire('settings.json.tmp');
-    timers.advance(10_000);
+    await timers.advanceAsync(10_000);
     expect(calls()).toBe(0);
     watcher.stop();
   });
 
-  it('null filename counts as a change', () => {
+  it('null filename counts as a change', async () => {
     const { fake, timers, calls, watcher } = setup();
     fake.fire(null);
-    timers.advance(200);
+    await timers.advanceAsync(200);
     expect(calls()).toBe(1);
     watcher.stop();
   });
 
-  it('polling fallback', () => {
+  it('polling fallback', async () => {
     const { timers, calls, warnings, errors, setKey, watcher } = setup({ throws: true });
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toBeInstanceOf(Error);
     expect(warnings[0]?.message).toContain('EMFILE');
-    timers.advance(2000 + 200);
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(0);
     setKey('k2');
-    timers.advance(2000 + 200);
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(1);
-    timers.advance(2000 + 200);
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(1);
     expect(warnings).toHaveLength(1);
     expect(errors).toEqual([]);
     watcher.stop();
   });
 
-  it('watch error falls back to polling', () => {
+  it('watch error falls back to polling', async () => {
     const { fake, timers, calls, warnings, errors, setKey, watcher } = setup();
     expect(warnings).toEqual([]);
     expect(() => fake.watchers[0]?.emit('error', Object.assign(new Error('watch failed'), { code: 'EIO' }))).not.toThrow();
@@ -159,30 +155,30 @@ describe('watchSettings', () => {
     expect(() => fake.watchers[0]?.emit('error', Object.assign(new Error('watch failed again'), { code: 'EIO' }))).not.toThrow();
     expect(warnings).toHaveLength(1);
     setKey('k2');
-    timers.advance(2000 + 200);
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(1);
     expect(warnings).toHaveLength(1);
     expect(errors).toEqual([]);
     watcher.stop();
   });
 
-  it('a working watch reports no warning and no error', () => {
+  it('a working watch reports no warning and no error', async () => {
     const { fake, timers, warnings, errors, watcher } = setup();
     fake.fire('settings.json');
-    timers.advance(10_000);
+    await timers.advanceAsync(10_000);
     expect(warnings).toEqual([]);
     expect(errors).toEqual([]);
     watcher.stop();
   });
 
-  it('seeds from initialKey, not from a key read at construction', () => {
+  it('seeds from initialKey, not from a key read at construction', async () => {
     const { timers, calls, watcher } = setup({ initialKey: 'seed', key: () => 'already-newer' });
-    timers.advance(2000 + 200);
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(1);
     watcher.stop();
   });
 
-  it('changeKey throw schedules onChange and nothing throws out of the timer', () => {
+  it('changeKey throw schedules onChange and nothing throws out of the timer', async () => {
     let fail = false;
     const { timers, calls, watcher } = setup({
       key: () => {
@@ -191,12 +187,12 @@ describe('watchSettings', () => {
       },
     });
     fail = true;
-    expect(() => timers.advance(2000 + 200)).not.toThrow();
+    await expect(timers.advanceAsync(2000 + 200)).resolves.toBeUndefined();
     expect(calls()).toBe(1);
     watcher.stop();
   });
 
-  it('an onChange that throws does not escape the timer and goes to onError, not onWarning', () => {
+  it('an onChange that throws does not escape the timer and goes to onError, not onWarning', async () => {
     const exploded = new Error('evaluate exploded');
     const { fake, timers, calls, warnings, errors, watcher } = setup({
       onChange: () => {
@@ -205,13 +201,14 @@ describe('watchSettings', () => {
     });
     fake.fire('settings.json');
     expect(() => timers.advance(200)).not.toThrow();
+    await afterMicrotasks();
     expect(calls()).toBe(1);
     expect(errors).toEqual([exploded]);
     expect(warnings).toEqual([]);
     watcher.stop();
   });
 
-  it('stop clears timers and closes the watcher', () => {
+  it('stop clears timers and closes the watcher', async () => {
     const { fake, timers, calls, watcher } = setup();
     fake.fire('settings.json');
     expect(timers.pending().length).toBeGreaterThan(0);
@@ -219,7 +216,7 @@ describe('watchSettings', () => {
     expect(timers.pending()).toEqual([]);
     expect(fake.watchers[0]?.closed).toBe(1);
     fake.fire('settings.json');
-    timers.advance(10_000);
+    await timers.advanceAsync(10_000);
     expect(calls()).toBe(0);
     expect(timers.pending()).toEqual([]);
   });
@@ -243,7 +240,7 @@ describe('watchSettings', () => {
       file: 'settings.json',
       debounceMs: 200,
       pollMs: 200,
-      changeKey: keyOf,
+      changeKey: async () => keyOf(),
       initialKey: keyOf(),
       onChange: () => {
         calls += 1;

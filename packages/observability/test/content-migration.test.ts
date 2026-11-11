@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { migrate, openDatabase } from '@momonga/foundation';
 import { BODY_KINDS, openTraceStore } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
+import type { SettledBeforeCleanup } from '@momonga/testkit';
 import { TRACE_STORE_MIGRATIONS } from '../src/trace-store.ts';
 import { RUN_ID, SENTINEL, START_MS, makeDir, registerCleanup, bodiesOfSpan } from './helpers.ts';
 
@@ -17,7 +18,7 @@ const legacyStore = (): { file: string } => {
   return { file };
 };
 
-const withDb = <T>(file: string, run: (db: DatabaseSync) => T): T => {
+const withDb = <T>(file: string, run: (db: DatabaseSync) => SettledBeforeCleanup<T>): T => {
   const db = openDatabase(file);
   try {
     return run(db);

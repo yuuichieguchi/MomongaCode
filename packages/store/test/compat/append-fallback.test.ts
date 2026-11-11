@@ -25,7 +25,7 @@ const derivedColumns = (dbPath: string, runId: string, seq: number) =>
 describe('derived records of rows a previous build appended (H7, 11.5)', () => {
   it('a read repairs the derived records, and claim repairs the derived columns, from the watermark on', async () => {
     const { store, dbPath, clock } = harness();
-    const run = enqueue(store, newSession(store).id, 'task');
+    const run = await enqueue(store, newSession(store).id, 'task');
     mustClaim(store, 'w-old');
     const [callSeq, , noticeSeq] = appendAsPreviousBuild(dbPath, run.id, [call('c1'), started('c1', 'k1'), notice]);
     if (callSeq === undefined || noticeSeq === undefined) throw new Error('the previous build appended no rows');
@@ -42,7 +42,7 @@ describe('derived records of rows a previous build appended (H7, 11.5)', () => {
 
   it('repairs the tail before recording an append that follows rows of a previous build', async () => {
     const { store, dbPath } = harness();
-    const run = enqueue(store, newSession(store).id, 'task');
+    const run = await enqueue(store, newSession(store).id, 'task');
     const claim = mustClaim(store, 'w1');
     appendAsPreviousBuild(dbPath, run.id, [call('c1'), started('c1', 'k1'), call('c2'), started('c2', 'k2')]);
     const result = store.append({ ...claim }, [completed('c1')]);
@@ -52,7 +52,7 @@ describe('derived records of rows a previous build appended (H7, 11.5)', () => {
 
   it('records each event once when the repair and the appends interleave', async () => {
     const { store, dbPath, clock } = harness();
-    const run = enqueue(store, newSession(store).id, 'task');
+    const run = await enqueue(store, newSession(store).id, 'task');
     mustClaim(store, 'w-old');
     appendAsPreviousBuild(dbPath, run.id, [call('c1'), started('c1', 'k1')]);
     clock.advance(LEASE_MS + 1);

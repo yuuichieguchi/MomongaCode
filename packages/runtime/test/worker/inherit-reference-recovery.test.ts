@@ -10,7 +10,7 @@ import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 const answered = async (env: Env, task: string, answer: string): Promise<string> => {
   env.gateway.script.push(textStep(answer));
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   expect((await settle(env, run.id)).status).toBe('COMPLETED');
   return run.id;
 };
@@ -21,7 +21,7 @@ const controlFirstInput = async (): Promise<string> => {
   const control = await makeEnv();
   await answered(control, 'Say hello', 'Hello there.');
   control.gateway.script.push(textStep('Answer.'));
-  const run = control.enqueue('And again');
+  const run = await control.enqueue('And again');
   await settle(control, run.id);
   return envNeutralJson(control, firstRequestInput(control, run.id));
 };
@@ -48,7 +48,7 @@ describe('13.6: crash between the commit of the reference and its use', () => {
       },
     };
     env.gateway.script.push(textStep('Answer.'));
-    const second = env.enqueue('And again');
+    const second = await env.enqueue('And again');
     await env.runOnce(env.worker('worker-a', { tools }));
     expect(env.ofType(second.id, 'model.requested')).toEqual([]);
     expect(inheritedEvents(env, second.id)).toEqual([expect.objectContaining({ form: 'reference' })]);
@@ -71,7 +71,7 @@ describe('13.6: crash during the read', () => {
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello there.');
     env.gateway.script.push(textStep('Answer.'));
-    const second = env.enqueue('And again');
+    const second = await env.enqueue('And again');
     const trace = newFactsTrace();
     const failing = tracedStore(env.store, trace, {
       window: (_request, call) => (call === 1 ? Promise.reject(new JournalThreadError('the journal thread died during inherited_window')) : undefined),
@@ -100,7 +100,7 @@ describe('13.6: crash during inherit_plan', () => {
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello there.');
     env.gateway.script.push(textStep('Answer.'));
-    const second = env.enqueue('And again');
+    const second = await env.enqueue('And again');
     const trace = newFactsTrace();
     const failing = tracedStore(env.store, trace, {
       plan: (_request, call) => (call === 1 ? Promise.reject(new JournalThreadError('the journal thread died during inherit_plan')) : undefined),
@@ -126,7 +126,7 @@ describe('13.6: a resent thread request', () => {
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello there.');
     const b = builderOf(env);
-    const queued = b.createRun('Not yet claimed');
+    const queued = await b.createRun('Not yet claimed');
     const facts = referenceFactsOf(env.store);
     const plan = await facts.inheritPlan({ runId: queued.id, mode: 'manual', unasked: UNASKED_COMMANDS });
     expect(plan).toMatchObject({ kind: 'ready', payload: { form: 'reference' } });
@@ -162,7 +162,7 @@ describe('13.6: two claimants', () => {
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello there.');
     const b = builderOf(env);
-    const child = b.createRun('And again');
+    const child = await b.createRun('And again');
     const claim = b.claimNext(child.id);
     expect(await env.store.inheritContext(claim, { mode: 'manual' })).toEqual({ kind: 'inherited' });
     expect(await env.store.inheritContext(claim, { mode: 'manual' })).toEqual({ kind: 'already' });

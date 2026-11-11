@@ -1,8 +1,9 @@
 import path from 'node:path';
-import { createStopValuesReader, readUserStopValues } from '@momonga/config';
+import { readUserStopValuesOrDefault } from '@momonga/config';
 import {
   CurrentGenerationUnreadableError,
   GenerationPrepareError,
+  HOST_READ_BOUND_MS,
   LIFELINE_FD,
   STARTUP_TIMEOUT_MS,
   STOP_WAIT_WHEN_UNKNOWN_MS,
@@ -14,6 +15,7 @@ import {
   listGenerations,
   lockReadsHeld,
   nodeFileSystem,
+  operationLimit,
   orderVersions,
   probeGenerationLocks,
   readCurrentGeneration,
@@ -90,7 +92,16 @@ const NO_NOTICE_CHANNEL: StopNotice = (message) => {
   throw new Error(`no notice channel was given for this daemon stop: ${message}`);
 };
 
-const readStopValues = (ports: Pick<DaemonPorts, 'home'>, onNotice: StopNotice): StopValues => createStopValuesReader({ load: () => readUserStopValues(ports.home), onNotice }).read();
+const STOP_VALUES_READ = 'the read of the stop values from the user settings';
+
+const readStopValues = async (ports: Pick<DaemonPorts, 'home'>, onNotice: StopNotice): Promise<StopValues> => {
+  const limit = operationLimit(new AbortController().signal, HOST_READ_BOUND_MS, STOP_VALUES_READ);
+  try {
+    return await readUserStopValuesOrDefault({ home: ports.home, signal: limit.signal, onNotice });
+  } finally {
+    limit.dispose();
+  }
+};
 
 const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
 
@@ -175,11 +186,11 @@ const stopCandidate = async (paths: MomongaPaths, generation: number): Promise<S
   }
 };
 
-const requestStop = async (paths: MomongaPaths, candidate: StopCandidate, values: () => StopValues): Promise<StopAsked | StopFailure> => {
+const requestStop = async (paths: MomongaPaths, candidate: StopCandidate, values: () => Promise<StopValues>): Promise<StopAsked | StopFailure> => {
   if (candidate.health.phase === 'draining') return { ...candidate, boundMs: stopWaitBoundMs([candidate.health]) };
   const client = createSupervisorClient({ resolveSocket: fixedSocket(supervisorSocketOf(paths, candidate.generation)) });
   try {
-    const stopValues = values();
+    const stopValues = await values();
     await client.shutdown(stopValues);
     return { ...candidate, boundMs: daemonStopBoundMs(stopValues) };
   } catch (error) {
@@ -203,8 +214,8 @@ export const stopDaemon = async (
   const probed = (await Promise.all(snapshot.map((generation) => stopCandidate(paths, generation)))).filter((entry) => entry !== undefined);
   const candidates = probed.filter((entry) => 'health' in entry);
   onInterrupting?.({ steps: sumOf(candidates.map((candidate) => candidate.health.steps)), jobs: sumOf(candidates.map((candidate) => candidate.health.jobs)) });
-  let stopValues: StopValues | undefined;
-  const values = (): StopValues => (stopValues ??= readStopValues(ports, onNotice));
+  let stopValues: Promise<StopValues> | undefined;
+  const values = (): Promise<StopValues> => (stopValues ??= readStopValues(ports, onNotice));
   const requests = await Promise.all(candidates.map((candidate) => requestStop(paths, candidate, values)));
   const asked = requests.filter((request) => 'boundMs' in request);
   const failures = [...probed, ...requests].flatMap((entry) => ('failure' in entry ? [entry.failure] : []));

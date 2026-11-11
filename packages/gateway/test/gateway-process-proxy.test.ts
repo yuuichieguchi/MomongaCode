@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, createUdsClient, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir, registerOwned } from '@momonga/testkit';
 import type { CleanupContext, FakeScriptedReply } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings, modelsOf, prepareHome, notTheRoleTick } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -79,7 +79,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
   prepareHome(home);
   writeSettings(home, settings);
   const log = captureLog();
-  const handle = await ownedStart(context, startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, env),
