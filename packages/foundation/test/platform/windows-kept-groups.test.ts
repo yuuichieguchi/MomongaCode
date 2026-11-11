@@ -17,7 +17,7 @@ const LIVE = { signal: new AbortController().signal };
 const portOf = (kept: KeptGroupControl): ProcessGroupPort => createProcessGroupPort('win32', { run: nodeCommandRunner, env: {}, kept });
 
 const opened = (fake: FakeKeeperHost, kept: KeptGroupControl, marker?: string) =>
-  kept.open({ command: { file: 'cmd.exe', args: ['/c', 'echo'] }, marker, descriptors: [], start: (executable, args) => ({ ...fake.start(executable, args), pid: KEEPER_PID }) });
+  kept.open({ command: { file: 'C:\\Windows\\System32\\where.exe', args: ['/c', 'echo'] }, marker, descriptors: [], start: (executable, args) => ({ ...fake.start(executable, args), pid: KEEPER_PID }) });
 
 const launchThen =
   (members: () => readonly number[], rest: (keeper: FakeKeeper, index: number) => void = () => undefined) =>
@@ -60,7 +60,7 @@ describe('a group launched through the keeper is the group of the keeper pid', (
     expect(args[2]).toMatch(/^Local\\momonga-[0-9a-f]{32}$/);
     expect(args[3]).toBe('terminate');
     expect(args[4]).toBe(Buffer.from('C:\\m\\marker', 'utf8').toString('hex'));
-    expect(args.slice(5)).toEqual(['-', '--', 'cmd.exe', '/c', 'echo']);
+    expect(args.slice(5)).toEqual(['-', '--', 'C:\\Windows\\System32\\where.exe', '/c', 'echo']);
     expect(`${KEEPER_JOB_PREFIX}${kept.nameOf(KEEPER_PID)}`).toBe(args[2]);
   });
 
@@ -179,10 +179,30 @@ describe('T-JO-7 on a fake keeper: a refused containment is reported and nothing
     );
     expect(refusal).toBeInstanceOf(GroupContainmentError);
     expect(refusal).toMatchObject({ reason: 'containment-unavailable', systemError: 5 });
-    expect((refusal as Error).message).toContain('containment-unavailable');
     expect((refusal as Error).message).toContain('was not started');
     expect(await port.alive(KEEPER_PID, LIVE)).toBe(false);
     expect(fake.keepers).toHaveLength(1);
+  });
+
+  it('names each refusal by its kind: a start that Windows refused is not a refused containment', async () => {
+    const messages: Record<string, string> = {};
+    for (const reason of ['containment-unavailable', 'launch-failed', 'marker-unavailable', 'name-taken'] as const) {
+      const fake = fakeKeeperHost((keeper) => keeper.say(`failed ${reason} 5\n`));
+      const opening = opened(fake, portOf(createKeptGroupControl(fake.host)).keeper as KeptGroupControl);
+      const refusal = await opening.commandExit.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refusal).toBeInstanceOf(GroupContainmentError);
+      expect(refusal).toMatchObject({ reason, systemError: 5 });
+      messages[reason] = (refusal as Error).message;
+    }
+    expect(messages).toEqual({
+      'containment-unavailable': 'the command was not started: Windows refused to hold its processes in a group that can be ended as one (Windows error 5)',
+      'launch-failed': 'the command was not started: Windows refused to start it (Windows error 5)',
+      'marker-unavailable': 'the command was not started: its marker file could not be opened (Windows error 5)',
+      'name-taken': 'the command was not started: the name chosen for its group is already taken (Windows error 5)',
+    });
   });
 
   it('a taken name is refused the same way and the job of that name is never terminated', async () => {

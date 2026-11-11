@@ -69,9 +69,10 @@ export type CliPorts = {
   terminal: Terminal | undefined;
   files: CliFiles;
   exec: HostExec;
-  probe: WorkspaceProbe;
+  probe(env: Readonly<Record<string, string>>): WorkspaceProbe;
   openUrl: OpenUrl;
   secretStore(): SecretStore;
+  personCapability(): Promise<string>;
   acpStdio?: () => AcpStdio;
   handover?: HandoverHost;
 };

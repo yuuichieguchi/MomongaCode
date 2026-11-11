@@ -1,14 +1,14 @@
 import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { BASE_ENV, entry, makeDir, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
 const DECLARED = 'PROVIDER_ENDPOINT_ID';
 
 const constructionNotices = (credentialNames: readonly string[]): string[] => {
   const notices: string[] = [];
-  const connection = createManagedConnection({ files: nodeFileSystem,
+  const connection = createManagedConnection({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 'local',
     config: { command: process.execPath, args: [], env: { [DECLARED]: 'Zq7#vK2' } },

@@ -1,7 +1,8 @@
 import path from 'node:path';
-import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
+import { loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
-import { canonicalHomeOf, helperCommandLine, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { createSandboxOf, placeholderJournalDirectoryOf } from './sandbox-of.ts';
+import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -35,15 +36,14 @@ import {
 import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, NETWORK_RELAY_HELPER, bubblewrapPresent, childProtectionFor, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, DEFAULT_SANDBOX_EXEC_PATH, bubblewrapPresent, childProtectionFor, protectionCommandOf, createPlaceholderJournal, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
-import type { Sandbox } from '@momonga/sandbox';
 import { unaskedCommandsFor } from '@momonga/policy';
 import { DERIVED_CATCH_UP_PAGES, FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createRuleVerifier, installedRuleSolver } from './rule-verifier.ts';
+import { productRuleVerifier } from './rule-verifier.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
-import { RetiringYield, ShellNotFoundError, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath, sweepCallLocks } from '@momonga/tools';
+import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, sweepCallLocks } from '@momonga/tools';
 import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
@@ -174,9 +174,7 @@ type Phase = 'starting' | 'running' | 'draining' | 'aborting' | 'tearingDown' | 
 
 type StartedWorker = { id: string; worker: Worker };
 
-const DEFAULT_SANDBOX_EXEC_PATH = '/usr/bin/sandbox-exec';
 const DEFAULT_LEASE_MS = 30_000;
-const PLACEHOLDER_JOURNAL_DIRECTORY = 'placeholders';
 const SPAWN_DIRECTORY_MODE = 0o700;
 
 const assertPositiveInteger = (name: string, value: number): void => {
@@ -421,58 +419,23 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       return { cache: created, settings: snapshot.settings };
     });
 
-    const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
+    const journalDirectory = placeholderJournalDirectoryOf(paths);
     const { helperSelf } = options;
     const bubblewrap = platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
     const noneProtection = childProtectionFor({ sandbox: 'none', home: canonicalHome, platform, env: process.env, bubblewrap });
-    const sandboxOf = async (kind: SandboxKind, deriveSignal: AbortSignal): Promise<Sandbox> => {
-      if (kind === 'none') {
-        const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS, protection: noneProtection, platform });
-        logger.warn('sandbox is none: Bash asks before every command');
-        if (noneProtection.kind === 'unprotected') logger.warn(noneProtection.reason);
-        return unsandboxed;
-      }
-      const required = kind === 'seatbelt' ? 'darwin' : 'linux';
-      if (platform !== required) {
-        throw new ConfigError(`sandbox "${kind}" is only available on ${required}; set "sandbox" in ${paths.settingsFile} to "none" to run without a sandbox (Bash will then ask before every command)`);
-      }
-      const launcherPath = sandboxExecPath ?? (kind === 'seatbelt' ? DEFAULT_SANDBOX_EXEC_PATH : DEFAULT_BWRAP_PATH);
-      const launcherName = kind === 'seatbelt' ? 'sandbox-exec' : 'bwrap';
-      try {
-        await nodeFileSystem.access(launcherPath, 'execute');
-      } catch (error) {
-        throw new ConfigError(
-          `${launcherName} is not available at ${launcherPath}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
-          { cause: error },
-        );
-      }
-      if (kind === 'bubblewrap') {
-        let shell: string;
-        try {
-          shell = await resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env });
-        } catch (error) {
-          if (!(error instanceof ShellNotFoundError)) throw error;
-          throw new ConfigError(error.message, { cause: error });
-        }
-        const probe = await probeBubblewrap(launcherPath, shell, { signal: deriveSignal });
-        if (!probe.ok) {
-          throw new ConfigError(
-            `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
-          );
-        }
-        return createBubblewrapSandbox({
-          bwrapPath: launcherPath,
-          tmpRoot: paths.tmp.spawn,
-          lock: kernelLock,
-          killGraceMs: SANDBOX_KILL_GRACE_MS,
-          journal: createPlaceholderJournal(journalDirectory),
-          holders: () => heldMountPoints(),
-          ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths) }),
-          ...(helperSelf === undefined ? {} : { relay: () => helperCommandLine(helperSelf, NETWORK_RELAY_HELPER, []) }),
-        });
-      }
-      return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, lock: kernelLock, killGraceMs: SANDBOX_KILL_GRACE_MS });
-    };
+    const sandboxOf = createSandboxOf({
+      platform,
+      paths,
+      env: process.env,
+      shellHost,
+      kernelLock,
+      journalDirectory,
+      noneProtection,
+      warn: (text) => logger.warn(text),
+      ...(sandboxExecPath === undefined ? {} : { sandboxExecPath }),
+      ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths) }),
+      ...(helperSelf === undefined ? {} : { helperSelf }),
+    });
     const sandboxes = createPinnedDerivation<SandboxBinding>({
       cache,
       signal: lifetime.signal,
@@ -627,6 +590,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock });
       const runtime: ToolRuntime = createToolRuntime({
         version,
+        mcpLaunch: {
+          protection: noneProtection,
+          commandOf: (argv) => protectionCommandOf(noneProtection, { platform, argv, scratch: [], sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
+        },
         owners: markerOwners,
         lockCapability,
         kernelLock,
@@ -669,7 +636,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         owners: runtime.owners,
         onWarning,
       });
-      const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: evidenceRunFor });
+      const memories = createMemoryPort({ platform, store, settings: composition.settings, evidenceRun: evidenceRunFor });
       const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: () => sandboxes.current().ruleEnforcement });
       const governance = createGovernancePort({ store, settings: composition.settings });
       const agents = createAgentsPort({
@@ -779,6 +746,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           files: nodeFileSystem,
         }),
         evidenceRun: evidenceRunFor,
+        platform,
         defaults: RUNTIME_DEFAULTS,
         timers,
         cancelUpstream: tracker.cancel,
@@ -826,14 +794,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     service = runService;
     cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
-    const ruleVerifier = createRuleVerifier({
-      host: options.ruleSolver === undefined ? installedRuleSolver(import.meta.url) : options.ruleSolver(paths),
-      fs: createPolicyFilesystem(),
-      paths,
-      timers,
-      bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env }),
-      clock,
-    });
+    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, timers, shellHost, env: process.env, clock });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
         const id = `runtime-${process.pid}-${startedAtMs}-${index}`;
@@ -860,7 +821,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           defaults: RUNTIME_DEFAULTS.limits,
           home: canonicalHome,
           blobs: store.blobs,
-          instructionReaderFor: createFsInstructionReader,
+          instructionReaderFor: (signal) => createFsInstructionReader(signal, platform),
           wake: notifier,
           onError: (error, context) =>
             logger.error('worker error', {
@@ -911,6 +872,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         role: rolePort,
         isIdle: () => phase === 'running' && rolePort.current() === 'serving' && !store.hasActiveRun(),
         evidenceRun: evidenceRunFor,
+        platform,
         maxAttempts: STORE_MAX_ATTEMPTS,
         attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
         timers,

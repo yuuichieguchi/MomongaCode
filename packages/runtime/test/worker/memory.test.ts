@@ -11,7 +11,7 @@ const FAKE_KEY = 'sk-abcdefghijklmnopqrstuvwxyz0123456789';
 const save = (callId: string, text: string, scope: 'user' | 'project' = 'user') =>
   callsStep([{ callId, name: 'MemorySave', args: { text, scope } }]);
 
-const memoryWorker = (env: Env, id: string): Worker => env.worker(id, { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) });
+const memoryWorker = (env: Env, id: string): Worker => env.worker(id, { memories: createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) });
 
 const inputOf = (env: Env, index: number): InputItem[] => {
   const body = env.gateway.streams[index]?.body;

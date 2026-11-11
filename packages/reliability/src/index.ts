@@ -8,7 +8,7 @@ export { FACTS_EVENT_TYPES, createFactsFold, foldFacts } from './fold-facts.ts';
 export type { CallsFold } from './fold-calls.ts';
 export type { FactsEvent, FactsFold } from './fold-facts.ts';
 export { REPORT_KINDS, buildReliabilityReport, describeRate, formatReliabilityReport } from './report.ts';
-export type { Harness, NotRun, ReliabilityReport, ReportInput, ReportKind, ScenarioRow, TaskRow } from './report.ts';
+export type { GateAgreement, Harness, NotRun, ReliabilityReport, ReportInput, ReportKind, ScenarioRow, TaskRow } from './report.ts';
 export { GROUP_KEYS, RUN_GROUP_KEYS, TASK_LABEL_KEYS } from './types.ts';
 export type { GroupKey, IndicatorGroups, Indicators, Rate, RunFacts, RunGroupKey, RunInfo, TaskLabelKey, TaskLabels } from './types.ts';
 export { mergeVerifications, verifyFacts } from './verify.ts';

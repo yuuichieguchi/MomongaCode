@@ -202,7 +202,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'specifierOf',
   'sqliteFileLock',
   'stopKeptGroup',
-  'syncPaths',
   'untrustedSchemaCacheSize',
   'urlOpenerFileFor',
   'valueOrThrow',

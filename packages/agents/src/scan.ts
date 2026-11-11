@@ -19,7 +19,8 @@ const toolsOf = (value: unknown, location: string, warnings: string[]): string[]
     warnings.push(`Agent at ${location} was skipped: tools must be a comma-separated string or a list of strings`);
     return 'invalid';
   }
-  return entries.map((entry) => entry.trim()).filter((entry) => entry !== '');
+  const named = entries.map((entry) => entry.trim()).filter((entry) => entry !== '');
+  return named.length === 0 ? undefined : named;
 };
 
 const nonEmptyStringsOf = (value: unknown): string[] | 'invalid' => {

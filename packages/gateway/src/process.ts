@@ -162,6 +162,7 @@ import { createManagedTarget } from './managed/target.ts';
 import { aboutModel, managedConnectionPlace, managedModelName } from './managed/name.ts';
 import type { ExecWithStdinFn, ManagedTarget } from './managed/target.ts';
 import { createGateway } from './server/gateway.ts';
+import { checkModels } from './server/config-check.ts';
 import { createRouter } from './core/router.ts';
 import { createReasoningOriginCodec } from './core/reasoning-origin.ts';
 import { createRedactor } from './core/redaction.ts';
@@ -1417,6 +1418,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         for (const [name, part] of parts) {
           adapters[name] = part.adapter;
         }
+        checkModels({ config, adapters });
         const router = createRouter({
           config,
           adapters,

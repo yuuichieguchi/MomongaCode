@@ -17,7 +17,7 @@ describe('the claim of a session scratch directory (17.6, 20.41)', () => {
     const temp = await makeTempHome();
     const lock = createFakeKernelLock({ inheritable: false });
     const directory = path.join(temp.paths.tmp.sessions, 'session-held');
-    lock.holdExternally(claimPathOf(lock, directory, 'sidecar'), 4242);
+    lock.holdExternally(claimPathOf(lock, directory, 'sidecar'), undefined);
 
     const shared = await ensureSessionTmpDir(temp.paths, 'session-held', { lock });
     const owned = await ensureSessionTmpDir(temp.paths, 'session-own', { lock });

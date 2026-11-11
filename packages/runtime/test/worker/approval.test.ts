@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
@@ -13,6 +14,8 @@ const askToWrite = async (env: Env, target = path.join(env.project, 'out.txt'), 
   expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
   return { run, target };
 };
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS, hookTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('worker approval request', () => {
   it('creates an approval, records the request with all four options and releases to WAITING_HUMAN', async () => {

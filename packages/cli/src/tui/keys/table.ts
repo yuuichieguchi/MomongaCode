@@ -35,6 +35,7 @@ export const KEYS = [
   { id: 'editor.down', context: 'chat', default: ['down'], description: 'line down, then newer history' },
   { id: 'history.search', context: 'chat', default: ['ctrl+r'], description: 'search the history' },
   { id: 'editor.external', context: 'chat', default: ['ctrl+g'], description: 'edit the draft in $VISUAL or $EDITOR' },
+  { id: 'editor.submitValue', context: 'select', default: ['ctrl+x enter'], description: 'confirm the value of the structured editor' },
   { id: 'transcript.detail', context: 'chat', default: ['ctrl+o'], description: 'show or fold the detail' },
   { id: 'mode.cycle', context: 'chat', default: ['shift+tab'], description: 'cycles the mode' },
   { id: 'run.stop', context: 'chat', default: ['escape'], description: 'stops the run' },

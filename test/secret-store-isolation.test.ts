@@ -10,7 +10,7 @@ import { supervisorEnv } from '../e2e/support/stack.ts';
 
 const TEST_TEMP_ROOT = fs.realpathSync(os.tmpdir());
 
-const HOST = { platform: process.platform, uid: process.getuid?.() };
+const HOST = { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
 
 const chosenSecretProgram = (env: Readonly<Record<string, string | undefined>>): string | undefined => secretStoreEnvFor(env, HOST)[SECRET_PROGRAM_ENV];
 

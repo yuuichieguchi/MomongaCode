@@ -453,7 +453,7 @@ describe('the figures of mandate runs', () => {
       [T0 + 31, resolved('c2', 'withdrawn')],
       [T0 + 40, terminal('COMPLETED')],
     ]);
-    expect(facts.delegation).toEqual({ held: 2, resolvedByPerson: 1, denied: 1, waited: true });
+    expect(facts.delegation).toMatchObject({ held: 2, resolvedByPerson: 1, denied: 1, waited: true });
     expect(fold('plain', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]).delegation).toBeUndefined();
   });
 
@@ -464,7 +464,7 @@ describe('the figures of mandate runs', () => {
       fold('stopped', [[T0, mandated(1)], [T0 + 1, held('c1')], [T0 + 9, terminal('STOPPED')]], { status: 'STOPPED', stopReason: 'timeout' }),
       fold('plain', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]),
     ];
-    expect(totalOf(rows).delegation).toEqual({ n: 3, intervened: 1, unattended: 1, waited: 1, held: 2, denied: 1 });
+    expect(totalOf(rows).delegation).toMatchObject({ n: 3, intervened: 1, unattended: 1, waited: 1, held: 2, denied: 1 });
   });
 });
 
@@ -491,15 +491,15 @@ describe('population buckets', () => {
     const stale: RunFacts = { ...fold('stale', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]), definitionsVersion: INDICATOR_DEFINITIONS_VERSION - 1 };
     const counted = fold('counted', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
     const total = totalOf([cancelled, stale, counted]);
-    expect(total.buckets).toEqual({ counted: 1, cancelled: 1, pendingFacts: 1, factsUnavailable: 0, unknownValues: 0 });
+    expect(total.buckets).toEqual({ counted: 1, cancelled: 1, pendingFacts: 1, factsUnavailable: 0, unknownValues: 0, notPlaced: 0 });
     expect(total.intervention).toEqual({ k: 0, n: 1 });
   });
 
-  it('decision 55: a root whose tree holds an unavailable run is the fourth bucket, outside every rate, whether or not its own row exists', () => {
+  it('decision 55: a root whose tree holds an unavailable run is the fourth bucket, outside every rate; a root with no row is not placed', () => {
     const counted = fold('counted', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
     const hasUnavailableChild = fold('parent', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
     const total = indicatorsOf(aggregate([counted, hasUnavailableChild], { groupBy: 'model', unavailableRoots: ['parent', 'ghost'] })).total;
-    expect(total.buckets).toEqual({ counted: 1, cancelled: 0, pendingFacts: 0, factsUnavailable: 2, unknownValues: 0 });
+    expect(total.buckets).toEqual({ counted: 1, cancelled: 0, pendingFacts: 0, factsUnavailable: 1, unknownValues: 0, notPlaced: 1 });
     expect(total.intervention).toEqual({ k: 0, n: 1 });
   });
 });

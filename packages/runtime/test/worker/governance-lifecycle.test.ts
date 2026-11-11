@@ -71,6 +71,7 @@ describe('RulePropose in a delegated run', () => {
 describe('a rule retired during a live run', () => {
   it('gives the model back the tool the rule had hidden at the next build', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
+    env.settings.contextValue = { ...env.settings.contextValue, cachePrefix: false, observedCapacity: false };
     const fact = env.store.governing.add({
       kind: 'constraint',
       target: 'glob',

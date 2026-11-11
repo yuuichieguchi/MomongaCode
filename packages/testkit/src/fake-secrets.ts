@@ -1,6 +1,5 @@
 import * as foundation from '@momonga/foundation';
 import { KEYCHAIN_SERVICE, SECRET_TOOL_BINARY, SECURITY_BINARY } from '@momonga/foundation';
-import { SecretNotFoundError } from '@momonga/foundation/secret-store';
 import type { SecretProcessPort, SecretProcessResult, SecretStore } from '@momonga/foundation';
 import type { SecretStoreFiles } from '@momonga/foundation/secret-store';
 
@@ -45,24 +44,32 @@ const ITEM_NOT_FOUND_EXIT = 44;
 export const createFakeSecretStore = (secrets: Readonly<Record<string, string>>, options: FakeSecretStoreOptions = {}): FakeSecretStore => {
   const reads: string[] = [];
   const writes: FakeSecretStore['writes'] = [];
-  const held = new Map(Object.entries(secrets));
+  const held: Record<string, string> = { ...secrets };
   const hangs = (): boolean => options.calls?.() === 'hang';
   const hung = <T>(action: 'read' | 'write', name: string, signal: AbortSignal): Promise<T> =>
     rejectedWhenAborted<T>(signal, (reason) => foundation.endedStoreCall({ action, name, backend: undefined }, reason));
+  const product = foundation.createKeychainSecretStore(
+    createFakeSecurityPort(
+      () => held,
+      (name, value) => {
+        held[name] = value;
+      },
+    ),
+    SECURITY_BINARY,
+    createFakeSecretFiles(() => new Set([FAKE_KEYCHAIN_PATH])),
+  );
   return {
     reads,
     writes,
     read: async (name, signal) => {
       reads.push(name);
       if (hangs()) return hung<string>('read', name, signal);
-      const value = held.get(name);
-      if (value === undefined) throw new SecretNotFoundError(name, ITEM_NOT_FOUND_EXIT, 'the fake store has no such secret');
-      return value;
+      return product.read(name, signal);
     },
     write: async (name, value, signal) => {
       if (hangs()) return hung<void>('write', name, signal);
+      await product.write(name, value, signal);
       writes.push({ name, value });
-      held.set(name, value);
     },
   };
 };

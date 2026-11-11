@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { appendPermissionRule, systemFileLockPorts } from '@momonga/config';
+import { appendPermissionRule, loadSettings, settingsLayerOfRule, systemFileLockPorts } from '@momonga/config';
 import type { FileLockPorts } from '@momonga/foundation';
 import { settingsLockPath } from '../src/file-lock.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, testPaths, sleepDrivenTiming, testKernelLock } from '@momonga/testkit';
-import { localSettingsDir, localSettingsPath, makeDir, makeTree, registerCleanup, writeText } from './helpers.ts';
+import { localSettingsDir, localSettingsPath, makeDir, makeTree, registerCleanup, trusting, userSettingsPath, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
 const NEVER_ABORTED = new AbortController().signal;
@@ -22,6 +22,17 @@ const readLocal = (tree: Tree): Record<string, unknown> =>
   JSON.parse(fs.readFileSync(localSettingsPath(tree), 'utf8')) as Record<string, unknown>;
 
 describe('appendPermissionRule', () => {
+  it('saves a Network rule in the user settings, the one layer that holds it, and names that layer', async () => {
+    const tree = makeTree();
+    expect(settingsLayerOfRule('Network(api.example.org)')).toBe('user');
+    expect(settingsLayerOfRule('Bash(ls)')).toBe('local');
+    await appendPermissionRule({ lock: testKernelLock(), ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Network(api.example.org)', effect: 'allow', signal: NEVER_ABORTED });
+    expect(JSON.parse(fs.readFileSync(userSettingsPath(tree), 'utf8'))).toEqual({ permissions: { allow: ['Network(api.example.org)'] } });
+    expect(fs.existsSync(localSettingsPath(tree))).toBe(false);
+    const loaded = await loadSettings({ signal: NEVER_ABORTED, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(loaded.rules).toMatchObject([{ text: 'Network(api.example.org)', effect: 'allow', origin: 'user' }]);
+  });
+
   it('creates settings.local.json with 0600 in a 0700 directory', async () => {
     const tree = makeTree();
     await appendPermissionRule({ lock: testKernelLock(), ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(npm run test:*)', effect: 'allow', signal: NEVER_ABORTED });

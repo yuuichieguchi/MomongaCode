@@ -5,7 +5,8 @@ import { asked, askerOf } from './asker.ts';
 import { editUserSettings } from './edit-user-settings.ts';
 import { settingsWriterPorts } from './file-lock.ts';
 import { localSettingsDirectory, reRootedRule, worktreeRootOf } from './local-settings.ts';
-import { parseRule } from './rule.ts';
+import { NETWORK_RULE_SUBJECT, checkRuleText, parseRule } from './rule.ts';
+import { userSettingsFile } from './layers.ts';
 import type { RuleEffect } from './rule.ts';
 
 export type AppendPermissionRuleOptions = {
@@ -31,7 +32,16 @@ const addRule = (document: Record<string, unknown>, file: string, rule: string, 
   return true;
 };
 
+export const settingsLayerOfRule = (rule: string): 'local' | 'user' => (checkRuleText(rule).tool === NETWORK_RULE_SUBJECT ? 'user' : 'local');
+
 export const appendPermissionRule = async ({ home, projectDir, rule, effect, lock, ports, lockTimeoutMs, signal }: AppendPermissionRuleOptions): Promise<void> => {
+  const writer = settingsWriterPorts(home, { lock, ports, signal, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) });
+  if (settingsLayerOfRule(rule) === 'user') {
+    const file = userSettingsFile(home);
+    parseRule(rule, { effect, origin: 'user', source: file, settingsRoot: home, home, cwd: projectDir });
+    await editUserSettings(file, (document) => addRule(document, file, rule, effect), writer);
+    return;
+  }
   const asker = askerOf(signal);
   const directory = await localSettingsDirectory(home, projectDir, asker);
   const file = path.join(directory, 'settings.local.json');
@@ -39,5 +49,6 @@ export const appendPermissionRule = async ({ home, projectDir, rule, effect, loc
   const stored = reRootedRule(rule, await asked(asker, asker.files.realpath(projectDir)), root);
   parseRule(stored, { effect, origin: 'local', source: file, settingsRoot: root, home, cwd: projectDir });
 
-  await editUserSettings(file, (document) => addRule(document, file, stored, effect), settingsWriterPorts(home, { lock, ports, signal, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) }));
+  await editUserSettings(file, (document) => addRule(document, file, stored, effect), writer);
 };
+

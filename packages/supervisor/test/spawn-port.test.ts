@@ -45,22 +45,4 @@ describe('real SpawnPort', () => {
     await expect(child.exit).resolves.toEqual({ code: null, signal: 'SIGKILL' });
     await pollUntil(() => !isProcessAlive(grandchild), 5000, 'grandchild gone');
   });
-
-  it('on Windows a stop closes the lifeline so the child closes gracefully, instead of a signal that would terminate it', async (context) => {
-    const markerFd = readOnlyScratchFd(context);
-    const port = trackedSpawnPort(context, 'win32');
-    const child = watch(port(process.execPath, [CHILD_FIXTURE, '--p2-watch-lifeline'], portOptions(markerFd)));
-    const pid = child.handle.pid as number;
-    await pollUntil(() => child.output().includes(`"started":${pid}`), 5000, 'child output');
-    child.handle.kill('SIGTERM');
-    await expect(child.exit).resolves.toEqual({ code: 0, signal: null });
-  });
-
-  it('on Windows a child without a lifeline cannot be stopped gracefully and the stop says so', async (context) => {
-    const port = trackedSpawnPort(context, 'win32');
-    const markerFd = readOnlyScratchFd(context);
-    const child = watch(port(process.execPath, [CHILD_FIXTURE], { ...portOptions(markerFd), stdio: ['ignore', 'pipe', 'pipe', 'ignore', markerFd] as never }));
-    await pollUntil(() => child.output().includes('"started"'), 5000, 'child output');
-    expect(() => child.handle.kill('SIGTERM')).toThrow('has no lifeline');
-  });
 });

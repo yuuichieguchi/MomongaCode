@@ -573,7 +573,7 @@ describe('T-L2-14 (R2.6, 20.5): the pass works in bounded units', () => {
       operations += 1;
       onOperation(line);
     });
-    const result = await passOf(paths, [], { files, lock: createFakeKernelLock({ inheritable: false }) });
+    const result = await passOf(paths, [], { files, lock: createFakeKernelLock({ inheritable: false, disk: 'in-memory' }) });
     expect(result.removed).toHaveLength(generations);
     return operations;
   };

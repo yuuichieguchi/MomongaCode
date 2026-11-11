@@ -4,7 +4,8 @@ import type { RunEventPayload, StreamEvent } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
 import { responseResource, usageOf } from '@momonga/testkit';
 
-import { START_MS, makeEnv } from './harness.ts';
+import { compactInputOf, compactPinOf } from '../../src/worker/compact-pin.ts';
+import { START_MS, capabilitiesFor, createdRun, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ID, assistantMessage, callsStep, functionCallItem, gated, textStep, textThenCallsStep } from './scripts.ts';
 import {
@@ -467,5 +468,62 @@ describe('a projected assistant message keeps its shape', () => {
 
     const input = (env.ofType(second, 'model.requested')[0]?.body as { input: unknown[] } | undefined)?.input ?? [];
     expect(input).toContainEqual(answerItem);
+  });
+});
+
+const LONG_TURNS: RunEventPayload[] = [
+  respondedPayload(1, [assistantMessage('m1', `answer one ${'x'.repeat(40_000)}`)]),
+  { type: 'user.message', text: 'question two' },
+  respondedPayload(2, [assistantMessage('m2', `answer two ${'y'.repeat(40_000)}`)]),
+  { type: 'user.message', text: 'question three' },
+  respondedPayload(3, [assistantMessage('m3', `answer three ${'z'.repeat(40_000)}`)]),
+  { type: 'user.message', text: 'question four' },
+];
+
+const compactedSession = async (): Promise<{ env: Env; compactRun: string }> => {
+  const env = await makeEnv({ capabilities: capabilitiesFor(200_000) });
+  const first = await env.enqueue('question one');
+  await env.seed(first.id, LONG_TURNS, 'release');
+  env.gateway.script.push(textStep('Done.'));
+  await env.runOnce(env.worker());
+  const compact = createdRun(
+    await env.store.createRunAndEnqueue(env.session.id, { input: compactInputOf(undefined), timeoutMs: 3_600_000, limits: {}, pins: compactPinOf(undefined), history: 'inherit' }),
+  );
+  await env.runOnce(env.worker());
+  expect(env.run(compact.id).status).toBe('COMPLETED');
+  return { env, compactRun: compact.id };
+};
+
+describe('a run that inherits a summary records the inherited compaction', () => {
+  it('writes one context.inherited_compacted before its first model request, with the summary, the replaced range and the tokens of the compaction', async () => {
+    const { env, compactRun } = await compactedSession();
+    const [compacted] = env.ofType(compactRun, 'context.compacted');
+    const next = await nextRun(env, 'question six', 'Done again.');
+    const later = await nextRun(env, 'question seven', 'Done once more.');
+
+    for (const runId of [next, later]) {
+      expect(env.run(runId).status).toBe('COMPLETED');
+      const recorded = env.ofType(runId, 'context.inherited_compacted');
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]).toMatchObject({
+        fromRunId: compactRun,
+        item: compacted?.item,
+        summary: compacted?.summary,
+        replacedThroughSeq: compacted?.replacedThroughSeq,
+        tokensBefore: compacted?.tokensBefore,
+        tokensAfter: compacted?.tokensAfter,
+      });
+      const types = env.events(runId).map((event) => event.type);
+      expect(types.indexOf('context.inherited_compacted')).toBeLessThan(types.indexOf('model.requested'));
+    }
+  });
+
+  it('writes none for a run that inherits no summary, nor for the run that compacted', async () => {
+    const env = await makeEnv();
+    await answered(env, 'Say hello', 'Hello there.');
+    const second = await nextRun(env, 'And again', 'Again.');
+    expect(env.ofType(second, 'context.inherited_compacted')).toEqual([]);
+    const { env: compactedEnv, compactRun } = await compactedSession();
+    expect(compactedEnv.ofType(compactRun, 'context.inherited_compacted')).toEqual([]);
   });
 });

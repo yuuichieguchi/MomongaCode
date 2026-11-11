@@ -35,7 +35,9 @@ import type { FakeTracer } from './fake-tracer.ts';
 import { MODEL_ID, resetResponseIds } from './scripts.ts';
 import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 
-import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
+import { installedRuleSolver, productRuleVerifier } from '../../src/process/rule-verifier.ts';
+import { systemTimers } from '../../src/service/timers.ts';
+import type { RuleVerifierPort } from '../../src/ports.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 export const START_MS = 1_800_000_000_000;
@@ -115,6 +117,7 @@ export const createFakeInstructions = (): FakeInstructions => {
   return {
     files,
     reads,
+    platform: process.platform,
     contains: (directory, candidate) => testPaths().comparableContains(directory, candidate),
     read: async (filePath) => {
       reads.push(filePath);
@@ -134,6 +137,7 @@ export type EnvOptions = {
   preparer?: ContributionPreparer;
   onDecode?: (rows: number, bytes: number) => void;
   onEncode?: (kind: string, bytes: number) => void;
+  ruleVerifier?: RuleVerifierPort;
 };
 
 export type BatchInput = Parameters<ToolExecutor['runBatch']>[0];
@@ -210,6 +214,8 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
   },
 });
 
+const ruleSolverHost = installedRuleSolver(import.meta.url);
+
 export const makeEnv = async (options: EnvOptions = {}) => {
   resetResponseIds();
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-worker-')));
@@ -254,8 +260,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const toolbox: FakeToolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executorWarnings: string[] = [];
+  const layout = momongaLayout(home, process.platform, process.env);
   const realExecutor = createToolExecutor({
-    layout: momongaLayout(home, process.platform, process.env),
+    layout,
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
     random: systemRandom,
@@ -358,7 +365,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
   });
 
-  const ruleVerifier = createFakeRuleVerifier();
+  const ruleVerifier: RuleVerifierPort = options.ruleVerifier ?? productRuleVerifier({ solver: () => ruleSolverHost, paths: layout, timers: systemTimers, shellHost: nodeShellHost(), env: process.env, clock });
 
   const worker = (workerId = 'worker-1', overrides: WorkerOverrides = {}): Worker => {
     const { tools: toolOverrides, toolList, ...rest } = overrides;

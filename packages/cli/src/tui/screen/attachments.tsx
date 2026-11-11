@@ -1,12 +1,13 @@
 import { Box, Text } from 'ink';
 import type { ImageAttachment } from '@momonga/protocol';
 import { describeAttachment } from '../../images.ts';
+import type { PastedSpan } from '../editor.ts';
 import type { KeyTable } from '../keys/table.ts';
 import { ChoiceRow } from '../select.tsx';
 
 export type Attachment = { file: string; image: ImageAttachment; label?: string };
 
-export const heldAttachments = (attachments: readonly Attachment[], text: string): Attachment[] => attachments.filter((attachment) => attachment.label === undefined || text.includes(attachment.label));
+export const heldAttachments = (attachments: readonly Attachment[], spans: readonly PastedSpan[]): Attachment[] => attachments.filter((attachment) => attachment.label === undefined || spans.some((span) => span.label === attachment.label));
 
 export const attachmentLine = (attachment: Attachment, keys: KeyTable): string => {
   const key = keys.keyHint('editor.deleteBefore');

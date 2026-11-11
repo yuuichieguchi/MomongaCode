@@ -32,6 +32,11 @@ const row = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView
   reconciledAlreadyApplied: 0,
   reconciledNotApplied: 0,
   reconciledUnknown: 0,
+  mutated: false,
+  owed: false,
+  verification: { rounds: 0, firstRoundPassed: null, failedRounds: 0, checkMs: 0, fixRoundTokens: 0 },
+  answers: { allowOnce: 0, allowAlways: 0, rejectOnce: 0, rejectAlways: 0 },
+  denials: { sandbox: 0, rule: 0, mode: 0, setting: 0, hook: 0, mandate: 0, superseded: 0, held: 0 },
   basis: { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 },
   declared: true,
   met: true,
@@ -40,12 +45,12 @@ const row = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView
 });
 
 describe('withinPeriod: a task with no readable root', () => {
-  it('lists a task whose root row is missing as unavailable, not as pending facts', () => {
+  it('counts a task whose root row is missing as not placed, not as pending facts', () => {
     const aggregated = withinPeriod(aggregate([row('run-child', { rootRunId: 'run-root' })], { groupBy: 'model' }), PERIOD);
-    expect([...aggregated.unavailableRoots]).toEqual(['run-root']);
+    expect([...aggregated.unavailableRoots]).toEqual([]);
     const { total } = indicatorsOf(aggregated);
-    expect(total.buckets).toEqual({ counted: 0, cancelled: 0, pendingFacts: 0, factsUnavailable: 1, unknownValues: 0 });
-    expect(explainOf(aggregated).get('facts unavailable')).toEqual(['run-root']);
+    expect(total.buckets).toEqual({ counted: 0, cancelled: 0, pendingFacts: 0, factsUnavailable: 0, unknownValues: 0, notPlaced: 1 });
+    expect(explainOf(aggregated).get('not placed')).toEqual(['run-root']);
   });
 
   it('keeps a task whose root is in the period counted', () => {

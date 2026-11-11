@@ -3,7 +3,7 @@ import type { UserModels } from '@momonga/config';
 import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
-import { FIRST_GENERATION, SecretUnavailableError, SocketPathUnsupportedError, momongaLayout } from '@momonga/foundation';
+import { FIRST_GENERATION, SecretUnavailableError, claimPathOf, SocketPathUnsupportedError, momongaLayout } from '@momonga/foundation';
 import { createFakeKernelLock, waitFor } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
@@ -97,7 +97,6 @@ const OWNER_HOME = '/home/person';
 
 const OTHER_HOME = '/home/someone-else';
 
-const HOME_SIDECAR_SUFFIX = '.lock';
 
 const harness = (behaviour: Behaviour = {}) => {
   const lock = createFakeKernelLock({ inheritable: false });
@@ -239,7 +238,7 @@ const harness = (behaviour: Behaviour = {}) => {
       alive.add(stale.holder);
       holders.set(stale.root, stale.holder);
     }
-    if (stale.held === true) lock.holdExternally(`${stale.root}${HOME_SIDECAR_SUFFIX}`, stale.owner);
+    if (stale.held === true) lock.holdExternally(claimPathOf(lock, stale.root, 'sidecar'), stale.owner);
   }
   return { lock, effects, sessionRoots, roots, alive, terminated, measuredSockets, stopped, memories, trusted, files, startEnvs, probeCopies, endpointProbeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
 };

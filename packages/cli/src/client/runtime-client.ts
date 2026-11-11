@@ -1,8 +1,8 @@
 import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
-import { DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -110,7 +110,7 @@ export class DaemonMoved extends Error {
   }
 }
 
-export type RunEventFrame = { readonly id: number; readonly event: string | undefined; readonly data: PublicRunEvent };
+export type RunEventFrame = { readonly id: number; readonly event: string | undefined; readonly data: PublicStreamEvent };
 
 export type EventsOptions = { after?: number; lastEventId?: number; signal?: AbortSignal; onOpen?: () => void };
 
@@ -137,6 +137,8 @@ export type CreateRunOptions = {
 };
 
 export type UserShellEnd = { kind: 'refused'; reason: string } | { kind: 'exit'; record: UserShellRecord };
+
+export type UserShellIo = { onUnprotected(reason: string): void; onOutput(text: string): void };
 
 export type MemoryFilter = { scope?: MemoryScope; state?: MemoryState; project?: string };
 
@@ -169,7 +171,7 @@ export type RuntimeClient = {
   inboxWithdraw(id: string): Promise<InboxWithdrawResponse>;
   inboxList(sessionId: string): Promise<InboxRowView[]>;
   runSuccessor(runId: string): Promise<RunView | undefined>;
-  userShell(sessionId: string, command: string, include: boolean, onOutput: (text: string) => void): Promise<UserShellEnd>;
+  userShell(sessionId: string, command: string, include: boolean, io: UserShellIo): Promise<UserShellEnd>;
   stopUserShell(sessionId: string): Promise<void>;
   pendingUserShell(sessionId: string): Promise<UserShellRecord[]>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
@@ -307,10 +309,12 @@ export const pathSegment = (value: string): string => {
   return encodeURIComponent(value);
 };
 
-export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; onMoved?: () => Promise<void> };
+export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; personCapability: () => Promise<string>; onMoved?: () => Promise<void> };
 
 export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
   const http = createUdsClient(options.resolveSocket, { connectTimeoutMs: HOST_READ_BOUND_MS, headersTimeoutMs: HOST_READ_BOUND_MS });
+
+  const personHeaders = async (): Promise<Record<string, string>> => ({ [PERSON_CAPABILITY_HEADER]: await options.personCapability() });
 
   const send = async (
     method: string,
@@ -319,7 +323,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     init: { body?: unknown; headers?: Record<string, string>; raw?: true } = {},
   ): Promise<{ response: UdsResponse; body: unknown }> => {
     const description = `${method} ${path}`;
-    const headers: Record<string, string> = { ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
+    const headers: Record<string, string> = { ...(await personHeaders()), ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
     const repeatable = REPEATABLE_METHODS.has(method) || (method === 'POST' && headers['idempotency-key'] !== undefined);
     let socketResends = 0;
     for (let movedResends = 0; ; ) {
@@ -328,7 +332,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
         response = await http.request({
           method,
           path,
-          ...(Object.keys(headers).length === 0 ? {} : { headers }),
+          headers,
           ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
         });
       } catch (error) {
@@ -841,14 +845,15 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     inboxAdd,
     inboxWithdraw,
     inboxList,
-    userShell: async (sessionId, command, include, onOutput) => {
+    userShell: async (sessionId, command, include, io) => {
       const path = `/v1/sessions/${pathSegment(sessionId)}/user-shell`;
       const description = `POST ${path}`;
-      const response = await http.request({ method: 'POST', path, headers: JSON_HEADERS, body: JSON.stringify({ command, include }) });
+      const response = await http.request({ method: 'POST', path, headers: { ...(await personHeaders()), ...JSON_HEADERS }, body: JSON.stringify({ command, include }) });
       if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
       for await (const event of decodeSse(response.body)) {
         const frame = checkUserShellFrame(parsed(event.data, description), description);
-        if (frame.type === 'output') onOutput(frame.text);
+        if (frame.type === 'output') io.onOutput(frame.text);
+        else if (frame.type === 'unprotected') io.onUnprotected(frame.reason);
         else return frame.type === 'refused' ? { kind: 'refused', reason: frame.reason } : { kind: 'exit', record: frame.record };
       }
       throw new ContractViolation(description, 'the stream ended without an exit');

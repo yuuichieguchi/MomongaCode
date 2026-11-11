@@ -1,9 +1,10 @@
+import fs from 'node:fs';
 import { secretStoreEnvFor } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
 
-const HOST = { platform: process.platform, uid: process.getuid?.() };
+const HOST = { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
 
 const settingsNaming = (forgeName: string, modelName: string): CredentialSettings =>
   ({

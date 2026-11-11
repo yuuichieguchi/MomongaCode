@@ -16,7 +16,7 @@ import { dismissNotice, readDismissedNotices } from './dismissed-notices.ts';
 import { listedSessions, ownRunsOf } from './session-list.ts';
 import type { SessionSummary } from './session-list.ts';
 import type { DismissedNotices } from './dismissed-notices.ts';
-import type { MemoryFilter, RunEventFrame, RuntimeClient, UserShellEnd } from '../client/runtime-client.ts';
+import type { MemoryFilter, RunEventFrame, RuntimeClient, UserShellEnd, UserShellIo } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
 import type { HistoryStore } from '../history-store.ts';
 import { daemonReadyBoundMs, ensureSessionDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
@@ -49,7 +49,7 @@ export type StartRunOptions = { skill?: string; images?: readonly ImageAttachmen
 
 export type UserInputBackend = {
   fileCandidates(signal: AbortSignal): Promise<FileCandidates>;
-  shell(command: string, include: boolean, onOutput: (text: string) => void): Promise<UserShellEnd>;
+  shell(command: string, include: boolean, io: UserShellIo): Promise<UserShellEnd>;
   stopShell(): Promise<void>;
   pendingShell(): Promise<readonly UserShellRecord[]>;
   readClipboard(signal: AbortSignal): Promise<ClipboardContent>;
@@ -262,7 +262,7 @@ export const createTuiBackend = (
         const { listFileCandidates } = await import('@momonga/runtime');
         return listFileCandidates({ root: ports.cwd, env: ports.env, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal });
       },
-      shell: (command, include, onOutput) => runtime().userShell(current().id, command, include, onOutput),
+      shell: (command, include, io) => runtime().userShell(current().id, command, include, io),
       stopShell: () => runtime().stopUserShell(current().id),
       pendingShell: () => runtime().pendingUserShell(current().id),
       readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), capture: clipboard.capture }, signal),

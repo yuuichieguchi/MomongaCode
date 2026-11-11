@@ -145,7 +145,7 @@ export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoMo
   const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier);
   const key = await classifierKeyOf(ports.models, classifier, ports.platform, options.signal);
   const view = await readAutoFitView(autoFitDirectoryOf(ports.home), classifier, key);
-  ports.write(`${autoModeNotice({ view, surface: options.surface })}\n`);
+  ports.write(`${autoModeNotice({ view, surface: options.surface, shownModel: displayOf(ports.models, view.model) })}\n`);
   return { measurement: view.measurement };
 };
 

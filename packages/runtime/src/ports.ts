@@ -60,7 +60,7 @@ export type SettingsPort = {
 
 export type AttachTerms = { ceiling: number; imageInput: boolean; signal: AbortSignal };
 
-export type UserShellIo = { signal: AbortSignal; onOutput(text: string): void };
+export type UserShellIo = { signal: AbortSignal; onUnprotected(reason: string): void; onOutput(text: string): void };
 
 export type UserInputPort = {
   attach(session: Session, text: string, terms: AttachTerms): Promise<AttachedMentions>;

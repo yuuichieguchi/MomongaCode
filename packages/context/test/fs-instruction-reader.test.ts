@@ -22,19 +22,19 @@ describe('createFsInstructionReader', () => {
     const dir = makeDir();
     const file = path.join(dir, 'AGENTS.md');
     fs.writeFileSync(file, 'hello rules');
-    const result = await createFsInstructionReader(NEVER_CANCELLED).read(file);
+    const result = await createFsInstructionReader(NEVER_CANCELLED, process.platform).read(file);
     expect(result).toEqual({ realPath: file, text: 'hello rules' });
   });
 
   it('returns undefined for a missing file', async () => {
     const dir = makeDir();
-    expect(await createFsInstructionReader(NEVER_CANCELLED).read(path.join(dir, 'AGENTS.md'))).toBeUndefined();
+    expect(await createFsInstructionReader(NEVER_CANCELLED, process.platform).read(path.join(dir, 'AGENTS.md'))).toBeUndefined();
   });
 
   it('returns undefined when the path is a directory', async () => {
     const dir = makeDir();
     fs.mkdirSync(path.join(dir, 'AGENTS.md'));
-    expect(await createFsInstructionReader(NEVER_CANCELLED).read(path.join(dir, 'AGENTS.md'))).toBeUndefined();
+    expect(await createFsInstructionReader(NEVER_CANCELLED, process.platform).read(path.join(dir, 'AGENTS.md'))).toBeUndefined();
   });
 
   it('resolves a symlink to its target', async () => {
@@ -44,13 +44,13 @@ describe('createFsInstructionReader', () => {
     fs.writeFileSync(target, 'outside rules');
     const link = path.join(project, 'AGENTS.md');
     fs.symlinkSync(target, link);
-    expect(await createFsInstructionReader(NEVER_CANCELLED).read(link)).toEqual({ realPath: target, text: 'outside rules' });
+    expect(await createFsInstructionReader(NEVER_CANCELLED, process.platform).read(link)).toEqual({ realPath: target, text: 'outside rules' });
   });
 
   it('decodes UTF-8 text', async () => {
     const dir = makeDir();
     const file = path.join(dir, 'AGENTS.md');
     fs.writeFileSync(file, 'ルール ✓');
-    expect((await createFsInstructionReader(NEVER_CANCELLED).read(file))?.text).toBe('ルール ✓');
+    expect((await createFsInstructionReader(NEVER_CANCELLED, process.platform).read(file))?.text).toBe('ルール ✓');
   });
 });

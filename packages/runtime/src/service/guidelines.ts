@@ -53,7 +53,7 @@ export const registerGuidelineRoutes = (route: RouteRegistrar, deps: GuidelineRo
     }
   };
 
-  route('/v1/guidelines', { GET: listGuidelines, POST: adoptGuideline });
-  route('/v1/guidelines/:version/rollback', { POST: rollbackGuideline });
+  route('/v1/guidelines', { GET: listGuidelines, POST: adoptGuideline }, { person: ['POST'] });
+  route('/v1/guidelines/:version/rollback', { POST: rollbackGuideline }, { person: ['POST'] });
   route('/v1/context-charges', { POST: recordCharge });
 };

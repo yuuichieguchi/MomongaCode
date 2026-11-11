@@ -7,6 +7,8 @@ import { createRuntimeClient } from '../src/client/runtime-client.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import { UsageError } from '../src/usage-error.ts';
 
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
+
 const OUTSIDE_ID = 'a/../b?c=d#e f';
 
 const PLAIN_ID = 'PLAINID';
@@ -45,7 +47,7 @@ const ID_ROUTES: Readonly<Record<string, Call>> = {
   traceContent: (client, id) => client.traceContent(id, { after: 0, limit: 1 }),
   streamEvents: (client, id) => client.streamEvents(id).next(),
   streamSessionEvents: (client, id) => client.streamSessionEvents(id).next(),
-  userShell: (client, id) => client.userShell(id, 'true', false, () => undefined),
+  userShell: (client, id) => client.userShell(id, 'true', false, { onUnprotected: () => undefined, onOutput: () => undefined }),
   stopUserShell: (client, id) => client.stopUserShell(id),
   pendingUserShell: (client, id) => client.pendingUserShell(id),
   runAnsweredBy: (client, id) => client.runAnsweredBy(id),
@@ -68,7 +70,7 @@ const recordingRuntime = async (context: TestContext): Promise<{ client: Runtime
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
-  const client = createRuntimeClient({ resolveSocket: async () => socketPath, clock: { now: () => 0, sleep: async () => undefined } });
+  const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket: async () => socketPath, clock: { now: () => 0, sleep: async () => undefined } });
   registerCleanup(context, () => client.close());
   return { client, urls };
 };

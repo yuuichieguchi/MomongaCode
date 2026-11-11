@@ -54,6 +54,28 @@ describe('ready parsing', () => {
     expect(harness.spawnCount()).toBe(2);
   });
 
+  it('through a keeper, the ready line is checked against the pid of the command, which the keeper reports after the start, and every report names it', async (context) => {
+    const harness = createManagerHarness(context, { keptCommandPidOffset: 1000 });
+    harness.spawnInitial();
+    const child = harness.port.last();
+    expect(child.pid).toBe(41_000);
+    child.started();
+    child.ready({ pid: 42_000 });
+    await waitFor(() => harness.manager.state() === 'ready');
+    expect(harness.manager.health()).toMatchObject({ state: 'ready', pid: 42_000 });
+    expect(harness.events('child.ready')).toEqual([expect.objectContaining({ childPid: 42_000 })]);
+  });
+
+  it('through a keeper, a ready line that names the keeper instead of the command is a mismatch', async (context) => {
+    const harness = createManagerHarness(context, { keptCommandPidOffset: 1000 });
+    harness.spawnInitial();
+    const child = harness.port.last();
+    child.started();
+    child.ready({ pid: 41_000 });
+    await waitFor(() => harness.manager.state() === 'stopping');
+    expect(harness.events('child.ready.mismatch')).toEqual([expect.objectContaining({ childPid: 42_000, readyPid: 41_000 })]);
+  });
+
   it('ready line of another version is not ready, is reported to the supervisor, and the child is stopped and held for its version (20.12)', async (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();

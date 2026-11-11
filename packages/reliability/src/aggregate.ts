@@ -1,5 +1,25 @@
 import { INDICATOR_DEFINITIONS_VERSION, UNKNOWN_VALUE } from '@momonga/protocol';
-import type { GroupKey, IndicatorGroups, Indicators, RunFacts, TaskLabels } from './types.ts';
+import type { GroupKey, IndicatorGroups, Indicators, PermissionFigures, RunFacts, TaskLabels } from './types.ts';
+
+const emptyPermissions = (): PermissionFigures => ({
+  basis: { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 },
+  asks: 0,
+  answers: { allowOnce: 0, allowAlways: 0, rejectOnce: 0, rejectAlways: 0 },
+  denials: { sandbox: 0, rule: 0, mode: 0, setting: 0, hook: 0, mandate: 0, superseded: 0, held: 0 },
+});
+
+const sumCounts = <K extends string>(left: Record<K, number>, right: Record<K, number>): Record<K, number> => {
+  const sum = { ...left };
+  for (const key in right) sum[key] = left[key] + right[key];
+  return sum;
+};
+
+const addPermissions = (left: PermissionFigures, right: PermissionFigures): PermissionFigures => ({
+  basis: sumCounts(left.basis, right.basis),
+  asks: left.asks + right.asks,
+  answers: sumCounts(left.answers, right.answers),
+  denials: sumCounts(left.denials, right.denials),
+});
 
 type TaskPartial = {
   root: RunFacts | undefined;
@@ -18,6 +38,7 @@ type TaskPartial = {
   stoppedEpisodes: number;
   durations: number[];
   clockSkew: number;
+  permissions: PermissionFigures;
 };
 
 export type Aggregate = { groupBy: GroupKey; tasks: ReadonlyMap<string, TaskPartial>; unavailableRoots: ReadonlySet<string>; labels: ReadonlyMap<string, TaskLabels> };
@@ -64,6 +85,7 @@ const partialOf = (row: RunFacts): TaskPartial => {
     stoppedEpisodes,
     durations,
     clockSkew,
+    permissions: { basis: row.basis, asks: row.asked, answers: row.answers, denials: row.denials },
   };
 };
 
@@ -88,6 +110,7 @@ const combine = (left: TaskPartial, right: TaskPartial): TaskPartial => {
     stoppedEpisodes: left.stoppedEpisodes + right.stoppedEpisodes,
     durations: [...left.durations, ...right.durations],
     clockSkew: left.clockSkew + right.clockSkew,
+    permissions: addPermissions(left.permissions, right.permissions),
   };
 };
 
@@ -119,15 +142,13 @@ export type Period = { days: number; fromMs: number; toMs: number };
 
 export const withinPeriod = (aggregated: Aggregate, period: Period): Aggregate => {
   const outside = new Set<string>();
-  const rootless: string[] = [];
   for (const [rootRunId, { root }] of aggregated.tasks) {
-    if (root === undefined) rootless.push(rootRunId);
-    else if (root.endedAt < period.fromMs || root.endedAt > period.toMs) outside.add(rootRunId);
+    if (root !== undefined && (root.endedAt < period.fromMs || root.endedAt > period.toMs)) outside.add(rootRunId);
   }
   return {
     groupBy: aggregated.groupBy,
     tasks: new Map([...aggregated.tasks].filter(([rootRunId]) => !outside.has(rootRunId))),
-    unavailableRoots: new Set([...aggregated.unavailableRoots, ...rootless].filter((rootRunId) => !outside.has(rootRunId))),
+    unavailableRoots: new Set([...aggregated.unavailableRoots].filter((rootRunId) => !outside.has(rootRunId))),
     labels: aggregated.labels,
   };
 };
@@ -168,6 +189,7 @@ const groupOf = (row: RunFacts, groupBy: GroupKey, labels: ReadonlyMap<string, T
 
 type Accumulator = {
   counted: number;
+  notPlaced: number;
   cancelled: number;
   pendingFacts: number;
   factsUnavailable: number;
@@ -191,6 +213,8 @@ type Accumulator = {
   moneyOverK: number;
   moneyOverN: number;
   delegation: Indicators['delegation'];
+  permissions: Map<string, PermissionFigures>;
+  verification: Indicators['verification'];
   budgetStops: number;
   timeN: number;
   activeSum: number;
@@ -199,6 +223,7 @@ type Accumulator = {
 
 const emptyAccumulator = (): Accumulator => ({
   counted: 0,
+  notPlaced: 0,
   cancelled: 0,
   pendingFacts: 0,
   factsUnavailable: 0,
@@ -221,7 +246,9 @@ const emptyAccumulator = (): Accumulator => ({
   overrunN: 0,
   moneyOverK: 0,
   moneyOverN: 0,
-  delegation: { n: 0, intervened: 0, unattended: 0, waited: 0, held: 0, denied: 0 },
+  delegation: { n: 0, intervened: 0, unattended: 0, waited: 0, held: 0, denied: 0, resolvedHolds: 0, holdLatencyMs: 0, workDuringHolds: { modelSteps: 0, toolCalls: 0 } },
+  permissions: new Map(),
+  verification: { firstRoundPassed: { k: 0, n: 0 }, failedRound: { k: 0, n: 0 }, coverage: { k: 0, n: 0 }, checkMs: 0, elapsedMs: 0, fixRoundTokens: 0 },
   budgetStops: 0,
   timeN: 0,
   activeSum: 0,
@@ -254,20 +281,17 @@ type Excluded = 'pendingFacts' | 'unknownValues' | 'cancelled';
 
 const EXCLUDED_LABELS: Record<Excluded, string> = { pendingFacts: 'pending facts', unknownValues: 'unknown values', cancelled: 'cancelled' };
 
-const exclusionOf = (task: TaskPartial): Excluded | undefined => {
-  if (task.root === undefined || task.stale) return 'pendingFacts';
+const exclusionOf = (root: RunFacts, task: TaskPartial): Excluded | undefined => {
+  if (task.stale) return 'pendingFacts';
   if (task.unknownValues) return 'unknownValues';
-  return task.root.status === 'CANCELLED' ? 'cancelled' : undefined;
+  return root.status === 'CANCELLED' ? 'cancelled' : undefined;
 };
 
-const accumulate = (accumulator: Accumulator, task: TaskPartial, marks?: Marks): void => {
-  const { root } = task;
-  const excluded = exclusionOf(task);
-  if (root === undefined || excluded !== undefined) {
-    if (excluded !== undefined) {
-      accumulator[excluded] += 1;
-      markOf(marks, EXCLUDED_LABELS[excluded], (root ?? task.earliest).rootRunId);
-    }
+const accumulate = (accumulator: Accumulator, root: RunFacts, task: TaskPartial, marks?: Marks): void => {
+  const excluded = exclusionOf(root, task);
+  if (excluded !== undefined) {
+    accumulator[excluded] += 1;
+    markOf(marks, EXCLUDED_LABELS[excluded], root.rootRunId);
     return;
   }
   accumulator.counted += 1;
@@ -323,7 +347,28 @@ const accumulate = (accumulator: Accumulator, task: TaskPartial, marks?: Marks):
     delegation.denied += root.delegation.denied;
     if (root.delegation.resolvedByPerson > 0) delegation.intervened += 1;
     if (root.delegation.waited) delegation.waited += 1;
+    delegation.resolvedHolds += root.delegation.resolvedByPerson;
+    delegation.holdLatencyMs += root.delegation.holdLatencyMs;
+    delegation.workDuringHolds = sumCounts(delegation.workDuringHolds, root.delegation.workDuringHolds);
     if (root.status === 'COMPLETED' && root.delegation.held === 0) delegation.unattended += 1;
+  }
+  accumulator.permissions.set(root.mode, addPermissions(accumulator.permissions.get(root.mode) ?? emptyPermissions(), task.permissions));
+  const { verification } = accumulator;
+  if (root.verification.rounds > 0) {
+    verification.firstRoundPassed.n += 1;
+    verification.failedRound.n += 1;
+    if (root.verification.firstRoundPassed === true) verification.firstRoundPassed.k += 1;
+    if (root.verification.failedRounds > 0) {
+      verification.failedRound.k += 1;
+      markOf(marks, 'averted false completion', root.runId);
+    }
+    verification.checkMs += root.verification.checkMs;
+    verification.elapsedMs += root.elapsedMs;
+    verification.fixRoundTokens += root.verification.fixRoundTokens;
+  }
+  if (root.mutated) {
+    verification.coverage.n += 1;
+    if (root.owed) verification.coverage.k += 1;
   }
   if (root.status === 'STOPPED' && root.stopReason === 'budget') {
     accumulator.budgetStops += 1;
@@ -347,7 +392,14 @@ const finish = (accumulator: Accumulator): Indicators => {
   const durationSum = sorted.reduce((sum, value) => sum + value, 0);
   const episodes = accumulator.recovered + accumulator.unknownEffect + accumulator.failedEpisodes;
   return {
-    buckets: { counted: accumulator.counted, cancelled: accumulator.cancelled, pendingFacts: accumulator.pendingFacts, factsUnavailable: accumulator.factsUnavailable, unknownValues: accumulator.unknownValues },
+    buckets: {
+      counted: accumulator.counted,
+      cancelled: accumulator.cancelled,
+      pendingFacts: accumulator.pendingFacts,
+      factsUnavailable: accumulator.factsUnavailable,
+      unknownValues: accumulator.unknownValues,
+      notPlaced: accumulator.notPlaced,
+    },
     completion: { k: accumulator.completionK, n: accumulator.completionN, undeclared: accumulator.undeclared },
     recovery: {
       k: accumulator.recovered,
@@ -365,7 +417,16 @@ const finish = (accumulator: Accumulator): Indicators => {
     duplicates: { journal: { k: accumulator.duplicatesK, n: accumulator.duplicatesN }, prevented: accumulator.prevented, unknown: accumulator.unknown },
     intervention: { k: accumulator.interventionK, n: accumulator.counted },
     overrun: { k: accumulator.overrunK, n: accumulator.overrunN, budgetStops: accumulator.budgetStops, money: { k: accumulator.moneyOverK, n: accumulator.moneyOverN } },
-    delegation: { ...accumulator.delegation },
+    delegation: { ...accumulator.delegation, workDuringHolds: { ...accumulator.delegation.workDuringHolds } },
+    permissions: Object.fromEntries([...accumulator.permissions.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))),
+    verification: {
+      firstRoundPassed: { ...accumulator.verification.firstRoundPassed },
+      failedRound: { ...accumulator.verification.failedRound },
+      coverage: { ...accumulator.verification.coverage },
+      checkMs: accumulator.verification.checkMs,
+      elapsedMs: accumulator.verification.elapsedMs,
+      fixRoundTokens: accumulator.verification.fixRoundTokens,
+    },
     time: {
       n: accumulator.timeN,
       meanActiveMs: accumulator.timeN === 0 ? null : accumulator.activeSum / accumulator.timeN,
@@ -374,30 +435,44 @@ const finish = (accumulator: Accumulator): Indicators => {
   };
 };
 
-const place = (accumulator: Accumulator, rootRunId: string, task: TaskPartial, unavailable: boolean, marks?: Marks): void => {
+const NOT_PLACED = 'not placed';
+
+const notPlaced = (accumulator: Accumulator, rootRunId: string, marks?: Marks): void => {
+  accumulator.notPlaced += 1;
+  markOf(marks, NOT_PLACED, rootRunId);
+};
+
+const place = (accumulator: Accumulator, root: RunFacts, task: TaskPartial, unavailable: boolean, marks?: Marks): void => {
   if (!unavailable) {
-    accumulate(accumulator, task, marks);
+    accumulate(accumulator, root, task, marks);
     return;
   }
   accumulator.factsUnavailable += 1;
-  markOf(marks, 'facts unavailable', rootRunId);
+  markOf(marks, 'facts unavailable', root.rootRunId);
 };
+
+const unplacedRootsOf = (aggregated: Aggregate): string[] => [
+  ...[...aggregated.tasks].filter(([, task]) => task.root === undefined).map(([rootRunId]) => rootRunId),
+  ...[...aggregated.unavailableRoots].filter((rootRunId) => !aggregated.tasks.has(rootRunId)),
+];
 
 export const indicatorsOf = (aggregated: Aggregate): IndicatorGroups => {
   const total = emptyAccumulator();
   const groups = new Map<string, Accumulator>();
   for (const [rootRunId, task] of aggregated.tasks) {
+    const { root } = task;
+    if (root === undefined) continue;
     const unavailable = aggregated.unavailableRoots.has(rootRunId);
-    place(total, rootRunId, task, unavailable);
-    const key = groupOf(task.root ?? task.earliest, aggregated.groupBy, aggregated.labels);
+    place(total, root, task, unavailable);
+    const key = groupOf(root, aggregated.groupBy, aggregated.labels);
     let group = groups.get(key);
     if (group === undefined) {
       group = emptyAccumulator();
       groups.set(key, group);
     }
-    place(group, rootRunId, task, unavailable);
+    place(group, root, task, unavailable);
   }
-  for (const rootRunId of aggregated.unavailableRoots) if (!aggregated.tasks.has(rootRunId)) total.factsUnavailable += 1;
+  for (const rootRunId of unplacedRootsOf(aggregated)) notPlaced(total, rootRunId);
   return {
     total: finish(total),
     groups: Object.fromEntries([...groups.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([key, group]) => [key, finish(group)])),
@@ -407,8 +482,8 @@ export const indicatorsOf = (aggregated: Aggregate): IndicatorGroups => {
 export const explainOf = (aggregated: Aggregate): Marks => {
   const marks: Marks = new Map();
   const scratch = emptyAccumulator();
-  for (const [rootRunId, task] of aggregated.tasks) place(scratch, rootRunId, task, aggregated.unavailableRoots.has(rootRunId), marks);
-  for (const rootRunId of aggregated.unavailableRoots) if (!aggregated.tasks.has(rootRunId)) markOf(marks, 'facts unavailable', rootRunId);
+  for (const [rootRunId, task] of aggregated.tasks) if (task.root !== undefined) place(scratch, task.root, task, aggregated.unavailableRoots.has(rootRunId), marks);
+  for (const rootRunId of unplacedRootsOf(aggregated)) notPlaced(scratch, rootRunId, marks);
   for (const ids of marks.values()) ids.sort();
   return new Map([...marks.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
 };
@@ -419,7 +494,7 @@ export const countedTasksOf = (aggregated: Aggregate): CountedTask[] => {
   const counted: CountedTask[] = [];
   for (const [rootRunId, task] of aggregated.tasks) {
     const { root } = task;
-    if (root === undefined || aggregated.unavailableRoots.has(rootRunId) || exclusionOf(task) !== undefined) continue;
+    if (root === undefined || aggregated.unavailableRoots.has(rootRunId) || exclusionOf(root, task) !== undefined) continue;
     counted.push({ rootRunId, group: groupOf(root, aggregated.groupBy, aggregated.labels), met: root.met, tokens: root.tokensTotal, runIds: [...task.runIds].sort() });
   }
   return counted.sort((left, right) => (left.rootRunId < right.rootRunId ? -1 : 1));

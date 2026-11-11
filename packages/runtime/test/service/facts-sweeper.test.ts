@@ -39,7 +39,7 @@ const factsStore = (runIds: readonly string[]) => {
         cursor: () => ({ definitionsVersion: 1, afterEventId }),
         nextBatch: (limit: number) => {
           const ids = runIds.slice(afterEventId, afterEventId + limit);
-          return { runIds: ids, throughEventId: afterEventId + ids.length };
+          return { runIds: ids, eventIds: ids.map((_, index) => afterEventId + index + 1), afterEventId, throughEventId: afterEventId + ids.length };
         },
         commit: (commit: Commit) => {
           commits.push(commit);
@@ -78,6 +78,11 @@ const fullRow = (runId: string, sessionId: string): RunFactsView => ({
   reconciledAlreadyApplied: 0,
   reconciledNotApplied: 0,
   reconciledUnknown: 0,
+  mutated: false,
+  owed: false,
+  verification: { rounds: 0, firstRoundPassed: null, failedRounds: 0, checkMs: 0, fixRoundTokens: 0 },
+  answers: { allowOnce: 0, allowAlways: 0, rejectOnce: 0, rejectAlways: 0 },
+  denials: { sandbox: 0, rule: 0, mode: 0, setting: 0, hook: 0, mandate: 0, superseded: 0, held: 0 },
   basis: { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 },
   declared: false,
   met: true,

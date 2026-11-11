@@ -1,3 +1,4 @@
+import type { SecretHost } from '@momonga/foundation/secret-store';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -45,7 +46,7 @@ const chain = (overrides: Readonly<Record<string, Entry>>): ProgramOwnerFiles =>
     ...overrides,
   });
 
-const host = (platform: NodeJS.Platform): { platform: NodeJS.Platform; uid: number | undefined } => ({ platform, uid: process.getuid?.() });
+const host = (platform: NodeJS.Platform): SecretHost => ({ platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) });
 
 describe('a secret program is trusted only when no other account can change it or its folders', () => {
   it('accepts a program owned by root in folders owned by root', () => {
@@ -94,7 +95,7 @@ describe('the secret backend is chosen by the platform', () => {
 
   it('refuses a program whose folder another account owns, with the sentence', () => {
     const bin = binDirWith('security');
-    const env = secretStoreEnvFor({ PATH: bin }, { platform: 'darwin', uid: (process.getuid?.() ?? 0) + 1 });
+    const env = secretStoreEnvFor({ PATH: bin }, { platform: 'darwin', uid: (process.getuid?.() ?? 0) + 1, realPathOf: (file: string) => fs.realpathSync(file) });
     expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
     expect(env[SECRET_REFUSAL_ENV]).toMatch(/owned by you or root/);
   });

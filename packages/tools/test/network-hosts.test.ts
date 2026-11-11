@@ -62,6 +62,11 @@ const neverSpawning = (kind: Sandbox['kind']): Sandbox => ({
 
 const PROXY_NOTE = 'through the sandbox proxy, which carries HTTP and HTTPS; a program that does not use the proxy variables stays without network';
 
+const authorizationOf = (proxyUrl: string): string => {
+  const url = new URL(proxyUrl);
+  return `Basic ${Buffer.from(`${url.username}:${url.password}`).toString('base64')}`;
+};
+
 describe('the Bash tool tells the model how to ask for named hosts', () => {
   it('names the hosts form in both descriptions', () => {
     for (const text of [bashTool.description, bashTool.conciseDescription]) expect(text).toContain('{"hosts": [');
@@ -69,6 +74,13 @@ describe('the Bash tool tells the model how to ask for named hosts', () => {
 });
 
 describe('a Bash call that asks for named hosts, before it runs', () => {
+  it('suggests the Network rule of the one host it asks for, which the user settings keep', async () => {
+    const tools = await makeBuiltins({ sandbox: neverSpawning('seatbelt') });
+    const asked = approvalOf(await tools.run('Bash', { command: 'ls', network: { hosts: ['Registry.example.org'] } }, { mode: 'manual' }));
+    expect(asked.decision).toMatchObject({ kind: 'ask', network: true });
+    expect(asked.suggestedRule).toBe('Network(registry.example.org)');
+  });
+
   it('asks naming the hosts and the proxy, suggests no rule, and binds the approval to the set of hosts', async () => {
     const tools = await makeBuiltins({ sandbox: neverSpawning('seatbelt') });
     const first = approvalOf(await tools.run('Bash', { command: 'npm install', network: { hosts: ['registry.example.org', 'Github.example.com:443'] } }, { mode: 'manual' }));
@@ -98,12 +110,12 @@ describe('a Bash call that asks for named hosts, before it runs', () => {
   });
 
   it('refuses the call under a sandbox that cannot limit a command to hosts, and grants nothing wider in its place', async () => {
-    const tools = await makeBuiltins({ sandbox: neverSpawning('bubblewrap') });
+    const tools = await makeBuiltins({ sandbox: neverSpawning('none') });
     const result = resultOf(await tools.run('Bash', { command: 'npm install', network: { hosts: ['registry.example.org'] } }, { mode: 'bypassPermissions' }));
     expect(result.status).toBe('failed');
     expect(result.denial).toEqual({
       source: 'sandbox',
-      reason: 'the command requests network access to registry.example.org only, and the sandbox in use (bubblewrap) cannot limit a command to that; nothing wider is granted in its place',
+      reason: 'the command requests network access to registry.example.org only, and the sandbox in use (none) cannot limit a command to that; nothing wider is granted in its place',
     });
   });
 });
@@ -171,7 +183,8 @@ describe.runIf(process.platform === 'darwin')('a Bash call that was granted name
     const [spawn] = tools.spawns;
     const network = spawn?.policy.network as { loopbackPort: number };
     expect(network.loopbackPort).toBeGreaterThan(0);
-    const proxy = `http://127.0.0.1:${network.loopbackPort}`;
+    const proxy = spawn?.command.env['HTTP_PROXY'] as string;
+    expect(proxy).toMatch(new RegExp(`^http://momonga:[0-9a-f]{64}@127\\.0\\.0\\.1:${network.loopbackPort}$`));
     expect(spawn?.command.env).toMatchObject({ HTTP_PROXY: proxy, HTTPS_PROXY: proxy, ALL_PROXY: proxy, http_proxy: proxy, https_proxy: proxy, all_proxy: proxy, NO_PROXY: '', no_proxy: '' });
     expect(await refusesConnections(network.loopbackPort)).toBe(true);
   });
@@ -230,7 +243,7 @@ describe('a background job that was granted named hosts', () => {
     expect(result.status).toBe('completed');
     const child = (started[0] as BackgroundJobStart).spawn('/marker', new AbortController().signal, undefined);
     const network = spawns[0]?.policy.network as { loopbackPort: number };
-    expect(spawns[0]?.command.env['HTTPS_PROXY']).toBe(`http://127.0.0.1:${network.loopbackPort}`);
+    expect(spawns[0]?.command.env['HTTPS_PROXY']).toMatch(new RegExp(`^http://momonga:[0-9a-f]{64}@127\\.0\\.0\\.1:${network.loopbackPort}$`));
     expect(await refusesConnections(network.loopbackPort)).toBe(false);
     end();
     await (await child).exited;
@@ -264,7 +277,7 @@ describe('a background job that was granted named hosts', () => {
     const child = await (started[0] as BackgroundJobStart).spawn('/marker', new AbortController().signal, undefined);
     const network = spawns[0]?.policy.network as { loopbackPort: number };
     await new Promise<void>((resolve, reject) => {
-      const request = http.request({ host: '127.0.0.1', port: network.loopbackPort, method: 'GET', path: 'http://evil.example.net/' }, (response) => {
+      const request = http.request({ host: '127.0.0.1', port: network.loopbackPort, method: 'GET', path: 'http://evil.example.net/', headers: { 'proxy-authorization': authorizationOf(spawns[0]?.command.env['HTTP_PROXY'] as string) } }, (response) => {
         response.resume();
         response.once('end', resolve);
       });

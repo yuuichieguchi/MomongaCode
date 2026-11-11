@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CREDENTIAL_MANAGER_BACKEND, KEYCHAIN_BACKEND, SECRET_SERVICE_BACKEND } from '@momonga/foundation/secret-store';
 import {
@@ -277,7 +278,7 @@ describe('no OS store at all', () => {
     ['the given store writing', 'given', 'write', R_NOT_GIVEN],
   ] as const)('no OS store on PATH is the same error class (%s)', async ([, kind, action, reason]) => {
     const fake = neverCalled();
-    const store = kind === 'platform' ? createPlatformSecretStore(fake.port, { PATH: makeDir() }, { platform: 'darwin', uid: process.getuid?.() }) : createGivenSecretStore(fake.port, {});
+    const store = kind === 'platform' ? createPlatformSecretStore(fake.port, { PATH: makeDir() }, { platform: 'darwin', uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }) : createGivenSecretStore(fake.port, {});
     const error = await rejection(action === 'read' ? store.read('k', SIGNAL) : store.write('k', 'v', SIGNAL));
     expect((error as Error).name).toBe('SecretStoreAbsentError');
     expect(error).toBeInstanceOf(SecretStoreAbsentError);

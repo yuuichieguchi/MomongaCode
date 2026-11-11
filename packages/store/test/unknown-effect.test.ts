@@ -181,7 +181,7 @@ describe('the snapshot of a run with an unknown effect', () => {
     const state = stateOf(store, runId);
     const encoded = encodedRunState(state);
     expect(encoded.read()).toEqual(state);
-    expect(SNAPSHOT_STATE_VERSION).toBe(22);
+    expect(SNAPSHOT_STATE_VERSION).toBe(24);
     encoded.mutate("json_remove(json_set(state_json, '$.stateVersion', 17), '$.unknownEffects')");
     expect(encoded.read()).toBeUndefined();
     expect(await foldedRunState(store, runId)).toEqual(state);
@@ -241,7 +241,7 @@ describe('migration 34: an approval may ask about an unknown effect, and a rule 
     expect(() => insert.run('unknown-2', 'call_10', START_MS + 1, START_MS, 'unknown_effect')).toThrow(/CHECK/);
     expect(() => insert.run('other-1', 'call_11', null, START_MS, 'something_else')).toThrow(/CHECK/);
     expect(() => insert.run('second-pending', 'call_9', null, START_MS, 'unknown_effect')).toThrow(/UNIQUE/);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 44 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({ version: 46 });
   });
 
   it('creates rule_verdicts keyed by the fingerprint', () => {

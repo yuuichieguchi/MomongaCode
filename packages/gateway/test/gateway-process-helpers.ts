@@ -67,7 +67,7 @@ export const fakeSecretHost = (bin: string, store: SecretHostProgram): SecretHos
   const programPath = path.join(bin, store.program);
   fs.writeFileSync(programPath, '#!/bin/sh\nexit 97\n', { mode: 0o755 });
   const platform: NodeJS.Platform = store.program === 'security' ? 'darwin' : 'linux';
-  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }, { platform, uid: process.getuid?.() }), programPath };
+  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }, { platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }), programPath };
 };
 
 export type HostPort = SecretProcessPort & {

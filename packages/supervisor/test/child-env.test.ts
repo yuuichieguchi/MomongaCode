@@ -13,7 +13,7 @@ import { createManagerHarness, settingsDeclaring, settingsOnDisk, writeInvalidSe
 import { pollUntil } from './support/p2-poll.ts';
 import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
 
-const HOST = { platform: process.platform, uid: process.getuid?.() };
+const HOST = { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
 
 const declaring = (...names: string[]): CredentialSettings =>
   ({

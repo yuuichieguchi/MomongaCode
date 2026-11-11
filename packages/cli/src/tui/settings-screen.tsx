@@ -601,7 +601,7 @@ const editStructured = async (context: SlashContext, snapshot: SettingsSnapshot,
   let draft = JSON.stringify(inLayer(snapshot, layer, leaf.path) ?? {}, null, 2);
   let sentence: string | undefined;
   for (;;) {
-    const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, validate: jsonProblem });
+    const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, structured: true, validate: jsonProblem });
     if (text === undefined) return LEFT;
     draft = text;
     const value: unknown = JSON.parse(text);
@@ -629,7 +629,7 @@ const editDialects = async (context: SlashContext, snapshot: SettingsSnapshot, l
   let draft = JSON.stringify(inLayer(snapshot, 'user', leaf.path) ?? {}, null, 2);
   let sentence: string | undefined;
   for (;;) {
-    const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, validate: jsonProblem });
+    const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, structured: true, validate: jsonProblem });
     if (text === undefined) return LEFT;
     draft = text;
     const value: unknown = JSON.parse(text);

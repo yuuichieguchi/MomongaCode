@@ -43,22 +43,21 @@ describe('gateway persistence and lifecycle', () => {
     expect(timers.pending()).toEqual([]);
   });
 
-  it('releases the database and socket so a new gateway on the same paths serves stored responses', async () => {
+  it('releases the database and socket so a new gateway on the same paths replays a keyed answer', async () => {
     const first = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['remembered'] }) }] });
     const before = await startGateway({ adapters: { 'scripted/scripted-primary': first } });
-    const stored = await readJson(await postJson(before.client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q1'), store: true }));
-    expect(stored.status).toBe(200);
+    const body = { model: 'scripted/scripted-primary', input: userInput('q1') };
+    const answered = await readJson(await postJson(before.client, '/v1/responses', body, { 'idempotency-key': 'k-restart' }));
+    expect(answered.status).toBe(200);
     await before.client.close();
     await before.gateway.close();
 
-    const second = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['continued'] }) }] });
+    const second = createScriptedAdapter({ calls: [] });
     const after = await startGateway({ adapters: { 'scripted/scripted-primary': second }, dir: before.dir, clock: before.clock });
-    const followUp = await readJson(
-      await postJson(after.client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q2'), previous_response_id: stored.body.id }),
-    );
-    expect(followUp.status).toBe(200);
-    expect(outputText(followUp.body)).toBe('continued');
-    expect(second.calls[0]?.request.input).toEqual([...userInput('q1'), ...stored.body.output, ...userInput('q2')]);
+    const replayed = await readJson(await postJson(after.client, '/v1/responses', body, { 'idempotency-key': 'k-restart' }));
+    expect(replayed.status).toBe(200);
+    expect(outputText(replayed.body)).toBe('remembered');
+    expect(second.calls).toEqual([]);
   });
 
   it('rejects construction when a model has no adapter', async () => {

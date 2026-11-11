@@ -3,7 +3,6 @@ import { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
 import { settledOrAborted } from './operation-limit.ts';
 import { findProgramOnPathSync, programOwnerProblemSync } from './program-search.ts';
 import type { ProgramOwnerFiles } from './program-search.ts';
-import { syncPaths } from './sync-paths.ts';
 import { declaredChildEnv } from './process-contract.ts';
 import { powershellArgs, powershellPath } from './platform/windows-scripts.ts';
 import { SecretStoreAbsentError, SecretStoreAnswerError, endedStoreCall } from './secret-store-failures.ts';
@@ -371,7 +370,7 @@ const searchedAs = (backend: SecretBackend): string => `${backend.searchedProgra
 
 const notOnPath = (backend: SecretBackend): string => `${searchedAs(backend)} is not on PATH`;
 
-export type SecretHost = { readonly platform: NodeJS.Platform; readonly uid: number | undefined };
+export type SecretHost = { readonly platform: NodeJS.Platform; readonly uid: number | undefined; readonly realPathOf: (file: string) => string };
 
 type BackendId = 'keychain' | 'secret-service' | 'credential-manager';
 
@@ -384,11 +383,11 @@ const PLATFORM_BACKENDS: Readonly<Partial<Record<NodeJS.Platform, BackendId>>> =
   win32: 'credential-manager',
 };
 
-const PROGRAM_OWNER_FILES: ProgramOwnerFiles = { lstatSync: (file) => nodeFileSystemSync.lstatSync(file), realPathOf: (file) => syncPaths.canonicalPath(file) };
+const ownerFilesOf = (host: SecretHost): ProgramOwnerFiles => ({ lstatSync: (file) => nodeFileSystemSync.lstatSync(file), realPathOf: host.realPathOf });
 
 const trusted = (program: string, host: SecretHost): ChosenSecretStore | undefined => {
   if (host.uid === undefined) return undefined;
-  const problem = programOwnerProblemSync(program, PROGRAM_OWNER_FILES, host.uid);
+  const problem = programOwnerProblemSync(program, ownerFilesOf(host), host.uid);
   return problem === undefined ? undefined : { kind: 'none', reason: problem };
 };
 

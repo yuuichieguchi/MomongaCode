@@ -1,3 +1,4 @@
+import { syncPaths } from '@momonga/foundation';
 import path from 'node:path';
 import type fs from 'node:fs';
 import { createStopValuesReader, createUserSettingsCache, noKeptRecords, stopValuesOfSettings, userSettingsChangeKey, writeAppliedRecord } from '@momonga/config';
@@ -175,7 +176,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const { startupTimeoutMs } = resolveStartTiming(options);
   const env = { ...(options.env ?? process.env) };
   const homePaths = momongaPaths(canonicalHome, process.platform, env);
-  const secretStoreEnv = secretStoreEnvFor(env, { platform: process.platform, uid: process.getuid?.() });
+  const secretStoreEnv = secretStoreEnvFor(env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) });
   const paths = scopeToGeneration(homePaths, options.generation);
   const { lockMechanism, inspector } = options;
   const lockOptions = { mechanism: lockMechanism };

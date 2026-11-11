@@ -80,12 +80,19 @@ describe('the welcome actions', () => {
     app.unmount();
   });
 
-  it('Use an API key explains the two ways a key is taken and calls no plan route that changes anything', async () => {
+  it('Use an API key starts the flow that asks for the API, the address, the key and the name, and prints no help text', async () => {
     const { app, backend } = await startPlan({ models: [], accounts: [] });
     await choose(app, 'Use an API key');
-    const frame = await untilFrame(app, 'Add the model with /models add.');
-    expect(frame).toContain('system secret store');
-    expect(frame).toContain('environment variable');
+    await choose(app, 'OpenAI-compatible API');
+    await untilFrame(app, 'Address:');
+    await submitLine(app, 'https://api.example.com/v1');
+    const keyChoice = await untilFrame(app, 'Save the key in the system secret store');
+    expect(keyChoice).toContain('Read the key from an environment variable');
+    await choose(app, 'Read the key from an environment variable');
+    await untilFrame(app, 'Name of the environment variable');
+    await submitLine(app, 'EXAMPLE_API_KEY');
+    const named = await untilFrame(app, 'Name of the service');
+    expect(named).not.toContain('takes an API key in one of two ways');
     expect(backend.planCalls.map((call) => call.route).filter((route) => route !== 'accounts')).toEqual([]);
     app.unmount();
   });

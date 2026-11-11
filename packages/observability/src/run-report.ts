@@ -1,5 +1,24 @@
 import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, heldEndOf, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
-import type { BudgetExhausted, ConditionResult, ConditionState, MutationFacts, NotRunReason, PinnedCompletion, ResidualRiskCode, OperationEffectRecord, RunBudgetReport, RunDeniedCallReport, RunOperationReport, RunEvent, RunEventPayload, RunHeldCallReport, RunReport } from '@momonga/protocol';
+import type {
+  BudgetExhausted,
+  ConditionResult,
+  ConditionState,
+  MutationFacts,
+  NotRunReason,
+  PinnedCompletion,
+  ReportAnomalyCause,
+  ResidualRiskCode,
+  OperationEffectRecord,
+  RunBudgetReport,
+  RunDeniedCallReport,
+  RunFailedCallReport,
+  RunOperationReport,
+  RunEvent,
+  RunEventPayload,
+  RunHeldCallReport,
+  RunReport,
+  RunReportAnomaly,
+} from '@momonga/protocol';
 
 type CallRecord = MutationFacts & { name: string; waitsOnRun: boolean; completedStatus: 'completed' | 'failed' | undefined };
 
@@ -58,6 +77,13 @@ export const createRunReportFold = (): RunReportFold => {
   let stoppedBy: BudgetExhausted | undefined;
   let quiescent = false;
   const operations = new Map<string, RunOperationReport>();
+  const failedCalls: RunFailedCallReport[] = [];
+  const anomalies: RunReportAnomaly[] = [];
+
+  const anomaly = (event: RunEvent, callId: string, cause: ReportAnomalyCause): undefined => {
+    anomalies.push({ seq: event.seq, type: event.type, callId, cause });
+    return undefined;
+  };
 
   const recordEffect = (callId: string, effect: OperationEffectRecord | undefined): void => {
     if (effect !== undefined) operations.set(callId, { callId, operation: effect.operation, target: effect.target, effect: effect.outcome });
@@ -68,17 +94,16 @@ export const createRunReportFold = (): RunReportFold => {
     mutatingCalls += 1;
     if (!hasKnownPaths) unknownPathMutations += 1;
   };
-  const requireCall = (callId: string, type: string): CallRecord => {
-    const call = calls.get(callId);
-    if (call === undefined) throw new Error(`${type} refers to unknown tool call ${callId}`);
-    return call;
-  };
+  const knownCall = (event: RunEvent, callId: string): CallRecord | undefined => calls.get(callId) ?? anomaly(event, callId, 'unknown_call');
 
   const endHold = (event: RunEvent): void => {
     const ended = heldEndOf(event);
     if (ended === undefined) return;
     const open = held.get(ended.callId);
-    if (open === undefined) throw new Error(`${event.type} refers to tool call ${ended.callId}, which was not held`);
+    if (open === undefined) {
+      anomaly(event, ended.callId, 'not_held');
+      return;
+    }
     held.set(ended.callId, { ...open, outcome: ended.outcome, status: ended.status, resolvedSeq: event.seq });
   };
 
@@ -106,20 +131,27 @@ export const createRunReportFold = (): RunReportFold => {
         break;
       case 'tool.permission.resolved': {
         const approval = approvals.get(event.approvalId);
-        if (approval !== undefined && approval.rejecting.has(event.optionId)) requireCall(approval.callId, event.type).rejected = true;
+        if (approval === undefined || !approval.rejecting.has(event.optionId)) break;
+        const call = knownCall(event, approval.callId);
+        if (call !== undefined) call.rejected = true;
         break;
       }
       case 'tool.started': {
-        const call = requireCall(event.callId, event.type);
-        if (event.basis !== undefined) call.basis = event.basis;
+        const call = knownCall(event, event.callId);
+        if (call !== undefined && event.basis !== undefined) call.basis = event.basis;
         break;
       }
-      case 'tool.waiting':
-        if (event.awaits.kind === 'run') requireCall(event.callId, event.type).waitsOnRun = true;
+      case 'tool.waiting': {
+        if (event.awaits.kind !== 'run') break;
+        const call = knownCall(event, event.callId);
+        if (call !== undefined) call.waitsOnRun = true;
         break;
+      }
       case 'tool.completed': {
-        const call = requireCall(event.callId, event.type);
+        const call = knownCall(event, event.callId);
+        if (call === undefined) break;
         call.completedStatus = event.status;
+        if (event.status === 'failed' && event.denial === undefined) failedCalls.push({ callId: event.callId, tool: call.name, seq: event.seq });
         if (event.denial !== undefined) denials += 1;
         if (event.denial?.source === 'mandate' || event.denial?.source === 'held') denied.push({ callId: event.callId, tool: call.name, source: event.denial.source, reason: event.denial.reason });
         if (event.truncated === true) truncatedOutputs += 1;
@@ -135,7 +167,8 @@ export const createRunReportFold = (): RunReportFold => {
         break;
       }
       case 'tool.reconciled': {
-        const call = requireCall(event.callId, event.type);
+        const call = knownCall(event, event.callId);
+        if (call === undefined) break;
         recordEffect(event.callId, event.effect);
         if (event.outcome === 'unknown') unknownEffectCalls += 1;
         if (reconciliationMutates(call, event.outcome)) recordMutation(false, event.seq);
@@ -152,9 +185,11 @@ export const createRunReportFold = (): RunReportFold => {
       case 'budget.exhausted':
         stoppedBy = { dimension: event.dimension, cause: event.cause, spent: event.spent, limit: event.limit };
         break;
-      case 'tool.held':
-        held.set(event.callId, { callId: event.callId, tool: requireCall(event.callId, event.type).name, reason: event.reason, heldSeq: event.seq });
+      case 'tool.held': {
+        const call = knownCall(event, event.callId);
+        if (call !== undefined) held.set(event.callId, { callId: event.callId, tool: call.name, reason: event.reason, heldSeq: event.seq });
         break;
+      }
       case 'run.quiescent':
         quiescent = true;
         break;
@@ -223,6 +258,8 @@ export const createRunReportFold = (): RunReportFold => {
       ...(stoppedBy === undefined ? {} : { stoppedBy }),
       ...(held.size === 0 && denied.length === 0 && !quiescent ? {} : { delegation: { held: [...held.values()], denied, quiescent } }),
       ...(operations.size === 0 ? {} : { operations: [...operations.values()] }),
+      ...(failedCalls.length === 0 ? {} : { failedCalls: [...failedCalls] }),
+      ...(anomalies.length === 0 ? {} : { anomalies: [...anomalies] }),
     };
   };
 

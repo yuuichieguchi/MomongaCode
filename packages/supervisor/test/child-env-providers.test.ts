@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { secretStoreEnvFor } from '@momonga/foundation';
@@ -7,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 
-const HOST = { platform: process.platform, uid: process.getuid?.() };
+const HOST = { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
 
 const CAPABILITIES = { contextWindow: 200000, maxOutputTokens: 8192 };
 const ANTHROPIC_VALUE = 'anthropic-env-value-0001';

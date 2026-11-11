@@ -97,6 +97,10 @@ export type AttachHost = {
 
 export type AttachedMentions = { attachments: MessageAttachment[]; images: ImageAttachment[] };
 
+const UNREACHABLE_ENTRY_CODES: readonly string[] = ['ENOENT', 'ENOTDIR', 'EISDIR', 'EACCES', 'EPERM', 'ELOOP', 'ENAMETOOLONG'];
+
+const isUnreachableEntry = (error: unknown): boolean => error instanceof Error && 'code' in error && typeof error.code === 'string' && UNREACHABLE_ENTRY_CODES.includes(error.code);
+
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 const textOf = (bytes: Uint8Array): string | undefined => {
@@ -116,8 +120,9 @@ const loadFile = async (target: AttachTarget, host: AttachHost, limits: AttachLi
   let bytes: Uint8Array;
   try {
     bytes = await host.read(target.absolute, limits.readBytes);
-  } catch {
-    return { kind: 'note', note: cannotAttach(target.shown, COULD_NOT_BE_READ) };
+  } catch (error) {
+    if (isUnreachableEntry(error)) return { kind: 'note', note: cannotAttach(target.shown, COULD_NOT_BE_READ) };
+    throw error;
   }
   const mediaType = imageMediaTypeOf(bytes);
   if (mediaType !== undefined) return host.imageInput ? { kind: 'image', image: { mediaType, data: Buffer.from(bytes).toString('base64') } } : { kind: 'note', note: notText(target.shown) };
@@ -128,8 +133,9 @@ const loadFile = async (target: AttachTarget, host: AttachHost, limits: AttachLi
 const loadDirectory = async (target: AttachTarget, host: AttachHost): Promise<Loaded> => {
   try {
     return { kind: 'content', content: directoryListing(await host.list(target.absolute)) };
-  } catch {
-    return { kind: 'note', note: cannotAttach(target.shown, COULD_NOT_BE_READ) };
+  } catch (error) {
+    if (isUnreachableEntry(error)) return { kind: 'note', note: cannotAttach(target.shown, COULD_NOT_BE_READ) };
+    throw error;
   }
 };
 

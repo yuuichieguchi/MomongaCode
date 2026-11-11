@@ -1,3 +1,4 @@
+import type { SecretHost } from '@momonga/foundation/secret-store';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -41,7 +42,7 @@ const keychainFilePresent: SecretStoreFiles = {
 const SIGNAL = new AbortController().signal;
 const DBUS = 'unix:path=/run/user/1000/bus';
 
-const hostOf = (platform: NodeJS.Platform): { platform: NodeJS.Platform; uid: number | undefined } => ({ platform, uid: platform === 'win32' ? undefined : process.getuid?.() });
+const hostOf = (platform: NodeJS.Platform): SecretHost => ({ platform, uid: platform === 'win32' ? undefined : process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) });
 
 const readWith = async (run: SecretProcessPort, env: Record<string, string | undefined>, platform: NodeJS.Platform): Promise<string> =>
   createPlatformSecretStore(run, env, hostOf(platform), keychainFilePresent).read('anthropic', SIGNAL);

@@ -549,7 +549,7 @@ class OutboundDispatcher extends Dispatcher {
     this.#network = network;
     this.#options = options;
     this.#siteLookup = options.lookup === undefined ? undefined : this.#recordingRefusals(options.lookup);
-    this.#direct = new Agent({ ...siteTimeouts(options), ...(this.#siteLookup === undefined ? {} : { connect: { lookup: this.#siteLookup } }) });
+    this.#direct = new Agent({ ...siteTimeouts(options), connect: { timeout: options.connectReplyTimeoutMs, ...(this.#siteLookup === undefined ? {} : { lookup: this.#siteLookup }) } });
   }
 
   #recordingRefusals(lookup: LookupFunction): LookupFunction {
