@@ -1,3 +1,4 @@
+import type { ExternalEditorPort } from './external-editor.ts';
 import { ModelRefError, PERMISSION_MODES, displayMapOf, isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
 import type { Mandate, MomongaModelEntry, PermissionMode } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
@@ -54,6 +55,7 @@ export type SlashContext = ModeAvailability & {
   readonly display: DisplayPort;
   readonly keyBindings: KeyBindingsScreen;
   readonly overlays: Pick<OverlayPorts, 'choose' | 'promptText'>;
+  readonly externalEditor: Pick<ExternalEditorPort, 'open'>;
   refusedWhileRunning(): boolean;
   status(): readonly string[];
   readonly sessions: SessionsPort;

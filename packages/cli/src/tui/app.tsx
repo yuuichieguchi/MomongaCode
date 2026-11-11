@@ -1079,6 +1079,7 @@ export function App(props: AppProps) {
       },
       keyBindings: { store: bindings, choose: overlayPorts.choose, captureKey: overlayPorts.captureKey },
       overlays: { choose: overlayPorts.choose, promptText: overlayPorts.promptText },
+      externalEditor,
       refusedWhileRunning: refusedWhileWorking,
       status: () => statusLines(statusFacts()),
       setMode: async (chosen) => {

@@ -44,6 +44,8 @@ const unusedDisplay: SlashContext['display'] = {
   pick: async () => undefined,
 };
 
+const unusedExternalEditor: SlashContext['externalEditor'] = { open: () => Promise.reject(new Error('unused')) };
+
 const unusedOverlays: SlashContext['overlays'] = { choose: async () => undefined, promptText: async () => undefined };
 const unusedKeyBindings: SlashContext['keyBindings'] = { store: fixedKeyBindings(DEFAULT_KEY_TABLE), choose: async () => undefined, captureKey: async () => undefined };
 
@@ -103,6 +105,7 @@ describe('built-in commands', () => {
       display: unusedDisplay,
       keyBindings: unusedKeyBindings,
       overlays: unusedOverlays,
+      externalEditor: unusedExternalEditor,
       refusedWhileRunning: () => false,
       status: () => [],
       ...overrides,
@@ -227,6 +230,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     display: unusedDisplay,
     keyBindings: unusedKeyBindings,
     overlays: unusedOverlays,
+    externalEditor: unusedExternalEditor,
     refusedWhileRunning: () => false,
     status: () => [],
   };

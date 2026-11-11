@@ -1,6 +1,7 @@
 import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, editModelsSettings } from '@momonga/config';
 import type { SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
+import { openInEditor } from './external-editor.ts';
 import type { PickRow } from './picker.tsx';
 import { switchWordOf } from './screen/a11y.ts';
 import { settingsFileLine } from './models/texts.ts';
@@ -8,6 +9,7 @@ import type { SlashContext } from './slash.ts';
 
 export const SETTINGS_TITLE = 'Settings';
 export const OPEN_SETTINGS_FILE_ROW = 'Open the settings file';
+export const OPEN_FILE_TITLE = 'Open which file in $EDITOR?';
 export const SAVE_TO_TITLE = 'Save to:';
 export const SAVING_SETTING = 'saving the setting';
 export const APPLIES_NOW = 'applies now';
@@ -275,6 +277,15 @@ export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { re
 };
 
 export const settingsFileLines = (snapshot: SettingsSnapshot): string[] => [...snapshot.layers.map((view) => (view.layer === 'user' ? settingsFileLine(view.file) : `${view.layer}: ${view.file}`)), ...(snapshot.mcpFile === undefined ? [] : [`.mcp.json: ${snapshot.mcpFile}`])];
+
+export const settingsFiles = (snapshot: SettingsSnapshot): { name: string; file: string }[] => [...snapshot.layers.map((view) => ({ name: view.layer, file: view.file })), ...(snapshot.mcpFile === undefined ? [] : [{ name: '.mcp.json', file: snapshot.mcpFile }])];
+
+const openSettingsFile = async (context: SlashContext, snapshot: SettingsSnapshot): Promise<void> => {
+  const files = settingsFiles(snapshot);
+  const choice = await context.overlays.choose({ title: OPEN_FILE_TITLE, lines: settingsFileLines(snapshot), rows: files.map(({ name }) => ({ label: name })), initial: 0, decideOn: 'enter', escape: 'back', filter: false });
+  const file = choice === undefined ? undefined : files[choice.index]?.file;
+  if (file !== undefined) await openInEditor(context.externalEditor, file, (text) => context.info(text));
+};
 
 export type Refusal = { readonly refused: string };
 
@@ -715,8 +726,8 @@ export const runSettingsScreen = async (context: SlashContext, live: readonly Li
     if (choice === undefined || chosen === undefined || chosen.kind === 'heading') return;
     at = choice.index;
     if (chosen.kind === 'open') {
-      context.info(settingsFileLines(snapshot).join('\n'));
-      return;
+      await openSettingsFile(context, snapshot);
+      continue;
     }
     if (chosen.kind === 'command') {
       await context.commands.find((command) => command.name === chosen.command)?.run('', context);
