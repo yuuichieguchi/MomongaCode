@@ -21,7 +21,8 @@ const fixtureOf = (file: string): Fixture => {
 const fixtures: Fixture[] = readdirSync(FIXTURE_DIRECTORY).sort().map(fixtureOf);
 
 const ESC = '\u001b';
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
+const unmodified = { ctrl: false, alt: false, shift: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', name, ...plain, ...mods });
 const text = (value: string, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', text: value, ...plain, ...mods });
 const textOf = (value: string): TerminalEvent[] => [...value].map((character) => text(character));
@@ -104,6 +105,17 @@ describe('keys', () => {
     ['kitty backspace', `${ESC}[127u`, [named('backspace')]],
     ['kitty modifier-only key', `${ESC}[57441;2u`, []],
     ['kitty text of two code points', `${ESC}[97;;12354:12356u`, [text('あい')]],
+    ['kitty super+z, the Cmd+Z of a terminal that reports it', `${ESC}[122;9u`, [text('z', { super: true })]],
+    ['kitty hyper+a', `${ESC}[97;17u`, [text('a', { hyper: true })]],
+    ['kitty meta+a', `${ESC}[97;33u`, [text('a', { meta: true })]],
+    ['kitty with every modifier', `${ESC}[97;64u`, [text('a', { shift: true, alt: true, ctrl: true, super: true, hyper: true, meta: true })]],
+    ['kitty super+shift+z with its shifted alternate', `${ESC}[122:90;10u`, [text('Z', { shift: true, super: true })]],
+    ['kitty ctrl+enter', `${ESC}[13;5u`, [named('enter', { ctrl: true })]],
+    ['kitty shift+enter', `${ESC}[13;2u`, [named('enter', { shift: true })]],
+    ['kitty super+enter', `${ESC}[13;9u`, [named('enter', { super: true })]],
+    ['super+up in the legacy form', `${ESC}[1;9A`, [named('up', { super: true })]],
+    ['super+delete in the legacy form', `${ESC}[3;9~`, [named('delete', { super: true })]],
+    ['xterm modifyOtherKeys super+z', `${ESC}[27;9;122~`, [text('z', { super: true })]],
     ['xterm modifyOtherKeys ctrl+i', `${ESC}[27;5;105~`, [text('i', { ctrl: true })]],
     ['focus in', `${ESC}[I`, [{ type: 'focus', direction: 'in' }]],
     ['focus out', `${ESC}[O`, [{ type: 'focus', direction: 'out' }]],
@@ -111,11 +123,11 @@ describe('keys', () => {
     ['kitty flags reply', `${ESC}[?7u`, [{ type: 'report', kind: 'kitty-keys', flags: 7 }]],
     ['DECRQM reply not recognised', `${ESC}[?1049;0$y`, [{ type: 'report', kind: 'mode', mode: 1049, value: 0 }]],
     ['OSC 11 reply ended by BEL', `${ESC}]11;rgb:ffff/ffff/ffff\u0007`, [{ type: 'report', kind: 'background-color', color: 'rgb:ffff/ffff/ffff' }]],
-    ['mouse middle press', `${ESC}[<1;2;3M`, [{ type: 'mouse', kind: 'press', button: 'middle', col: 2, row: 3, ...plain }]],
-    ['mouse right press', `${ESC}[<2;2;3M`, [{ type: 'mouse', kind: 'press', button: 'right', col: 2, row: 3, ...plain }]],
-    ['mouse drag', `${ESC}[<32;3;4M`, [{ type: 'mouse', kind: 'move', button: 'left', col: 3, row: 4, ...plain }]],
-    ['mouse move without a button', `${ESC}[<35;3;4M`, [{ type: 'mouse', kind: 'move', button: 'none', col: 3, row: 4, ...plain }]],
-    ['mouse wheel down', `${ESC}[<65;1;1M`, [{ type: 'mouse', kind: 'wheel', button: 'wheel-down', col: 1, row: 1, ...plain }]],
+    ['mouse middle press', `${ESC}[<1;2;3M`, [{ type: 'mouse', kind: 'press', button: 'middle', col: 2, row: 3, ...unmodified }]],
+    ['mouse right press', `${ESC}[<2;2;3M`, [{ type: 'mouse', kind: 'press', button: 'right', col: 2, row: 3, ...unmodified }]],
+    ['mouse drag', `${ESC}[<32;3;4M`, [{ type: 'mouse', kind: 'move', button: 'left', col: 3, row: 4, ...unmodified }]],
+    ['mouse move without a button', `${ESC}[<35;3;4M`, [{ type: 'mouse', kind: 'move', button: 'none', col: 3, row: 4, ...unmodified }]],
+    ['mouse wheel down', `${ESC}[<65;1;1M`, [{ type: 'mouse', kind: 'wheel', button: 'wheel-down', col: 1, row: 1, ...unmodified }]],
     ['mouse press with ctrl and shift', `${ESC}[<20;1;1M`, [{ type: 'mouse', kind: 'press', button: 'left', col: 1, row: 1, ctrl: true, alt: false, shift: true }]],
     ['mouse press with alt', `${ESC}[<8;1;1M`, [{ type: 'mouse', kind: 'press', button: 'left', col: 1, row: 1, ctrl: false, alt: true, shift: false }]],
     ['a paste end marker without a paste', `${ESC}[201~`, []],
@@ -148,16 +160,34 @@ describe('UTF-8 across reads', () => {
 });
 
 describe('a lone ESC byte', () => {
-  it('is held at the end of a read and emitted when the next read is not a continuation', () => {
+  it('is held at the end of a read and emitted when the settle ends with no byte', () => {
+    const parser = createInputParser();
+    expect(parser.push(bytesOf(ESC))).toEqual([]);
+    expect(parser.holdsLoneEscape()).toBe(true);
+    expect(parser.settle()).toEqual([named('escape')]);
+    expect(parser.holdsLoneEscape()).toBe(false);
+    expect(parser.settle()).toEqual([]);
+  });
+
+  it('is no longer the start of a sequence once the settle ended', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(ESC));
+    expect(parser.settle()).toEqual([named('escape')]);
+    expect(parser.push(bytesOf('[A'))).toEqual(textOf('[A'));
+  });
+
+  it('is emitted before a next read within the settle that is not a continuation', () => {
     const parser = createInputParser();
     expect(parser.push(bytesOf(ESC))).toEqual([]);
     expect(parser.push(bytesOf('a'))).toEqual([named('escape'), text('a')]);
+    expect(parser.holdsLoneEscape()).toBe(false);
   });
 
   it('stays held across an empty read', () => {
     const parser = createInputParser();
     expect(parser.push(bytesOf(ESC))).toEqual([]);
     expect(parser.push(new Uint8Array(0))).toEqual([]);
+    expect(parser.holdsLoneEscape()).toBe(true);
     expect(parser.push(bytesOf(ESC))).toEqual([named('escape')]);
     expect(parser.push(bytesOf('\r'))).toEqual([named('escape'), named('enter')]);
   });
@@ -166,44 +196,102 @@ describe('a lone ESC byte', () => {
     ['a CSI sequence', '[A', [named('up')]],
     ['an SS3 sequence', 'OP', [named('f1')]],
     ['an OSC reply', ']11;rgb:0000/0000/0000\u0007', [{ type: 'report', kind: 'background-color', color: 'rgb:0000/0000/0000' }]],
-  ] as [string, string, TerminalEvent[]][])('is joined with a next read that begins %s', (_name, continuation, expected) => {
+  ] as [string, string, TerminalEvent[]][])('is joined with a next read within the settle that begins %s', (_name, continuation, expected) => {
     expect(parseText(ESC, continuation)).toEqual(expected);
   });
 
+  it('is an arrow with [A of the same read', () => {
+    expect(parseText(`${ESC}[A`)).toEqual([named('up')]);
+  });
+
   it('is Alt with the next character of the same read', () => {
-    expect(parseText(`${ESC}a`)).toEqual([text('a', { alt: true })]);
+    expect(parseText(`${ESC}x`)).toEqual([text('x', { alt: true })]);
+  });
+
+  it('is not held by the settle while a sequence is open, a paste is open, or a character is incomplete', () => {
+    const open = createInputParser();
+    open.push(bytesOf(`${ESC}[1`));
+    expect(open.holdsLoneEscape()).toBe(false);
+    expect(open.settle()).toEqual([]);
+    expect(open.push(bytesOf(';5C'))).toEqual([named('right', { ctrl: true })]);
+
+    const pasting = createInputParser();
+    pasting.push(bytesOf(`${ESC}[200~a${ESC}`));
+    expect(pasting.holdsLoneEscape()).toBe(false);
+    expect(pasting.settle()).toEqual([]);
+    expect(pasting.push(bytesOf(`b${ESC}[201~`))).toEqual([{ type: 'paste', text: `a${ESC}b`, overflow: false }]);
+
+    const partial = createInputParser();
+    const bytes = bytesOf(`${ESC}é`);
+    partial.push(bytes.subarray(0, 2));
+    expect(partial.holdsLoneEscape()).toBe(false);
+    expect(partial.settle()).toEqual([]);
+    expect(partial.push(bytes.subarray(2))).toEqual([text('é', { alt: true })]);
   });
 });
 
 describe('sequences that are not recognised', () => {
-  it('turns an unknown complete sequence into text', () => {
-    expect(parseText(`${ESC}[5n`)).toEqual(textOf(`${ESC}[5n`));
+  it.each([
+    ['a device status report', `${ESC}[5n`],
+    ['F13', `${ESC}[25~`],
+    ['F16', `${ESC}[29~`],
+    ['the keypad 5', `${ESC}[E`],
+    ['the keypad 5 with ctrl', `${ESC}[1;5E`],
+    ['an SS3 key that is not known', `${ESC}OE`],
+    ['an OSC 52 clipboard write', `${ESC}]52;c;AA==\u0007`],
+    ['an OSC ended by ST', `${ESC}]0;title${ESC}\\`],
+    ['a kitty key of a control code point', `${ESC}[1;5u`],
+    ['a mouse report with a field missing', `${ESC}[<0;1M`],
+    ['a sequence with an intermediate byte', `${ESC}[1 q`],
+  ])('drops %s whole and types nothing', (_name, sequence) => {
+    expect(parseText(sequence)).toEqual([]);
+    expect(parseText(`a${sequence}b`)).toEqual(textOf('ab'));
+    expect(parse(...[...bytesOf(`a${sequence}b`)].map((byte) => Uint8Array.of(byte)))).toEqual(textOf('ab'));
   });
 
-  it('turns an unknown OSC into text', () => {
-    expect(parseText(`${ESC}]52;c;AA==\u0007`)).toEqual(textOf(`${ESC}]52;c;AA==\u0007`));
+  it('drops a C1 control character, alone or after an ESC, and a kitty key whose text holds a control character', () => {
+    expect(parseText('a\u009b1mb\u0085c')).toEqual(textOf('a1mbc'));
+    expect(parseText(`${ESC}\u009b`)).toEqual([]);
+    expect(parseText(`${ESC}[97;;7u`)).toEqual([]);
+    expect(parseText(`${ESC}[97;;97:155u`)).toEqual([]);
+    expect(parseText(`${ESC}[133u`)).toEqual([]);
+    expect(parseText(`${ESC}[97:133;2u`)).toEqual([text('a', { shift: true })]);
   });
 
-  it('abandons a sequence at a byte that cannot continue it and parses that byte on its own', () => {
-    expect(parseText(`${ESC}[1\r`)).toEqual([...textOf(`${ESC}[1`), named('enter')]);
+  it('drops a sequence at a byte that cannot continue it and parses that byte on its own', () => {
+    expect(parseText(`${ESC}[1\r`)).toEqual([named('enter')]);
+    expect(parseText(`${ESC}]0;x${ESC}[A`)).toEqual([named('up')]);
   });
 
-  it(`abandons a sequence that passes ${MAX_SEQUENCE_BYTES} bytes without a final byte`, () => {
-    const overlong = `${ESC}[${'1'.repeat(300)}`;
-    expect(parseText(overlong)).toEqual(textOf(overlong));
-    expect(parse(...[...bytesOf(overlong)].map((byte) => Uint8Array.of(byte)))).toEqual(textOf(overlong));
+  it(`drops a sequence that passes ${MAX_SEQUENCE_BYTES} bytes without a final byte`, () => {
+    const overlong = `${ESC}[${'1'.repeat(MAX_SEQUENCE_BYTES - 2)}`;
+    expect(parseText(overlong)).toEqual([]);
+    expect(parse(...[...bytesOf(overlong)].map((byte) => Uint8Array.of(byte)))).toEqual([]);
   });
 
-  it('emits the abandoned bytes as soon as the bound is reached', () => {
+  it('reads on as soon as the bound is reached', () => {
     const parser = createInputParser();
     expect(parser.push(bytesOf(`${ESC}[${'1'.repeat(MAX_SEQUENCE_BYTES - 3)}`))).toEqual([]);
-    expect(parser.push(bytesOf('1'))).toEqual(textOf(`${ESC}[${'1'.repeat(MAX_SEQUENCE_BYTES - 2)}`));
+    expect(parser.push(bytesOf('1'))).toEqual([]);
+    expect(parser.push(bytesOf(`${ESC}[A`))).toEqual([named('up')]);
+  });
+
+  it('never gives a key event that holds a control character', () => {
+    const alphabet = [0x1b, 0x1b, 0x5b, 0x4f, 0x5d, 0x3c, 0x3f, 0x3b, 0x31, 0x32, 0x39, 0x75, 0x7e, 0x4d, 0x41, 0x45, 0x6e, 0x07, 0x5c, 0x61, 0x20, 0x24, 0x37, 0x33, 0xc2, 0x9b, 0xc2, 0x85];
+    let state = 11;
+    for (let round = 0; round < 500; round += 1) {
+      const bytes = Uint8Array.from({ length: 1 + (round % 40) }, () => {
+        state = (state * 1103515245 + 12345) % 2147483648;
+        return alphabet[Math.floor(state / 65536) % alphabet.length] ?? 0;
+      });
+      for (const event of parse(bytes)) if (event.type === 'key' && 'text' in event) expect(event.text, `round ${round}`).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/u);
+    }
   });
 
   it('keeps a sequence of exactly the bound', () => {
     const longest = `${ESC}[<${'0'.repeat(MAX_SEQUENCE_BYTES - 8)};1;1M`;
     expect(Buffer.byteLength(longest)).toBe(MAX_SEQUENCE_BYTES);
-    expect(parseText(longest)).toEqual([{ type: 'mouse', kind: 'press', button: 'left', col: 1, row: 1, ...plain }]);
+    expect(parseText(longest)).toEqual([{ type: 'mouse', kind: 'press', button: 'left', col: 1, row: 1, ...unmodified }]);
   });
 });
 
@@ -238,19 +326,48 @@ describe('bracketed paste', () => {
     expect(parser.push(bytesOf(`${END}a`))).toEqual([{ type: 'paste', text: '', overflow: true }, text('a')]);
   });
 
-  it('ends an unterminated paste after 8 MiB and parses normally again', () => {
+  const OVERFLOWED: TerminalEvent = { type: 'paste', text: '', overflow: true };
+
+  it('reports a paste once when 8 MiB arrived with no end marker, and turns nothing of what follows into a key', () => {
+    const parser = createInputParser();
+    const chunk = bytesOf(`${'x'.repeat(64 * 1024 - 1)}\r`);
+    const events: TerminalEvent[] = [...parser.push(bytesOf(START))];
+    for (let sent = 0; sent < PASTE_ABANDON_BYTES; sent += chunk.length) events.push(...parser.push(chunk));
+    expect(events).toEqual([OVERFLOWED]);
+    expect(parser.push(bytesOf(`\rrm -rf x\r${ESC}[A\u0003`))).toEqual([]);
+    expect(parser.push(chunk)).toEqual([]);
+    expect(parser.holdsLoneEscape()).toBe(false);
+  });
+
+  it('reads keys again after the end marker of an abandoned paste, and reports that paste only once', () => {
     const parser = createInputParser();
     const chunk = bytesOf('x'.repeat(64 * 1024));
     const events: TerminalEvent[] = [...parser.push(bytesOf(START))];
-    for (let sent = 0; sent < PASTE_ABANDON_BYTES; sent += chunk.length) events.push(...parser.push(chunk));
-    expect(events).toEqual([{ type: 'paste', text: '', overflow: true }]);
-    expect(parser.push(bytesOf(`\r${ESC}[A`))).toEqual([named('enter'), named('up')]);
+    for (let sent = 0; sent < PASTE_ABANDON_BYTES + chunk.length; sent += chunk.length) events.push(...parser.push(chunk));
+    events.push(...parser.push(bytesOf(`left over\r${END}\r${ESC}[A`)));
+    expect(events).toEqual([OVERFLOWED, named('enter'), named('up')]);
   });
 
-  it('ends an unterminated paste at the same byte whatever the chunking', () => {
-    const tail = 'abc';
-    const whole = bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}${tail}`);
-    expect(parse(whole)).toEqual([{ type: 'paste', text: '', overflow: true }, ...textOf(tail)]);
+  it('finds the end marker of an abandoned paste split across reads', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}`));
+    expect(parser.push(bytesOf(`tail\r${ESC}[20`))).toEqual([]);
+    expect(parser.push(bytesOf('1'))).toEqual([]);
+    expect(parser.push(bytesOf('~a'))).toEqual([text('a')]);
+  });
+
+  it('gives the same events for a paste over 8 MiB whatever the chunking', () => {
+    const whole = bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}abc\r${END}z`);
+    const expected = [OVERFLOWED, text('z')];
+    expect(parse(whole)).toEqual(expected);
+    const cut = START.length + PASTE_ABANDON_BYTES;
+    for (const position of [cut - 1, cut, cut + 1, cut + 4, whole.length - 3]) expect(parse(whole.subarray(0, position), whole.subarray(position)), `split at ${position}`).toEqual(expected);
+  });
+
+  it('keeps nothing of a paste it abandoned', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${START}${'x'.repeat(PASTE_ABANDON_BYTES)}`));
+    expect(parser.push(bytesOf(`${END}${START}small${END}`))).toEqual([{ type: 'paste', text: 'small', overflow: false }]);
   });
 });
 

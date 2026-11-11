@@ -264,7 +264,7 @@ describe('shutdown order and bounds', () => {
       overrides: { lockMechanism: lock, lockWaitMs: 1000 },
     });
     h.fake.latest('gateway').exit(78);
-    h.fake.latest('runtime').exit(75);
+    h.fake.latest('runtime').exit(77);
     await pumpUntil(h.timers, () => h.child('gateway').state === 'held-config' && h.child('runtime').state === 'external', { realWork: h.realWork, maxMs: 10_000 });
     const start = h.clock.now();
     const result = await finish(h, h.supervisor.close());
@@ -371,7 +371,7 @@ describe('shutdown and marker reaps', () => {
       prepare: (_home, paths) => lock.holdExternally(firstGeneration(paths).locks.runtime, process.pid),
       overrides: { lockWaitMs: 3_600_000, lockMechanism: inFlight },
     });
-    h.fake.latest('runtime').exit(75);
+    h.fake.latest('runtime').exit(77);
     await pumpUntil(h.timers, () => polls === 1, { realWork: h.realWork, maxMs: 5000 });
     const closing = h.supervisor.close();
     await quiesce(h.realWork);

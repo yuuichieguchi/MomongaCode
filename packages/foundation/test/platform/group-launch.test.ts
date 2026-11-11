@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
-import { GroupContainmentError, createKeptGroupControl, createPosixGroupPort, createProcessGroupPort, launchApart, launchGroupLeader, nodeCommandRunner } from '../../src/index.ts';
+import { GroupContainmentError, KeeperProtocolError, createKeptGroupControl, createPosixGroupPort, createProcessGroupPort, launchApart, launchGroupLeader, nodeCommandRunner } from '../../src/index.ts';
 import type { ProcessGroupPort } from '../../src/index.ts';
 import type { GroupLaunchRequest } from '../../src/platform/group-launch.ts';
 import { answeringMembers, fakeKeeperHost, settle } from '../support/fake-keeper.ts';
@@ -139,10 +139,43 @@ describe('on a port whose identity is a job the launch goes through the keeper',
     expect(seen[0]?.file).toBe('C:\\cache\\momonga-keeper.exe');
     expect(seen[0]?.args[0]).toBe('launch');
     expect(seen[0]?.args[4]).toBe(Buffer.from('C:\\m\\marker', 'utf8').toString('hex'));
-    expect(seen[0]?.args.slice(5)).toEqual(['--', 'C:\\node.exe', 'server.js']);
+    expect(seen[0]?.args.slice(5)).toEqual(['3', '--', 'C:\\node.exe', 'server.js']);
     expect(seen[0]?.options).toEqual({ cwd: 'C:\\work', env: { SystemRoot: 'C:\\Windows' }, detached: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'ignore'] });
     expect(launched.pgid).toBe(KEEPER_PID);
     expect(port.names?.nameOf(KEEPER_PID)).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('names to the keeper every slot after the standard three that carries a descriptor, and tells the exit once the keeper says it passed them', async () => {
+    const { fake, port, seen, spawnProcess } = world((keeper) => {
+      answeringMembers(() => [COMMAND_PID])(keeper);
+      keeper.say(`started ${COMMAND_PID} 3 5\n`);
+    });
+    const launched = launchGroupLeader({ file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe', 'pipe', 17, 21], marker: { slot: 4, file: 'C:\\m\\marker', descriptor: 17 }, port, spawnProcess });
+    expect(seen[0]?.args.slice(5, 7)).toEqual(['3,5', '--']);
+    expect(seen[0]?.options.stdio).toEqual(['ignore', 'pipe', 'pipe', 'pipe', 'ignore', 21]);
+    const exits: unknown[] = [];
+    launched.onExit((exit) => exits.push(exit), () => exits.push('failed'));
+    await settle();
+    fake.keepers[0]?.say('exit 0\n');
+    await settle();
+    expect(exits).toEqual([{ code: 0, signal: null }]);
+  });
+
+  it('names no descriptor when the command gets only the standard three', () => {
+    const { port, seen, spawnProcess } = world(running);
+    launchGroupLeader({ file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe', 'ignore'], port, spawnProcess });
+    expect(seen[0]?.args.slice(5, 7)).toEqual(['-', '--']);
+  });
+
+  it('tells a launch whose keeper dropped a named descriptor as a failure, never as a started command', async () => {
+    const { fake, port, spawnProcess } = world((keeper) => keeper.say(`started ${COMMAND_PID} 5\n`));
+    const launched = launchGroupLeader({ file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe', 'pipe', 17, 21], marker: { slot: 4, file: 'C:\\m\\marker', descriptor: 17 }, port, spawnProcess });
+    const outcomes: unknown[] = [];
+    launched.onExit(() => outcomes.push('exit'), (error) => outcomes.push(error));
+    await settle();
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]).toBeInstanceOf(KeeperProtocolError);
+    expect(fake.keepers[0]?.closedByClient()).toBe(true);
   });
 
   it('opens no descriptor of the marker and adds no slot for it', () => {

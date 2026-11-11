@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
-import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, NO_MODEL_CONNECTED_TEXT, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities } from '@momonga/protocol';
+import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, NO_MODEL_CONNECTED_TEXT, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, PLAN_DISABLED_STATE } from '@momonga/protocol';
 import type { ChainCapabilities, ImageAttachment, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -651,7 +651,7 @@ export function App(props: AppProps) {
       return;
     }
     enterPhase({ kind: 'unconnected' });
-    const usable = listed.accounts.find((account) => account.active && (account.state === 'active' || account.state === 'plan_disabled'));
+    const usable = listed.accounts.find((account) => account.active && (account.state === 'active' || account.state === PLAN_DISABLED_STATE));
     if (usable !== undefined) runFlow(() => flows.catalogPicker(profileOf(listed.profiles, usable.profile), usable.label));
   };
 

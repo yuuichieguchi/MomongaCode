@@ -1,4 +1,4 @@
-import { COST_CURRENCY } from '@momonga/protocol';
+import { COST_CURRENCY, PRICE_DECIMAL_PLACES, priceEffectiveFromMs, validatePriceTable } from '@momonga/protocol';
 import type { ModelQuote, RunCostView, UnpricedOutcome, UsageSource } from '@momonga/protocol';
 import { UNKNOWN_BILLING } from './semconv.ts';
 
@@ -30,44 +30,15 @@ export type CostInput = {
   table: PriceTable;
 };
 
-const PRICE_SCALE_DIGITS = 9;
-const PRICE_SCALE = 10 ** PRICE_SCALE_DIGITS;
+const PRICE_SCALE = 10 ** PRICE_DECIMAL_PLACES;
 const TOKENS_PER_MTOK_DIGITS = 6;
-const AMOUNT_DIGITS = PRICE_SCALE_DIGITS + TOKENS_PER_MTOK_DIGITS;
+const AMOUNT_DIGITS = PRICE_DECIMAL_PLACES + TOKENS_PER_MTOK_DIGITS;
 const AMOUNT_DIVISOR = 10n ** BigInt(AMOUNT_DIGITS);
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-const identify = (entry: PriceEntry): string => `${entry.provider}/${entry.model}@${entry.effectiveFrom}`;
-
-const effectiveFromMs = (entry: PriceEntry): number => Date.parse(`${entry.effectiveFrom}T00:00:00Z`);
-
-const assertPrice = (entry: PriceEntry, field: string, price: number): void => {
-  if (!Number.isFinite(price) || price < 0) {
-    throw new RangeError(`price entry ${identify(entry)}: ${field} must be a non-negative finite number, got ${price}`);
-  }
-  if (Math.abs(Math.round(price * PRICE_SCALE) - price * PRICE_SCALE) > 1e-3) {
-    throw new RangeError(
-      `price entry ${identify(entry)}: ${field} has more than ${PRICE_SCALE_DIGITS} decimal places, got ${price}`,
-    );
-  }
-};
+const effectiveFromMs = priceEffectiveFromMs;
 
 export const definePriceTable = (entries: readonly PriceEntry[]): PriceTable => {
-  const seen = new Set<string>();
-  for (const entry of entries) {
-    const identity = identify(entry);
-    const currency: string = entry.currency;
-    if (currency !== 'USD') throw new RangeError(`price entry ${identity}: currency must be USD, got ${currency}`);
-    if (!DATE_PATTERN.test(entry.effectiveFrom) || Number.isNaN(effectiveFromMs(entry))) {
-      throw new RangeError(`price entry ${identity}: effectiveFrom must be a valid YYYY-MM-DD date`);
-    }
-    if (seen.has(identity)) throw new Error(`duplicate price entry ${identity}`);
-    seen.add(identity);
-    assertPrice(entry, 'inputPerMTok', entry.inputPerMTok);
-    assertPrice(entry, 'outputPerMTok', entry.outputPerMTok);
-    if (entry.cachedInputPerMTok !== undefined) assertPrice(entry, 'cachedInputPerMTok', entry.cachedInputPerMTok);
-    if (entry.cacheWritePerMTok !== undefined) assertPrice(entry, 'cacheWritePerMTok', entry.cacheWritePerMTok);
-  }
+  validatePriceTable(entries);
   return Object.freeze(entries.map((entry) => Object.freeze({ ...entry })));
 };
 
@@ -149,7 +120,7 @@ const memberPriceOf = (member: QuotedMember, table: PriceTable, atMs: number): M
   const entry = findPriceEntry(table, member.provider, member.model, atMs);
   if (entry === undefined) return undefined;
   return {
-    inUnits: larger(scaledPrice(entry.inputPerMTok), scaledPrice(entry.cacheWritePerMTok ?? 0)),
+    inUnits: [entry.inputPerMTok, entry.cacheWritePerMTok ?? 0, entry.cachedInputPerMTok ?? 0].map(scaledPrice).reduce(larger),
     outUnits: scaledPrice(entry.outputPerMTok),
     priceVersion: entry.effectiveFrom,
   };

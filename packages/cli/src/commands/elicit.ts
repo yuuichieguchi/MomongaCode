@@ -10,10 +10,11 @@ import type { ElicitationView } from '../client/views.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
+import { UsageError } from '../usage-error.ts';
 import { activeRunIdOf, runTreeOf } from './targets.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 
-export class ElicitationUsageError extends Error {
+export class ElicitationUsageError extends UsageError {
   constructor(message: string) {
     super(message);
     this.name = 'ElicitationUsageError';

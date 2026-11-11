@@ -29,13 +29,13 @@ const startFailure = (temp: RunHome, extra: Record<string, unknown> = {}): Promi
   failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream(), ...extra }));
 
 describe('exit classes of startRuntimeProcess errors (system timers)', () => {
-  it('exit 75 applies only when the error is a ProcessLockHeldError with lockPath equal to paths.locks.runtime', async () => {
+  it('exit 77 applies only when the error is a ProcessLockHeldError with lockPath equal to paths.locks.runtime', async () => {
     const stack = await startStack();
     await launchRuntime(stack.temp);
     const error = await startFailure(stack.temp);
     expect(error).toBeInstanceOf(ProcessLockHeldError);
     expect((error as ProcessLockHeldError).lockPath).toBe(firstGeneration(stack.temp.paths).locks.runtime);
-    expect(exitClassOf(error)).toBe(75);
+    expect(exitClassOf(error)).toBe(77);
 
     const foreign = new ProcessLockHeldError('held', firstGeneration(stack.temp.paths).locks.runtime, 4242);
     expect(exitClassOf(foreign)).toBe(1);

@@ -105,7 +105,7 @@ describe('what a connection may leave out, and what each default is', () => {
     expect(keysOf(derived.models)).toEqual(['srv-127.0.0.1-8080/m', 'srv-responses.example.com-443/m']);
     const written = await loadModelsSection({
       connections: [
-        { adapter: 'anthropic', provider: 'claude-work', apiKeyEnv: 'ANTHROPIC_API_KEY', models: [{ id: 'claude-x', capabilities: CAPABILITIES }] },
+        { adapter: 'anthropic', provider: 'claude-work', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', models: [{ id: 'claude-x', capabilities: CAPABILITIES }] },
         ollamaConnection('http://127.0.0.1:11434', ['m'], { provider: 'home-pc' }),
         { adapter: 'managed', server: 'fm', provider: 'on-device', models: [{ id: 'x' }] },
       ],

@@ -3,10 +3,11 @@ import type { CostFilter } from '../client/runtime-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
+import { UsageError } from '../usage-error.ts';
 
 export type CostOptions = { runId?: string; session?: string; all: boolean; json: boolean; breakdown?: boolean };
 
-export class CostUsageError extends Error {
+export class CostUsageError extends UsageError {
   constructor(message: string) {
     super(message);
     this.name = 'CostUsageError';

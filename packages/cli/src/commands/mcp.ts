@@ -1,3 +1,4 @@
+import { EXIT_INTERRUPTED } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
@@ -20,8 +21,6 @@ export class McpLoginFailed extends Error {
     this.code = code;
   }
 }
-
-const EXIT_INTERRUPTED = 130;
 
 const column = (values: readonly string[]): number => Math.max(...values.map((value) => value.length));
 

@@ -30,7 +30,7 @@ export type {
   RecordedRequest,
 } from './fake-chat-completions.ts';
 export { inlinedSubsetRefusalOf, strictClosedRefusalOf } from './dialect-checkers.ts';
-export { UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS } from './outbound-network.ts';
+export { UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS, hostTimers } from './outbound-network.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
 export { CLAIM_HOLDER_MAIN, LOCK_HOLDER_MAIN, startClaimHolder, startLockHolder } from './lock-holder.ts';

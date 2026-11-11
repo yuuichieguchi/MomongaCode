@@ -27,10 +27,17 @@ const meanAt = (fields: Fields, key: string, path: string): number | null => {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fail(`${path}.${key}`, 'a non-negative number or null');
 };
 
-const rateAt = (value: unknown, path: string): { k: number; n: number } => {
-  const fields = fieldsAt(value, path);
-  return { k: countAt(fields, 'k', path), n: countAt(fields, 'n', path) };
+const partAt = (fields: Fields, key: string, path: string, whole: { key: string; count: number }): number => {
+  const part = countAt(fields, key, path);
+  return part <= whole.count ? part : fail(`${path}.${key}`, `at most ${whole.key} (${whole.count})`);
 };
+
+const rateOf = (fields: Fields, path: string): { k: number; n: number } => {
+  const n = countAt(fields, 'n', path);
+  return { k: partAt(fields, 'k', path, { key: 'n', count: n }), n };
+};
+
+const rateAt = (value: unknown, path: string): { k: number; n: number } => rateOf(fieldsAt(value, path), path);
 
 const decodeIndicators = (value: unknown, path: string): Indicators => {
   const fields = fieldsAt(value, path);
@@ -42,6 +49,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
   const overrun = fieldsAt(fields['overrun'], `${path}.overrun`);
   const time = fieldsAt(fields['time'], `${path}.time`);
   const delegation = fieldsAt(fields['delegation'], `${path}.delegation`);
+  const mandateRuns = { key: 'n', count: countAt(delegation, 'n', `${path}.delegation`) };
   return {
     buckets: {
       counted: countAt(buckets, 'counted', `${path}.buckets`),
@@ -51,13 +59,11 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       unknownValues: countAt(buckets, 'unknownValues', `${path}.buckets`),
     },
     completion: {
-      k: countAt(completion, 'k', `${path}.completion`),
-      n: countAt(completion, 'n', `${path}.completion`),
+      ...rateOf(completion, `${path}.completion`),
       undeclared: countAt(completion, 'undeclared', `${path}.completion`),
     },
     recovery: {
-      k: countAt(recovery, 'k', `${path}.recovery`),
-      n: countAt(recovery, 'n', `${path}.recovery`),
+      ...rateOf(recovery, `${path}.recovery`),
       unknownEffect: countAt(recovery, 'unknownEffect', `${path}.recovery`),
       failed: countAt(recovery, 'failed', `${path}.recovery`),
       stopped: countAt(recovery, 'stopped', `${path}.recovery`),
@@ -75,15 +81,14 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
     },
     intervention: rateAt(fields['intervention'], `${path}.intervention`),
     overrun: {
-      k: countAt(overrun, 'k', `${path}.overrun`),
-      n: countAt(overrun, 'n', `${path}.overrun`),
+      ...rateOf(overrun, `${path}.overrun`),
       budgetStops: countAt(overrun, 'budgetStops', `${path}.overrun`),
       money: rateAt(overrun['money'], `${path}.overrun.money`),
     },
     delegation: {
-      n: countAt(delegation, 'n', `${path}.delegation`),
-      intervened: countAt(delegation, 'intervened', `${path}.delegation`),
-      unattended: countAt(delegation, 'unattended', `${path}.delegation`),
+      n: mandateRuns.count,
+      intervened: partAt(delegation, 'intervened', `${path}.delegation`, mandateRuns),
+      unattended: partAt(delegation, 'unattended', `${path}.delegation`, mandateRuns),
       waited: countAt(delegation, 'waited', `${path}.delegation`),
       held: countAt(delegation, 'held', `${path}.delegation`),
       denied: countAt(delegation, 'denied', `${path}.delegation`),
@@ -127,8 +132,7 @@ const decodeTasks = (value: unknown): TaskRow[] =>
     const path = `report.tasks[${index}]`;
     const row = fieldsAt(entry, path);
     const trials = countAt(row, 'trials', path);
-    const met = countAt(row, 'met', path);
-    if (met > trials) fail(`${path}.met`, `at most trials (${trials})`);
+    const met = partAt(row, 'met', path, { key: 'trials', count: trials });
     return { task: textAt(row, 'task', path), trials, met, difficulty: textAt(row, 'difficulty', path), taskType: textAt(row, 'taskType', path) };
   });
 
@@ -137,16 +141,9 @@ const decodeScenarios = (value: unknown): ScenarioRow[] =>
     const path = `report.scenarios[${index}]`;
     const row = fieldsAt(entry, path);
     const episodes = countAt(row, 'episodes', path);
-    const recovered = countAt(row, 'recovered', path);
-    if (recovered > episodes) fail(`${path}.recovered`, `at most episodes (${episodes})`);
+    const recovered = partAt(row, 'recovered', path, { key: 'episodes', count: episodes });
     return { scenario: textAt(row, 'scenario', path), trials: countAt(row, 'trials', path), episodes, recovered };
   });
-
-const decodeWitnessed = (value: unknown): { k: number; n: number } => {
-  const rate = rateAt(value, 'report.witnessed');
-  if (rate.k > rate.n) fail('report.witnessed.k', `at most n (${rate.n})`);
-  return rate;
-};
 
 const decodePopulation = (value: unknown): { notRun: NotRun[] } => {
   const fields = fieldsAt(value, 'report.population');
@@ -238,7 +235,7 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
     harness: harness === null ? null : decodeHarness(harness),
     ...(fields['tasks'] === undefined ? {} : { tasks: decodeTasks(fields['tasks']) }),
     ...(fields['scenarios'] === undefined ? {} : { scenarios: decodeScenarios(fields['scenarios']) }),
-    ...(fields['witnessed'] === undefined ? {} : { witnessed: decodeWitnessed(fields['witnessed']) }),
+    ...(fields['witnessed'] === undefined ? {} : { witnessed: rateAt(fields['witnessed'], 'report.witnessed') }),
     ...(fields['population'] === undefined ? {} : { population: decodePopulation(fields['population']) }),
     ...(fields['period'] === undefined ? {} : { period: decodePeriod(fields['period']) }),
     ...(fields['cost'] === undefined ? {} : { cost: decodeCost(fields['cost']) }),

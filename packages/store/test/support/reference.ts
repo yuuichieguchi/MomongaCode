@@ -5,10 +5,10 @@ import { findDanglingOutput } from '@momonga/protocol';
 import type { InputItem, PermissionMode, RunEvent, RunEventPayload, RunState, StopReason } from '@momonga/protocol';
 import { JournalThreadError, applyInheritance, createJournalReader, foldRunState, initialRunState, knownValue, projectInheritance } from '@momonga/store';
 import { retractsTask } from '../../src/inherit.ts';
-import type { Claim, ContributionPreparer, InheritanceOutcome, JournalReaderOptions, Run, RuntimeStore } from '@momonga/store';
+import type { Claim, ContributionPreparer, InheritanceOutcome, JournalReaderOptions, Run, RuntimeStore, UnaskedCommands } from '@momonga/store';
 import { createFakeClock, fixtureCompactionItem } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
-import { START_MS, TIMEOUT_MS, makeStoreDir, mustClaim, mustRun, newSession, noJournalFacts, openStoreAt, registerCleanup } from '../helpers.ts';
+import { START_MS, TIMEOUT_MS, makeStoreDir, mustClaim, mustRun, newSession, noJournalFacts, openStoreAt, registerCleanup, UNASKED_COMMANDS } from '../helpers.ts';
 import { assistantItem, callItem } from '../inherit-fixtures.ts';
 import type { InheritedEvent } from '../inherit-fixtures.ts';
 import type { Random } from './seeded.ts';
@@ -55,7 +55,7 @@ export type InheritPlanReply =
 
 export type WindowRequest = { runId: string; windowTokens: number; floorTokens: number };
 
-export type PlanRequest = { runId: string; mode: PermissionMode };
+export type PlanRequest = { runId: string; mode: PermissionMode; unasked: UnaskedCommands };
 
 export type ReferenceReader = {
   planInheritance(request: PlanRequest): InheritPlanReply;
@@ -115,12 +115,12 @@ export const referencePreparer = (dbPath: string, calls: { plan: number; window:
 
 export type ReferenceHarness = { dir: string; dbPath: string; clock: FakeClock; store: RuntimeStore; calls: { plan: number; window: number }; sessionId: string };
 
-export const referenceHarness = (): ReferenceHarness => {
+export const referenceHarness = (options: { unaskedCommands?: UnaskedCommands } = {}): ReferenceHarness => {
   const dir = makeStoreDir();
   const dbPath = path.join(dir, 'runtime.db');
   const clock = createFakeClock(START_MS);
   const calls = { plan: 0, window: 0 };
-  const store = openStoreAt(dbPath, clock, { leaseMs: LONG_LEASE_MS, preparer: referencePreparer(dbPath, calls) });
+  const store = openStoreAt(dbPath, clock, { leaseMs: LONG_LEASE_MS, preparer: referencePreparer(dbPath, calls), ...options });
   const sessionId = newSession(store).id;
   return { dir, dbPath, clock, store, calls, sessionId };
 };
@@ -190,7 +190,7 @@ export const oracleProjection = (store: RuntimeStore, child: Run, mode: Permissi
     carriedSkills = (payload.activatedSkills ?? []).map((skill) => skill.name);
     sourceRun = candidate;
   }
-  return projectInheritance(sourceState, { ...outcomeOf(sourceRun), carriedSkills }, { kind: 'final', currentMode: mode }) as InheritedEvent;
+  return projectInheritance(sourceState, { ...outcomeOf(sourceRun), carriedSkills }, { kind: 'final', currentMode: mode, unasked: UNASKED_COMMANDS }) as InheritedEvent;
 };
 
 export const oracleState = (store: RuntimeStore, runId: string, throughSeq = Number.POSITIVE_INFINITY): RunState => {

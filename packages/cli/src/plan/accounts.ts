@@ -1,13 +1,14 @@
+import { PLAN_DISABLED_STATE, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
 import type { PlanAccountState, PlanAccountView, PlanProfileView } from '@momonga/protocol';
 
 const STATE_WORDS: Readonly<Record<PlanAccountState, string>> = {
   active: 'active',
   needs_sign_in: 'sign-in required',
-  plan_disabled: 'plan use not enabled',
+  [PLAN_DISABLED_STATE]: 'plan use not enabled',
   registered: 'signed out',
   signing_out: 'signing out',
-  store_unreadable: 'record unreadable',
-  store_unwritable: 'record not writable',
+  [PLAN_STORE_UNREADABLE_STATE]: 'record unreadable',
+  [PLAN_STORE_UNWRITABLE_STATE]: 'record not writable',
 };
 
 const PAUSED_WORD = 'paused by limit';
@@ -18,9 +19,9 @@ const SAVED_ACCOUNT_ACTIONS: Readonly<Record<PlanAccountState, SavedAccountActio
   active: 'activate',
   needs_sign_in: 'sign-in',
   registered: 'sign-in',
-  plan_disabled: 'sign-in',
-  store_unreadable: 'none',
-  store_unwritable: 'none',
+  [PLAN_DISABLED_STATE]: 'sign-in',
+  [PLAN_STORE_UNREADABLE_STATE]: 'none',
+  [PLAN_STORE_UNWRITABLE_STATE]: 'none',
   signing_out: 'none',
 };
 

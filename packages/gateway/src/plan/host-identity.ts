@@ -2,8 +2,9 @@ import { createHash, generateKeyPair } from 'node:crypto';
 import type { JsonWebKey } from 'node:crypto';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
+import { AUTH_DOCUMENT_MAX_BYTES, isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
+import { parsePlanJson } from './plan-json.ts';
 
 export type HostIdentity = { hostId: string };
 
@@ -44,19 +45,14 @@ const hostFileError = (file: string, problem: string): Error => new Error(`the p
 
 const readHostFile = async (fileSystem: FileSystem, file: string): Promise<string | undefined> => {
   try {
-    return await fileSystem.readOwnerOnlyTextFile(file, 'it');
+    return await fileSystem.readOwnerOnlyTextFile(file, 'it', AUTH_DOCUMENT_MAX_BYTES);
   } catch (error) {
     throw hostFileError(file, `cannot be read (${(error as Error).message})`);
   }
 };
 
 const parseHostFile = (file: string, text: string): HostIdentity => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw hostFileError(file, 'is not valid JSON');
-  }
+  const parsed = parsePlanJson(text, (problem) => hostFileError(file, problem));
   if (!isRecord(parsed) || typeof parsed['hostId'] !== 'string' || !isRecord(parsed['privateKey'])) throw hostFileError(file, 'has an unrecognised shape');
   const key = parsed['privateKey'];
   if (key['kty'] !== 'EC' || key['crv'] !== 'P-256' || typeof key['d'] !== 'string') throw hostFileError(file, 'does not hold an EC P-256 private key');

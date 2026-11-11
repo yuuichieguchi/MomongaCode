@@ -7,7 +7,8 @@ import { RunApiError } from '../src/client/runtime-client.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { noTargetLines, readinessNoticeOf } from '../src/readiness.ts';
-import { EXIT_RUN_FAILED, runHeadless } from '../src/run/headless.ts';
+import { EXIT_FAILURE } from '@momonga/foundation';
+import { runHeadless } from '../src/run/headless.ts';
 import type { HeadlessOptions } from '../src/run/headless.ts';
 import { frameOf } from './acp-harness.ts';
 import { SESSION, capabilitiesOf, runView } from './fake-backend.ts';
@@ -74,7 +75,7 @@ describe('what a shell surface says when no model can answer', () => {
     try {
       const result = await headless(context, capabilitiesOf());
 
-      expect(result.code).toBe(EXIT_RUN_FAILED);
+      expect(result.code).toBe(EXIT_FAILURE);
       expect(result.stderr).toBe(`momonga: ${message}\n${HINT(result.paths.settingsFile)}\n`);
     } finally {
       opening.refusal = undefined;
@@ -87,7 +88,7 @@ describe('what a shell surface says when no model can answer', () => {
     try {
       const result = await headless(context, capabilitiesOf());
 
-      expect(result.code).toBe(EXIT_RUN_FAILED);
+      expect(result.code).toBe(EXIT_FAILURE);
       expect(result.stderr).toBe(`momonga: ${sentence}\n`);
     } finally {
       opening.refusal = undefined;
@@ -106,7 +107,7 @@ describe('what a shell surface says when no model can answer', () => {
   it('headless on an unavailable model refuses with the message and then the shell remedy', async (context) => {
     const result = await headless(context, UNAVAILABLE);
 
-    expect(result.code).toBe(EXIT_RUN_FAILED);
+    expect(result.code).toBe(EXIT_FAILURE);
     expect(result.stderr).toBe(`momonga: target_not_ready: ${UNAVAILABLE_MESSAGE}\nChoose a model with momonga --model <model>, or set one up with momonga models add.\n`);
   });
 

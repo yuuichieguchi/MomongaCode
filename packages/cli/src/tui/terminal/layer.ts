@@ -1,4 +1,5 @@
-import { MIN_COLUMNS, MIN_ROWS, NO_FULLSCREEN_NOTICE, PASTE_TOO_LARGE_NOTICE } from './constants.ts';
+import type { ScreenTimers } from '../screen/timers.ts';
+import { KEY_SETTLE_MS, MIN_COLUMNS, MIN_ROWS, NO_FULLSCREEN_NOTICE, PASTE_TOO_LARGE_NOTICE } from './constants.ts';
 import type { TerminalEvent } from './events.ts';
 import { BACKGROUND_QUERY, enterSequenceOf, inTableOrder, LEAVE_EVERY_MODE, leaveSequenceOf, QUERY_BATCH } from './modes.ts';
 import type { ScreenMode, TerminalModeName } from './modes.ts';
@@ -54,6 +55,7 @@ export type TerminalLayerOptions = {
   input: TerminalInputPort;
   output: TerminalOutputPort;
   process: ProcessPort;
+  timers: ScreenTimers;
   screen: ScreenMode;
   screenSetByUser: boolean;
   mouse: boolean;
@@ -82,10 +84,10 @@ export type TerminalLayer = {
 
 export const isTooSmall = (size: TerminalSize): boolean => size.columns < MIN_COLUMNS || size.rows < MIN_ROWS;
 
-const isCtrl = (event: TerminalEvent, letter: string): boolean => event.type === 'key' && 'text' in event && event.text === letter && event.ctrl && !event.alt && !event.shift;
+const isCtrl = (event: TerminalEvent, letter: string): boolean => event.type === 'key' && 'text' in event && event.text === letter && event.ctrl && !event.alt && !event.shift && !event.super && !event.hyper && !event.meta;
 
 export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLayer => {
-  const { input, output, process: host } = options;
+  const { input, output, process: host, timers } = options;
   const parser = createInputParser();
   const enabled = new Set<TerminalModeName>();
   const listeners = new Set<() => void>();
@@ -214,9 +216,9 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     publish();
   };
 
-  const onData = (chunk: Uint8Array): void => {
+  const deliver = (events: readonly TerminalEvent[]): void => {
     const delivered: TerminalEvent[] = [];
-    for (const event of parser.push(chunk)) {
+    for (const event of events) {
       absorb(event);
       if (event.type === 'focus' && event.direction === 'in' && enabled.has('focus')) output.writeSync(BACKGROUND_QUERY);
       if (isTooSmall(size) && !isCtrl(event, 'c')) continue;
@@ -227,6 +229,26 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     if (delivered.length > 0) options.onEvents(delivered);
   };
 
+  let keySettle: { timer: unknown } | undefined;
+
+  const stopKeySettle = (): void => {
+    if (keySettle === undefined) return;
+    timers.clearTimeout(keySettle.timer);
+    keySettle = undefined;
+  };
+
+  const endKeySettle = (): void => {
+    keySettle = undefined;
+    deliver(parser.settle());
+  };
+
+  const onData = (chunk: Uint8Array): void => {
+    stopKeySettle();
+    const events = parser.push(chunk);
+    if (parser.holdsLoneEscape()) keySettle = { timer: timers.setTimeout(endKeySettle, KEY_SETTLE_MS) };
+    deliver(events);
+  };
+
   const onResize = (): void => {
     size = output.size();
     publish();
@@ -235,6 +257,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   const leaveForProgram = (): (() => void) => {
     const saved = inTableOrder(enabled);
     restore();
+    stopKeySettle();
     input.off('data', onData);
     input.pause();
     return () => {
@@ -266,6 +289,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     pendingContinue = undefined;
     stopResizeListening?.();
     stopResizeListening = undefined;
+    stopKeySettle();
     input.off('data', onData);
     input.pause();
   };

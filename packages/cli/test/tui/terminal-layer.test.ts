@@ -1,12 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { HANDOVER_TERMINAL_ENV, NO_FULLSCREEN_NOTICE, PASTE_MAX_BYTES, PASTE_TOO_LARGE_NOTICE } from '../../src/tui/terminal/constants.ts';
+import { HANDOVER_TERMINAL_ENV, KEY_SETTLE_MS, NO_FULLSCREEN_NOTICE, PASTE_MAX_BYTES, PASTE_TOO_LARGE_NOTICE } from '../../src/tui/terminal/constants.ts';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { handoverTerminalValue, parseHandoverTerminal, startFromHandover } from '../../src/tui/terminal/handover.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ProcessEvent, ProcessSignal, ScreenRequest, TerminalLayerOptions } from '../../src/tui/terminal/layer.ts';
 import { LEAVE_EVERY_MODE, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
 import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
+import { manualClock } from './screen-clock.ts';
 
 const ESC = '\u001b';
 const START_QUERIES = `${ESC}[?u${ESC}[>7u${ESC}[?1049$p${ESC}[?1006$p${ESC}[?2004$p${ESC}[?2026$p${ESC}]11;?${ESC}\\${ESC}[c`;
@@ -19,7 +20,7 @@ const ENTER_MOUSE = `${ESC}[?1000;1002;1006h`;
 const ENTER_MODIFY_OTHER_KEYS = `${ESC}[>4;2m`;
 const LEAVE_ALL = `${ESC}[?1049l${ESC}[?1000;1002;1006l${ESC}[?2004l${ESC}[?1004l${ESC}[<u${ESC}[>4m${ESC}[23;2t`;
 
-const plain = { ctrl: false, alt: false, shift: false };
+const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 
 type Fakes = ReturnType<typeof fakes>;
 
@@ -34,7 +35,9 @@ const fakes = (given: Partial<Pick<TerminalLayerOptions, 'screen' | 'screenSetBy
   const delivered: TerminalEvent[] = [];
   const requests: ScreenRequest[] = [];
   const log: string[] = [];
+  const clock = manualClock();
   const layer = createTerminalLayer({
+    timers: clock.timers,
     input: {
       setRawMode: (on) => {
         rawModes.push(on);
@@ -76,6 +79,7 @@ const fakes = (given: Partial<Pick<TerminalLayerOptions, 'screen' | 'screenSetBy
   layer.subscribeScreen((request) => requests.push(request));
   return {
     layer,
+    clock,
     writes,
     rawModes,
     kills,
@@ -174,7 +178,7 @@ describe('negotiation', () => {
     expect(t.layer.state().enabled).toContain('modify-other-keys');
     t.feed(`${ESC}[27;2;13~`);
     expect(t.layer.state()).toMatchObject({ negotiation: 'proven', newlineHint: 'shift+enter' });
-    expect(t.delivered).toContainEqual({ type: 'key', name: 'enter', ctrl: false, alt: false, shift: true });
+    expect(t.delivered).toContainEqual({ type: 'key', name: 'enter', ctrl: false, alt: false, shift: true, super: false, hyper: false, meta: false });
   });
 
   it('stays unknown and working when the terminal never replies, and a received Shift+Enter proves it', () => {
@@ -428,8 +432,8 @@ describe('resize and the size limits', () => {
     t.resize(19, 24);
     t.feed(`a\r${ESC}[200~p${ESC}[201~${ESC}[<0;1;1M\u001a\u0003${ESC}[99;5u${KITTY_REPLY}`);
     expect(t.delivered).toEqual([
-      { type: 'key', text: 'c', ctrl: true, alt: false, shift: false },
-      { type: 'key', text: 'c', ctrl: true, alt: false, shift: false },
+      { type: 'key', text: 'c', ctrl: true, alt: false, shift: false, super: false, hyper: false, meta: false },
+      { type: 'key', text: 'c', ctrl: true, alt: false, shift: false, super: false, hyper: false, meta: false },
     ]);
     expect(t.kills).toEqual([]);
     expect(t.layer.state().negotiation).toBe('kitty');
@@ -519,5 +523,60 @@ describe('the handover', () => {
     expect(HANDOVER_TERMINAL_ENV in env).toBe(false);
     expect(t.writes).toEqual([LEAVE_ALL, FULLSCREEN_START]);
     expect(t.layer.state()).toMatchObject({ negotiation: 'unknown', enabled: ['alt-screen', 'bracketed-paste', 'kitty-keys'] });
+  });
+});
+
+describe('a lone ESC and the key settle', () => {
+  const escape: TerminalEvent = { type: 'key', name: 'escape', ...plain };
+  const up: TerminalEvent = { type: 'key', name: 'up', ...plain };
+
+  it('has one written value', () => {
+    expect(KEY_SETTLE_MS).toBe(150);
+  });
+
+  it('delivers Escape when the settle ends with no byte, without a next key', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(ESC);
+    expect(t.delivered).toEqual([]);
+    t.clock.advance(KEY_SETTLE_MS - 1);
+    expect(t.delivered).toEqual([]);
+    t.clock.advance(1);
+    expect(t.delivered).toEqual([escape]);
+    expect(t.clock.pending()).toBe(0);
+  });
+
+  it('reads an arrow whose bytes are split after the ESC within the settle, and waits for nothing more', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(ESC);
+    t.clock.advance(KEY_SETTLE_MS - 1);
+    t.feed('[A');
+    expect(t.delivered).toEqual([up]);
+    expect(t.clock.pending()).toBe(0);
+    t.clock.advance(KEY_SETTLE_MS);
+    expect(t.delivered).toEqual([up]);
+  });
+
+  it('starts the settle again at each lone ESC', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(ESC);
+    t.clock.advance(KEY_SETTLE_MS - 1);
+    t.feed(ESC);
+    expect(t.delivered).toEqual([escape]);
+    t.clock.advance(KEY_SETTLE_MS - 1);
+    expect(t.delivered).toEqual([escape]);
+    t.clock.advance(1);
+    expect(t.delivered).toEqual([escape, escape]);
+  });
+
+  it('does not wait for a settle after the terminal was released', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(ESC);
+    t.layer.close();
+    expect(t.clock.pending()).toBe(0);
+    expect(t.delivered).toEqual([]);
   });
 });

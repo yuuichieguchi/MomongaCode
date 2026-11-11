@@ -80,7 +80,6 @@
     "packages/foundation/src/process-contract.ts": ["STARTUP_TIMEOUT_MS"],
     "packages/gateway/src/managed/target.ts": ["options.requestLimitMs"],
     "packages/gateway/src/probe/auto-probe.ts": ["precondition.boundMs"],
-    "packages/gateway/src/process.ts": ["CONTROL_REQUEST_TIMEOUT_MS","wiring.requestLimitMs"],
     "packages/runtime/src/memory/deadline-signal.ts": ["Math.min(Math.max(deadlineAt - now, 0), TIMER_CEILING_MS)"]
   },
   "burnDown": {
@@ -114,6 +113,7 @@
       {"name":"WAITING_INPUT_BYTES","file":"packages/cli/src/tui/screen/use-prompts.tsx","lacks":["row"]},
       {"name":"SECONDS_MS","file":"packages/cli/src/tui/screen/waiting-row.tsx","lacks":["kind","row"]},
       {"name":"SPINNER_MS","file":"packages/cli/src/tui/screen/waiting-row.tsx","lacks":["kind","row"]},
+      {"name":"KEY_SETTLE_MS","file":"packages/cli/src/tui/terminal/constants.ts","lacks":["kind","row"]},
       {"name":"MAX_SEQUENCE_BYTES","file":"packages/cli/src/tui/terminal/constants.ts","lacks":["row"]},
       {"name":"PASTE_ABANDON_BYTES","file":"packages/cli/src/tui/terminal/constants.ts","lacks":["row"]},
       {"name":"PASTE_MAX_BYTES","file":"packages/cli/src/tui/terminal/constants.ts","lacks":["row"]},
@@ -214,6 +214,7 @@
       {"name":"IDENTITY_READ_TIMEOUT_MS","file":"packages/gateway/src/probe/endpoint-target.ts","lacks":["kind"]},
       {"name":"CACHE_PROBE_TIMEOUT_MS","file":"packages/gateway/src/probe/ollama.ts","lacks":["kind","row"]},
       {"name":"DEFAULT_STEP_TIMEOUT_MS","file":"packages/gateway/src/probe/run-probe.ts","lacks":["kind"]},
+      {"name":"HOST_TIMER_LIMIT_MS","file":"packages/gateway/src/process-ports.ts","lacks":["kind","row"]},
       {"name":"DAY_MS","file":"packages/gateway/src/process.ts","lacks":["kind"]},
       {"name":"MIN_HMAC_KEY_BYTES","file":"packages/gateway/src/server/config-check.ts","lacks":["row"]},
       {"name":"MCP_TOOL_IDLE_TIMEOUT_MS","file":"packages/mcp/src/call-bounds.ts","lacks":["kind","row"]},

@@ -9,7 +9,7 @@ import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES, STORED_MODEL_KEYS, TERMI
 import { FACTS_EVENT_TYPES, createCallsFold, createFactsFold } from '@momonga/reliability';
 import type { Capabilities, ClaimedToken, PermissionMode, RunBudgetReport, RunEvent, RunEventPayload, RunFactsLimits } from '@momonga/protocol';
 import type { DatabaseSync } from 'node:sqlite';
-import type { BlobStore, JournalReader, WalkUnits } from '@momonga/store';
+import type { BlobStore, JournalReader, UnaskedCommands, WalkUnits } from '@momonga/store';
 import { contributionAtTerminal } from './contribution.ts';
 import { EVIDENCE_EVENT_TYPES, createEvidenceFold } from './evidence-fold.ts';
 import { FIDELITY_EVENT_TYPES, createFidelityFold } from './fidelity-fold.ts';
@@ -331,12 +331,23 @@ const modeOf = (value: unknown, kind: string): PermissionMode => {
   return mode;
 };
 
+const isRequestFields = (value: unknown): value is JournalRequest => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const unaskedOf = (value: unknown, kind: string): UnaskedCommands => {
+  if (!isRequestFields(value)) throw new TypeError(`a ${kind} request must carry unasked as the commands that run without asking`);
+  return { readOnly: textsOf(value, 'readOnly', kind), edit: textsOf(value, 'edit', kind) };
+};
+
 type PlanningReader = Pick<JournalReader, 'planInheritance'>;
 
 type WindowReader = Pick<JournalReader, 'readInheritedWindow'>;
 
 export const inheritPlanHandler = (reader: PlanningReader): JournalHandler => (request) =>
-  reader.planInheritance({ runId: textOf(request, 'runId', 'inherit_plan'), mode: modeOf(request['mode'], 'inherit_plan') });
+  reader.planInheritance({
+    runId: textOf(request, 'runId', 'inherit_plan'),
+    mode: modeOf(request['mode'], 'inherit_plan'),
+    unasked: unaskedOf(request['unasked'], 'inherit_plan'),
+  });
 
 export const inheritedWindowHandler = (reader: WindowReader): JournalHandler => (request) =>
   reader.readInheritedWindow({

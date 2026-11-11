@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { FIRST_GENERATION, endpointFormsOfSocket, generationLayout, redactedUrl, transportUrlMessage, transportUrlProblem, syncPaths } from '@momonga/foundation';
+import { endpointFormsOfPlatform, redactedUrl, transportUrlMessage, transportUrlProblem, syncPaths } from '@momonga/foundation';
 import {
   DEFAULT_ANTHROPIC_API_VERSION,
   SERVER_KINDS,
@@ -18,6 +18,7 @@ import type { ChainMember } from './chain-room.ts';
 import { checkModelDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
+import { addressProblem } from './probe-record-key.ts';
 import type { PlanProfile } from './plan-profiles.ts';
 import { PROVIDER_NAME_RULE_TEXT, isProviderName, providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
 import { registeredIds, registeredServer, requireOfferedEndpointForm } from './server-registry.ts';
@@ -105,10 +106,10 @@ const DEFAULT_ADMISSION_TIMEOUT_MS = 30_000;
 const unknownServerMessage = (where: string, id: string, servers: ServerRegistry): string =>
   `${where}: server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${registeredIds(servers).join(', ')}`;
 
-const resolveManaged = (target: ManagedTarget, { connection, entry }: Where, servers: ServerRegistry, home: string | undefined): ResolvedManagedTarget => {
+const resolveManaged = (target: ManagedTarget, { connection, entry }: Where, servers: ServerRegistry): ResolvedManagedTarget => {
   const description = registeredServer(servers, target.server);
   if (description === undefined) throw new Error(unknownServerMessage(connection, target.server, servers));
-  if (home !== undefined) requireOfferedEndpointForm(description, endpointFormsOfSocket(generationLayout(home, FIRST_GENERATION).sockets.gateway), connection);
+  requireOfferedEndpointForm(description, endpointFormsOfPlatform(), connection);
   for (const field of Object.keys(target.capabilities ?? {})) {
     if (!(description.declarable as readonly string[]).includes(field)) throw new Error(`${entry}: capabilities.${field} is not a field the server ${JSON.stringify(description.id)} lets a model declare; declarable: ${description.declarable.join(', ')}`);
   }
@@ -203,13 +204,10 @@ const resolveRemote = (
   home: string | undefined,
   { connection, entry: where }: Where,
   serving: { billing: TargetBilling; maxConcurrency: number } = REMOTE_SERVING,
-  address: 'required' | 'optional' = 'required',
 ) => {
   const { baseUrl, socketPath } = target;
-  if (baseUrl !== undefined && socketPath !== undefined) throw new Error(`${connection}: baseUrl and socketPath cannot both be written; exactly one names the server`);
-  if (address === 'required' && baseUrl === undefined && socketPath === undefined) {
-    throw new Error(`${connection}: exactly one of baseUrl and socketPath is required`);
-  }
+  const problem = addressProblem(target);
+  if (problem !== undefined) throw new Error(`${connection}: ${problem}`);
   if (baseUrl !== undefined) checkBaseUrl(baseUrl, connection, target.apiKeyEnv !== undefined || target.apiKeySecret !== undefined);
   if (socketPath !== undefined) checkSocketPath(socketPath, home, connection);
   checkSamplingRange(target.capabilities, where);
@@ -320,7 +318,7 @@ const resolveAnthropic = (target: AnthropicTarget, home: string | undefined, pla
     model: target.model,
     toolCalling: 'native',
     apiVersion,
-    ...resolveRemote(target, ANTHROPIC_CAPABILITY_DEFAULTS, home, place, REMOTE_SERVING, 'optional'),
+    ...resolveRemote(target, ANTHROPIC_CAPABILITY_DEFAULTS, home, place),
   };
 };
 
@@ -347,7 +345,7 @@ type ResolveContext = { home: string | undefined; warnings: string[]; servers: S
 const resolveAdapter = (target: ModelTarget, provider: string, where: Where, { home, warnings, servers, profiles }: ResolveContext): ResolvedModelTarget => {
   switch (target.adapter) {
     case 'managed':
-      return resolveManaged(target, where, servers, home);
+      return resolveManaged(target, where, servers);
     case 'chat-completions':
       return resolveChatCompletions(target, provider, home, where);
     case 'open-responses':

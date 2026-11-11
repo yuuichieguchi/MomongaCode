@@ -35,8 +35,9 @@ import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { shellModelsOf } from '../plain-http.ts';
+import { UsageError } from '../usage-error.ts';
 
-export class EvaluateUsageError extends Error {
+export class EvaluateUsageError extends UsageError {
   constructor(message: string) {
     super(message);
     this.name = 'EvaluateUsageError';

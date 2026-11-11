@@ -1,3 +1,4 @@
+import { EXIT_FAILURE } from '@momonga/foundation';
 import type { SelfExecutable, Sink } from '../ports.ts';
 import { HANDOVER_TERMINAL_ENV } from '../tui/terminal/constants.ts';
 import { handoverTerminalValue, takeHandoverTerminal } from '../tui/terminal/handover.ts';
@@ -58,8 +59,6 @@ export const handoverTarget = ({ self, execArgv, args, env }: Invocation, record
 
 export type RefusalIo = { stderr: Sink; terminal?: { output: { writeSync(text: string): void }; input: { setRawMode(on: boolean): unknown } } };
 
-export const EXIT_NOT_RESTORED = 1;
-
 export const refuseStart = (io: RefusalIo, refusal: Refusal): number => {
   if (io.terminal !== undefined) {
     const leave = refusal.terminal === undefined ? LEAVE_EVERY_MODE : leaveSequenceOf(refusal.terminal.modes);
@@ -67,5 +66,5 @@ export const refuseStart = (io: RefusalIo, refusal: Refusal): number => {
     io.terminal.input.setRawMode(false);
   }
   io.stderr.write(`momonga: ${restoreRefusedText(refusal)}\n`);
-  return EXIT_NOT_RESTORED;
+  return EXIT_FAILURE;
 };

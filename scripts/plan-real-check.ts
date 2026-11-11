@@ -6,7 +6,7 @@ import type { ModelsOperation } from '@momonga/config';
 import { CONTEXT_REPORT_FORMAT } from '@momonga/eval';
 import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths, UdsClient } from '@momonga/foundation';
-import { WORKSPACE_USAGE_LIMIT_CODE, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import { SIGNED_IN_OUTCOME, WORKSPACE_USAGE_LIMIT_CODE, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 
 const REPORT_FORMAT = 'momonga-plan-real-check/1';
 
@@ -163,7 +163,7 @@ const readEvents = (paths: MomongaPaths): Event[] => {
 
 const named = (events: readonly Event[], name: string): Event[] => events.filter((event) => event['msg'] === name);
 
-const signedIn = (events: readonly Event[]): Event[] => named(events, 'plan.sign_in').filter((event) => event['outcome'] === 'signed_in');
+const signedIn = (events: readonly Event[]): Event[] => named(events, 'plan.sign_in').filter((event) => event['outcome'] === SIGNED_IN_OUTCOME);
 
 const accountOf = (events: readonly Event[]): string | null => {
   const [first] = signedIn(events);

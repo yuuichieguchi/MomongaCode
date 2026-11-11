@@ -32,8 +32,9 @@ import {
   toolDone,
 } from './inherit-fixtures.ts';
 import type { InheritedEvent, Outcome } from './inherit-fixtures.ts';
+import { UNASKED_COMMANDS } from './helpers.ts';
 
-const FINAL_DEFAULT = { kind: 'final', currentMode: 'manual' } as const;
+const FINAL_DEFAULT = { kind: 'final', currentMode: 'manual', unasked: UNASKED_COMMANDS } as const;
 const CANCELLED: Outcome = { status: 'CANCELLED' };
 
 const project = (state: RunState, outcome: Outcome, kind: Parameters<typeof projectInheritance>[2] = FINAL_DEFAULT): InheritedEvent =>
@@ -492,7 +493,7 @@ describe('projectInheritance: skills of a pinned_overflow run', () => {
 describe('projectInheritance: the mode', () => {
   it('appends the mode_changed marker last, after the interruption marker, when the final mode differs', () => {
     const state = foldOf([task('Do it'), ...claimed('manual'), ended('CANCELLED')]);
-    const payload = project(state, CANCELLED, { kind: 'final', currentMode: 'plan' });
+    const payload = project(state, CANCELLED, { kind: 'final', currentMode: 'plan', unasked: UNASKED_COMMANDS });
     expect(payload.history).toEqual([
       { seq: 1, item: taskItem('Do it') },
       markerEntry(2, MARKER_TEXT.userInterrupted),
@@ -511,7 +512,7 @@ describe('projectInheritance: the mode', () => {
   const pairs = PERMISSION_MODES.flatMap((from) => PERMISSION_MODES.filter((to) => to !== from).map((to) => [from, to] as const));
 
   it.each(pairs)('announces a change from %s to %s with the label and rule of the new mode', (from, to) => {
-    const payload = project(answered(from), { status: 'COMPLETED' }, { kind: 'final', currentMode: to });
+    const payload = project(answered(from), { status: 'COMPLETED' }, { kind: 'final', currentMode: to, unasked: UNASKED_COMMANDS });
     expect(payload.history.at(-1)).toEqual(markerEntry(3, modeChangedText(from, to)));
     expect(payload.markers).toEqual([{ seq: 3, kind: 'mode_changed' }]);
     expect(payload.fromMode).toBe(from);
@@ -519,7 +520,7 @@ describe('projectInheritance: the mode', () => {
   });
 
   it('adds no marker when the mode is unchanged and records the current mode', () => {
-    const payload = project(answered('plan'), { status: 'COMPLETED' }, { kind: 'final', currentMode: 'plan' });
+    const payload = project(answered('plan'), { status: 'COMPLETED' }, { kind: 'final', currentMode: 'plan', unasked: UNASKED_COMMANDS });
     expect(payload.markers).toEqual([]);
     expect(payload.history).toHaveLength(2);
     expect(payload.mode).toBe('plan');
@@ -528,7 +529,7 @@ describe('projectInheritance: the mode', () => {
   it('adds no marker when the source mode is unknown and still records the current mode', () => {
     const state = answered(undefined);
     expect(state.mode).toBeUndefined();
-    const payload = project(state, { status: 'COMPLETED' }, { kind: 'final', currentMode: 'acceptEdits' });
+    const payload = project(state, { status: 'COMPLETED' }, { kind: 'final', currentMode: 'acceptEdits', unasked: UNASKED_COMMANDS });
     expect(payload.markers).toEqual([]);
     expect(payload.fromMode).toBeUndefined();
     expect(payload.mode).toBe('acceptEdits');
@@ -546,8 +547,8 @@ describe('projectInheritance: the mode', () => {
 
   it('changes the digest when only the mode differs', () => {
     const state = answered(undefined);
-    const asDefault = project(state, { status: 'COMPLETED' }, { kind: 'final', currentMode: 'manual' });
-    const asPlan = project(state, { status: 'COMPLETED' }, { kind: 'final', currentMode: 'plan' });
+    const asDefault = project(state, { status: 'COMPLETED' }, { kind: 'final', currentMode: 'manual', unasked: UNASKED_COMMANDS });
+    const asPlan = project(state, { status: 'COMPLETED' }, { kind: 'final', currentMode: 'plan', unasked: UNASKED_COMMANDS });
     expect(asPlan.history).toEqual(asDefault.history);
     expect(asPlan.digest).not.toBe(asDefault.digest);
   });
@@ -556,7 +557,7 @@ describe('projectInheritance: the mode', () => {
 describe('projectInheritance: determinism and wording', () => {
   it('gives byte-identical canonical JSON for the same input', () => {
     const state = danglingSource([toolCall('c1'), toolCall('c2'), { type: 'tool.started', callId: 'c1', idemKey: 'k-c1' }], ended('CANCELLED'));
-    expect(canonicalJson(project(state, CANCELLED, { kind: 'final', currentMode: 'plan' }))).toBe(canonicalJson(project(state, CANCELLED, { kind: 'final', currentMode: 'plan' })));
+    expect(canonicalJson(project(state, CANCELLED, { kind: 'final', currentMode: 'plan', unasked: UNASKED_COMMANDS }))).toBe(canonicalJson(project(state, CANCELLED, { kind: 'final', currentMode: 'plan', unasked: UNASKED_COMMANDS })));
   });
 
   it('never puts a stop reason, a status or an error code into a model-facing text', () => {
@@ -572,7 +573,7 @@ describe('projectInheritance: determinism and wording', () => {
         danglingSource([toolCall('c1'), toolCall('c2'), { type: 'tool.started', callId: 'c1', idemKey: 'k-c1' }], ended('CANCELLED')),
         foldOf([task('Do it'), ...claimed('manual'), ended('CANCELLED')]),
       ]) {
-        const payload = project(state, outcome, { kind: 'final', currentMode: 'plan' });
+        const payload = project(state, outcome, { kind: 'final', currentMode: 'plan', unasked: UNASKED_COMMANDS });
         for (const entry of payload.history.filter((candidate) => candidate.seq >= state.nextItemSeq)) {
           const item = entry.item as { output?: unknown; content?: unknown };
           texts.add(String(item.output ?? item.content));
@@ -589,7 +590,7 @@ describe('projectInheritance: determinism and wording', () => {
 
 describe('applyInheritance', () => {
   it('rebases the task after the inherited entries and records the inheritance', () => {
-    const payload = project(answered('manual'), { status: 'COMPLETED' }, { kind: 'final', currentMode: 'plan' });
+    const payload = project(answered('manual'), { status: 'COMPLETED' }, { kind: 'final', currentMode: 'plan', unasked: UNASKED_COMMANDS });
     const fresh = foldOf([task('And again')], NEXT_RUN);
     const next = applyInheritance(fresh, payload as never);
     expect(next.history).toEqual([...payload.history, { seq: payload.nextItemSeq, item: taskItem('And again') }]);

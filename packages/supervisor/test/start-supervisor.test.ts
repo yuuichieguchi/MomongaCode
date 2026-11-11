@@ -239,7 +239,7 @@ describe('startSupervisor', () => {
     });
     await h.waitForState('runtime', 'ready');
     await h.waitForState('gateway', 'ready');
-    h.fake.latest('gateway').exit(75);
+    h.fake.latest('gateway').exit(77);
     await pumpUntil(h.timers, () => h.log.withMsg('supervisor.background_failed').length >= 1, { realWork: h.realWork, maxMs: 5000 });
     explodeRandom = true;
     h.fake.latest('runtime').exit(1);

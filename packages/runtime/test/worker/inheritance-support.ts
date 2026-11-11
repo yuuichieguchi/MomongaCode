@@ -5,6 +5,7 @@ import type { Run } from '@momonga/store';
 import { FLOOR_TOKENS, UNBOUNDED_WINDOW, withReader } from '../../../store/test/support/reference.ts';
 import { textOf } from './harness.ts';
 import type { Env } from './harness.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 export const NEUTRAL_MESSAGE = 'The previous conversation could not be loaded. Start a new conversation (/clear) to continue.';
 
@@ -27,12 +28,12 @@ export const MARKER_TEXT = {
   dropped: '[A previous message was too large to process and was dropped.]',
 } as const;
 
+const READ_ONLY_SENTENCE = `Read-only uses of these commands run without asking: ${UNASKED_COMMANDS.readOnly.join(', ')}.`;
+
 export const MODE_RULE: Record<PermissionMode, string> = {
-  manual:
-    "File changes and commands need the user's approval unless an allow rule covers them; read-only commands (ls, cat, echo, pwd, head, tail, grep, find, wc, which, diff, stat, du, cd, file, sort, ps on Linux and read-only git) run without asking.",
-  acceptEdits:
-    'File edits and the filesystem commands mkdir, touch, rm, rmdir, mv, cp and sed inside the workspace are accepted without asking, and read-only commands run without asking; other actions still need approval unless an allow rule covers them.',
-  plan: "Do not edit files; research and propose a plan for the user to approve. Read-only commands (ls, cat, echo, pwd, head, tail, grep, find, wc, which, diff, stat, du, cd, file, sort, ps on Linux and read-only git) run without asking; any other command needs the user's approval unless an allow rule covers it.",
+  manual: `File changes and commands need the user's approval unless an allow rule covers them. ${READ_ONLY_SENTENCE}`,
+  acceptEdits: `File edits and these filesystem commands inside the workspace are accepted without asking: ${UNASKED_COMMANDS.edit.join(', ')}. ${READ_ONLY_SENTENCE} Other actions still need approval unless an allow rule covers them.`,
+  plan: `Do not edit files; research and propose a plan for the user to approve. ${READ_ONLY_SENTENCE} Any other command needs the user's approval unless an allow rule covers it.`,
   auto: "Tool calls that would need approval are first reviewed by an automatic safety classifier; calls it does not clearly approve still need the user's approval. Stay within what the user asked.",
   bypassPermissions: 'Tool calls run without asking the user; be careful with destructive actions.',
 };
