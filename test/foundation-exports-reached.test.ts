@@ -158,7 +158,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'credentialWriteScript',
   'decideGenerationStart',
   'defaultProtectedPaths',
-  'ensureGenerationDirs',
   'exitCodeForStartError',
   'failureOfError',
   'fileMatcherOf',

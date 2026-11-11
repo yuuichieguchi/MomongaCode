@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SocketPathUnsupportedError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths, setSocketBind } from '@momonga/foundation';
+import { SocketPathUnsupportedError, ensureMomongaDirs, generationLayout, momongaPaths, refuseUnfitGenerationSocketsBeforeCreation, setSocketBind } from '@momonga/foundation';
 import { createTempDir, removeTempDir } from '@momonga/testkit';
 
 const REALISTIC_HOME = '/Users/alexandra-wilkinson';
@@ -54,10 +54,10 @@ describe('generation-scoped sockets and locks', () => {
   });
 });
 
-describe('ensureGenerationDirs', () => {
+describe('refuseUnfitGenerationSocketsBeforeCreation', () => {
   const temporaryHome = (): string => createTempDir({ asHome: true });
 
-  it('creates run/g<N> private and probes each socket path of that generation', async () => {
+  it('probes, before run/g<N> exists, a path in run as long as the longest socket path of that generation', async () => {
     const home = temporaryHome();
     const probed: string[] = [];
     try {
@@ -66,15 +66,13 @@ describe('ensureGenerationDirs', () => {
       setSocketBind(async (candidate) => {
         probed.push(candidate);
       });
-      await ensureGenerationDirs(paths, 3);
+      await refuseUnfitGenerationSocketsBeforeCreation(paths, 3);
       const dir = path.join(home, '.momonga', 'run', 'g3');
-      const stat = fs.lstatSync(dir);
-      expect(stat.isDirectory()).toBe(true);
-      expect(stat.mode & 0o777).toBe(0o700);
-      expect(probed.map((candidate) => path.dirname(candidate)).sort()).toEqual([dir, dir, dir]);
-      expect(probed.map((candidate) => Buffer.byteLength(candidate)).sort()).toEqual(
-        ['gateway.sock', 'runtime.sock', 'supervisor.sock'].map((name) => Buffer.byteLength(path.join(dir, name))).sort(),
-      );
+      expect(fs.existsSync(dir)).toBe(false);
+      expect(probed.map((candidate) => path.dirname(candidate))).toEqual([paths.run]);
+      expect(probed.map((candidate) => Buffer.byteLength(candidate))).toEqual([
+        Math.max(...['gateway.sock', 'runtime.sock', 'supervisor.sock'].map((name) => Buffer.byteLength(path.join(dir, name)))),
+      ]);
     } finally {
       setSocketBind(undefined);
       await removeTempDir(home);
@@ -89,7 +87,7 @@ describe('ensureGenerationDirs', () => {
       setSocketBind(async () => {
         throw Object.assign(new Error('bind: ENAMETOOLONG'), { code: 'ENAMETOOLONG' });
       });
-      const error = await ensureGenerationDirs(paths, 1).catch((caught: unknown) => caught);
+      const error = await refuseUnfitGenerationSocketsBeforeCreation(paths, 1).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(SocketPathUnsupportedError);
       expect((error as Error).message).toContain(path.join(home, '.momonga', 'run', 'g1'));
       expect((error as Error).message).toMatch(/must be shorter than \d+ bytes/);

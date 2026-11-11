@@ -19,7 +19,6 @@ import {
 } from '@momonga/foundation';
 import type { KernelLockMechanism, LockedEntry, LockedEntryFiles, MomongaPaths, OutboundNetwork, OutboundOptions } from '@momonga/foundation';
 import { interceptors, request } from 'undici';
-import type { Dispatcher } from 'undici';
 import { withOutboundNetwork } from '../network.ts';
 import { daemonReadyBoundMs } from '../daemon/ensure-daemon.ts';
 import { listLiveGenerations, retiringWorkOf } from '../daemon/generations.ts';
@@ -33,31 +32,16 @@ export const UPDATE_LOCK_FILE = 'update.lock';
 export const UPDATE_STATE_FILE = 'update.json';
 const UPDATE_STATE_MODE = 0o600;
 
-const TRANSFER_OPTIONS: OutboundOptions = { connectReplyTimeoutMs: TRANSFER_STALL_TIMEOUT_MS, headersTimeout: TRANSFER_STALL_TIMEOUT_MS, bodyTimeout: TRANSFER_STALL_TIMEOUT_MS };
+export const UPDATE_TRANSFER_OPTIONS: OutboundOptions = { connectReplyTimeoutMs: TRANSFER_STALL_TIMEOUT_MS, headersTimeout: TRANSFER_STALL_TIMEOUT_MS, bodyTimeout: TRANSFER_STALL_TIMEOUT_MS };
 
-const redirectingDispatcher = (network: OutboundNetwork, options: OutboundOptions): Dispatcher =>
-  createOutboundDispatcher(network, options).compose(interceptors.redirect({ maxRedirections: MAX_REDIRECTS, throwOnMaxRedirect: true }));
+export type NetworkLease = <T>(signal: AbortSignal, use: (network: OutboundNetwork) => Promise<T>) => Promise<T>;
 
-export const undiciUpdateHttp = (network: Promise<OutboundNetwork>, options: OutboundOptions = TRANSFER_OPTIONS): UpdateHttp => {
-  let dispatcher: Promise<Dispatcher> | undefined;
-  const dispatcherOnce = (): Promise<Dispatcher> => {
-    dispatcher ??= network.then((resolved) => redirectingDispatcher(resolved, options));
-    return dispatcher;
-  };
-  return {
-    get: async (url, { headers, signal }) => {
-      const response = await request(url, { method: 'GET', headers: { ...headers }, signal, dispatcher: await dispatcherOnce() });
-      return { status: response.statusCode, body: response.body };
-    },
-  };
-};
-
-const leasedUpdateHttp = (ports: CliPorts): UpdateHttp => ({
+export const leasedUpdateHttp = (lease: NetworkLease, options: OutboundOptions, onCloseFailure: (error: unknown) => void): UpdateHttp => ({
   get: (url, { headers, signal }) =>
     new Promise((resolve, reject) => {
       let answered = false;
-      withOutboundNetwork(ports, signal, async (network) => {
-        const dispatcher = createOutboundDispatcher(network, TRANSFER_OPTIONS);
+      lease(signal, async (network) => {
+        const dispatcher = createOutboundDispatcher(network, options);
         try {
           const response = await request(url, { method: 'GET', headers: { ...headers }, signal, dispatcher: dispatcher.compose(interceptors.redirect({ maxRedirections: MAX_REDIRECTS, throwOnMaxRedirect: true })) });
           const bodyClosed = new Promise<void>((closed) => response.body.once('close', () => closed()));
@@ -69,10 +53,15 @@ const leasedUpdateHttp = (ports: CliPorts): UpdateHttp => ({
         }
       }).then(undefined, (error: unknown) => {
         if (!answered) reject(error);
-        else ports.stderr.write(`momonga: the update connection could not be closed: ${error instanceof Error ? error.message : String(error)}\n`);
+        else onCloseFailure(error);
       });
     }),
 });
+
+const cliUpdateHttp = (ports: CliPorts): UpdateHttp =>
+  leasedUpdateHttp((signal, use) => withOutboundNetwork(ports, signal, use), UPDATE_TRANSFER_OPTIONS, (error) => {
+    ports.stderr.write(`momonga: the update connection could not be closed: ${error instanceof Error ? error.message : String(error)}\n`);
+  });
 
 const REPLACE_REFUSED_CODES: ReadonlySet<string> = new Set(['EPERM', 'EACCES', 'EBUSY']);
 
@@ -201,7 +190,7 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths, lock: Kern
   self: ports.self,
   env: definedEnv(ports.env),
   clock: ports.clock,
-  http: leasedUpdateHttp(ports),
+  http: cliUpdateHttp(ports),
   fs: nodeUpdateFs(lock),
   run: nodeBoundedCommandRunner,
   lock: nodeUpdateLock(paths, lock),

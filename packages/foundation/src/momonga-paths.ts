@@ -309,12 +309,6 @@ export type RoleEndpoint = { socketPath: string; lockPath: string };
 
 export const roleEndpoint = (layout: GenerationLayout, role: GenerationProcessRole): RoleEndpoint => ({ socketPath: layout.sockets[role], lockPath: layout.locks[role] });
 
-const refuseUnfitGenerationSockets = async (layout: GenerationLayout): Promise<void> => {
-  const sockets = Object.values(layout.sockets);
-  for (const socket of sockets) assertSocketPathLength(socket);
-  await Promise.all(sockets.filter((socket) => !isPipePath(socket)).map((socket) => refuseUnbindableUnixSocketPath(socket)));
-};
-
 const createMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts): Promise<void> => {
   const platform = ports.platform ?? process.platform;
   await createDirectory(path.dirname(paths.root), { recursive: true });
@@ -469,13 +463,6 @@ export const generationMemberOf = (name: string): GenerationMember | undefined =
 };
 
 export const generationSpawnScratch = (paths: MomongaPaths, generation: number): string => scopeToGeneration(paths, generation).tmp.spawn;
-
-export const ensureGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
-  const layout = generationLayout(path.dirname(paths.root), generation);
-  await refuseUnfitGenerationSockets(layout);
-  await createMomongaDirs(paths, ports);
-  await ensurePrivateDirectory(layout.dir, ports.platform ?? process.platform);
-};
 
 export class SessionTmpDirError extends Error {}
 

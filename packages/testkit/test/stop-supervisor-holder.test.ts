@@ -1,5 +1,6 @@
+import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { FIRST_GENERATION, acquireProcessLock, ensureGenerationDirs, ensureMomongaDirs, generationLayout, inspectProcessLock, isProcessAlive, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, acquireProcessLock, ensureMomongaDirs, generationLayout, inspectProcessLock, isProcessAlive, momongaPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, registerCleanup, startLockHolder, stopSupervisorHolders, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 
@@ -9,7 +10,7 @@ const preparedHome = async (context: CleanupContext): Promise<{ home: string; lo
   const home = withTempDir(context, { asHome: true });
   const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
-  await ensureGenerationDirs(paths, FIRST_GENERATION);
+  fs.mkdirSync(firstGeneration(paths).dir, { mode: 0o700 });
   return { home, lockPath: firstGeneration(paths).locks.supervisor };
 };
 
@@ -27,7 +28,7 @@ describe('stopSupervisorHolders', () => {
   it('kills the holder of the supervisor lock of every generation of a home (20.78)', async (context) => {
     const { home, lockPath } = await preparedHome(context);
     const second = generationLayout(home, 2);
-    await ensureGenerationDirs(momongaPaths(home, process.platform, process.env), 2);
+    fs.mkdirSync(second.dir, { mode: 0o700 });
     const holders = [await startLockHolder(context, lockPath), await startLockHolder(context, second.locks.supervisor)];
 
     expect(await stopSupervisorHolders(home)).toEqual(holders.map((holder) => holder.pid));

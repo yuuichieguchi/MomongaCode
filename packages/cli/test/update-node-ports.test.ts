@@ -2,12 +2,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaPaths, systemTiming } from '@momonga/foundation';
+import type { OutboundNetwork } from '@momonga/foundation';
 import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { daemonReadyBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { MAX_REDIRECTS, STAGING_PREFIX, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, undiciUpdateHttp } from '../src/update/node-ports.ts';
+import { MAX_REDIRECTS, STAGING_PREFIX, UPDATE_TRANSFER_OPTIONS, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState } from '../src/update/node-ports.ts';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
 const unusedPort = (name: string): never =>
@@ -174,9 +175,13 @@ describe('daemon probe', () => {
   });
 });
 
-const DIRECT_NETWORK = Promise.resolve({ config: { caFiles: [] }, trust: { sources: [], failures: [] } });
+const DIRECT_NETWORK: OutboundNetwork = { config: { caFiles: [] }, trust: { sources: [], failures: [] } };
 
-describe('undici update http', () => {
+const closeFailures: unknown[] = [];
+
+const directHttp = leasedUpdateHttp((_signal, use) => use(DIRECT_NETWORK), UPDATE_TRANSFER_OPTIONS, (error) => void closeFailures.push(error));
+
+describe('update http', () => {
   const serve = async (context: Parameters<typeof withTempDir>[0], handler: http.RequestListener): Promise<string> => {
     const server = http.createServer(handler);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -200,9 +205,30 @@ describe('undici update http', () => {
     });
     const signal = new AbortController().signal;
 
-    await expect(undiciUpdateHttp(DIRECT_NETWORK).get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
-    const response = await undiciUpdateHttp(DIRECT_NETWORK).get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
+    await expect(directHttp.get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
+    const response = await directHttp.get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
     expect(response.status).toBe(200);
+    expect(closeFailures).toEqual([]);
+  });
+
+  it('is the http port of the update ports the product composes', async (context) => {
+    const origin = await serve(context, (request, response) => {
+      const hop = Number(request.url?.slice(1));
+      if (hop < MAX_REDIRECTS + 2) {
+        response.writeHead(302, { location: `/${hop + 1}` });
+        response.end();
+        return;
+      }
+      response.end('arrived');
+    });
+    const home = withTempDir(context, { asHome: true });
+    const http = nodeUpdatePorts({ ...cliPortsFor(home), timers: systemTiming }, momongaPaths(home, process.platform, process.env), testKernelLock()).http;
+    const signal = new AbortController().signal;
+
+    await expect(http.get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
+    const response = await http.get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
+    expect(response.status).toBe(200);
+    for await (const chunk of response.body) expect(chunk).toBeDefined();
   });
 
   it('sends the given headers', async (context) => {
@@ -212,7 +238,7 @@ describe('undici update http', () => {
       response.end('ok');
     });
 
-    await undiciUpdateHttp(DIRECT_NETWORK).get(origin, { headers: { 'user-agent': 'momonga/1.0.0', accept: 'x/y' }, signal: new AbortController().signal });
+    await directHttp.get(origin, { headers: { 'user-agent': 'momonga/1.0.0', accept: 'x/y' }, signal: new AbortController().signal });
 
     expect(seen['user-agent']).toBe('momonga/1.0.0');
     expect(seen['accept']).toBe('x/y');

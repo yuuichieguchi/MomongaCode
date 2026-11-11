@@ -56,7 +56,6 @@ export type ChildExit = { code: number | null; signal: NodeJS.Signals | null };
 export type SpawnPortOptions = {
   cwd: string;
   env: Readonly<Record<string, string>>;
-  detached: true;
   markerFile?: string;
   stdio: readonly ['ignore', 'pipe', 'pipe', 'pipe', number] | readonly ['ignore', 'pipe', 'pipe', 'pipe', number, number];
 };
@@ -410,7 +409,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       const handle = options.spawn(resolved.command, resolved.args, {
         cwd: options.home,
         env: { ...resolved.env, [SETTINGS_APPLIED_ENV]: generationLayout(options.home, options.generation).settingsApplied, ...(handoff === undefined ? {} : handoff.env), ...(spawnCapability === undefined ? {} : { [CREDENTIAL_CAPABILITY_ENV]: spawnCapability }) },
-        detached: true,
         markerFile: marker.path,
         stdio: childStdio(marker.fd, handoff?.descriptor),
       });

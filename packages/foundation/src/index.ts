@@ -128,7 +128,6 @@ export {
   MARKER_KINDS,
   MomongaDirectoryError,
   SessionTmpDirError,
-  ensureGenerationDirs,
   ensureMomongaDirs,
   ensureSessionTmpDir,
   releaseSessionScratch,
