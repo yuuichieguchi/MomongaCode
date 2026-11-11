@@ -17,11 +17,11 @@ vi.mock('@momonga/foundation', async (importOriginal) => {
 });
 
 describe('the limit of a request to the runtime is stated by the product', () => {
-  it('gives the client the host read bound as the limit for the headers of an answer', async () => {
+  it('gives the client the host read bound as the limit of the connection and of the headers of an answer', async () => {
     const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket: fixedSocket('/unused.sock'), clock: nodeClock });
     await client.close();
 
-    expect(created.options).toEqual([{ headersTimeoutMs: HOST_READ_BOUND_MS }]);
+    expect(created.options).toEqual([{ connectTimeoutMs: HOST_READ_BOUND_MS, headersTimeoutMs: HOST_READ_BOUND_MS }]);
     expect(HOST_READ_BOUND_MS).toBe(300_000);
   });
 });

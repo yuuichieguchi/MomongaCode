@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { stripCredentialEnv } from '@momonga/config';
-import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, momongaPaths, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
 import { afterMicrotasks, waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
@@ -12,6 +12,8 @@ import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness, settingsDeclaring, settingsOnDisk, writeInvalidSettings, writeSettings } from './support/p2-manager-harness.ts';
 import { pollUntil } from './support/p2-poll.ts';
 import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
+
+const HOST = { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
 
 const declaring = (...names: string[]): CredentialSettings =>
   ({
@@ -39,16 +41,16 @@ describe('gatewayEnv', () => {
       FOO: 'foo',
       NODE_OPTIONS: '--require /x.js',
     };
-    const env = gatewayEnv(source, declaring('UPSTREAM_X', 'ABSENT_KEY'), '/canonical/home');
+    const env = gatewayEnv(source, declaring('UPSTREAM_X', 'ABSENT_KEY'), '/canonical/home', secretStoreEnvFor(source, HOST));
     expect(env).toEqual({
-      ...secretStoreEnvFor(source),
+      ...secretStoreEnvFor(source, HOST),
       PATH: MINIMAL_CHILD_PATH,
       HOME: '/Users/u',
       LANG: 'en_US.UTF-8',
       TMPDIR: '/var/tmp/u',
       LC_ALL: 'C',
       UPSTREAM_X: 'upstream-value',
-      ...secretStoreEnvFor(source),
+      ...secretStoreEnvFor(source, HOST),
     });
     expect(env).not.toHaveProperty('ABSENT_KEY');
   });
@@ -57,7 +59,7 @@ describe('gatewayEnv', () => {
     const env = gatewayEnv(
       { PATH: '/bin', HOME: '/h', NODE_EXTRA_CA_CERTS: '/etc/corp-ca.pem', HTTPS_PROXY: 'http://proxy:3128', HTTP_PROXY: 'http://proxy:3128', SSL_CERT_FILE: '/etc/ssl.pem' },
       declaring(),
-      '/h',
+      '/h', secretStoreEnvFor({ PATH: '/bin', HOME: '/h', NODE_EXTRA_CA_CERTS: '/etc/corp-ca.pem', HTTPS_PROXY: 'http://proxy:3128', HTTP_PROXY: 'http://proxy:3128', SSL_CERT_FILE: '/etc/ssl.pem' }, HOST),
     );
     expect(env['NODE_EXTRA_CA_CERTS']).toBe('/etc/corp-ca.pem');
     expect(env['HTTPS_PROXY']).toBe('http://proxy:3128');
@@ -67,7 +69,7 @@ describe('gatewayEnv', () => {
 
   it('gatewayEnv hands the gateway every network variable the resolver reads', () => {
     const source = Object.fromEntries(NETWORK_ENV_NAMES.map((name) => [name, `value-of-${name}`]));
-    const env = gatewayEnv({ PATH: '/bin', HOME: '/h', ...source }, declaring(), '/h');
+    const env = gatewayEnv({ PATH: '/bin', HOME: '/h', ...source }, declaring(), '/h', secretStoreEnvFor({ PATH: '/bin', HOME: '/h', ...source }, HOST));
     for (const name of NETWORK_ENV_NAMES) expect(env[name]).toBe(`value-of-${name}`);
   });
 
@@ -85,15 +87,16 @@ describe('gatewayEnv', () => {
       source,
       declaring('PATH', 'NODE_OPTIONS', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'HOME', 'LC_ALL'),
       '/canonical/home',
+      secretStoreEnvFor(source, HOST),
       (name) => skipped.push(name),
     );
-    expect(env).toEqual({ ...secretStoreEnvFor(source), PATH: MINIMAL_CHILD_PATH, HOME: '/Users/real-home', LC_ALL: 'en_US.UTF-8' });
+    expect(env).toEqual({ ...secretStoreEnvFor(source, HOST), PATH: MINIMAL_CHILD_PATH, HOME: '/Users/real-home', LC_ALL: 'en_US.UTF-8' });
     for (const value of ['declared-path-value', 'declared-node-options', 'declared-ld-preload', 'declared-dyld']) expect(Object.values(env)).not.toContain(value);
     expect([...skipped].sort()).toEqual(['DYLD_INSERT_LIBRARIES', 'HOME', 'LC_ALL', 'LD_PRELOAD', 'NODE_OPTIONS', 'PATH']);
   });
 
   it('gateway HOME comes from the canonical home when the env lacks it', () => {
-    expect(gatewayEnv({ PATH: '/bin', LANG: 'C' }, declaring(), '/canonical/home')).toEqual({ ...secretStoreEnvFor({ PATH: '/bin', LANG: 'C' }), PATH: MINIMAL_CHILD_PATH, HOME: '/canonical/home', LANG: 'C' });
+    expect(gatewayEnv({ PATH: '/bin', LANG: 'C' }, declaring(), '/canonical/home', secretStoreEnvFor({ PATH: '/bin', LANG: 'C' }, HOST))).toEqual({ ...secretStoreEnvFor({ PATH: '/bin', LANG: 'C' }, HOST), PATH: MINIMAL_CHILD_PATH, HOME: '/canonical/home', LANG: 'C' });
   });
 });
 
@@ -113,7 +116,7 @@ describe('gatewayEnv secret store discovery', () => {
     const bin = binWith('secret-tool');
     try {
       const bus = 'unix:path=/nonexistent/momonga-test-bus';
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: bus, XDG_RUNTIME_DIR: '/run/user/1000' }, referencingSecret(), '/home/u');
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: bus, XDG_RUNTIME_DIR: '/run/user/1000' }, referencingSecret(), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: bus, XDG_RUNTIME_DIR: '/run/user/1000' }, { ...HOST, platform: 'linux' }));
       expect(env[SECRET_BACKEND_ENV]).toBe('secret-service');
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'secret-tool'));
       expect(env['DBUS_SESSION_BUS_ADDRESS']).toBe(bus);
@@ -127,7 +130,7 @@ describe('gatewayEnv secret store discovery', () => {
   it('passes no D-Bus address when the chosen store does not declare it', () => {
     const bin = binWith('security');
     try {
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, referencingSecret(), '/home/u');
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, referencingSecret(), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
       expect(env['DBUS_SESSION_BUS_ADDRESS']).toBeUndefined();
@@ -139,7 +142,7 @@ describe('gatewayEnv secret store discovery', () => {
   it('passes the store choice even when no target references a secret, because the credential store needs it (N81)', () => {
     const bin = binWith('security');
     try {
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u');
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u' }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
     } finally {
@@ -150,7 +153,7 @@ describe('gatewayEnv secret store discovery', () => {
   it('passes the reason when the host has no store, with no target referencing a secret (N81)', () => {
     const bin = binWith();
     try {
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u');
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u' }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
       expect(env[SECRET_REFUSAL_ENV]).toMatch(/security \(Keychain\) is not on PATH/);
     } finally {
@@ -163,7 +166,7 @@ describe('runtimeEnv secret store choice (N81)', () => {
   it('passes the store choice to the runtime at every start, after the credential names are removed', () => {
     const bin = binWith('security');
     try {
-      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'));
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), secretStoreEnvFor({ PATH: bin, HOME: '/home/u' }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
     } finally {
@@ -174,7 +177,7 @@ describe('runtimeEnv secret store choice (N81)', () => {
   it('passes the reason to the runtime when the host has no store', () => {
     const bin = binWith();
     try {
-      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'));
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), secretStoreEnvFor({ PATH: bin, HOME: '/home/u' }, HOST));
       expect(env[SECRET_REFUSAL_ENV]).toMatch(/security \(Keychain\) is not on PATH/);
     } finally {
       fs.rmSync(bin, { recursive: true, force: true });
@@ -199,8 +202,8 @@ describe('runtimeEnv', () => {
       NEUTRAL_NAME: TOKEN_LIKE,
       DATABASE_URL: 'postgres://u:p@h/db',
     };
-    const result = runtimeEnv(source, declaring('UPSTREAM_X'));
-    expect(result.env).toEqual({ FOO: 'foo', PATH: '/opt/bin:/usr/bin', NEUTRAL_NAME: TOKEN_LIKE, ...secretStoreEnvFor(source) });
+    const result = runtimeEnv(source, declaring('UPSTREAM_X'), secretStoreEnvFor(source, HOST));
+    expect(result.env).toEqual({ FOO: 'foo', PATH: '/opt/bin:/usr/bin', NEUTRAL_NAME: TOKEN_LIKE, ...secretStoreEnvFor(source, HOST) });
     expect(result.removed).toEqual(['DATABASE_URL', 'GITHUB_TOKEN', 'MY_API_KEY', 'UPSTREAM_X']);
   });
 });
@@ -209,11 +212,11 @@ describe('undefined values', () => {
   it('undefined env values are dropped', () => {
     const source = { FOO: 'foo', GONE: undefined, PATH: '/bin', HOME: undefined };
     expect(definedEnv(source)).toEqual({ FOO: 'foo', PATH: '/bin' });
-    const runtime = runtimeEnv(source, declaring());
-    expect(runtime.env).toEqual({ FOO: 'foo', PATH: '/bin', ...secretStoreEnvFor(definedEnv(source)) });
+    const runtime = runtimeEnv(source, declaring(), secretStoreEnvFor(source, HOST));
+    expect(runtime.env).toEqual({ FOO: 'foo', PATH: '/bin', ...secretStoreEnvFor(definedEnv(source), HOST) });
     expect(Object.keys(runtime.env)).not.toContain('GONE');
-    const gateway = gatewayEnv(source, declaring(), '/h');
-    expect(gateway).toEqual({ ...secretStoreEnvFor(definedEnv(source)), PATH: MINIMAL_CHILD_PATH, HOME: '/h' });
+    const gateway = gatewayEnv(source, declaring(), '/h', secretStoreEnvFor(source, HOST));
+    expect(gateway).toEqual({ ...secretStoreEnvFor(definedEnv(source), HOST), PATH: MINIMAL_CHILD_PATH, HOME: '/h' });
     expect(Object.values(gateway)).not.toContain(undefined);
   });
 });
@@ -346,4 +349,19 @@ describe('settings at the supervisor', () => {
     expect(harness.log.events('child.held')).toEqual([expect.objectContaining({ child: 'runtime', source: 'settings', heldReason: message })]);
     expect(harness.port.calls).toHaveLength(2);
   });
+});
+
+describe('the layout every process derives from its environment (C12)', () => {
+  for (const platform of ['linux', 'win32'] as const) {
+    it(`${platform}: the gateway's environment gives the same cache base, executables area and key store as the supervisor's`, () => {
+      const home = platform === 'win32' ? 'C:\\Users\\a' : '/home/a';
+      const supervisor = { PATH: '/usr/bin', HOME: home, XDG_CACHE_HOME: '/x/cache', XDG_DATA_HOME: '/x/data', LOCALAPPDATA: 'D:\\local', APPDATA: 'D:\\roaming', SystemRoot: 'C:\\Windows' };
+      const gateway = gatewayEnv(supervisor, declaring(), home, {});
+      const of = (env: Record<string, string>) => {
+        const paths = momongaPaths(home, platform, env);
+        return { cacheBase: paths.cacheBase, executables: paths.executables, keychains: paths.keychains, tmp: paths.tmp };
+      };
+      expect(of(gateway)).toEqual(of(supervisor));
+    });
+  }
 });

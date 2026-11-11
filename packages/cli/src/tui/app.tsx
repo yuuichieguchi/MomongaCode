@@ -130,9 +130,14 @@ const unavailableShell: ShellPort = {
   },
 };
 
+const EXTERNAL_EDITOR_UNAVAILABLE = 'the external editor is not available in this interface';
+
 const unavailableExternalEditor: ExternalEditorPort = {
   edit() {
-    return Promise.reject(new Error('the external editor is not available in this interface'));
+    return Promise.reject(new Error(EXTERNAL_EDITOR_UNAVAILABLE));
+  },
+  open() {
+    return Promise.reject(new Error(EXTERNAL_EDITOR_UNAVAILABLE));
   },
 };
 
@@ -289,7 +294,7 @@ export function App(props: AppProps) {
         hint: NEWLINE_HINT[state.negotiation],
         size: state.size,
         ...(state.screen === 'fullscreen' ? { view: viewOf(facts.current.position, origins), toggles: togglesOf(store) } : { printed: feedRef.current.handed() }),
-        input: { text: current.text, cursor: current.cursor, historyIndex: current.historyIndex ?? null, draft: current.draft, draftPastes: current.draftPastes.map((paste) => ({ ...paste })), pastes: current.pastes.map((paste) => ({ ...paste })), pasteCount: current.pasteCount, shell: current.shell },
+        input: { text: current.text, cursor: current.cursor, historyIndex: current.historyIndex ?? null, draft: current.draft, draftPastes: current.draftPastes.map((paste) => ({ ...paste })), pastes: current.pastes.map((paste) => ({ ...paste })), pasteCount: current.pasteCount, shell: current.shell, draftShell: current.draftShell },
         attachments: heldAttachments(attachmentsRef.current, current.pastes).map((attachment) => ({ file: attachment.file, sha256: attachmentDigest(attachment.image) })),
         notes: origins.notes(),
       };
@@ -339,6 +344,7 @@ export function App(props: AppProps) {
     working: busy,
     prompting: phase.kind === 'trust' || transcript.approval !== undefined || transcript.elicitation !== undefined,
     notify,
+    timers,
   });
 
   const enterPhase = (next: Phase): void => {
@@ -847,7 +853,7 @@ export function App(props: AppProps) {
   const resumePorts = { backend, pick: overlayPorts.pick, info: note, resume: resumeSession, now, columns: () => terminal.state().size.columns };
 
   const restoreInput = (input: HandoverInput): void => {
-    replaceEditor({ ...editorRef.current, text: input.text, cursor: input.cursor, historyIndex: input.historyIndex ?? undefined, draft: input.draft ?? '', draftPastes: input.draftPastes ?? [], pastes: input.pastes ?? [], pasteCount: input.pasteCount ?? 0, shell: input.shell ?? false });
+    replaceEditor({ ...editorRef.current, text: input.text, cursor: input.cursor, historyIndex: input.historyIndex ?? undefined, draft: input.draft ?? '', draftPastes: input.draftPastes ?? [], pastes: input.pastes ?? [], pasteCount: input.pasteCount ?? 0, shell: input.shell ?? false, draftShell: input.draftShell ?? false });
   };
 
   const readRecordedImage = async (file: string): Promise<{ image: ImageAttachment } | { reason: string }> => {

@@ -194,16 +194,12 @@ describe('encrypted credential store: a marker whose key cannot be read (N81, Un
     expect(fs.readFileSync(path.join(given.stateDirectory, CREDENTIAL_KEY_MARKER_FILE), 'utf8')).toBe(markerText);
   });
 
-  it('write is store_unwritable with the cause, no key is created and the record is left as it was', async () => {
+  it('write after the store answered not found creates a new key, rewrites the marker and replaces the record', async () => {
     const { given, markerText } = await withLostKey();
-    const before = fs.readFileSync(recordFileOf(given.directory, 'plan/p/a'), 'utf8');
-    const error = await rejection(storeOf(given).write('plan/p/a', 'replacement', SIGNAL));
-    expect(error).toBeInstanceOf(CredentialStoreError);
-    expect((error as CredentialStoreError).code).toBe('store_unwritable');
-    expect((error as CredentialStoreError).cause).toBeInstanceOf(Error);
-    expect(createdKeyNames(given.keys)).toHaveLength(1);
-    expect(fs.readFileSync(path.join(given.stateDirectory, CREDENTIAL_KEY_MARKER_FILE), 'utf8')).toBe(markerText);
-    expect(fs.readFileSync(recordFileOf(given.directory, 'plan/p/a'), 'utf8')).toBe(before);
+    await storeOf(given).write('plan/p/a', 'replacement', SIGNAL);
+    expect(createdKeyNames(given.keys)).toHaveLength(2);
+    expect(fs.readFileSync(path.join(given.stateDirectory, CREDENTIAL_KEY_MARKER_FILE), 'utf8')).not.toBe(markerText);
+    expect(await storeOf(given).read('plan/p/a', SIGNAL)).toBe('replacement');
   });
 
   it('after a crash between the OS-store write and the marker, the next writer creates a key of its own and never reads the orphan', async () => {

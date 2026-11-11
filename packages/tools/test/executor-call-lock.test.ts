@@ -8,7 +8,7 @@ import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
-import { sleep, systemTiming } from '@momonga/foundation';
+import { lockFormOf, sidecarOf, sleep, systemTiming } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -211,8 +211,13 @@ describe('the per-call lock of the executor', () => {
 
   it('the sweep removes every lock file nobody holds and keeps the lock file a live holder has (20.35, R1)', async () => {
     const harness = makeHarness();
-    fs.writeFileSync(path.join(harness.callLockDir, 'a.lock'), '123');
-    fs.writeFileSync(path.join(harness.callLockDir, 'b.lock'), '');
+    const leftover = (name: string, holder: string): void => {
+      const entry = path.join(harness.callLockDir, name);
+      fs.writeFileSync(entry, holder);
+      if (lockFormOf(harness.kernelLock, 'file') === 'sidecar') fs.writeFileSync(sidecarOf(harness.kernelLock, entry), '');
+    };
+    leftover('a.lock', '123');
+    leftover('b.lock', '');
     fs.writeFileSync(path.join(harness.callLockDir, 'held.lock'), String(HOLDER_PID));
     harness.kernelLock.holdExternally(path.join(harness.callLockDir, 'held.lock'), HOLDER_PID);
 

@@ -92,7 +92,7 @@ describe('gateway probe on a HOME that has never run momonga', () => {
       path.join(root, 'settings.json'),
       JSON.stringify({
         models: {
-          connections: [{ adapter: 'chat-completions', provider: 'fake', socketPath: upstream.socketPath, models: [{ id: 'system', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }],
+          connections: [{ adapter: 'chat-completions', provider: 'fake', socketPath: upstream.socketPath, billing: 'local', models: [{ id: 'system', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }],
         },
       }),
       { mode: 0o600 },

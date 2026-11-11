@@ -53,6 +53,19 @@ describe('the project file .momonga/mandate.json', () => {
     await expect(loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true, approvals: undefined })).rejects.toThrow(`${key} can only be declared in the user settings`);
   });
 
+  it('refuses an allow rule even in content the person approved: a project file only narrows a mandate (ruling 2026-11-11, P-592)', async () => {
+    const declared = { allow: ['Bash(git:*)'], ask: ['Bash'] };
+    const projectDir = projectWith(declared);
+    const loading = loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true, approvals: { [projectDir]: { mandate: approvalDigestOf(declared) } } });
+    await expect(loading).rejects.toThrow(`${path.join(projectDir, PROJECT_MANDATE_FILE)}: allow can only be declared in the user settings (mandates)`);
+  });
+
+  it('loads approved ask and deny rules with budgets smaller than any mandate', async () => {
+    const declared = { ask: ['Bash(npm:*)'], deny: ['Write'], steps: 5, tokens: 10_000, costUsd: 0.25, timeMs: 60_000 };
+    const projectDir = projectWith(declared);
+    expect(await loadProjectMandate({ signal: new AbortController().signal, projectDir, trusted: true, approvals: { [projectDir]: { mandate: approvalDigestOf(declared) } } })).toEqual(declared);
+  });
+
   it('refuses a key it does not know, a rule that is not a permission rule and a budget out of range, naming the file', () => {
     expect(() => parseProjectMandate({ scope: {} }, '/p/.momonga/mandate.json')).toThrow('/p/.momonga/mandate.json');
     expect(() => parseProjectMandate({ deny: ['Bash(('] }, '/p/.momonga/mandate.json')).toThrow('is not a permission rule');

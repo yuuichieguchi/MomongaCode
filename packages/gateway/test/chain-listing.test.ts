@@ -8,7 +8,7 @@ import { createManagedTarget, saveProbeRecord } from '../src/index.ts';
 import { invalidRequest } from '../src/core/errors.ts';
 import { mergeCapabilities } from '../src/core/router.ts';
 import { capabilityFailingAdapter } from './capability-failing-adapter.ts';
-import { FM_CURRENCY, fmRecordKey, fmTargetBase, idleServer, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmModelBase, idleServer, recordKeyOptions } from './fm-record-support.ts';
 import { getJson, makeDir, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 
@@ -117,7 +117,7 @@ describe('rule M: a managed server that lists another id than its entry is never
     const renamed = await startFakeChatCompletions({ scenario: 'tools-ok', wire: 'fm', modelId: 'renamed-by-the-server' });
     registerCleanup(() => renamed.close());
     const managed = await createManagedTarget({
-      ...fmTargetBase('apple'),
+      ...fmModelBase('apple'),
       server: { ...idleServer, ensureRunning: async () => ({ kind: 'unix', path: renamed.socketPath }) },
       binary: '/opt/fake/fm',
       exec: async () => ({ exitCode: 0, stdout: '5\n', stderr: '' }),

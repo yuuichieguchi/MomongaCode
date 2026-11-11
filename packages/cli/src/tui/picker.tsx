@@ -123,7 +123,7 @@ function WaitingScreen({ overlay, editor, keys, room }: { overlay: WaitingOverla
       <Text> </Text>
       <Text>{PASTE_LABEL}</Text>
       <EditorView editor={editor} columns={room.columns} rows={entryRows(room, overlay.view.lines.length + WAITING_ROWS_AROUND)} hidden={false} framed={false} />
-      {overlay.problem === undefined ? null : <Text color="red">{escapeTerminalLine(overlay.problem)}</Text>}
+      {overlay.problem === undefined ? null : <Text {...styleOf(['error'])}>{escapeTerminalLine(overlay.problem)}</Text>}
       {overlay.status === undefined ? null : <Text dimColor>{escapeTerminalLine(overlay.status)}</Text>}
       <Text dimColor>{waitingHint(keys)}</Text>
     </Box>
@@ -140,7 +140,7 @@ function TextScreen({ overlay, editor, keys, room }: { overlay: Extract<Overlay,
         <Text key={index}>{escapeTerminalLine(line)}</Text>
       ))}
       <EditorView editor={editor} columns={room.columns} rows={entryRows(room, around)} hidden={overlay.request.hidden === true} framed={false} />
-      {overlay.error === undefined ? null : <Text color="red">{escapeTerminalLine(overlay.error)}</Text>}
+      {overlay.error === undefined ? null : <Text {...styleOf(['error'])}>{escapeTerminalLine(overlay.error)}</Text>}
       <Text dimColor>{overlay.request.structured === true ? structuredHint(keys) : textHint(keys)}</Text>
     </Box>
   );

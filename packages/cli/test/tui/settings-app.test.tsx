@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
-import { APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
+import { ADD_ROW, APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import type { ExternalEditorPort } from '../../src/tui/external-editor.ts';
 import { KEYS, untilOutput } from '../ink-helpers.ts';
@@ -113,8 +113,8 @@ describe('/config, the settings screen', () => {
     await open(started);
     await openRow(started, 'ripgrep program', '> bundled');
     await press(started, `${CLEAR}rg`, '> rg');
-    const refused = await press(started, KEYS.enter, 'tools.ripgrep must be');
-    expect(unwrapped(refused)).toContain(`${place.userFile}: tools.ripgrep must be "bundled", "system" or an absolute path; got "rg"`);
+    const refused = await press(started, KEYS.enter, 'invalid settings at /tools/ripgrep');
+    expect(unwrapped(refused)).toContain(`${place.userFile}: invalid settings at /tools/ripgrep: must be "bundled", "system" or an absolute path; got "rg"`);
     expect(refused).toContain('ripgrep program  bundled  default');
     expect(fs.existsSync(place.userFile)).toBe(false);
     started.app.unmount();
@@ -282,6 +282,7 @@ describe('/config, the settings screen', () => {
         edited.push(`${kind}:${draft}`);
         return { kind: 'edited', text: '{"fromEditor": {}}' };
       },
+      open: () => Promise.reject(new Error('no file is opened in this test')),
     };
     const started = await startAt(place, {}, undefined, { externalEditor });
     await open(started);
@@ -300,6 +301,38 @@ describe('/config, the settings screen', () => {
     await press(started, `${KEYS.pasteStart}2${KEYS.pasteEnd}`, '> 120');
     await press(started, KEYS.enter, 'Forget after (days)  120  user');
     expect(stored(place.userFile)).toEqual({ memory: { forgetAfterDays: 120 } });
+    started.app.unmount();
+  });
+
+  it('lists the check commands by folder and edits the map as JSON in the structured editor, written to the user file', async () => {
+    const place = freshPlace();
+    writeSettings(place.userFile, { projectChecks: { '/work/a': { commands: ['npm test'] }, '/work/b': { declined: true } } });
+    const externalEditor: ExternalEditorPort = { edit: async () => ({ kind: 'edited', text: '{"/work/a": {"commands": ["npm run check"]}}' }), open: () => Promise.reject(new Error('no file is opened in this test')) };
+    const started = await startAt(place, {}, undefined, { externalEditor });
+    const listed = await open(started);
+    expect(listed).toContain('Check commands by folder  /work/a, /work/b  user');
+    const editor = await openRow(started, 'Check commands by folder', STRUCTURED_LINES[0]);
+    expect(editor).toContain('"/work/a"');
+    await press(started, KEYS.ctrlG, 'npm run check');
+    await press(started, SUBMIT, 'Check commands by folder  /work/a  user');
+    expect(stored(place.userFile)).toEqual({ projectChecks: { '/work/a': { commands: ['npm run check'] } } });
+    started.app.unmount();
+  });
+
+  it('lists the approvals by folder, withdraws one after asking, and has no row that adds one', async () => {
+    const place = freshPlace();
+    const digest = 'a'.repeat(64);
+    writeSettings(place.userFile, { projectApprovals: { '/work/a': { hooks: [digest], mandate: digest }, '/work/b': { mandate: digest } } });
+    const started = await startAt(place);
+    await open(started);
+    const list = await openRow(started, 'Approvals by folder', '/work/a  hooks approved: 1 · mandate approved');
+    expect(list).toContain('/work/b  mandate approved');
+    expect(list).not.toContain(`${ADD_ROW}\n`);
+    expect(unwrapped(list)).not.toMatch(/\d\. Add /);
+    await press(started, KEYS.enter, 'Remove');
+    await press(started, KEYS.enter, 'Withdraw the approvals of /work/a?');
+    await press(started, `${KEYS.down}${KEYS.enter}`, (frame) => frame.includes('/work/b  mandate approved') && !frame.includes('/work/a  hooks'));
+    expect(stored(place.userFile)).toEqual({ projectApprovals: { '/work/b': { mandate: digest } } });
     started.app.unmount();
   });
 

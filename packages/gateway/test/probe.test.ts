@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { vocabularyOf, capabilitiesFromProbe, ProbeTimeoutError, runProbe } from '@momonga/gateway';
-import { Deadline } from '@momonga/foundation';
+import { DEFAULT_STEP_TIMEOUT_MS } from '../src/probe/run-probe.ts';
+import { systemTiming } from '@momonga/foundation';
+import type { ProbePorts } from '../src/probe/client.ts';
 import { tokensForText } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
 import {
@@ -19,6 +21,7 @@ import { fillerText } from '../src/probe/filler.ts';
 import { isProbeReport } from '../src/probe/report-schema.ts';
 import { FM_SERVER } from '@momonga/protocol';
 import { FM_PROBE_ROUTES } from './fm-record-support.ts';
+import { hostProbePorts, probePortsAt, waitRecordingProbePorts } from './probe-ports-support.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -31,11 +34,11 @@ const fixedNow = () => new Date('2026-10-23T12:00:00.000Z');
 
 const probe = async (
   options: FakeChatCompletionsOptions,
-  probeOptions: Omit<Parameters<typeof runProbe>[0], 'socketPath'> = {},
+  probeOptions: Partial<Omit<Parameters<typeof runProbe>[0], 'socketPath'>> = {},
 ): Promise<{ report: ProbeReport; fake: FakeChatCompletionsServer }> => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, now: fixedNow, ...probeOptions });
+  const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, ports: probePortsAt(fixedNow), ...probeOptions });
   return { report, fake };
 };
 
@@ -286,11 +289,22 @@ describe('runProbe server features', () => {
         contextWindow: 8192,
         contextSizeExposure: 'models',
       },
-      { sleep: async (ms) => void waits.push(ms) },
+      { ports: waitRecordingProbePorts(fixedNow, DEFAULT_STEP_TIMEOUT_MS, waits) },
     );
     expect(waits).toEqual([3000, 3000]);
     expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
     expect(report.imageTokens?.maxTokens).toBe(1600 + IMAGE_WRAPPER_TOKENS);
+  });
+
+  it('reads Retry-After only in the forms HTTP gives it, so a date in another form is not waited for', async () => {
+    const waits: number[] = [];
+    await expect(
+      probe(
+        { scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 }, rateLimitSizedImages: { count: 1, retryAfter: '2026-10-23T12:00:02.000Z' } },
+        { ports: waitRecordingProbePorts(fixedNow, DEFAULT_STEP_TIMEOUT_MS, waits) },
+      ),
+    ).rejects.toThrow(/HTTP 429/);
+    expect(waits).toEqual([]);
   });
 
   it('does not wait for a Retry-After longer than a step may take, and fails the step', async () => {
@@ -298,7 +312,7 @@ describe('runProbe server features', () => {
     await expect(
       probe(
         { scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 }, rateLimitSizedImages: { count: 1, retryAfter: '3600' } },
-        { sleep: async (ms) => void waits.push(ms), stepTimeoutMs: 5000 },
+        { ports: waitRecordingProbePorts(fixedNow, 5000, waits), stepTimeoutMs: 5000 },
       ),
     ).rejects.toThrow(/HTTP 429/);
     expect(waits).toEqual([]);
@@ -355,20 +369,12 @@ describe('runProbe server features', () => {
     expect(report.imageTokens).toBeUndefined();
   });
 
-  it('measures max concurrency 1', async () => {
+  it('records the largest count accepted before a refusal "too many" as the measured max concurrency', async () => {
     const { report } = await probe(
-      { scenario: 'tools-ok', latencyMs: SLOW_MS, maxConcurrency: 1, contextSizeExposure: 'models' },
+      { scenario: 'tools-ok', latencyMs: SLOW_MS, maxConcurrency: 3, contextSizeExposure: 'models' },
       { samples: 1 },
     );
-    expect(report.maxConcurrency).toBe(1);
-  });
-
-  it('measures max concurrency 2', async () => {
-    const { report } = await probe(
-      { scenario: 'tools-ok', latencyMs: SLOW_MS, maxConcurrency: 2, contextSizeExposure: 'models' },
-      { samples: 1 },
-    );
-    expect(report.maxConcurrency).toBe(2);
+    expect(report.maxConcurrency).toEqual({ value: 3, evidence: 'refused' });
   });
 
   it('builds the keyword support table from rejected keywords', async () => {
@@ -417,7 +423,7 @@ describe('runProbe server features', () => {
     });
     servers.push(fake);
 
-    await expect(runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, now: fixedNow, samples: 5, vocabulary: vocabularyOf(FM_SERVER) })).rejects.toThrow(
+    await expect(runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, ports: probePortsAt(fixedNow), samples: 5, vocabulary: vocabularyOf(FM_SERVER) })).rejects.toThrow(
       'failed with HTTP 200',
     );
     expect(fake.routeHits).toEqual([1]);
@@ -525,7 +531,7 @@ describe('runProbe context window calibration', () => {
     });
     servers.push(fake);
 
-    await expect(runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2 })).rejects.toThrow(/payload_too_large.*413/);
+    await expect(runProbe({ ports: hostProbePorts, socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2 })).rejects.toThrow(/payload_too_large.*413/);
   });
 
   it('records the first overflow response body for a context_length_exceeded 400', async () => {
@@ -553,12 +559,12 @@ describe('runProbe context window calibration', () => {
 });
 
 describe('runProbe concurrency measurement', () => {
-  it('reports 1 for a server that queues requests instead of rejecting them', async () => {
+  it('records no max concurrency for a server that refuses no request, whatever its timing', async () => {
     const { report } = await probe(
       { scenario: 'tools-ok', latencyMs: SLOW_MS, maxConcurrency: 1, overflow: 'queue', contextSizeExposure: 'models' },
       { samples: 1 },
     );
-    expect(report.maxConcurrency).toBe(1);
+    expect(report.maxConcurrency).toBeUndefined();
   }, 20000);
 });
 
@@ -589,19 +595,27 @@ describe('runProbe sampling resilience', () => {
 });
 
 describe('runProbe deadlines', () => {
-  it('disposes every deadline it creates', async () => {
-    const created = vi.spyOn(Deadline, 'after');
-    const disposed = vi.spyOn(Deadline.prototype, 'dispose');
-    try {
-      await probe({ scenario: 'tools-ok', contextSizeExposure: 'models' }, { samples: 2 });
-      const instances = created.mock.results.map((result) => result.value as Deadline);
-      expect(instances.length).toBeGreaterThan(10);
-      const disposedInstances = new Set(disposed.mock.contexts);
-      expect(instances.filter((instance) => !disposedInstances.has(instance))).toEqual([]);
-    } finally {
-      created.mockRestore();
-      disposed.mockRestore();
-    }
+  it('ends every step bound it arms on its timer port', async () => {
+    const open = new Set<unknown>();
+    let armed = 0;
+    const timers: ProbePorts['timers'] = {
+      setTimeout: (callback, ms) => {
+        armed += 1;
+        const handle: unknown = systemTiming.setTimeout(() => {
+          open.delete(handle);
+          callback();
+        }, ms);
+        open.add(handle);
+        return handle;
+      },
+      clearTimeout: (handle) => {
+        open.delete(handle);
+        systemTiming.clearTimeout(handle);
+      },
+    };
+    await probe({ scenario: 'tools-ok', contextSizeExposure: 'models' }, { ports: { clock: systemTiming, timers }, samples: 2 });
+    expect(armed).toBeGreaterThan(10);
+    expect(open.size).toBe(0);
   });
 });
 
@@ -620,7 +634,7 @@ describe('runProbe step timeout and client lifecycle', () => {
   it('closes its connections after a failed probe', async () => {
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', latencyMs: 800 });
     servers.push(fake);
-    await expect(runProbe({ socketPath: fake.socketPath, stepTimeoutMs: 100 })).rejects.toThrow();
+    await expect(runProbe({ ports: hostProbePorts, socketPath: fake.socketPath, stepTimeoutMs: 100 })).rejects.toThrow();
     await vi.waitFor(() => expect(fake.openConnections()).toBe(0));
   });
 });

@@ -57,10 +57,20 @@ const FORGE_FORM: readonly FormField[] = [
   { name: 'credentialSecret', label: 'Token: name in the secret store', kind: 'text', required: false, at: ['credential', 'secret'] },
 ];
 
+const ISSUE_WATCH_FORM: readonly FormField[] = [
+  { name: 'repository', label: 'Repository (owner/name)', kind: 'text', required: true },
+  { name: 'labels', label: 'Labels an issue must carry, separated by commas', kind: 'list', required: false },
+  { name: 'authorAssociation', label: 'Authors it takes (OWNER, MEMBER, COLLABORATOR), separated by commas', kind: 'list', required: false },
+  { name: 'mandate', label: 'Mandate of the run it starts', kind: 'text', required: true },
+];
+
 const PRICE_CONSTANTS = { currency: 'USD' } as const;
 
 const priceLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['provider'])}/${String(entry['model'])}  from ${String(entry['effectiveFrom'])}  input ${String(entry['inputPerMTok'])}  output ${String(entry['outputPerMTok'])}`;
+
+const issueWatchLine = (entry: Readonly<Record<string, unknown>>): string =>
+  `${String(entry['repository'])}  under ${String(entry['mandate'])}${Array.isArray(entry['labels']) ? `  labels ${entry['labels'].map(String).join(', ')}` : ''}${Array.isArray(entry['authorAssociation']) ? `  authors ${entry['authorAssociation'].map(String).join(', ')}` : ''}`;
 
 const forgeLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['id'])}  ${String(entry['descriptor'])}  ${Array.isArray(entry['hosts']) ? entry['hosts'].map(String).join(', ') : ''}  ${String(entry['apiBaseUrl'])}`;
@@ -91,6 +101,8 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'verification.commands': { label: 'Verification commands', section: 'Verification', appliesNow: false },
   'verification.manifests': { label: 'Verification manifests', section: 'Verification', appliesNow: false },
   'verification.required': { label: 'Require a completion condition', section: 'Verification', appliesNow: false },
+  projectChecks: { label: 'Check commands by folder', section: 'Verification', appliesNow: false },
+  projectApprovals: { label: 'Approvals by folder', section: 'Permissions', appliesNow: false },
   enableAllProjectMcpServers: { label: 'Enable every server of .mcp.json', section: 'MCP', appliesNow: false },
   'mcp.toolIdleTimeoutNetworkMs': { label: 'Tool idle timeout of URL servers (ms)', section: 'MCP', appliesNow: false },
   'mcp.toolIdleTimeoutStdioMs': { label: 'Tool idle timeout of command servers (ms)', section: 'MCP', appliesNow: false },
@@ -121,6 +133,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'ceilings.timeMs': { label: 'Ceiling on the time a mandate may declare (ms)', section: 'Budget and delegation', appliesNow: false },
   mandates: { label: 'Mandates by name', section: 'Budget and delegation', appliesNow: false },
   forges: { label: 'Forges for pull request operations', section: 'Git and pull requests', appliesNow: false, form: FORGE_FORM, line: forgeLine },
+  'issues.watch': { label: 'Issues the watch takes', section: 'Git and pull requests', appliesNow: false, form: ISSUE_WATCH_FORM, line: issueWatchLine },
   'operations.protectedRefs': { label: 'Protected branches (a push always asks you)', section: 'Git and pull requests', appliesNow: false },
   'operations.approval': { label: 'Approval class by operation (rule or always)', section: 'Git and pull requests', appliesNow: false },
   autoUpdates: { label: 'Automatic updates', section: 'Updates', appliesNow: false },
@@ -373,7 +386,7 @@ type Collection = {
   readonly lines?: readonly string[];
   readonly applied?: string;
   entries(snapshot: SettingsSnapshot): readonly string[];
-  add(context: SlashContext, snapshot: SettingsSnapshot): Promise<Refusal | 'left' | undefined>;
+  add?(context: SlashContext, snapshot: SettingsSnapshot): Promise<Refusal | 'left' | undefined>;
   act(context: SlashContext, snapshot: SettingsSnapshot, index: number): Promise<Refusal | 'left' | 'remove' | undefined>;
   removal(snapshot: SettingsSnapshot, index: number): Removal | undefined;
 };
@@ -403,7 +416,7 @@ export const runCollection = async (context: SlashContext, collection: Collectio
     const choice = await context.overlays.choose({
       title: collection.title,
       lines: [...(collection.lines ?? []), ...(sentence === undefined ? [] : [sentence]), ...(sentence === undefined && changedNow && collection.applied !== undefined ? [collection.applied] : [])],
-      rows: [...entries.map((label) => ({ label })), { label: ADD_ROW }],
+      rows: [...entries.map((label) => ({ label })), ...(collection.add === undefined ? [] : [{ label: ADD_ROW }])],
       initial: Math.min(at, entries.length),
       decideOn: 'enter',
       escape: 'back',
@@ -412,12 +425,12 @@ export const runCollection = async (context: SlashContext, collection: Collectio
     });
     if (choice === undefined) return changed;
     at = choice.index;
-    const isAdd = choice.index === entries.length;
+    const isAdd = collection.add !== undefined && choice.index === entries.length;
     if (isAdd && choice.alt) {
       changedNow = false;
       continue;
     }
-    const asked = isAdd ? await collection.add(context, snapshot) : choice.alt ? 'remove' : await collection.act(context, snapshot, choice.index);
+    const asked = isAdd && collection.add !== undefined ? await collection.add(context, snapshot) : choice.alt ? 'remove' : await collection.act(context, snapshot, choice.index);
     const result = asked === 'remove' ? await removeAfterAsking(context, collection.removal(snapshot, choice.index)) : asked;
     sentence = result === undefined || result === 'left' ? undefined : result.refused;
     changedNow = result === undefined;
@@ -453,6 +466,41 @@ const listCollection = (leaf: SettingLeaf, presentation: SettingPresentation, la
 };
 
 const PAIR = /^([^=\s]+)=([\s\S]*)$/;
+
+export const APPROVALS_KEY = 'projectApprovals';
+
+const approvalLine = (folder: string, approval: unknown): string => {
+  const hooks = isRecord(approval) && Array.isArray(approval['hooks']) ? [`hooks approved: ${approval['hooks'].length}`] : [];
+  const mandate = isRecord(approval) && approval['mandate'] !== undefined ? ['mandate approved'] : [];
+  return `${folder}  ${[...hooks, ...mandate].join(' · ')}`;
+};
+
+const approvalsCollection = (leaf: SettingLeaf, presentation: SettingPresentation): Collection => {
+  const own = (snapshot: SettingsSnapshot): [string, unknown][] => {
+    const value = inLayer(snapshot, 'user', leaf.path);
+    return isRecord(value) ? Object.entries(value) : [];
+  };
+  return {
+    title: presentation.label,
+    lines: ['An approval is given only by answering its question; here it can be withdrawn.'],
+    entries: (snapshot) => own(snapshot).map(([folder, approval]) => approvalLine(folder, approval)),
+    act: async (context, snapshot, index) => {
+      const entry = own(snapshot)[index];
+      if (entry === undefined) return 'left';
+      return (await chosenAction(context, approvalLine(entry[0], entry[1]), REMOVE_ACTIONS)) === undefined ? 'left' : 'remove';
+    },
+    removal: (snapshot, index) => {
+      const entries = own(snapshot);
+      const entry = entries[index];
+      if (entry === undefined) return undefined;
+      const rest = entries.filter((_, position) => position !== index);
+      return {
+        question: `Withdraw the approvals of ${entry[0]}?`,
+        remove: (context) => writeSetting(context, 'user', rest.length === 0 ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: Object.fromEntries(rest) }),
+      };
+    },
+  };
+};
 
 const mapCollection = (leaf: SettingLeaf, presentation: SettingPresentation, layer: SettingsLayer): Collection => {
   const own = (snapshot: SettingsSnapshot): Readonly<Record<string, unknown>> => {
@@ -645,6 +693,7 @@ const editDialects = async (context: SlashContext, snapshot: SettingsSnapshot, l
 
 const editSetting = async (context: SlashContext, snapshot: SettingsSnapshot, leaf: SettingLeaf, presentation: SettingPresentation, live: readonly LiveSetting[]): Promise<Outcome> => {
   if (leaf.key === DIALECTS_KEY) return editDialects(context, snapshot, leaf, presentation);
+  if (leaf.key === APPROVALS_KEY) return (await runCollection(context, approvalsCollection(leaf, presentation))) ? { kind: 'written' } : LEFT;
   if (leaf.kind === 'toggle' || leaf.kind === 'choice' || leaf.kind === 'number' || leaf.kind === 'text') return editScalar(context, snapshot, leaf, presentation, liveOf(leaf, live));
   const layer = await saveTargetOf(context, snapshot, currentOf(snapshot, leaf.path).source);
   if (layer === undefined) return LEFT;

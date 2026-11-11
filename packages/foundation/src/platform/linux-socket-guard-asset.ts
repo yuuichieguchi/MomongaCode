@@ -5,8 +5,6 @@ export const LINUX_SOCKET_GUARD_MANIFEST_ASSET = 'linux-socket-guard-manifest.js
 export const LINUX_SOCKET_GUARD_BINARY_ASSET = 'linux-socket-guard';
 export const LINUX_SOCKET_GUARD_BINARY_NAME = 'momonga-socket-guard';
 
-const OWNER_EXECUTABLE_MODE = 0o700;
-
 export class LinuxSocketGuardDistributionError extends Error {
   constructor(message: string) {
     super(message);
@@ -18,7 +16,6 @@ const LINUX_SOCKET_GUARD: BundledExecutableKind = {
   what: 'socket guard',
   manifestAsset: LINUX_SOCKET_GUARD_MANIFEST_ASSET,
   folder: 'linux-socket-guard',
-  mode: OWNER_EXECUTABLE_MODE,
   failure: (message) => new LinuxSocketGuardDistributionError(message),
 };
 

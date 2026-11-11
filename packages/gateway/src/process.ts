@@ -19,6 +19,7 @@ import {
   resolveTelemetrySettings,
   settingsInputsDigest,
   stopValuesOfSettings,
+  telemetryWithReferences,
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
@@ -104,10 +105,12 @@ import { NO_USER_DIALECTS } from './dialect/choice.ts';
 import type { UserDialects } from './dialect/choice.ts';
 import type { DialectCurrency } from './dialect/candidates.ts';
 import { resolveDialectId } from './dialect/resolve-id.ts';
-import { PROBE_METHOD_VERSION } from './probe/run-probe.ts';
+import { DEFAULT_SAMPLES, PROBE_METHOD_VERSION } from './probe/run-probe.ts';
 import { chatRecordOf, loadEndpointRecord, ollamaRecordOf, saveEndpointRecord } from './probe/endpoint-record.ts';
 import type { DeclaredCapabilities } from './probe/decide.ts';
 import { withImageDefault } from './probe/decide.ts';
+import type { ProbePorts } from './probe/client.ts';
+import { isMeteredTarget, meteredPrecondition } from './probe/consent.ts';
 import { createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { answersAsOllama, readOllamaDigest } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
@@ -152,7 +155,7 @@ import { createInstanceProbe } from './probe/instance-probe.ts';
 import { loadProbeRecord } from './probe/record.ts';
 import type { ManagedRecordCurrency, ManagedRecordKey } from './probe/record.ts';
 import { lockKeyOf, managedCurrencyOf, managedKeyReader, managedPrecondition, managedProbeSubject, measureManagedServer } from './probe/probe-fm.ts';
-import { endpointPrecondition, endpointProbeSubject, measureEndpoint } from './probe/probe-endpoint.ts';
+import { endpointPrecondition, endpointProbeSubject, measureEndpoint, meteredGateOf } from './probe/probe-endpoint.ts';
 import type { EndpointMeasurement } from './probe/probe-endpoint.ts';
 import { measureOllama, ollamaPrecondition, ollamaProbeSubject } from './probe/ollama.ts';
 import type { OllamaMeasurement } from './probe/ollama.ts';
@@ -394,6 +397,7 @@ type MeasureEndpointPort<Measurement> = (request: { key: EndpointKey; signal: Ab
 type ProbeWiring = {
   autoProbe: AutoProbe;
   lock: KernelLockMechanism;
+  ports: ProbePorts;
   outputPolicy: () => ProbeOutputPolicy;
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
@@ -523,6 +527,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     probeRecordDir: paths.probe,
     serverName: provider,
     requestLimitMs: wiring.requestLimitMs,
+    timeoutSignal: wiring.timeoutSignal,
     isUsableBinary: wiring.files.isUsableBinary,
     readKey,
     onInstanceEnd: () => host.release(),
@@ -577,20 +582,24 @@ const createAutoChatCompletionsAdapter = async (
   const key = endpointProbeKeyOf(target);
   const { endpoint } = key;
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
-  const readRecord = async () => chatRecordOf(await loadEndpointRecord(probeRecordDir, key, currency), key);
+  const readRecord = async () => chatRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, display), key);
   const loaded = await readRecord();
   const adapterTarget: AdapterTarget = { name: target.canon, display, model: target.model };
   const apiKeyNow = (signal: AbortSignal) => readKey(adapterTarget, signal);
+  const precondition = endpointPrecondition(display, upstream, probes.ports, target.model, apiKeyNow);
+  const metered = isMeteredTarget(target) ? { display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   const subject = endpointProbeSubject({
     target: endpointLockKeyOf(key).target,
     key,
     probeRecordDir,
     lock: probes.lock,
-    precondition: endpointPrecondition(display, upstream, target.model, apiKeyNow),
+    precondition: metered === undefined ? precondition : meteredPrecondition(precondition, probeRecordDir, key, metered, DEFAULT_SAMPLES),
     measure:
       (probes.measureEndpoint === undefined ? undefined : onRecordKey(probes.measureEndpoint)) ??
       (async (request) =>
         measureEndpoint({
+          ports: probes.ports,
+          ...(metered === undefined ? {} : { metered: meteredGateOf(probeRecordDir, key, metered, DEFAULT_SAMPLES) }),
           upstream,
           model: target.model,
           apiKey: await apiKeyNow(request.signal),
@@ -610,7 +619,7 @@ const createAutoChatCompletionsAdapter = async (
     startProbe: () => probes.autoProbe.ensure(subject, endpointLockKeyOf(key)),
     readIdentity: async (fields, signal) => {
       const apiKey = await readKey(adapterTarget, signal);
-      return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, signal);
+      return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, probes.ports, signal);
     },
     saveRecord: (record) =>
       saveEndpointRecord(probeRecordDir, key, record.identity, record.identityFields, record.report, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects), probes.lock),
@@ -649,17 +658,18 @@ const createProbedOllamaAdapter = async (
   const key = endpointProbeKeyOf(target);
   const { endpoint } = key;
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
-  const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency), key);
+  const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, display), key);
   const loaded = await readRecord();
   const subject = ollamaProbeSubject({
     target: endpointLockKeyOf(key).target,
     key,
     probeRecordDir,
     lock: probes.lock,
-    precondition: ollamaPrecondition(upstream, target.model),
+    precondition: ollamaPrecondition(upstream, probes.ports, target.model),
     measure:
       (probes.measureOllama === undefined ? undefined : onRecordKey(probes.measureOllama)) ??
       measureOllama({
+        ports: probes.ports,
         upstream,
         model: target.model,
         contextWindow: target.capabilities.contextWindow,
@@ -676,7 +686,7 @@ const createProbedOllamaAdapter = async (
     record: loaded,
     readRecord,
     startProbe: () => probes.autoProbe.ensure(subject, endpointLockKeyOf(key)),
-    readDigest: (signal) => readOllamaDigest(upstream, target.model, signal),
+    readDigest: (signal) => readOllamaDigest(upstream, probes.ports, target.model, signal),
   });
   const adapter = createOllamaAdapter({
     resolveEndpoint: async (_target, signal) => {
@@ -695,11 +705,11 @@ type Identification = (signal: AbortSignal) => Promise<void>;
 
 const UNIDENTIFIED = Symbol('unidentified');
 
-const ollamaIdentificationOf = (display: string, target: OllamaDetectable, network: OutboundNetwork): Identification => {
+const ollamaIdentificationOf = (display: string, target: OllamaDetectable, network: OutboundNetwork, ports: ProbePorts): Identification => {
   let refusal: PreconditionFailedError | null | typeof UNIDENTIFIED = UNIDENTIFIED;
   return async (signal) => {
     if (refusal === UNIDENTIFIED) {
-      const isOllama = await answersAsOllama(reachableEndpoint(upstreamEndpointOf(target), network), signal);
+      const isOllama = await answersAsOllama(reachableEndpoint(upstreamEndpointOf(target), network), ports, signal);
       refusal = isOllama ? ollamaServerRefusal(display, target.adapter, endpointKeyOf(upstreamEndpointOf(target))) : null;
     }
     if (refusal !== null) throw refusal;
@@ -708,8 +718,8 @@ const ollamaIdentificationOf = (display: string, target: OllamaDetectable, netwo
 
 const NO_IDENTIFICATION: Identification = async () => undefined;
 
-const identificationOf = (display: string, target: ServedTarget, network: OutboundNetwork): Identification =>
-  (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined ? ollamaIdentificationOf(display, target, network) : NO_IDENTIFICATION;
+const identificationOf = (display: string, target: ServedTarget, network: OutboundNetwork, ports: ProbePorts): Identification =>
+  (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined ? ollamaIdentificationOf(display, target, network, ports) : NO_IDENTIFICATION;
 
 const DEBUG_TCP_HOST = '127.0.0.1';
 
@@ -1016,7 +1026,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         serviceVersion: options.version,
         clock,
         store: traceStore,
-        exporters: exportersFor(current.telemetry, outbound),
+        exporters: exportersFor(telemetryWithReferences(current.telemetry, options.env), outbound),
         captureMessageContent: resolved.captureMessageContent,
         contentRetentionMs: resolveRetentionSettings(current.retention).days * DAY_MS,
       });
@@ -1051,6 +1061,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       dir: paths.probe,
       lock: kernelLock,
       clock,
+      timers,
       retryAfterMs: PROBE_RETRY_AFTER_MS,
       role,
       onEvent: (event) => {
@@ -1066,6 +1077,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const probePorts: Omit<ProbeWiring, 'outputPolicy'> = {
       autoProbe,
       lock: kernelLock,
+      ports: { clock, timers },
       ...(options.measureEndpoint === undefined ? {} : { measureEndpoint: options.measureEndpoint }),
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
@@ -1320,7 +1332,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
       const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential, keyReadLimitOf(current.models.headersTimeoutMs), timers);
-      const identify = identificationOf(display, target, outbound);
+      const identify = identificationOf(display, target, outbound, probes.ports);
       if (isMeasuredBy(target, 'chat-completions-wire')) {
         const probed = await createAutoChatCompletionsAdapter(display, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));

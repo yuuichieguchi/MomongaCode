@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CORE_SETTING_KEYS, NON_CORE_SETTING_KEYS, SETTINGS_SCHEMA, defaultContextSettings, defaultMemorySettings, defaultToolsSettings } from '@momonga/config';
+import { CORE_SETTING_KEYS, SETTINGS_SCHEMA, defaultContextSettings, defaultMemorySettings, defaultToolsSettings } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 
 type SchemaNode = { type?: string; properties?: Record<string, SchemaNode>; items?: { enum?: readonly unknown[] } };
 
 const CORE_SECTIONS = ['context', 'tools', 'memory'] as const;
+
+const NON_CORE_SETTING_KEYS: readonly string[] = ['tools.ripgrep', 'memory.forgetAfterDays', 'memory.reflection.maxTokens'];
 
 const leavesOf = (node: SchemaNode, prefix: string): { key: string; node: SchemaNode }[] =>
   Object.entries(node.properties ?? {}).flatMap(([name, child]) =>

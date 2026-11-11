@@ -17,6 +17,7 @@ import {
 import type { FakeOllamaOptions } from './ollama-support.ts';
 import { TARGET_PROBING } from '@momonga/protocol';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { hostProbePorts } from './probe-ports-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -36,6 +37,7 @@ const probedHome = async (options: FakeOllamaOptions) => {
   const home = makeHome();
   writeSettings(home, { models: modelsOf({ local: ollamaTarget(fake.origin) }) });
   await probeOllamaTarget({
+    ports: hostProbePorts,
     lock: testKernelLock(),
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
     upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_LISTED }, model: OLLAMA_LISTED,

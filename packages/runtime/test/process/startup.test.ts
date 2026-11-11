@@ -4,7 +4,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { nodeChildPorts } from '@momonga/tools';
-import { FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, ProcessLockHeldError, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration, registerOwned } from '@momonga/testkit';
@@ -166,7 +166,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
   it('takes the lock before the database: a held lock on a fresh home throws ProcessLockHeldError and state/runtime.db does not exist', async (context) => {
     const temp = sandboxNoneHome();
     await ensureMomongaDirs(temp.paths);
-    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    fs.mkdirSync(firstGeneration(temp.paths).dir, { mode: 0o700 });
     const holder = (await startLockHolder(context, firstGeneration(temp.paths).locks.runtime)).pid;
     const { started, stdout } = startBare(temp);
     const error = await failureOf(started);
@@ -192,7 +192,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
   it('a ProcessLockHeldError from the runtime socket lock (a live pid in runtime.sock.lock) has a lockPath other than the runtime lock', async (context) => {
     const temp = sandboxNoneHome();
     await ensureMomongaDirs(temp.paths);
-    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    fs.mkdirSync(firstGeneration(temp.paths).dir, { mode: 0o700 });
     const holder = (await startLockHolder(context, `${firstGeneration(temp.paths).sockets.runtime}.lock`)).pid;
     const { started, stdout } = startBare(temp);
     const error = await failureOf(started);
@@ -267,7 +267,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
   describe.runIf(process.platform === 'linux')('the empty placeholder that a killed runtime left in a workspace', () => {
     const leave = async (temp: RunHome): Promise<string> => {
       await ensureMomongaDirs(temp.paths);
-      await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+      fs.mkdirSync(firstGeneration(temp.paths).dir, { mode: 0o700 });
       const leftover = path.join(temp.root, '.mcp.json');
       const journal = createPlaceholderJournal(path.join(temp.paths.state, 'placeholders'));
       await journal.intend(leftover, Date.now());
@@ -369,7 +369,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
   it('a late failure (runtime.sock path occupied by a regular file) unwinds: the lock is free, the store is closed and the error is rethrown unchanged', async () => {
     const temp = sandboxNoneHome();
     await ensureMomongaDirs(temp.paths);
-    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    fs.mkdirSync(firstGeneration(temp.paths).dir, { mode: 0o700 });
     fs.writeFileSync(firstGeneration(temp.paths).sockets.runtime, 'not a socket');
     const { started, stdout, logger } = startBare(temp);
     const error = await failureOf(started);

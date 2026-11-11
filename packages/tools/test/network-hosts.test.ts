@@ -2,6 +2,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { SANDBOX_NETWORK_SCOPES } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
 import type { BackgroundJobStart, BackgroundJobs, ExecutionBatchInput } from '@momonga/tools';
 import { bashTool } from '../src/builtins/bash.ts';
@@ -112,6 +113,7 @@ describe('a Bash call that asks for named hosts, before it runs', () => {
   it('refuses the call under a sandbox that cannot limit a command to hosts, and grants nothing wider in its place', async () => {
     const tools = await makeBuiltins({ sandbox: neverSpawning('none') });
     const result = resultOf(await tools.run('Bash', { command: 'npm install', network: { hosts: ['registry.example.org'] } }, { mode: 'bypassPermissions' }));
+    expect(SANDBOX_NETWORK_SCOPES.none).not.toContain('hosts');
     expect(result.status).toBe('failed');
     expect(result.denial).toEqual({
       source: 'sandbox',

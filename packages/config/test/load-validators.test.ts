@@ -28,8 +28,12 @@ const chatWithCeiling = (maxOutputTokens: number): Record<string, unknown> => ({
 const withServer = (name: string, server: unknown): unknown => ({ mcpServers: { [name]: server } });
 
 describe('a value a consumer refuses is refused when the settings file loads, with file, pointer and reason', () => {
-  it('a network connection with neither baseUrl nor socketPath', async () => {
-    await refusedAt({ models: { connections: [anthropic()] } }, '/models/connections/0', /exactly one of baseUrl and socketPath/);
+  it('an Anthropic connection without an address loads with the default address', async () => {
+    const { models } = await loadFile({ models: { connections: [anthropic()] } });
+    expect([...models.models.values()].map((model) => (model as { baseUrl?: string }).baseUrl)).toEqual([ANTHROPIC_ADDRESS]);
+  });
+
+  it('a network connection of an adapter without a default address and with neither baseUrl nor socketPath', async () => {
     await refusedAt({ models: { connections: [ollamaConnection(ANTHROPIC_ADDRESS), { adapter: 'chat-completions', models: [{ id: 'm', capabilities: CAPABILITIES }] }] } }, '/models/connections/1', /baseUrl and socketPath/);
   });
 

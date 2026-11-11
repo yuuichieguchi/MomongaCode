@@ -6,6 +6,7 @@ import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts'
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { OLLAMA_LISTED, chunkLine, doneLine, fixtureJson, startFakeOllama } from './ollama-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { hostProbePorts } from './probe-ports-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -28,6 +29,7 @@ const gatewayOverProbedOllama = async (showCapabilities: readonly string[], repl
       }),
   });
   await probeOllamaTarget({
+    ports: hostProbePorts,
     lock: testKernelLock(),
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
     upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_LISTED }, model: OLLAMA_LISTED,

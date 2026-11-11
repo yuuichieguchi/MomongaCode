@@ -18,12 +18,25 @@ describe('mcpServersOf', () => {
     });
   });
 
-  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])('accepts the server name %s as an ordinary name', (name) => {
+  it.each([['constructor', 'constructor'], ['toString', 'tostring'], ['__proto__', 'proto'], ['hasOwnProperty', 'hasownproperty']])('accepts the server name %s as an ordinary name, keyed %s', (name, key) => {
     const configs = mcpServersOf([{ name, command: 'node', args: [], env: [] }]);
 
-    expect(Object.keys(configs)).toEqual([name]);
-    expect(Object.getOwnPropertyDescriptor(configs, name)?.value).toEqual({ type: 'stdio', command: 'node', args: [], env: {} });
+    expect(Object.keys(configs)).toEqual([key]);
+    expect(Object.getOwnPropertyDescriptor(configs, key)?.value).toEqual({ type: 'stdio', command: 'node', args: [], env: {} });
     expect(Object.getPrototypeOf(configs)).toBe(Object.prototype);
+  });
+
+  it('keys a label by the one server key rule, and a repeated label gets a distinct key', () => {
+    const configs = mcpServersOf([
+      { name: 'Sequential Thinking', command: 'a', args: [], env: [] },
+      { name: 'fx', command: 'b', args: [], env: [] },
+      { name: 'fx', command: 'c', args: [], env: [] },
+    ]);
+    expect(Object.keys(configs)).toEqual(['sequential-thinking', 'fx', 'fx-2']);
+  });
+
+  it('refuses a label with no letter or digit with the sentence that names it', () => {
+    expect(() => mcpServersOf([{ name: '@/.', command: 'a', args: [], env: [] }])).toThrow('the MCP server "@/." has no letter or digit to make a server name from; give it a name with one');
   });
 
   it('returns no servers for an empty list', () => {
@@ -32,13 +45,7 @@ describe('mcpServersOf', () => {
 
   it.each([
     ['an sse server', [{ type: 'sse', name: 'legacy', url: 'https://example.com/sse', headers: [] }]],
-    [
-      'a name given twice',
-      [
-        { name: 'fx', command: 'a', args: [], env: [] },
-        { name: 'fx', command: 'b', args: [], env: [] },
-      ],
-    ],
+    ['a name with no letter or digit', [{ name: '@/.', command: 'a', args: [], env: [] }]],
   ] as const)('refuses %s with invalid params', (_label, servers) => {
     expect(() => mcpServersOf(servers as unknown as McpServer[])).toThrow(RequestError);
     try {

@@ -50,6 +50,7 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
     reason: 'a payload the gateway minted, parsed in the gateway only after its HMAC verifies and in the runtime only from its own gateway\'s output',
   },
   'packages/gateway/src/probe/record.ts': { calls: 1, reason: 'probe records the product wrote' },
+  'packages/gateway/src/probe/consent.ts': { calls: 1, reason: 'the measurement consents the product wrote' },
   'packages/gateway/src/probe/endpoint-record.ts': { calls: 1, reason: 'endpoint probe records the product wrote' },
   'packages/cli/src/history-store.ts': { calls: 1, reason: 'the prompt history file the product writes' },
   'packages/cli/src/commands/trace.ts': { calls: 1, reason: 'a span attribute the product encoded' },

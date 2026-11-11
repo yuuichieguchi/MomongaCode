@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as config from '@momonga/config';
-import { ConfigError, readAutoFitRecord, writeAutoFitRecord } from '@momonga/config';
+import { readAutoFitRecord } from '../src/auto-fit.ts';
+import { ConfigError, writeAutoFitRecord } from '@momonga/config';
 import type { AutoFitKey, AutoFitRecord } from '@momonga/config';
 import { makeDir } from './helpers.ts';
 import { loadModelsSection } from './load-models.ts';

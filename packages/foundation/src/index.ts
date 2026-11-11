@@ -128,7 +128,6 @@ export {
   MARKER_KINDS,
   MomongaDirectoryError,
   SessionTmpDirError,
-  ensureGenerationDirs,
   ensureMomongaDirs,
   ensureSessionTmpDir,
   releaseSessionScratch,
@@ -139,6 +138,7 @@ export {
   generationSpawnScratch,
   leftoverDirectories,
   managedInstancePaths,
+  layoutEnvOf,
   homeLayout,
   momongaLayout,
   momongaPaths,
@@ -220,12 +220,12 @@ export {
 } from './secret-store.ts';
 export type { SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export { isAcceptableAddress, isLoopbackAddress } from './global-address.ts';
-export { isLoopbackHost, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
+export { claimsLoopback, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
 export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
 export { startSharedCall } from './shared-call.ts';
 export type { SharedCall } from './shared-call.ts';
-export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, openOutboundTunnel, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError, trustFailureText } from './outbound.ts';
+export { OutboundConnectionError, createOutboundDispatcher, loopbackCheckedLookup, findOutboundError, installTrust, openOutboundTunnel, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError, trustFailureText } from './outbound.ts';
 export type { OutboundFailure, OutboundFetch, OutboundNetwork, OutboundOptions, OutboundPlan, TrustReport } from './outbound.ts';
 export type { NetworkConfig, NetworkEnvName, NetworkSource, Route, SourcedValue } from './network-route.ts';
 export {
@@ -316,7 +316,7 @@ export type { SignalSender } from './process-alive.ts';
 export type { ProcessPort } from './process-port.ts';
 export { HELPER_COMMAND, helperCommandLine } from './executable-helper.ts';
 export type { ExecutableHelper, ExecutableHelpers, HelperHost, HelperSelf } from './executable-helper.ts';
-export { SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, endpointHostOf, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
+export { SocketPathUnmeasuredError, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, endpointHostOf, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, comparableFromParts, containsByComponents, createPathResolver, createSyncPathResolver, hostPaths, setCaseSensitivityProbe, walkPath } from './path-compare.ts';
 export { syncPaths } from './sync-paths.ts';
 export { answeredLater, answeredNow, askedPaths } from './path-asking.ts';
@@ -339,6 +339,8 @@ export type { GuardedStandardStreams } from './standard-streams.ts';
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
 export { everyAsync, filterAsync, findAsync, mapAsync, someAsync } from './sequential.ts';
+export { SYSTEM_PROGRAM_DIRECTORIES, programOnSearchPath, systemProgramDirectories } from './program-search.ts';
+export type { ProgramResolution, WritableCheck } from './program-search.ts';
 export { displayToolPath, resolveToolPath } from './tool-path.ts';
 export type { Awaitable, PathProbes, PathResolution, UnresolvableErrno, UnresolvableReason, Unresolved } from './path-resolution.ts';
 export { gitlinksOfIndex } from './git-index.ts';

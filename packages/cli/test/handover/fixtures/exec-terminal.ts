@@ -3,7 +3,7 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import { hostReplace, replaceProcess } from '../../../src/handover/replace-process.ts';
 import { handoverTarget, takeHandoverStart } from '../../../src/handover/start.ts';
 import { startWithHandoverTerminal } from '../../../src/tui/terminal/handover.ts';
-import { hostProcess, hostTerminalOutput } from '../../../src/tui/terminal/host.ts';
+import { hostProcessOn, hostTerminalOutput } from '../../../src/tui/terminal/host.ts';
 import { createTerminalLayer } from '../../../src/tui/terminal/layer.ts';
 
 const RECORD = '/nonexistent/handover/session-1.json';
@@ -18,19 +18,24 @@ const script = process.argv[1];
 if (script === undefined) throw new Error('the fixture needs its own path');
 const lose = process.argv.includes('lose-value');
 const taken = takeHandoverStart(process.argv.slice(2), process.env, () => '{}');
-const layer = createTerminalLayer({ input: process.stdin, output: hostTerminalOutput(process.stdout), process: hostProcess, timers: systemTiming, screen: 'fullscreen', screenSetByUser: true, mouse: true, onEvents: () => undefined });
+const hostOutput = hostTerminalOutput(process.stdout);
+if (hostOutput.kind === 'no-descriptor') throw new Error('the fixture needs a terminal output with a descriptor');
+const output = hostOutput.port;
+const layer = createTerminalLayer({ input: process.stdin, output, process: hostProcessOn(process.platform), timers: systemTiming, screen: 'fullscreen', screenSetByUser: true, mouse: true, onEvents: () => undefined, onFailure: (error) => {
+  throw error;
+} });
 
 if (taken.started === undefined) {
   layer.start();
   layer.enable('mouse');
   const terminal = layer.handoverTerminal();
-  hostTerminalOutput(process.stdout).writeSync(`before-exec pid=${process.pid} ${ttyState()}\r\n`);
+  output.writeSync(`before-exec pid=${process.pid} ${ttyState()}\r\n`);
   const target = handoverTarget({ self: { kind: 'script', execPath: process.execPath, script }, execArgv: process.execArgv, args: taken.args, env: process.env }, RECORD, lose ? undefined : terminal);
   layer.release();
   await replaceProcess(target, hostReplace, { release: () => undefined, relayed: () => undefined });
 } else {
   const outcome = startWithHandoverTerminal(layer, taken.started.terminal, 'kitty');
-  hostTerminalOutput(process.stdout).writeSync(`after-exec pid=${process.pid} ${outcome} enabled=${layer.state().enabled.join(',')} value=${String(process.env['MOMONGA_HANDOVER_TERMINAL'])} ${ttyState()}\r\n`);
+  output.writeSync(`after-exec pid=${process.pid} ${outcome} enabled=${layer.state().enabled.join(',')} value=${String(process.env['MOMONGA_HANDOVER_TERMINAL'])} ${ttyState()}\r\n`);
   layer.close();
   process.exit(0);
 }

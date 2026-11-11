@@ -3,7 +3,7 @@ import type { Counts, ParsedSource, Reference, SourceNode } from './source-scan.
 
 const GLOBAL_TIMERS = new Set(['setTimeout', 'setInterval', 'setImmediate']);
 
-const GLOBAL_MEMBERS = new Set(['Date.now', 'performance.now', 'Math.random', 'process.kill', 'process.hrtime', 'crypto.randomUUID', 'crypto.getRandomValues']);
+const GLOBAL_MEMBERS = new Set(['AbortSignal.timeout', 'Date.now', 'performance.now', 'Math.random', 'process.kill', 'process.hrtime', 'crypto.randomUUID', 'crypto.getRandomValues']);
 
 const RANDOM_SOURCES = new Set(['randomUUID', 'randomBytes', 'randomInt', 'randomFill', 'randomFillSync', 'getRandomValues', 'webcrypto']);
 

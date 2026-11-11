@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { foldReplayedEvent } from '../../src/tui/transcript.ts';
-import { emptyEditor, insertPaste, placeText } from '../../src/tui/editor.ts';
+import { applyAction, emptyEditor, insertPaste, placeText } from '../../src/tui/editor.ts';
 import type { EditorState } from '../../src/tui/editor.ts';
 import { leftShell, shellCommandOf, shellEnded, shellHint, shellHistoryText, shellOutput, shellStarted, showShellRecord, typedIntoDraft } from '../../src/tui/user-shell.ts';
 import { eventOf, plainOf } from './screen-fakes.ts';
@@ -30,6 +30,13 @@ describe('the shell mode of a draft (design 5.9)', () => {
     expect(shellCommandOf(typedInto('!'))).toBeUndefined();
     expect(shellCommandOf(typedInto('!!  '))).toBeUndefined();
     expect(shellCommandOf(insertPaste(emptyEditor(), '!ls'))).toBeUndefined();
+  });
+
+  it('keeps the mode of the draft when the history is walked up and back down', () => {
+    const shell = typedInto('!ls', emptyEditor(['older']));
+    const up = applyAction(shell, 'editor.up');
+    expect(up).toMatchObject({ text: 'older', shell: false });
+    expect(applyAction(up, 'editor.down')).toMatchObject({ text: 'ls', shell: true });
   });
 
   it('becomes a chat draft again without its marks', () => {

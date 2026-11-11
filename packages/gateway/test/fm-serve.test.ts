@@ -843,12 +843,16 @@ describe('createManagedServer ensureRunning', () => {
     expect(await server.health(asking())).toEqual({ ok: true });
   });
 
-  it('returns the endpoint while a restart is pending', async () => {
-    const { server, spawn, socketPath } = setup();
+  it('answers a request that arrives while a restart is pending once the restarted child is ready, never with the dead socket', async () => {
+    const { server, spawn, socketPath, manual } = setup();
     await server.ensureRunning();
     await children[0]?.crash(1, null);
-    expect(await server.ensureRunning()).toEqual({ kind: 'unix', path: socketPath });
+    const ensured = server.ensureRunning();
+    await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS]));
     expect(spawn).toHaveBeenCalledTimes(1);
+    manual.fire(BACKOFF_MS);
+    expect(await ensured).toEqual({ kind: 'unix', path: socketPath });
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 });
 

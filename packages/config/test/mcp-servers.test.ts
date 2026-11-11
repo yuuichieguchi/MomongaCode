@@ -46,6 +46,18 @@ describe('loadMcpServers', () => {
     expect(result.pendingApproval).toEqual([]);
   });
 
+  it('reads $${NAME} as the literal ${NAME}, in every place a value is expanded', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), {
+      mcpServers: { literal: { type: 'stdio', command: 'tool', args: ['$${PORT}', '$${UNSET_ONE}', 'x$${PORT}y', '${PORT}'], env: { TEMPLATE: '$${HOME_BIN}/bin' } } },
+    });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
+    expect(result.failed).toEqual([]);
+    expect(result.enabled).toEqual([
+      { name: 'literal', scope: 'user', config: { type: 'stdio', command: 'tool', args: ['${PORT}', '${UNSET_ONE}', 'x${PORT}y', '9000'], env: { TEMPLATE: '${HOME_BIN}/bin' } } },
+    ]);
+  });
+
   it('reports a project server with an unset ${VAR} as failed instead of throwing', async () => {
     const tree = makeTree();
     writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });

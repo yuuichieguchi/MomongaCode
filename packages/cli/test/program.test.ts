@@ -92,6 +92,33 @@ describe('root command', () => {
     expect(refused.out.join('')).toContain('Allowed choices are manual, acceptEdits, plan, auto, bypassPermissions.');
   });
 
+  const withProbeOutput = (built: ReturnType<typeof harness>): ReturnType<typeof harness> => {
+    const probe = built.program.commands.find((command) => command.name() === 'gateway')?.commands.find((command) => command.name() === 'probe');
+    if (probe === undefined) throw new Error('the program has no gateway probe command');
+    probe.exitOverride().configureOutput({ writeOut: (text) => built.out.push(text), writeErr: (text) => built.out.push(text) });
+    return built;
+  };
+
+  it('gateway probe refuses a step bound that is not a positive whole number of seconds, naming the flag', async () => {
+    for (const given of ['0', '-5', '1.5', 'soon']) {
+      const refused = withProbeOutput(harness());
+      await expect(run(refused.program, 'gateway', 'probe', 'some/model', '--step-timeout', given)).rejects.toMatchObject({ code: 'commander.invalidArgument' });
+      expect(refused.out.join('')).toContain('--step-timeout <seconds>');
+    }
+  });
+
+  it('gateway probe lists --yes, the consent to measure a model paid for by use, in its help', async () => {
+    const { program, out } = withProbeOutput(harness());
+    await expect(run(program, 'gateway', 'probe', '--help')).rejects.toMatchObject({ code: 'commander.helpDisplayed' });
+    expect(out.join('')).toMatch(/--yes\s+[^\n]*paid for by use/);
+  });
+
+  it('gateway probe lists its step bound with the default of 120 seconds in its help', async () => {
+    const { program, out } = withProbeOutput(harness());
+    await expect(run(program, 'gateway', 'probe', '--help')).rejects.toMatchObject({ code: 'commander.helpDisplayed' });
+    expect(out.join('')).toMatch(/--step-timeout <seconds>[\s\S]*120/);
+  });
+
   it('policy verify --mode refuses default and names the starting mode in its help', async () => {
     const { program, out } = harness();
     const verify = program.commands.find((command) => command.name() === 'policy')?.commands.find((command) => command.name() === 'verify');
