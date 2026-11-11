@@ -450,7 +450,7 @@ describe('cli: gateway probe of a chat-completions target', () => {
       writeSettingsFile(
         home,
         modelSettings({
-          models: [{ adapter: 'chat-completions', provider: 'fake', id: 'upstream-model', socketPath: home.upstreamSocket, toolCalling: 'auto', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }],
+          models: [{ adapter: 'chat-completions', provider: 'fake', id: 'upstream-model', socketPath: home.upstreamSocket, billing: 'local', toolCalling: 'auto', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }],
         }),
       );
 

@@ -62,7 +62,27 @@ const assertServerName = (name: string, source: string): void => {
   if (problem !== undefined) throw new Error(`${source}: ${problem}`);
 };
 
-type VariableGuard = (variable: string) => boolean;
+export type ServerKeyOfLabel = { kind: 'key'; key: string } | { kind: 'refused'; reason: string };
+
+const derivedServerKey = (label: string): string =>
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '-')
+    .replace(/_+/g, '_')
+    .replace(/-*_-*/g, '_')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '');
+
+export const serverKeyOfLabel = (label: string, taken: ReadonlySet<string>): ServerKeyOfLabel => {
+  const key = derivedServerKey(label);
+  if (key === '') return { kind: 'refused', reason: `the MCP server ${JSON.stringify(label)} has no letter or digit to make a server name from; give it a name with one` };
+  if (!taken.has(key)) return { kind: 'key', key };
+  let suffix = 2;
+  while (taken.has(`${key}-${suffix}`)) suffix += 1;
+  return { kind: 'key', key: `${key}-${suffix}` };
+};
+
+type VariableGuard =(variable: string) => boolean;
 
 const expandText = (value: string, env: LoadMcpServersOptions['env'], serverName: string, source: string, refuse: VariableGuard): string =>
   expandVariables(value, {

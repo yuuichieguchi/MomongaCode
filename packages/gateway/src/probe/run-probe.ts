@@ -1,6 +1,8 @@
-import { SSE_EVENT_MAX_BYTES, decodeSse, defineProductSchema } from '@momonga/foundation';
+import { SSE_EVENT_MAX_BYTES, decodeSse, defineProductSchema, parseRetryAfter, sleep } from '@momonga/foundation';
 import type { OutboundNetwork, ProductValidator } from '@momonga/foundation';
 import {
+  DEFAULT_PROBE_STEP_SECONDS,
+  probeStepBoundMs,
   ESTIMATED_ERROR_BOUND_RATIO,
   DEFAULT_DIALECT_ID,
   DEFAULT_OUTPUT_BOUND_FIELD,
@@ -26,7 +28,7 @@ import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
 import { IMAGE_PROMPT, SEARCH_TOLERANCE, TINY_PNG, measureImageTokens } from './image-tokens.ts';
 import type { ImageCostProbe } from './image-tokens.ts';
-import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ManagedProbeRoutes, type ProbeClient, type ProbeEndpoint } from './client.ts';
+import { ProbeTimeoutError, createProbeClient, type HttpResult, type ProbePorts, type ManagedProbeRoutes, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import type { ProbeTool } from './envelope.ts';
 import { NO_USER_DIALECTS, resolveDialect } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
@@ -39,8 +41,12 @@ import { assistantMessage, errorKindOf, expectStatus, failProbeStep, isAcceptedO
 import type { Chat, ChatResult, ProbeOutcome } from './probe-chat.ts';
 import { fillerText } from './filler.ts';
 import { JSON_MODE_PROBE_PROMPT, measureJsonMode } from './json-mode.ts';
+import { MeasurementBoundReachedError, isCount } from './consent.ts';
+import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
 import type { JsonModeAnswer } from './json-mode.ts';
-import { field, firstOf, isRecord, listedEntryOf, parseJson, valueAtPath } from './json.ts';
+import { field, firstOf, isRecord, listedEntryOf, valueAtPath } from './reply.ts';
+import { parseExternalJson } from '../adapters/shared/json.ts';
+import { usableUpstreamJson } from '../adapters/shared/upstream-json.ts';
 
 export interface ProbeOptions {
   socketPath?: string;
@@ -55,21 +61,24 @@ export interface ProbeOptions {
   samples?: number;
   countTokens?: (text: string) => Promise<number>;
   guardrailPrompt?: string;
-  now?: () => Date;
+  ports: ProbePorts;
   signal?: AbortSignal;
   stepTimeoutMs?: number;
-  sleep?: (ms: number, signal: AbortSignal | undefined) => Promise<void>;
+  metered?: { measurement: MeteredMeasurement; bound: MeasurementBound };
 }
 
-export const PROBE_METHOD_VERSION = 3;
+export const PROBE_METHOD_VERSION = 4;
 
 const MAX_RATE_LIMIT_RETRIES = 3;
+const MEASUREMENT_BASE_REQUESTS = 64;
+const MEASUREMENT_REQUESTS_PER_SAMPLE = 16;
 export const DEFAULT_SAMPLES = 10;
 const CONCURRENCY_ATTEMPTS = 8;
 const SEARCH_INITIAL_WORDS = 64;
 const SEARCH_MAX_WORDS = 262144;
-export const DEFAULT_STEP_TIMEOUT_MS = 120000;
-const CACHE_PROBE_WORDS = 1536;
+export const MS_PER_SECOND = 1000;
+export const DEFAULT_STEP_TIMEOUT_MS = probeStepBoundMs(DEFAULT_PROBE_STEP_SECONDS);
+export const CACHE_PROBE_WORDS = 1536;
 const OUTPUT_BOUND_PROBE_TOKENS = 16;
 const OUTPUT_BOUND_HONOURED_FACTOR = 2;
 const ONE_OUTPUT_TOKEN = 1;
@@ -88,13 +97,6 @@ const PROBE_TOOL: ProbeTool = { name: 'probe_weather', parameters: PROBE_PARAMET
 const TOOL_PROMPT = `Please call ${PROBE_TOOL.name} for Tokyo for 3 days`;
 const PLAIN_PROMPT = 'Say hello in one short sentence.';
 const validateToolArguments: ProductValidator<unknown> = defineProductSchema('gateway/probe-tool-arguments', PROBE_PARAMETERS);
-
-const retryAfterMs = (value: string | undefined, now: Date): number | undefined => {
-  if (value === undefined) return undefined;
-  if (/^\d+$/.test(value)) return Number(value) * 1000;
-  const at = Date.parse(value);
-  return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
-};
 
 const estimatedCount = async (text: string): Promise<number> => tokensForText(text);
 
@@ -125,7 +127,7 @@ const nativeCallOf = (body: unknown): NativeCall | undefined => {
 const nativeCallValid = (call: NativeCall | undefined, ledger: RenderLedger): boolean => {
   if (call === undefined || call.name !== PROBE_TOOL.name) return false;
   const record = ledger.wraps.get(call.name);
-  return toolArgumentsValid(parseJson(record === undefined ? call.arguments : invertReply(record, call.arguments)));
+  return toolArgumentsValid(usableUpstreamJson(record === undefined ? call.arguments : invertReply(record, call.arguments)));
 };
 
 const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
@@ -136,8 +138,56 @@ const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
   return { kind: 'tcp', baseUrl: baseUrl as string, network: options.network, ...(options.headers === undefined ? {} : { headers: options.headers }) };
 };
 
+export const measurementBoundOf = (contextWindow: number, samples: number): MeasurementBound => {
+  const requests = (MEASUREMENT_BASE_REQUESTS + MEASUREMENT_REQUESTS_PER_SAMPLE * samples) * (1 + MAX_RATE_LIMIT_RETRIES);
+  return { requests, inputTokens: requests * contextWindow, outputTokens: requests * maxOutputTokensFor(contextWindow) };
+};
+
+const requestedOutputOf = (body: unknown, contextWindow: number): number => {
+  if (isRecord(body)) {
+    for (const name of OUTPUT_BOUND_FIELDS) {
+      const value = body[name];
+      if (isCount(value)) return value;
+    }
+  }
+  return maxOutputTokensFor(contextWindow);
+};
+
+const meteredProbeClient = (client: ProbeClient, metered: MeteredMeasurement, bound: MeasurementBound): ProbeClient => {
+  let requests = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  const count = (body: unknown): void => {
+    const nextRequests = requests + 1;
+    const nextInput = inputTokens + tokensForText(JSON.stringify(body));
+    const nextOutput = outputTokens + requestedOutputOf(body, metered.declaredContextWindow);
+    if (nextRequests > bound.requests || nextInput > bound.inputTokens || nextOutput > bound.outputTokens) throw new MeasurementBoundReachedError(metered.display, bound);
+    requests = nextRequests;
+    inputTokens = nextInput;
+    outputTokens = nextOutput;
+  };
+  return {
+    hasHealthRoute: client.hasHealthRoute,
+    get: (route) => client.get(route),
+    post: async (route, body) => {
+      count(body);
+      return client.post(route, body);
+    },
+    request: async (method, requestPath, body) => {
+      if (method === 'POST') count(body);
+      return client.request(method, requestPath, body);
+    },
+    stream: async (route, body) => {
+      count(body);
+      return client.stream(route, body);
+    },
+    close: () => client.close(),
+  };
+};
+
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
-  const client = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.managed);
+  const unmetered = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.ports.timers, options.managed);
+  const client = options.metered === undefined ? unmetered : meteredProbeClient(unmetered, options.metered.measurement, options.metered.bound);
   try {
     return await probeWith(client, options);
   } finally {
@@ -147,14 +197,14 @@ export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
 
 const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<ProbeReport> => {
   const samples = options.samples ?? DEFAULT_SAMPLES;
-  const now = options.now ?? (() => new Date());
+  const now = (): Date => new Date(options.ports.clock.now());
 
   const healthResult: HttpResult = client.hasHealthRoute ? await client.get('health') : { status: 200, text: '', headers: {} };
   expectStatus(healthResult, [200], 'health');
 
   const modelsResult = await client.get('models');
   expectStatus(modelsResult, [200], 'models');
-  const modelsBody = parseJson(modelsResult.text);
+  const modelsBody = parseExternalJson(modelsResult.text);
   const listedId = options.managed === undefined ? field(firstOf(field(modelsBody, 'data')), 'id') : valueAtPath(modelsBody, options.managed.idPath);
   const model = options.model ?? listedId;
   if (typeof model !== 'string') throw new Error(`Probe could not determine a model id from ${options.managed?.listPath ?? '/v1/models'}`);
@@ -167,15 +217,14 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     return { ...result, reply, errorKind, outcome: outcomeOf(result.status, reply, errorKind) };
   };
   const stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
-  const sleep = options.sleep ?? systemSleep;
   const retryingRateLimits =
     (once: Chat): Chat =>
     async (body) => {
       let result = await once(body);
       for (let retry = 0; result.status === 429 && retry < MAX_RATE_LIMIT_RETRIES; retry += 1) {
-        const waitMs = retryAfterMs(result.headers['retry-after'], now());
+        const waitMs = parseRetryAfter(result.headers['retry-after'], options.ports.clock.now());
         if (waitMs === undefined || waitMs > stepTimeoutMs) return result;
-        await sleep(waitMs, options.signal);
+        if ((await sleep(options.ports.timers, waitMs, options.signal)) === 'aborted') options.signal?.throwIfAborted();
         result = await once(body);
       }
       return result;
@@ -189,7 +238,10 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   };
   const chat = retryingRateLimits(post);
 
-  const contextWindow = reportedWindowOf(modelsBody, model, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens));
+  const contextWindow: ProbeReport['contextWindow'] =
+    options.metered === undefined
+      ? (reportedWindowOf(modelsBody, model, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens)))
+      : { value: options.metered.measurement.declaredContextWindow, method: 'declared' };
   bound.tokens = maxOutputTokensFor(contextWindow.value);
 
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
@@ -238,7 +290,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
 
   const promptCache = await measurePromptCache(chat);
 
-  const jsonMode = await measureJsonMode(() => askJsonOnly(chat), options.signal);
+  const jsonMode = await measureJsonMode(() => askJsonOnly(chat));
 
   const maxConcurrency = await measureConcurrency(post);
 
@@ -258,7 +310,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     outputBoundField,
     parallelToolCalls,
     reasoning,
-    maxConcurrency,
+    ...(maxConcurrency === undefined ? {} : { maxConcurrency }),
     imageInputAccepted,
     ...(imageTokens === undefined ? {} : { imageTokens }),
     guardrail,
@@ -354,7 +406,7 @@ const probeStreaming = async (client: ProbeClient, model: string, outputBound: o
       doneSentinel = true;
       continue;
     }
-    const usage = field(parseJson(event.data), 'usage');
+    const usage = field(parseExternalJson(event.data), 'usage');
     if (isRecord(usage)) usageInStream = true;
   }
   return { supported: events > 0, doneSentinel, usageInStream };
@@ -542,7 +594,7 @@ export const reportedContextWindow = (source: unknown): number | undefined => re
 export const reportedContextCeiling = (source: unknown): number | undefined => reportedCount(source, CONTEXT_CEILING_FIELDS);
 
 const reportedWindowOf = (modelsBody: unknown, model: string, healthText: string): ProbeReport['contextWindow'] | undefined => {
-  for (const source of [listedEntryOf(modelsBody, model), parseJson(healthText)]) {
+  for (const source of [listedEntryOf(modelsBody, model), usableUpstreamJson(healthText)]) {
     const value = reportedContextWindow(source);
     if (value !== undefined) return { value, method: 'reported' };
   }
@@ -604,17 +656,12 @@ const searchContextWindow = async (chat: Chat, countTokens: ProbeOptions['countT
   };
 };
 
-const measureConcurrency = async (chat: Chat): Promise<number> => {
+const measureConcurrency = async (chat: Chat): Promise<ProbeReport['maxConcurrency']> => {
   const request = (): Promise<ChatResult> => chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
-  expectStatus(await request(), [200], 'concurrency warm-up');
-  const singleStartedAt = performance.now();
-  expectStatus(await request(), [200], 'concurrency baseline');
-  const singleMs = performance.now() - singleStartedAt;
-  const parallelStartedAt = performance.now();
   const results = await Promise.all(Array.from({ length: CONCURRENCY_ATTEMPTS }, request));
-  const parallelMs = performance.now() - parallelStartedAt;
   for (const result of results) expectStatus(result, [200, 429], 'concurrency');
-  const successCount = results.filter((result) => result.status === 200).length;
-  const overlap = Math.floor((CONCURRENCY_ATTEMPTS * singleMs) / parallelMs);
-  return Math.max(1, Math.min(overlap, successCount));
+  const accepted = results.filter((result) => result.status === 200).length;
+  if (accepted === results.length) return undefined;
+  if (accepted === 0) throw new Error(`the server refused every one of ${CONCURRENCY_ATTEMPTS} requests sent at once as too many`);
+  return { value: accepted, evidence: 'refused' };
 };

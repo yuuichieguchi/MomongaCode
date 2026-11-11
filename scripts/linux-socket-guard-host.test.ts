@@ -158,7 +158,7 @@ describe.runIf(HAS_BWRAP)('Unix sockets under the real Linux sandbox, with the s
 
       expect(await probed(`connect ${listener.path}`)).toBe('EPERM');
       expect(listener.connections()).toBe(0);
-      expect((await finished(await sh(`${process.execPath} -e "process.stdout.write(require('node:child_process').execFileSync('/bin/echo', ['piped']))"`))).stdout.trim()).toBe('piped');
+      expect((await finished(await sh(`/bin/sh -c '/bin/echo piped | /bin/cat'`))).stdout.trim()).toBe('piped');
     });
 
     it('the command still ends with its own exit code', async () => {

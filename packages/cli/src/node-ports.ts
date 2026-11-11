@@ -195,8 +195,8 @@ export const runSocketGuardBuild = (script: string, workDir: string): number | n
   return run.status;
 };
 
-export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string): Promise<string> =>
-  ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem });
+export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string, lock: KernelLockMechanism): Promise<string> =>
+  ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem, lock });
 
 export const hostSourceBuiltLinuxSocketGuard = (executablesRoot: string): (() => string) =>
   sourceBuiltLinuxSocketGuard({ script: LINUX_SOCKET_GUARD_BUILD_SCRIPT, executablesRoot, build: runSocketGuardBuild, files: nodeSourceKeeperFiles, random: systemRandom });
@@ -354,7 +354,7 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
     self,
     handover: createHandoverHost({ version, parties: async () => ({ writer: process.pid, reader: process.pid, namespace: await pidNamespaceOf(nodeFileSystem) }), self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles(lock) }),
     spawnDetached: nodeSpawnDetached,
-    terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
+    terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout, colourOff: () => Reflect.set(process.env, 'FORCE_COLOR', '0') } : undefined,
     files: nodeFilesLockedBy(lock),
     exec: createHostExec(minimalChildEnv(process.env)),
     probe: nodeWorkspaceProbeOf(nodeWorkspaceSandbox(settingsWorkspaceSandbox(home, process.cwd(), interrupt, (text) => streams.stderr.write(`${text}\n`))), hostProcessGroupPort()),

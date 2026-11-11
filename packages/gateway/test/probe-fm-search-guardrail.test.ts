@@ -3,6 +3,7 @@ import { vocabularyOf, runProbe } from '@momonga/gateway';
 import { FM_CONTEXT_OVERFLOW_ERROR, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { FM_SERVER } from '@momonga/protocol';
 import { FM_PROBE_ROUTES } from './fm-record-support.ts';
+import { hostProbePorts } from './probe-ports-support.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -55,6 +56,7 @@ describe('the fm context window search against the guardrail fm applies to a rep
     servers.push(fake);
 
     const report = await runProbe({
+      ports: hostProbePorts,
       socketPath: fake.socketPath,
       managed: FM_PROBE_ROUTES,
       samples: 2,

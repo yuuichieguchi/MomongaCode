@@ -4,7 +4,7 @@ import { HANDOVER_TERMINAL_ENV, KEY_SETTLE_MS, NO_FULLSCREEN_NOTICE, PASTE_ABAND
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { handoverTerminalValue, parseHandoverTerminal, startFromHandover } from '../../src/tui/terminal/handover.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
-import type { ProcessEvent, ProcessSignal, ScreenRequest, TerminalLayerOptions } from '../../src/tui/terminal/layer.ts';
+import type { DeliverableSignal, ProcessEvent, ProcessSignal, ScreenRequest, TerminalLayerOptions } from '../../src/tui/terminal/layer.ts';
 import { LEAVE_EVERY_MODE, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
 import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
 import { manualClock } from './screen-clock.ts';
@@ -24,7 +24,7 @@ const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: fals
 
 type Fakes = ReturnType<typeof fakes>;
 
-const fakes = (given: Partial<Pick<TerminalLayerOptions, 'screen' | 'screenSetByUser' | 'mouse'>> = {}) => {
+const fakes = (given: Partial<Pick<TerminalLayerOptions, 'screen' | 'screenSetByUser' | 'mouse'>> & { undeliverable?: readonly DeliverableSignal[] } = {}) => {
   const stdin = new EventEmitter();
   const rawModes: boolean[] = [];
   const writes: string[] = [];
@@ -70,10 +70,14 @@ const fakes = (given: Partial<Pick<TerminalLayerOptions, 'screen' | 'screenSetBy
         kills.push(signal);
         log.push(`kill:${signal}`);
       },
+      deliverable: (signal) => !(given.undeliverable ?? []).includes(signal),
     },
     screen: given.screen ?? 'fullscreen',
     screenSetByUser: given.screenSetByUser ?? false,
     mouse: given.mouse ?? true,
+    onFailure: (error) => {
+      throw error;
+    },
     onEvents: (events) => delivered.push(...events),
   });
   layer.subscribeScreen((request) => requests.push(request));
@@ -380,6 +384,26 @@ describe('the one restore path', () => {
     const t = fakes();
     t.layer.start();
     for (const event of ['exit', 'SIGINT', 'SIGTERM', 'SIGHUP', 'uncaughtExceptionMonitor'] as const) expect(t.listening(event), event).toBe(true);
+  });
+});
+
+describe('the signals of a platform', () => {
+  it('installs only the signals the platform port reports deliverable', () => {
+    const t = fakes({ undeliverable: ['SIGTERM', 'SIGSTOP', 'SIGCONT'] });
+    t.layer.start();
+    expect(t.listening('SIGINT')).toBe(true);
+    expect(t.listening('SIGTERM')).toBe(false);
+    t.layer.close();
+  });
+
+  it('does not stop the process at Ctrl+Z where the platform cannot stop and continue it', () => {
+    const t = fakes({ undeliverable: ['SIGSTOP', 'SIGCONT'] });
+    t.layer.start();
+    t.log.length = 0;
+    t.feed('\u001a');
+    expect(t.kills).toEqual([]);
+    expect(t.log).toEqual([]);
+    t.layer.close();
   });
 });
 

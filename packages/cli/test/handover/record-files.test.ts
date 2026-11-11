@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { handoverLeftovers, handoverRecordOwner, isProcessAlive, momongaPaths, nodeFileSystem, pidNamespaceOf, sweepLeftovers } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { nodeRecordFiles } from '../../src/node-ports.ts';
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import { createMover } from '../../src/handover/mover.ts';
 import { replaceProcess } from '../../src/handover/replace-process.ts';
 import type { RelayChild } from '../../src/handover/replace-process.ts';

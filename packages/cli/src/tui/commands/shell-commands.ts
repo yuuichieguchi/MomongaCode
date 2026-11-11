@@ -26,7 +26,7 @@ export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
   },
   { name: 'policy', usage: 'verify [--json] [--mode <mode>] [--secret <path>] [--mandate <name>]', description: 'check the permission rules of this folder', subcommands: ['verify'] },
   { name: 'models', usage: '[--json] | detect [url...] [--json]', description: 'list the configured models with the capabilities they declare, or find the local model servers that are running' },
-  { name: 'gateway', usage: 'probe <model> [--samples <count>]', description: 'measure a model and record the result for the gateway', subcommands: ['probe'] },
+  { name: 'gateway', usage: 'probe <model> [--samples <count>] [--step-timeout <seconds>] [--yes]', description: 'measure a model and record the result for the gateway', subcommands: ['probe'] },
 ];
 
 const refusalOf = (entry: ShellSlash | undefined, words: readonly string[]): string | undefined => {

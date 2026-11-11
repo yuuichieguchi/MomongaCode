@@ -1,7 +1,8 @@
+import { colourOffWhenAsked } from './tui/screen/theme.ts';
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
 import type { EntryIo, SandboxNetworkSetting } from '@momonga/foundation';
-import { PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION, messageOf } from '@momonga/protocol';
+import { DEFAULT_PROBE_STEP_SECONDS, PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION, messageOf, probeStepBoundMs } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
 import { serveAcp } from './acp/serve.ts';
 import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.ts';
@@ -211,6 +212,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         const read = prompt === undefined ? '' : ` "${prompt}" is not the name of a command and was read as its first prompt;`;
         throw new Error(`the interactive session needs a terminal;${read} pass --print <prompt> to run without one`);
       }
+      colourOffWhenAsked(ports.env, ports.terminal);
       const { runInteractive } = await import('./tui/run-interactive.tsx');
       deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...bounds, ...session, ...(reopen === undefined ? {} : { reopen }), screenReader: options.screenReader === true }, await deps.update(), createShellPort(given)));
     });
@@ -302,10 +304,14 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .command('probe <model>')
     .description('measure a model of a managed server, an OpenAI-compatible server or an Ollama server and record the result for the gateway (an Ollama server: trained context length, tools, vision, thinking and model digest; a managed or OpenAI-compatible server: tool calling, structured output, stop sequences, parallel calls, reasoning control, usage)')
     .option('--samples <count>', 'samples per measured rate', integerArgument(1))
-    .action(async (model: string, options: { samples?: number }) => {
+    .option('--step-timeout <seconds>', 'the bound of each measuring step, in seconds', integerArgument(1), DEFAULT_PROBE_STEP_SECONDS)
+    .option('--yes', 'consent to measure a model paid for by use, up to the bound of requests and tokens the measurement can send')
+    .action(async (model: string, options: { samples?: number; stepTimeout: number; yes?: true }) => {
       deps.complete(
         await probeModel(ports, await pathsOf(ports), model, {
           interrupt: deps.interrupt,
+          stepTimeoutMs: probeStepBoundMs(options.stepTimeout),
+          consented: options.yes === true,
           ...(options.samples === undefined ? {} : { samples: options.samples }),
         }),
       );

@@ -8,6 +8,7 @@ import { FM_SERVER } from '@momonga/protocol';
 import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
 import { FAKE_FM_LISTED_MODEL, FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
+import { systemTiming } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -37,6 +38,7 @@ const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] 
   inspector: testProcessInspector(),
   isUsableBinary: async (binary: string) => fs.existsSync(binary),
   readStopGraceMs: () => 1_000,
+  timers: systemTiming,
   onWarning: (message: string) => void warnings.push(message),
 });
 

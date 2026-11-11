@@ -1,6 +1,8 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createSocketPathProbe } from '@momonga/foundation';
+import { FIRST_GENERATION, SocketPathUnmeasuredError, assertUnixSocketPathFits, createSocketPathProbe, generationLayout, momongaPaths, refuseUnfitGenerationSocketsBeforeCreation, setSocketBind } from '@momonga/foundation';
 
 const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`bind failed: ${code}`), { code });
 
@@ -70,5 +72,41 @@ describe('socket path limit by measurement (B12)', () => {
     expect(first.evidence).toContain(code);
     expect((await probe(INTENDED)).kind).toBe('unmeasured');
     expect(bound).toHaveLength(2);
+  });
+});
+
+describe('a socket path is used only when its bind measurement succeeded (20.19, 20.58)', () => {
+  const homeOf = (): string => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-socket-fit-')));
+
+  it('refuses a path the bind could not measure with the designed text, before any generation exists', async () => {
+    const home = homeOf();
+    try {
+      const paths = momongaPaths(home, 'darwin', {});
+      setSocketBind(async () => {
+        throw errno('EACCES');
+      });
+      const error = await refuseUnfitGenerationSocketsBeforeCreation(paths, FIRST_GENERATION).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(SocketPathUnmeasuredError);
+      const longest = generationLayout(home, FIRST_GENERATION).sockets.supervisor;
+      expect((error as Error).message).toBe(`Unix socket path ${longest}: a socket path of ${Buffer.byteLength(longest)} bytes could not be tested in ${paths.run}: EACCES`);
+    } finally {
+      setSocketBind(undefined);
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an unmeasured path in assertUnixSocketPathFits and gives a measured one back', async () => {
+    const socketPath = path.join(DIRECTORY, 'fits.sock');
+    try {
+      setSocketBind(async () => {
+        throw errno('ENOENT');
+      });
+      await expect(assertUnixSocketPathFits(socketPath)).rejects.toBeInstanceOf(SocketPathUnmeasuredError);
+      setSocketBind(async () => undefined);
+      await expect(assertUnixSocketPathFits(socketPath)).resolves.toBeUndefined();
+    } finally {
+      setSocketBind(undefined);
+    }
   });
 });

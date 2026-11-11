@@ -1,5 +1,6 @@
 import { getAssetKeys, getRawAsset, isSea } from 'node:sea';
 import { LINUX_SOCKET_GUARD_MANIFEST_ASSET } from '@momonga/foundation';
+import type { KernelLockMechanism } from '@momonga/foundation';
 import { hostExtractedLinuxSocketGuard, hostSourceBuiltLinuxSocketGuard } from '../node-ports.ts';
 
 type RuntimeEntry = typeof import('@momonga/runtime/entry');
@@ -9,7 +10,7 @@ export type SocketGuardHost = {
   platform: NodeJS.Platform;
   embedded: { present(name: string): boolean; raw(name: string): Uint8Array } | undefined;
   builtFromSource(executablesRoot: string): () => string;
-  extracted(asset: (name: string) => Uint8Array, executablesRoot: string): Promise<string>;
+  extracted(asset: (name: string) => Uint8Array, executablesRoot: string, lock: KernelLockMechanism): Promise<string>;
 };
 
 const seaAssets = (): SocketGuardHost['embedded'] => (isSea() ? { present: (name) => getAssetKeys().includes(name), raw: (name) => new Uint8Array(getRawAsset(name)) } : undefined);
@@ -23,7 +24,7 @@ export const socketGuardSourceOf = ({ platform, embedded, builtFromSource, extra
     };
   }
   if (!embedded.present(LINUX_SOCKET_GUARD_MANIFEST_ASSET)) return undefined;
-  return (paths) => () => extracted(embedded.raw, paths.executables);
+  return (paths, locks) => () => extracted(embedded.raw, paths.executables, locks.mechanism);
 };
 
 export const hostSocketGuardSource = (): SocketGuardSource | undefined =>
