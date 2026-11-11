@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildSeatbeltProfile } from '@momonga/sandbox';
+import { SYSTEM_RESOLVER_SOCKET, buildSeatbeltProfile } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { makeTempDir } from './helpers.ts';
 import { NEVER_CANCELLED, testPaths } from '@momonga/testkit';
@@ -107,9 +107,11 @@ describe('buildSeatbeltProfile', () => {
     expect(profile).not.toMatch(/network/);
   });
 
-  it('allows network when network is allow', async () => {
+  it('allows IP outbound and the system resolver socket when network is allow, never every network operation', async () => {
     const { profile } = await buildSeatbeltProfile(policyFor(tempDir(), { network: 'allow' }), {}, testPaths());
-    expect(profile).toContain('(allow network*)');
+    expect(profile).toContain('(allow network-outbound (remote ip))');
+    expect(profile).toContain(`(allow network-outbound (remote unix-socket (path-literal "${SYSTEM_RESOLVER_SOCKET}")))`);
+    expect(profile).not.toContain('(allow network*)');
   });
 
   it('does not allow keychain or securityd mach services', async () => {

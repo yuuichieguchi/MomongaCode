@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SandboxPolicyError, buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
+import { SYSTEM_RESOLVER_SOCKET, SandboxPolicyError, buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, NEVER_CANCELLED, testPaths, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
@@ -60,6 +60,17 @@ describe('the Unix socket allow list in the Seatbelt profile', () => {
       '(deny network-outbound (remote unix-socket (subpath (param "READ_DENIED_0"))))',
     ]);
     expect(params['READ_DENIED_0']).toBe(owned);
+  });
+
+  it('grants only IP outbound, the listed sockets and the system resolver socket when network is allow', async () => {
+    const root = tempDir();
+    const listed = path.join(root, 'sockets');
+    const { profile } = await buildSeatbeltProfile(policyFor(root, { network: 'allow', unixSocketAllow: [listed] }), {}, testPaths());
+    expect(profile.split('\n').filter((line) => line.startsWith('(allow network'))).toEqual([
+      '(allow network-outbound (remote ip))',
+      `(allow network-outbound (remote unix-socket (path-literal "${SYSTEM_RESOLVER_SOCKET}")))`,
+      '(allow network-outbound (remote unix-socket (subpath (param "UNIX_SOCKET_ALLOW_0"))))',
+    ]);
   });
 
   it('refuses a list entry that is not an absolute path', async () => {
@@ -158,6 +169,30 @@ describe.runIf(process.platform === 'darwin')('the Unix socket allow list under 
     const result = await run(await connect(socket, { readDenied: [owned], unixSocketAllow: [path.join(owned, 'run')] }));
     expect(result.code).not.toBe(0);
     expect(hits).toEqual([]);
+  });
+
+  it('cannot connect to an unlisted socket when the network is granted', async () => {
+    const socket = await serve('unlisted', path.join(outside, 'other', 'c.sock'));
+    const result = await run(await connect(socket, { network: 'allow', unixSocketAllow: [path.join(outside, 'agents')] }));
+    expect(result.code).not.toBe(0);
+    expect(hits).toEqual([]);
+  });
+
+  it('connects to a listed socket when the network is granted', async () => {
+    const socket = await serve('listed', path.join(outside, 'agents', 'd.sock'));
+    const result = await run(await connect(socket, { network: 'allow', unixSocketAllow: [path.join(outside, 'agents')] }));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe('hi');
+    expect(hits).toEqual(['listed']);
+  });
+
+  it('resolves a name through the system resolver when the network is granted', async () => {
+    const lookup = 'my @a = gethostbyname("example.com"); print @a ? join(".", unpack("C4", $a[4])) : "none"';
+    const proc = await sandbox.spawn({ argv: ['/usr/bin/perl', '-e', lookup], cwd: root, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' } }, policyFor(root, { network: 'allow' }), new AbortController().signal);
+    spawned.push(proc);
+    const result = await run(proc);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
   });
 
   it('cannot reach a TCP listener through the list', async () => {
