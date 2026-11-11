@@ -437,7 +437,7 @@ export type ServiceOverrides = {
   permissionRules?: (session: Session) => Promise<readonly PermissionRule[]>;
   role?: RolePort;
   work?: { steps(): number; jobs(): number };
-  ignorableMarkerDirectories?: () => Promise<readonly string[]>;
+  ignorableMarkerDirectories?: (signal: AbortSignal) => Promise<readonly string[]>;
   onRequestEnd?: () => void;
   timers?: FakeTimers;
   keepAliveMs?: number;
@@ -585,6 +585,7 @@ export const serviceOptions = (
   role: overrides.role ?? fixedRolePort('serving'),
   work: overrides.work ?? { steps: () => 0, jobs: () => 0 },
   ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home, process.platform, process.env).markers.root]),
+  files: nodeFileSystem,
   ...(overrides.onRequestEnd === undefined ? {} : { onRequestEnd: overrides.onRequestEnd }),
   ...(overrides.delegation === undefined ? {} : { delegation: overrides.delegation }),
   onError: (error: unknown) => base.errors.push(error),

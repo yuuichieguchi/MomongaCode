@@ -132,6 +132,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     ownerAlive: async (ownerGeneration) =>
       (await inspectProcessLock(generationLayout(home, ownerGeneration).locks.runtime, { mechanism: kernelLock })).state !== 'free',
     markerFiles: createNodeJobMarkerFiles(lockCapability),
+    files: nodeFileSystem,
     inspector,
     killGraceMs: SANDBOX_KILL_GRACE_MS,
     reapTiming,
