@@ -33,6 +33,7 @@ export const SETTINGS = { trusted: () => true, verification: async () => ({ comm
 
 export const portFor = (store: RuntimeStore, counter: CheckCounter) =>
   createMemoryPort({
+    platform: process.platform,
     store,
     settings: SETTINGS,
     evidenceRun: () => async () => ({ exitCode: 128 }),

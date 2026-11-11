@@ -1,9 +1,8 @@
-import { lexicallyWithin } from '@momonga/foundation';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { AddMemoryRequest, MemoryEvidence } from '@momonga/protocol';
 import { MEMORY_TEXT_MAX_CHARS, memoryTextProblem } from '@momonga/tools';
 import type { AddMemoryByCommandInput } from '@momonga/store';
-import { MemoryEvidenceError, USER_MEMORY_PATH_REFUSAL, bindMemoryEvidence, createEvidencePorts, readGitHead } from './evidence.ts';
+import { MemoryEvidenceError, USER_MEMORY_PATH_REFUSAL, bindMemoryEvidence, createEvidencePorts, memoryPathsOf, readGitHead, withinProject } from './evidence.ts';
 import type { BoundFacts, EvidenceRun } from './evidence.ts';
 
 export class MemoryAddRefusal extends Error {
@@ -17,15 +16,16 @@ export class MemoryAddRefusal extends Error {
 }
 
 export type MemoryAddContext = {
+  platform: NodeJS.Platform;
   trusted(project: string): boolean | Promise<boolean>;
   evidenceRun(project: string): EvidenceRun;
   signal: AbortSignal;
 };
 
-const hashedBy = (project: string, given: readonly string[], ports: ReturnType<typeof createEvidencePorts>) => async (resolved: readonly string[]): Promise<BoundFacts> => {
+const hashedBy = (platform: NodeJS.Platform, project: string, given: readonly string[], ports: ReturnType<typeof createEvidencePorts>) => async (resolved: readonly string[]): Promise<BoundFacts> => {
   const recorded = await Promise.all(
     resolved.map(async (target, index) => {
-      if (!lexicallyWithin(target, project)) return null;
+      if (!withinProject(memoryPathsOf(platform), project, target)) return null;
       const name = given[index];
       let sha256: string | undefined;
       try {
@@ -64,14 +64,14 @@ export const prepareCommandMemory = async (request: AddMemoryRequest, context: M
   let evidence: MemoryEvidence[];
   try {
     evidence = await bindMemoryEvidence({
-      platform: process.platform,
+      platform: context.platform,
       scope: request.scope,
       paths,
       project,
       trusted: true,
       facts: (resolved) => {
         if (project === null || ports === undefined) throw new Error('a user memory has no journal to ask');
-        return hashedBy(project, paths, ports)(resolved);
+        return hashedBy(context.platform, project, paths, ports)(resolved);
       },
       head: () => {
         if (project === null || run === undefined) throw new Error('a user memory has no head to read');

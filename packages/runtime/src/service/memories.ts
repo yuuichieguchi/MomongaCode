@@ -54,6 +54,7 @@ export type MemoryRoutesDeps = {
   store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'contextCharges' | 'getRun'>;
   views: RecordViews;
   evidenceRun: (project: string) => EvidenceRun;
+  platform: NodeJS.Platform;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
   home: string;
@@ -121,6 +122,7 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
       const prepared = await prepareCommandMemory(request, {
         trusted: async (project) => (await trust.decisionAsked(project, context.req.raw.signal)).decision === 'trusted',
         evidenceRun: deps.evidenceRun,
+        platform: deps.platform,
         signal: boundOf(context),
       });
       return json({ memory: await views.viewOf(memories.addByCommand(prepared), boundOf(context)) }, 201);
