@@ -31,7 +31,11 @@ describe('NETWORK_ENV_NAMES', () => {
 });
 
 describe('isLoopbackHost', () => {
-  it.each(['localhost', 'LOCALHOST', 'localhost.', 'ollama.localhost', 'a.b.localhost', '127.0.0.1', '127.255.255.254', '::1', '[::1]', '0:0:0:0:0:0:0:1', '::ffff:127.0.0.1', '[::ffff:7f00:1]'])(
+  it.each(['localhost', 'LOCALHOST', 'localhost.', 'ollama.localhost', 'a.b.localhost'])('does not exempt the name %s by its text', (host) => {
+    expect(isLoopbackHost(host)).toBe(false);
+  });
+
+  it.each(['127.0.0.1', '127.255.255.254', '::1', '[::1]', '0:0:0:0:0:0:0:1', '::ffff:127.0.0.1', '[::ffff:7f00:1]'])(
     'treats %s as loopback',
     (host) => {
       expect(isLoopbackHost(host)).toBe(true);

@@ -1,4 +1,5 @@
 import { X509Certificate } from 'node:crypto';
+import { lookup as systemLookup } from 'node:dns';
 import net, { isIP } from 'node:net';
 import type { LookupFunction } from 'node:net';
 import type { Duplex } from 'node:stream';
@@ -6,7 +7,8 @@ import tls from 'node:tls';
 import { Worker } from 'node:worker_threads';
 import { Agent, Dispatcher, Pool, ProxyAgent, fetch as undiciFetch } from 'undici';
 import type { RequestInit as UndiciRequestInit, Response as UndiciResponse, buildConnector } from 'undici';
-import { isLoopbackHost } from './loopback.ts';
+import { isLoopbackAddress } from './global-address.ts';
+import { claimsLoopback, isLoopbackName } from './loopback.ts';
 import type { FileSystem } from './node-file-system.ts';
 import { routeOf } from './network-route.ts';
 import type { NetworkConfig, NetworkSource, Route } from './network-route.ts';
@@ -31,7 +33,8 @@ export type OutboundFailure =
   | { readonly kind: 'proxy-unsupported'; readonly source: NetworkSource; readonly text: string }
   | { readonly kind: 'origin-certificate'; readonly host: string; readonly code: string; readonly caSources: readonly string[] }
   | { readonly kind: 'ca-file'; readonly file: string; readonly source: NetworkSource; readonly reason: string }
-  | { readonly kind: 'origin-connection'; readonly origin: string; readonly code?: string };
+  | { readonly kind: 'origin-connection'; readonly origin: string; readonly code?: string }
+  | { readonly kind: 'not-loopback'; readonly host: string; readonly address: string };
 
 export type OutboundHop = 'proxy' | 'origin';
 
@@ -51,12 +54,14 @@ const failureText = (failure: OutboundFailure): string => {
       return `the certificate of ${failure.host} did not verify (${failure.code}); trusted CA sources: ${failure.caSources.join(', ')}`;
     case 'origin-connection':
       return `the connection to ${failure.origin} failed before a response${failure.code === undefined ? '' : ` (${failure.code})`}`;
+    case 'not-loopback':
+      return `${failure.host} names this machine, but its address ${failure.address} is not a loopback address, so the connection was refused`;
     case 'ca-file':
       return `the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}; https connections to remote hosts are refused until it loads`;
   }
 };
 
-const hopOf = (failure: OutboundFailure): OutboundHop => (failure.kind === 'origin-certificate' || failure.kind === 'ca-file' || failure.kind === 'origin-connection' ? 'origin' : 'proxy');
+const hopOf = (failure: OutboundFailure): OutboundHop => (failure.kind === 'origin-certificate' || failure.kind === 'ca-file' || failure.kind === 'origin-connection' || failure.kind === 'not-loopback' ? 'origin' : 'proxy');
 
 export class OutboundConnectionError extends Error {
   readonly failure: OutboundFailure;
@@ -363,7 +368,7 @@ type OutboundClient = { readonly forwardsPlainHttp: boolean; readonly signal: un
 
 export const outboundPlan = (destination: URL, network: OutboundNetwork, client: OutboundClient): OutboundPlan => {
   const trustFailure = network.trust.failures.find(isFileFailure);
-  if (trustFailure !== undefined && TLS_SCHEMES.has(destination.protocol) && !isLoopbackHost(destination.hostname)) {
+  if (trustFailure !== undefined && TLS_SCHEMES.has(destination.protocol) && !claimsLoopback(destination.hostname)) {
     return { kind: 'refuse', error: new OutboundConnectionError({ kind: 'ca-file', ...trustFailure }) };
   }
   return routePlan(destination, network, client);
@@ -484,6 +489,7 @@ export const openOutboundTunnel = async (network: OutboundNetwork, target: Outbo
   assertConnectBound(options.connectReplyTimeoutMs);
   const destination = new URL(`https://${hostOfAddress(target.host)}:${target.port}`);
   const checked = checkedUrlOf(destination, target.address);
+  if (claimsLoopback(target.host) && !isLoopbackAddress(target.address)) throw new OutboundConnectionError({ kind: 'not-loopback', host: target.host, address: target.address });
   const plan = routePlan(destination, network, { forwardsPlainHttp: false, signal: options.signal });
   if (plan.kind === 'refuse') throw plan.error;
   const route = routeToChecked(plan.route, checked, network.config);
@@ -573,13 +579,26 @@ class OutboundDispatcher extends Dispatcher {
     });
   }
 
+  async #checkedLoopback(destination: URL, signal: unknown): Promise<URL> {
+    const checked = await this.#checkedBySite(this.#siteLookup ?? systemLookup, destination, signal);
+    const address = unbracketed(checked.hostname);
+    if (!isLoopbackAddress(address)) throw new OutboundConnectionError({ kind: 'not-loopback', host: unbracketed(destination.hostname), address });
+    return checked;
+  }
+
   override dispatch(options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
     const destination = new URL(String(options.origin));
     const signal: unknown = 'signal' in options ? options.signal : undefined;
     const plan = outboundPlan(destination, this.#network, { forwardsPlainHttp: true, signal });
     if (plan.kind === 'refuse') return this.#refuse(plan.error, handler);
     const labelled = labelledHandler(handler, (error) => (this.#refusedBySite(error) ? error : plan.label(error)));
-    if (plan.route.kind !== 'proxy') return this.#direct.dispatch(options, labelled);
+    if (plan.route.kind !== 'proxy') {
+      if (!isLoopbackName(destination.hostname)) return this.#direct.dispatch(options, labelled);
+      void this.#checkedLoopback(destination, signal)
+        .then((checked) => this.#direct.dispatch(dispatchToChecked(options, destination, checked), labelled))
+        .catch((error: unknown) => this.#refuse(errorOf(error), handler));
+      return true;
+    }
     const named = plan.route;
     if (this.#siteLookup === undefined || isIP(unbracketed(destination.hostname)) !== 0) return this.#proxyFor(named).dispatch(options, labelled);
     void this.#checkedBySite(this.#siteLookup, destination, signal)

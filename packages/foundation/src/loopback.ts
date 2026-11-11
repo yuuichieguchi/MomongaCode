@@ -8,9 +8,15 @@ export const normalizedHost = (host: string): string => {
 
 export const isLoopbackHost = (host: string): boolean => {
   const name = normalizedHost(host);
-  if (name === 'localhost' || name.endsWith('.localhost')) return true;
   return isIP(name) !== 0 && isLoopbackAddress(name);
 };
+
+export const isLoopbackName = (host: string): boolean => {
+  const name = normalizedHost(host);
+  return name === 'localhost' || name.endsWith('.localhost');
+};
+
+export const claimsLoopback = (host: string): boolean => isLoopbackHost(host) || isLoopbackName(host);
 
 export type TransportUrlProblem = 'unparseable' | 'userinfo' | 'cleartext';
 
@@ -37,7 +43,7 @@ export const transportUrlProblem = (raw: string): TransportUrlProblem | undefine
     return 'unparseable';
   }
   if (url.username !== '' || url.password !== '') return 'userinfo';
-  const secure = url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHost(url.hostname));
+  const secure = url.protocol === 'https:' || (url.protocol === 'http:' && claimsLoopback(url.hostname));
   return secure ? undefined : 'cleartext';
 };
 

@@ -1,5 +1,6 @@
-import { BlockList, isIP } from 'node:net';
-import { isLoopbackHost, normalizedHost } from './loopback.ts';
+import { isIP } from 'node:net';
+import { isAddressInRange } from './global-address.ts';
+import { claimsLoopback, normalizedHost } from './loopback.ts';
 
 export const NETWORK_ENV_NAMES = [
   'https_proxy',
@@ -87,21 +88,9 @@ const parseEntry = (entry: string): NoProxyEntry | null => {
   return port === null ? null : { host: entry.slice(0, colon), port };
 };
 
-const familyName = (address: string): 'ipv4' | 'ipv6' => (isIP(address) === 4 ? 'ipv4' : 'ipv6');
+const inSubnet = (cidr: string, prefix: number, address: string): boolean => isIP(cidr) === isIP(address) && isAddressInRange(address, `${cidr}/${prefix}`);
 
-const sameAddress = (left: string, right: string): boolean => {
-  if (isIP(left) !== isIP(right)) return false;
-  const list = new BlockList();
-  list.addAddress(left, familyName(left));
-  return list.check(right, familyName(right));
-};
-
-const inSubnet = (cidr: string, prefix: number, address: string): boolean => {
-  if (isIP(cidr) !== isIP(address)) return false;
-  const list = new BlockList();
-  list.addSubnet(cidr, prefix, familyName(cidr));
-  return list.check(address, familyName(address));
-};
+const sameAddress = (left: string, right: string): boolean => inSubnet(left, isIP(left) === 4 ? 32 : 128, right);
 
 const entryMatches = (entry: NoProxyEntry, host: string, port: number): boolean => {
   const hostIsAddress = isIP(host) !== 0;
@@ -149,7 +138,7 @@ const proxyRoute = ({ value, source }: SourcedValue): Route => {
 export const routeOf = (destination: Destination, config: NetworkConfig): Route => {
   if ('socketPath' in destination) return DIRECT;
   const scheme = PROXIED_SCHEMES[destination.protocol];
-  if (scheme === undefined || isLoopbackHost(destination.hostname)) return DIRECT;
+  if (scheme === undefined || claimsLoopback(destination.hostname)) return DIRECT;
   const proxy = config[scheme.proxy];
   if (proxy === undefined) return DIRECT;
   const port = destination.port === '' ? scheme.defaultPort : Number(destination.port);
