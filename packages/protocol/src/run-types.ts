@@ -192,12 +192,17 @@ export const CHANGE_NOT_SHOWN_LEAD = 'The change is not shown: ';
 
 export const hunkHeaderOf = (hunk: DiffHunk): string => `@@ -${hunk.oldStart} +${hunk.newStart} @@`;
 
-export const approvalShownLines = (shown: ApprovalShown): string[] => [
-  ...(shown.effect === undefined ? [] : shown.effect.split('\n')),
-  ...(shown.claim === undefined ? [] : [`${MODEL_CLAIM_LEAD}${shown.claim}`]),
-  ...(shown.diff?.diffOmitted === undefined ? [] : [`${CHANGE_NOT_SHOWN_LEAD}${shown.diff.diffOmitted}`]),
-  ...(shown.diff?.hunks ?? []).flatMap((hunk) => [hunkHeaderOf(hunk), ...hunk.lines]),
+export type ApprovalShownPart = { kind: 'text'; lines: string[] } | { kind: 'hunks'; hunks: DiffHunk[] };
+
+export const approvalShownParts = (shown: ApprovalShown): ApprovalShownPart[] => [
+  ...(shown.effect === undefined ? [] : [{ kind: 'text' as const, lines: shown.effect.split('\n') }]),
+  ...(shown.claim === undefined ? [] : [{ kind: 'text' as const, lines: [`${MODEL_CLAIM_LEAD}${shown.claim}`] }]),
+  ...(shown.diff?.diffOmitted === undefined ? [] : [{ kind: 'text' as const, lines: [`${CHANGE_NOT_SHOWN_LEAD}${shown.diff.diffOmitted}`] }]),
+  ...(shown.diff?.hunks === undefined || shown.diff.hunks.length === 0 ? [] : [{ kind: 'hunks' as const, hunks: shown.diff.hunks }]),
 ];
+
+export const approvalShownLines = (shown: ApprovalShown): string[] =>
+  approvalShownParts(shown).flatMap((part) => (part.kind === 'text' ? part.lines : part.hunks.flatMap((hunk) => [hunkHeaderOf(hunk), ...hunk.lines])));
 
 export const isApprovalShown = (value: unknown): value is ApprovalShown => {
   if (typeof value !== 'object' || value === null || !('input' in value)) return false;
