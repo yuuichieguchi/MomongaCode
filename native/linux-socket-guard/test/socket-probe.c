@@ -7,8 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+#define IO_URING_SETUP_CALL 425
 
 static int report(int result) {
   if (result == 0) {
@@ -84,6 +87,7 @@ int main(int argc, char **argv) {
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     return report(bind(descriptor, (struct sockaddr *)&address, sizeof address));
   }
-  fputs("usage: socket <kind> | pair <kind> | connect <path> | connect-abstract <name> | bind <path> | connect-loopback <port> | bind-loopback\n", stderr);
+  if (argc == 2 && strcmp(argv[1], "io-uring") == 0) return report(syscall(IO_URING_SETUP_CALL, 0, NULL) < 0 ? -1 : 0);
+  fputs("usage: io-uring | socket <kind> | pair <kind> | connect <path> | connect-abstract <name> | bind <path> | connect-loopback <port> | bind-loopback\n", stderr);
   return 2;
 }

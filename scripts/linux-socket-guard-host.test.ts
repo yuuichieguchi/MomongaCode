@@ -163,6 +163,10 @@ describe.runIf(HAS_BWRAP)('Unix sockets under the real Linux sandbox, with the s
     it('the command still ends with its own exit code', async () => {
       expect((await finished(await sh('exit 7'))).code).toBe(7);
     });
+
+    it('io_uring, which would make socket calls the filter never sees, answers that the call does not exist', async () => {
+      expect(await probed('io-uring')).toBe('ENOSYS');
+    });
   });
 
   describe('with a socket named', () => {
@@ -220,6 +224,7 @@ describe.runIf(HAS_BWRAP)('Unix sockets under the real Linux sandbox, with the s
     it('a stream socket can be made, and a connected pair still works', async () => {
       expect(await probed('socket stream', named())).toBe('ok');
       expect(await probed('pair stream', named())).toBe('ok');
+      expect(await probed('io-uring', named())).toBe('ENOSYS');
     });
 
     it('with the network open, a loopback address is reached and bound through the guard as without it', async () => {

@@ -11,6 +11,8 @@ export const SOCKET_FILTER_SLOT = 4;
 
 const STDIO_THROUGH_SOCKET_FILTER = ['ignore', 'pipe'] as const;
 
+const ENDED_BEFORE_READING: ReadonlySet<string> = new Set(['EPIPE', 'ECONNRESET']);
+
 export const SANDBOX_STOP_BOUND_MS = groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS);
 
 export interface LaunchOptions {
@@ -92,7 +94,9 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       });
       throw new Error(`failed to open the pipe of the socket filter for ${options.file}`);
     }
-    feed.on('error', fed);
+    feed.on('error', (error: NodeJS.ErrnoException) => {
+      if (!ENDED_BEFORE_READING.has(error.code ?? '')) stdinFailure ??= error;
+    });
     feed.end(options.socketFilter);
   }
   let killedBy: SandboxExit['killedBy'];

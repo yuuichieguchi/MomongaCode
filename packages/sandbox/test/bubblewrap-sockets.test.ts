@@ -1,3 +1,5 @@
+import { spawn } from '@momonga/testkit/child-process';
+import type { SpawnOptions } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -173,6 +175,26 @@ describe('the socket filter reaches the program that installs it', () => {
     expect(lines.slice(0, 5)).toEqual(['supervise', String(SOCKET_GUARD_CHANNEL_SLOT), '--allow', listed, '--']);
     expect(lines[5]).toBe(bwrap);
     expect(lines.slice(-7)).toEqual([guard, 'enter', String(SOCKET_FILTER_SLOT), String(SOCKET_GUARD_CHANNEL_SLOT), '--', '/bin/true', `filter ${hexOf(socketFilter(architecture, 'named-unix-sockets'))}`]);
+  });
+
+  it('a launcher that ends before it has read the filter is reported by its exit, not by the reset of the filter pipe', async () => {
+    const bwrap = executable('bwrap', '#!/bin/sh\nexit 3\n');
+    const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+    const sandbox = createBubblewrapSandbox({
+      bwrapPath: bwrap,
+      tmpRoot: path.join(base, 'tmp'),
+      killGraceMs: 300,
+      journal: createPlaceholderJournal(path.join(base, 'journal')),
+      holders: () => new Set(),
+      spawnProcess: ((file, args, spawnOptions) => {
+        const child = spawn(file, args as string[], spawnOptions as SpawnOptions);
+        setImmediate(() => child.stdio[SOCKET_FILTER_SLOT]?.emit('error', reset));
+        return child;
+      }) as typeof spawn,
+    });
+    const result = await run(await sandbox.spawn({ argv: ['/bin/true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
+
+    expect(result.code).toBe(3);
   });
 
   it('a command that names a socket is not started when the sandbox was given no guard', async () => {
