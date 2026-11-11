@@ -1444,6 +1444,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           additionalDirectories: canonicalJson(parentSession.additionalDirectories),
           mcpServers: canonicalJson(parentSession.mcpServers),
           createdAt: now,
+          fenceNonce: random.hex(FENCE_NONCE_BYTE_LENGTH),
         });
         const runId = uuidv7(clock);
         sql.insertRun.run({

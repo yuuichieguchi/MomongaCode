@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { migrate } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
-import { START_MS, harness, makeStoreDir, openStoreAt, rawDb } from './helpers.ts';
+import { START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, openStoreAt, rawDb } from './helpers.ts';
 
 const OLD_ID = '018f4a2b-0000-7000-8000-00000000abcd';
 
@@ -29,5 +29,15 @@ describe('the fence boundary of a session', () => {
     fs.chmodSync(dbPath, 0o600);
     const store = openStoreAt(dbPath, createFakeClock(START_MS + 100));
     expect(store.getSession(OLD_ID)?.fenceNonce).toBe(OLD_ID.replaceAll('-', ''));
+  });
+
+  it('a child run gets a session with its own drawn boundary', async () => {
+    const { store } = harness();
+    const parent = await enqueue(store, newSession(store).id, 'go');
+    mustClaim(store, 'w1');
+    const created = await store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_1', input: 'child', pins: {}, model: 'fm' });
+    if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
+    expect(created.session.fenceNonce).toMatch(/^[0-9a-f]{32}$/);
+    expect(created.session.fenceNonce).not.toBe(store.getSession(parent.sessionId)?.fenceNonce);
   });
 });
