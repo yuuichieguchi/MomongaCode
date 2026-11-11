@@ -4,6 +4,9 @@
   "burnDown": "A use nobody has read against the table yet: it is either in the other meaning or it is to be replaced by the word of the table, by the package of the area that owns the file. A count only shrinks.",
   "uses": {
     "otherMeaning": {
+      "packages/cli/src/commands/jobs.ts": {
+        "job": 1
+      },
       "packages/cli/src/commands/report.ts": {
         "limit": 2
       },
@@ -16,6 +19,9 @@
       },
       "packages/eval/src/context-report.ts": {
         "cap": 1
+      },
+      "packages/runtime/src/process/background-jobs.ts": {
+        "job": 10
       }
     },
     "burnDown": {
@@ -383,8 +389,8 @@
         "gateway": 1
       },
       "packages/gateway/src/core/store.ts": {
-        "gateway": 4,
-        "target": 5
+        "gateway": 3,
+        "target": 3
       },
       "packages/gateway/src/core/tool-choice.ts": {
         "target": 5
@@ -447,7 +453,7 @@
         "profile": 1
       },
       "packages/gateway/src/server/app.ts": {
-        "gateway": 4,
+        "gateway": 3,
         "limit": 2
       },
       "packages/gateway/src/server/body.ts": {
@@ -547,9 +553,6 @@
       },
       "packages/runtime/src/memory/views.ts": {
         "project": 2
-      },
-      "packages/runtime/src/process/background-jobs.ts": {
-        "job": 10
       },
       "packages/runtime/src/process/history-port.ts": {
         "project": 1

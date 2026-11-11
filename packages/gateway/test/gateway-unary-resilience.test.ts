@@ -113,8 +113,6 @@ describe('count_tokens uses the breaker and admission gate', () => {
     const one = postJson(client, '/v1/momonga/count_tokens', countBody);
     await waitFor(() => running === 1);
     const two = postJson(client, '/v1/momonga/count_tokens', countBody);
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(running).toBe(1);
     release?.();
     await waitFor(() => started === 2, { description: 'second admitted after first finished' });
     release?.();

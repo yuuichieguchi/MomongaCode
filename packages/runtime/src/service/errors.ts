@@ -1,5 +1,5 @@
-import { MOVED_CODE } from '@momonga/foundation';
-import { TARGET_NOT_READY } from '@momonga/protocol';
+import { GENERATION_STARTING_CODE, MOVED_CODE } from '@momonga/foundation';
+import { TARGET_NOT_READY, messageOf } from '@momonga/protocol';
 import { MODEL_NOT_FOUND_CODE } from '../gateway-client.ts';
 
 export type ApiErrorInit = {
@@ -82,6 +82,9 @@ export const gatewayAnswer = (answer: { status: number; type: string; code: stri
 export const MOVED_MESSAGE = 'This daemon has been replaced by a newer version and accepts no new work. The request was not run; send it again.';
 
 export const moved = (): ApiError => new ApiError({ status: 503, type: 'server_error', code: MOVED_CODE, message: MOVED_MESSAGE, headers: { 'retry-after': '1' } });
+
+export const starting = (): ApiError =>
+  new ApiError({ status: 503, type: 'server_error', code: GENERATION_STARTING_CODE, message: messageOf('daemonStarting', 'cli'), headers: { 'retry-after': '1' } });
 
 export const contributionUnavailable = (message: string): ApiError =>
   new ApiError({ status: 503, type: 'server_error', code: 'contribution_unavailable', message, headers: { 'retry-after': '1' } });

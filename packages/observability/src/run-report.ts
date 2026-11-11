@@ -1,17 +1,9 @@
-import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
+import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, heldEndOf, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
 import type { BudgetExhausted, ConditionResult, ConditionState, MutationFacts, NotRunReason, PinnedCompletion, ResidualRiskCode, OperationEffectRecord, RunBudgetReport, RunDeniedCallReport, RunOperationReport, RunEvent, RunEventPayload, RunHeldCallReport, RunReport } from '@momonga/protocol';
 
-type CallRecord = MutationFacts & { name: string; command: string | undefined; waitsOnRun: boolean; completedStatus: 'completed' | 'failed' | undefined };
+type CallRecord = MutationFacts & { name: string; waitsOnRun: boolean; completedStatus: 'completed' | 'failed' | undefined };
 
 type CheckRecord = { rounds: Set<number>; last: Extract<RunEvent, { type: 'verification.completed' }> | undefined };
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const commandOf = (call: Extract<RunEvent, { type: 'tool.call' }>): string | undefined => {
-  if (call.kind !== 'execute' || !isRecord(call.rawInput)) return undefined;
-  const { command } = call.rawInput;
-  return typeof command === 'string' ? command : undefined;
-};
 
 const isNotRunReason = (value: string): value is NotRunReason => (NOT_RUN_REASONS as readonly string[]).includes(value);
 
@@ -82,7 +74,16 @@ export const createRunReportFold = (): RunReportFold => {
     return call;
   };
 
+  const endHold = (event: RunEvent): void => {
+    const ended = heldEndOf(event);
+    if (ended === undefined) return;
+    const open = held.get(ended.callId);
+    if (open === undefined) throw new Error(`${event.type} refers to tool call ${ended.callId}, which was not held`);
+    held.set(ended.callId, { ...open, outcome: ended.outcome, status: ended.status, resolvedSeq: event.seq });
+  };
+
   const add = (event: RunEvent): void => {
+    endHold(event);
     switch (event.type) {
       case 'run.started':
         pins ??= event.pins;
@@ -96,7 +97,6 @@ export const createRunReportFold = (): RunReportFold => {
           ...(event.sideEffect === undefined ? {} : { sideEffect: event.sideEffect }),
           rejected: false,
           name: event.name,
-          command: commandOf(event),
           waitsOnRun: false,
           completedStatus: undefined,
         });
@@ -129,8 +129,8 @@ export const createRunReportFold = (): RunReportFold => {
           recordMutation(changed.length > 0, event.seq);
           for (const file of changed) written.set(file.path, { ...(file.sha256 === undefined ? {} : { sha256: file.sha256 }), lastSeq: event.seq });
         }
-        if (call.command !== undefined && event.status === 'completed' && event.exitCode !== undefined && event.denial === undefined) {
-          completedCommands.push({ command: call.command, exitCode: event.exitCode, seq: event.seq });
+        if (event.command !== undefined && event.status === 'completed' && event.exitCode !== undefined && event.denial === undefined) {
+          completedCommands.push({ command: event.command, exitCode: event.exitCode, seq: event.seq });
         }
         break;
       }
@@ -155,12 +155,6 @@ export const createRunReportFold = (): RunReportFold => {
       case 'tool.held':
         held.set(event.callId, { callId: event.callId, tool: requireCall(event.callId, event.type).name, reason: event.reason, heldSeq: event.seq });
         break;
-      case 'tool.held.resolved': {
-        const open = held.get(event.callId);
-        if (open === undefined) throw new Error(`${event.type} refers to tool call ${event.callId}, which was not held`);
-        held.set(event.callId, { ...open, outcome: event.outcome, status: event.status, resolvedSeq: event.seq });
-        break;
-      }
       case 'run.quiescent':
         quiescent = true;
         break;

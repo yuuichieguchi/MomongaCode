@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { ensureMomongaDirs, momongaPaths, readCurrentGeneration } from '@momonga/foundation';
-import { firstGeneration, registerCleanup, withTempDir } from '@momonga/testkit';
+import { firstGeneration, registerCleanup, withTempDir, afterMicrotasks, waitFor } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { ensureDaemon } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
@@ -11,8 +11,6 @@ import type { FakeSupervisor } from './fake-supervisor.ts';
 const VERSION = '1.2.3';
 const BOUNDS = { readyMs: 600_000, stopMs: 500 };
 const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' };
-
-const yieldOnce = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
 
 describe('ensureDaemon and run/current', () => {
   it('never returns from a start before the started generation has published run/current', async (context) => {
@@ -37,7 +35,7 @@ describe('ensureDaemon and run/current', () => {
       sleep: async (ms) => {
         if ((supervisor?.healthRequests ?? 0) >= 1) sleptAfterReadyAnswer = true;
         now += ms;
-        await yieldOnce();
+        await afterMicrotasks();
       },
     };
     const { spawn } = recordingSpawn(() => {
@@ -52,7 +50,7 @@ describe('ensureDaemon and run/current', () => {
     const pending = ensureDaemon(ports, paths, { bounds: BOUNDS }).finally(() => {
       returned = true;
     });
-    while (!returned && !sleptAfterReadyAnswer) await yieldOnce();
+    await waitFor(() => returned || sleptAfterReadyAnswer, { description: 'the start to return or to sleep after the ready answer' });
 
     expect(fs.existsSync(paths.current)).toBe(false);
     expect(returned).toBe(false);

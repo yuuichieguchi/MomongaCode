@@ -27,12 +27,6 @@ export const HISTORY_SEARCH_TOOL = 'HistorySearch';
 
 const callKey = (call: CallRecord): string => `${call.name}\n${canonicalJson(call.input)}`;
 
-const commandOf = (call: CallRecord): string | undefined => {
-  if (call.name !== 'Bash' || !isRecord(call.input)) return undefined;
-  const command = call.input['command'];
-  return typeof command === 'string' ? command : undefined;
-};
-
 export const WHOLE_RUN_FROM = 1;
 
 const lineRangeOf = (call: CallRecord): LineRange => {
@@ -108,7 +102,7 @@ export const compactionLossSignals = (events: readonly (RunEvent | PublicRunEven
             ranges: known?.sha256 === readFile.sha256 ? [...known.ranges, range] : [range],
           });
         }
-        const command = commandOf(call);
+        const { command } = event;
         if (command !== undefined && ran.ran(event)) {
           const failed = event.status === 'failed';
           if (failed && snapshot?.commandFailed.get(command) === true) signal('repeated_failure', call);

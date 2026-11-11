@@ -64,7 +64,7 @@ export const extractSelection = (source: ViewSource, selection: Selection, capBy
     const lastRow = index === lastIndex ? Math.min(end.rowIndex, rows.length - 1) : rows.length - 1;
     for (let rowIndex = firstRow; rowIndex <= lastRow; rowIndex += 1) {
       const row = rows[rowIndex];
-      if (row === undefined) continue;
+      if (row === undefined || row.kind === 'label') continue;
       const columns = selectedColumns(selection, entry.id, rowIndex) ?? [0, Number.POSITIVE_INFINITY];
       const separator = pieces.length === 0 || (row.wrapped && rowIndex > firstRow) ? '' : '\n';
       const piece = `${separator}${pieceOf(row, columns[0], columns[1], rows[rowIndex + 1]?.wrapped !== true)}`;

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import {
   buildCostBreakdown,
-  buildCostReport,
   definePriceTable,
   formatCostBreakdown,
   formatCostReport,
@@ -11,7 +10,7 @@ import {
   startChatSpan,
 } from '@momonga/observability';
 import type { SpanRecord } from '@momonga/observability';
-import { harness, billedCallsOfRun } from './helpers.ts';
+import { harness, billedCallsOfRun, costReportOfSpans } from './helpers.ts';
 
 const AT = Date.parse('2026-07-10T00:00:00Z');
 const TABLE = definePriceTable([{ provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 1, cachedInputPerMTok: 0.5, outputPerMTok: 4, currency: 'USD' }]);
@@ -61,7 +60,7 @@ const recorded = async (sources: readonly Source[]) => {
   agent.end(h.clock.now());
   await h.telemetry.forceFlush();
   h.store.writeSpans(storedBeforeUsageSource);
-  const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+  const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
   const billed = billedCallsOfRun(h.store, 'run-a', TABLE);
   const breakdown = buildCostBreakdown(
     billed.map((call) => ({ runId: call.runId, provider: call.provider, model: call.model, billing: call.billing, at: new Date(call.startMs), price: call.price, usage: call.usage })),

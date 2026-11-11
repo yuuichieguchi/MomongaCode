@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime } from '@momonga/testkit';
 import { STORE_MAX_TOTAL_ATTEMPTS } from '../../src/process/constants.ts';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { approveOnce, launchRuntime, readDb, runStatus, scriptedToolCall, startStack, waitForCondition, waitForStatus } from './run-helpers.ts';
@@ -38,15 +38,21 @@ const advanceUntil = async (
   clock: ReturnType<typeof createFakeClock>,
   timers: ReturnType<typeof createFakeTimers>,
 ): Promise<string> => {
-  for (let round = 0; round < 4000; round += 1) {
-    const status = runStatus(temp, runId);
-    if (status !== undefined && TERMINAL.includes(status)) return status;
-    if (status === 'WAITING_HUMAN') throw new Error(`run ${runId} asked for approval`);
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    const next = [...timers.pending()].sort((left, right) => left.dueAt - right.dueAt)[0];
-    if (next !== undefined && status === 'QUEUED') await timers.advanceAsync(Math.max(0, next.dueAt - timers.monotonicMs()));
-  }
-  throw new Error(`run ${runId} did not reach a terminal state`);
+  let status: string | undefined;
+  await driveFakeTime(timers, {
+    done: () => {
+      status = runStatus(temp, runId);
+      if (status === 'WAITING_HUMAN') throw new Error(`run ${runId} asked for approval`);
+      return status !== undefined && TERMINAL.includes(status);
+    },
+    ready: () => status === 'QUEUED',
+    horizonAt: Number.MAX_SAFE_INTEGER,
+    maxSteps: Number.MAX_SAFE_INTEGER,
+    deadlineMs: REAL_PROCESS_TEST_TIMEOUT_MS,
+    description: `run ${runId} to reach a terminal state`,
+  });
+  if (status === undefined) throw new Error(`run ${runId} did not reach a terminal state`);
+  return status;
 };
 
 type ChatMessage = { role: string; content?: unknown; tool_calls?: unknown };

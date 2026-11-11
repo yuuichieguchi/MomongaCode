@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { ProcessLockHeldError, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, parseReadyLine, inspectProcessLock, runtimeMaxCloseMs } from '@momonga/foundation';
+import path from 'node:path';
+import { generationLayout, generationMarkerDirectories, momongaPaths, parseReadyLine, inspectProcessLock, scopeToGeneration, syncPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerOwned, createFakeKernelLock, createFakeClock, createFakeTimers, driveFakeTime, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration, testKernelLock, testProcessInspector } from '@momonga/testkit';
-import { ORPHAN_POLL_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
+import { ORPHAN_POLL_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
 import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
   HARNESS_GENERATION,
   INVALID_SETTINGS_TEXT,
+  T0,
   TEST_VERSION,
   captureLog,
   captureText,
@@ -258,38 +260,53 @@ describe('startSupervisor', () => {
   });
 });
 
-describe('resolveStartTiming', () => {
-  const PREDECESSOR = { closeGraceMs: 1, managedServerStopGraceMs: 2, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 };
-
-  it('waits for an unknown predecessor by the bounds of the allowed maxima', () => {
-    expect(resolveStartTiming({ predecessorStopValues: undefined })).toEqual({
-      startupTimeoutMs: STARTUP_TIMEOUT_MS,
-      orphanGraceMs: 508_125,
-      orphanReapGraceMs: 208_125,
-      orphanPollMs: ORPHAN_POLL_MS,
+describe('the stop of a start that was never promoted (design 20.14)', () => {
+  it('a superseded start sends SIGTERM to its children and gives each the startup kill grace before the group kill', async (context) => {
+    const h = await startHarness(context, {
+      generation: 2,
+      behaviours: { runtime: { autoReady: false, onTerm: 'ignore' }, gateway: { autoReady: false, onTerm: 'ignore' } },
+      prepare: (home, paths) => {
+        prepareGenerationForTest(home, 3, TEST_VERSION);
+        fs.writeFileSync(paths.current, `${JSON.stringify({ generation: 3, version: TEST_VERSION, sockets: generationLayout(syncPaths.canonicalPath(home), 3).sockets })}\n`, { mode: 0o600 });
+      },
     });
+    const closed = settledFlag(h.supervisor.closed);
+    await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, maxMs: STARTUP_TIMEOUT_MS, description: 'the superseded start to end' });
+    expect(h.log.withMsg('start.superseded')).toHaveLength(1);
+    for (const role of ['runtime', 'gateway'] as const) {
+      const signalled = h.fake.events.find((event) => event.role === role && event.kind === 'kill' && event.detail === 'SIGTERM');
+      const killed = h.fake.events.find((event) => event.role === role && event.kind === 'killGroup');
+      expect(signalled).toBeDefined();
+      expect((killed?.at ?? Number.NaN) - (signalled?.at ?? Number.NaN)).toBe(STARTUP_KILL_GRACE_MS);
+    }
+    expect(h.log.withMsg('child.stop').map((line) => line['stop'])).toEqual(['superseded', 'superseded']);
+  });
+});
+
+describe('the start reads no orphan option (design 20.16, 20.62)', () => {
+  it('resolves the startup timeout and nothing else', () => {
+    expect(resolveStartTiming({})).toEqual({ startupTimeoutMs: STARTUP_TIMEOUT_MS });
+    expect(resolveStartTiming({ startupTimeoutMs: 7000 })).toEqual({ startupTimeoutMs: 7000 });
+    expect(supervisorStartBoundMs(resolveStartTiming({ startupTimeoutMs: 7000 }))).toBe(7000);
   });
 
-  it('waits for a predecessor whose stop record it read by the runtime close and the orphan grace of those values', () => {
-    expect(resolveStartTiming({ predecessorStopValues: PREDECESSOR })).toEqual({
-      startupTimeoutMs: STARTUP_TIMEOUT_MS,
-      orphanGraceMs: 7000 + 8050 + 10_000 + 6 * 40 + 10_075,
-      orphanReapGraceMs: 8050 + 10_000 + 6 * 40 + 10_075,
-      orphanPollMs: ORPHAN_POLL_MS,
+  it('a start with a held marker of an earlier generation neither waits for it nor reaps it', async (context) => {
+    let earlier = '';
+    const h = await startHarness(context, {
+      generation: 2,
+      prepare: (home) => {
+        const layout = prepareGenerationForTest(home, 1, TEST_VERSION);
+        earlier = path.join(generationMarkerDirectories(momongaPaths(syncPaths.canonicalPath(home), process.platform, {}), 1).daemons, 'runtime-old');
+        fs.writeFileSync(earlier, '', { mode: 0o600 });
+        expect(fs.existsSync(layout.dir)).toBe(true);
+      },
+      markerPorts: { findHolders: async () => [999_999] },
     });
-  });
-
-  it('takes every injected value in place of its derivation', () => {
-    expect(resolveStartTiming({ predecessorStopValues: PREDECESSOR, startupTimeoutMs: 7000, orphanGraceMs: 3000, orphanReapGraceMs: 400, intervals: { orphanPollMs: 50 } })).toEqual({
-      startupTimeoutMs: 7000,
-      orphanGraceMs: 3000,
-      orphanReapGraceMs: 400,
-      orphanPollMs: 50,
-    });
-  });
-
-  it('bounds the start by the startup timeout of the children alone: no start waits for a previous daemon', () => {
-    const timing = resolveStartTiming({ predecessorStopValues: PREDECESSOR, orphanGraceMs: 3000 });
-    expect(supervisorStartBoundMs(timing)).toBe(timing.startupTimeoutMs);
+    await pumpUntil(h.timers, () => h.supervisor.role() === 'serving', { realWork: h.realWork, maxMs: 5000, description: 'the generation to serve' });
+    expect(h.clock.now() - T0).toBeLessThan(ORPHAN_POLL_MS);
+    expect(h.markers.calls.findHolders).toEqual([]);
+    expect(h.markers.calls.reapMarkerDirectory.map((call) => call.dir)).toEqual([scopeToGeneration(momongaPaths(syncPaths.canonicalPath(h.home), process.platform, {}), 2).markers.daemons]);
+    expect(h.markers.calls.reapMarkedProcesses).toEqual([]);
+    expect(fs.existsSync(earlier)).toBe(true);
   });
 });

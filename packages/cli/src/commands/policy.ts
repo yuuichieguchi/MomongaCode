@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { loadSettings, parseGovernanceRule, parseRule } from '@momonga/config';
-import { hostPaths, mapAsync, ruleEnforcementOf, verdictKey } from '@momonga/foundation';
+import { hostPaths, mapAsync, ruleEnforcementOf, sessionRootsOf, verdictKey } from '@momonga/foundation';
 import type { MomongaPaths, PathResolver } from '@momonga/foundation';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
@@ -26,13 +26,6 @@ export class PolicyVerifyInputError extends Error {
   }
 }
 
-const rootsOf = (cwd: string, additional: readonly string[], paths: PathResolver): Promise<string[]> =>
-  mapAsync([cwd, ...additional], async (root) => {
-    const resolved = await paths.canonicalDirectory(root);
-    if (!resolved.ok) throw new PolicyVerifyInputError(`the folder ${root} ${resolved.reason}`);
-    return resolved.path;
-  });
-
 const secretPathOf = (home: string, text: string): string => {
   if (text === '~' || text.startsWith('~/')) return path.join(home, text.slice(1));
   if (!path.isAbsolute(text)) throw new PolicyVerifyInputError(`--secret ${JSON.stringify(text)} must be an absolute path or start with ~/`);
@@ -50,15 +43,20 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   } finally {
     await runtime.close();
   }
-  const loaded = await loadSettings({ home: ports.home, projectDir: ports.cwd, cli: {}, trust: { isTrusted: () => trusted }, signal: ports.interrupt });
-  const governanceRules = governance.rules.map((entry) => parseGovernanceRule(entry, { home: ports.home, project: ports.cwd }));
   const signal = ports.interrupt;
   const resolver = hostPaths(signal);
-  const roots = await rootsOf(ports.cwd, loaded.settings.permissions.additionalDirectories, resolver);
+  const home = await resolver.canonicalPath(ports.home);
+  const folder = await resolver.canonicalDirectory(ports.cwd);
+  if (!folder.ok) throw new PolicyVerifyInputError(`the folder ${ports.cwd} ${folder.reason}`);
+  const cwd = folder.path;
+  const loaded = await loadSettings({ home, projectDir: cwd, cli: {}, trust: { isTrusted: () => trusted }, signal });
+  const governanceRules = governance.rules.map((entry) => parseGovernanceRule(entry, { home, project: cwd }));
+  const resolvedRoots = await sessionRootsOf(cwd, loaded.settings.permissions.additionalDirectories, resolver);
+  if (!resolvedRoots.ok) throw new PolicyVerifyInputError(`the folder ${resolvedRoots.root} ${resolvedRoots.reason}`);
+  const { roots } = resolvedRoots;
   const mode = options.mode ?? loaded.settings.permissions.defaultMode ?? 'manual';
   const verifier = await host.loadVerifier();
   const fs = await host.loadPolicyFilesystem();
-  const home = await resolver.canonicalPath(ports.home);
   const secretLocations = verifier.secretLocationsOf(
     paths,
     options.secrets.map((text) => secretPathOf(home, text)),
@@ -71,7 +69,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
     mandate === undefined
       ? []
       : MANDATE_EFFECTS.flatMap((effect) =>
-          (mandate[effect] ?? []).map((text) => parseRule(text, { effect, origin: 'cli', source: `the mandate ${options.mandate ?? ''}`, settingsRoot: ports.cwd, home: ports.home, cwd: ports.cwd })),
+          (mandate[effect] ?? []).map((text) => parseRule(text, { effect, origin: 'cli', source: `the mandate ${options.mandate ?? ''}`, settingsRoot: cwd, home, cwd })),
         );
   const catalogue = mandate === undefined ? undefined : await host.loadOperationCatalogue?.();
   if (mandate !== undefined && catalogue === undefined) throw new PolicyVerifyInputError('this build cannot read the operation catalogue, so a mandate cannot be checked');
@@ -80,7 +78,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
     roots,
     mode,
     home,
-    cwd: ports.cwd,
+    cwd,
     protectedSet: await verifier.protectedSetOf(roots, fs, signal),
     secretLocations,
     deniedLocations: verifier.secretLocationsOf(paths, []),

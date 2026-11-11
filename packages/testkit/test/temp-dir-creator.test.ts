@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { shortTempBase } from '@momonga/foundation';
 import * as testkit from '@momonga/testkit';
-import { TEST_RUN_ENV, createTempDir, registerOwned, registerCleanup, removeTempDir, tempDirPrefixFor, testRunToken, testTempBases } from '@momonga/testkit';
+import { TEST_RUN_ENV, createTempDir, registerOwned, registerCleanup, removeTempDir, tempDirPrefixFor, testRunToken, testTempBases, afterMicrotasks } from '@momonga/testkit';
 
 describe('createTempDir and removeTempDir', () => {
   it('creates a resolved 0700 directory carrying the run token under the base of other directories', async () => {
@@ -129,7 +129,7 @@ describe('registerOwned', () => {
     registerCleanup(context, () => void process.off('unhandledRejection', record));
 
     const started = registerOwned(context, () => Promise.reject<{ close: () => Promise<void> }>(failure));
-    for (let turn = 0; turn < 3; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
 
     expect(unhandled).toEqual([]);
     await expect(started).rejects.toBe(failure);

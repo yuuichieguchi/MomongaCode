@@ -2,6 +2,7 @@ import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runt
 import type { StopValues } from '@momonga/foundation';
 import {
   LOCK_WATCH_INTERVAL_MS,
+  ORPHAN_POLL_MS,
   SETTINGS_DEBOUNCE_MS,
   SETTINGS_POLL_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
@@ -27,7 +28,7 @@ export const E2E_LEASE_MS = 3000;
 export const E2E_DRAIN_TIMEOUT_MS = 1000;
 export const E2E_STOP_VALUES: StopValues = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS };
 export const e2eStartBoundMs = (deps: Parameters<typeof resolveStartTiming>[0]): number => supervisorStartBoundMs(resolveStartTiming(deps));
-export const E2E_READY_DEADLINE_MS = e2eStartBoundMs({ predecessorStopValues: E2E_STOP_VALUES });
+export const E2E_READY_DEADLINE_MS = e2eStartBoundMs({});
 export const E2E_HOOK_TIMEOUT_MS = 30_000;
 export const DEFAULT_TEST_TIMEOUT_MS = 60_000;
 export const E2E_DISPOSE_BOUND_MS = 25_000;
@@ -46,8 +47,8 @@ export const E2E_CANCEL_SWEEP_BOUND_MS = SWEEP_INTERVAL_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_KILL_BOUND_MS = SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_STREAM_BOUND_MS = GATEWAY_CANCEL_TIMEOUT_MS + CANCEL_UPSTREAM_SETTLE_MS + E2E_MARGIN_MS;
 export const E2E_ORPHAN_GRACE_MS = 3000;
-export const E2E_REAP_TO_RUNNING_BOUND_MS = e2eStartBoundMs({ predecessorStopValues: E2E_STOP_VALUES, orphanGraceMs: E2E_ORPHAN_GRACE_MS });
-export const E2E_PHASE2_REACHED_BOUND_MS = orphanPhaseOneBoundMs(resolveStartTiming({ predecessorStopValues: E2E_STOP_VALUES, orphanGraceMs: E2E_ORPHAN_GRACE_MS })) + E2E_MARGIN_MS;
+export const E2E_REAP_TO_RUNNING_BOUND_MS = e2eStartBoundMs({});
+export const E2E_PHASE2_REACHED_BOUND_MS = orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS;
 export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND_MS;
 export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_TEST_WAIT_BOUNDS_MS = {

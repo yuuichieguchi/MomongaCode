@@ -1,6 +1,7 @@
 import { isValidElement } from 'react';
 import type { ReactElement } from 'react';
 import { render } from 'ink-testing-library';
+import { systemTiming } from '@momonga/foundation';
 import type { TerminalEvent } from '../src/tui/terminal/events.ts';
 import { createInputParser } from '../src/tui/terminal/parser.ts';
 
@@ -77,14 +78,14 @@ export type FramePattern = string | RegExp | ((frame: string) => boolean);
 const until = (source: Source, instance: Instance, pattern: FramePattern): Promise<string> =>
   new Promise<string>((resolve, reject) => {
     const matches = (frame: string | undefined): frame is string => frame !== undefined && (typeof pattern === 'string' ? frame.includes(pattern) : typeof pattern === 'function' ? pattern(frame) : pattern.test(frame));
-    const timer = setTimeout(() => {
+    const timer = systemTiming.setTimeout(() => {
       instance.stdout.off('write', check);
       reject(new Error(`no frame matched ${String(pattern)} within ${FRAME_BOUND_MS} ms; last frame:\n${instance.lastFrame() ?? ''}`));
     }, FRAME_BOUND_MS);
     const check = (): void => {
       const frame = source(instance);
       if (!matches(frame)) return;
-      clearTimeout(timer);
+      systemTiming.clearTimeout(timer);
       instance.stdout.off('write', check);
       resolve(frame);
     };

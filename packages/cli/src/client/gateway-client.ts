@@ -1,13 +1,14 @@
 import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
-import type { SocketResolver } from '@momonga/foundation';
+import type { SocketResolver, UdsClient } from '@momonga/foundation';
 import { checkTraceContent } from './contract.ts';
-import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
+import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type {
   TraceContentPage,
   Capabilities,
   GatewayHealth,
   MomongaModelEntry,
   MomongaModelList,
+  MomongaModelRoles,
   ModelViews,
   PlanAccountView,
   PlanAccountsResponse,
@@ -30,7 +31,6 @@ import type {
   PlanTargetRequest,
   PlanTargetResponse,
   TargetHealth,
-  UsageReport,
 } from '@momonga/protocol';
 
 export type GatewayAnswerBody = { code: string; message: string };
@@ -92,7 +92,6 @@ export type GatewayClient = {
   modelOf(model: string): Promise<MomongaModelEntry>;
   capabilitiesOf(model: string): Promise<MomongaModelEntry['capabilities']>;
   contextWindowOf(model: string): Promise<number>;
-  usageOf(runId: string): Promise<UsageReport>;
   contentOf(runId: string, request: { after: number; limit: number }): Promise<TraceContentPage>;
   health(): Promise<GatewayHealth>;
   readonly plan: PlanGatewayClient;
@@ -142,6 +141,7 @@ const isChainMember = (value: unknown): boolean =>
   isString(value['model']) &&
   isString(value['counter']) &&
   isBilling(value['billing']) &&
+  isOptional(value['provider'], isString) &&
   isString(value['adapter']) &&
   oneOf(value['answers'], TARGET_ANSWERS) &&
   isString(value['upstream']) &&
@@ -152,6 +152,7 @@ const isChainMember = (value: unknown): boolean =>
 const isModelEntry = (entry: unknown): boolean =>
   isRecord(entry) &&
   isString(entry['id']) &&
+  entry['object'] === 'model' &&
   isString(entry['provider']) &&
   isString(entry['ownName']) &&
   isOptional(entry['defaultTag'], isString) &&
@@ -160,12 +161,17 @@ const isModelEntry = (entry: unknown): boolean =>
   Array.isArray(entry['chain']) &&
   entry['chain'].every(isChainMember);
 
+const MODEL_LIST_ROLES: Readonly<Record<keyof MomongaModelRoles, true>> = { compaction: true, reflection: true, analysis: true };
+
+const isModelRoles = (value: unknown): boolean => isRecordOf(value, isString) && isRecord(value) && Object.keys(value).every((role) => Object.hasOwn(MODEL_LIST_ROLES, role));
+
 const isModelList = (value: unknown): value is MomongaModelList =>
   isRecord(value) &&
+  value['object'] === 'list' &&
   Array.isArray(value['data']) &&
   value['data'].every(isModelEntry) &&
   (value['start'] === null || isString(value['start'])) &&
-  isRecordOf(value['roles'], isString);
+  isModelRoles(value['roles']);
 
 export const listingViewsOf = (entries: readonly MomongaModelEntry[]): ModelViews =>
   entries.map((entry) => ({ canon: entry.id, provider: entry.provider, ownName: entry.ownName, ...(entry.defaultTag === undefined ? {} : { defaultTag: entry.defaultTag }) }));
@@ -223,9 +229,12 @@ const isAccountsResponse = (value: unknown): value is PlanAccountsResponse =>
 const isBeginResponse = (value: unknown): value is PlanSignInBeginResponse =>
   isRecord(value) && isString(value['attemptId']) && isString(value['authorizationUrl']) && isString(value['state']) && isString(value['expiresAt']);
 
+const isSignInIdentity = (value: unknown): boolean => isRecord(value) && isString(value['subject']) && isOptional(value['email'], isString);
+
 const isCompleteResponse = (value: unknown): value is PlanSignInCompleteResponse =>
   isRecord(value) &&
   ((value['outcome'] === RETRY_OUTCOME && value['reason'] === INVALID_GRANT_REASON) ||
+    (value['outcome'] === IDENTITY_UNCONFIRMED_OUTCOME && isString(value['attemptId']) && isSignInIdentity(value['identity']) && isString(value['expiresAt'])) ||
     (oneOf(value['outcome'], [SIGNED_IN_OUTCOME, PLAN_DISABLED_STATE]) && isAccountView(value['account']) && typeof value['firstSignIn'] === 'boolean'));
 
 const isSignOutResponse = (value: unknown): value is PlanSignOutResponse => isRecord(value) && oneOf(value['revocation'], PLAN_REVOCATIONS) && isString(value['usageUrl']);
@@ -250,18 +259,6 @@ const modelsQuery = (request: PlanModelsRequest): string => new URLSearchParams(
 
 const accountRoute = (route: string, account: string): string => `${PLAN_API_PREFIX}${route.replace(':account', encodeURIComponent(account))}`;
 
-const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
-
-const isUsageReport = (value: unknown): value is UsageReport =>
-  isRecord(value) &&
-  typeof value['run_id'] === 'string' &&
-  Array.isArray(value['responses']) &&
-  Array.isArray(value['steps']) &&
-  isRecord(value['total']) &&
-  isCount(value['total']['input_tokens']) &&
-  isCount(value['total']['output_tokens']) &&
-  isCount(value['total']['total_tokens']);
-
 const retiredRefusalOf = (text: string): string | undefined => {
   const body = parsedBodyOf(text);
   const error = body.json && isRecord(body.value) ? body.value['error'] : undefined;
@@ -272,10 +269,16 @@ const MODELS_PATH = '/v1/momonga/models';
 
 const MODEL_LIST_KIND = 'a model list';
 
-const USAGE_REPORT_KIND = 'a usage report';
-
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
-  const http = createUdsClient(options.resolveSocket);
+  const dial = (): UdsClient => createUdsClient(options.resolveSocket);
+
+  let http = dial();
+
+  const leaveRetiredGeneration = async (): Promise<void> => {
+    const retired = http;
+    http = dial();
+    await retired.close();
+  };
 
   type Sent = { status: number; text: string };
 
@@ -286,7 +289,9 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
 
   const send = async (method: HttpMethod, path: string, body: unknown, signal: AbortSignal | undefined): Promise<Sent> => {
     const first = await sendOnce(method, path, body, signal);
-    return retiredRefusalOf(first.text) === undefined ? first : sendOnce(method, path, body, signal);
+    if (retiredRefusalOf(first.text) === undefined) return first;
+    await leaveRetiredGeneration();
+    return sendOnce(method, path, body, signal);
   };
 
   const getJson = async (path: string, what: string, signal?: AbortSignal): Promise<unknown> => {
@@ -301,7 +306,10 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
 
   const answer = async (method: HttpMethod, path: string, body: unknown): Promise<string> => {
     const { status, text } = await send(method, path, body, undefined);
-    if (status < 200 || status > 299) throw new GatewayAnswerError(`${method} ${path} answered ${status}: ${text}`, status, answerBodyOf(text));
+    if (status < 200 || status > 299) {
+      const refusal = answerBodyOf(text);
+      throw new GatewayAnswerError(refusal === undefined ? `${method} ${path} answered ${status}: ${text}` : refusal.message, status, refusal);
+    }
     return text;
   };
 
@@ -351,17 +359,10 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     return capabilities.contextWindow;
   };
 
-  const usageOf = async (runId: string): Promise<UsageReport> => {
-    const path = `/v1/momonga/usage?run_id=${encodeURIComponent(runId)}`;
-    const body = await getJson(path, USAGE_REPORT_KIND);
-    if (!isUsageReport(body)) throw new Error(malformedAnswerText('GET', path, USAGE_REPORT_KIND));
-    return body;
-  };
-
   const contentOf = async (runId: string, request: { after: number; limit: number }): Promise<TraceContentPage> => {
     const path = `/v1/momonga/content?${new URLSearchParams({ run_id: runId, after: String(request.after), limit: String(request.limit) }).toString()}`;
     return checkTraceContent(await getJson(path, 'a trace content page'), `GET ${path}`);
   };
 
-  return { modelList, models, modelOf, capabilitiesOf, contextWindowOf, usageOf, contentOf, health, plan, close: () => http.close() };
+  return { modelList, models, modelOf, capabilitiesOf, contextWindowOf, contentOf, health, plan, close: () => http.close() };
 };

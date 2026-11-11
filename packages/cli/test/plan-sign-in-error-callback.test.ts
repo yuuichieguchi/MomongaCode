@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { systemTiming } from '@momonga/foundation';
+import { EXIT_FAILURE, systemTiming } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { GatewayAnswerError } from '../src/client/gateway-client.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
@@ -44,6 +44,7 @@ describe('a callback carrying error= reaches the gateway whole, which judges it 
         plan: fake.plan,
         startListener: loopbackSignInListener(systemTiming, new AbortController().signal),
         authorize: async () => undefined,
+        confirmIdentity: async () => false,
         pasted: (_state, signal) => {
           callbackUrl = `http://127.0.0.1:${fake.ports[0]}/auth/callback?error=access_denied&state=st-1`;
           answered.push(fetch(callbackUrl));
@@ -73,6 +74,7 @@ describe('a callback carrying error= reaches the gateway whole, which judges it 
           close: async () => undefined,
         }),
         authorize: async () => undefined,
+        confirmIdentity: async () => false,
         pasted: async () => pastedUrl,
         signal: new AbortController().signal,
         timers: createFakeTimers(createFakeClock(START_MS)),
@@ -82,7 +84,7 @@ describe('a callback carrying error= reaches the gateway whole, which judges it 
     expect(fake.completions).toEqual([{ attemptId: 'attempt-1', callbackUrl: pastedUrl }]);
   });
 
-  it("the command lets the gateway's authorization_failed answer reach its caller unchanged", async () => {
+  it("the command shows the message of the gateway's authorization_failed answer with the try-again command: exit 1", async () => {
     const refusal = new GatewayAnswerError('the authorization was refused', 400, { code: 'authorization_failed', message: 'access_denied' });
     const fake = recordingPlan();
     const plan = {
@@ -109,11 +111,7 @@ describe('a callback carrying error= reaches the gateway whole, which judges it 
       timers: createFakeTimers(createFakeClock(START_MS)),
       isTerminal: false as const,
     } as unknown as AuthLoginPorts;
-    const failure = await authLogin(ports, { provider: 'chatgpt', account: 'work', browser: false }).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-    expect(failure).toBe(refusal);
-    expect((failure as GatewayAnswerError).answer?.code).toBe('authorization_failed');
+    expect(await authLogin(ports, { provider: 'chatgpt', account: 'work', browser: false })).toBe(EXIT_FAILURE);
+    expect(written.at(-1)).toBe('access_denied Run momonga auth login chatgpt --account work to try again.\n');
   });
 });

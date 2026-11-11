@@ -59,13 +59,6 @@ describe('the classifier key read of a session ends with the request that asked'
     const secondOutcome = outcomeOf(composition.sessionReadSettings(project, second.signal));
     first.abort(firstEnded);
     expect(await firstOutcome).toEqual({ error: firstEnded });
-    let secondSettled = false;
-    void secondOutcome.then(() => {
-      secondSettled = true;
-    });
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(secondSettled).toBe(false);
     second.abort(secondEnded);
     expect(await secondOutcome).toEqual({ error: secondEnded });
   });

@@ -6,7 +6,7 @@ import type { HostExec, HostExecAnswer, MomongaPaths, ProcessLock } from '@momon
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { SupervisorChildHealth, SupervisorHealth } from '@momonga/protocol';
 import type { CliClock, DetachedExit, SpawnDetached } from '../src/ports.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { testKernelLock, afterMicrotasks } from '@momonga/testkit';
 
 export type FakeSupervisorOptions = {
   paths: MomongaPaths;
@@ -86,7 +86,6 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
       const health: SupervisorHealth = {
         status: 'ok',
         version: options.version,
-        apiVersion: 1,
         pid: options.pid ?? process.pid,
         startedAt: '2026-01-01T00:00:00.000Z',
         phase,
@@ -171,7 +170,7 @@ export const virtualClock = (work: FakeWork = untracked): CliClock => {
     sleep: async (ms) => {
       await work.settled();
       now += ms;
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await afterMicrotasks();
     },
   };
 };

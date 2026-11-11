@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, orphanReapGraceMs, probeFailed, runtimeMaxCloseMs, scopeToGeneration, supervisorMaxCloseMs, syncPaths, sleep } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, probeFailed, runtimeMaxCloseMs, scopeToGeneration, syncPaths, sleep } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, spawnTracked, waitFor, withTempDir, firstGeneration, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { DAEMON_MARKER_KILL_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
+import { DAEMON_MARKER_KILL_GRACE_MS } from '../src/constants.ts';
 import { orphanPhaseOneBoundMs, orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
 import type { MarkerPorts, OrphanReapOptions, OrphanReapResult } from '../src/orphans.ts';
 import { TEST_VERSION, captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
@@ -412,12 +412,6 @@ describe('reapOrphans', () => {
 });
 
 describe('orphan reap at supervisor start', () => {
-  it('reap shutdown bound relation', () => {
-    const noDrain = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0 };
-    expect(orphanReapGraceMs(noDrain) + SHUTDOWN_RELEASE_BOUND_MS).toBeLessThan(supervisorMaxCloseMs(noDrain));
-    expect(orphanReapGraceMs(DEFAULT_STOP_VALUES)).toBe(34_125);
-  });
-
   it('start reaps only the daemon markers of its own generation, before the first spawn, and reads no other generation (20.29)', async (context) => {
     const others: string[] = [];
     const h = await startHarness(context, {
@@ -479,7 +473,7 @@ describe('orphan reap at supervisor start', () => {
         lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: async () => ({ reaped: 0, kept: 1 }) },
-      overrides: { orphanGraceMs: 250, lockMechanism: lock, lockWaitMs: 3_600_000 },
+      overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     expect(h.log.withMsg('orphans.reaped')).toEqual([expect.objectContaining({ reaped: 0, kept: 1, level: 'warn' })]);

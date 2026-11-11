@@ -3,7 +3,7 @@ import { STYLE, STYLE_TOKEN_NAMES, THEMES, THEME_IDS, appearanceOf, applyTheme, 
 import type { Appearance, ColorLevel, Paint, StyleToken, TokenStyle } from '../../src/tui/screen/theme.ts';
 import * as tokens from '../../src/tui/screen/tokens.ts';
 
-const DESIGN_TOKENS = ['text', 'dim', 'user', 'accent', 'error', 'warning', 'success', 'diff.added', 'diff.removed', 'code', 'link', 'choice.selected', 'selection', 'border', 'art.fur', 'art.membrane', 'art.face'];
+const DESIGN_TOKENS = ['text', 'dim', 'user', 'accent', 'error', 'warning', 'success', 'diff.added', 'diff.removed', 'code', 'link', 'choice.selected', 'selection', 'border', 'art.fur', 'art.membrane', 'art.face', 'italic'];
 const NAMES_THE_VIEWS_ALREADY_USE = ['bold', 'notice', 'banner.fur', 'banner.membrane', 'banner.face', 'banner.border'];
 
 const table: Readonly<Record<string, TokenStyle>> = STYLE;
@@ -16,6 +16,7 @@ const attrsOf = (name: StyleToken) => {
   return {
     ...(attrs.bold === true ? { bold: true } : {}),
     ...(attrs.dim === true ? { dimColor: true } : {}),
+    ...(attrs.italic === true ? { italic: true } : {}),
     ...(attrs.inverse === true ? { inverse: true } : {}),
     ...(attrs.underline === true ? { underline: true } : {}),
   };

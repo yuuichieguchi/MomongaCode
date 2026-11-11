@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { RunTraceView, UsageReport } from '@momonga/protocol';
+import type { RunTraceView } from '@momonga/protocol';
 import { renderTrace } from '../src/commands/trace.ts';
 
-const usage = { total: { input_tokens: 1, output_tokens: 1 }, responses: [] } as unknown as UsageReport;
 
 const SIGNATURE = 'Bash {"command":"npm test"}';
 
@@ -25,23 +24,23 @@ const lineOf = (text: string, prefix: string): string => text.split('\n').find((
 
 describe('momonga trace shows the prefix causes, tool.loaded and loop.warned', () => {
   it('names the prefix causes on the line of the call they precede', () => {
-    const text = renderTrace(trace, usage);
+    const text = renderTrace(trace);
     const second = lineOf(text, 'step 2, attempt 1:');
     expect(second).toContain('tools_loaded');
     expect(second).toContain('eviction');
   });
 
   it('names no cause on a call whose prefix was kept', () => {
-    const text = renderTrace(trace, usage);
+    const text = renderTrace(trace);
     for (const cause of ['tools_loaded', 'eviction']) expect(lineOf(text, 'step 3, attempt 1:')).not.toContain(cause);
   });
 
   it('shows each tool.loaded with the names of the loaded tools', () => {
-    expect(renderTrace(trace, usage)).toMatch(/loaded tools: Grep, Glob/);
+    expect(renderTrace(trace)).toMatch(/loaded tools: Grep, Glob/);
   });
 
   it('shows each loop.warned with the signature of the repeated call', () => {
-    const text = renderTrace(trace, usage);
+    const text = renderTrace(trace);
     const warned = text.split('\n').find((line) => line.includes('loop warned')) ?? '';
     expect(warned).toContain(SIGNATURE);
   });

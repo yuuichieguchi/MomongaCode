@@ -147,6 +147,7 @@ export const NO_FORGE: ForgeAccess = {
     throw new Error('this test configures no forge');
   },
   gitCredential: async () => undefined,
+  gitDestination: () => undefined,
 };
 
 export const operationTool = (name: string, deps: { runArgv: ArgvRunner; forge?: ForgeAccess; settings?: OperationSettings }): AnyTool => {

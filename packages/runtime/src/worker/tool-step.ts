@@ -1,12 +1,11 @@
 import { PinnedOverflowError, formatToolOutput, formattedHeader, readersOffered } from '@momonga/context';
 import { canonicalJson, hostPaths, parseBoundedJson, spanValueOfJsonText } from '@momonga/foundation';
 import { diffFieldsOf, termsOf } from '@momonga/protocol';
-import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
+import type { HeldLink, PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
 import { COVERED_PROGRAMS, OPERATION_SPECS, TOOL_VALIDATOR_FAILED_CODE, supersededForms, toolRefusalKey, validateToolInput } from '@momonga/tools';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
-import { permissionRulesFor } from '../governance/rules.ts';
 import { createAutoClassifier } from './auto-classifier.ts';
 import { haltRun, hookRunContextFor } from './hook-step.ts';
 import type { TraceSpan } from '../ports.ts';
@@ -15,11 +14,11 @@ import { pinnedFailureFor, taskOf } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
 import { offeredInBody } from './tool-offer.ts';
 import type { OfferedInBody } from './tool-offer.ts';
-import { hasHeld, heldOutput, heldVerdictOf, quiesce } from './held-calls.ts';
+import { hasHeld, heldLinkOf, heldOutput, heldVerdictOf, quiesce } from './held-calls.ts';
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
-import { laterVerdictNotice, policyRefusal, ruleVerdictFor } from './rule-verdict.ts';
+import { laterVerdictNotice, policyRefusal, ruleVerdictFor, runRulesFor } from './rule-verdict.ts';
 import type { HeldSandbox } from './held-sandbox.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
@@ -60,8 +59,9 @@ export const recordCalls = async (ctx: ClaimContext, leading: readonly RunEventP
   if (payloads.length > 0) ctx.journal.append(payloads);
 };
 
-export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
+export const outcomePayloads = (outcome: ResultOutcome, held?: HeldLink): RunEventPayload[] => {
   const { callId, result } = outcome;
+  const link = held === undefined ? {} : { held };
   const settled: RunEventPayload =
     outcome.reconciled === undefined || (outcome.reconciled === 'not_applied' && outcome.interrupted === undefined)
       ? {
@@ -82,6 +82,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
           ...diffFieldsOf(result),
           ...(result.effect === undefined ? {} : { effect: result.effect }),
+          ...link,
         }
       : {
           type: 'tool.reconciled',
@@ -93,6 +94,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.command === undefined ? {} : { command: result.command }),
           ...(result.effect === undefined ? {} : { effect: result.effect }),
           ...diffFieldsOf(result),
+          ...link,
         };
   return [
     settled,
@@ -209,7 +211,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   await recordCalls(ctx);
   const entries = Object.entries(journal.state.pendingCalls);
   if (entries.some(([, call]) => call.status === 'awaiting_approval' || call.status === 'awaiting_input')) return ctx.terminals.yieldTo('WAITING_HUMAN');
-  const runnable = entries.filter(([, call]) => call.status === 'requested' || call.status === 'started');
+  const runnable = entries.filter(([callId, call]) => (call.status === 'requested' || call.status === 'started') && heldLinkOf(journal.state, callId) === undefined);
   if (runnable.length === 0) return 'continue';
 
   const session = heldSessionOf(options.store, run.sessionId);
@@ -286,7 +288,7 @@ export const settleHeld = async (ctx: ClaimContext): Promise<Flow | number> => {
 const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSession, calls: ToolCall[], step: number, lateBatch?: LateBatch): Promise<Flow> => {
   const { options, journal, run } = ctx;
   const late = lateBatch !== undefined;
-  const rules = [...(await permissionRulesFor(options, session)), ...(ctx.delegation?.rules ?? [])];
+  const rules = await runRulesFor(options, session, ctx.delegation);
   const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal, discoverGitConfig: true });
   const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
@@ -352,13 +354,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
         return { traceparent: span.traceparent };
       },
       onOutcome: (outcome) => {
-        if (late) {
-          const lateCall = journal.state.heldCalls?.[outcome.callId];
-          if (lateCall === undefined) throw new Error(`the held call ${outcome.callId} settled twice`);
-          journal.append([{ type: 'tool.held.resolved', callId: outcome.callId, approvalId: lateCall.approvalId, outcome: 'executed', status: outcome.result.status, output: outcome.result.output }]);
-          return;
-        }
-        journal.append(outcomePayloads(outcome));
+        journal.append(outcomePayloads(outcome, heldLinkOf(journal.state, outcome.callId)));
         if (outcome.result.toolsLoaded !== undefined) ctx.toolLoading?.rememberLoaded(outcome.result.toolsLoaded);
         recordToolContent(spans, calls, outcome);
         recordToolBackend(spans, outcome);
@@ -366,10 +362,10 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
       toolUnavailable: (toolKey) => toolRefusedInJournal(ctx, toolKey),
       onWarning: (message, toolKey) => journal.append([{ type: 'notice', level: 'warning', message, code: TOOL_VALIDATOR_FAILED_CODE, toolKey }]),
       onStarted: (callId, idemKey, basis) => {
-        if (!late) journal.append([{ type: 'tool.started', callId, idemKey, basis }]);
+        journal.append([{ type: 'tool.started', callId, idemKey, basis }]);
       },
       onUpdate: (callId, content) => {
-        if (!late) journal.append([{ type: 'tool.updated', callId, content }]);
+        journal.append([{ type: 'tool.updated', callId, content }]);
       },
     });
   } catch (error) {

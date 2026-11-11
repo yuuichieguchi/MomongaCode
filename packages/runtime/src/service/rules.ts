@@ -17,7 +17,6 @@ export type RuleRoutesDeps = {
   modelListing: (signal: AbortSignal) => Promise<ModelListing>;
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   maxBodyBytes: number;
-  closeSignal: AbortSignal;
   refuseWhileRetiring(): void;
 };
 
@@ -45,28 +44,29 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
 
   type ModelWindow = { measured: true; target: string; contextWindow: number } | { measured: false; warning: string };
 
-  const windowOf = async (view: ModelView, views: ModelViews): Promise<ModelWindow> => {
+  const windowOf = async (view: ModelView, views: ModelViews, signal: AbortSignal): Promise<ModelWindow> => {
     try {
-      return { measured: true, target: view.canon, contextWindow: (await deps.modelCapabilities(view.canon, deps.closeSignal)).contextWindow };
+      return { measured: true, target: view.canon, contextWindow: (await deps.modelCapabilities(view.canon, signal)).contextWindow };
     } catch (error) {
       if (!(error instanceof ModelUnlistedError)) throw error;
       return { measured: false, warning: `the size of this rule was not measured against the model "${displayOf(view, views)}": ${error.message}` };
     }
   };
 
-  const sizeOf = async (tokens: number): Promise<{ size: RuleAddResponse['size']; warnings: string[] }> => {
-    const { views } = await deps.modelListing(deps.closeSignal);
-    const windows = await Promise.all(views.map((view) => windowOf(view, views)));
+  const sizeOf = async (tokens: number, signal: AbortSignal): Promise<{ size: RuleAddResponse['size']; warnings: string[] }> => {
+    const { views } = await deps.modelListing(signal);
+    const windows = await Promise.all(views.map((view) => windowOf(view, views, signal)));
     return {
       size: ruleSizeReport(tokens, windows.flatMap((window) => (window.measured ? [{ target: window.target, contextWindow: window.contextWindow }] : []))),
       warnings: windows.flatMap((window) => (window.measured ? [] : [window.warning])),
     };
   };
 
-  const sizeOrWarning = async (tokens: number): Promise<{ size: RuleAddResponse['size']; warnings: string[] }> => {
+  const sizeOrWarning = async (tokens: number, signal: AbortSignal): Promise<{ size: RuleAddResponse['size']; warnings: string[] }> => {
     try {
-      return await sizeOf(tokens);
+      return await sizeOf(tokens, signal);
     } catch (error) {
+      signal.throwIfAborted();
       if (!(error instanceof GatewayRequestError)) throw error;
       return { size: [], warnings: [`the size of this rule could not be measured because the gateway did not answer: ${error.message}`] };
     }
@@ -87,7 +87,7 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
       enforcement: body.enforcement ?? null,
       source: { kind: 'command' as const },
     };
-    const sized = await sizeOrWarning(tokensForText(input.text));
+    const sized = await sizeOrWarning(tokensForText(input.text), context.req.raw.signal);
     const candidate: GoverningFactView = { ...input, id: '', validFrom: 0, retiredAt: null, source: { kind: 'command', at: 0 } };
     let existing: readonly GoverningFactView[] = [];
     const added = governing.addAdmitted(input, (facts) => {

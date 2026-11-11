@@ -34,6 +34,8 @@ export type ResolveElicitationBody = { responses: Record<string, unknown> };
 
 export type PutTrustBody = { path: string; decision: 'trusted' | 'untrusted' };
 
+export type McpFolderBody = { cwd: string; env: Record<string, string> };
+
 type RequestSchemaName =
   | 'CreateSessionRequest'
   | 'PatchSessionRequest'
@@ -44,6 +46,7 @@ type RequestSchemaName =
   | 'CompactSessionRequest'
   | 'ResolveElicitationRequest'
   | 'PutTrustRequest'
+  | 'McpFolderRequest'
   | 'AddRuleRequest'
   | 'PutRuleVerdictRequest'
   | 'PromoteMemoryRequest'
@@ -63,6 +66,7 @@ const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
   CompactSessionRequest: requestValidator(RUN_API_SCHEMAS.CompactSessionRequest),
   ResolveElicitationRequest: requestValidator(RUN_API_SCHEMAS.ResolveElicitationRequest),
   PutTrustRequest: requestValidator(RUN_API_SCHEMAS.PutTrustRequest),
+  McpFolderRequest: requestValidator(RUN_API_SCHEMAS.McpFolderRequest),
   AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),
   PutRuleVerdictRequest: requestValidator(RUN_API_SCHEMAS.PutRuleVerdictRequest),
   PromoteMemoryRequest: requestValidator(RUN_API_SCHEMAS.PromoteMemoryRequest),
@@ -154,6 +158,15 @@ export const parseIdempotencyKey = (header: string | null): string | undefined =
   }
   return key;
 };
+
+export const integerQueryOf = (raw: string | undefined, name: string, bounds: { from: number; to: number }): number | undefined => {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < bounds.from || value > bounds.to) throw invalidRequest(`${name} must be an integer from ${bounds.from} to ${bounds.to}`, name);
+  return value;
+};
+
+export const pageLimitOf = (raw: string | undefined, pageRows: number): number => integerQueryOf(raw, 'limit', { from: 1, to: pageRows }) ?? pageRows;
 
 const CURSOR = /^(?:0|[1-9][0-9]*)$/;
 

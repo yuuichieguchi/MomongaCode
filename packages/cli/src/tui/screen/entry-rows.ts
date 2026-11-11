@@ -1,10 +1,13 @@
 import { escapeTerminalLine } from '@momonga/protocol';
+import { FAILURE_DETAIL_LINE, FAILURE_REMEDY_LINE } from '../../failure.ts';
 import { describeDenial } from '../../policy-messages.ts';
 import { bannerRows, textLines } from '../startup.tsx';
 import type { Entry, ToolEntry } from '../transcript.ts';
-import { markdownRowsWith } from './markdown.ts';
+import { markdownRowsWith, parseMarkdown } from './markdown.ts';
+import type { Parsed, ParsePoint, References, TableDrawing } from './markdown.ts';
 import type { StyleToken } from './tokens.ts';
-import { thoughtRows } from './thought.ts';
+import { openThoughtRows, thoughtRows } from './thought.ts';
+import type { ThoughtEntry, ThoughtWrap } from './thought.ts';
 import { runningToolText, toolBlockRows } from './tool-view.ts';
 import type { RowFacts } from './tool-view.ts';
 import { inertText, withoutTabs, wrapText } from './wrap.ts';
@@ -31,6 +34,14 @@ export const toolMark = (status: ToolEntry['status']): string => {
 
 const NOTICE_TOKENS: Readonly<Record<Extract<Entry, { kind: 'notice' }>['level'], StyleToken>> = { error: 'error', warning: 'warning', info: 'notice' };
 
+const errorLineToken = (line: string, index: number): StyleToken => {
+  if (index === 0) return 'error';
+  if (line.startsWith(FAILURE_DETAIL_LINE)) return 'dim';
+  return line.startsWith(FAILURE_REMEDY_LINE) ? 'accent' : 'error';
+};
+
+const errorRows = (text: string, width: number): Row[] => text.split('\n').flatMap((line, index) => wrapText(shown(line), width, { token: errorLineToken(line, index) }));
+
 const ENDED: readonly ToolEntry['status'][] = ['completed', 'failed', 'unknown'];
 
 const toolRows = (entry: ToolEntry, width: number, { keys, a11y }: RowFacts): Row[] => {
@@ -42,7 +53,19 @@ const toolRows = (entry: ToolEntry, width: number, { keys, a11y }: RowFacts): Ro
   ];
 };
 
-export const assistantTextRows = (text: string, width: number, { a11y }: RowFacts): Row[] => markdownRowsWith(text, width, { tables: a11y.screenReader ? 'records' : 'grid' });
+const tablesOf = ({ a11y }: RowFacts): TableDrawing => (a11y.screenReader ? 'records' : 'grid');
+
+export const assistantTextRows = (text: string, width: number, facts: RowFacts): Row[] => markdownRowsWith(text, width, { tables: tablesOf(facts) });
+
+export type AnswerReading = { references: References; settled: boolean; unit: boolean };
+
+export const answerRowsFrom = (text: string, from: ParsePoint, width: number, reading: AnswerReading, facts: RowFacts): Parsed => parseMarkdown(text, from, width, { ...reading, tables: tablesOf(facts) });
+
+export const plainTextRows = (text: string, width: number): Row[] => wrapText(shown(text), width, { links: false });
+
+const UNSPOKEN_THOUGHT: ThoughtWrap = { width: 0, window: 0, characters: 0, wrapped: 0, kept: [], rows: [] };
+
+export const openThoughtRowsFrom = (entry: ThoughtEntry, width: number, before: ThoughtWrap | undefined, { a11y }: RowFacts): ThoughtWrap => (a11y.screenReader ? UNSPOKEN_THOUGHT : openThoughtRows(entry, width, before));
 
 const plainBannerRows = (banner: Extract<Entry, { kind: 'banner' }>['banner'], width: number): Row[] =>
   [...textLines(banner.config, banner.model, banner.cwd), ...banner.notices.map((notice) => `! ${notice}`)].flatMap((line) => wrapText(shown(line), width));
@@ -63,6 +86,8 @@ export const rowsOfEntry = (entry: Entry, width: number, facts: RowFacts): Row[]
       return entry.entries.flatMap((item) => wrapText(shown(`${item.status === 'completed' ? '[x]' : item.status === 'in_progress' ? '[~]' : '[ ]'} ${item.content}`), width));
     case 'notice':
       return wrapText(shown(entry.text), width, { token: NOTICE_TOKENS[entry.level] });
+    case 'error':
+      return errorRows(entry.text, width);
     case 'info':
       return wrapText(shown(entry.text), width, { token: 'dim' });
     case 'retired':

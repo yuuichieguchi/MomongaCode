@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { repoRoot } from './bundle.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
+import { pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 
 describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh', () => {
   let root = '';
@@ -175,10 +176,14 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh takes the heavy run lock for more than
     const exit = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)));
     holder = { child, exit, release };
     const info = path.join(state, 'run-lock', 'heavy.info');
-    while (!fs.existsSync(info)) {
-      if (child.exitCode !== null || child.signalCode !== null) throw new Error('the heavy holder ended before it held the lock');
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    await pollUntil(
+      () => {
+        if (fs.existsSync(info)) return true;
+        if (child.exitCode !== null || child.signalCode !== null) throw new Error('the heavy holder ended before it held the lock');
+        return false;
+      },
+      { description: 'the heavy holder to hold the run lock', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS },
+    );
     return child.pid;
   };
 

@@ -22,14 +22,13 @@ import {
   managedServerReapBoundMs,
   markerReapClockBoundMs,
   mcpPoolCloseBoundMs,
-  orphanReapGraceMs,
   runtimeMaxCloseMs,
   runtimeStopBudgetMs,
   runtimeTeardownBudgetMs,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
 import type { StopValues as ProductStopValues } from '@momonga/foundation';
-import { resolveStartTiming, supervisorStartBoundMs } from '@momonga/supervisor';
+import { resolveStartTiming, shutdownStepBoundsMs, supervisorStartBoundMs } from '@momonga/supervisor';
 import { proofArith } from '../support/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../support/proofs/arith.ts';
 import { expectRefuted, prove } from '../support/proofs/prove.ts';
@@ -130,12 +129,12 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3; the clos
       expect(runtimeTeardownBudgetMs(g)).toBe(RUNTIME_TEARDOWN_BUDGET_MS + MCP_CLOSE_GRACE_WINDOWS * g + MCP_CLOSE_FIXED_MS);
       expect(runtimeMaxCloseMs(values)).toBe(d + MCP_CLOSE_GRACE_WINDOWS * g + RUNTIME_CLOSE_FIXED_MS);
       expect(runtimeStopBudgetMs(values)).toBe(runtimeMaxCloseMs(values) + SHUTDOWN_MARGIN_MS);
-      expect(orphanReapGraceMs(values)).toBe(MCP_CLOSE_GRACE_WINDOWS * g + RUNTIME_CLOSE_FIXED_MS);
       expect(gatewayMaxCloseMs(values)).toBe(c + managedServerStopBoundMs(m));
       expect(gatewayStopBudgetMs(values)).toBe(c + MANAGED_STOP_GRACE_WINDOWS * m + MANAGED_STOP_FIXED_MS + SHUTDOWN_MARGIN_MS);
       expect(gatewayAbortBudgetMs(values)).toBe(MANAGED_STOP_GRACE_WINDOWS * m + MANAGED_STOP_FIXED_MS + SHUTDOWN_MARGIN_MS);
       expect(supervisorMaxCloseMs(values)).toBe(d + c + (MANAGED_STOP_GRACE_WINDOWS + MANAGED_REAP_GRACE_WINDOWS) * m + MCP_CLOSE_GRACE_WINDOWS * g + SUPERVISOR_FIXED_CLOSE_MS);
       expect(daemonStopBoundMs(values)).toBe(supervisorMaxCloseMs(values) + ENTRY_HARD_EXIT_MARGIN_MS);
+      expect(shutdownStepBoundsMs(values).reduce((total, bound) => total + bound, 0)).toBe(supervisorMaxCloseMs(values));
     }
     expect(daemonStopBoundMs(MAXIMUM_STOP_VALUES)).toBe(1_279_275);
     expect(SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max).toBe(STARTUP_TIMEOUT_MS);
@@ -156,7 +155,7 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3; the clos
   it('S3 proves the ready bound of a start is STARTUP_TIMEOUT_MS for every stop value of a previous daemon: a start waits for no previous daemon', async () => {
     const { arith, startup, readyBound } = clientBoundArith('S3');
     expect(await prove(arith, readyBound.eq(startup))).toEqual({ status: 'proved' });
-    expect(supervisorStartBoundMs(resolveStartTiming({ predecessorStopValues: MAXIMUM_STOP_VALUES }))).toBe(STARTUP_TIMEOUT_MS);
+    expect(supervisorStartBoundMs(resolveStartTiming({}))).toBe(STARTUP_TIMEOUT_MS);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('S3w refutes that bound for a start that waited for a previous daemon to close, with a counter-example for every allowed stop value', async () => {

@@ -16,13 +16,13 @@ export function HistoryView({ store, source, feed }: HistoryViewProps) {
   const pending = feed.pending(settled);
   const handNext = useEffectEvent((): void => {
     const chunk = feed.next(source, store.settledCount());
-    setChunks((handed) => [...handed.map(() => HANDED), chunk]);
+    if (chunk.length > 0) setChunks((handed) => [...handed.map(() => HANDED), chunk]);
   });
   useEffect(() => {
     if (!pending) return undefined;
     const turn = setImmediate(handNext);
     return () => clearImmediate(turn);
-  }, [pending, settled, chunks.length]);
+  }, [pending, settled, chunks.length, source]);
   const live = feed.live(source, settled);
   return (
     <>

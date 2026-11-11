@@ -409,13 +409,21 @@ export const pollFor = (condition: () => boolean, boundMs: number, description: 
 
 export type McpAdminPort = Parameters<typeof runtime.createRunService>[0]['mcp'];
 
-const unusedMcpAdmin: McpAdminPort = {
+export const unusedMcpAdmin: McpAdminPort = {
   servers: () => Promise.reject(new Error('this test configured no MCP admin')),
   startAuthorization: () => Promise.reject(new Error('this test configured no MCP admin')),
   authorization: () => {
     throw new Error('this test configured no MCP admin');
   },
   cancelAuthorization: () => {
+    throw new Error('this test configured no MCP admin');
+  },
+  folderServers: () => Promise.reject(new Error('this test configured no MCP admin')),
+  startFolderAuthorization: () => Promise.reject(new Error('this test configured no MCP admin')),
+  folderAuthorization: () => {
+    throw new Error('this test configured no MCP admin');
+  },
+  cancelFolderAuthorization: () => {
     throw new Error('this test configured no MCP admin');
   },
 };
@@ -443,7 +451,7 @@ export type ServiceOverrides = {
   wrapStore?: (store: RuntimeStore) => RuntimeStore;
   cancelUpstream?: (runId: string) => Promise<void>;
   releaseStopped?: (runId: string, signal: AbortSignal) => Promise<void>;
-  runTrace?: (runId: string) => Promise<unknown>;
+  runTrace?: (runId: string, signal: AbortSignal) => Promise<unknown>;
   imageInput?: boolean;
   beforeCapabilities?: () => Promise<void>;
   capabilitiesOf?: (model: string) => Promise<unknown>;
@@ -459,7 +467,11 @@ export type ServiceOverrides = {
   mcp?: McpAdminPort;
   userInput?: runtime.UserInputPort;
   evidenceRun?: (project: string) => EvidenceRun;
+  delegation?: DelegationPort;
+  modelListing?: (signal: AbortSignal) => Promise<{ views: ModelViews; start: string | null }>;
 };
+
+export type DelegationPort = NonNullable<Parameters<typeof runtime.createRunService>[0]['delegation']>;
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
 
@@ -532,7 +544,7 @@ export const serviceOptions = (
   startedAt: STARTED_AT,
   sandboxKind: async () => overrides.sandboxKind ?? 'seatbelt',
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
-  modelListing: base.ports.modelListing,
+  modelListing: overrides.modelListing ?? base.ports.modelListing,
   modelCapabilities: async (model: string) => {
     await overrides.beforeCapabilities?.();
     if (overrides.capabilitiesOf !== undefined) return overrides.capabilitiesOf(model);
@@ -572,6 +584,7 @@ export const serviceOptions = (
   work: overrides.work ?? { steps: () => 0, jobs: () => 0 },
   ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home, process.platform, process.env).markers.root]),
   ...(overrides.onRequestEnd === undefined ? {} : { onRequestEnd: overrides.onRequestEnd }),
+  ...(overrides.delegation === undefined ? {} : { delegation: overrides.delegation }),
   onError: (error: unknown) => base.errors.push(error),
   ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),
 });

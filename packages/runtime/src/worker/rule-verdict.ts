@@ -7,6 +7,7 @@ import type { RunError } from '@momonga/store';
 import { permissionRulesFor } from '../governance/rules.ts';
 import type { RuleVerifierPort, ToolEnv } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
+import type { Delegation } from './held-calls.ts';
 import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
 import type { WorkerOptions } from './types.ts';
@@ -14,6 +15,12 @@ import type { WorkerOptions } from './types.ts';
 export type RuleVerdictSources = { options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier'>; control: Pick<ClaimControl, 'signal' | 'recordingRaised' | 'fail'> };
 
 export type RuleSetFacts = { rules: readonly PermissionRule[]; roots: readonly string[]; exemptDirectory: string; enforcement: RuleEnforcement };
+
+export const runRulesFor = async (
+  options: Parameters<typeof permissionRulesFor>[0],
+  session: HeldSession,
+  delegation: Pick<Delegation, 'rules'> | undefined,
+): Promise<PermissionRule[]> => [...(await permissionRulesFor(options, session)), ...(delegation?.rules ?? [])];
 
 type Undecided = { verdict: RuleVerdict; retry: Promise<void> | undefined };
 
@@ -66,14 +73,15 @@ export type StartVerdictSources = RuleVerdictSources & {
   options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier' | 'tools' | 'settings' | 'clock'>;
   env: ToolEnv;
   readableDirectories: readonly string[];
+  delegation: Pick<Delegation, 'rules'> | undefined;
 };
 
 export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: HeldSession): Promise<PinnedRuleVerdict> => {
   const { options, control } = sources;
   const held = await holdSandbox(options.tools.sandboxes, control.signal);
   try {
-    const rules = await permissionRulesFor(options, session);
-    const policy = await options.tools.policyFor(session, { env: sources.env, rules, readableDirectories: sources.readableDirectories, ruleEnforcement: held.ruleEnforcement, signal: control.signal });
+    const rules = await runRulesFor(options, session, sources.delegation);
+    const policy = await options.tools.policyFor(session, { env: sources.env, rules, readableDirectories: sources.readableDirectories, ruleEnforcement: held.ruleEnforcement, signal: control.signal, discoverGitConfig: true });
     return await ruleVerdictFor(sources, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement });
   } finally {
     held.done();

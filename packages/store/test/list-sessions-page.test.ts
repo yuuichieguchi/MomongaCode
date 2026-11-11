@@ -57,10 +57,10 @@ describe('the sessions are listed a page at a time', () => {
 
     const { sessions } = store.listSessions({ limit: PAGE, cursor: null });
 
-    expect(sessions.map(({ id, activeRunId, latestRunId }) => ({ id, activeRunId, latestRunId }))).toEqual([
-      { id: idle.id, activeRunId: null, latestRunId: null },
-      { id: finished.id, activeRunId: null, latestRunId: done.id },
-      { id: busy.id, activeRunId: working.id, latestRunId: working.id },
+    expect(sessions.map(({ id, activeRunId, activeRunAt, latestRunId, latestRunAt }) => ({ id, activeRunId, activeRunAt, latestRunId, latestRunAt }))).toEqual([
+      { id: idle.id, activeRunId: null, activeRunAt: null, latestRunId: null, latestRunAt: null },
+      { id: finished.id, activeRunId: null, activeRunAt: null, latestRunId: done.id, latestRunAt: done.createdAt },
+      { id: busy.id, activeRunId: working.id, activeRunAt: working.createdAt, latestRunId: working.id, latestRunAt: working.createdAt },
     ]);
   });
 

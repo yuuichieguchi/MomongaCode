@@ -36,6 +36,32 @@ const item = (text: string, overrides: Partial<InjectedItem> = {}): InjectedItem
 const contributedOf = (payloads: readonly RunEventPayload[], injected: InjectedItem, task = TASK): boolean =>
   measureContribution({ events: journal(payloads), task, injected: [injected] })[0]?.contributed ?? false;
 
+describe('measureContribution reads every event that carries executed text', () => {
+  const check = (output: string): RunEventPayload =>
+    ({ type: 'verification.completed', round: 1, conditionId: 'c1', command: 'npm test', outcome: 'failed', exitCode: 1, durationMs: 3, output, mutationSeq: 0 }) as RunEventPayload;
+
+  it('does not credit an identifier first seen in the output of a check the runtime ran', () => {
+    expect(contributedOf([check('TypeError in zorpLauncher'), said(1, 'Fixing zorpLauncher now')], item('use zorpLauncher'))).toBe(false);
+    expect(contributedOf([said(1, 'Fixing zorpLauncher now')], item('use zorpLauncher'))).toBe(true);
+  });
+
+  it('does not credit an identifier first seen in the command of a check', () => {
+    const named = { ...check('failed'), command: 'make zorpLauncher-test' } as RunEventPayload;
+    expect(contributedOf([named, said(1, 'Running make zorpLauncher-test again')], item('use zorpLauncher-test'))).toBe(false);
+  });
+
+  it('does not credit an identifier first seen in the recorded result of a held call, and counts that result as one history item', () => {
+    const resolved: RunEventPayload = { type: 'tool.held.resolved', callId: 'c0', approvalId: 'a1', outcome: 'executed', status: 'completed', output: 'deployed zorpLauncher' };
+    expect(contributedOf([resolved, said(1, 'zorpLauncher is deployed')], item('use zorpLauncher'))).toBe(false);
+    expect(contributedOf([resolved, toolOutput('unrelated'), compaction(1), said(1, 'zorpLauncher is deployed')], item('use zorpLauncher'))).toBe(true);
+  });
+
+  it('keeps the output of a check out of the count of history items, so a compaction drops exactly the items it replaced', () => {
+    expect(contributedOf([toolOutput('saw zorpLauncher'), check('failed'), toolOutput('unrelated'), compaction(1), said(1, 'zorpLauncher')], item('use zorpLauncher'))).toBe(true);
+    expect(contributedOf([toolOutput('unrelated'), check('failed'), toolOutput('saw zorpLauncher'), compaction(1), said(1, 'zorpLauncher')], item('use zorpLauncher'))).toBe(false);
+  });
+});
+
 describe('measureContribution', () => {
   it('credits an item whose identifier first appears in a step text', () => {
     expect(measureContribution({ events: journal([said(1, 'Calling zorpLauncher now')]), task: TASK, injected: [item('use zorpLauncher')] })).toEqual([{ kind: 'memory', id: 'q1', contributed: true }]);

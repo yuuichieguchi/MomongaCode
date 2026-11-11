@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
-import { installTrust, trustFailureText, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { installTrust, settledOrAborted, trustFailureText, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -63,7 +63,7 @@ import { createReflector } from '../memory/reflection.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
-import { TRACE_EVENT_TYPES, costBreakdownOf, reportCostOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf, traceEventsOf } from '../service/model-calls.ts';
+import { TRACE_EVENT_TYPES, costBreakdownOf, costReportOf, readRecordedCosts, reportCostOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf, traceEventsOf } from '../service/model-calls.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -236,14 +236,19 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   let onWorkEnded: () => void = () => undefined;
   const stepsInFlight = (): number => workers.reduce((sum, { worker }) => sum + worker.claimsInFlight(), 0);
 
+  const abortOnLatchedFatal = (): void => {
+    if (fatalError === undefined) return;
+    if (phase === 'running') void abort();
+    else if (phase === 'draining') requestAbort();
+  };
+
   const latchFatal = (error: Error): void => {
     if (phase === 'closed') return;
     logger.error('runtime.fatal', { err: error });
     if (fatalError !== undefined) return;
     fatalError = error;
     resolveFatal(error);
-    if (phase === 'running') void abort();
-    else if (phase === 'draining') requestAbort();
+    abortOnLatchedFatal();
   };
 
   const report = (error: unknown): void => {
@@ -734,8 +739,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         notifier,
         modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
         delegation: {
-          settings: () => {
-            const { limits, ceilings, mandates } = settingsComposition.takeUserSnapshot().settings;
+          settings: async (requestSignal) => {
+            const { limits, ceilings, mandates } = (await settingsComposition.userSnapshot(requestSignal)).settings;
             return { ...(limits === undefined ? {} : { limits }), ...(ceilings === undefined ? {} : { ceilings }), ...(mandates === undefined ? {} : { mandates }) };
           },
           projectMandate: async (cwd, requestSignal) => loadProjectMandate({ projectDir: cwd, trusted: await settingsComposition.trustOracle.isTrusted(cwd, requestSignal), signal: requestSignal }),
@@ -754,7 +759,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
-        permissionRules: (session) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session),
+        permissionRules: (session, requestSignal) => settledOrAborted(permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session), requestSignal),
         userInput: createUserInputPort({
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
@@ -769,25 +774,32 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         timers,
         cancelUpstream: tracker.cancel,
         releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
-        runTrace: async (runId) => {
-          await telemetries.current().telemetry.forceFlush();
+        runTrace: async (runId, requestSignal) => {
+          await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined
             ? undefined
             : { ...trace, calls: traceCallsOf(await store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };
         },
-        runCost: (runs, signal, includeRunless) => gatewayClient.cost(runs, signal, includeRunless),
+        runCost: (runs, signal, includeRunless) =>
+          costReportOf({
+            runs,
+            includeRunless,
+            recordedCosts: () => readRecordedCosts(store, runs.map((run) => run.runId), includeRunless),
+            fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
+          }),
         runCostBreakdown: (runs, signal, includeRunless) =>
           costBreakdownOf({
             runIds: runs.map((run) => run.runId),
             recordsOf: (runId) => store.readModelCallEvents(runId),
+            recordedCosts: () => readRecordedCosts(store, runs.map((run) => run.runId), includeRunless),
             sideTimingsOf: (runId) => sideTimingsOfRun(store, runId),
             runlessTimingsOf: () => runlessTimingsOf(store),
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
-        reportCost: (runIds, signal) => reportCostOf({ runIds, fetchPage: (ids, cursor, limit) => gatewayClient.billedCalls(ids, cursor, limit, false, signal) }),
-        runTraceContent: async (runId, after, limit) => {
-          await telemetries.current().telemetry.forceFlush();
+        reportCost: async (runIds) => reportCostOf(store, runIds),
+        runTraceContent: async (runId, after, limit, requestSignal) => {
+          await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
           return pageRunBodies(traceStore, runId, after, limit);
         },
         mcp: toolRuntime.mcpAdmin,
@@ -1087,6 +1099,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       announceReady(fields, stdout);
       logger.info('runtime ready');
       phase = 'running';
+      abortOnLatchedFatal();
       return fields;
     });
 

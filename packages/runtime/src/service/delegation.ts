@@ -9,7 +9,7 @@ export type DelegationSettings = { limits?: LimitsSettings; ceilings?: CeilingsS
 export type ChainBilling = { metered: boolean; priced: boolean };
 
 export type DelegationPort = {
-  settings(): DelegationSettings;
+  settings(signal: AbortSignal): Promise<DelegationSettings>;
   projectMandate(cwd: string, signal: AbortSignal): Promise<ProjectMandate | undefined>;
   chainBilling(model: string, signal: AbortSignal): Promise<ChainBilling>;
 };

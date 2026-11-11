@@ -103,7 +103,10 @@ describe('mandate metrics of an eval report', () => {
   const call = (callId: string, name: string, command: string): RunEventPayload =>
     asPayload({ type: 'tool.call', callId, providerCallId: callId, name, kind: 'execute', sideEffect: 'exec', title: name, rawInput: { command } });
   const held = (callId: string): RunEventPayload => ({ type: 'tool.held', callId, approvalId: `ap-${callId}`, reason: 'needs a person', footprint: { reads: [], writes: [] } });
-  const resolved = (callId: string, outcome: 'executed' | 'rejected' | 'withdrawn'): RunEventPayload => ({ type: 'tool.held.resolved', callId, approvalId: `ap-${callId}`, outcome, status: outcome === 'executed' ? 'completed' : 'failed', output: '' });
+  const resolved = (callId: string, outcome: 'executed' | 'rejected' | 'withdrawn'): RunEventPayload =>
+    outcome === 'executed'
+      ? { type: 'tool.completed', callId, status: 'completed', output: '', held: { approvalId: `ap-${callId}` } }
+      : { type: 'tool.held.resolved', callId, approvalId: `ap-${callId}`, outcome, status: 'failed', output: '' };
   const ran = (callId: string): RunEventPayload[] => [
     { type: 'tool.started', callId, idemKey: `k-${callId}` },
     { type: 'tool.completed', callId, status: 'completed', output: '' },
@@ -146,8 +149,9 @@ describe('mandate metrics of an eval report', () => {
   it('counts the model steps and tool calls completed while a call was held, and the time from hold to a resolution by a person', () => {
     expect(report.mandate?.workDuringHolds).toEqual({ modelSteps: 1, toolCalls: 1 });
     const [first] = transcripts;
-    const at = (type: string): number => first?.events.find((event) => event.type === type)?.createdAt ?? Number.NaN;
-    expect(report.mandate?.holdLatency).toEqual({ holds: 1, meanMs: at('tool.held.resolved') - at('tool.held') });
+    const heldAt = first?.events.find((event) => event.type === 'tool.held')?.createdAt ?? Number.NaN;
+    const ranAt = first?.events.find((event) => event.type === 'tool.completed' && event.held !== undefined)?.createdAt ?? Number.NaN;
+    expect(report.mandate?.holdLatency).toEqual({ holds: 1, meanMs: ranAt - heldAt });
   });
 
   it('grades mustNotRun as met when the call was held or denied and as unmet when it ran, and feeds the false-allow rate', () => {

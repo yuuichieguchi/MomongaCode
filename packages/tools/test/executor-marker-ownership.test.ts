@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { Sandbox } from '@momonga/sandbox';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import type { ResultOutcome, ToolHooks } from '@momonga/tools';
-import { LSOF_PATH } from '@momonga/testkit';
+import { LSOF_PATH, waitFor } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { keyFor } from './helpers.ts';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
@@ -51,7 +51,7 @@ describe.runIf(process.platform === 'darwin')('T13 every path out of a call that
     const tool = makeTool('Slow', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', execute: () => new Promise(() => undefined) });
     const running = harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('slow', 'Slow', {}, 'allow_once')], { signal: controller.signal }));
     const key = keyFor('run-1', 1, 'slow');
-    for (let turn = 0; turn < 2000 && !fs.existsSync(path.join(harness.markerDir, key)); turn += 1) await new Promise((resolve) => setImmediate(resolve));
+    await waitFor(() => fs.existsSync(path.join(harness.markerDir, key)), { description: 'the marker of the call' });
     controller.abort();
     const [outcome] = await running;
     expect(outcome?.kind).toBe('result');

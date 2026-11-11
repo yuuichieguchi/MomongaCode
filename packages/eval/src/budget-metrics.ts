@@ -1,5 +1,5 @@
-import { TERMINAL_STATUSES, nanoOfAmount, nanoOfCost } from '@momonga/protocol';
-import type { BudgetCause, BudgetDimension, PublicRunEvent } from '@momonga/protocol';
+import { TERMINAL_STATUSES, heldEndOf, nanoOfAmount, nanoOfCost } from '@momonga/protocol';
+import type { BudgetCause, BudgetDimension, PublicRunEvent, RecordedModelCost } from '@momonga/protocol';
 import type { GoldenCase } from './dataset.ts';
 import { gateVerdictOf } from './oracle.ts';
 import { proportionOf } from './stats.ts';
@@ -38,7 +38,7 @@ const limitsOf = (golden: Pick<GoldenCase, 'limits' | 'mandate'>): RunBudgetFact
   return { ...(tokens === undefined ? {} : { tokens }), ...(costUsd === undefined ? {} : { costNano: nanoOfAmount(costUsd) }) };
 };
 
-type Billed = { cost?: { amount: number; units?: string }; unpriced?: unknown };
+type Billed = { cost?: RecordedModelCost; unpriced?: unknown };
 
 const spendOfEvents = (events: readonly PublicRunEvent[]): RunBudgetFacts['spent'] => {
   const spent = { tokens: 0, costNano: 0, unpricedCalls: 0 };
@@ -81,11 +81,11 @@ const mandateFactsOf = (transcript: RecordedRun): RunMandateFacts => {
   let waitedForPerson = false;
   for (const event of events) {
     if (event.type === 'tool.held') heldAt.set(event.callId, { seq: event.seq, createdAt: event.createdAt });
-    if (event.type === 'tool.held.resolved') {
-      const held = heldAt.get(event.callId);
-      if (held === undefined) continue;
+    const ended = heldEndOf(event);
+    const held = ended === undefined ? undefined : heldAt.get(ended.callId);
+    if (ended !== undefined && held !== undefined && 'seq' in event) {
       intervals.push({ from: held.seq, to: event.seq });
-      if (event.outcome !== 'withdrawn') {
+      if (ended.outcome !== 'withdrawn') {
         resolvedByPerson += 1;
         holdLatenciesMs.push(event.createdAt - held.createdAt);
       }
@@ -94,7 +94,7 @@ const mandateFactsOf = (transcript: RecordedRun): RunMandateFacts => {
     if (event.type === 'tool.completed' && event.denial?.source === 'held') blockedByHeldCall += 1;
     if (event.type === 'run.quiescent' || (event.type === 'run.status' && event.to === 'WAITING_HUMAN')) waitedForPerson = true;
   }
-  const resolved = new Set(events.flatMap((event) => (event.type === 'tool.held.resolved' ? [event.callId] : [])));
+  const resolved = new Set(events.flatMap((event) => heldEndOf(event)?.callId ?? []));
   for (const [callId, held] of heldAt) if (!resolved.has(callId)) intervals.push({ from: held.seq, to: Number.POSITIVE_INFINITY });
   const duringHold = (seq: number): boolean => intervals.some((interval) => seq > interval.from && seq < interval.to);
   return {

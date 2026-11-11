@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import type { SecretStore } from '@momonga/foundation';
 import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
-import { FAKE_LEASE, UNCONFIGURED_NETWORK, testLocks, testKernelLock } from '@momonga/testkit';
+import { FAKE_LEASE, UNCONFIGURED_NETWORK, testLocks, testKernelLock, waitFor } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import { createSession, inertSandbox, makeRuntimeFixture, writeUserSettings } from './helpers.ts';
 
@@ -73,12 +73,14 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
   const authorize = async (value: string) => {
     tokens = value;
     await toolRuntime.mcpAdmin.startAuthorization(session.id, 'docs', new AbortController().signal);
-    for (let turn = 0; turn < 200; turn += 1) {
+    const settledView = () => {
       const view = toolRuntime.mcpAdmin.authorization(session.id, 'docs');
-      if (view !== undefined && view.status !== 'awaiting_user') return view;
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-    throw new Error('the authorization did not settle');
+      return view !== undefined && view.status !== 'awaiting_user' ? view : undefined;
+    };
+    await waitFor(() => settledView() !== undefined, { description: 'the authorization to settle' });
+    const view = settledView();
+    if (view === undefined) throw new Error('the authorization did not settle');
+    return view;
   };
   return { f, written, authorize, directory: path.join(f.temp.paths.state, 'mcp-credentials') };
 };

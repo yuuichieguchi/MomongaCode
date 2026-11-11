@@ -14,9 +14,6 @@ const wheel = (button: 'wheel-up' | 'wheel-down', row: number): TerminalEvent =>
 
 const CTRL_O = '\u000f';
 
-const KEY_GAP_MS = 100;
-const apart = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, KEY_GAP_MS));
-
 const screenRowOf = (app: Instance, text: string): number => (app.lastFrame() ?? '').split('\n').findIndex((line) => line.includes(text)) + 1;
 
 const TRUST_HINT = 'up/down to move · enter to choose · esc: No, continue without its project settings';
@@ -115,7 +112,6 @@ describe('the tool approval is the selection component and decides at once', () 
     const { app, backend } = await approving([ALLOW]);
     expect(app.lastFrame()).toContain('1-9 or enter to choose · up/down to move · ctrl+c: cancel the run');
     app.stdin.write(KEYS.escape);
-    await apart();
     app.stdin.write('1');
     await backend.called('approve:ap1:o1');
     expect(backend.calls).not.toContain('cancel:run-1');
@@ -154,9 +150,7 @@ describe('the tool approval is the selection component and decides at once', () 
     await untilFrame(app, 'sending...');
     app.stdin.write('2');
     app.stdin.write(KEYS.enter);
-    await apart();
     app.stdin.write(KEYS.escape);
-    await apart();
     terminal.emit(press(rejectRow));
     backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
     await untilFrame(app, (shown) => !shown.includes('Permission requested'));
@@ -212,7 +206,6 @@ describe('the tool approval is the selection component and decides at once', () 
     app.stdin.write('\u001b[6~');
     await untilFrame(app, 'reason 29');
     app.stdin.write('1');
-    await apart();
     app.stdin.write(KEYS.escape);
     await untilFrame(app, '2. Reject once');
     expect(backend.calls.filter((call) => call.startsWith('approve:') || call.startsWith('cancel:'))).toEqual([]);
@@ -294,10 +287,10 @@ describe('the sandbox-off dialog is decided only by enter and starts on the safe
     app.stdin.write('1');
     await untilFrame(app, '› 1. Continue');
     expect(app.lastFrame()).toContain('The sandbox is off');
-    await apart();
     app.stdin.write(KEYS.escape);
     await untilFrame(app, (shown) => !shown.includes('The sandbox is off'));
-    await quiet();
+    app.stdin.write('typed');
+    await untilFrame(app, '> typed');
     expect(backend.planCalls.map((call) => call.route)).not.toContain('sign-in/begin');
     app.unmount();
   });

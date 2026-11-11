@@ -365,11 +365,11 @@ const drive = async (
   const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
   const systemPromptDigest = sha256Hex(systemPrompt);
   const env = await tools.envFor(session, control.signal);
-  const skills = await options.skills.load(session);
+  const skills = await options.skills.load(session, control.signal);
   const admit = createSkillAdmission(() => ctx);
   const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name), admit });
   const recalled = await options.memories.load(session, signalUntil(run.deadlineAt, clock.now(), control.signal));
-  const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session) : undefined;
+  const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session, control.signal) : undefined;
   const agentTool = options.agents === undefined ? undefined : agentSet?.tool(options.agents.runs);
   const toolSet = await tools.toolSet(run.id, {
     signal: control.signal,
@@ -396,7 +396,9 @@ const drive = async (
     await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: roleModelNotConfiguredText(lostRole, newRoles[lostRole] ?? '') } });
     return;
   }
-  const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories }, session);
+  const completionPin = pinned === undefined ? await completionPinFor({ run, session, settings: options.settings }) : undefined;
+  const { delegation } = delegationOf((pinned ?? completionPin ?? {}) as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts());
+  const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories, delegation }, session);
   const startRefusal = policyRefusal(startVerdict);
   if (startRefusal !== undefined) {
     await terminals.finish('FAILED', { error: startRefusal });
@@ -420,7 +422,7 @@ const drive = async (
             ...(await tokenPinFor({ store: options.store, settings: options.settings, session, run })),
             ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run })),
           },
-          ...(await completionPinFor({ run, session, settings: options.settings })),
+          ...completionPin,
         }
       : pinned;
   const startOffered = offeredRecordFor(journal.state.offeredTools, pins.token?.deferred ?? []);
@@ -548,7 +550,7 @@ const drive = async (
       release: () => options.store.releaseBudget(run.id),
       tail: Promise.resolve(),
     },
-    ...delegationOf(pins as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts()),
+    ...(delegation === undefined ? {} : { delegation }),
     toolSet: offeredSet,
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,

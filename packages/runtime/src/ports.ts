@@ -68,7 +68,7 @@ export type UserInputPort = {
 };
 
 export type SkillsPort = {
-  load(session: Session): Promise<SkillSet>;
+  load(session: Session, signal: AbortSignal): Promise<SkillSet>;
 };
 
 export type RecallCapacity = { capabilities: Capabilities; memoryShare?: number | undefined };
@@ -99,7 +99,7 @@ export type HistoryPort = {
   load(session: Session): Promise<HistorySet>;
 };
 
-export type AgentCatalogPort = { load(session: Session): Promise<AgentSet> };
+export type AgentCatalogPort = { load(session: Session, signal: AbortSignal): Promise<AgentSet> };
 
 export type AgentsPort = AgentCatalogPort & { runs: ChildRuns };
 

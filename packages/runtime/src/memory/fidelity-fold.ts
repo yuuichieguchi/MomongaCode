@@ -1,16 +1,13 @@
 import { textOfItem } from '@momonga/context';
 import { isRecord } from '@momonga/foundation';
 import { createCallRunTracker } from '@momonga/memory';
-import { tokenMatcherOf } from '@momonga/protocol';
-import type { ClaimedToken, FidelityClaim, RunEvent } from '@momonga/protocol';
+import { EXECUTED_TEXT_EVENT_TYPES, readExecutedText, tokenMatcherOf } from '@momonga/protocol';
+import type { ClaimedToken, ExecutedTextHandlers, FidelityClaim, RunEvent } from '@momonga/protocol';
 import { VERDICT_RANKS } from '@momonga/store';
 import type { FidelityVerdict, FidelityVerdictRow, VerdictRank } from '@momonga/store';
 
 export const FIDELITY_EVENT_TYPES = [
-  'tool.call',
-  'tool.started',
-  'tool.completed',
-  'tool.reconciled',
+  ...EXECUTED_TEXT_EVENT_TYPES,
   'user.message',
   'plan.updated',
   'instructions.loaded',
@@ -123,31 +120,42 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string,
     countMaxed();
   };
 
+  const executedText: ExecutedTextHandlers<Phase> = {
+    'tool.call': (event, phase) => {
+      calls.set(event.callId, { leaves: stringLeavesOf(event.rawInput), seq: event.seq, phase });
+    },
+    'tool.started': () => undefined,
+    'tool.completed': (event, phase) => {
+      const pending = calls.get(event.callId);
+      calls.delete(event.callId);
+      if (event.denial !== undefined) return;
+      if (ran.ran(event)) for (const leaf of pending?.leaves ?? []) offer(leaf, 'executed', phase, event.seq);
+      offer(event.output, 'executed', phase, event.seq);
+      for (const file of event.files ?? []) offer(file.path, 'executed', phase, event.seq);
+      if (event.handle !== undefined) noteHandle(event.handle, phase, event.seq);
+    },
+    'tool.reconciled': (event, phase) => {
+      const pending = calls.get(event.callId);
+      calls.delete(event.callId);
+      if (event.outcome === 'already_applied') for (const leaf of pending?.leaves ?? []) offer(leaf, 'executed', phase, event.seq);
+      offer(event.output, 'executed', phase, event.seq);
+    },
+    'tool.held.resolved': (event, phase) => {
+      offer(event.output, 'executed', phase, event.seq);
+    },
+    'verification.completed': (event, phase) => {
+      offer(event.command, 'executed', phase, event.seq);
+      offer(event.output, 'executed', phase, event.seq);
+      if (event.handle !== undefined) noteHandle(event.handle, phase, event.seq);
+    },
+  };
+
   const process = (event: RunEvent, phase: Phase): void | Promise<void> => {
     ran.observe(event);
+    if (readExecutedText(event, executedText, phase)) return;
     const executed = (text: string): void => offer(text, 'executed', phase, event.seq);
     const stated = (text: string): void => offer(text, 'stated', phase, event.seq);
     switch (event.type) {
-      case 'tool.call':
-        calls.set(event.callId, { leaves: stringLeavesOf(event.rawInput), seq: event.seq, phase });
-        return;
-      case 'tool.completed': {
-        const pending = calls.get(event.callId);
-        calls.delete(event.callId);
-        if (event.denial !== undefined) return;
-        if (ran.ran(event)) for (const leaf of pending?.leaves ?? []) executed(leaf);
-        executed(event.output);
-        for (const file of event.files ?? []) executed(file.path);
-        if (event.handle !== undefined) noteHandle(event.handle, phase, event.seq);
-        return;
-      }
-      case 'tool.reconciled': {
-        const pending = calls.get(event.callId);
-        calls.delete(event.callId);
-        if (event.outcome === 'already_applied') for (const leaf of pending?.leaves ?? []) executed(leaf);
-        executed(event.output);
-        return;
-      }
       case 'user.message': {
         const task = phase === 'own' && !taskSeen;
         if (task) taskSeen = true;

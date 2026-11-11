@@ -24,7 +24,9 @@ export const createHistoryFeed = (printed = 0): HistoryFeed => {
     next: (source, settled) => {
       const chunk: Row[] = [];
       while (entryIndex < settled && chunk.length < SWITCH_CHUNK_ROWS) {
-        const rows = source.rowsOf(source.at(entryIndex));
+        const entry = source.at(entryIndex);
+        const rows = source.rowsOf(entry);
+        if (!source.parsed(entry)) break;
         const taken = rows.slice(rowOffset, rowOffset + SWITCH_CHUNK_ROWS - chunk.length);
         chunk.push(...taken);
         rowOffset += taken.length;

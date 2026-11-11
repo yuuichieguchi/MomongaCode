@@ -7,7 +7,7 @@ import { expectRejected } from './support.ts';
 
 const SPEC_DIR = path.resolve(import.meta.dirname, '../../src/operations/specs');
 
-const CATALOGUE = ['GitBranch', 'GitStage', 'GitFetch', 'GitUpdate', 'GitCommit', 'GitPush', 'PullRequestStatus', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'];
+const CATALOGUE = ['GitBranch', 'GitStage', 'GitFetch', 'GitUpdate', 'GitCommit', 'GitPush', 'PullRequestStatus', 'PullRequestComments', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'];
 
 const rawSpecs = (): Array<Record<string, unknown>> =>
   fs
@@ -58,9 +58,16 @@ describe('the operation catalogue', () => {
     expect(specOf(name).approval).toBe(approval);
   });
 
-  it('marks PullRequestStatus as the only read-only operation, with no effect', () => {
-    expect(OPERATION_SPECS.filter((spec) => spec.sideEffect === 'read_only').map((spec) => spec.name)).toEqual(['PullRequestStatus']);
+  it('marks the two operations that read a pull request as the only read-only operations, with no effect', () => {
+    expect(OPERATION_SPECS.filter((spec) => spec.sideEffect === 'read_only').map((spec) => spec.name).sort()).toEqual(['PullRequestComments', 'PullRequestStatus']);
     expect(specOf('PullRequestStatus').effect).toBeUndefined();
+    expect(specOf('PullRequestComments').effect).toBeUndefined();
+  });
+
+  it('reads the checks of PullRequestStatus for the head commit the forge gave for the pull request in the same observation', () => {
+    const probes = specOf('PullRequestStatus').observe;
+    expect(probes.map((probe) => probe.via).map((via) => ('forge' in via ? via.forge : 'argv'))).toEqual(['getPullRequest', 'listChecks']);
+    expect(probes[1]?.via).toMatchObject({ args: { headSha: '{seen.pr.headSha}' }, shape: 'lines' });
   });
 
   it('gives every operation that changes state exactly one effect and at least one probe', () => {
@@ -105,6 +112,35 @@ describe('loading an operation spec', () => {
 
   it('rejects an approval class other than rule or always', () => {
     expectRejected(() => parseOperationSpec({ ...rawOf('PullRequestMerge'), approval: 'never' }), OperationSpecError);
+  });
+
+  const messageOf = (attempt: () => unknown): string => {
+    try {
+      attempt();
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return '';
+  };
+
+  const statusWith = (checks: Record<string, unknown>): Record<string, unknown> => {
+    const raw = rawOf('PullRequestStatus');
+    const [pr] = raw['observe'] as Array<Record<string, unknown>>;
+    return { ...raw, observe: [pr, { id: 'checks', via: { forge: 'listChecks', args: { headSha: '{seen.pr.headSha}' }, ...checks } }] };
+  };
+
+  it('rejects a probe that lists every item as lines without the forms of a line', () => {
+    expect(messageOf(() => parseOperationSpec(statusWith({ shape: 'lines' })))).toBe('PullRequestStatus: the probe checks lists every item and must give the forms of a line in lines');
+  });
+
+  it('rejects the forms of a line on a probe that does not list every item', () => {
+    expect(messageOf(() => parseOperationSpec(statusWith({ shape: 'list', lines: ['{item.name}'] })))).toBe('PullRequestStatus: the probe checks gives the forms of a line but does not list every item (shape lines)');
+  });
+
+  it('rejects a probe that reads a value of this observation from a probe that does not come before it', () => {
+    const raw = rawOf('PullRequestStatus');
+    const [pr, checks] = raw['observe'] as Array<Record<string, unknown>>;
+    expect(messageOf(() => parseOperationSpec({ ...raw, observe: [checks, pr] }))).toBe('PullRequestStatus: the probe checks reads seen.pr.headSha, but no probe named pr comes before it');
   });
 });
 

@@ -8,7 +8,7 @@ import type { McpStdioServerConfig } from '@momonga/config';
 import { createStdioTransport, type StdioTransport } from '@momonga/mcp';
 import { groupAlive, holderGroups } from '@momonga/foundation';
 import type { TerminateOutcome } from '@momonga/foundation';
-import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, testProcessInspector } from '@momonga/testkit';
+import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, testProcessInspector, pollUntil } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -143,13 +143,9 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
   return { transport, messages, errors, events, closeCount: () => closes, request };
 };
 
-const until = async (predicate: () => boolean | Promise<boolean>, description: string): Promise<void> => {
-  const deadline = Date.now() + 20000;
-  while (!(await predicate())) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${description}`);
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-};
+const CONDITION_BOUND_MS = 20_000;
+
+const until = (predicate: () => boolean | Promise<boolean>, description: string): Promise<void> => pollUntil(predicate, { description, boundMs: CONDITION_BOUND_MS });
 
 const trackGrandchild = (pid: number): void => {
   cleanups.push(() => {
@@ -390,8 +386,6 @@ const collectUnhandledRejections = (): unknown[] => {
   return seen;
 };
 
-const macrotask = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
-
 const failingTerminate = (calls: number[]) => (pgid: number): Promise<TerminateOutcome> => {
   calls.push(pgid);
   return Promise.reject(new Error('terminate failed for test'));
@@ -478,8 +472,7 @@ describe('createStdioTransport terminate failures on internal close paths', () =
     const pgid = transport.pgid;
     await transport.send({ jsonrpc: '2.0', id: 1, method: 'exit', params: { code: 3 } });
     await until(() => closeCount() === 1, 'onclose after exit');
-    await macrotask();
-    await macrotask();
+    await until(() => errors.some((error) => error.message.includes('terminate failed for test')), 'the terminate failure to be reported');
     expect(calls).toEqual([pgid]);
     expect(closeCount()).toBe(1);
     expect(errors.map((error) => error.message)).toContainEqual(expect.stringContaining('terminate failed for test'));
@@ -493,8 +486,7 @@ describe('createStdioTransport terminate failures on internal close paths', () =
     const pgid = transport.pgid;
     await transport.send({ jsonrpc: '2.0', id: 1, method: 'oversized', params: { bytes: MAX_MESSAGE_BYTES + 1024 } });
     await until(() => closeCount() === 1, 'onclose after oversized message');
-    await macrotask();
-    await macrotask();
+    await until(() => errors.some((error) => error.message.includes('terminate failed for test')), 'the terminate failure to be reported');
     expect(calls).toEqual([pgid]);
     expect(closeCount()).toBe(1);
     expect(errors.map((error) => error.message)).toContainEqual(expect.stringContaining('terminate failed for test'));
@@ -506,7 +498,7 @@ describe('createStdioTransport terminate failures on internal close paths', () =
     const calls: number[] = [];
     const { transport, closeCount } = await harness({ modes: ['--linger'], closeGraceMs: 50, terminate: failingTerminate(calls) });
     await expect(transport.close()).rejects.toThrow('terminate failed for test');
-    await macrotask();
+    await until(() => closeCount() === 1, 'onclose after the explicit close');
     expect(calls).toEqual([transport.pgid]);
     expect(closeCount()).toBe(1);
     expect(unhandled).toEqual([]);
@@ -561,12 +553,9 @@ describe('createStdioTransport pipes after close', () => {
     });
     const escapedPid = await readEscapedPid(readyFile);
     await until(() => stdout.includes('closed\n'), 'host reported onclose');
-    const outcome = await Promise.race([
-      exited.then((code) => ({ exited: true, code })),
-      new Promise<{ exited: false }>((resolve) => setTimeout(() => resolve({ exited: false }), 3000)),
-    ]);
+    const code = await exited;
     expect(pidAlive(escapedPid)).toBe(true);
-    expect(outcome).toEqual({ exited: true, code: 0 });
+    expect(code).toBe(0);
   });
 });
 
@@ -577,8 +566,7 @@ describe('createStdioTransport terminate failure reporting', () => {
     await transport.send({ jsonrpc: '2.0', id: 1, method: 'oversized', params: { bytes: MAX_MESSAGE_BYTES + 1024 } });
     await until(() => closeCount() === 1, 'onclose after oversized message');
     await until(() => transport.diagnostics().exit !== null, 'leader exit after stdin end');
-    await macrotask();
-    await macrotask();
+    await until(() => errors.some((error) => error.message.includes('terminate failed for test')), 'the terminate failure to be reported');
     expect(errors.filter((error) => error.message.includes('terminate failed for test'))).toHaveLength(1);
     expect(closeCount()).toBe(1);
   });

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ListableCredentialStore } from '@momonga/foundation';
 import { NEVER_ENDED, PROFILE_ID, readRecord, recordKey, signedIn, startHarness, writeSigningOut } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
+import { afterMicrotasks } from '@momonga/testkit';
 
 const harnesses: Harness[] = [];
 
@@ -40,7 +41,10 @@ const holdingReads = (inner: ListableCredentialStore, key: string): HeldRead => 
   };
 };
 
-const nextTurn = (): Promise<'still waiting'> => new Promise((resolve) => setImmediate(() => resolve('still waiting')));
+const nextTurn = async (): Promise<'still waiting'> => {
+  await afterMicrotasks();
+  return 'still waiting';
+};
 
 describe('close() of the plan sessions waits for every load in flight (P-108)', () => {
   it('a load whose store read outlives the close: close() resolves after the read ended, the load adopts nothing and resumes no sign-out', async () => {

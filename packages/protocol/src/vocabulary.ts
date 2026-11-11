@@ -181,6 +181,16 @@ const BANNED_MATCHERS: readonly BannedMatcher[] = CONCEPTS.flatMap((concept) => 
 export const bannedVariantsIn = (text: string): BannedUse[] =>
   BANNED_MATCHERS.filter((matcher) => matcher.expression.test(text)).map(({ concept, word, variant, keptFor }) => ({ concept, word, variant, keptFor }));
 
+const SHELL_PLAIN_ARGUMENT = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+export const shellQuote = (argument: string): string => (SHELL_PLAIN_ARGUMENT.test(argument) ? argument : `'${argument.replaceAll("'", "'\\''")}'`);
+
+export const BYPASS_OPT_IN_OPTION = '--dangerously-skip-permissions';
+
+export const PERMISSION_MODE_OPTION = '--permission-mode';
+
+export const PRINT_OPTION = '--print';
+
 export const reopenSessionCommand = (sessionId: string): string => `${WORDS.command} --resume ${sessionId}`;
 
 export const CHOOSE_SESSION_COMMAND = `${WORDS.command} --resume`;
@@ -192,6 +202,10 @@ export const ADD_MODEL_COMMAND = `${WORDS.command} models add`;
 export const SIGN_IN_COMMAND = `${WORDS.command} auth login`;
 
 export const TUI_SIGN_IN_COMMAND = '/login';
+
+export const signOutCommand = (account: string): string => `${WORDS.command} auth logout ${account}`;
+
+export const TUI_SIGN_OUT_COMMAND = '/logout';
 
 export type KeptWork = { readonly kind: 'sessions'; readonly sessionIds: readonly string[] } | { readonly kind: 'run'; readonly runId: string } | { readonly kind: 'unnamed' };
 
@@ -252,13 +266,24 @@ export type MessageInputs = {
   sessionInOtherFolder: [given: { readonly id: string; readonly folder: string }];
   noSessionToContinue: [given: { readonly folder: string }];
   notAnId: [given: { readonly value: string }];
+  storedBypassNeedsOptIn: [given: { readonly id: string }];
+  optionNeedsPrint: [given: { readonly option: string }];
+  optionNeedsInteractive: [given: { readonly option: string }];
+  promptGivenTwice: [given: { readonly prompt: string }];
+  resumeNeedsIdToPrint: [];
+  bypassNotStarted: [given: { readonly id: string }];
   handoverFailed: [given: { readonly toVersion: string; readonly fromVersion: string; readonly reason: string; readonly kept: KeptWork }];
   restoreRefused: [given: { readonly reason: string; readonly kept: KeptWork }];
   aboutModel: [given: { readonly model: string; readonly text: string }];
   modelNotReady: [given: { readonly model: string; readonly reason: string }];
   modelIdChanged: [given: { readonly server: string; readonly model: string; readonly listed: string; readonly entry: string }];
   serverSocketPathTooLong: [given: { readonly model: string; readonly byteLength: number; readonly directory: string; readonly code: string }];
+  signInIdentityQuestion: [given: { readonly provider: string; readonly identity: string; readonly account: string }];
+  signInIdentityNotConfirmed: [given: { readonly identity: string; readonly account: string; readonly command: string }];
+  planRecordUnreadable: [given: { readonly account: string; readonly cause: string | undefined; readonly signInCommand: string }];
+  accountWithoutModel: [given: { readonly provider: string; readonly account: string }];
   serverFormNotOffered: [given: { readonly server: string; readonly platform: string; readonly accepted: readonly string[]; readonly offered: readonly string[] }];
+  daemonStarting: [];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -273,7 +298,15 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   sessionNotFound: (_surface, given) => `No ${WORDS.session} has the id ${given.id}.`,
   sessionIdTooShort: (_surface, given) => `No ${WORDS.session} has the id ${given.id}. A shortened id needs at least ${given.minimum} characters.`,
   sessionAmbiguous: (_surface, given) => `${given.id} matches more than one ${WORDS.session}: ${given.matches.join(', ')}`,
-  sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${given.folder} && ${reopenSessionCommand(given.id)}`,
+  sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${shellQuote(given.folder)} && ${reopenSessionCommand(given.id)}`,
+  optionNeedsPrint: (_surface, given) => `${given.option} applies only with ${PRINT_OPTION}; the interactive ${WORDS.session} cannot apply it.`,
+  optionNeedsInteractive: (_surface, given) => `${given.option} applies only to the interactive ${WORDS.session}; it cannot be given with ${PRINT_OPTION}.`,
+  promptGivenTwice: (_surface, given) => `${PRINT_OPTION} takes the prompt as its value, so ${JSON.stringify(given.prompt)} cannot be given as well.`,
+  resumeNeedsIdToPrint: () => `--resume needs a ${WORDS.session} id when ${PRINT_OPTION} is used.`,
+  storedBypassNeedsOptIn: (_surface, given) =>
+    `The ${WORDS.session} ${given.id} is stored in the bypassPermissions mode, and this command does not give ${BYPASS_OPT_IN_OPTION}. Reopen it with ${BYPASS_OPT_IN_OPTION} to stay in that mode, or with ${PERMISSION_MODE_OPTION} <mode> to leave it.`,
+  bypassNotStarted: (_surface, given) =>
+    `The ${WORDS.session} ${given.id} was not started with ${BYPASS_OPT_IN_OPTION}, so a resume cannot move it into the bypassPermissions mode. Start a new ${WORDS.session} with ${BYPASS_OPT_IN_OPTION}.`,
   notAnId: (_surface, given) => `${JSON.stringify(given.value)} is not an id.`,
   noSessionToContinue: (_surface, given) => `No ${WORDS.session} to continue in the ${WORDS.folder} ${given.folder}.`,
   handoverFailed: (surface, given) =>
@@ -288,8 +321,31 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
       model: given.model,
       text: `its ${WORDS.server} socket path is ${given.byteLength} bytes, and the system refused to bind a socket path of that length in ${given.directory} (${given.code}); choose a shorter ${WORDS.server} name`,
     }),
+  signInIdentityQuestion: (_surface, given) => `The sign-in at ${given.provider} is for ${given.identity}. Save this account under the label ${given.account}?`,
+  signInIdentityNotConfirmed: (surface, given) =>
+    `The sign-in for ${given.identity} was not saved under the label ${given.account}, because the account was not confirmed. Run ${given.command} to sign in again${SIGN_IN_AGAIN_UNASKED[surface]}.`,
+  planRecordUnreadable: (surface, given) =>
+    `The saved record of ${given.account} cannot be read${given.cause === undefined ? '' : ` (${given.cause})`}. Run ${given.signInCommand} to replace it with a new sign-in, or ${forgetRecordCommand(surface, given.account)} to forget it on this computer; forgetting it does not revoke the session at the provider.`,
+  accountWithoutModel: (surface, given) => `No ${WORDS.model} uses this account yet. ${ACCOUNT_MODEL_STEP[surface](given)}`,
   serverFormNotOffered: (_surface, given) =>
     `the ${WORDS.server} ${JSON.stringify(given.server)} cannot be used on ${given.platform}: it accepts only the socket forms [${given.accepted.join(', ')}], and ${given.platform} offers [${given.offered.join(', ')}]`,
+  daemonStarting: () => `The ${WORDS.daemon} is still starting and accepts no new work yet. The request was not run; send it again.`,
+};
+
+const ACCOUNT_MODEL_STEP: Readonly<Record<Surface, (given: { readonly provider: string; readonly account: string }) => string>> = {
+  cli: (given) => `Run ${WORDS.command} models catalog ${given.account} to list its ${WORDS.model}s, then ${ADD_MODEL_COMMAND} --plan ${given.provider} --account ${given.account} --model <${WORDS.ownName}> --yes to add one.`,
+  tui: () => `Use /model to choose one of its ${WORDS.model}s.`,
+  acp: (given) => ACCOUNT_MODEL_STEP.cli(given),
+  gateway: (given) => ACCOUNT_MODEL_STEP.cli(given),
+};
+
+const forgetRecordCommand = (surface: Surface, account: string): string => (surface === 'tui' ? TUI_SIGN_OUT_COMMAND : signOutCommand(account));
+
+const SIGN_IN_AGAIN_UNASKED: Readonly<Record<Surface, string>> = {
+  cli: ', or add --yes to save the account without the question',
+  tui: '',
+  acp: '',
+  gateway: '',
 };
 
 export const MESSAGE_KEYS = Object.keys(MESSAGES) as readonly MessageKey[];

@@ -1,6 +1,6 @@
 import { isRecord } from '@momonga/foundation';
-import { escapeXmlAttribute } from '@momonga/protocol';
-import type { ContributionKind, RunEvent } from '@momonga/protocol';
+import { escapeXmlAttribute, readExecutedText } from '@momonga/protocol';
+import type { ContributionKind, ExecutedTextHandlers, RunEvent } from '@momonga/protocol';
 
 export type InjectedItem = { kind: ContributionKind; id: string; text: string; fromSeq: number; untilSeq?: number };
 
@@ -221,6 +221,10 @@ export const measureContribution = ({
     nextItemSeq += 1;
   };
 
+  const retainBesideItems = (text: string): void => {
+    segments.push({ itemSeq: nextItemSeq, text });
+  };
+
   const pinLayers = (body: unknown): void => {
     for (const layer of pinnedLayersOf(body)) {
       if (pinnedSeen.has(layer)) continue;
@@ -243,16 +247,20 @@ export const measureContribution = ({
     });
   };
 
+  const executedText: ExecutedTextHandlers = {
+    'tool.call': () => undefined,
+    'tool.started': () => undefined,
+    'tool.completed': (event) => retain(event.memories === undefined ? event.output : withoutSearchedNotes(event.output, event.memories, injected, unit)),
+    'tool.reconciled': (event) => retain(event.output),
+    'tool.held.resolved': (event) => retain(event.output),
+    'verification.completed': (event) => retainBesideItems(`${event.command}\n${event.output}`),
+  };
+
   for (const event of events) {
+    readExecutedText(event, executedText, undefined);
     switch (event.type) {
       case 'user.message':
         retain(event.text);
-        break;
-      case 'tool.completed':
-        retain(event.memories === undefined ? event.output : withoutSearchedNotes(event.output, event.memories, injected, unit));
-        break;
-      case 'tool.reconciled':
-        retain(event.output);
         break;
       case 'context.compacted':
         segments = segments.filter((segment) => segment.itemSeq > event.replacedThroughSeq);

@@ -25,7 +25,7 @@ import { APPROVAL_STATUSES, OPERATION_EFFECT_OUTCOMES, IMAGE_MEDIA_TYPES, INBOX_
 import type { ImageMediaType, InboxDelivery, InboxRowView, MessageAttachment, UserShellRecord, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import { UNPRICED_CODES } from './token-anatomy.ts';
-import type { BilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
+import type { BilledDetail, NewBilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
 
 const DAY_MS = 86_400_000;
 const operationEffect: JsonSchema = closed({ operation: string, target: string, outcome: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['operation', 'target', 'outcome']);
@@ -48,6 +48,7 @@ const autoClassifierView = closed(
       { recordedAt: string, falseAllows: nonNegativeInteger, total: nonNegativeInteger, upperBound: { type: 'number', minimum: 0, maximum: 1 }, failedBound: enumOf(AUTO_FIT_FAILED_BOUNDS) },
       ['recordedAt', 'falseAllows', 'total', 'upperBound'],
     ),
+    refusal: closed({ file: string, reason: string }, ['file', 'reason']),
   },
   ['model', 'key', 'measurement'],
 );
@@ -129,6 +130,8 @@ const elicitationAnswer = {
     closed({ action: constant('cancel') }, ['action']),
   ],
 } as const satisfies JsonSchema;
+
+const heldLink = closed({ approvalId: string }, ['approvalId']);
 
 const heldCallView = closed({ callId: string, approvalId: string, tool: string, reason: string, sinceSeq: nonNegativeInteger }, ['callId', 'approvalId', 'tool', 'reason', 'sinceSeq']);
 
@@ -342,7 +345,13 @@ const tokenAnatomy = closed(
   ['estimated', 'total', 'layers', 'tools'],
 );
 
-const modelCost = closed({ amount: { type: 'number', minimum: 0 }, units: { type: 'string', pattern: '^[0-9]+$' }, currency: constant('USD'), priceVersion: string }, ['amount', 'currency', 'priceVersion']);
+const costUnits: JsonSchema = { type: 'string', pattern: '^[0-9]+$' };
+
+const modelCostProperties = { amount: { type: 'number', minimum: 0 }, currency: constant('USD'), priceVersion: string };
+
+const modelCost = closed({ ...modelCostProperties, units: costUnits }, ['amount', 'units', 'currency', 'priceVersion']);
+
+const recordedModelCost = closed({ ...modelCostProperties, units: nullable(costUnits) }, ['amount', 'units', 'currency', 'priceVersion']);
 
 const unpricedOutcome = closed({ code: enumOf(UNPRICED_CODES), reason: string }, ['code', 'reason']);
 
@@ -354,12 +363,14 @@ const withOnePriceOutcome = (schema: JsonSchema): JsonSchema => ({ ...schema, ..
 
 const callTiming = closed({ firstEventMs: nonNegativeInteger, durationMs: nonNegativeInteger }, ['durationMs']);
 
-const billedDetail = withOnePriceOutcome(
-  closed(
-    { responseId: string, cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost: modelCost, unpriced: unpricedOutcome, timing: callTiming },
-    [],
-  ),
-);
+const billedDetailOf = (cost: JsonSchema): JsonSchema =>
+  withOnePriceOutcome(
+    closed({ responseId: string, cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost, unpriced: unpricedOutcome, timing: callTiming }, []),
+  );
+
+const billedDetail = billedDetailOf(recordedModelCost);
+
+const newBilledDetail = billedDetailOf(modelCost);
 
 const recoveryEpisodeView = closed(
   {
@@ -474,7 +485,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
             },
             ['input_tokens', 'output_tokens', 'total_tokens'],
           ),
-          momonga: withOnePriceOutcome(closed({ cacheWriteInputTokens: nonNegativeInteger, cacheReadNotReported: { type: 'boolean', const: true }, cost: modelCost, unpriced: unpricedOutcome }, [])),
+          momonga: withOnePriceOutcome(closed({ cacheWriteInputTokens: nonNegativeInteger, cacheReadNotReported: { type: 'boolean', const: true }, cost: recordedModelCost, unpriced: unpricedOutcome }, [])),
           timing: callTiming,
         },
         ['status', 'output', 'usage'],
@@ -597,6 +608,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
       ...appliedDiffFields,
       effect: operationEffect,
+      held: heldLink,
     },
     required: ['callId', 'status', 'output'],
   },
@@ -634,7 +646,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     properties: { callId: string, approvalId: string, outcome: enumOf(HELD_OUTCOMES), status: enumOf(['completed', 'failed']), output: string },
     required: ['callId', 'approvalId', 'outcome', 'status', 'output'],
   },
-  'run.quiescent': { properties: { held: { type: 'array', items: heldCallView } }, required: ['held'] },
+  'run.quiescent': { properties: { held: { type: 'array', items: heldCallView }, onQuiescent: enumOf(QUIESCENT_BEHAVIOURS) }, required: ['held'] },
   'model.rejected': {
     properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string, target: string },
     required: ['step', 'attempt', 'reason'],
@@ -659,7 +671,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
-    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect, ...appliedDiffFields },
+    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect, held: heldLink, ...appliedDiffFields },
     required: ['callId', 'outcome', 'output'],
   },
   'tool.waiting': {
@@ -703,7 +715,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       responseId: string,
       cachedInputTokens: nonNegativeInteger,
       cacheWriteInputTokens: nonNegativeInteger,
-      cost: modelCost,
+      cost: recordedModelCost,
       unpriced: unpricedOutcome,
       timing: callTiming,
       target: string,
@@ -844,6 +856,7 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   priceVersions: { type: 'array', items: string },
   unpriced: unpricedCounts,
   priceNotRecordedCalls: nonNegativeInteger,
+  legacyPrecisionCalls: nonNegativeInteger,
 };
 const roleCostRequired = Object.keys(costTotalsProperties);
 const costTotalsRequired = [...roleCostRequired, 'roles'];
@@ -964,8 +977,8 @@ const costBreakdownView = closed(
       ),
     },
     cost: closed(
-      { amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger, unpriced: unpricedCounts, priceNotRecordedCalls: nonNegativeInteger, priceVersions: { type: 'array', items: string } },
-      ['amount', 'currency', 'unpricedCalls', 'unpriced', 'priceNotRecordedCalls', 'priceVersions'],
+      { amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger, unpriced: unpricedCounts, priceNotRecordedCalls: nonNegativeInteger, legacyPrecisionCalls: nonNegativeInteger, priceVersions: { type: 'array', items: string } },
+      ['amount', 'currency', 'unpricedCalls', 'unpriced', 'priceNotRecordedCalls', 'legacyPrecisionCalls', 'priceVersions'],
     ),
     plan: closed({ calls: nonNegativeInteger, inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger }, ['calls', 'inputTokens', 'outputTokens']),
     unpriced: {
@@ -1258,6 +1271,7 @@ export type RoleCostView = {
   priceVersions: string[];
   unpriced: Partial<Record<UnpricedCode, number>>;
   priceNotRecordedCalls: number;
+  legacyPrecisionCalls: number;
 };
 
 export type CostTotalsView = RoleCostView & { roles: Record<string, RoleCostView> };
@@ -1303,7 +1317,7 @@ export type RecordContextChargeRequest = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
-  detail?: BilledDetail;
+  detail?: NewBilledDetail;
 };
 
 export type ContextChargeResponse = { charge: ContextChargeView };
@@ -1538,17 +1552,20 @@ export const RUN_API_SCHEMAS = {
         createdAt: integer,
         envKeys: { type: 'array', items: string },
         activeRunId: nullable(string),
+        activeRunAt: nullable(integer),
         latestRunId: nullable(string),
+        latestRunAt: nullable(integer),
         additionalDirectories: { type: 'array', items: string },
         lastEventId: nonNegativeInteger,
         autoClassifier: autoClassifierView,
       },
-      ['id', 'cwd', 'permissionMode', 'model', 'bypassAllowed', 'createdAt', 'envKeys', 'activeRunId', 'latestRunId', 'additionalDirectories', 'lastEventId'],
+      ['id', 'cwd', 'permissionMode', 'model', 'bypassAllowed', 'createdAt', 'envKeys', 'activeRunId', 'activeRunAt', 'latestRunId', 'latestRunAt', 'additionalDirectories', 'lastEventId'],
     ),
   ),
   TrustView: root(trustView),
   TrustResponse: root(closed({ trust: trustView }, ['trust'])),
   PutTrustRequest: root(closed({ path: { type: 'string', minLength: 1 }, decision: enumOf(['trusted', 'untrusted']) }, ['path', 'decision'])),
+  McpFolderRequest: root(closed({ cwd: { type: 'string', minLength: 1 }, env: { type: 'object', additionalProperties: string } }, ['cwd', 'env'])),
   RunView: root(runView),
   ApprovalView: root(
     closed(
@@ -1686,7 +1703,7 @@ export const RUN_API_SCHEMAS = {
         inputTokens: nonNegativeInteger,
         outputTokens: nonNegativeInteger,
         totalTokens: nonNegativeInteger,
-        detail: billedDetail,
+        detail: newBilledDetail,
       },
       ['purpose', 'project', 'model', 'inputTokens', 'outputTokens', 'totalTokens'],
     ),

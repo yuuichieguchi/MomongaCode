@@ -49,7 +49,6 @@ describe('supervisor.log and role logs with real children', () => {
       stdout: { write: () => true },
       watchSettings: false,
       startupTimeoutMs: 20_000,
-      orphanReapGraceMs: 200,
     }), (started) => started.abort());
 
     const supervisorLines = (): JsonLine[] => readLines(paths.logFiles.supervisor);

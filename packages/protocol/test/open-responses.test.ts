@@ -31,7 +31,6 @@ import type {
   ReasoningItem,
   ResponseResource,
   StreamEvent,
-  UsageReport,
 } from '@momonga/protocol';
 import { createOpenResponsesValidator, responseResource, textResponseEvents, usageOf } from '@momonga/testkit';
 
@@ -235,16 +234,8 @@ describe('momonga extension shapes', () => {
     expect(countReplyOf(321, 'exact', EXACT_ERROR_SHAPE)).toEqual({ input_tokens: 321, method: 'exact', error_bound: 0, error_shape: EXACT_ERROR_SHAPE });
   });
 
-  it('defines health and usage report shapes', () => {
+  it('defines the health shape', () => {
     expectTypeOf<GatewayHealth['models'][string]['breaker']>().toEqualTypeOf<'closed' | 'open' | 'half-open'>();
     expectTypeOf<GatewayHealth['models'][string]['ok']>().toEqualTypeOf<boolean>();
-    expectTypeOf<UsageReport['run_id']>().toEqualTypeOf<string>();
-    expectTypeOf<UsageReport['steps'][number]>().toEqualTypeOf<{
-      step: number;
-      input_tokens: number;
-      output_tokens: number;
-      total_tokens: number;
-    }>();
-    expectTypeOf<UsageReport['responses'][number]['usage_source']>().toEqualTypeOf<'reported' | 'estimated'>();
   });
 });

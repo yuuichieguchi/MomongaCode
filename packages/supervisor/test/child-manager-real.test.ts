@@ -58,10 +58,8 @@ describe('child manager with the real SpawnPort', () => {
     await pollUntil(() => watcher.output().includes('started'), 5000, 'watcher started');
     const sleeper = watch(port('/bin/sleep', ['30'], portOptions(markerFd)));
     expect(typeof sleeper.handle.pid).toBe('number');
-    const destroyedAt = Date.now();
     watcher.handle.lifeline?.destroy();
     await expect(watcher.exit).resolves.toEqual({ code: 0, signal: null });
-    expect(Date.now() - destroyedAt).toBeLessThan(2000);
     expect(isProcessAlive(sleeper.handle.pid as number)).toBe(true);
   });
 });

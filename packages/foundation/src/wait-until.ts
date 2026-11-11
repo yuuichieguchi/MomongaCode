@@ -5,7 +5,7 @@ export const POLL_INTERVAL_MS = 25;
 
 export type WaitOutcome<T> = { kind: 'found'; value: T } | { kind: 'timed_out' } | { kind: 'aborted' };
 
-export type WaitUntilOptions = { intervalMs: number; deadline: number; signal?: AbortSignal };
+export type WaitUntilOptions = { intervalMs: number; deadline: number; signal?: AbortSignal | undefined };
 
 export const waitUntil = async <T>(timing: Timing, probe: () => Promise<T | undefined>, options: WaitUntilOptions): Promise<WaitOutcome<T>> => {
   const { intervalMs, deadline, signal } = options;

@@ -12,7 +12,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, waitFor } from '@mo
 import { spawn } from '@momonga/testkit/child-process';
 import { groupExists } from './cancel-fixture.ts';
 
-import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
+import { DEADLINE_MS, LEASE_MS, createdRun, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
 
@@ -181,3 +181,81 @@ describe('recovery during verification', () => {
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
   });
 });
+
+describe('the decision after a verification round is read from the journal only', () => {
+  const FIRST = 'echo first failed >&2; exit 1';
+  const SECOND = 'echo second failed >&2; exit 2';
+
+  const enqueueTwo = async (env: Env): Promise<Run> =>
+    createdRun(
+      await env.store.createRunAndEnqueue(env.session.id, {
+        input: 'check it',
+        timeoutMs: DEADLINE_MS - env.clock.now(),
+        limits: {},
+        pins: {},
+        mandate: { completion: { conditions: [{ command: FIRST }, { command: SECOND }] } },
+      } as never),
+    );
+
+  const failedCheck = (command: string): RunEventPayload[] =>
+    [
+      { type: 'verification.started', round: 1, conditionId: conditionIdOf(command), command, mutationSeq: 0, attempt: 1 },
+      { type: 'verification.completed', round: 1, conditionId: conditionIdOf(command), command, outcome: 'failed', exitCode: 1, durationMs: 1, output: 'first failed', mutationSeq: 0 },
+    ] as unknown as RunEventPayload[];
+
+  const feedback = (env: Env, runId: string): string[] =>
+    env
+      .ofType(runId, 'user.message')
+      .map((event) => event.text)
+      .filter((text) => text.startsWith(protocol.VERIFICATION_FEEDBACK_PREFIX));
+
+  it('gives the feedback of a round whose first check failed before a crash, and goes on with the next model step', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const run = await enqueueTwo(env);
+    await env.seed(run.id, [stoppedResponse, ...failedCheck(FIRST)], 'crash');
+    env.gateway.script.push(textStep('still done'));
+
+    await env.runOnce(workerOf(env));
+
+    expect(completions(env, run.id).map((event) => [event.round, event.conditionId])).toEqual([
+      [1, conditionIdOf(FIRST)],
+      [1, conditionIdOf(SECOND)],
+    ]);
+    expect(feedback(env, run.id)).toHaveLength(1);
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
+  });
+
+  it('records the last result of a round with its feedback in one append, so a crash between them cannot end the run without the feedback', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const run = await enqueueTwo(env);
+    await env.seed(run.id, [stoppedResponse], 'crash');
+    let dropped = false;
+    const losesTheFeedback = new Proxy(env.store, {
+      get: (target, property, receiver) => {
+        if (property !== 'append') return Reflect.get(target, property, receiver) as unknown;
+        return (...args: Parameters<typeof target.append>) => {
+          const [, payloads] = args;
+          if (!dropped && payloads.some((payload) => payload.type === 'user.message')) {
+            dropped = true;
+            env.clock.advance(LEASE_MS + 1);
+            return { kind: 'lease_lost' as const };
+          }
+          return target.append(...args);
+        };
+      },
+    });
+
+    await env.runOnce(env.worker('worker-1', { store: losesTheFeedback, tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } }));
+    expect(dropped).toBe(true);
+    env.gateway.script.push(textStep('still done'));
+    await env.runOnce(workerOf(env));
+
+    expect(feedback(env, run.id)).toHaveLength(1);
+    const [message] = env.ofType(run.id, 'user.message').filter((event) => event.text.startsWith(protocol.VERIFICATION_FEEDBACK_PREFIX));
+    const last = completions(env, run.id).filter((event) => event.round === 1).at(-1);
+    expect(message?.seq).toBe((last?.seq ?? 0) + 1);
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
+  });
+});
+

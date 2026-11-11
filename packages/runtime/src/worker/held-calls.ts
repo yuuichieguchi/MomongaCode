@@ -1,12 +1,12 @@
 import { parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { pinnedDelegationOf } from '@momonga/protocol';
-import type { HeldCall, HeldCallView, HeldOutcome, PinnedDelegation, RunState } from '@momonga/protocol';
+import type { HeldCall, HeldCallView, HeldLink, HeldOutcome, PinnedDelegation, QuiescentBehaviour, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 
 const MANDATE_SOURCE = 'the mandate of this run';
 
-export type Delegation = { rules: readonly PermissionRule[]; notice: string; onQuiescent?: 'report' | 'wait' };
+export type Delegation = { rules: readonly PermissionRule[]; notice: string; onQuiescent?: QuiescentBehaviour };
 
 export type MandateCatalogue = { alwaysOperations: readonly string[]; supersededForms: ReadonlyArray<{ operation: string; argv: readonly string[] }> };
 
@@ -48,6 +48,13 @@ export const HELD_WITHDRAWN_OUTPUT = 'The request for approval was withdrawn bef
 export const heldViewsOf = (state: Pick<RunState, 'heldCalls'>): HeldCallView[] =>
   Object.entries(state.heldCalls ?? {}).map(([callId, held]) => ({ callId, approvalId: held.approvalId, tool: held.name, reason: held.reason, sinceSeq: held.sinceSeq }));
 
+export const heldLinkOf = (state: Pick<RunState, 'heldCalls'>, callId: string): HeldLink | undefined => {
+  const held = state.heldCalls?.[callId];
+  return held === undefined ? undefined : { approvalId: held.approvalId };
+};
+
+export const stepOfCall = (state: Pick<RunState, 'heldCalls' | 'step'>, callId: string): number => state.heldCalls?.[callId]?.step ?? state.step;
+
 export const hasHeld = (state: Pick<RunState, 'heldCalls'>): boolean => Object.keys(state.heldCalls ?? {}).length > 0;
 
 export type HeldVerdict = { kind: 'waiting' } | { kind: 'run'; approval: { kind: 'allow_once' | 'allow_always'; subjectDigest: string } } | { kind: 'closed'; outcome: Exclude<HeldOutcome, 'executed'>; output: string };
@@ -72,8 +79,9 @@ export const quiesce = (ctx: ClaimContext): Promise<Flow> => {
   const { journal } = ctx;
   if (journal.state.quiescent !== true) {
     const held = heldViewsOf(journal.state);
+    const onQuiescent = ctx.delegation?.onQuiescent;
     journal.append([
-      { type: 'run.quiescent', held },
+      { type: 'run.quiescent', held, ...(onQuiescent === undefined ? {} : { onQuiescent }) },
       { type: 'notice', level: 'warning', message: quiescentText(held), code: 'run_quiescent' },
     ]);
   }

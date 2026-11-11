@@ -6,7 +6,7 @@ import { SESSION } from './fake-backend.ts';
 
 const stored = (sessions: readonly SessionView[]) => ({ listSessions: async (cwd?: string) => sessions.filter((session) => cwd === undefined || session.cwd === cwd) });
 
-const session = (id: string, overrides: Partial<SessionView> = {}): SessionView => ({ ...SESSION, id, latestRunId: 'run-1', ...overrides });
+const session = (id: string, overrides: Partial<SessionView> = {}): SessionView => ({ ...SESSION, id, latestRunId: `run-of-${id}`, latestRunAt: 1, ...overrides });
 
 const HERE = '/work/project';
 
@@ -40,6 +40,15 @@ describe('the reopen command (9.1)', () => {
     await expect(resolveSession(sessions, HERE, '01234567')).rejects.toThrow(new SessionRefused('01234567 matches more than one session: 0123456789abcdef, 0123456700000000'));
   });
 
+  it('opens the one session of this folder a prefix names, whatever sessions of other folders share it, after one read of the list', async () => {
+    const lists: (string | undefined)[] = [];
+    const all = [session('0123456789abcdef'), session('0123456700000000', { cwd: '/work/other' })];
+    const sessions = { listSessions: async (cwd?: string) => (lists.push(cwd), all.filter((each) => cwd === undefined || each.cwd === cwd)) };
+
+    expect((await resolveSession(sessions, HERE, '01234567')).id).toBe('0123456789abcdef');
+    expect(lists).toEqual([HERE]);
+  });
+
   it('refuses a session of another folder with the command that reopens it there', async () => {
     const sessions = stored([session('0123456789abcdef', { cwd: '/work/other' })]);
 
@@ -48,13 +57,18 @@ describe('the reopen command (9.1)', () => {
 });
 
 describe('--continue (9.1)', () => {
-  it('opens the newest session of this folder that has a run', async () => {
-    const sessions = stored([session('old', { createdAt: 1 }), session('newest', { createdAt: 3 }), session('empty', { createdAt: 4, latestRunId: null }), session('elsewhere', { createdAt: 5, cwd: '/work/other' })]);
+  it('opens the session of this folder whose run is the latest, whenever the session was made', async () => {
+    const sessions = stored([
+      session('worked-in-last', { createdAt: 1, latestRunAt: 9 }),
+      session('made-last', { createdAt: 3, latestRunAt: 4 }),
+      session('empty', { createdAt: 5, latestRunId: null, latestRunAt: null }),
+      session('elsewhere', { createdAt: 6, latestRunAt: 10, cwd: '/work/other' }),
+    ]);
 
-    expect((await continuedSession(sessions, HERE)).id).toBe('newest');
+    expect((await continuedSession(sessions, HERE)).id).toBe('worked-in-last');
   });
 
   it('refuses when this folder has no session', async () => {
-    await expect(continuedSession(stored([session('empty', { latestRunId: null })]), HERE)).rejects.toThrow(new SessionRefused('No session to continue in the folder /work/project.'));
+    await expect(continuedSession(stored([session('empty', { latestRunId: null, latestRunAt: null })]), HERE)).rejects.toThrow(new SessionRefused('No session to continue in the folder /work/project.'));
   });
 });

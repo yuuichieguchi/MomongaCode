@@ -1,4 +1,4 @@
-import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, pinnedCompletionOf, pinnedDelegationOf } from '@momonga/protocol';
+import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, heldEndOf, pinnedCompletionOf, pinnedDelegationOf } from '@momonga/protocol';
 import type { RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView } from '@momonga/protocol';
 import type { RunInfo } from './types.ts';
 
@@ -108,6 +108,8 @@ export const createFactsFold = (): FactsFold => {
   };
 
   const add = (event: FactsEvent): void => {
+    const ended = heldEndOf(event);
+    if (ended !== undefined && ended.outcome !== 'withdrawn') resolvedByPerson += 1;
     switch (event.type) {
       case 'run.started': {
         declared ??= declaredCompletion(event);
@@ -151,9 +153,6 @@ export const createFactsFold = (): FactsFold => {
       }
       case 'tool.held':
         heldCalls.add(event.callId);
-        break;
-      case 'tool.held.resolved':
-        if (event.outcome !== 'withdrawn') resolvedByPerson += 1;
         break;
       case 'run.quiescent':
         waited = true;

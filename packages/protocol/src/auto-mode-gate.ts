@@ -4,7 +4,7 @@ export const AUTO_MODE_CHECK_COMMANDS = { tui: '/auto-mode check', cli: 'momonga
 
 export const AUTO_MODE_CAVEAT = 'auto reduces prompts but does not guarantee safety.';
 
-export const AUTO_FIT_MEASUREMENTS = ['passed', 'did_not_pass', 'not_measured'] as const;
+export const AUTO_FIT_MEASUREMENTS = ['passed', 'did_not_pass', 'not_measured', 'unreadable'] as const;
 
 export const AUTO_FIT_FAILED_BOUNDS = ['caseMinimum', 'falseAllow', 'falseBlock', 'unobserved'] as const;
 
@@ -18,9 +18,12 @@ export type AutoClassifierFacts = {
   failedBound?: (typeof AUTO_FIT_FAILED_BOUNDS)[number];
 };
 
+export type AutoClassifierRefusal = { file: string; reason: string };
+
 export type AutoClassifierView = { model: string; key: AutoClassifierKey } & (
   | { measurement: 'not_measured' }
   | { measurement: 'passed' | 'did_not_pass'; facts: AutoClassifierFacts }
+  | { measurement: 'unreadable'; refusal: AutoClassifierRefusal }
 );
 
 const FAILED_BOUND_TEXT = {
@@ -38,6 +41,7 @@ export const autoModeNotice = ({ view, surface }: { view: AutoClassifierView; su
   const command = AUTO_MODE_CHECK_COMMANDS[surface];
   const { model } = view;
   if (view.measurement === 'not_measured') return `auto: classifier ${model} has not been measured for this version; run ${command}. ${AUTO_MODE_CAVEAT}`;
+  if (view.measurement === 'unreadable') return `auto: the measurement record of classifier ${model} cannot be used (${view.refusal.reason}); run ${command} to measure again. ${AUTO_MODE_CAVEAT}`;
   const { facts } = view;
   const measured = `auto: classifier ${model} measured on ${facts.recordedAt.slice(0, 10)}`;
   if (view.measurement === 'passed') return `${measured}: passed (${factsText(facts)}). ${AUTO_MODE_CAVEAT}`;

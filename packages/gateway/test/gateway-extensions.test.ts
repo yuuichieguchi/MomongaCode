@@ -179,64 +179,24 @@ describe('models and health', () => {
   });
 });
 
-describe('GET /v1/momonga/usage', () => {
-  it('records usage per response, estimates when upstream omits it, and sums per step for a run', async () => {
+describe('the usage of a model call is in its reply', () => {
+  it('answers each response of a run with its usage, estimated when the upstream omits it', async () => {
     const primary = createScriptedAdapter({
       calls: [
         { events: textResponseEvents({ model: 'scripted-primary', chunks: ['one'], usage: usageOf(10, 2) }) },
-        { events: textResponseEvents({ model: 'scripted-primary', chunks: ['two'], usage: usageOf(20, 4) }) },
         { events: textResponseEvents({ model: 'scripted-primary', chunks: ['three'], usage: null }) },
-        { events: textResponseEvents({ model: 'scripted-primary', chunks: ['other run'], usage: usageOf(99, 99) }) },
       ],
     });
     const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
-    const send = (step: string, runId = 'run-1') =>
-      postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput(`step ${step}`), metadata: { run_id: runId, step } });
-    const r1 = await readJson(await send('1'));
-    const r2 = await readJson(await send('1'));
-    const r3 = await readJson(await send('2'));
-    await readJson(await send('1', 'run-2'));
+    const send = (step: string) => postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput(`step ${step}`), metadata: { run_id: 'run-1', step } });
+    const reported = await readJson(await send('1'));
+    const estimated = await readJson(await send('2'));
 
-    expect(r1.body.momonga.usageSource).toBe('reported');
-    expect(r3.body.momonga.usageSource).toBe('estimated');
-    expect(r3.body.usage.input_tokens).toBeGreaterThan(0);
-    expect(r3.body.usage.output_tokens).toBeGreaterThan(0);
-    expect(r3.body.usage.total_tokens).toBe(r3.body.usage.input_tokens + r3.body.usage.output_tokens);
-
-    const report = await getJson(client, '/v1/momonga/usage?run_id=run-1');
-    expect(report.status).toBe(200);
-    expect(report.body.run_id).toBe('run-1');
-    expect(report.body.responses.map((entry: { response_id: string }) => entry.response_id)).toEqual([r1.body.id, r2.body.id, r3.body.id]);
-    expect(report.body.responses.map((entry: { usage_source: string }) => entry.usage_source)).toEqual(['reported', 'reported', 'estimated']);
-    const estimated = r3.body.usage;
-    expect(report.body.steps).toEqual([
-      { step: 1, input_tokens: 30, output_tokens: 6, total_tokens: 36 },
-      { step: 2, input_tokens: estimated.input_tokens, output_tokens: estimated.output_tokens, total_tokens: estimated.total_tokens },
-    ]);
-    expect(report.body.total).toEqual({
-      input_tokens: 30 + estimated.input_tokens,
-      output_tokens: 6 + estimated.output_tokens,
-      total_tokens: 36 + estimated.total_tokens,
-    });
-  });
-
-  it('requires run_id', async () => {
-    const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
-    const response = await getJson(client, '/v1/momonga/usage');
-    expect(response.status).toBe(400);
-    expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_query', param: 'run_id' });
-  });
-
-  it('returns an empty report for a run without responses', async () => {
-    const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
-    const response = await getJson(client, '/v1/momonga/usage?run_id=unknown');
-    expect(response.body).toEqual({
-      run_id: 'unknown',
-      responses: [],
-      steps: [],
-      total: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
-    });
+    expect(reported.body.momonga.usageSource).toBe('reported');
+    expect(reported.body.usage).toMatchObject({ input_tokens: 10, output_tokens: 2, total_tokens: 12 });
+    expect(estimated.body.momonga.usageSource).toBe('estimated');
+    expect(estimated.body.usage.input_tokens).toBeGreaterThan(0);
+    expect(estimated.body.usage.output_tokens).toBeGreaterThan(0);
+    expect(estimated.body.usage.total_tokens).toBe(estimated.body.usage.input_tokens + estimated.body.usage.output_tokens);
   });
 });

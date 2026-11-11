@@ -71,7 +71,7 @@ export type Session = {
 
 export type SessionPageRequest = { cwd?: string; limit: number; cursor: string | null };
 
-export type ListedSession = Session & { activeRunId: string | null; latestRunId: string | null };
+export type ListedSession = Session & { activeRunId: string | null; activeRunAt: number | null; latestRunId: string | null; latestRunAt: number | null };
 
 export type SessionPage = { sessions: ListedSession[]; next: string | null };
 
@@ -627,6 +627,7 @@ export type GuidelineStore = {
 export type RuntimeStore = {
   createSession(input: CreateSessionInput): Session;
   getSession(id: string): Session | undefined;
+  getListedSession(id: string): ListedSession | undefined;
   listSessions(request: SessionPageRequest): SessionPage;
   createRunAndEnqueue(sessionId: string, input: CreateRunInput): Promise<CreateRunResult>;
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;

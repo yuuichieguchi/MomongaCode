@@ -1,3 +1,4 @@
+import type { FallbackCause } from './fallback-cause.ts';
 import type { CacheMissCause } from './prefix-events.ts';
 
 export const ANATOMY_FLAT_LAYERS = ['system', 'tools', 'instructions', 'skills', 'governing', 'memories', 'summary', 'workingState'] as const;
@@ -32,7 +33,13 @@ export const anatomyLayerEntries = (layers: TokenAnatomyLayers): [string, number
   ...(layers.framing === undefined ? [] : [['framing', layers.framing] as [string, number]]),
 ];
 
-export type ModelCost = { amount: number; units?: string; currency: 'USD'; priceVersion: string };
+export type ModelCost = { amount: number; units: string; currency: 'USD'; priceVersion: string };
+
+export type RecordedModelCost = Omit<ModelCost, 'units'> & { units: string | null };
+
+export type StoredModelCost = Omit<ModelCost, 'units'> & { units?: string | null };
+
+export const recordedCostOf = (stored: StoredModelCost): RecordedModelCost => ({ ...stored, units: stored.units ?? null });
 
 export const UNPRICED_CODES = ['plan', 'unknown_billing', 'usage_not_reported', 'cache_read_not_reported', 'no_price_entry', 'unpriceable_usage'] as const;
 
@@ -42,11 +49,19 @@ export type UnpricedOutcome = { code: UnpricedCode; reason: string };
 
 export type ModelPricing = { kind: 'priced'; cost: ModelCost } | ({ kind: 'unpriced' } & UnpricedOutcome);
 
+export type RecordedPricing = { kind: 'priced'; cost: RecordedModelCost } | ({ kind: 'unpriced' } & UnpricedOutcome);
+
 export const CACHE_READS_NOT_REPORTED = 'cache reads not reported';
 
 export const PRICE_NOT_RECORDED = 'price not recorded';
 
+export const LEGACY_PRECISION_TEXT = (calls: number): string => `includes ${calls} call(s) recorded before exact units`;
+
 export type PriceNotRecorded = { kind: 'not_recorded' };
+
+export type RecordedPrice = RecordedPricing | PriceNotRecorded;
+
+export type RecordedCost = { runId: string; responseId?: string; step?: number; price: RecordedPrice };
 
 export const UNPRICED_CODE_TEXT: Readonly<Record<UnpricedCode, string>> = {
   plan: 'plan usage, no per-token price',
@@ -59,7 +74,9 @@ export const UNPRICED_CODE_TEXT: Readonly<Record<UnpricedCode, string>> = {
 
 export type CallTiming = { firstEventMs?: number; durationMs: number };
 
-export type BilledDetail = { responseId?: string; cachedInputTokens?: number; cacheWriteInputTokens?: number; cost?: ModelCost; unpriced?: UnpricedOutcome; timing?: CallTiming };
+export type BilledDetail = { responseId?: string; cachedInputTokens?: number; cacheWriteInputTokens?: number; cost?: RecordedModelCost; unpriced?: UnpricedOutcome; timing?: CallTiming };
+
+export type NewBilledDetail = Omit<BilledDetail, 'cost'> & { cost?: ModelCost };
 
 export type BilledTokensView = {
   inputTokens: number;
@@ -95,7 +112,7 @@ export type CostBreakdownView = {
   timeToFirstToken: TimingSummaryView | null;
   duration: TimingSummaryView | null;
   roles: Record<string, RoleBreakdownView>;
-  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number; unpriced: Partial<Record<UnpricedCode, number>>; priceNotRecordedCalls: number; priceVersions: string[] };
+  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number; unpriced: Partial<Record<UnpricedCode, number>>; priceNotRecordedCalls: number; legacyPrecisionCalls: number; priceVersions: string[] };
   plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCallView[];
   inconsistentUsage: InconsistentUsageView[];
@@ -117,7 +134,7 @@ export type BilledCallView = {
   billing: 'metered' | 'local' | 'plan' | 'unknown';
   startMs: number;
   usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
-  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; code: UnpricedCode; reason: string } | PriceNotRecorded;
+  fallbackCauses?: FallbackCause[];
 };
 
 export type BilledCallsCursorView = { run: number; after: number };

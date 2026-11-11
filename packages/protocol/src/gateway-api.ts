@@ -52,37 +52,6 @@ export type GatewayHealth = {
 
 export type UsageSource = 'reported' | 'estimated';
 
-export type UsageTotals = {
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-};
-
-export type UsageReportResponse = {
-  response_id: string;
-  step: number | null;
-  target: string;
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-  usage_source: UsageSource;
-  retry_of_seq?: number;
-};
-
-export type UsageReportStep = {
-  step: number;
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-};
-
-export type UsageReport = {
-  run_id: string;
-  responses: UsageReportResponse[];
-  steps: UsageReportStep[];
-  total: UsageTotals;
-};
-
 export type ModelListEntry = { id: string; object: 'model'; created: number; owned_by: string };
 
 export type ModelList = { object: 'list'; data: ModelListEntry[] };

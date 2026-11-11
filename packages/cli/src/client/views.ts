@@ -9,7 +9,9 @@ export type SessionView = {
   readonly createdAt: number;
   readonly envKeys: readonly string[];
   readonly activeRunId: string | null;
+  readonly activeRunAt: number | null;
   readonly latestRunId: string | null;
+  readonly latestRunAt: number | null;
   readonly additionalDirectories: readonly string[];
   readonly lastEventId: number;
   readonly autoClassifier?: AutoClassifierView;

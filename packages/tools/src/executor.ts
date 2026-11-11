@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf, standardSecretLocations } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf, standardSecretLocations } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
@@ -48,7 +48,6 @@ export const heldCallWaitMs = (heartbeatMs: number): number => heartbeatMs + ABO
 
 const DEFAULT_RECONCILE_GRACE_MS = 2000;
 const DEFAULT_RECONCILE_CAP_MS = 30_000;
-const ABANDON_KILL_GRACE_MS = 2000;
 const UNKNOWN_EFFECTS_NOTICE = 'Its side effects are unknown; inspect the current state before retrying.';
 
 export type ToolCall = {
@@ -197,6 +196,7 @@ export type UserPolicy = { userRefusal(subject: UserSubject, facts: UserPolicyFa
 
 export type ToolExecutor = {
   runBatch(input: BatchInput): Promise<CallOutcome[]>;
+  holdCall(key: string, signal: AbortSignal): Promise<CallLock | 'aborted'>;
   abandon(targets: readonly AbandonTarget[], options: { signal: AbortSignal }): Promise<AbandonOutcome[]>;
   release(targets: readonly ReleaseTarget[], options: { toolSet: () => Promise<ToolSet>; signal: AbortSignal }): Promise<void>;
 };
@@ -1843,5 +1843,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     await Promise.all(targets.map((target) => releaseTarget(target, loadOnce, signal)));
   };
 
-  return { runBatch, userRefusal, abandon, release, inFlightKeys: () => new Set(activeKeys.keys()) };
+  const holdCall: ToolExecutor['holdCall'] = async (key, signal) => {
+    const acquired = await callLocks.acquire(key, signal);
+    return acquired === 'aborted' ? acquired : { release: () => releaseCallLock(acquired) };
+  };
+
+  return { runBatch, holdCall, userRefusal, abandon, release, inFlightKeys: () => new Set(activeKeys.keys()) };
 };

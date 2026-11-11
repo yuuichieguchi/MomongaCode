@@ -226,15 +226,9 @@ describe('S1 gateway: pricing applies from the next request (design-settings-liv
       models: modelsOf({ local: target }),
       pricing: [{ provider: 'acme', model: 'local-fake', effectiveFrom: '2026-01-01', inputPerMTok: 1_000_000, outputPerMTok: 2_000_000, currency: 'USD' }],
     });
-    expect((await post(stack.client, ask('acme/local-fake', { metadata: { run_id: 'run-1' } }))).status).toBe(200);
-    const cost = await stack.client.request({
-      method: 'POST',
-      path: '/v1/momonga/cost',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ runs: [{ runId: 'run-1', sessionId: 'session-1' }], includeRunless: false }),
-    });
-    const { report } = (await cost.json()) as { report: { total: Record<string, unknown> } };
-    expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 0, amount: 17, currency: 'USD' });
+    const answered = await post(stack.client, ask('acme/local-fake', { metadata: { run_id: 'run-1' } }));
+    expect(answered.status).toBe(200);
+    expect((JSON.parse(answered.text) as { momonga: { cost: Record<string, unknown> } }).momonga.cost).toMatchObject({ amount: 17, currency: 'USD', priceVersion: '2026-01-01' });
   });
 });
 

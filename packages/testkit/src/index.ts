@@ -248,7 +248,7 @@ export type { FakeCallMode, FakeControl, FakeReadiness, FakeSecretStore, FakeSec
 export { readBody, sendJson, startLoopbackServer } from './loopback-http.ts';
 export type { LoopbackHandler, LoopbackServer } from './loopback-http.ts';
 export { LAB_DESCRIPTOR, REPOSITORY_PATH, startFakeForge } from './fake-forge.ts';
-export type { FakeForge, FakeForgeRequest, FakePullRequest, Fault, ForgeShape } from './fake-forge.ts';
+export type { FakeCheck, FakeForge, FakeForgeRequest, FakePullRequest, FakeReviewComment, Fault, ForgeShape } from './fake-forge.ts';
 export { startFakeGitHttp } from './fake-git-http.ts';
 export type { FakeGitHttp, FakeGitHttpOptions } from './fake-git-http.ts';
 export { startMcpOauthFixture } from './mcp-oauth-fixture.ts';

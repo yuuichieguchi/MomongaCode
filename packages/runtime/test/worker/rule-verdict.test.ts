@@ -326,3 +326,22 @@ describe('the verdict of the permission rules before a run', () => {
     expect(env.ruleVerifier.verified).toHaveLength(2);
   });
 });
+describe('the rules of a run under a mandate', () => {
+  const mandate = (env: Env) => ({ scope: { allow: ['Bash(ls:*)'], ask: [`Write(/${path.join(env.project, 'out.txt')})`], deny: ['Bash(rm:*)'] } });
+
+  it('are verified once, at the start, with the scope rules of the mandate, and the first batch neither verifies again nor writes a notice that they changed', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(callsStep([{ callId: 'call_l', name: 'Bash', args: { command: 'ls' } }]), textStep('Listed.'));
+    const run = await env.enqueue('List the files', { mandate: mandate(env) });
+
+    await env.runOnce(env.worker());
+
+    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ status: 'completed' })]);
+    expect(env.ruleVerifier.verified).toHaveLength(1);
+    const [request] = env.ruleVerifier.requests;
+    expect(request?.rules.map((rule) => rule.text)).toEqual(expect.arrayContaining(['Bash(ls:*)', 'Bash(rm:*)']));
+    expect(new Set(env.ruleVerifier.requests.map((asked) => JSON.stringify(asked.rules.map((rule) => rule.text))))).toEqual(new Set([JSON.stringify(request?.rules.map((rule) => rule.text))]));
+    expect(verdictEvents(env, run.id)).toEqual([]);
+  });
+});
+

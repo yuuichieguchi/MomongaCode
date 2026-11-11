@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, countFakeTokens, createFakeFm, fakeExec, killGroupsForCleanup, testHostPath } from '@momonga/testkit';
+import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, countFakeTokens, createFakeFm, fakeExec, killGroupsForCleanup, testHostPath, pollUntil } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -34,15 +34,9 @@ const minimalEnv = (dir: string, extra: Record<string, string> = {}): Record<str
 const runFm = (binary: string, args: string[], env: Record<string, string>, input?: string) =>
   spawnSync(binary, args, { env, input: input ?? '', encoding: 'utf8', timeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const CONDITION_BOUND_MS = 15_000;
 
-const until = async (predicate: () => boolean, description: string, timeoutMs = 15_000): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${description}`);
-    await pause(25);
-  }
-};
+const until = (predicate: () => boolean | Promise<boolean>, description: string): Promise<void> => pollUntil(predicate, { description, boundMs: CONDITION_BOUND_MS });
 
 const send = (socketPath: string, method: string, urlPath: string, body?: unknown): Promise<{ status: number; text: string }> =>
   new Promise((resolve, reject) => {
@@ -147,14 +141,10 @@ describe('createFakeFm under the minimal env', () => {
     const socketPath = path.join(dir, 'fm.sock');
     await startServe(fm.binaryPath, socketPath, minimalEnv(dir));
     let health = { status: 0, text: '' };
-    await (async () => {
-      const deadline = Date.now() + 15_000;
-      while (Date.now() < deadline) {
-        health = await send(socketPath, 'GET', '/health').catch(() => ({ status: 0, text: '' }));
-        if (health.status === 200) return;
-        await pause(25);
-      }
-    })();
+    await until(async () => {
+      health = await send(socketPath, 'GET', '/health').catch(() => ({ status: 0, text: '' }));
+      return health.status === 200;
+    }, 'the health of the served socket');
     expect(health.status).toBe(200);
     expect(completionBody).not.toHaveProperty('stream');
     const completion = await send(socketPath, 'POST', '/v1/chat/completions', completionBody);
@@ -171,12 +161,10 @@ describe('createFakeFm under the minimal env', () => {
     const socketPath = path.join(dir, 'fm.sock');
     await startServe(fm.binaryPath, socketPath, minimalEnv(dir));
     let completion = { status: 0, text: '' };
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline) {
+    await until(async () => {
       completion = await send(socketPath, 'POST', '/v1/chat/completions', completionBody).catch(() => ({ status: 0, text: '' }));
-      if (completion.status !== 0) break;
-      await pause(25);
-    }
+      return completion.status !== 0;
+    }, 'an answer of the served socket');
     expect(completion.status).toBe(418);
     expect(JSON.parse(completion.text)).toEqual(errorBody);
   });
@@ -276,7 +264,7 @@ describe('createFakeFm serveSurvivorPidFile', () => {
     const exited = new Promise<void>((resolve) => leader.once('exit', () => resolve()));
     process.kill(-leaderPid, 'SIGTERM');
     await exited;
-    await pause(200);
+    await until(() => holdersOf(marker).length === 1, 'the marker to be held by the survivor alone');
     expect(isAlive(survivorPid)).toBe(true);
     expect(holdersOf(marker)).toEqual([survivorPid]);
   });
@@ -321,7 +309,7 @@ describe('createFakeFm serveDetachedHelperPidFile', () => {
     const exited = new Promise<void>((resolve) => leader.once('exit', () => resolve()));
     process.kill(-leaderPid, 'SIGTERM');
     await exited;
-    await pause(200);
+    await until(() => holdersOf(marker).length === 0, 'the marker to have no holder');
     expect(isAlive(helperPid)).toBe(true);
     expect(holdersOf(marker)).toEqual([]);
   });

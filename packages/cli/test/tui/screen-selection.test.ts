@@ -8,11 +8,11 @@ import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { sourceOf } from '../../src/tui/screen/viewport.ts';
 import { displayWidth } from '../../src/tui/screen/wrap.ts';
 import { appendEntry } from '../../src/tui/transcript.ts';
-import { randomText, seeded, ROW_RENDERERS } from './screen-fakes.ts';
+import { randomText, seeded, ROW_RENDERERS, ROW_SCHEDULE } from './screen-fakes.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
-const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers, ROW_SCHEDULE);
 
 const sourceWith = (texts: readonly string[], width: number) => {
   const store = createTranscriptStore();

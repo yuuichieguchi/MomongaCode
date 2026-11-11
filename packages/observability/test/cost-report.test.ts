@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
-import { buildCostReport, definePriceTable, formatCostReport, recordChatResponse, recordError, recordFallbackCauses, startAgentSpan, startChatSpan } from '@momonga/observability';
-import { harness } from './helpers.ts';
+import { definePriceTable, formatCostReport, recordChatResponse, recordError, recordFallbackCauses, startAgentSpan, startChatSpan } from '@momonga/observability';
+import { harness, costReportOfSpans } from './helpers.ts';
 
 const TABLE = definePriceTable([
   { provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, cachedInputPerMTok: 0.5, outputPerMTok: 8, currency: 'USD' },
@@ -37,7 +37,7 @@ describe('buildCostReport', () => {
     await recordCalls('run-b', [{ provider: 'acme', model: 'm1', input: 3, cached: 0, output: 7, at: AT_MARCH }], h);
     await recordCalls('run-c', [{ provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY }], h);
 
-    const report = buildCostReport(h.store, [
+    const report = costReportOfSpans(h.store, [
       { runId: 'run-a', sessionId: 'session-1' },
       { runId: 'run-b', sessionId: 'session-1' },
       { runId: 'run-c', sessionId: 'session-2' },
@@ -73,7 +73,7 @@ describe('buildCostReport', () => {
       { provider: 'acme', model: 'unlisted', input: 5, cached: 0, output: 5, at: AT_JULY },
       { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: Date.parse('2025-12-31T00:00:00Z') },
     ], h);
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 3, unpricedCalls: 2, unpriced: { no_price_entry: 2 }, amount: 1, inputTokens: 2_000_005 });
     expect(formatCostReport(report)).toContain('  total: 3 call(s), 2000005 input (0 cached) + 5 output tokens, not complete: no price entry in 2 call(s); priced part: 1 USD over 1 of 3 call(s)');
   });
@@ -84,14 +84,14 @@ describe('buildCostReport', () => {
       { provider: 'acme', model: 'm1', input: 0, output: 0, at: AT_JULY, fail: true },
       { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY },
     ], h);
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 0, amount: 1 });
   });
 
   it('reports a call with no price entry as unpriced and a run with no chat spans as empty', async () => {
     const h = harness();
     await recordCalls('run-a', [{ provider: 'apple', model: 'system', input: 100, cached: 0, output: 10, at: AT_JULY }], h);
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }, { runId: 'run-none', sessionId: 's' }], { table: definePriceTable([]) });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }, { runId: 'run-none', sessionId: 's' }], { table: definePriceTable([]) });
     expect(report.runs[0]).toMatchObject({ calls: 1, unpricedCalls: 1, unpriced: { no_price_entry: 1 }, amount: null, inputTokens: 100 });
     expect(report.runs[1]).toMatchObject({ calls: 0, unpricedCalls: 0, unpriced: {}, amount: 0, priceVersions: [] });
     const text = formatCostReport(report);
@@ -106,7 +106,7 @@ describe('buildCostReport', () => {
       { provider: 'apple', model: 'system', input: 100, output: 10, at: AT_JULY, billing: 'local' },
       { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY },
     ], h);
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 2, localCalls: 1, unpricedCalls: 0, amount: 1, inputTokens: 1_000_100, outputTokens: 10 });
     const text = formatCostReport(report);
     expect(text).toContain('  total: 2 call(s), 1000100 input (0 cached in 1 of 2 call(s); cache reads not reported in 1 call(s)) + 10 output tokens, 1 USD at price version 2026-06-01');
@@ -116,7 +116,7 @@ describe('buildCostReport', () => {
   it('does not look up a price for a local call even when the table has an entry for its provider and model', async () => {
     const h = harness();
     await recordCalls('run-a', [{ provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY, billing: 'local' }], h);
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 1, localCalls: 1, unpricedCalls: 0, amount: 0, priceVersions: [] });
   });
 
@@ -139,7 +139,7 @@ describe('buildCostReport', () => {
     agent.end(h.clock.now());
     await h.telemetry.forceFlush();
 
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
 
     expect(report.total).toMatchObject({ calls: 3, fallbackCalls: 2, fallbacks: [{ answeredBy: 'secondary', calls: 2, failed: causes }] });
     expect(formatCostReport(report)).toContain('2 of 3 call(s) were answered by the fallback model secondary after primary failed (provider_unavailable: the chat-completions upstream is unreachable)');
@@ -148,14 +148,14 @@ describe('buildCostReport', () => {
   it('reports no fallback fields when every call was answered by the first target', async () => {
     const h = harness();
     await recordCalls('run-a', [{ provider: 'acme', model: 'm1', input: 1, output: 1, at: AT_JULY }], h);
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect('fallbackCalls' in report.total).toBe(false);
     expect(formatCostReport(report)).not.toContain('fallback');
   });
 
   it('refuses a run listed twice', () => {
     const h = harness();
-    expect(() => buildCostReport(h.store, [{ runId: 'r', sessionId: 's' }, { runId: 'r', sessionId: 's' }], { table: TABLE })).toThrow(/run r is listed twice/);
+    expect(() => costReportOfSpans(h.store, [{ runId: 'r', sessionId: 's' }, { runId: 'r', sessionId: 's' }], { table: TABLE })).toThrow(/run r is listed twice/);
   });
 });
 
@@ -166,7 +166,7 @@ describe('formatCostReport escapes each line', () => {
   it('shows a session id with a newline on its session line', async () => {
     const h = harness();
     await recordCalls('run-a', [{ provider: 'acme', model: 'm1', input: 1, output: 1, at: AT_JULY }], h);
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: `s ${FORGED}` }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: `s ${FORGED}` }], { table: TABLE });
     const lines = formatCostReport(report).split('\n');
     expect(lines[1]).toMatch(new RegExp(`^  session s ${SHOWN.replaceAll('\\', '\\\\')}: `));
     expect(lines.filter((line) => line.startsWith('  momonga'))).toEqual([]);
