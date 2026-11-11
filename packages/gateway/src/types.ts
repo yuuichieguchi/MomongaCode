@@ -39,7 +39,6 @@ export type GatewayConfig = {
   closeGraceMs: number;
   sseKeepAliveMs: number;
   detachedMaxMs: number;
-  websocketConnectionMs: number;
 };
 
 export type GatewayTimers = {

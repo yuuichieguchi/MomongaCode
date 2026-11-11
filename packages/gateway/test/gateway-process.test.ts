@@ -225,7 +225,6 @@ describe('gateway defaults', () => {
       closeGraceMs: 10_000,
       sseKeepAliveMs: 15_000,
       detachedMaxMs: 30 * 60 * 1000,
-      websocketConnectionMs: 60 * 60 * 1000,
     });
   });
 });
