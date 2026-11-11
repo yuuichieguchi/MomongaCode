@@ -5,6 +5,7 @@ import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, LimitTimi
 import { PLAN_ACCOUNT_STATES, PLAN_DISABLED_STATE, PLAN_LABEL_PATTERN, PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, PLAN_SIGN_IN_FAILURE, PLAN_STORE_STATES, SIGNED_IN_OUTCOME, isPlanLabel } from '@momonga/protocol';
 import type { NamedPlanAccountRef, PlanAccountRef, PlanAccountState, PlanListProblem, PlanRevocation, PlanRevocationAnswer, PlanStoreState } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
+import { describeError } from '../core/describe-error.ts';
 import type { WaitPolicy } from '../core/retry.ts';
 import { readActivePointer, writeActivePointer } from './active-account.ts';
 import type { ActivePointer } from './active-account.ts';
@@ -28,7 +29,8 @@ import { ensureHostIdentity } from './host-identity.ts';
 import type { PlanOutbound } from './outbound.ts';
 import { ownEntry } from './own-entry.ts';
 import { parsePlanJson } from './plan-json.ts';
-import { describeError, endedByOperation, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
+import { planProfileNamed } from './profiles.ts';
+import { endedByOperation, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
 import { grantsScope, lazyRefreshMarginMs, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, RefreshEnd, RefreshTokens } from './refresh.ts';
 import { revokeRefreshToken } from './revoke.ts';
@@ -372,11 +374,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const closing = new AbortController();
   let hostKnown = false;
 
-  const profileOf = (id: string): PlanProfile => {
-    const profile = ownEntry(options.profiles, id);
-    if (profile === undefined) throw new Error(`unknown plan profile ${JSON.stringify(id)}`);
-    return profile;
-  };
+  const profileOf = (id: string): PlanProfile => planProfileNamed(options.profiles, id);
 
   const accountOf = (profileId: string, label: string): Account => {
     const key = recordKey(profileId, label);

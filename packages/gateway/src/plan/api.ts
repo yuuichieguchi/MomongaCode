@@ -2,7 +2,7 @@ import { editModelsSettings } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { PLAN_ACCOUNT_NOT_SELECTABLE_CODE, PLAN_LABEL_REFUSAL, isPlanLabel, RETRY_OUTCOME } from '@momonga/protocol';
+import { PLAN_ACCOUNT_NOT_FOUND_CODE, PLAN_ACCOUNT_NOT_SELECTABLE_CODE, PLAN_LABEL_REFUSAL, isPlanLabel, RETRY_OUTCOME } from '@momonga/protocol';
 import type {
   NamedPlanAccountRef,
   PlanAccountRef,
@@ -23,6 +23,8 @@ import { PlanCredentialError, credentialErrorType, statusOf } from './auth-sourc
 import { limitFailureOf } from './request-limit.ts';
 import type { AccountView } from './auth-source.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
+import { CONFLICT_STATUS, RETRYABLE_STATUS } from './http-status.ts';
+import { planProfileNamed } from './profiles.ts';
 import type { PlanCatalog } from './catalog.ts';
 import { ownEntry } from './own-entry.ts';
 import { PlanAccountNotSelectableError } from './session.ts';
@@ -80,9 +82,6 @@ const portOf = (body: unknown): number => {
   return value;
 };
 
-const RETRYABLE_STATUS = 503;
-const CONFLICT_STATUS = 409;
-
 export const gatewayErrorOfCredential = (error: unknown): unknown => {
   if (error instanceof PlanAccountNotSelectableError) return invalidRequest(PLAN_ACCOUNT_NOT_SELECTABLE_CODE, error.message, null, CONFLICT_STATUS);
   const failure = error instanceof PlanCredentialError ? error : limitFailureOf(error);
@@ -118,11 +117,9 @@ export const accountViewOf = (ref: NamedPlanAccountRef, view: AccountView, activ
 export const createPlanApi = (options: PlanApiOptions): PlanApi => {
   const { sessions } = options;
 
-  const profileOf = (id: string): PlanProfile => {
-    const profile = ownEntry(options.profiles, id);
-    if (profile === undefined) throw invalidRequest('plan_profile_unknown', `no plan profile is named ${JSON.stringify(id)}`, 'profile');
-    return profile;
-  };
+  const profileOf = (id: string): PlanProfile => planProfileNamed(options.profiles, id);
+
+  const accountNotFound = (ref: NamedPlanAccountRef): GatewayError => notFound(PLAN_ACCOUNT_NOT_FOUND_CODE, `no ${ref.profile} account is labelled ${JSON.stringify(ref.account)}`, 'account');
 
   const activeLabels = (): ReadonlyMap<string, string> =>
     new Map(
@@ -139,7 +136,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     await sessions.load(ref, signal);
     const found = (await sessions.known(signal)).find((entry) => entry.profile === ref.profile && entry.account === ref.account);
     const view = found === undefined ? undefined : accountViewOf(ref, found.view, active.get(ref.profile) === ref.account, pinnedBy(ref, targets), options.clock.now());
-    if (view === undefined) throw notFound('plan_account_not_found', `no ${ref.profile} account is labelled ${JSON.stringify(ref.account)}`, 'account');
+    if (view === undefined) throw accountNotFound(ref);
     return view;
   };
 
@@ -167,9 +164,8 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     const account = accountLabelOf(label);
     if (profile === undefined || profile === '') throw invalidRequest('invalid_query', 'the profile query parameter is required', 'profile');
     const chosen = profileOf(profile);
-    if ((await sessions.registration({ profile: chosen.id, account }, signal)) === undefined) {
-      throw notFound('plan_account_not_found', `no ${chosen.id} account is labelled ${JSON.stringify(account)}`, 'account');
-    }
+    const ref = { profile: chosen.id, account };
+    if ((await sessions.registration(ref, signal)) === undefined) throw accountNotFound(ref);
     return { profile: chosen, account };
   };
 

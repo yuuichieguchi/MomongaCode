@@ -17,6 +17,7 @@ import type { AuthSource } from './auth-source.ts';
 import { PLAN_EVENT_INTERNAL, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
 import type { PlanOutbound } from './outbound.ts';
+import { SUCCESS_STATUS } from './http-status.ts';
 import { ownEntry } from './own-entry.ts';
 import { parsePlanJson } from './plan-json.ts';
 import { recordAccess } from './record-io.ts';
@@ -26,7 +27,6 @@ import type { PlanFetch, PlanSleep } from './refresh.ts';
 export const NO_REPORTED_WINDOW = 'the server reports no context window for this model';
 
 const CATALOG_LABEL = 'plan catalog';
-const SUCCESS_STATUS = 200;
 
 type RecordEntry = { contextWindow: number; maxOutputTokens: number; source: 'reported' } | { unreported: true };
 

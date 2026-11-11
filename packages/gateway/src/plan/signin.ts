@@ -10,6 +10,7 @@ import { hostIdentityFailure } from './auth-source.ts';
 import { endCodeOf, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
 import { ensureHostIdentity, resetHostIdentity } from './host-identity.ts';
+import { CONFLICT_STATUS, SUCCESS_STATUS, answeredLater } from './http-status.ts';
 import type { HostIdentity } from './host-identity.ts';
 import { createIdTokenVerifier, idTokenFacts } from './id-token.ts';
 import type { IdTokenFacts, IdTokenVerifier } from './id-token.ts';
@@ -18,7 +19,7 @@ import { boundedSend, refreshRequiredFor, tokenResponseOf } from './refresh.ts';
 import type { PlanFetch, PlanSleep, RefreshTokens } from './refresh.ts';
 import { createSerial } from './serial.ts';
 import { OAUTH_ACCESS_DENIED, OAUTH_INVALID_GRANT } from './oauth-wire.ts';
-import { ownEntry } from './own-entry.ts';
+import { planProfileNamed } from './profiles.ts';
 import type { PlanSessions, Registration } from './session.ts';
 
 export type SignInEnd = { outcome: typeof SIGNED_IN_OUTCOME | typeof PLAN_DISABLED_STATE; ref: NamedPlanAccountRef; firstSignIn: boolean } | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON };
@@ -83,10 +84,6 @@ const failureCodeOf = (error: unknown): string | undefined => {
 const MIN_PORT = 1;
 const MAX_PORT = 65_535;
 
-const CONFLICT_STATUS = 409;
-const SUCCESS_STATUS = 200;
-const TOO_MANY_REQUESTS = 429;
-const SERVER_ERROR_FLOOR = 500;
 const UNSPECIFIED = 'unspecified';
 const OVERSIZE_REASON = `the token response is larger than ${PLAN_SIGN_IN_DEFAULTS.authBodyBytes} bytes`;
 const NO_ID_TOKEN_REASON = 'the token response has no ID token';
@@ -136,11 +133,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   const events = options.events ?? noPlanEvents;
   const hostGate = createSerial();
 
-  const profileOf = (id: string): PlanProfile => {
-    const profile = ownEntry(options.profiles, id);
-    if (profile === undefined) throw invalidRequest('plan_profile_unknown', `no plan profile is named ${JSON.stringify(id)}`, 'profile');
-    return profile;
-  };
+  const profileOf = (id: string): PlanProfile => planProfileNamed(options.profiles, id);
 
   const verifierOf = (profile: PlanProfile): IdTokenVerifier => {
     const existing = verifiers.get(profile.id);
@@ -245,7 +238,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
       PLAN_SIGN_IN_DEFAULTS.exchangeTimeoutMs,
       PLAN_SIGN_IN_DEFAULTS.authBodyBytes,
     );
-    if (answer.kind === 'unanswered' || answer.status === TOO_MANY_REQUESTS || answer.status >= SERVER_ERROR_FLOOR) throw signInFailure(PLAN_SIGN_IN_FAILURE.exchangeUnavailable, profile);
+    if (answer.kind === 'unanswered' || answeredLater(answer.status)) throw signInFailure(PLAN_SIGN_IN_FAILURE.exchangeUnavailable, profile);
     if (answer.truncated) {
       progress.endStep = STEP_TOKEN_RESPONSE;
       throw signInFailure(PLAN_SIGN_IN_FAILURE.tokenResponseInvalid, profile, { reason: OVERSIZE_REASON });

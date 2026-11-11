@@ -1,4 +1,5 @@
 import { newCallId, uuidv7 } from '@momonga/foundation';
+import { describeError } from './describe-error.ts';
 import { redactedError } from './guarded-adapter.ts';
 import type {
   AdapterRequest,
@@ -131,8 +132,6 @@ export const errorTypeOf = (failure: unknown): string => {
 
 const thrownSpanType = (error: unknown): string => (error instanceof GatewayError ? error.body.type : 'server_error');
 
-export const messageOf = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
-
 const classifiedFailure = (adapter: TargetRuntime['adapter'], error: ResponseError): ClassifiedError => {
   const classified = adapter.classify(new StreamFailure(error.code, error.type ?? 'server_error', error.message));
   return error.retryAfterMs === undefined ? classified : { ...classified, retryAfterMs: error.retryAfterMs };
@@ -199,7 +198,7 @@ const openAttempt = async (
     if (error instanceof CandidateRefused || error instanceof CandidateDropped || error instanceof UnprobedTarget) throw error;
     const failure = failureFrom(target.adapter, error, signal);
     const failed = startSpan();
-    failed.fail(errorTypeOf(failure), failure, messageOf(failure));
+    failed.fail(errorTypeOf(failure), failure, describeError(failure));
     throw failure;
   }
   const span = startSpan(retryOfSeq);
@@ -220,7 +219,7 @@ const openAttempt = async (
   } catch (error) {
     release();
     const failure = failureFrom(target.adapter, error, signal);
-    span.fail(errorTypeOf(failure), failure, messageOf(failure));
+    span.fail(errorTypeOf(failure), failure, describeError(failure));
     throw failure;
   }
 };
@@ -286,8 +285,6 @@ const finishReasonOf = (resource: ResponseResource): string =>
 const orderedItems = (items: Map<number, ItemField>): ItemField[] =>
   [...items.entries()].sort(([left], [right]) => left - right).map(([, item]) => item);
 
-const messageOfError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
 type RelayProgress = { concluded: boolean; thrown: { error: unknown } | undefined };
 
 const verdictOfThrown = (error: unknown): BreakerVerdict =>
@@ -315,12 +312,12 @@ async function* relay(
       try {
         await opened.iterator.return?.();
       } catch (error) {
-        opened.span.note(MOMONGA_SPAN_NOTES.adapterCleanupError, messageOfError(error));
+        opened.span.note(MOMONGA_SPAN_NOTES.adapterCleanupError, describeError(error));
       }
       if (thrown === undefined) {
         opened.span.fail('cancelled', control.signal.reason ?? new ClientDisconnectedError(), 'the response stream was closed before it completed');
       } else {
-        opened.span.fail(thrownSpanType(thrown.error), thrown.error, messageOf(thrown.error));
+        opened.span.fail(thrownSpanType(thrown.error), thrown.error, describeError(thrown.error));
       }
     }
   }
@@ -422,7 +419,7 @@ async function* relaySteps(
     try {
       await opened.iterator.return?.();
     } catch (error) {
-      opened.span.note(MOMONGA_SPAN_NOTES.adapterCleanupError, messageOfError(error));
+      opened.span.note(MOMONGA_SPAN_NOTES.adapterCleanupError, describeError(error));
     }
   }
 

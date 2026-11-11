@@ -99,7 +99,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       timers: services.timers,
       readerStallMs: services.config.limits.readerStallMs,
       signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal, submission.events.evicted]),
-      onError: dependencies.errors.report,
+      answer: dependencies.errors.answer,
     };
     if (submission.stream && idleBoundMs !== undefined) return sseResponse(undefined, shownEvents, { ...streamOptions, keepAliveMs: keepAliveMsFor(idleBoundMs) });
     const first = await shownEvents.next();
@@ -128,7 +128,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       timers: services.timers,
       keepAliveMs: keepAliveMsFor(idleBoundMs),
       signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal]),
-      onError: dependencies.errors.report,
+      answer: dependencies.errors.answer,
     });
   });
 

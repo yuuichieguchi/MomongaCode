@@ -5,6 +5,7 @@ import type { PlanRevocationAnswer } from '@momonga/protocol';
 import type { PlanProfile } from '@momonga/config';
 import { nextWait } from '../core/retry.ts';
 import type { WaitPolicy } from '../core/retry.ts';
+import { SUCCESS_STATUS } from './http-status.ts';
 import { boundedSend } from './refresh.ts';
 import type { BoundedSendPorts, SendOutcome } from './refresh.ts';
 
@@ -31,7 +32,7 @@ const parsed = (text: string): unknown => {
 };
 
 const revocationEndpointOf = (profile: PlanProfile, outcome: SendOutcome): string | undefined => {
-  if (outcome.kind !== 'answered' || outcome.status !== 200 || outcome.truncated) return undefined;
+  if (outcome.kind !== 'answered' || outcome.status !== SUCCESS_STATUS || outcome.truncated) return undefined;
   const document = parsed(outcome.body);
   if (!isRecord(document) || document['issuer'] !== profile.oauth.issuer) return undefined;
   const endpoint = document['revocation_endpoint'];
@@ -39,7 +40,7 @@ const revocationEndpointOf = (profile: PlanProfile, outcome: SendOutcome): strin
   return new URL(endpoint).origin === new URL(profile.oauth.issuer).origin ? endpoint : undefined;
 };
 
-const isEmptySuccess = (outcome: SendOutcome): boolean => outcome.kind === 'answered' && outcome.status === 200 && !outcome.truncated && outcome.body === '';
+const isEmptySuccess = (outcome: SendOutcome): boolean => outcome.kind === 'answered' && outcome.status === SUCCESS_STATUS && !outcome.truncated && outcome.body === '';
 
 const mayResend = (outcome: SendOutcome): boolean => outcome.kind === 'unanswered' || isRetryableHttp(outcome.status, undefined);
 

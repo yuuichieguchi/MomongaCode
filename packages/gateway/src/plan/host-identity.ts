@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { AUTH_DOCUMENT_MAX_BYTES, isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
 import { parsePlanJson } from './plan-json.ts';
-import { describeError } from './record-io.ts';
+import { describeError } from '../core/describe-error.ts';
 
 export type HostIdentity = { hostId: string };
 

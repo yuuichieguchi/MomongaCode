@@ -4,6 +4,7 @@ import { readTextLimited } from '../adapters/shared/body-reading.ts';
 import { nextWait } from '../core/retry.ts';
 import type { WaitPolicy } from '../core/retry.ts';
 import { PLAN_SESSION_DEFAULTS } from '../defaults.ts';
+import { SUCCESS_STATUS } from './http-status.ts';
 import { OAUTH_INVALID_GRANT } from './oauth-wire.ts';
 
 export type PlanFetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -109,8 +110,6 @@ const REFRESH_ERROR_CLASSES: ReadonlyMap<string, ErrorClass> = new Map<string, E
   ...PLAN_TERMINAL_REFRESH_CODES.map((code): [string, ErrorClass] => [code, 'terminal']),
   ...PLAN_CONFIGURATION_REFRESH_CODES.map((code): [string, ErrorClass] => [code, 'configuration']),
 ]);
-
-const SUCCESS_STATUS = 200;
 
 export const answeredForResend = (outcome: SendOutcome): boolean => outcome.kind === 'answered' && outcome.status === SUCCESS_STATUS;
 
