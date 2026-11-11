@@ -1,3 +1,4 @@
+import { redactedUrl } from '@momonga/foundation';
 import type { NetworkConfig, NetworkEnvName, SourcedValue } from '@momonga/foundation';
 import type { NetworkSettings } from './settings.ts';
 
@@ -34,4 +35,20 @@ export const resolveNetwork = (settings: NetworkSettings | undefined, env: Netwo
     ...(noProxy === undefined ? {} : { noProxy }),
     caFiles,
   };
+};
+
+export type ShownNetworkValue = SourcedValue | { readonly source: 'none' };
+
+export type NetworkSources = {
+  readonly httpProxy: ShownNetworkValue;
+  readonly httpsProxy: ShownNetworkValue;
+  readonly noProxy: ShownNetworkValue;
+  readonly trust: readonly SourcedValue[];
+};
+
+const shownProxy = (resolved: SourcedValue | undefined): ShownNetworkValue => (resolved === undefined ? { source: 'none' } : { value: redactedUrl(resolved.value), source: resolved.source });
+
+export const resolveNetworkSources = (settings: NetworkSettings | undefined, env: NetworkEnvironment): NetworkSources => {
+  const { httpProxy, httpsProxy, noProxy, caFiles } = resolveNetwork(settings, env);
+  return { httpProxy: shownProxy(httpProxy), httpsProxy: shownProxy(httpsProxy), noProxy: noProxy ?? { source: 'none' }, trust: caFiles };
 };

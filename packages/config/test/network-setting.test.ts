@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as config from '@momonga/config';
 import { loadSettings, loadUserSettings, resolveNetwork } from '@momonga/config';
 import type { NetworkSettings } from '@momonga/config';
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
@@ -175,5 +176,42 @@ describe('resolveNetwork', () => {
     const settings: NetworkSettings = { environment: true };
     expect(resolveNetwork(settings, env).httpsProxy).toEqual({ value: 'http://b:1', source: 'HTTPS_PROXY' });
     expect(resolveNetwork({}, env).httpsProxy).toEqual({ value: 'http://b:1', source: 'HTTPS_PROXY' });
+  });
+});
+
+describe('resolveNetworkSources', () => {
+  const sourcesOf = (settings: NetworkSettings | undefined, env: Record<string, string>): unknown =>
+    (config as unknown as { resolveNetworkSources(settings: NetworkSettings | undefined, env: Record<string, string>): unknown }).resolveNetworkSources(settings, env);
+
+  it('names the setting when a setting overrides a variable', () => {
+    expect(sourcesOf({ httpsProxy: 'http://proxy.corp:3129', noProxy: '.corp' }, { HTTPS_PROXY: 'http://other:1', NO_PROXY: '*' })).toMatchObject({
+      httpsProxy: { value: 'http://proxy.corp:3129/', source: 'network.httpsProxy' },
+      noProxy: { value: '.corp', source: 'network.noProxy' },
+    });
+  });
+
+  it('names the variable when no setting is present', () => {
+    expect(sourcesOf(undefined, { HTTP_PROXY: 'http://env.proxy:8080', SSL_CERT_FILE: '/etc/ssl/corp.pem' })).toEqual({
+      httpProxy: { value: 'http://env.proxy:8080/', source: 'HTTP_PROXY' },
+      httpsProxy: { value: 'http://env.proxy:8080/', source: 'HTTP_PROXY' },
+      noProxy: { source: 'none' },
+      trust: [{ value: '/etc/ssl/corp.pem', source: 'SSL_CERT_FILE' }],
+    });
+  });
+
+  it('says none when neither a setting nor a variable is present, and when the environment is turned off', () => {
+    const none = { httpProxy: { source: 'none' }, httpsProxy: { source: 'none' }, noProxy: { source: 'none' }, trust: [] };
+    expect(sourcesOf(undefined, {})).toEqual(none);
+    expect(sourcesOf({ environment: false }, { HTTPS_PROXY: 'http://env:1' })).toEqual(none);
+  });
+
+  it('shows a proxy URL with credentials without them', () => {
+    const shown = JSON.stringify(sourcesOf(NETWORK, {}));
+    expect(sourcesOf(NETWORK, {})).toMatchObject({
+      httpProxy: { value: 'http://proxy.corp:3128/', source: 'network.httpProxy' },
+      trust: [{ value: '/etc/corp/root.pem', source: 'network.extraCaFiles' }],
+    });
+    expect(shown).not.toContain('secret');
+    expect(shown).not.toContain('user:');
   });
 });
