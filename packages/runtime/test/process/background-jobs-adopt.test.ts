@@ -196,7 +196,8 @@ describe('a running foreground command adopted as a background job', () => {
 
   it('is refused, and leaves the command to its call, when the session has no free job slot', async () => {
     const t = await setup();
-    for (let index = 0; index < MAX_RUNNING_JOBS_PER_SESSION; index += 1) await t.start(`busy-${index}`);
+    const busy: string[] = [];
+    for (let index = 0; index < MAX_RUNNING_JOBS_PER_SESSION; index += 1) busy.push((await t.start(`busy-${index}`)).jobId);
     const callSignal = new AbortController();
     const process = fakeProcess(4200, callSignal.signal);
     const marker = path.join(t.markerDir, 'call-full');
@@ -209,5 +210,6 @@ describe('a running foreground command adopted as a background job', () => {
     callSignal.abort();
     expect(await process.exited).toMatchObject({ killedBy: 'abort' });
     for (const spawned of t.spawned) spawned.exit({ code: 0, signal: null });
+    await Promise.all(busy.map((jobId) => t.settled(jobId)));
   });
 });
