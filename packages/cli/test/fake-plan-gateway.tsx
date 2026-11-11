@@ -240,10 +240,11 @@ export const submitLine = async (app: Instance, text: string): Promise<void> => 
   app.stdin.write(KEYS.enter);
 };
 
-export const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
-
 export const eventually = (holds: () => boolean, what: string): Promise<void> => pollUntil(holds, { description: what, boundMs: FRAME_BOUND_MS });
 
-export const quiet = async (): Promise<void> => {
-  for (let tick = 0; tick < 20; tick += 1) await settle();
+export const TYPED_AFTER = 'typed-after';
+
+export const untilTypedAfter = async (app: Instance): Promise<string> => {
+  app.stdin.write(TYPED_AFTER);
+  return untilFrame(app, TYPED_AFTER);
 };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 import { bigStep, padOf, withinTurnWorker } from './within-turn-support.ts';
@@ -8,6 +9,7 @@ const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index
 describe('wrap-up build', () => {
   it('makes no proactive compaction call although the context is above the high-water mark', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
+    env.settings.contextValue = TOKEN_SETTINGS_OFF;
     env.gateway.script.push(...sixPaddedSteps(), textStep('Here is what I did.'));
     const run = await env.enqueue('Fill the context', { limits: { maxSteps: 6 } });
 
@@ -22,6 +24,7 @@ describe('wrap-up build', () => {
 
   it('compacts proactively at the same step when the run is not wrapping up', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
+    env.settings.contextValue = TOKEN_SETTINGS_OFF;
     env.gateway.script.push(...sixPaddedSteps(), textStep('done'));
     const run = await env.enqueue('Fill the context');
 

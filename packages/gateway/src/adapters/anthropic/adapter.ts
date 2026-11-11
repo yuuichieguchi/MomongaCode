@@ -1,6 +1,7 @@
 import { decodeSse } from '@momonga/foundation';
 import { EXACT_ERROR_SHAPE, anthropicVersionSamplingBound, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { ToolChoiceWire, AdapterCompactRequest, AdapterSampling, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterCompactRequest, AdapterSampling, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, Capabilities, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { carryRefusalOfRender } from '../../core/unsupported-input.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { normalizeInput } from '../../core/input.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
@@ -12,7 +13,7 @@ import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../
 import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import { gatewayOutputCeilingOf, watchContent, watchedPostOf } from '../shared/content-idle.ts';
 import type { ContentWatch } from '../shared/content-idle.ts';
-import { createEndpointPool } from '../shared/http-client.ts';
+import { createEndpointPool, routeReportOf } from '../shared/http-client.ts';
 import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
@@ -98,13 +99,18 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     }
   }
 
-  async function* stream(request: AdapterRequest, ctx: AdapterContext, cache: CachePlan | undefined): AsyncGenerator<StreamEvent> {
-    if (closed) throw new Error('the anthropic adapter is closed');
-    const capabilities = ctx.capabilities;
+  const planOf = (request: AdapterRequest, target: AdapterTarget, capabilities: Capabilities, origin: ReasoningOrigin, cache: CachePlan | undefined) => {
     const ledger = new RenderLedger();
     const dialect = resolveDialect(capabilities.schemaDialect, options.userDialects ?? NO_USER_DIALECTS);
     const jsonReply = jsonReplyPlanOf(request, capabilities);
-    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.display, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger, jsonReply }, ctx.reasoningOrigin);
+    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, target.display, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger, jsonReply }, origin);
+    return { ledger, jsonReply, base };
+  };
+
+  async function* stream(request: AdapterRequest, ctx: AdapterContext, cache: CachePlan | undefined): AsyncGenerator<StreamEvent> {
+    if (closed) throw new Error('the anthropic adapter is closed');
+    const capabilities = ctx.capabilities;
+    const { ledger, jsonReply, base } = planOf(request, ctx.target, capabilities, ctx.reasoningOrigin, cache);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     let watch: ContentWatch | undefined;
@@ -118,7 +124,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         const body: AnthropicRequestBody =
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
         const response = await sendAuthorized(auth, signal, (key) =>
-          pool.clientFor(endpoint).post({ headers: { ...idempotencyHeaderOf(ctx, continuation), ...headersFor(key, 'text/event-stream') }, body: JSON.stringify(body), signal, ...watchedPostOf(options.liveness) }),
+          pool.clientFor(endpoint).post({ ...routeReportOf(ctx), headers: { ...idempotencyHeaderOf(ctx, continuation), ...headersFor(key, 'text/event-stream') }, body: JSON.stringify(body), signal, ...watchedPostOf(options.liveness) }),
         );
         if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
         watch?.dispose();
@@ -168,8 +174,8 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const response = await sendAuthorized(options.authSource(ctx.target), signal, (key) =>
-        pool.clientFor(endpoint).post({
-          headers: headersFor(key, 'application/json'),
+        pool.clientFor(endpoint).post({ ...routeReportOf(ctx),
+          headers: { ...idempotencyHeaderOf(ctx), ...headersFor(key, 'application/json') },
           body: JSON.stringify(body),
           signal,
           subpath: ANTHROPIC_COUNT_TOKENS_SUBPATH,
@@ -255,6 +261,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     compact,
     renderCompactWire,
     toolChoiceWire: () => ANTHROPIC_TOOL_CHOICE,
+    carryRefusalOf: (request, target, capabilities, origin) => carryRefusalOfRender(() => planOf(request, target, capabilities, origin, undefined)),
     classify: createUpstreamClassifier(ANTHROPIC_PROVIDER_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

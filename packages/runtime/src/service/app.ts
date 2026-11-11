@@ -7,7 +7,7 @@ import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/confi
 import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
-import type { Clock, GenerationRole, PathResolver } from '@momonga/foundation';
+import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
@@ -130,7 +130,8 @@ export type RunAppDeps = {
   recomputeFacts: ReportRouteDeps['recomputeFacts'];
   mcp: McpAdminPort;
   markerOwners: MarkerOwners;
-  ignorableMarkerDirectories: () => Promise<readonly string[]>;
+  ignorableMarkerDirectories: (signal: AbortSignal) => Promise<readonly string[]>;
+  files: FileSystem;
   onError: (error: unknown) => void;
   delegation?: DelegationPort;
 };
@@ -786,7 +787,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     maxBodyBytes: deps.maxBodyBytes,
     refuseWhileRetiring,
   });
-  registerMarkerRoutes(route, { markerDirectories: deps.ignorableMarkerDirectories, owners: deps.markerOwners, closeSignal: deps.closeSignal });
+  registerMarkerRoutes(route, { markerDirectories: deps.ignorableMarkerDirectories, owners: deps.markerOwners, files: deps.files });
   registerUserShellRoutes(route, { store, userInput: deps.userInput, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
   registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal, refuseWhileRetiring });
 

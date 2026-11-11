@@ -19,12 +19,12 @@ describe('the last good copy survives a restart (SettingsHealth Persist, restart
     await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     writeProjectSettings(f.temp.project, { permissions: { allow: ['Bash(ls)'] } });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
-    expect((await f.composition.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
+    expect((await f.composition.settings.rules(session, new AbortController().signal)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
 
     breakProjectFile(f.temp.project);
-    const restarted = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: process.platform, cache: makeCache(f.temp.home), store: f.store });
+    const restarted = runtime.createSettingsComposition({ lock: testKernelLock(), home: f.temp.home, platform: process.platform, cache: makeCache(f.temp.home), store: f.store });
 
-    expect((await restarted.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
+    expect((await restarted.settings.rules(session, new AbortController().signal)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
   });
 });
 
@@ -57,13 +57,13 @@ describe('every settings file reports a kept copy the same way: one notice to th
     writeProjectSettings(f.temp.project, {});
     const warnings: string[] = [];
     const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: noKeptRecords });
-    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: process.platform, cache, store: f.store });
+    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: f.temp.home, platform: process.platform, cache, store: f.store });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
-    await composition.settings.rules(session);
+    await composition.settings.rules(session, new AbortController().signal);
 
     breakProjectFile(f.temp.project);
-    await composition.settings.rules(session);
-    await composition.settings.rules(session);
+    await composition.settings.rules(session, new AbortController().signal);
+    await composition.settings.rules(session, new AbortController().signal);
 
     expect(warnings.filter((warning) => warning.startsWith(`settings file is invalid: ${projectFile(f.temp.project)}`))).toHaveLength(1);
   });

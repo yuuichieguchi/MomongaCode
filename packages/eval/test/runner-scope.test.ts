@@ -8,6 +8,7 @@ type Scope = { api: EvalRunApi; workspace: { cwd: string; env: Record<string, st
 type OpenPorts = { open(golden: GoldenCase, runIndex: number): Promise<Scope>; model?: string };
 
 const apiFor = (label: string, log: string[], sessions: EvalSessionInput[], failRun = false): EvalRunApi => ({
+  costs: async () => [],
   createSession: async (input) => {
     sessions.push(input);
     log.push(`session ${label}`);

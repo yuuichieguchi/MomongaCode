@@ -7,7 +7,7 @@ import type { AuthLoginPorts } from '../src/commands/auth.ts';
 import * as signInModule from '../src/plan/sign-in.ts';
 import { SignInExpiredError, loopbackSignInListener, signIn } from '../src/plan/sign-in.ts';
 import { untilFrame, untilOutput } from './ink-helpers.ts';
-import { AUTHORIZATION_URL, CHATGPT, PLAN_TEST_TIMEOUT_MS, choose, eventually, quiet, startPlan, submitLine } from './fake-plan-gateway.tsx';
+import { AUTHORIZATION_URL, CHATGPT, PLAN_TEST_TIMEOUT_MS, choose, eventually, startPlan, submitLine, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 import { failWaitingListener, listenerClock, resetScriptedLoopback } from './scripted-loopback-redirect.ts';
 
@@ -124,7 +124,6 @@ describe('a listener that fails during the wait is a failure of the sign-in (O-R
     expect(error).toBeInstanceOf(listenerFailedClass() as new (...args: never[]) => Error);
     expect(error.name).toBe('SignInListenerFailedError');
     expect(error.message).toBe(LISTENER_FAILED);
-    await quiet();
     expect(started.cancels()).toEqual([{ route: 'sign-in/cancel', body: { attemptId: 'attempt-1' } }]);
   });
 });
@@ -195,7 +194,7 @@ describe('the TUI prints the outcome of the wait as an info line (O-R5-6 J 3, J 
     expect(signInTimers.pending().map((timer) => timer.delayMs)).toEqual([WAIT_MS]);
     signInTimers.advance(WAIT_MS);
     await untilOutput(app, 'Sign-in was not completed within 300 seconds. Run /login to try again.');
-    await quiet();
+    await untilTypedAfter(app);
     expect(routesOf(backend).filter((route) => route === 'sign-in/cancel')).toHaveLength(1);
     expect(routesOf(backend)).not.toContain('sign-in/complete');
     app.unmount();
@@ -207,7 +206,7 @@ describe('the TUI prints the outcome of the wait as an info line (O-R5-6 J 3, J 
     await untilListenerWaits();
     failWaitingListener(new Error('socket reset'));
     await untilOutput(app, LISTENER_FAILED);
-    await quiet();
+    await untilTypedAfter(app);
     expect(routesOf(backend).filter((route) => route === 'sign-in/cancel')).toHaveLength(1);
     app.unmount();
   });

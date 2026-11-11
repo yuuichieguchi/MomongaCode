@@ -5,7 +5,7 @@ import type { CredentialSettings } from '../src/child-env.ts';
 const settingsNaming = (forgeName: string, modelName: string): CredentialSettings =>
   ({
     models: { connections: [{ adapter: 'chat-completions', provider: 't0', apiKeyEnv: modelName }] },
-    forges: [{ id: 'gh', descriptor: 'github', host: 'github.com', apiBaseUrl: 'https://api.github.com', credentialEnv: forgeName }],
+    forges: [{ id: 'gh', descriptor: 'github', hosts: ['github.com'], apiBaseUrl: 'https://api.github.com', credential: { env: forgeName } }],
   }) as unknown as CredentialSettings;
 
 describe('the runtime environment and the forge credential', () => {

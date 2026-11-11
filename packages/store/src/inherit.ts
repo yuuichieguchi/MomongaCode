@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { emptyWorkingFacts, findDanglingOutput, findUnpairedCalls, inheritedWorkingFacts, isInheritedReference } from '@momonga/protocol';
+import { COMPACT_PIN_KEY, emptyWorkingFacts, findDanglingOutput, findUnpairedCalls, inheritedWorkingFacts, isInheritedReference } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
 import type { InheritedCopyPayload, InheritedReferencePayload, InheritedSynthesisEntry, InheritedViaLink, InputItem, PermissionMode, RunEventPayload, RunState, StopReason, TerminalStatus } from '@momonga/protocol';
 
@@ -11,7 +11,9 @@ export type UnsignedReference = Omit<InheritedReferencePayload, 'digest'>;
 
 export const isReferenceInherited = isInheritedReference;
 
-export type InheritanceOutcome = { status: TerminalStatus; stopReason?: StopReason; errorCode?: string; carriedSkills?: readonly string[] };
+export type InheritanceOutcome = { status: TerminalStatus; stopReason?: StopReason; errorCode?: string; carriedSkills?: readonly string[]; compactCommand?: true };
+
+export const compactCommandOf = (runPins: Record<string, unknown>): { compactCommand?: true } => (runPins[COMPACT_PIN_KEY] === undefined ? {} : { compactCommand: true });
 
 export type InheritanceKind = { kind: 'final'; currentMode: PermissionMode; unasked: UnaskedCommands } | { kind: 'intermediate' };
 
@@ -92,7 +94,8 @@ const startedPhrase = (outcome: InheritanceOutcome): string => {
 const startedText = (outcome: InheritanceOutcome): string =>
   `This tool call had started when the previous request ${startedPhrase(outcome)}. Its result was not recorded and its effect is unknown; inspect the current state before retrying it.`;
 
-export const retractsTask = (state: RunState, outcome: InheritanceOutcome): boolean => state.pins === undefined && outcome.status === 'CANCELLED';
+export const retractsTask = (state: RunState, outcome: InheritanceOutcome): boolean =>
+  (state.pins === undefined && outcome.status === 'CANCELLED') || outcome.compactCommand === true;
 
 const userMarker = (text: string): InputItem => ({ type: 'message', role: 'user', content: text });
 

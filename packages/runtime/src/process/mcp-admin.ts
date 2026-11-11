@@ -1,6 +1,6 @@
 import { loadMcpServers } from '@momonga/config';
 import type { McpServerEntry, SettingsUse, UserLayer } from '@momonga/config';
-import { AUTHORIZATION_WAIT_MS, CredentialStoreError, canonicalJson, sha256Hex } from '@momonga/foundation';
+import { AUTHORIZATION_WAIT_MS, CredentialStoreError, canonicalJson, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger } from '@momonga/foundation';
 import { McpAuthorizationError } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpMarkerOptions, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
@@ -114,6 +114,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       servers,
       projectDir: session.cwd,
       baseEnv: { ...env },
+      files: nodeFileSystem,
       clock,
       clientVersion: options.clientVersion,
       timers: options.timers,

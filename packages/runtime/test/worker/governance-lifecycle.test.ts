@@ -130,7 +130,7 @@ describe('RulePropose after a crash', () => {
 
     const crashing: GovernancePort = {
       load: async (session) => ({
-        tools: (await real.load(session)).tools.map((tool) => ({
+        tools: (await real.load(session, new AbortController().signal)).tools.map((tool) => ({
           ...tool,
           execute: async (input, ctx, prepared) => {
             const result = await tool.execute(input, ctx, prepared);

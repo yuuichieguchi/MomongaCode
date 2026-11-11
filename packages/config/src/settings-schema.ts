@@ -454,8 +454,8 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: DECLARED_SERVER_SCHEMA,
         },
         dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
-        headersTimeoutMs: NON_NEGATIVE_INTEGER,
-        idleTimeoutMs: NON_NEGATIVE_INTEGER,
+        headersTimeoutMs: POSITIVE_INTEGER,
+        idleTimeoutMs: POSITIVE_INTEGER,
         billingChanges: {
           type: 'array',
           items: {
@@ -608,12 +608,17 @@ export const SETTINGS_SCHEMA = {
         properties: {
           id: { type: 'string', minLength: 1 },
           descriptor: { type: 'string', minLength: 1 },
-          host: { type: 'string', minLength: 1 },
+          hosts: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
           apiBaseUrl: { type: 'string', minLength: 1 },
-          credentialEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
-          credentialSecret: { type: 'string', pattern: SECRET_NAME_PATTERN },
+          credential: {
+            type: 'object',
+            properties: { env: { type: 'string', pattern: ENV_NAME_PATTERN }, secret: { type: 'string', pattern: SECRET_NAME_PATTERN } },
+            minProperties: 1,
+            maxProperties: 1,
+            additionalProperties: false,
+          },
         },
-        required: ['id', 'descriptor', 'host', 'apiBaseUrl'],
+        required: ['id', 'descriptor', 'hosts', 'apiBaseUrl', 'credential'],
         additionalProperties: false,
       },
     },

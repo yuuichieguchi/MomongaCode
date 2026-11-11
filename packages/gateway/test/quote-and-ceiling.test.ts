@@ -66,10 +66,17 @@ describe('a model request that carries the most it may cost is checked against t
     return { status: response.status, code: parsed.error?.code, param: parsed.error?.param };
   };
 
-  it('refuses with budget_exceeded one nano below the worst case, before any upstream call', async () => {
+  it('caps the output bound to the largest that fits one nano below the worst case', async () => {
     const gateway = await startAnthropicGateway({ script: [turn()], priceTable: definePriceTable([ENTRY]) });
 
-    expect(await refusalOf(gateway, ceiling(4_499_999, 1000, 250))).toEqual({ status: 400, code: 'budget_exceeded', param: 'momonga.max_cost_nano' });
+    expect(terminalOf(await streamResponse(gateway, ceiling(4_499_999, 1000, 250))).type).toBe('response.completed');
+    expect((gateway.fake.requests[0]?.body as Record<string, unknown>)['max_tokens']).toBe(249);
+  });
+
+  it('refuses with budget_exceeded when not even one output token fits, before any upstream call', async () => {
+    const gateway = await startAnthropicGateway({ script: [turn()], priceTable: definePriceTable([ENTRY]) });
+
+    expect(await refusalOf(gateway, ceiling(2_507_999, 1000, 250))).toEqual({ status: 400, code: 'budget_exceeded', param: 'momonga.max_cost_nano' });
     expect(gateway.fake.requests).toHaveLength(0);
   });
 
@@ -80,7 +87,7 @@ describe('a model request that carries the most it may cost is checked against t
     expect(gateway.fake.requests).toHaveLength(0);
   });
 
-  it('refuses a ceiling that comes without the input bound or without an output bound, and one that is not a whole number', async () => {
+  it('refuses a ceiling that comes without the input bound, one that does not fit the largest answer of a request without an output bound, and one that is not a whole number', async () => {
     const gateway = await startAnthropicGateway({ script: [], priceTable: definePriceTable([ENTRY]) });
     const send = async (body: Record<string, unknown>): Promise<number> => (await postJson(gateway.client, '/v1/responses', { model: MODEL, stream: true, input: 'hello', ...body })).status;
 
@@ -105,11 +112,11 @@ describe('a compaction request that carries the most it may cost is checked the 
     expect(gateway.fake.requests).toHaveLength(0);
   });
 
-  it('refuses a ceiling that comes without the input bound or without a summary cap', async () => {
+  it('refuses a ceiling that comes without the input bound, and one that no summary fits', async () => {
     const gateway = await startAnthropicGateway({ script: [], priceTable: definePriceTable([ENTRY]) });
 
     expect((await compact(gateway, { max_summary_tokens: 64, max_cost_nano: 5 })).status).toBe(400);
-    expect((await compact(gateway, { max_cost_nano: 5, max_input_tokens: 5 })).code).toBe('cost_ceiling_without_output_bound');
+    expect((await compact(gateway, { max_cost_nano: 5, max_input_tokens: 5 })).code).toBe('budget_exceeded');
     expect(gateway.fake.requests).toHaveLength(0);
   });
 });

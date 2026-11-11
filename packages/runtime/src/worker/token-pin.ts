@@ -30,10 +30,11 @@ export const tokenPinFor = async (input: {
   settings: Pick<SettingsPort, 'context' | 'tools'>;
   session: Session;
   run: Run;
+  signal: AbortSignal;
 }): Promise<TokenPin> => {
-  const { store, settings, session, run } = input;
+  const { store, settings, session, run, signal } = input;
   if (run.parentRunId !== null) return pinOfParent(store, run.parentRunId);
-  const [context, tools] = await Promise.all([settings.context(session), settings.tools(session)]);
+  const [context, tools] = await Promise.all([settings.context(session, signal), settings.tools(session, signal)]);
   return {
     ...(context.cachePrefix ? { cachePrefix: true } : {}),
     ...(tools.conciseDescriptions ? { conciseDescriptions: true } : {}),
@@ -48,8 +49,9 @@ export const deferredPinFor = async (input: {
   settings: Pick<SettingsPort, 'tools'>;
   session: Session;
   run: Run;
+  signal: AbortSignal;
 }): Promise<Pick<TokenPin, 'deferred'>> => {
-  const { store, settings, session, run } = input;
-  if (run.parentRunId !== null || !(await settings.tools(session)).deferral) return {};
+  const { store, settings, session, run, signal } = input;
+  if (run.parentRunId !== null || !(await settings.tools(session, signal)).deferral) return {};
   return { deferred: deferredSetOf({ runs: await toolUsageWindowOf(store, session.cwd) }) };
 };

@@ -13,6 +13,7 @@ const dataset = parseContextDataset(
 const goldenRun = (caseId: string): RecordedRun => ({
   caseId,
   runIndex: 0,
+  costs: [],
   run: { id: `run-${caseId}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
   events: publicEventsOf([{ type: 'run.started', attempt: 1, now: 0, pins: {} }, answer('done')]),
   children: [],

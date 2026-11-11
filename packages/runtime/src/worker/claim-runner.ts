@@ -6,7 +6,7 @@ import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
-import { UnknownValueError, isFatalStoreError } from '@momonga/store';
+import { JournalThreadError, UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
@@ -117,12 +117,12 @@ const recordUpstreamFailures = (journal: Journal, failures: readonly string[]): 
   journal.append(failures.map((message) => ({ type: 'notice', level: 'warning', message: `Cancelling the upstream model request failed: ${message}`, code: 'upstream_cancel_failed' })));
 };
 
-const touchedOf = (session: Session, options: WorkerOptions): ClaimTouched => {
+const touchedOf = (session: Session, options: WorkerOptions, signal: AbortSignal): ClaimTouched => {
   const source = (after: { eventId: number; path: string } | null, limit: number) =>
     after === null ? options.store.sessionTouched.after(session.id, 0, limit) : options.store.sessionTouched.after(session.id, after.eventId, limit, after.path);
   return {
     governing: createGoverningActivation({ project: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
-    probes: createInstructionProbes({ reader: options.instructionReader, projectRoot: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
+    probes: createInstructionProbes({ reader: options.instructionReaderFor(signal), projectRoot: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
   };
 };
 
@@ -144,6 +144,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
   let tracerLease: Lease<TracerPort> | undefined;
   let escaping = false;
   let fatal = false;
+  let leftToRecovery = false;
   try {
     journal = openJournal({ store, claim, lost: control.lost });
     terminals = createTerminals({ store, claim, journal, control, clock: options.clock });
@@ -160,6 +161,10 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
       throw cause;
     }
     if (control.leaseLost() || cause instanceof LeaseLostError) return;
+    if (control.shuttingDown() && cause instanceof JournalThreadError) {
+      leftToRecovery = true;
+      return;
+    }
     if (journal === undefined || terminals === undefined) {
       escaping = true;
       throw cause;
@@ -199,7 +204,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
     tracerLease?.release();
     control.stop();
     detach();
-    if (!fatal) {
+    if (!fatal && !leftToRecovery) {
       try {
         if (memory.streak === 0 || store.getRun(claim.runId)?.status !== 'QUEUED') host.forget(claim.runId);
       } catch (lookupError) {
@@ -374,7 +379,7 @@ const drive = async (
   const toolSet = await tools.toolSet(run.id, {
     signal: control.signal,
     env,
-    additionalTools: [activationTool, agentTool, ...recalled.tools, ...(await options.history.load(session)).tools, ...(await options.governance.load(session)).tools].filter(
+    additionalTools: [activationTool, agentTool, ...recalled.tools, ...(await options.history.load(session, control.signal)).tools, ...(await options.governance.load(session, control.signal)).tools].filter(
       (tool) => tool !== undefined,
     ),
     ...(agentPin?.tools === undefined ? {} : { only: agentPin.tools }),
@@ -396,7 +401,7 @@ const drive = async (
     await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: roleModelNotConfiguredText(lostRole, newRoles[lostRole] ?? '') } });
     return;
   }
-  const completionPin = pinned === undefined ? await completionPinFor({ run, session, settings: options.settings }) : undefined;
+  const completionPin = pinned === undefined ? await completionPinFor({ run, session, settings: options.settings, signal: control.signal }) : undefined;
   const { delegation } = delegationOf((pinned ?? completionPin ?? {}) as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts());
   const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories, delegation }, session);
   const startRefusal = policyRefusal(startVerdict);
@@ -404,7 +409,7 @@ const drive = async (
     await terminals.finish('FAILED', { error: startRefusal });
     return;
   }
-  const newMemoryShare = recorded === undefined ? await memoryShareFor({ store: options.store, settings: options.settings, session, run }) : undefined;
+  const newMemoryShare = recorded === undefined ? await memoryShareFor({ store: options.store, settings: options.settings, session, run, signal: control.signal }) : undefined;
   const newGuidelineVersion = recorded === undefined ? guidelineVersionFor(options.store, run) : undefined;
   const pins: RunPins =
     pinned === undefined
@@ -419,8 +424,8 @@ const drive = async (
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
           token: {
-            ...(await tokenPinFor({ store: options.store, settings: options.settings, session, run })),
-            ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run })),
+            ...(await tokenPinFor({ store: options.store, settings: options.settings, session, run, signal: control.signal })),
+            ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run, signal: control.signal })),
           },
           ...completionPin,
         }
@@ -464,7 +469,7 @@ const drive = async (
 
   const pinnedGuideline = guidelineOf(options.store, pins.guidelineVersion);
   const limits = readRunLimits(run.limits, options.defaults);
-  const composeRules = await permissionRulesComposerFor(options, session);
+  const composeRules = await permissionRulesComposerFor(options, session, control.signal);
   const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities; counter: string }>();
   const counterOf = (target: string): string => {
     const counter = listing.chain.find((member) => member.model === target)?.counter;
@@ -555,7 +560,7 @@ const drive = async (
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
     recalled,
-    touched: touchedOf(session, options),
+    touched: touchedOf(session, options, control.signal),
     env,
     functionTools: () => offerNow().tools,
     toolOffer: offerNow,
@@ -582,8 +587,8 @@ const drive = async (
       requirements: pins.mandate?.completion.requirements ?? [],
       required: pins.verificationRequired === true,
     },
-    verificationCommands: (await options.settings.verification(session)).commands,
-    autoCompact: (await options.settings.context(session)).autoCompact,
+    verificationCommands: (await options.settings.verification(session, control.signal)).commands,
+    autoCompact: (await options.settings.context(session, control.signal)).autoCompact,
     token,
     policyFingerprint: pins.policyVerdict?.fingerprint,
   };

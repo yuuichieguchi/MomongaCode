@@ -1,7 +1,7 @@
 import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, findOutboundError, givenSecretStoreChildEnv, minimalChildEnv, outboundFetch } from '@momonga/foundation';
 import type { HelperSelf, MomongaPaths, ProcessInspector, SecretStore } from '@momonga/foundation';
 import type { PolicyHostPorts } from '@momonga/policy';
-import { createForgeAccess, createOperationTools, createSandboxedArgvRunner, forgeCredentialOf, loadForgeDescriptors } from '@momonga/tools';
+import { createForgeAccess, createOperationTools, createSandboxedArgvRunner, loadForgeDescriptors } from '@momonga/tools';
 import type { AnyTool, ForgeCredentialReference, ForgeFetch, MarkerOwners, ProbeContext, ReconcileSandbox, ShellHost } from '@momonga/tools';
 import type { SandboxBindings } from '../ports.ts';
 import type { NetworkOf } from './network-derivation.ts';
@@ -93,7 +93,7 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
       runArgv,
       forge: createForgeAccess({
         descriptors,
-        instances: (forges ?? []).map((forge) => ({ id: forge.id, descriptor: forge.descriptor, host: forge.host, apiBaseUrl: forge.apiBaseUrl, credential: forgeCredentialOf(forge) })),
+        instances: forges ?? [],
         readCredential,
         fetch,
       }),

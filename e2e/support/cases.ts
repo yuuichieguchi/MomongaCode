@@ -42,7 +42,8 @@ export type E2eCaseFile =
   | 'eval-context-model.test.ts'
   | 'same-name-models.test.ts'
   | 'settings-live.test.ts'
-  | 'gitpr-crash.test.ts';
+  | 'gitpr-crash.test.ts'
+  | 'interrupt-cleanup.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -205,6 +206,7 @@ export const E2E_CASES = [
   { id: 'gitpr-commit-kill', file: 'gitpr-crash.test.ts', title: 'gitpr: a runtime SIGKILL inside the commit of GitCommit leaves the head unchanged, and recovery commits once', needsBash: true },
   { id: 'gitpr-create-response-lost', file: 'gitpr-crash.test.ts', title: 'gitpr: a runtime SIGKILL after the forge opened the pull request and before its answer arrived: recovery finds it and opens no second one', needsBash: false },
   { id: 'gitpr-create-in-flight', file: 'gitpr-crash.test.ts', title: 'gitpr: a runtime SIGKILL with the create request in flight and not applied: recovery sees no pull request and opens exactly one', needsBash: false },
+  { id: 'eval-interrupt-cleanup', file: 'interrupt-cleanup.test.ts', title: 'cancels the run it started, starts no other, removes the workspaces it made and exits 130', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

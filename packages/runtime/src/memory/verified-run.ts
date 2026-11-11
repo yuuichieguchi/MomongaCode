@@ -14,9 +14,9 @@ const sessionOfRun = (store: VerifiedRunDeps['store'], runId: string) => {
   return { run, session };
 };
 
-export const isRunVerified = async ({ store, settings }: VerifiedRunDeps, runId: string): Promise<boolean> => {
+export const isRunVerified = async ({ store, settings }: VerifiedRunDeps, runId: string, signal: AbortSignal): Promise<boolean> => {
   const { session } = sessionOfRun(store, runId);
-  const verification = await settings.verification(session);
+  const verification = await settings.verification(session, signal);
   const { verified } = await store.journalFacts.verdict({ runId, commands: verification.commands, manifests: verification.manifests });
   return verified;
 };

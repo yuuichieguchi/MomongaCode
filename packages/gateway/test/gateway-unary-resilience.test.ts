@@ -130,7 +130,7 @@ describe('the retry budget on unary endpoints', () => {
     ['/v1/momonga/count_tokens', countBody, 'count'],
   ] as const)('spends the whole 84 s budget on %s: 17 equal-jitter waits, 18 calls, then 502', async (path, body, kind) => {
     const { adapter, attempts } = failing(503);
-    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, config: { retry: { ...BUDGET, maxAttempts: 100 }, breaker: BREAKER_OUT_OF_THE_WAY } });
     const pending = postJson(harness.client, path, body);
 
     const waits = await driveTimers(harness, [pending]);

@@ -1,3 +1,4 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import net from 'node:net';
@@ -98,7 +99,7 @@ describe('the route an MCP connection took is on its connection record', { timeo
   });
 
   it('records no route for a stdio server', () => {
-    const connection = createManagedConnection({
+    const connection = createManagedConnection({ files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       name: 'local',
       config: { command: process.execPath, args: ['-e', ''] },

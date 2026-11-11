@@ -38,11 +38,11 @@ describe('a failed write of the kept copy never fails the read that triggered it
     writeProjectSettings(f.temp.project, { permissions: { allow: ['Bash(ls)'] } });
     const warnings: string[] = [];
     const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: failingRecords() });
-    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: process.platform, cache, store: f.store });
+    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: f.temp.home, platform: process.platform, cache, store: f.store });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
 
-    expect((await composition.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
-    expect((await composition.settings.rules(session)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
+    expect((await composition.settings.rules(session, new AbortController().signal)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
+    expect((await composition.settings.rules(session, new AbortController().signal)).map((rule) => rule.text)).toEqual(['Bash(ls)']);
 
     const projectFile = path.join(f.temp.project, '.momonga', 'settings.json');
     expect(warnings.filter((warning) => warning.includes('could not keep') && warning.includes(projectFile) && warning.includes('ENOSPC'))).toHaveLength(1);

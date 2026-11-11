@@ -186,6 +186,23 @@ describe('/config, the settings screen', () => {
     started.app.unmount();
   });
 
+  it('adds a forge with its hosts and its credential reference in the shape the loader takes', async () => {
+    const place = freshPlace();
+    const started = await startAt(place);
+    await open(started);
+    const label = 'Forges for pull request operations';
+    await openRow(started, label, `${label} (user)`);
+    await press(started, KEYS.enter, `${label}: Name`);
+    await typeInto(started, 'work', `${label}: Forge kind`);
+    await typeInto(started, 'github', `${label}: Hosts of the git remotes`);
+    await typeInto(started, 'github.com, ssh.github.com', `${label}: API base URL`);
+    await typeInto(started, 'https://api.github.com', `${label}: Token: environment variable name`);
+    await typeInto(started, 'GITHUB_TOKEN', `${label}: Token: name in the secret store`);
+    await press(started, KEYS.enter, '1. work  github  github.com, ssh.github.com  https://api.github.com');
+    expect(stored(place.userFile)).toEqual({ forges: [{ id: 'work', descriptor: 'github', hosts: ['github.com', 'ssh.github.com'], apiBaseUrl: 'https://api.github.com', credential: { env: 'GITHUB_TOKEN' } }] });
+    started.app.unmount();
+  });
+
   it('offers Save to: user, project, local for a value that comes from the project file, and writes the layer chosen', async () => {
     const place = freshPlace();
     writeSettings(place.projectFile, { context: { loopGuidance: true } });

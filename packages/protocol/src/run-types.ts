@@ -105,6 +105,7 @@ export const USER_SHELL_TAIL_BYTES = USER_SHELL_OUTPUT_BYTES - USER_SHELL_HEAD_B
 export const USER_SHELL_COMMAND_CHARS = 100_000;
 export const USER_SHELL_RUN_ACTIVE_CODE = 'run_active';
 export const PROMPT_TEXT_MAX_CHARS = 1_000_000;
+export const COMPACT_PIN_KEY = 'compact';
 export const NOTHING_TO_COMPACT_CODE = 'nothing_to_compact';
 export const NOTHING_TO_COMPACT_MESSAGE = 'Nothing to compact.';
 
@@ -379,6 +380,7 @@ export type RunEventPayload =
       guidelineVersion?: number;
       tokensBefore?: number;
       tokensAfter?: number;
+      tokensAfterEstimated?: true;
     }
   | { type: 'context.governing_loaded'; active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] }
   | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }
@@ -391,7 +393,7 @@ export type RunEventPayload =
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'skill.activated'; name: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
-  | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string; code?: string; toolKey?: string; reduction?: NoticeReduction };
+  | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string; code?: string; toolKey?: string; key?: string; reduction?: NoticeReduction };
 
 export type SessionEventPayload =
   | { type: 'mode.changed'; mode: Stored<PermissionMode> }

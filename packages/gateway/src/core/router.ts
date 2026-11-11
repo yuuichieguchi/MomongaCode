@@ -19,6 +19,7 @@ import {
   typedModelText,
 } from '@momonga/protocol';
 import type {
+  AdapterRequest,
   AdapterTarget,
   Capabilities,
   CapabilityOverride,
@@ -34,6 +35,7 @@ import type {
   MomongaModelRoles,
   PlanAccountRef,
   ProviderAdapter,
+  ReasoningOrigin,
   TargetAnswers,
   TargetBilling,
   TargetHealth,
@@ -88,6 +90,8 @@ export type UnknownFieldsRequirement = { keys: readonly string[]; operation: Cli
 
 export type ToolChoiceRequirement = { tools: readonly FunctionTool[] | null | undefined; tool_choice: ToolChoice | null | undefined };
 
+export type CarryRequirement = { requestFor(target: TargetRuntime): AdapterRequest; originFor(target: TargetRuntime): ReasoningOrigin };
+
 export type CandidateRequirements = {
   tools?: boolean;
   images?: boolean;
@@ -97,6 +101,7 @@ export type CandidateRequirements = {
   toolChoice?: ToolChoiceRequirement;
   summaryCap?: number;
   unknownFields?: UnknownFieldsRequirement;
+  carry?: CarryRequirement;
 };
 
 export type Narrowed = { targets: TargetRuntime[]; refusals: Refusal[]; billing: BillingWalk; capabilitiesOf(target: TargetRuntime): Promise<Capabilities> };
@@ -419,6 +424,12 @@ export const createRouter = (options: RouterOptions): Router => {
           stage: REFUSAL_STAGES.unknownFields,
           error: unknownParameterError(unknownFields.keys, displayOf(model), `neither it nor its fallback models relay a ${unknownFields.operation} request body upstream`),
         };
+      }
+      const { carry } = requirements;
+      const carryRefusalOf = target.adapter.carryRefusalOf;
+      if (carry !== undefined && carryRefusalOf !== undefined) {
+        const refused = carryRefusalOf.call(target.adapter, carry.requestFor(target), adapterTargetOf(target), capabilities, carry.originFor(target));
+        if (refused !== undefined) return { stage: REFUSAL_STAGES.carry, error: invalidRequest(refused.code, refused.message, refused.param) };
       }
       return undefined;
     };

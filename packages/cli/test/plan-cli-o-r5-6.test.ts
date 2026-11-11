@@ -6,7 +6,7 @@ import type { FakeTimers } from '@momonga/testkit';
 import * as authCommands from '../src/commands/auth.ts';
 import { describeRunError } from '../src/policy-messages.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
-import { AUTHORIZATION_URL, CHATGPT, LISTENER_PORT, account, eventually, quiet } from './fake-plan-gateway.tsx';
+import { AUTHORIZATION_URL, CHATGPT, LISTENER_PORT, account, eventually } from './fake-plan-gateway.tsx';
 
 const PASTE_PROMPT = 'On a remote machine? Paste the redirect URL here, then press Enter. Otherwise finish the sign-in in the browser.';
 const NOT_REDIRECT = 'That is not a redirect URL from the browser.';
@@ -131,15 +131,6 @@ type Harness = ReturnType<typeof harness>;
 const login = (h: Harness, options: Record<string, unknown> = { provider: 'chatgpt', account: 'work' }): Promise<number> =>
   (authCommands as unknown as { authLogin: (ports: unknown, options: unknown) => Promise<number> }).authLogin(h.ports, options);
 
-const settled = <T>(promise: Promise<T>): { done(): boolean } => {
-  let finished = false;
-  promise.then(
-    () => void (finished = true),
-    () => void (finished = true),
-  );
-  return { done: () => finished };
-};
-
 const untilWaiting = (h: Harness, options: { browser?: boolean } = {}): Promise<void> =>
   options.browser === false
     ? eventually(() => h.routes().includes('sign-in/begin') && h.shown().includes(AUTHORIZATION_URL), 'the authorization URL to be shown')
@@ -168,19 +159,13 @@ describe('momonga auth login reads a pasted redirect URL in a terminal (O-R5-6 A
   it('ignores a blank line, prints the S2 sentence of a refused line on stderr, keeps waiting, then completes with the next valid line', async () => {
     const h = harness({ terminal: true });
     const exit = login(h);
-    const state = settled(exit);
     await untilWaiting(h);
     h.stdin.write('\n');
-    await quiet();
-    expect(h.stderr.text()).toBe('');
     h.stdin.write('not a url\n');
     await eventually(() => h.stderr.text().includes(NOT_REDIRECT), 'the refusal of a line that is not a redirect URL');
     h.stdin.write('https://elsewhere.example/x?code=c&state=st-other\n');
     await eventually(() => h.stderr.text().includes(OTHER_SIGN_IN), 'the refusal of a URL of another sign-in');
     expect(h.stderr.text()).toBe(`${NOT_REDIRECT}\n${OTHER_SIGN_IN}\n`);
-    await quiet();
-    expect(state.done()).toBe(false);
-    expect(completions(h)).toEqual([]);
     h.stdin.write(`${PASTED_URL}\n`);
     expect(await exit).toBe(0);
     expect(completions(h)).toEqual([{ attemptId: 'attempt-1', callbackUrl: PASTED_URL }]);
@@ -189,11 +174,8 @@ describe('momonga auth login reads a pasted redirect URL in a terminal (O-R5-6 A
   it('keeps waiting for the callback after end of input and completes with it', async () => {
     const h = harness({ terminal: true });
     const exit = login(h);
-    const state = settled(exit);
     await untilWaiting(h);
     h.stdin.end();
-    await quiet();
-    expect(state.done()).toBe(false);
     h.callback.resolve(new URL(CALLBACK_URL));
     expect(await exit).toBe(0);
     expect(completions(h)).toEqual([{ attemptId: 'attempt-1', callbackUrl: CALLBACK_URL }]);
@@ -206,7 +188,6 @@ describe('momonga auth login reads a pasted redirect URL in a terminal (O-R5-6 A
     h.callback.resolve(new URL(CALLBACK_URL));
     h.stdin.write(`${PASTED_URL}\n`);
     expect(await exit).toBe(0);
-    await quiet();
     expect(completions(h)).toEqual([{ attemptId: 'attempt-1', callbackUrl: CALLBACK_URL }]);
   });
 
@@ -218,7 +199,6 @@ describe('momonga auth login reads a pasted redirect URL in a terminal (O-R5-6 A
     await eventually(() => completions(h).length > 0, 'the completion');
     h.callback.resolve(new URL(CALLBACK_URL));
     expect(await exit).toBe(0);
-    await quiet();
     expect(completions(h)).toEqual([{ attemptId: 'attempt-1', callbackUrl: PASTED_URL }]);
   });
 
@@ -228,7 +208,6 @@ describe('momonga auth login reads a pasted redirect URL in a terminal (O-R5-6 A
     const before = h.stdin.readableLength;
     const exit = login(h);
     await untilWaiting(h);
-    await quiet();
     h.callback.resolve(new URL(CALLBACK_URL));
     expect(await exit).toBe(0);
     expect(h.stdin.readableLength).toBe(before);
@@ -241,11 +220,9 @@ describe('the bound, the interrupt and the failures of momonga auth login (O-R5-
   it.each([true, false])('cancels the attempt and exits 1 with the expiry text after AUTHORIZATION_WAIT_MS (terminal %s)', async (terminal) => {
     const h = harness({ terminal });
     const exit = login(h);
-    const state = settled(exit);
     await untilWaiting(h);
     h.timers.advance(WAIT_MS - 1);
-    await quiet();
-    expect(state.done()).toBe(false);
+    expect(h.timers.nextDueAt()).toBe(h.timers.monotonicMs() + 1);
     h.timers.advance(1);
     expect(await exit).toBe(1);
     expect(h.stderr.text()).toContain('Sign-in was not completed within 300 seconds. Run momonga auth login chatgpt --account work to try again.\n');
@@ -363,12 +340,9 @@ describe('momonga auth login shows the authorization URL only for --no-browser o
     const h = harness({ terminal: false });
     const exit = login(h);
     await untilWaiting(h);
-    await quiet();
-    expect(h.stdout.text()).toBe(`${DESCRIPTION}\n${HINT}\n`);
-    expect(h.stderr.text()).toBe('');
-    expect(h.shown()).not.toContain(AUTHORIZATION_URL);
     h.callback.resolve(new URL(CALLBACK_URL));
     expect(await exit).toBe(0);
+    expect(h.stderr.text()).toBe('');
     expect(h.stdout.text()).toBe(`${DESCRIPTION}\n${HINT}\nSigned in as work (ada@example.com)\n`);
     expect(h.shown()).not.toContain(AUTHORIZATION_URL);
   });

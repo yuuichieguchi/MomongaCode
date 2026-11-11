@@ -54,6 +54,7 @@ const startRun = async (env: Env): Promise<string> => {
 describe('adaptive memory budget at run start', () => {
   it('pins a share only when the setting is on, for the same window', async () => {
     const off = await makeEnv({ mode: 'bypassPermissions' });
+    off.settings.contextValue = { ...off.settings.contextValue, adaptiveBudget: false };
     await finishPasts(off, 20, { injected: 1, used: 0 });
     const on = await adaptiveEnv();
     await finishPasts(on, 20, { injected: 1, used: 0 });

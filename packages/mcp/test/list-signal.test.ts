@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { nodeFileSystem } from '@momonga/foundation';
 import { createManagedConnection, createMcpPool, createMcpToolSource } from '@momonga/mcp';
 import type { McpConnectionOptions, McpPoolOptions, McpServerConnection } from '@momonga/mcp';
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_TOOL_NAMES, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testProcessInspector } from '@momonga/testkit';
@@ -25,6 +26,7 @@ const modernServer = { command: process.execPath, args: [MCP_MODERN_SERVER_PATH]
 
 const connectionFor = (extra: Partial<McpConnectionOptions> = {}): McpServerConnection => {
   const connection = createManagedConnection({
+    files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 'modern',
     config: modernServer,
@@ -90,6 +92,7 @@ describe('MCP listTools signal', () => {
     const onWarning = (): void => undefined;
     transportCalls.length = 0;
     const pool = createMcpPool({
+      files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       servers: [{ name: 'modern', scope: 'user', config: modernServer }],
       projectDir: makeDir(),

@@ -13,10 +13,11 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
 import { PreconditionFailedError, StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
+import { carryRefusalOfRender } from '../../core/unsupported-input.ts';
 import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { gatewayOutputCeilingOf, watchContent, watchedPostOf } from '../shared/content-idle.ts';
 import type { ContentWatch } from '../shared/content-idle.ts';
-import { createEndpointPool } from '../shared/http-client.ts';
+import { createEndpointPool, routeReportOf } from '../shared/http-client.ts';
 import { isJsonOnlyEnforced, jsonReplyFormatOf, jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
@@ -117,16 +118,20 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       ? wireOf(bodyFor(request, target, renderOptions.reasoningOrigin, renderOptions.capabilities, renderOptions.capabilities.allowedTools).body)
       : lenientWireOf(request, target, renderOptions.lenientItems, renderOptions.reasoningOrigin, renderOptions.capabilities);
 
+  const planOf = (request: AdapterRequest, target: AdapterTarget, origin: ReasoningOrigin, capabilities: Capabilities) => {
+    const planned = bodyFor(request, target, origin, capabilities, capabilities.allowedTools);
+    const jsonReply = jsonReplyPlanOf(request, capabilities);
+    if (jsonReply !== undefined && planned.envelope !== undefined) {
+      throw new UnsupportedInputError('unsupported_input', 'a JSON reply format cannot be combined with tools on a constrained target, whose response format carries the tool envelope', 'text');
+    }
+    return { planned, jsonReply, responseFormat: jsonReplyFormatOf(jsonReply, resolveDialect(options.schemaDialect(target), options.userDialects ?? NO_USER_DIALECTS, options.constructSupport?.(target))) };
+  };
+
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the chat-completions adapter is closed');
     const capabilities = ctx.capabilities;
-    const planned = bodyFor(request, ctx.target, ctx.reasoningOrigin, capabilities, capabilities.allowedTools);
+    const { planned, jsonReply, responseFormat } = planOf(request, ctx.target, ctx.reasoningOrigin, capabilities);
     const { envelope, ledger } = planned;
-    const jsonReply = jsonReplyPlanOf(request, capabilities);
-    if (jsonReply !== undefined && envelope !== undefined) {
-      throw new UnsupportedInputError('unsupported_input', 'a JSON reply format cannot be combined with tools on a constrained target, whose response format carries the tool envelope', 'text');
-    }
-    const responseFormat = jsonReplyFormatOf(jsonReply, resolveDialect(options.schemaDialect(ctx.target), options.userDialects ?? NO_USER_DIALECTS, options.constructSupport?.(ctx.target)));
     const body = {
       ...withCapabilityOptions(planned.body, request, capabilities),
       ...(responseFormat === undefined ? {} : { response_format: { type: 'json_schema', json_schema: { ...responseFormat } } }),
@@ -140,7 +145,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const upstreamModel = await options.upstreamModel?.(ctx.target, signal);
       const response = await sendAuthorized(options.authSource(ctx.target), signal, (bearer) =>
-        pool.clientFor(endpoint).post({
+        pool.clientFor(endpoint).post({ ...routeReportOf(ctx),
           headers: {
             ...idempotencyHeaderOf(ctx),
             'content-type': 'application/json',
@@ -239,6 +244,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     renderWire,
     renderCompactWire,
     toolChoiceWire,
+    carryRefusalOf: (request, target, capabilities, origin) => carryRefusalOfRender(() => planOf(request, target, origin, capabilities)),
     classify: classifyChatCompletionsError,
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     ...(roomFacts === undefined ? {} : { roomFacts: (target: AdapterTarget) => roomFacts(target) }),

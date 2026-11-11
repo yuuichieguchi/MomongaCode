@@ -1,14 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { nodeBoundedCommandRunner, nodeCommandRunner } from '../../src/platform/command-runner.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import { waitFor } from '@momonga/testkit';
+import { makeTemporaryDirectory } from '../support/temporary-directory.ts';
+import { ProgramSignalledError, nodeBoundedCommandRunner, nodeCommandRunner } from '../../src/platform/command-runner.ts';
 
 describe('nodeCommandRunner', () => {
-  it('kills the command and rejects when the caller aborts', async () => {
+  it('rejects with the reason of the abort at once and leaves the command that ignores SIGTERM to end by itself', async (context) => {
+    const pidFile = path.join(makeTemporaryDirectory(), 'pid');
     const controller = new AbortController();
-    const running = nodeCommandRunner('/bin/sleep', ['600'], { env: {}, signal: controller.signal });
+    const running = nodeCommandRunner(process.execPath, ['-e', "process.on('SIGTERM', () => {}); require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)", pidFile], { env: {}, signal: controller.signal });
+    running.catch(() => undefined);
+    await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8') !== '', { description: 'the command wrote its pid' });
+    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+    context.onTestFinished(() => {
+      process.kill(pid, 'SIGKILL');
+    });
+    const reason = new Error('the asker left');
+    controller.abort(reason);
 
-    controller.abort();
+    await expect(running).rejects.toBe(reason);
+    expect(() => process.kill(pid, 0)).not.toThrow();
+  });
 
-    await expect(running).rejects.toMatchObject({ name: 'AbortError' });
+  it('gives the command its input on stdin', async () => {
+    expect(await nodeCommandRunner('/bin/cat', [], { env: {}, input: 'given' })).toEqual({ exitCode: 0, stdout: 'given', stderr: '' });
+  });
+
+  it('starts the command as the leader of its own process group, the one launch port', async () => {
+    const result = await nodeCommandRunner('/bin/sh', ['-c', 'echo $$; ps -o pgid= -p $$'], { env: { PATH: '/bin:/usr/bin' } });
+    const [pid, pgid] = result.stdout.trim().split(/\s+/);
+    expect(pgid).toBe(pid);
+  });
+
+  it('rejects with a ProgramSignalledError when the command is ended by a signal', async () => {
+    await expect(nodeCommandRunner('/bin/sh', ['-c', 'kill -9 $$'], { env: {} })).rejects.toBeInstanceOf(ProgramSignalledError);
   });
 
   it('answers the exit code of a command that fails', async () => {

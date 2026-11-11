@@ -1,3 +1,4 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import { LEGACY_FIXTURE_PROTOCOL_VERSION, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
@@ -27,7 +28,7 @@ lines.on('close', () => process.exit(0));
 
 describe('the MCP client reports the version it was given', () => {
   it('the clientInfo of the initialize message carries the product name and the clientVersion of the connection', async () => {
-    const connection = createManagedConnection({
+    const connection = createManagedConnection({ files: nodeFileSystem,
       name: 'recorder',
       config: { command: process.execPath, args: ['-e', RECORDING_SERVER] },
       scope: 'user',

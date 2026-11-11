@@ -45,12 +45,12 @@ describe('ModelResend.tla matches the code', () => {
     ['packages/runtime/src/worker/model-step.ts', 329, 'export const resumeInFlight'],
     ['packages/runtime/src/worker/model-step.ts', 333, 'attempt: inFlight.attempt'],
     ['packages/runtime/src/worker/model-step.ts', 176, 'const reject = '],
-    ['packages/store/src/fold.ts', 445, "case 'model.requested'"],
-    ['packages/store/src/fold.ts', 472, "case 'model.rejected'"],
-    ['packages/store/src/fold.ts', 475, 'attempt: event.attempt + 1'],
+    ['packages/store/src/fold.ts', 421, "case 'model.requested'"],
+    ['packages/store/src/fold.ts', 444, "case 'model.rejected'"],
+    ['packages/store/src/fold.ts', 447, 'attempt: event.attempt + 1'],
     ['packages/gateway/src/core/idempotency.ts', 43, "kind: 'inflight'"],
     ['packages/gateway/src/core/idempotency.ts', 52, "kind: 'stored'"],
-    ['packages/gateway/src/core/store.ts', 264, 'putIdempotency.run(key, digest'],
+    ['packages/gateway/src/core/store.ts', 246, 'putIdempotency.run(key, digest'],
   ];
 
   it('cites code lines that still hold the code it names, each cited in the spec header, and no retired symbol', () => {

@@ -171,6 +171,8 @@ export type AnthropicApiVersion = (typeof ANTHROPIC_API_VERSIONS)[number];
 
 export const DEFAULT_ANTHROPIC_API_VERSION: AnthropicApiVersion = '2026-10-21';
 
+export const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
+
 const ANTHROPIC_VERSION_SAMPLING_BOUND: Readonly<Record<AnthropicApiVersion, readonly SamplingField[]>> = {
   '2026-10-21': [],
   '2023-06-01': SAMPLING_FIELDS,

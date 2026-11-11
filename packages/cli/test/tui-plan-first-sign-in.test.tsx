@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { KEYS, untilFrame } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
-import { IDENTITY_UNCONFIRMED, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, rowNumberOf, startPlan, submitLine, untilRow } from './fake-plan-gateway.tsx';
+import { IDENTITY_UNCONFIRMED, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, rowNumberOf, startPlan, submitLine, untilRow, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -37,7 +37,7 @@ describe('/login: the first sign-in of an account is saved only after the person
     await eventually(() => cancellations(backend).length === 1, 'the cancellation of the attempt');
     const shown = await untilFrame(app, 'because the account was not confirmed');
     expect(shown.replace(/\s+/g, ' ')).toContain('The sign-in for ada@example.com was not saved under the label chatgpt, because the account was not confirmed. Run /login to sign in again.');
-    await quiet();
+    await untilTypedAfter(app);
     expect(completions(backend)).toHaveLength(1);
     expect(cancellations(backend)).toEqual([{ attemptId: 'attempt-1' }]);
     app.unmount();
