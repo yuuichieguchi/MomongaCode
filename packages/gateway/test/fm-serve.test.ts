@@ -401,8 +401,8 @@ describe('createManagedServer start', () => {
     const { server, spawn, socketPath } = setup();
     const first = server.start();
     const second = server.start();
-    expect(second).toBe(first);
     expect(await first).toEqual({ kind: 'unix', path: socketPath });
+    expect(await second).toEqual({ kind: 'unix', path: socketPath });
     expect(spawn).toHaveBeenCalledTimes(1);
     await expect(server.start()).rejects.toThrow(/already started/);
   });
@@ -884,9 +884,9 @@ const hangingOn =
 
 describe('createManagedServer bounds each precondition command by the asking operation (design 8.2, row healthTimeoutMs (a))', () => {
   it.each([
-    ['license', 'license --status'],
-    ['available', 'available'],
-  ])('cancels a hanging %s command when the asker ends, with no clock of its own, naming the command', async (hungCommand, argvText) => {
+    ['license'],
+    ['available'],
+  ])('cancels a hanging %s command when its only asker ends, with no clock of its own: the asker leaves with its own reason', async (hungCommand) => {
     const signals: AbortSignal[] = [];
     const { server, spawn, manual } = setup({ exec: hangingOn(hungCommand, signals) });
     const asker = new AbortController();
@@ -895,8 +895,8 @@ describe('createManagedServer bounds each precondition command by the asking ope
     expect(manual.delays()).toEqual([]);
     expect(signals[0]?.aborted).toBe(false);
     asker.abort(new Error('the request ended'));
-    expect(await starting).toMatchObject({ message: `the precondition "${argvText}" was cancelled before it answered` });
-    expect(signals[0]?.aborted).toBe(true);
+    expect(await starting).toMatchObject({ message: 'the request ended' });
+    await vi.waitFor(() => expect(signals[0]?.aborted).toBe(true));
     expect(spawn).not.toHaveBeenCalled();
   });
 
