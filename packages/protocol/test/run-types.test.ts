@@ -494,9 +494,10 @@ describe('RunState', () => {
       lastMutationSeq: number;
       verification: {
         round: number;
-        results: Record<string, { seq: number; outcome: 'passed' | 'failed' | 'timed_out' | 'cancelled' | 'spawn_error'; mutationSeq: number }>;
+        results: Record<string, { seq: number; outcome: 'passed' | 'failed' | 'timed_out' | 'cancelled' | 'spawn_error'; mutationSeq: number; round?: number }>;
         pending?: Record<string, { round: number; attempt: number }>;
-        lastFailedRoundMutationSeq?: number;
+        lastFailure?: { round: number; mutationSeq: number };
+        failureBefore?: number;
       };
       formsSinceCompaction: Record<string, number>;
       governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };

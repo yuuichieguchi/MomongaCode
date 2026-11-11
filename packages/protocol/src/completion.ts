@@ -110,7 +110,9 @@ export type PinnedCondition = { id: string; command: string; when: ConditionWhen
 
 export type PinnedCompletion = { conditions: PinnedCondition[]; requirements: string[] };
 
-export type ConditionResult = { seq: number; outcome: VerificationOutcome; mutationSeq: number };
+export type ConditionResult = { seq: number; outcome: VerificationOutcome; mutationSeq: number; round?: number };
+
+export type RoundFailure = { round: number; mutationSeq: number };
 
 export type PendingCheck = { round: number; attempt: number };
 
@@ -118,7 +120,8 @@ export type VerificationState = {
   round: number;
   results: Record<string, ConditionResult>;
   pending?: Record<string, PendingCheck>;
-  lastFailedRoundMutationSeq?: number;
+  lastFailure?: RoundFailure;
+  failureBefore?: number;
 };
 
 export const initialVerificationState = (): VerificationState => ({ round: 0, results: {} });
@@ -138,10 +141,27 @@ export const withVerificationCompleted = (
   const next: VerificationState = {
     ...rest,
     round: Math.max(state.round, event.round),
-    results: { ...state.results, [event.conditionId]: { seq: event.seq, outcome: event.outcome, mutationSeq: event.mutationSeq } },
+    results: { ...state.results, [event.conditionId]: { seq: event.seq, outcome: event.outcome, mutationSeq: event.mutationSeq, round: event.round } },
     ...(Object.keys(stillPending).length === 0 ? {} : { pending: stillPending }),
   };
-  return event.outcome === 'passed' ? next : { ...next, lastFailedRoundMutationSeq: event.mutationSeq };
+  if (event.outcome === 'passed') return next;
+  const { lastFailure } = state;
+  if (lastFailure !== undefined && lastFailure.round === event.round) return { ...next, lastFailure: { round: event.round, mutationSeq: event.mutationSeq } };
+  return { ...next, lastFailure: { round: event.round, mutationSeq: event.mutationSeq }, ...(lastFailure === undefined ? {} : { failureBefore: lastFailure.mutationSeq }) };
+};
+
+export const failureBeforeRound = (state: VerificationState, round: number): number | undefined => {
+  const { lastFailure } = state;
+  if (lastFailure === undefined) return undefined;
+  return lastFailure.round < round ? lastFailure.mutationSeq : state.failureBefore;
+};
+
+export const openRoundOf = (state: VerificationState, mutationSeq: number): number | undefined => {
+  const rounds = [
+    ...Object.values(state.pending ?? {}).map((check) => check.round),
+    ...Object.values(state.results).flatMap((result) => (result.round !== undefined && result.mutationSeq === mutationSeq ? [result.round] : [])),
+  ];
+  return rounds.length === 0 ? undefined : Math.max(...rounds);
 };
 
 export type MutationFacts = { sideEffect?: SideEffect; basis?: ApprovalBasis; rejected: boolean };

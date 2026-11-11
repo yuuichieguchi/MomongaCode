@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { inputCeilingFor } from '@momonga/context';
 import { cutToChars, jsonReplyInstructions, keepingHeadAndTail } from '@momonga/foundation';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, assistantTextOf, escapeXmlAttribute, escapeXmlText, tokensForText } from '@momonga/protocol';
-import type { Capabilities, RunEvent } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, EXECUTED_TEXT_EVENT_TYPES, assistantTextOf, escapeXmlAttribute, escapeXmlText, readExecutedText, tokensForText } from '@momonga/protocol';
+import type { Capabilities, ExecutedTextEvent, ExecutedTextHandlers, RunEvent } from '@momonga/protocol';
 import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS } from '@momonga/store';
 import { REFLECTION_REPLY_SCHEMA } from './reflection-reply-schema.ts';
 
@@ -31,26 +31,36 @@ const shown = (project: string, file: string): string => {
   return relative === '' || relative.startsWith('..') || path.isAbsolute(relative) ? file : relative;
 };
 
-const stepOf = (project: string, index: number, call: Pick<CallEvent, 'name' | 'title'>, event: RunEvent): string => {
-  const status =
-    event.type === 'tool.completed'
-      ? `${event.status}${event.exitCode === undefined ? '' : `, exit code ${event.exitCode}`}`
-      : event.type === 'tool.reconciled'
-        ? `reconciled ${event.outcome}`
-        : '';
+type SettledEvent = ExecutedTextEvent<'tool.completed' | 'tool.reconciled' | 'tool.held.resolved'>;
+
+const statusOf = (event: SettledEvent): string => {
+  if (event.type === 'tool.completed') return `${event.status}${event.exitCode === undefined ? '' : `, exit code ${event.exitCode}`}`;
+  if (event.type === 'tool.reconciled') return `reconciled ${event.outcome}`;
+  return `held, ${event.outcome}, ${event.status}`;
+};
+
+const stepOf = (project: string, index: number, call: Pick<CallEvent, 'name' | 'title'>, event: SettledEvent): string => {
   const files = event.type === 'tool.completed' ? (event.files ?? []).map((file) => `${file.access} ${shown(project, file.path)}`) : [];
-  const output = event.type === 'tool.completed' || event.type === 'tool.reconciled' ? headAndTail(event.output) : '';
   return [
-    `<step n="${index}" tool="${escapeXmlAttribute(call.name)}" title="${escapeXmlAttribute(call.title)}" status="${escapeXmlAttribute(status)}">`,
+    `<step n="${index}" tool="${escapeXmlAttribute(call.name)}" title="${escapeXmlAttribute(call.title)}" status="${escapeXmlAttribute(statusOf(event))}">`,
     ...files.map(escapeXmlText),
-    escapeXmlText(output),
+    escapeXmlText(headAndTail(event.output)),
     '</step>',
   ]
     .filter((line) => line !== '')
     .join('\n');
 };
 
-export const REFLECTION_INPUT_EVENT_TYPES = ['user.message', 'tool.call', 'tool.completed', 'tool.reconciled', 'model.responded'] as const satisfies readonly RunEvent['type'][];
+const checkOf = (index: number, event: ExecutedTextEvent<'verification.completed'>): string =>
+  [
+    `<check n="${index}" command="${escapeXmlAttribute(event.command)}" status="${escapeXmlAttribute(`${event.outcome}${event.exitCode === undefined ? '' : `, exit code ${event.exitCode}`}`)}">`,
+    escapeXmlText(headAndTail(event.output)),
+    '</check>',
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+
+export const REFLECTION_INPUT_EVENT_TYPES = [...EXECUTED_TEXT_EVENT_TYPES, 'user.message', 'model.responded'] as const satisfies readonly RunEvent['type'][];
 
 export type ReflectionInputFold = {
   add(event: RunEvent): void;
@@ -68,24 +78,8 @@ export const createReflectionInputFold = (project: string, capabilities: Capabil
   let stepCount = 0;
   let task = '';
   let final = '';
-  const add = (event: RunEvent): void => {
-    if (event.type === 'user.message') {
-      if (task === '') task = event.text;
-      return;
-    }
-    if (event.type === 'tool.call') {
-      calls.set(event.callId, { name: event.name, title: event.title });
-      return;
-    }
-    if (event.type === 'model.responded') {
-      final = assistantTextOf(event.response.output);
-      return;
-    }
-    if (event.type !== 'tool.completed' && event.type !== 'tool.reconciled') return;
-    const call = calls.get(event.callId);
-    if (call === undefined) return;
+  const show = (step: string): void => {
     stepCount += 1;
-    const step = stepOf(project, stepCount, call, event);
     window.push(step);
     windowChars += step.length + 1;
     while (head < window.length && windowChars > pinnedChars) {
@@ -96,6 +90,28 @@ export const createReflectionInputFold = (project: string, capabilities: Capabil
       window = window.slice(head);
       head = 0;
     }
+  };
+  const showSettled = (event: SettledEvent): void => {
+    const call = calls.get(event.callId);
+    if (call !== undefined) show(stepOf(project, stepCount + 1, call, event));
+  };
+  const executedText: ExecutedTextHandlers = {
+    'tool.call': (event) => {
+      calls.set(event.callId, { name: event.name, title: event.title });
+    },
+    'tool.started': () => undefined,
+    'tool.completed': showSettled,
+    'tool.reconciled': showSettled,
+    'tool.held.resolved': showSettled,
+    'verification.completed': (event) => show(checkOf(stepCount + 1, event)),
+  };
+  const add = (event: RunEvent): void => {
+    if (readExecutedText(event, executedText, undefined)) return;
+    if (event.type === 'user.message') {
+      if (task === '') task = event.text;
+      return;
+    }
+    if (event.type === 'model.responded') final = assistantTextOf(event.response.output);
   };
   const finish = (): string => {
     const taskBlock = `<task>\n${cutToChars(escapeXmlText(task), Math.floor(pinnedChars / 2))}\n</task>`;
