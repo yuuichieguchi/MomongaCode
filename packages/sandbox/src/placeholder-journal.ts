@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Awaitable, PlaceholderForm } from '@momonga/foundation';
 
-export type PlaceholderIdentity = { device: string; inode: string };
+export type PlaceholderIdentity = { device: string; inode: string; changed: string };
 
 export type PlaceholderRecord = { path: string; intentMs: number; form: PlaceholderForm; identity: PlaceholderIdentity | null };
 
@@ -44,7 +44,7 @@ const lstatOrAbsent = async (target: string): Promise<fs.BigIntStats | undefined
 
 export const identityOf = async (target: string): Promise<PlaceholderIdentity> => {
   const stat = await fs.promises.lstat(target, { bigint: true });
-  return { device: String(stat.dev), inode: String(stat.ino) };
+  return { device: String(stat.dev), inode: String(stat.ino), changed: String(stat.ctimeNs) };
 };
 
 const hasForm = async (target: string, stat: fs.BigIntStats, form: PlaceholderForm): Promise<boolean> => {
@@ -56,7 +56,8 @@ const hasForm = async (target: string, stat: fs.BigIntStats, form: PlaceholderFo
 export const isStillThePlaceholder = async (target: string, identity: PlaceholderIdentity, form: PlaceholderForm = EMPTY_FILE_FORM): Promise<boolean> => {
   const stat = await lstatOrAbsent(target);
   if (stat === undefined || !(await hasForm(target, stat, form))) return false;
-  return String(stat.dev) === identity.device && String(stat.ino) === identity.inode;
+  const unchanged = form.kind === 'directory' || String(stat.ctimeNs) === identity.changed;
+  return String(stat.dev) === identity.device && String(stat.ino) === identity.inode && unchanged;
 };
 
 export const removePlaceholderEntry = async (target: string, form: PlaceholderForm): Promise<void> => {
@@ -77,11 +78,13 @@ const syncDirectory = async (directory: string): Promise<void> => {
 
 const parseIdentity = (file: string, value: unknown): PlaceholderIdentity | null => {
   if (value === null) return null;
-  const { device, inode } = (value ?? {}) as Record<string, unknown>;
+  const { device, inode, changed } = (value ?? {}) as Record<string, unknown>;
   if (typeof device !== 'string' || typeof inode !== 'string') {
     throw new Error(`the placeholder record ${file} has an identity without a device or an inode`);
   }
-  return { device, inode };
+  if (changed === undefined) return null;
+  if (typeof changed !== 'string') throw new Error(`the placeholder record ${file} has an identity whose change time is not a string`);
+  return { device, inode, changed };
 };
 
 const parseForm = (file: string, value: unknown): PlaceholderForm => {

@@ -43,9 +43,9 @@ describe('the journal record carries the form', () => {
     const first = createPlaceholderJournal(journalDirectory);
     await first.intend('/w/.git', 100, DIRECTORY_FORM);
     await first.intend('/w/.git/commondir', 200, COMMONDIR_FORM);
-    await first.complete('/w/.git', { device: '1', inode: '2' });
+    await first.complete('/w/.git', { device: '1', inode: '2', changed: '3' });
     expect((await createPlaceholderJournal(journalDirectory).records())).toEqual([
-      { path: '/w/.git', intentMs: 100, form: DIRECTORY_FORM, identity: { device: '1', inode: '2' } },
+      { path: '/w/.git', intentMs: 100, form: DIRECTORY_FORM, identity: { device: '1', inode: '2', changed: '3' } },
       { path: '/w/.git/commondir', intentMs: 200, form: COMMONDIR_FORM, identity: null },
     ]);
   });
@@ -55,11 +55,11 @@ describe('the journal record carries the form', () => {
     expect((await createPlaceholderJournal(journalDirectory).records())).toEqual([{ path: '/w/.envrc', intentMs: 300, form: EMPTY_FILE, identity: null }]);
   });
 
-  it('reads a record written before forms existed as an empty file', async () => {
+  it('reads a record written before forms existed as an empty file, and an identity without its change time as no identity', async () => {
     await createPlaceholderJournal(journalDirectory).records();
     fs.writeFileSync(path.join(journalDirectory, 'legacy.json'), JSON.stringify({ path: '/w/.mcp.json', intentMs: 5, identity: { device: '7', inode: '8', birthMs: 9 } }));
     expect((await createPlaceholderJournal(journalDirectory).records())).toEqual([
-      { path: '/w/.mcp.json', intentMs: 5, form: EMPTY_FILE, identity: { device: '7', inode: '8' } },
+      { path: '/w/.mcp.json', intentMs: 5, form: EMPTY_FILE, identity: null },
     ]);
   });
 

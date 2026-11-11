@@ -51,9 +51,9 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       const first = createPlaceholderJournal(directory);
       await first.intend('/w/.mcp.json', 100);
       await first.intend('/w/.envrc', 200);
-      await first.complete('/w/.envrc', { device: '1', inode: '3' });
+      await first.complete('/w/.envrc', { device: '1', inode: '3', changed: '4' });
       expect((await createPlaceholderJournal(directory).records())).toEqual([
-        { path: '/w/.envrc', intentMs: 200, form: { kind: 'file', bytes: '' }, identity: { device: '1', inode: '3' } },
+        { path: '/w/.envrc', intentMs: 200, form: { kind: 'file', bytes: '' }, identity: { device: '1', inode: '3', changed: '4' } },
         { path: '/w/.mcp.json', intentMs: 100, form: { kind: 'file', bytes: '' }, identity: null },
       ]);
       await first.forget('/w/.envrc');
@@ -62,7 +62,7 @@ describe('the placeholder journal and the recovery at runtime start', () => {
 
     it('refuses to complete a path that has no intent', async () => {
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
-      await expect(journal.complete('/w/.mcp.json', { device: '1', inode: '2' })).rejects.toThrow('no intent');
+      await expect(journal.complete('/w/.mcp.json', { device: '1', inode: '2', changed: '3' })).rejects.toThrow('no intent');
     });
 
     it('refuses a malformed record instead of skipping it', async () => {
@@ -144,6 +144,18 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       fs.writeFileSync(target, '');
       expect(await recoverPlaceholders(journal, { holders: () => new Set([target]) })).toEqual({ removed: [], kept: [], unrecovered: [target] });
       expect((await journal.records())).toHaveLength(1);
+    });
+
+    it('a file under the same device and inode that is not the recorded one (an inode the file system reused) stays', async () => {
+      const work = tempDir();
+      const target = path.join(work, '.mcp.json');
+      const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
+      await journal.intend(target, Date.now());
+      fs.writeFileSync(target, '');
+      const identity = await identityOf(target);
+      await journal.complete(target, { ...identity, changed: `${identity.changed}1` });
+      expect((await recoverPlaceholders(journal, { holders: noHolders })).removed).toEqual([]);
+      expect(fs.existsSync(target)).toBe(true);
     });
 
     it('killed after the completion: the recorded device and inode decide', async () => {
