@@ -84,7 +84,7 @@ describe('Bash run_in_background', () => {
     const [request] = jobs.started;
     expect(request).toMatchObject({ runId: 'run-1', command: 'npm run dev', timeoutMs: 1_800_000 });
     expect(request?.callKey).toMatch(/^[0-9a-f]{64}$/);
-    request?.spawn('/markers/key', new AbortController().signal);
+    await request?.spawn('/markers/key', new AbortController().signal);
     expect(spawns).toEqual([{ argv: ['/bin/bash', '-c', 'npm run dev'], markerFile: '/markers/key', cwd: builtins.layout.project }]);
   });
 

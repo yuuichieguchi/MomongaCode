@@ -5,7 +5,7 @@ import type { Clock } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import type { AnyTool, ToolContext, ToolResult } from '@momonga/tools';
-import { UNBOUNDED_OUTPUT_FIT } from '@momonga/testkit';
+import { UNBOUNDED_OUTPUT_FIT, NEVER_CANCELLED } from '@momonga/testkit';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { createHistoryPort } from '../../src/process/history-port.ts';
 import { harness } from '../../../store/test/helpers.ts';
@@ -24,7 +24,7 @@ const toolsFor = (store: RuntimeStore, session: Session, rules: RulesOf = [], cl
 const execute = async (tools: AnyTool[], name: string, input: unknown, runId = 'current'): Promise<ToolResult> => {
   const tool = tools.find((candidate) => candidate.name === name);
   if (tool === undefined) throw new Error(`no tool ${name}`);
-  return (await tool.execute(input, { runId, outputFit: UNBOUNDED_OUTPUT_FIT } as unknown as ToolContext, undefined)) as ToolResult;
+  return (await tool.execute(input, { runId, outputFit: UNBOUNDED_OUTPUT_FIT, signal: NEVER_CANCELLED } as unknown as ToolContext, undefined)) as ToolResult;
 };
 
 describe('history tools over the real store', () => {

@@ -47,17 +47,17 @@ describe('rule 2: the sandbox policy of each path that approves a Bash call', ()
     const built = await setup();
     const rules = [ruleFor(built.layout)('allow', `Edit(/${built.layout.outside}/**)`)];
     const sandboxPolicy = await policyFor({ layout: built.layout, rules, tmpDir: built.tmpDir });
-    expect((await sandboxPolicy).fileRules.entries.some((entry) => entry.widening)).toBe(true);
-    resultOf(await built.run('Bash', { command: 'pwd' }, { rules, sandboxPolicy: await sandboxPolicy }));
+    expect(sandboxPolicy.fileRules.entries.some((entry) => entry.widening)).toBe(true);
+    resultOf(await built.run('Bash', { command: 'pwd' }, { rules, sandboxPolicy }));
     expect(built.spawns[0]?.policy.fileRules.entries.some((entry) => entry.widening)).toBe(false);
-    expect(built.spawns[0]?.policy.fileRules.entries).toHaveLength((await sandboxPolicy).fileRules.entries.length);
+    expect(built.spawns[0]?.policy.fileRules.entries).toHaveLength(sandboxPolicy.fileRules.entries.length);
   });
 
   it('a file rule that allows writes outside the workspace still widens a call that is not read-only', async () => {
     const built = await setup();
     const rules = [ruleFor(built.layout)('allow', `Edit(/${built.layout.outside}/**)`), ruleFor(built.layout)('allow', 'Bash(pwd:*)')];
     const sandboxPolicy = await policyFor({ layout: built.layout, rules, tmpDir: built.tmpDir });
-    resultOf(await built.run('Bash', { command: 'pwd' }, { rules, sandboxPolicy: await sandboxPolicy }));
+    resultOf(await built.run('Bash', { command: 'pwd' }, { rules, sandboxPolicy }));
     expect(built.spawns[0]?.policy.fileRules.entries.some((entry) => entry.widening)).toBe(true);
   });
 
@@ -70,8 +70,8 @@ describe('rule 2: the sandbox policy of each path that approves a Bash call', ()
   it('a background job started from a read-only analysis gets the read-only policy and environment', async () => {
     const started: Array<Promise<unknown>> = [];
     const jobs = {
-      start: async (request: { spawn(marker: string, signal: AbortSignal): { exited: Promise<unknown> } }) => {
-        started.push(request.spawn(path.join(built.layout.root, 'job-marker'), new AbortController().signal).exited);
+      start: async (request: { spawn(marker: string, signal: AbortSignal): Promise<{ exited: Promise<unknown> }> }) => {
+        started.push((await request.spawn(path.join(built.layout.root, 'job-marker'), new AbortController().signal)).exited);
         return { jobId: 'job-1' };
       },
     } as unknown as BackgroundJobs;
