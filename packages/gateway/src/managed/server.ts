@@ -11,6 +11,7 @@ import type { ChildEnv } from './fm-processes.ts';
 import { aboutModel } from './name.ts';
 import { notReadyText, runPreconditions } from './preconditions.ts';
 import type { ExecFn, RefusedVerdict } from './preconditions.ts';
+import { readProbeReply } from '../probe/client.ts';
 
 export interface ManagedChild {
   finalize?(graceMs: number): Promise<void>;
@@ -330,7 +331,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
   const answersReady = async (readyClient: UdsClient, signal: AbortSignal): Promise<boolean> => {
     try {
       const response = await readyClient.request({ method: description.ready.method, path: description.ready.path, signal });
-      await response.text();
+      await readProbeReply(description.ready.method, description.ready.path, response);
       return response.status === description.ready.status;
     } catch (error) {
       if (isConnectionFailure(error)) return false;

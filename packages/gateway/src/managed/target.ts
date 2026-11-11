@@ -44,6 +44,7 @@ import { targetProbingError } from '../probe/auto-probe.ts';
 import { modelIdChangedError } from '../probe/model-id-changed.ts';
 import type { InstanceProbe } from '../probe/instance-probe.ts';
 import { declaredDialectRefusal, needsProbeOf } from '../probe/remedy.ts';
+import { readProbeReply } from '../probe/client.ts';
 import { aboutModel, managedModelName } from './name.ts';
 import { missingExecutableVerdict, notReadyText } from './preconditions.ts';
 import type { ExecResult } from './preconditions.ts';
@@ -275,7 +276,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     const client = createUdsClient(fixedSocket(socketPath));
     try {
       const response = await client.request({ method: 'GET', path: description.models.listPath, signal });
-      const text = await response.text();
+      const text = await readProbeReply('GET', description.models.listPath, response);
       if (response.status !== 200) throw new Error(aboutModel(modelName(), `the server answered GET ${description.models.listPath} with HTTP ${response.status}: ${text.slice(0, 200)}`));
       const id = valueAtPath(parseJson(text), description.models.idPath);
       if (typeof id !== 'string') throw new Error(aboutModel(modelName(), `the server lists no model id at GET ${description.models.listPath}`));

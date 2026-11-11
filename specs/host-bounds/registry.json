@@ -39,6 +39,7 @@
     {"name":"MAX_SSE_EVENT_BYTES","file":"packages/gateway/src/adapters/shared/limits.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"MAX_UNARY_BODY_BYTES","file":"packages/gateway/src/adapters/shared/limits.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"HEADER_BYTES","file":"packages/gateway/src/core/image-size.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
+    {"name":"PROBE_REPLY_MAX_BYTES","file":"packages/gateway/src/probe/client.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"FILE_NAME_HASH_CHARS","file":"packages/gateway/src/probe/endpoint-record.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"MAX_ERROR_CHARS","file":"packages/mcp/src/authorize.ts","kind":"stated","owner":"mcp","row":"mcp-skills-agents-eval.md"},
     {"name":"BACKOFF_BASE_MS","file":"packages/mcp/src/connection.ts","kind":"C","owner":"mcp","row":"mcp-skills-agents-eval.md"},
