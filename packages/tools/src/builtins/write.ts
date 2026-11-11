@@ -1,5 +1,6 @@
 import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
+import type { PreconditionContext } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, isUtf8File, newFileMode, readUtf8File, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
 import { diffOfContents } from './applied-diff.ts';
 import { pluralize, splitLines } from './format.ts';
@@ -7,6 +8,20 @@ import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './pa
 import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
 
 type WriteInput = { file_path: string; content: string };
+
+const planWrite = async (input: WriteInput, ctx: PreconditionContext): Promise<{ path: string; preHash: string | null; postHash: string }> => {
+  const target = await canonicalPathOf(ctx, 'file_path', input.file_path);
+  const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
+  const stat = await statIfExists(ctx.files, target);
+  if (stat?.isDirectory() === true) throw new ToolExecutionError(`${shown} is a directory, not a file`);
+  const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
+  if (problem !== undefined) throw new ToolExecutionError(problem);
+  if (stat !== undefined && !(await isUtf8File(ctx.files, target))) {
+    throw new ToolExecutionError(`${shown} is not UTF-8 text and is not replaced by Write; its encoding is not guessed`);
+  }
+  const preHash = stat === undefined ? null : await assertReadAndUnchanged(ctx.files, ctx.session, target, shown);
+  return { path: target, preHash, postHash: sha256Hex(input.content) };
+};
 
 export const writeTool = defineTool<WriteInput>({
   name: 'Write',
@@ -34,19 +49,8 @@ export const writeTool = defineTool<WriteInput>({
   title: async (input, ctx) => `Write ${await shownPath(ctx, await accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Write', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
-  prepare: async (input, ctx) => {
-    const target = await canonicalPathOf(ctx, 'file_path', input.file_path);
-    const shown = await shownPath(ctx, resolvedPathOf(ctx, input.file_path));
-    const stat = await statIfExists(ctx.files, target);
-    if (stat?.isDirectory() === true) throw new ToolExecutionError(`${shown} is a directory, not a file`);
-    const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
-    if (problem !== undefined) throw new ToolExecutionError(problem);
-    if (stat !== undefined && !(await isUtf8File(ctx.files, target))) {
-      throw new ToolExecutionError(`${shown} is not UTF-8 text and is not replaced by Write; its encoding is not guessed`);
-    }
-    const preHash = stat === undefined ? null : await assertReadAndUnchanged(ctx.files, ctx.session, target, shown);
-    return { path: target, preHash, postHash: sha256Hex(input.content) };
-  },
+  precondition: async (input, ctx) => void (await planWrite(input, ctx)),
+  prepare: planWrite,
   execute: async (input, ctx, prepared) => {
     const plan = parsePreparedWrite(prepared);
     if (sha256Hex(input.content) !== plan.postHash) throw new ToolExecutionError('Write content does not match the prepared state');

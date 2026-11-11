@@ -65,6 +65,8 @@ export type SubjectContext = {
 
 export type DisplayContext = Pick<SubjectContext, 'cwd' | 'workingDirectory' | 'paths'>;
 
+export type PreconditionContext = SubjectContext & { files: FileSystem; session: ToolSessionState; signal: AbortSignal };
+
 export type ToolResume = {
   checkpoint: Record<string, unknown> | undefined;
   inputResponses: Record<string, unknown> | undefined;
@@ -187,6 +189,7 @@ export type ToolBody<Input> = {
   title(input: Input, ctx: DisplayContext): Awaitable<string>;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
   gateFacts?(input: Input, ctx: SubjectContext, call: GateCall): Promise<GateFacts>;
+  precondition?(input: Input, ctx: PreconditionContext): Promise<void>;
   prepare?(input: Input, ctx: ToolContext, gateFacts?: GateFacts): Promise<Record<string, unknown>>;
   execute(input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult | ToolPending>;
   reconcile?(input: Input, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult>;

@@ -827,6 +827,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return failedOutcome(call.callId, `Permission check failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (approval?.subjectDigest !== subjectDigest) {
+        if (stage === 'enforce' && tool.precondition !== undefined) {
+          try {
+            await tool.precondition(input, { ...subjectContextOf(batch), files: options.files, session: batch.session, signal: batch.signal });
+          } catch (error) {
+            return failedOutcome(call.callId, describeThrown(tool.name, error));
+          }
+        }
         if (batch.mode === 'auto' && decision.source === 'mode' && decision.humanOnly !== true) {
           if (batch.classifier === undefined) throw new Error('auto mode needs a classifier');
           const classified = await batch.classifier.classify({
