@@ -54,7 +54,7 @@ export const createFactsFold = (): FactsFold => {
   let ordinal = 0;
   let declared: boolean | undefined;
   let mandated: boolean | undefined;
-  let held = 0;
+  const heldCalls = new Set<string>();
   let resolvedByPerson = 0;
   let denied = 0;
   let waited = false;
@@ -150,7 +150,7 @@ export const createFactsFold = (): FactsFold => {
         break;
       }
       case 'tool.held':
-        held += 1;
+        heldCalls.add(event.callId);
         break;
       case 'tool.held.resolved':
         if (event.outcome !== 'withdrawn') resolvedByPerson += 1;
@@ -214,7 +214,7 @@ export const createFactsFold = (): FactsFold => {
       costNano: info.costNano,
       steps: info.step,
       limits: info.limits,
-      ...(mandated === true ? { delegation: { held, resolvedByPerson, denied, waited } } : {}),
+      ...(mandated === true ? { delegation: { held: heldCalls.size, resolvedByPerson, denied, waited } } : {}),
       ...(info.deadlineAt === undefined ? {} : { deadlineAt: info.deadlineAt }),
       asked,
       elicited,

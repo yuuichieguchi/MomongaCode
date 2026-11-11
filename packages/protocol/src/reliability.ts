@@ -15,7 +15,7 @@ export const MIN_RATE_POPULATION = 35;
 export const REVIEW_SAMPLE_SIZE = 73;
 export const REPORT_PAGE_ROWS = 500;
 export const FACTS_SWEEP_BATCH_RUNS = 3;
-export const INDICATOR_DEFINITIONS_VERSION = 2;
+export const INDICATOR_DEFINITIONS_VERSION = 3;
 
 export const MAIN_AGENT = 'main';
 
