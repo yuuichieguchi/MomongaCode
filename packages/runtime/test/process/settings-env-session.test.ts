@@ -32,3 +32,13 @@ describe('the env setting reaches the environment of the session (config-C14)', 
     expect(env['OPENAI_API_KEY']).toBeUndefined();
   });
 });
+
+describe('the environment the references of the person own MCP servers read (config-C35)', () => {
+  it('holds the session environment and the env setting, a credential included, while the tool environment strips the credential', async () => {
+    const { composition, cwd } = await compositionOf({ env: { MCP_PORT: '9000' } }, {});
+    const session = { cwd, env: { PATH: '/usr/bin', GITHUB_TOKEN: 'fake-token-for-tests' } };
+    const referenceEnv = await composition.referenceEnvFor(session, await composition.userSnapshot(new AbortController().signal), new AbortController().signal);
+    expect(referenceEnv).toMatchObject({ PATH: '/usr/bin', MCP_PORT: '9000', GITHUB_TOKEN: 'fake-token-for-tests' });
+    expect((await composition.envFor(session, new AbortController().signal))['GITHUB_TOKEN']).toBeUndefined();
+  });
+});

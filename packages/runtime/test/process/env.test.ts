@@ -82,7 +82,7 @@ describe('tool env at use time (system timers)', () => {
       });
     });
 
-    it('a variable declared as apiKeyEnv after session create is stripped at use time from Bash and from MCP', async () => {
+    it('a variable declared as apiKeyEnv after session create is stripped at use time from Bash and from the environment an MCP server inherits, and reaches the server only where the person wrote it as a reference', async () => {
       const temp = await makeTempHome();
       const f = await makeRuntimeFixture({
         temp,
@@ -106,8 +106,8 @@ describe('tool env at use time (system timers)', () => {
 
       writeUserSettings(temp.home, { ...chatTargetSettings(DECLARED_CREDENTIAL), mcpServers: { dump: dumpServer(dump) } });
       const mcpEnv = await mcpEnvDump(f, runId, dump);
-      expect(mcpEnv).toContain('SEEN_DECLARED=absent');
-      expect(mcpEnv).not.toContain(`${DECLARED_CREDENTIAL}=`);
+      expect(mcpEnv).toContain('SEEN_DECLARED=v');
+      expect(mcpEnv.split('\n').some((line) => line.startsWith(`${DECLARED_CREDENTIAL}=`))).toBe(false);
     });
 
     it('the variable a forge names for its token is absent from Bash, which the session runs', async () => {

@@ -88,6 +88,7 @@ const setup = async () => {
     readConnectTimeoutMs: () => CONNECT_TIMEOUT_MS,
     settings: {
       envFor: async () => ({}),
+      referenceEnvFor: async () => ({}),
       admitUserSnapshot: async (signal) => {
         const snapshot = await cache.load(signal);
         if ('error' in snapshot) throw snapshot.error;
