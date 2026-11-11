@@ -18,6 +18,7 @@ import {
   createExecWithStdin,
   createHostExec,
   createPlatformSecretStore,
+  guardStandardStreams,
   hostKernelLock,
   minimalChildEnv,
   nodeFileSystem,
@@ -29,7 +30,7 @@ import {
   writeFileAtomicallySync,
   launchApart,
 } from '@momonga/foundation';
-import type { HeldKernelLock, HelperHost, LaunchProgram, ProcessPort } from '@momonga/foundation';
+import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessPort } from '@momonga/foundation';
 import { sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
@@ -317,7 +318,7 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
   };
 };
 
-export const nodePorts = (version: string, interrupt: AbortSignal): CliPorts => {
+export const nodePorts = (version: string, interrupt: AbortSignal, streams: GuardedStandardStreams = guardStandardStreams(process)): CliPorts => {
   const self = nodeSelf(process.argv, isSea);
   return {
     version,
@@ -327,8 +328,8 @@ export const nodePorts = (version: string, interrupt: AbortSignal): CliPorts => 
     cwd: process.cwd(),
     home: process.env['HOME'] ?? os.homedir(),
     stdin: { isTerminal: process.stdin.isTTY === true, bytes: () => process.stdin },
-    stdout: process.stdout,
-    stderr: process.stderr,
+    stdout: streams.stdout,
+    stderr: streams.stderr,
     clock: nodeClock,
     timers: systemTiming,
     random: Math.random,

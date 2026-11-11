@@ -327,6 +327,8 @@ export { watchLifeline } from './lifeline.ts';
 export { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
 export type { RotatingLogFile } from './rotating-log.ts';
 export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';
+export { guardStandardStreams } from './standard-streams.ts';
+export type { GuardedStandardStreams } from './standard-streams.ts';
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
 export { everyAsync, filterAsync, findAsync, mapAsync, someAsync } from './sequential.ts';
