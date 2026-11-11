@@ -15,14 +15,18 @@ const requirePositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`createGateway: ${name} must be a positive integer, got ${value}`);
 };
 
-const checkModels = (options: FixedModelsOptions): void => {
+const requireNonNegativeInteger = (name: string, value: number): void => {
+  if (!Number.isInteger(value) || value < 0) throw new RangeError(`createGateway: ${name} must be a non-negative integer, got ${value}`);
+};
+
+export const checkModels = (options: Pick<FixedModelsOptions, 'config' | 'adapters'>): void => {
   const { config, adapters } = options;
   const { targets, chains } = config.models;
   const configured = Object.keys(targets);
   for (const [name, target] of Object.entries(targets)) {
     if (!Object.hasOwn(adapters, name)) throw new Error(`createGateway: model "${name}" has no adapter`);
     requirePositiveInteger(`maxConcurrency of model "${name}"`, target.maxConcurrency);
-    requirePositiveInteger(`admissionTimeoutMs of model "${name}"`, target.admissionTimeoutMs);
+    requireNonNegativeInteger(`admissionTimeoutMs of model "${name}"`, target.admissionTimeoutMs);
   }
   for (const name of [...Object.keys(chains), ...Object.values(chains).flat()]) {
     if (!configured.includes(name)) throw new Error(`createGateway: the fallback order names "${name}", which is not a configured model`);
