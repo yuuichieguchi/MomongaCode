@@ -113,7 +113,7 @@ describe('tool env at use time (system timers)', () => {
     it('the variable a forge names for its token is absent from Bash, which the session runs', async () => {
       const temp = await makeTempHome();
       const f = await makeRuntimeFixture({ temp, sandbox: createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 }) });
-      writeUserSettings(temp.home, { forges: [{ id: 'gh', descriptor: 'github', host: 'github.com', apiBaseUrl: 'https://api.github.com', credentialEnv: FORGE_TOKEN }] });
+      writeUserSettings(temp.home, { forges: [{ id: 'gh', descriptor: 'github', hosts: ['github.com'], apiBaseUrl: 'https://api.github.com', credential: { env: FORGE_TOKEN } }] });
       const session = createSession(f.store, temp.project, { env: { PATH: '/usr/bin:/bin', HOME: temp.home, [FORGE_TOKEN]: 'forge-value' } });
       const runId = await createRun(f.store, session.id);
 

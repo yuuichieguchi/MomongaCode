@@ -6,7 +6,7 @@ const FORGE_VARIABLE = 'FORGE_ACCESS_FOR_TEST';
 
 const forgeSettings = (name: string): Record<string, unknown> => ({
   ...chatTargetSettings('MODEL_VARIABLE_FOR_TEST'),
-  forges: [{ id: 'gh', descriptor: 'github', host: 'github.com', apiBaseUrl: 'https://api.github.com', credentialEnv: name }],
+  forges: [{ id: 'gh', descriptor: 'github', hosts: ['github.com'], apiBaseUrl: 'https://api.github.com', credential: { env: name } }],
 });
 
 afterEach(() => {

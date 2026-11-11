@@ -8,16 +8,10 @@ import { hostedRemoteOf, parseRemoteUrl, splitRepository } from './remote.ts';
 
 export type ForgeCredentialReference = { readonly env: string } | { readonly secret: string };
 
-export const forgeCredentialOf = (instance: { credentialEnv?: string; credentialSecret?: string; id: string }): ForgeCredentialReference => {
-  if (instance.credentialEnv !== undefined) return { env: instance.credentialEnv };
-  if (instance.credentialSecret !== undefined) return { secret: instance.credentialSecret };
-  throw new ToolExecutionError(`the forge ${instance.id} names no credential`);
-};
-
 export type ForgeInstance = {
   readonly id: string;
   readonly descriptor: string;
-  readonly host: string;
+  readonly hosts: readonly string[];
   readonly apiBaseUrl: string;
   readonly credential: ForgeCredentialReference;
 };
@@ -36,7 +30,11 @@ const GIT_TRANSPORT_SCHEME = 'https';
 const GIT_REPOSITORY_ENDING = '.git';
 const URL_FORM = /^[a-z][a-z0-9+.-]*:\/\//i;
 
-export const gitOriginOf = (instance: Pick<ForgeInstance, 'host'>): string => new URL(`${GIT_TRANSPORT_SCHEME}://${instance.host}`).origin;
+const gitOriginOfHost = (host: string): string => new URL(`${GIT_TRANSPORT_SCHEME}://${host}`).origin;
+
+export const gitOriginsOf = (instance: Pick<ForgeInstance, 'hosts'>): string[] => instance.hosts.map(gitOriginOfHost);
+
+const canonicalHostOf = (host: string): string => new URL(`${GIT_TRANSPORT_SCHEME}://${host}`).host;
 
 const originOfRemote = (remoteUrl: string): string | undefined => {
   const trimmed = remoteUrl.trim();
@@ -65,20 +63,22 @@ export const createForgeAccess = (options: ForgeAccessOptions): ForgeAccess => {
   return {
     gitDestination: (remoteUrl) => {
       const hosted = hostedRemoteOf(remoteUrl);
-      const instance = hosted === undefined ? undefined : options.instances.find((candidate) => new URL(gitOriginOf(candidate)).hostname === hosted.hostname);
-      if (hosted === undefined || instance === undefined) return undefined;
-      return `${gitOriginOf(instance)}/${hosted.repo.split('/').map(encodeURIComponent).join('/')}${GIT_REPOSITORY_ENDING}`;
+      const hostname = hosted === undefined ? undefined : canonicalHostOf(hosted.hostname);
+      const origin = options.instances.flatMap(gitOriginsOf).find((candidate) => new URL(candidate).hostname === hostname);
+      if (hosted === undefined || origin === undefined) return undefined;
+      return `${origin}/${hosted.repo.split('/').map(encodeURIComponent).join('/')}${GIT_REPOSITORY_ENDING}`;
     },
     gitCredential: async (remoteUrl, signal) => {
       const origin = originOfRemote(remoteUrl);
-      const instance = origin === undefined ? undefined : options.instances.find((candidate) => gitOriginOf(candidate) === origin);
+      const instance = origin === undefined ? undefined : options.instances.find((candidate) => gitOriginsOf(candidate).includes(origin));
       if (origin === undefined || instance === undefined) return undefined;
       const descriptor = descriptorOf(instance);
       return { origin, username: descriptor.auth.gitUsername, password: await options.readCredential(instance.credential, signal) };
     },
     request: async ({ remoteUrl, operation, args, signal, boundMs }) => {
       const location = parseRemoteUrl(remoteUrl);
-      const instance = options.instances.find((candidate) => candidate.host === location.host);
+      const host = canonicalHostOf(location.host);
+      const instance = options.instances.find((candidate) => candidate.hosts.map(canonicalHostOf).includes(host));
       if (instance === undefined) throw new ToolExecutionError(`no forge configured for host ${location.host}`);
       const descriptor = descriptorOf(instance);
       const credential = await options.readCredential(instance.credential, signal);

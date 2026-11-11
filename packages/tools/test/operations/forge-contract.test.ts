@@ -21,7 +21,7 @@ const operations = Object.keys(github().operations) as Operation[];
 const accessOn = (apiBaseUrl: string, fetch: ForgeFetch) =>
   createForgeAccess({
     descriptors: [github()],
-    instances: [{ id: 'gh', descriptor: 'github', host: new URL(apiBaseUrl).host, apiBaseUrl, credential: { env: 'FAKE_FORGE_TOKEN' } }],
+    instances: [{ id: 'gh', descriptor: 'github', hosts: [new URL(apiBaseUrl).host], apiBaseUrl, credential: { env: 'FAKE_FORGE_TOKEN' } }],
     fetch,
     readCredential: async () => CREDENTIAL,
   });

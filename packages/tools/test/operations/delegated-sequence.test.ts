@@ -53,7 +53,7 @@ const setup = async () => {
     runArgv: runner.run,
     forge: createForgeAccess({
       descriptors: [descriptor],
-      instances: [{ id: 'local', descriptor: descriptor.id, host: gitServer.host, apiBaseUrl: forge.origin, credential: { env: 'FAKE_FORGE_TOKEN' } }],
+      instances: [{ id: 'local', descriptor: descriptor.id, hosts: [gitServer.host], apiBaseUrl: forge.origin, credential: { env: 'FAKE_FORGE_TOKEN' } }],
       fetch: TEST_FETCH,
       readCredential: async () => CREDENTIAL,
     }),

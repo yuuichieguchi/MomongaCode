@@ -29,7 +29,7 @@ const setup = async (shape: ForgeShape): Promise<{ forge: FakeForge; tool(name: 
   const descriptor = descriptorFor(shape);
   const access = createForgeAccess({
     descriptors: [descriptor],
-    instances: [{ id: 'local', descriptor: descriptor.id, host: forge.host, apiBaseUrl: forge.origin, credential: { env: 'FAKE_FORGE_TOKEN' } }],
+    instances: [{ id: 'local', descriptor: descriptor.id, hosts: [forge.host], apiBaseUrl: forge.origin, credential: { env: 'FAKE_FORGE_TOKEN' } }],
     fetch: TEST_FETCH,
     readCredential: async () => CREDENTIAL,
   });
@@ -82,7 +82,7 @@ const answering =
 const accessWith = (fetch: ForgeFetch) =>
   createForgeAccess({
     descriptors: [github()],
-    instances: [{ id: 'gh', descriptor: 'github', host: 'forge.example', apiBaseUrl: FORGE_ORIGIN, credential: { env: 'FAKE_FORGE_TOKEN' } }],
+    instances: [{ id: 'gh', descriptor: 'github', hosts: ['forge.example'], apiBaseUrl: FORGE_ORIGIN, credential: { env: 'FAKE_FORGE_TOKEN' } }],
     fetch,
     readCredential: async () => CREDENTIAL,
   });
