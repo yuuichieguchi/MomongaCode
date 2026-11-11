@@ -1,5 +1,7 @@
 import { TARGET_BILLINGS } from './capabilities.ts';
 import type { TargetBilling } from './capabilities.ts';
+import { messageOf } from './vocabulary.ts';
+import type { Surface } from './vocabulary.ts';
 
 export const BILLING_CHANGE_ALLOWED = 'billing_change_allowed' as const;
 export const BILLING_CHANGE_REFUSED = 'billing_change_refused' as const;
@@ -10,7 +12,9 @@ export type BillingChangeRecord = { fromBilling: TargetBilling; toBilling: Targe
 
 export type FallbackCause = { target: string; name?: string; code: string | null; message: string } & (BillingChangeRecord | { fromBilling?: never; toBilling?: never; reason?: never });
 
-export type SpanFallbackCause = Omit<FallbackCause, 'message'> & { message?: string };
+type WithoutMessage<Cause> = Cause extends unknown ? Omit<Cause, 'message'> & { message?: string } : never;
+
+export type SpanFallbackCause = WithoutMessage<FallbackCause>;
 
 export const spanFallbackCauseOf = (cause: FallbackCause, captureMessageContent: boolean): SpanFallbackCause => {
   if (captureMessageContent) return cause;
@@ -52,8 +56,8 @@ const failureDetailOf = (cause: SpanFallbackCause): string => [cause.code, cause
 
 const failureOf = (cause: SpanFallbackCause): string => `${fallbackCauseName(cause)} failed (${failureDetailOf(cause)})`;
 
-export const describeFallbackCause = (cause: SpanFallbackCause): string => {
-  if (cause.reason === BILLING_CHANGE_REFUSED) return `changing from ${cause.fromBilling} to ${cause.toBilling} billing is not allowed, so ${fallbackCauseName(cause)} was not tried`;
+export const describeFallbackCause = (cause: SpanFallbackCause, surface: Surface): string => {
+  if (cause.reason === BILLING_CHANGE_REFUSED) return messageOf('billingChangeRefused', surface, { model: fallbackCauseName(cause), from: cause.fromBilling, to: cause.toBilling });
   if (cause.reason === BILLING_CHANGE_ALLOWED) return `${failureOf(cause)}, so the request changed from ${cause.fromBilling} to ${cause.toBilling} billing as models.billingChanges allows`;
   return failureOf(cause);
 };
