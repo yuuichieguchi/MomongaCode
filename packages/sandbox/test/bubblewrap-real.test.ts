@@ -173,12 +173,12 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
       ['a link to a directory in the root', (git: string) => fs.symlinkSync('realgit', git)],
       ['a link to a directory outside the root', (git: string) => fs.symlinkSync(path.join(outside, 'x.git'), git)],
       ['a link to itself', (git: string) => fs.symlinkSync('.git', git)],
-    ] as const)('refuses to start when the writable root holds %s', (_label, make) => {
+    ] as const)('refuses to start when the writable root holds %s', async (_label, make) => {
       fs.mkdirSync(path.join(work, 'realgit'), { recursive: true });
       fs.mkdirSync(path.join(outside, 'x.git'), { recursive: true });
       const git = path.join(work, '.git');
       make(git);
-      expect(spawnFor(git)).toThrow(expect.objectContaining({ code: 'protected_link_not_pinnable', path: git }));
+      await expect(spawnFor(git)()).rejects.toThrow(expect.objectContaining({ code: 'protected_link_not_pinnable', path: git }));
       expect(fs.lstatSync(git).isSymbolicLink()).toBe(true);
     });
 

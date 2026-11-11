@@ -65,7 +65,7 @@ describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap o
     return run(await proc);
   };
 
-  const refusedWithControl = async (build: (base: string) => Built, script: string, unchanged: (cwd: string) => unknown) => {
+  const refusedWithControl = async (build: (base: string) => Built, script: string, unchanged: (cwd: string) => unknown, refusal = 'protected_link_not_pinnable') => {
     const protectedBase = tempDir();
     const target = build(protectedBase);
     const set = await setOf(target.roots);
@@ -77,7 +77,7 @@ describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap o
       expect(refused.code).not.toBe(0);
     } else {
       expect(process.platform).not.toBe('darwin');
-      expect(refusedToStart).toMatchObject({ name: 'SandboxPolicyError', code: 'protected_link_not_pinnable' });
+      expect(refusedToStart).toMatchObject({ name: 'SandboxPolicyError', code: refusal });
     }
     expect(unchanged(target.cwd)).toEqual(before);
 
@@ -150,16 +150,16 @@ describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap o
       ['a regular file: mv x z', regularFile, 'mv x z', ['x', 'z']],
       ['a one-link loop: rm x', loop, 'rm x', ['x']],
       ['a one-link loop: ln -sfn other x', loop, 'mkdir other && ln -sfn other x', ['x']],
-      ['a mode 000 directory: chmod 755 x', lockedX, 'chmod 755 x', ['x']],
-      ['a mode 000 directory: rmdir x', lockedX, 'rmdir x', ['x']],
+      ['a mode 000 directory: chmod 755 x', lockedX, 'chmod 755 x', ['x'], 'protected_path_unreadable'],
+      ['a mode 000 directory: rmdir x', lockedX, 'rmdir x', ['x'], 'protected_path_unreadable'],
       ['a two-link loop: ln -sfn dir b', twoLinks, 'ln -sfn dir b', ['a', 'b']],
       ['a two-link loop: rm b', twoLinks, 'rm b', ['a', 'b']],
       ['a link to a file: rm f', linkToFile, 'rm f', ['sf', 'f']],
       ['a link to a file: rm f && mkdir f', linkToFile, 'rm f && mkdir f', ['sf', 'f']],
       ['a link to a locked directory: chmod 755 locked', linkToLocked, 'chmod 755 locked', ['a/l', 'locked']],
       ['a link to a locked directory: ln -sfn other a/l', linkToLocked, 'ln -sfn ../other a/l', ['a/l', 'locked']],
-    ] as const)('refuses %s', async (_label, build, script, names) => {
-      await refusedWithControl(build, script, stateOf(...names));
+    ] as const)('refuses %s', async (_label, build, script, names, refusal: string = 'protected_link_not_pinnable') => {
+      await refusedWithControl(build, script, stateOf(...names), refusal);
     });
   });
 

@@ -297,8 +297,6 @@
       {"name":"FLUSH_BYTES","file":"packages/runtime/src/worker/model-stream.ts","lacks":["row"]},
       {"name":"FLUSH_INTERVAL_MS","file":"packages/runtime/src/worker/model-stream.ts","lacks":["row"]},
       {"name":"LAUNCHER_LINKS_MAX_BYTES","file":"packages/sandbox/src/always-write-denied.ts","lacks":["row"]},
-      {"name":"FILESYSTEM_TIMESTAMP_GRANULARITY_MS","file":"packages/sandbox/src/placeholder-journal.ts","lacks":["kind"]},
-      {"name":"NS_PER_MS","file":"packages/sandbox/src/placeholder-journal.ts","lacks":["kind","row"]},
       {"name":"SANDBOX_STOP_BOUND_MS","file":"packages/sandbox/src/process.ts","lacks":["kind","row"]},
       {"name":"ACTIVATE_SKILL_TIMEOUT_MS","file":"packages/skills/src/constants.ts","lacks":["kind"]},
       {"name":"OUTCOME_LABEL_CHARS","file":"packages/store/src/search-documents.ts","lacks":["row"]},

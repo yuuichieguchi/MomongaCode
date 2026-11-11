@@ -102,7 +102,7 @@ export type { LeftoverDirectory, LeftoverFiles } from './leftover-sweep.ts';
 export { createOwnedDirectory, createOwnedDirectorySync } from './owned-directory.ts';
 export { createLockedEntry } from './locked-entry.ts';
 export type { LockedEntry, LockedEntryFiles } from './locked-entry.ts';
-export type { OwnedDirectory, OwnedDirectorySync } from './owned-directory.ts';
+export type { OwnedDirectory } from './owned-directory.ts';
 export { createLockCapability, resolveLayoutLocks } from './platform/lock-capability.ts';
 export type { LayoutLocks, LockCapability, LockCapabilityProbe } from './platform/lock-capability.ts';
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
