@@ -229,10 +229,38 @@ describe('a group read back from a record is proved by its name', () => {
     expect(fake.keepers[0]?.closedByClient()).toBe(true);
   });
 
-  it('does not answer for a group that has no job on record', async () => {
-    const port = portOf(createKeptGroupControl(fakeKeeperHost().host));
-    await expect(port.alive(6000, LIVE)).rejects.toThrow(/no job/);
-    await expect(port.signal(6000, 'SIGTERM', LIVE)).rejects.toThrow(/no job/);
+  it('answers unknown for a group that has no job on record, starts no keeper and never throws', async () => {
+    const fake = fakeKeeperHost();
+    const kept = createKeptGroupControl(fake.host);
+    const port = portOf(kept);
+    expect(await kept.members(6000, LIVE)).toEqual({ kind: 'unknown' });
+    expect(await port.alive(6000, LIVE)).toBe(false);
+    await expect(port.signal(6000, 'SIGTERM', LIVE)).resolves.toBeUndefined();
+    await expect(port.ended?.(6000, LIVE)).resolves.toBeUndefined();
+    expect(fake.keepers).toHaveLength(0);
+  });
+
+  it('deletes the entry of a launched group when the group ends', async () => {
+    const fake = fakeKeeperHost(launchThen(() => [COMMAND_PID]));
+    const kept = createKeptGroupControl(fake.host);
+    opened(fake, kept);
+    await settle();
+    expect(kept.nameOf(KEEPER_PID)).toBeDefined();
+    expect(kept.leads(KEEPER_PID)).toBe(true);
+    fake.keepers[0]?.say('exit 0\nempty\n');
+    await settle();
+    expect(kept.nameOf(KEEPER_PID)).toBeUndefined();
+    expect(kept.leads(KEEPER_PID)).toBe(false);
+    expect(await kept.members(KEEPER_PID, LIVE)).toEqual({ kind: 'unknown' });
+  });
+
+  it('deletes the entry of a recalled group once its name no longer opens', async () => {
+    const fake = fakeKeeperHost((keeper) => keeper.say('failed job-absent 2\n'));
+    const kept = createKeptGroupControl(fake.host);
+    kept.recall(5000, NAME);
+    expect(kept.leads(5000)).toBe(false);
+    expect(await kept.members(5000, LIVE)).toEqual({ kind: 'members', pids: [] });
+    expect(kept.nameOf(5000)).toBeUndefined();
   });
 
   it('a record never replaces a group this process launched under the same number', async () => {

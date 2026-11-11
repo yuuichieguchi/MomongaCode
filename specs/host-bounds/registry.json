@@ -26,6 +26,7 @@
     {"name":"HEADER_BYTES","file":"packages/foundation/src/git-index.ts","kind":"stated","owner":"foundation","row":"gateway-config.md"},
     {"name":"HISTORY_OUTPUT_HEAD_CHARS","file":"packages/foundation/src/history-output.ts","kind":"stated","owner":"foundation","row":"context.md"},
     {"name":"HISTORY_OUTPUT_TAIL_CHARS","file":"packages/foundation/src/history-output.ts","kind":"stated","owner":"foundation","row":"context.md"},
+    {"name":"COMMAND_OUTPUT_MAX_BYTES","file":"packages/foundation/src/platform/command-runner.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"HOLDER_READ_MAX_BYTES","file":"packages/foundation/src/platform/holder-file.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"ABANDON_KILL_GRACE_MS","file":"packages/foundation/src/process-contract.ts","kind":"P","owner":"supervisor","row":"foundation-supervisor-packaging.md"},
     {"name":"DAEMON_MARKER_KILL_GRACE_MS","file":"packages/foundation/src/process-contract.ts","kind":"P","owner":"supervisor","row":"foundation-supervisor-packaging.md"},

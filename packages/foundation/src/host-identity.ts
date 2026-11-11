@@ -1,10 +1,10 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { nodeFileSystem } from './node-file-system.ts';
 import type { FileSystem } from './node-file-system.ts';
 import { settledOrAborted } from './operation-limit.ts';
+import { nodeCommandRunner } from './platform/command-runner.ts';
 import { isErrno } from './platform/inspector-types.ts';
 import { startSharedCall } from './shared-call.ts';
 import type { SharedCall } from './shared-call.ts';
@@ -20,19 +20,7 @@ export type HostExec = (file: string, args: readonly string[], options: { signal
 export const createHostExec =
   (env?: Readonly<Record<string, string>>): HostExec =>
   (file, args, options) =>
-    new Promise((resolve, reject) => {
-      execFile(file, [...args], { ...(env === undefined ? {} : { env: { ...env } }), signal: options.signal }, (error, stdout, stderr) => {
-        if (error === null) {
-          resolve({ exitCode: 0, stdout, stderr });
-          return;
-        }
-        if (typeof error.code === 'number') {
-          resolve({ exitCode: error.code, stdout, stderr });
-          return;
-        }
-        reject(error);
-      });
-    });
+    nodeCommandRunner(file, args, { env, signal: options.signal });
 
 export type BinaryHashCache = { sha256Of(file: string, signal: AbortSignal): Promise<string> };
 
