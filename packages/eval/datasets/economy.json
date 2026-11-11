@@ -4,7 +4,7 @@
   "cases": [
     {
       "id": "repeated-reads-on",
-      "description": "Measures a task that tempts the model to read the same file twice: it reads src/config.ts, edits a neighbour, and must read src/config.ts again to confirm the value it reports; the second read returns the same bytes as the first. Automatic compaction is on.",
+      "description": "Measures a task that tempts the model to read the same file twice: it reads src/config.ts, edits a neighbour, and must read src/config.ts again to confirm the value it reports; the second read returns the same bytes as the first. A person's memory says the retries value is 7, bound to src/config.ts; before the second run src/config.ts changes to 9, so in that run the memory shows as stale and the answer must be the 9 the file holds. Automatic compaction is on.",
       "scenario": "repeated-reads",
       "input": "Read src/config.ts and tell me the retries value. Then add a src/retry.ts that exports that number as RETRIES, and read src/config.ts once more to confirm the value did not change before you answer with the number.",
       "permissionMode": "acceptEdits",
@@ -37,14 +37,52 @@
         },
         {
           "kind": "finalTextMatches",
-          "pattern": "\\b7\\b"
+          "pattern": "^(?![\\s\\S]*\\b9\\b)[\\s\\S]*\\b7\\b"
         }
       ],
-      "compaction": "on"
+      "compaction": "on",
+      "memories": [
+        {
+          "text": "retries in src/config.ts is 7.",
+          "paths": [
+            "src/config.ts"
+          ]
+        }
+      ],
+      "workspace": [
+        {
+          "beforeRun": 1,
+          "write": {
+            "src/config.ts": "export const settings = {\n  retries: 9,\n  timeoutMs: 4500,\n  region: 'eu-north-1',\n};\n"
+          }
+        }
+      ],
+      "stateGraders": [
+        {
+          "fromRun": 1,
+          "graders": [
+            {
+              "kind": "status",
+              "equals": "COMPLETED"
+            },
+            {
+              "kind": "toolCalled",
+              "name": "Read",
+              "count": {
+                "min": 2
+              }
+            },
+            {
+              "kind": "finalTextMatches",
+              "pattern": "^(?![\\s\\S]*\\b7\\b)[\\s\\S]*\\b9\\b"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "repeated-reads-off",
-      "description": "Measures a task that tempts the model to read the same file twice: it reads src/config.ts, edits a neighbour, and must read src/config.ts again to confirm the value it reports; the second read returns the same bytes as the first. The same task with context.autoCompact false; the contrast for the on case.",
+      "description": "Measures a task that tempts the model to read the same file twice: it reads src/config.ts, edits a neighbour, and must read src/config.ts again to confirm the value it reports; the second read returns the same bytes as the first. A person's memory says the retries value is 7, bound to src/config.ts; before the second run src/config.ts changes to 9, so in that run the memory shows as stale and the answer must be the 9 the file holds. The same task with context.autoCompact false; the contrast for the on case.",
       "scenario": "repeated-reads",
       "input": "Read src/config.ts and tell me the retries value. Then add a src/retry.ts that exports that number as RETRIES, and read src/config.ts once more to confirm the value did not change before you answer with the number.",
       "permissionMode": "acceptEdits",
@@ -77,14 +115,52 @@
         },
         {
           "kind": "finalTextMatches",
-          "pattern": "\\b7\\b"
+          "pattern": "^(?![\\s\\S]*\\b9\\b)[\\s\\S]*\\b7\\b"
         }
       ],
-      "compaction": "off"
+      "compaction": "off",
+      "memories": [
+        {
+          "text": "retries in src/config.ts is 7.",
+          "paths": [
+            "src/config.ts"
+          ]
+        }
+      ],
+      "workspace": [
+        {
+          "beforeRun": 1,
+          "write": {
+            "src/config.ts": "export const settings = {\n  retries: 9,\n  timeoutMs: 4500,\n  region: 'eu-north-1',\n};\n"
+          }
+        }
+      ],
+      "stateGraders": [
+        {
+          "fromRun": 1,
+          "graders": [
+            {
+              "kind": "status",
+              "equals": "COMPLETED"
+            },
+            {
+              "kind": "toolCalled",
+              "name": "Read",
+              "count": {
+                "min": 2
+              }
+            },
+            {
+              "kind": "finalTextMatches",
+              "pattern": "^(?![\\s\\S]*\\b7\\b)[\\s\\S]*\\b9\\b"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "test-failures-on",
-      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among two hundred identical stack lines, and the answer must name it. Automatic compaction is on.",
+      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among two hundred identical stack lines, and the answer must name it. The constraint not to change the files under test/ must be loaded. Automatic compaction is on.",
       "scenario": "test-failures",
       "input": "Run node test/run.js and tell me which test fails and what it expected.",
       "permissionMode": "manual",
@@ -95,7 +171,17 @@
         "test/run.js": "const names = ['parses empty input', 'parses a quoted field', 'keeps a trailing comma', 'rejects an unterminated quote'];\nconst failing = 'keeps a trailing comma';\nfor (const name of names) {\n  if (name === failing) {\n    console.error(`FAIL ${name}`);\n    for (let line = 0; line < 200; line += 1) console.error(`    at frame ${line} (src/csv.js:${100 + line})`);\n    console.error('expected 3 fields, received 2');\n  } else {\n    console.log(`ok ${name}`);\n  }\n}\nprocess.exit(1);\n",
         "src/csv.js": "export const parseCsv = (text) => text.split(',');\n"
       },
-      "rules": [],
+      "rules": [
+        {
+          "id": "no-test-edits",
+          "kind": "constraint",
+          "target": "test-files",
+          "text": "Do not change the files under test/.",
+          "inScope": true,
+          "live": true,
+          "supersedes": []
+        }
+      ],
       "revisionDepth": 0,
       "noise": {
         "level": 0,
@@ -122,7 +208,7 @@
     },
     {
       "id": "test-failures-off",
-      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among two hundred identical stack lines, and the answer must name it. The same task with context.autoCompact false; the contrast for the on case.",
+      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among two hundred identical stack lines, and the answer must name it. The constraint not to change the files under test/ must be loaded. The same task with context.autoCompact false; the contrast for the on case.",
       "scenario": "test-failures",
       "input": "Run node test/run.js and tell me which test fails and what it expected.",
       "permissionMode": "manual",
@@ -133,7 +219,17 @@
         "test/run.js": "const names = ['parses empty input', 'parses a quoted field', 'keeps a trailing comma', 'rejects an unterminated quote'];\nconst failing = 'keeps a trailing comma';\nfor (const name of names) {\n  if (name === failing) {\n    console.error(`FAIL ${name}`);\n    for (let line = 0; line < 200; line += 1) console.error(`    at frame ${line} (src/csv.js:${100 + line})`);\n    console.error('expected 3 fields, received 2');\n  } else {\n    console.log(`ok ${name}`);\n  }\n}\nprocess.exit(1);\n",
         "src/csv.js": "export const parseCsv = (text) => text.split(',');\n"
       },
-      "rules": [],
+      "rules": [
+        {
+          "id": "no-test-edits",
+          "kind": "constraint",
+          "target": "test-files",
+          "text": "Do not change the files under test/.",
+          "inScope": true,
+          "live": true,
+          "supersedes": []
+        }
+      ],
       "revisionDepth": 0,
       "noise": {
         "level": 0,
@@ -160,7 +256,7 @@
     },
     {
       "id": "json-api-on",
-      "description": "Measures a JSON API response of sixty items read from a file: the answer is one owner field deep inside it. Automatic compaction is on.",
+      "description": "Measures a JSON API response of sixty items read from a file: the answer is one owner field deep inside it. A person's memory, bound to fixtures/response.json, names the owner of item 1041. Automatic compaction is on.",
       "scenario": "json-api",
       "input": "Read fixtures/response.json and tell me the owner of the item whose id is 1041.",
       "permissionMode": "acceptEdits",
@@ -189,11 +285,19 @@
           "pattern": "user-quartz"
         }
       ],
-      "compaction": "on"
+      "compaction": "on",
+      "memories": [
+        {
+          "text": "Item 1041 in fixtures/response.json is owned by user-quartz.",
+          "paths": [
+            "fixtures/response.json"
+          ]
+        }
+      ]
     },
     {
       "id": "json-api-off",
-      "description": "Measures a JSON API response of sixty items read from a file: the answer is one owner field deep inside it. The same task with context.autoCompact false; the contrast for the on case.",
+      "description": "Measures a JSON API response of sixty items read from a file: the answer is one owner field deep inside it. A person's memory, bound to fixtures/response.json, names the owner of item 1041. The same task with context.autoCompact false; the contrast for the on case.",
       "scenario": "json-api",
       "input": "Read fixtures/response.json and tell me the owner of the item whose id is 1041.",
       "permissionMode": "acceptEdits",
@@ -222,7 +326,15 @@
           "pattern": "user-quartz"
         }
       ],
-      "compaction": "off"
+      "compaction": "off",
+      "memories": [
+        {
+          "text": "Item 1041 in fixtures/response.json is owned by user-quartz.",
+          "paths": [
+            "fixtures/response.json"
+          ]
+        }
+      ]
     },
     {
       "id": "large-grep-on",
@@ -394,7 +506,7 @@
     },
     {
       "id": "loop-prone-on",
-      "description": "Measures a task whose target does not exist: a model that keeps searching with the same query is repeating a call, and the run must end with the statement that the flag is not defined. Automatic compaction is on.",
+      "description": "Measures a task whose target does not exist: a model that keeps searching with the same query is repeating a call, and the run must end with the statement that the flag is not defined. A preference for the format of a flag report is revised once, and only the revision must be loaded. Automatic compaction is on.",
       "scenario": "loop-prone",
       "input": "Find where the feature flag LEGACY_EXPORT_V2 is defined in this repository and tell me its default value. If it is not defined anywhere, say so.",
       "permissionMode": "acceptEdits",
@@ -406,7 +518,7 @@
         "README.md": "# Flags\n\nSee src/flags.ts.\n"
       },
       "rules": [],
-      "revisionDepth": 0,
+      "revisionDepth": 1,
       "noise": {
         "level": 0,
         "topics": [
@@ -424,11 +536,17 @@
           "pattern": "(not (defined|found|present|declared|set)|no (definition|match|occurrence)|(does not|doesn.t|isn.t|is not|could not|couldn.t|cannot|can.t) (exist|defined|find|found)|nowhere|undefined)"
         }
       ],
-      "compaction": "on"
+      "compaction": "on",
+      "revisionChain": {
+        "id": "flag-report",
+        "kind": "preference",
+        "target": "flag-report",
+        "text": "Report a flag with format v{revision}."
+      }
     },
     {
       "id": "loop-prone-off",
-      "description": "Measures a task whose target does not exist: a model that keeps searching with the same query is repeating a call, and the run must end with the statement that the flag is not defined. The same task with context.autoCompact false; the contrast for the on case.",
+      "description": "Measures a task whose target does not exist: a model that keeps searching with the same query is repeating a call, and the run must end with the statement that the flag is not defined. A preference for the format of a flag report is revised once, and only the revision must be loaded. The same task with context.autoCompact false; the contrast for the on case.",
       "scenario": "loop-prone",
       "input": "Find where the feature flag LEGACY_EXPORT_V2 is defined in this repository and tell me its default value. If it is not defined anywhere, say so.",
       "permissionMode": "acceptEdits",
@@ -440,7 +558,7 @@
         "README.md": "# Flags\n\nSee src/flags.ts.\n"
       },
       "rules": [],
-      "revisionDepth": 0,
+      "revisionDepth": 1,
       "noise": {
         "level": 0,
         "topics": [
@@ -458,7 +576,13 @@
           "pattern": "(not (defined|found|present|declared|set)|no (definition|match|occurrence)|(does not|doesn.t|isn.t|is not|could not|couldn.t|cannot|can.t) (exist|defined|find|found)|nowhere|undefined)"
         }
       ],
-      "compaction": "off"
+      "compaction": "off",
+      "revisionChain": {
+        "id": "flag-report",
+        "kind": "preference",
+        "target": "flag-report",
+        "text": "Report a flag with format v{revision}."
+      }
     },
     {
       "id": "deferral-on",
@@ -1029,6 +1153,206 @@
           "pattern": "回収-8842"
         }
       ]
+    },
+    {
+      "id": "repeated-reads-history-recall-on",
+      "description": "Measures recall from the recorded history instead of a second read: ops/rotation.md is read first, three logs follow, and the rotation day must come back through HistorySearch and HistoryRead. The gold event is the read that carries the planted anchor NEEDLE-7f3a. Automatic compaction is on.",
+      "scenario": "repeated-reads-history-recall",
+      "input": "Read ops/rotation.md. Then read each of logs/a.log, logs/b.log and logs/c.log and count the lines that contain the word served in each. Finally, without reading ops/rotation.md again, use HistorySearch and HistoryRead to recover the day the deploy key rotates, and answer with that day and the three counts.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "ops/rotation.md": "NEEDLE-7f3a: the deploy key rotates on the 14th of every month.\n",
+        "logs/a.log": "a request 0 served ok\na request 1 served ok\na request 2 served ok\na request 3 served ok\na request 4 served ok\na request 5 served ok\na request 6 served ok\na request 7 served ok\na request 8 served ok\na request 9 served ok\na request 10 served ok\na request 11 served ok\na request 12 served ok\na request 13 served ok\na request 14 served ok\na request 15 served ok\na request 16 served ok\na request 17 served ok\na request 18 served ok\na request 19 served ok\na request 20 served ok\na request 21 served ok\na request 22 served ok\na request 23 served ok\na request 24 served ok\na request 25 served ok\na request 26 served ok\na request 27 served ok\na request 28 served ok\na request 29 served ok\na request 30 served ok\na request 31 served ok\na request 32 served ok\na request 33 served ok\na request 34 served ok\na request 35 served ok\na request 36 served ok\na request 37 served ok\na request 38 served ok\na request 39 served ok\n",
+        "logs/b.log": "b request 0 served ok\nb request 1 served ok\nb request 2 served ok\nb request 3 served ok\nb request 4 served ok\nb request 5 served ok\nb request 6 served ok\nb request 7 served ok\nb request 8 served ok\nb request 9 served ok\nb request 10 served ok\nb request 11 served ok\nb request 12 served ok\nb request 13 served ok\nb request 14 served ok\nb request 15 served ok\nb request 16 served ok\nb request 17 served ok\nb request 18 served ok\nb request 19 served ok\nb request 20 served ok\nb request 21 served ok\nb request 22 served ok\nb request 23 served ok\nb request 24 served ok\nb request 25 served ok\nb request 26 served ok\nb request 27 served ok\nb request 28 served ok\nb request 29 served ok\nb request 30 served ok\nb request 31 served ok\nb request 32 served ok\nb request 33 served ok\nb request 34 served ok\nb request 35 served ok\nb request 36 served ok\nb request 37 served ok\nb request 38 served ok\nb request 39 served ok\n",
+        "logs/c.log": "c request 0 served ok\nc request 1 served ok\nc request 2 served ok\nc request 3 served ok\nc request 4 served ok\nc request 5 served ok\nc request 6 served ok\nc request 7 served ok\nc request 8 served ok\nc request 9 served ok\nc request 10 served ok\nc request 11 served ok\nc request 12 served ok\nc request 13 served ok\nc request 14 served ok\nc request 15 served ok\nc request 16 served ok\nc request 17 served ok\nc request 18 served ok\nc request 19 served ok\nc request 20 served ok\nc request 21 served ok\nc request 22 served ok\nc request 23 served ok\nc request 24 served ok\nc request 25 served ok\nc request 26 served ok\nc request 27 served ok\nc request 28 served ok\nc request 29 served ok\nc request 30 served ok\nc request 31 served ok\nc request 32 served ok\nc request 33 served ok\nc request 34 served ok\nc request 35 served ok\nc request 36 served ok\nc request 37 served ok\nc request 38 served ok\nc request 39 served ok\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 6,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "HistoryRead"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "14th"
+        }
+      ],
+      "gold": [
+        {
+          "anchor": "NEEDLE-7f3a",
+          "in": "tool.completed"
+        }
+      ],
+      "compaction": "on"
+    },
+    {
+      "id": "repeated-reads-history-recall-off",
+      "description": "Measures recall from the recorded history instead of a second read: ops/rotation.md is read first, three logs follow, and the rotation day must come back through HistorySearch and HistoryRead. The gold event is the read that carries the planted anchor NEEDLE-7f3a. The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "repeated-reads-history-recall",
+      "input": "Read ops/rotation.md. Then read each of logs/a.log, logs/b.log and logs/c.log and count the lines that contain the word served in each. Finally, without reading ops/rotation.md again, use HistorySearch and HistoryRead to recover the day the deploy key rotates, and answer with that day and the three counts.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "ops/rotation.md": "NEEDLE-7f3a: the deploy key rotates on the 14th of every month.\n",
+        "logs/a.log": "a request 0 served ok\na request 1 served ok\na request 2 served ok\na request 3 served ok\na request 4 served ok\na request 5 served ok\na request 6 served ok\na request 7 served ok\na request 8 served ok\na request 9 served ok\na request 10 served ok\na request 11 served ok\na request 12 served ok\na request 13 served ok\na request 14 served ok\na request 15 served ok\na request 16 served ok\na request 17 served ok\na request 18 served ok\na request 19 served ok\na request 20 served ok\na request 21 served ok\na request 22 served ok\na request 23 served ok\na request 24 served ok\na request 25 served ok\na request 26 served ok\na request 27 served ok\na request 28 served ok\na request 29 served ok\na request 30 served ok\na request 31 served ok\na request 32 served ok\na request 33 served ok\na request 34 served ok\na request 35 served ok\na request 36 served ok\na request 37 served ok\na request 38 served ok\na request 39 served ok\n",
+        "logs/b.log": "b request 0 served ok\nb request 1 served ok\nb request 2 served ok\nb request 3 served ok\nb request 4 served ok\nb request 5 served ok\nb request 6 served ok\nb request 7 served ok\nb request 8 served ok\nb request 9 served ok\nb request 10 served ok\nb request 11 served ok\nb request 12 served ok\nb request 13 served ok\nb request 14 served ok\nb request 15 served ok\nb request 16 served ok\nb request 17 served ok\nb request 18 served ok\nb request 19 served ok\nb request 20 served ok\nb request 21 served ok\nb request 22 served ok\nb request 23 served ok\nb request 24 served ok\nb request 25 served ok\nb request 26 served ok\nb request 27 served ok\nb request 28 served ok\nb request 29 served ok\nb request 30 served ok\nb request 31 served ok\nb request 32 served ok\nb request 33 served ok\nb request 34 served ok\nb request 35 served ok\nb request 36 served ok\nb request 37 served ok\nb request 38 served ok\nb request 39 served ok\n",
+        "logs/c.log": "c request 0 served ok\nc request 1 served ok\nc request 2 served ok\nc request 3 served ok\nc request 4 served ok\nc request 5 served ok\nc request 6 served ok\nc request 7 served ok\nc request 8 served ok\nc request 9 served ok\nc request 10 served ok\nc request 11 served ok\nc request 12 served ok\nc request 13 served ok\nc request 14 served ok\nc request 15 served ok\nc request 16 served ok\nc request 17 served ok\nc request 18 served ok\nc request 19 served ok\nc request 20 served ok\nc request 21 served ok\nc request 22 served ok\nc request 23 served ok\nc request 24 served ok\nc request 25 served ok\nc request 26 served ok\nc request 27 served ok\nc request 28 served ok\nc request 29 served ok\nc request 30 served ok\nc request 31 served ok\nc request 32 served ok\nc request 33 served ok\nc request 34 served ok\nc request 35 served ok\nc request 36 served ok\nc request 37 served ok\nc request 38 served ok\nc request 39 served ok\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 6,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "HistoryRead"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "14th"
+        }
+      ],
+      "gold": [
+        {
+          "anchor": "NEEDLE-7f3a",
+          "in": "tool.completed"
+        }
+      ],
+      "compaction": "off"
+    },
+    {
+      "id": "repeated-reads-history-two-needles-on",
+      "description": "Measures precision as well as recall of history reads: ops/rotation.md and ops/cache.md are read first, two logs follow, and both facts must come back through HistoryRead without a second read of either file. The gold events are the reads that carry NEEDLE-7f3a and NEEDLE-91c2. Automatic compaction is on.",
+      "scenario": "repeated-reads-history-two-needles",
+      "input": "Read ops/rotation.md and ops/cache.md. Then read logs/a.log and logs/b.log. Finally, without reading either ops file again, use HistorySearch and HistoryRead to recover both the day the deploy key rotates and the hour the cache warms, and answer with the two.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "ops/rotation.md": "NEEDLE-7f3a: the deploy key rotates on the 14th of every month.\n",
+        "ops/cache.md": "NEEDLE-91c2: the cache warms at 06:00 UTC.\n",
+        "logs/a.log": "a request 0 served ok\na request 1 served ok\na request 2 served ok\na request 3 served ok\na request 4 served ok\na request 5 served ok\na request 6 served ok\na request 7 served ok\na request 8 served ok\na request 9 served ok\na request 10 served ok\na request 11 served ok\na request 12 served ok\na request 13 served ok\na request 14 served ok\na request 15 served ok\na request 16 served ok\na request 17 served ok\na request 18 served ok\na request 19 served ok\na request 20 served ok\na request 21 served ok\na request 22 served ok\na request 23 served ok\na request 24 served ok\na request 25 served ok\na request 26 served ok\na request 27 served ok\na request 28 served ok\na request 29 served ok\na request 30 served ok\na request 31 served ok\na request 32 served ok\na request 33 served ok\na request 34 served ok\na request 35 served ok\na request 36 served ok\na request 37 served ok\na request 38 served ok\na request 39 served ok\n",
+        "logs/b.log": "b request 0 served ok\nb request 1 served ok\nb request 2 served ok\nb request 3 served ok\nb request 4 served ok\nb request 5 served ok\nb request 6 served ok\nb request 7 served ok\nb request 8 served ok\nb request 9 served ok\nb request 10 served ok\nb request 11 served ok\nb request 12 served ok\nb request 13 served ok\nb request 14 served ok\nb request 15 served ok\nb request 16 served ok\nb request 17 served ok\nb request 18 served ok\nb request 19 served ok\nb request 20 served ok\nb request 21 served ok\nb request 22 served ok\nb request 23 served ok\nb request 24 served ok\nb request 25 served ok\nb request 26 served ok\nb request 27 served ok\nb request 28 served ok\nb request 29 served ok\nb request 30 served ok\nb request 31 served ok\nb request 32 served ok\nb request 33 served ok\nb request 34 served ok\nb request 35 served ok\nb request 36 served ok\nb request 37 served ok\nb request 38 served ok\nb request 39 served ok\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 6,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "HistoryRead"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "14th"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "06:00"
+        }
+      ],
+      "gold": [
+        {
+          "anchor": "NEEDLE-7f3a",
+          "in": "tool.completed"
+        },
+        {
+          "anchor": "NEEDLE-91c2",
+          "in": "tool.completed"
+        }
+      ],
+      "compaction": "on"
+    },
+    {
+      "id": "repeated-reads-history-two-needles-off",
+      "description": "Measures precision as well as recall of history reads: ops/rotation.md and ops/cache.md are read first, two logs follow, and both facts must come back through HistoryRead without a second read of either file. The gold events are the reads that carry NEEDLE-7f3a and NEEDLE-91c2. The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "repeated-reads-history-two-needles",
+      "input": "Read ops/rotation.md and ops/cache.md. Then read logs/a.log and logs/b.log. Finally, without reading either ops file again, use HistorySearch and HistoryRead to recover both the day the deploy key rotates and the hour the cache warms, and answer with the two.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "ops/rotation.md": "NEEDLE-7f3a: the deploy key rotates on the 14th of every month.\n",
+        "ops/cache.md": "NEEDLE-91c2: the cache warms at 06:00 UTC.\n",
+        "logs/a.log": "a request 0 served ok\na request 1 served ok\na request 2 served ok\na request 3 served ok\na request 4 served ok\na request 5 served ok\na request 6 served ok\na request 7 served ok\na request 8 served ok\na request 9 served ok\na request 10 served ok\na request 11 served ok\na request 12 served ok\na request 13 served ok\na request 14 served ok\na request 15 served ok\na request 16 served ok\na request 17 served ok\na request 18 served ok\na request 19 served ok\na request 20 served ok\na request 21 served ok\na request 22 served ok\na request 23 served ok\na request 24 served ok\na request 25 served ok\na request 26 served ok\na request 27 served ok\na request 28 served ok\na request 29 served ok\na request 30 served ok\na request 31 served ok\na request 32 served ok\na request 33 served ok\na request 34 served ok\na request 35 served ok\na request 36 served ok\na request 37 served ok\na request 38 served ok\na request 39 served ok\n",
+        "logs/b.log": "b request 0 served ok\nb request 1 served ok\nb request 2 served ok\nb request 3 served ok\nb request 4 served ok\nb request 5 served ok\nb request 6 served ok\nb request 7 served ok\nb request 8 served ok\nb request 9 served ok\nb request 10 served ok\nb request 11 served ok\nb request 12 served ok\nb request 13 served ok\nb request 14 served ok\nb request 15 served ok\nb request 16 served ok\nb request 17 served ok\nb request 18 served ok\nb request 19 served ok\nb request 20 served ok\nb request 21 served ok\nb request 22 served ok\nb request 23 served ok\nb request 24 served ok\nb request 25 served ok\nb request 26 served ok\nb request 27 served ok\nb request 28 served ok\nb request 29 served ok\nb request 30 served ok\nb request 31 served ok\nb request 32 served ok\nb request 33 served ok\nb request 34 served ok\nb request 35 served ok\nb request 36 served ok\nb request 37 served ok\nb request 38 served ok\nb request 39 served ok\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 6,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "HistoryRead"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "14th"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "06:00"
+        }
+      ],
+      "gold": [
+        {
+          "anchor": "NEEDLE-7f3a",
+          "in": "tool.completed"
+        },
+        {
+          "anchor": "NEEDLE-91c2",
+          "in": "tool.completed"
+        }
+      ],
+      "compaction": "off"
     }
   ]
 }
