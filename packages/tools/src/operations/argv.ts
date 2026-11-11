@@ -3,7 +3,7 @@ import { canonicalJson, groupRecordOutcome, sha256Hex } from '@momonga/foundatio
 import type { NetworkScope, OutboundNetwork, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openGrantedNetwork } from '../builtins/network-egress.ts';
-import type { ShellHost } from '../builtins/shell.ts';
+import type { ShellHost } from '@momonga/policy';
 import { createCapture, pumpOutput } from '../capture.ts';
 import type { MarkerOwners } from '../marker-owners.ts';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';

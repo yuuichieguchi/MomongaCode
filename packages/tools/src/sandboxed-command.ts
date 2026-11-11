@@ -3,8 +3,8 @@ import { UNMEASURED_CAPABILITY, canonicalJson, createMarker, defaultProcessInspe
 import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxExit, SandboxPolicy } from '@momonga/sandbox';
 import { createCapture, pumpOutput } from './capture.ts';
-import { resolveBashPath } from './builtins/shell.ts';
-import type { ShellHost } from './builtins/shell.ts';
+import { resolveBashPath } from '@momonga/policy';
+import type { ShellHost } from '@momonga/policy';
 import { createMarkerSettle, settleFinishedCommand } from './marker-settle.ts';
 import type { MarkerOwners } from './marker-owners.ts';
 import { cancellableTimer } from './timers.ts';

@@ -7,6 +7,8 @@ const job: RuleVerifyJob = {
   solver: { kind: 'installed', entry: '/nowhere/z3.js' },
   solverVersion: 'z3 1',
   budgetMs: 60_000,
+  platform: 'linux',
+  bashPath: '/bin/bash',
 };
 
 describe('a verification job inside its thread', () => {

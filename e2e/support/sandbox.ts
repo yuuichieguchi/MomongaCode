@@ -3,7 +3,7 @@ import path from 'node:path';
 import { defaultSandboxSetting } from '@momonga/config';
 import type { SandboxSetting } from '@momonga/config';
 import { DEFAULT_BWRAP_PATH, SANDBOX_STOP_BOUND_MS, bwrapProbeArguments } from '@momonga/sandbox';
-import { resolveBashPath } from '@momonga/tools';
+import { nodeShellHost, resolveBashPath } from '@momonga/tools';
 import type { E2eCase } from './cases.ts';
 
 export const SANDBOX_ENV = 'MOMONGA_E2E_SANDBOX';
@@ -59,7 +59,7 @@ const probeLauncher = (kind: ProductSandbox, args: readonly string[], run: Sandb
 };
 
 const probeProductSandbox = (kind: ProductSandbox, platform: NodeJS.Platform, run: SandboxProbeRunner): SandboxProbe =>
-  probeLauncher(kind, kind === 'seatbelt' ? SANDBOX_PROBE_ARGS : bwrapProbeArguments(resolveBashPath(platform)), run);
+  probeLauncher(kind, kind === 'seatbelt' ? SANDBOX_PROBE_ARGS : bwrapProbeArguments(resolveBashPath(platform, { isExecutable: nodeShellHost().isExecutable, env: process.env })), run);
 
 export const runSandboxProbe = (platform: NodeJS.Platform = process.platform, run: SandboxProbeRunner = spawnSandboxProbe): SandboxProbe => {
   const kind = platformSandbox(platform);

@@ -240,6 +240,9 @@
       {"name":"DEFAULT_MAX_QUEUED_BYTES","file":"packages/observability/src/body-queue.ts","lacks":["row"]},
       {"name":"OTLP_EXPORT_TIMEOUT_MS","file":"packages/observability/src/otlp.ts","lacks":["kind"]},
       {"name":"MAX_APPROVABLE_COMMAND_CHARS","file":"packages/policy/src/approval.ts","lacks":["row"]},
+      {"name":"GIT_HEADREF_BUFFER_BYTES","file":"packages/policy/src/host-filesystem.ts","lacks":["row"]},
+      {"name":"HEAD_BYTES","file":"packages/policy/src/host-filesystem.ts","lacks":["row"]},
+      {"name":"PATH_MAX_BYTES","file":"packages/policy/src/host-filesystem.ts","lacks":["row"]},
       {"name":"HOOK_DEFAULT_TIMEOUT_SECONDS","file":"packages/protocol/src/hooks.ts","lacks":["kind","row"]},
       {"name":"USER_PROMPT_HOOK_DEFAULT_TIMEOUT_SECONDS","file":"packages/protocol/src/hooks.ts","lacks":["kind","row"]},
       {"name":"MANAGED_READY_LIMIT_MS","file":"packages/protocol/src/managed-servers.ts","lacks":["kind","row"]},
@@ -341,9 +344,6 @@
       {"name":"MEMORY_TOOL_TIMEOUT_MS","file":"packages/tools/src/memory/constants.ts","lacks":["kind","row"]},
       {"name":"MAX_ASK_BYTES","file":"packages/tools/src/operations/git-credential.ts","lacks":["row"]},
       {"name":"FIRST_BUDGET_CHARS","file":"packages/tools/src/paging.ts","lacks":["row"]},
-      {"name":"GIT_HEADREF_BUFFER_BYTES","file":"packages/tools/src/policy-filesystem.ts","lacks":["row"]},
-      {"name":"HEAD_BYTES","file":"packages/tools/src/policy-filesystem.ts","lacks":["row"]},
-      {"name":"PATH_MAX_BYTES","file":"packages/tools/src/policy-filesystem.ts","lacks":["row"]},
       {"name":"SHRINK_BUDGET_MS","file":"packages/verify/src/dialect-model/harness.ts","lacks":["kind","row"]}
     ],
     "literalBounds": {

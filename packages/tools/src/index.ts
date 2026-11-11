@@ -83,10 +83,10 @@ export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts'
 export { listDirectoryEntries, listFileCandidates } from './file-listing.ts';
 export type { FileListingOptions } from './file-listing.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
-export { ShellNotFoundError, nodeShellHost, resolveBashPath } from './builtins/shell.ts';
-export type { ShellHost } from './builtins/shell.ts';
-export { createGlobExpander, createPolicyFilesystem, nodeGlobPorts } from './policy-filesystem.ts';
-export type { GlobChild, GlobPorts } from './policy-filesystem.ts';
+export { ShellNotFoundError, nodeGlobPorts, resolveBashPath } from '@momonga/policy';
+export type { GlobChild, GlobPorts, ShellHost } from '@momonga/policy';
+export { nodeShellHost } from './builtins/shell.ts';
+export { createGlobExpander, createPolicyFilesystem } from './policy-filesystem.ts';
 export {
   MEMORY_QUERY_MAX_CHARS,
   MEMORY_SAVE_TOOL_NAME,

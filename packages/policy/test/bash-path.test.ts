@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ShellNotFoundError, resolveBashPath } from '../../src/builtins/shell.ts';
+import { ShellNotFoundError, resolveBashPath } from '../src/bash-path.ts';
 
 const portsWith = (existing: string[], path = ''): Parameters<typeof resolveBashPath>[1] => ({ isExecutable: (file) => existing.includes(file), env: { Path: path } });
 

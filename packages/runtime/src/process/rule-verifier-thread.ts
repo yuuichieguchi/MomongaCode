@@ -1,7 +1,7 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { systemRandom } from '@momonga/foundation';
 import type { RuleVerdict } from '@momonga/protocol';
-import { createPolicyFilesystem } from '@momonga/tools';
+import { ShellNotFoundError, createHostFilesystem, nodeGlobPorts } from '@momonga/policy';
 
 type VerifyModule = typeof import('@momonga/verify');
 type RuleVerifyInput = Parameters<VerifyModule['ruleVerifyInputOf']>[0];
@@ -16,6 +16,8 @@ export type RuleVerifyJob = {
   readonly solver: RuleSolverRecipe;
   readonly solverVersion: string;
   readonly budgetMs: number;
+  readonly platform: NodeJS.Platform;
+  readonly bashPath: string | undefined;
 };
 
 export type RuleVerification = { readonly verdict: RuleVerdict; readonly report: string };
@@ -36,6 +38,11 @@ const sourceOf = async (verifier: VerifyModule, recipe: RuleSolverRecipe): Promi
   });
 };
 
+const bashPathOf = (job: RuleVerifyJob): string => {
+  if (job.bashPath === undefined) throw new ShellNotFoundError('the runtime found no bash for the verification');
+  return job.bashPath;
+};
+
 export type RuleVerifyAbort = { readonly abort: string };
 
 export const runRuleVerifyJob = async (job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerification> => {
@@ -43,7 +50,7 @@ export const runRuleVerifyJob = async (job: RuleVerifyJob, signal: AbortSignal):
   const verifier = await import('@momonga/verify');
   const engine = await verifier.openZ3(await sourceOf(verifier, job.solver));
   try {
-    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createPolicyFilesystem(), budgetMs: job.budgetMs, signal });
+    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createHostFilesystem(job.platform, () => bashPathOf(job), nodeGlobPorts()), budgetMs: job.budgetMs, signal });
     return { verdict: verifier.verdictOfReport(report, job.solverVersion), report: verifier.formatReport(report) };
   } finally {
     await engine.close();
@@ -51,7 +58,7 @@ export const runRuleVerifyJob = async (job: RuleVerifyJob, signal: AbortSignal):
 };
 
 const isRuleVerifyJob = (value: unknown): value is RuleVerifyJob =>
-  typeof value === 'object' && value !== null && 'input' in value && 'solver' in value && 'solverVersion' in value && typeof value.solverVersion === 'string' && 'budgetMs' in value && typeof value.budgetMs === 'number';
+  typeof value === 'object' && value !== null && 'input' in value && 'solver' in value && 'solverVersion' in value && typeof value.solverVersion === 'string' && 'budgetMs' in value && typeof value.budgetMs === 'number' && 'platform' in value && typeof value.platform === 'string';
 
 const isRuleVerifyAbort = (value: unknown): value is RuleVerifyAbort => typeof value === 'object' && value !== null && 'abort' in value && typeof value.abort === 'string';
 

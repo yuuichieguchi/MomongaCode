@@ -773,6 +773,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       fs: createPolicyFilesystem(),
       paths,
       timers,
+      bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env }),
     });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {

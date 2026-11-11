@@ -35,7 +35,7 @@ const ASYNCHRONOUS_FILES: readonly string[] = [
   'packages/foundation/src/file-rules.ts',
   'packages/foundation/src/protected-set.ts',
   'packages/foundation/src/tool-path.ts',
-  'packages/tools/src/policy-filesystem.ts',
+  'packages/policy/src/host-filesystem.ts',
   'packages/tools/src/read-access.ts',
   'packages/tools/src/builtins/paths.ts',
   'packages/tools/src/builtins/sandbox-policy.ts',

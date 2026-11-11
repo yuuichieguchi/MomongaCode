@@ -13,7 +13,8 @@ import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { describeJobStatus } from './jobs.ts';
 import { openGrantedNetwork } from './network-egress.ts';
 import { canonicalDirectories, insideAny, shownPath } from './paths.ts';
-import { nodeShellPorts, resolveBashPath } from './shell.ts';
+import { resolveBashPath } from '@momonga/policy';
+import { nodeShellPorts } from './shell.ts';
 
 type BashInput = { command: string; timeout?: number; description?: string; run_in_background?: boolean; network?: NetworkRequest };
 

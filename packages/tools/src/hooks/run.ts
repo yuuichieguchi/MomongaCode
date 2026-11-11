@@ -4,7 +4,7 @@ import type { HookCommand, HookEvent, HookExecution, HookStart, HooksSettings, P
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
-import type { ShellHost } from '../builtins/shell.ts';
+import type { ShellHost } from '@momonga/policy';
 import type { MarkerOwners } from '../marker-owners.ts';
 import { runSandboxedCommand } from '../sandboxed-command.ts';
 import { parseHookOutput } from './output.ts';

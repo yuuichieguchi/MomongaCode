@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { mapAsync, nodeFileSystem, protectedSetFor, sha256Hex } from '@momonga/foundation';
 import type { MomongaPaths, VerdictSubject } from '@momonga/foundation';
-import { askedBy } from '@momonga/policy';
+import { ShellNotFoundError, askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { RuleVerification, RuleVerifierPort } from '../ports.ts';
@@ -47,9 +47,18 @@ export type RuleVerifierDeps = {
   fs: PolicyHostFilesystem;
   paths: Pick<MomongaPaths, 'root' | 'keychains'>;
   timers: ServiceTimers;
+  bashPath: () => string;
 };
 
-export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers }: RuleVerifierDeps): RuleVerifierPort => {
+export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, bashPath }: RuleVerifierDeps): RuleVerifierPort => {
+  const foundBashPath = (): string | undefined => {
+    try {
+      return bashPath();
+    } catch (error) {
+      if (error instanceof ShellNotFoundError) return undefined;
+      throw error;
+    }
+  };
   const prepared = new WeakSet<object>();
   const preparedInput = (input: VerdictSubject): RuleVerifyInput => {
     if (!prepared.has(input)) throw new Error('the rule verifier was given an input it did not prepare');
@@ -61,7 +70,7 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers }
     const verifier = await host.loadVerifier();
     return verifyInThread(
       { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers, loadAllowanceMs: RULE_VERIFY_LOAD_ALLOWANCE_MS },
-      { input: request, solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS },
+      { input: request, solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS, platform: policyFilesystem.platform, bashPath: foundBashPath() },
       signal,
     );
   };
