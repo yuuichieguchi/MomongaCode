@@ -117,12 +117,12 @@ const recordUpstreamFailures = (journal: Journal, failures: readonly string[]): 
   journal.append(failures.map((message) => ({ type: 'notice', level: 'warning', message: `Cancelling the upstream model request failed: ${message}`, code: 'upstream_cancel_failed' })));
 };
 
-const touchedOf = (session: Session, options: WorkerOptions): ClaimTouched => {
+const touchedOf = (session: Session, options: WorkerOptions, signal: AbortSignal): ClaimTouched => {
   const source = (after: { eventId: number; path: string } | null, limit: number) =>
     after === null ? options.store.sessionTouched.after(session.id, 0, limit) : options.store.sessionTouched.after(session.id, after.eventId, limit, after.path);
   return {
     governing: createGoverningActivation({ project: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
-    probes: createInstructionProbes({ reader: options.instructionReader, projectRoot: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
+    probes: createInstructionProbes({ reader: options.instructionReaderFor(signal), projectRoot: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
   };
 };
 
@@ -555,7 +555,7 @@ const drive = async (
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
     recalled,
-    touched: touchedOf(session, options),
+    touched: touchedOf(session, options, control.signal),
     env,
     functionTools: () => offerNow().tools,
     toolOffer: offerNow,

@@ -841,7 +841,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           defaults: RUNTIME_DEFAULTS.limits,
           home: canonicalHome,
           blobs: store.blobs,
-          instructionReader: createFsInstructionReader(lifetime.signal),
+          instructionReaderFor: createFsInstructionReader,
           wake: notifier,
           onError: (error, context) =>
             logger.error('worker error', {

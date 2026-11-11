@@ -42,7 +42,7 @@ const contextFor = (state: RunState) => {
       tools: { sessionState: () => ({ cwd: '/project/wrap' }) },
       settings: { trusted: () => true },
       blobs: { handleFor: () => 'blob-1', put: async () => ({ handle: 'blob-1' }) },
-      instructionReader: { read: async () => undefined, exists: async () => false, realpath: async (target: string) => target },
+      instructionReaderFor: () => ({ read: async () => undefined, exists: async () => false, realpath: async (target: string) => target }),
     },
     run: { id: 'run_wrap', sessionId: 'session_wrap' },
     model: 'fm',

@@ -259,7 +259,7 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => {
       handleFor: (content) => ctx.options.blobs.handleFor(content),
       put: (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
     },
-    instructions: ctx.options.instructionReader,
+    instructions: ctx.options.instructionReaderFor(ctx.control.signal),
     ...(roleModel === undefined ? {} : { compactionTarget: () => compactionRoleCapabilitiesOf(ctx, roleModel) }),
   };
 };

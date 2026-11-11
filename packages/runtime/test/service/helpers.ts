@@ -846,7 +846,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       systemPrompt: testSystemPrompt,
       home: env.layout.home,
       blobs: env.store.blobs,
-      instructionReader: instructions,
+      instructionReaderFor: () => instructions,
       onFatal: (error: Error) => {
         fatals.push(error);
       },

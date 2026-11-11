@@ -2,6 +2,7 @@ import { Worker } from 'node:worker_threads';
 import { isRuleVerdict } from '@momonga/protocol';
 import type { RuleVerdict } from '@momonga/protocol';
 import type { ServiceTimers } from '../service/timers.ts';
+import { RULE_VERIFY_ABORT } from './rule-verifier-thread.ts';
 import type { RuleVerifyJob } from './rule-verifier-thread.ts';
 
 export type RuleVerifierThreadOptions = { readonly code: string; readonly timers: ServiceTimers };
@@ -41,7 +42,10 @@ export const verifyInThread = ({ code, timers }: RuleVerifierThreadOptions, job:
       signal.removeEventListener('abort', onAbort);
       worker.terminate().then(settle, reject);
     };
-    const onAbort = (): void => end(() => reject(signal.reason));
+    const onAbort = (): void => {
+      worker.postMessage(RULE_VERIFY_ABORT);
+      end(() => reject(signal.reason));
+    };
     const budget = timers.setTimeout(() => end(() => resolve(undecided(job, `the verification budget of ${job.budgetMs} ms was spent`))), job.budgetMs);
     signal.addEventListener('abort', onAbort, { once: true });
     worker.on('message', (reply: unknown) => end(() => resolve(verdictOfReply(job, reply))));

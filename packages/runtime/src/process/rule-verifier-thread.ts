@@ -34,13 +34,25 @@ const sourceOf = async (verifier: VerifyModule, recipe: RuleSolverRecipe): Promi
   });
 };
 
-const THREAD_LIFETIME: AbortSignal = new AbortController().signal;
+export const RULE_VERIFY_ABORT = { kind: 'abort' } as const;
 
-export const runRuleVerifyJob = async (job: RuleVerifyJob): Promise<RuleVerdict> => {
+const isAbortMessage = (value: unknown): boolean => typeof value === 'object' && value !== null && 'kind' in value && value.kind === RULE_VERIFY_ABORT.kind;
+
+export type AskerPort = { on(event: 'message', listener: (value: unknown) => void): unknown };
+
+export const threadSignalOf = (port: AskerPort): AbortSignal => {
+  const asker = new AbortController();
+  port.on('message', (value) => {
+    if (isAbortMessage(value)) asker.abort(new Error('the operation that asked for the verification ended'));
+  });
+  return asker.signal;
+};
+
+export const runRuleVerifyJob = async (job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerdict> => {
   const verifier = await import('@momonga/verify');
   const engine = await verifier.openZ3(await sourceOf(verifier, job.solver));
   try {
-    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createPolicyFilesystem(), exemptDirectory: null, budgetMs: job.budgetMs, signal: THREAD_LIFETIME });
+    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createPolicyFilesystem(), exemptDirectory: null, budgetMs: job.budgetMs, signal });
     return verifier.verdictOfReport(report, job.solverVersion);
   } finally {
     await engine.close();
@@ -53,7 +65,7 @@ const isRuleVerifyJob = (value: unknown): value is RuleVerifyJob =>
 if (!isMainThread && parentPort !== null && isRuleVerifyJob(workerData)) {
   const port = parentPort;
   const post = (reply: RuleVerifyReply): void => port.postMessage(reply);
-  void runRuleVerifyJob(workerData).then(
+  void runRuleVerifyJob(workerData, threadSignalOf(port)).then(
     (verdict) => post({ ok: true, verdict }),
     (error: unknown) => post({ ok: false, reason: error instanceof Error ? error.message : String(error) }),
   );
