@@ -610,14 +610,16 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   };
 
   const persistRetry = async (account: Account): Promise<void> => {
+    let waitMs: number = defaults.persistRetryMs;
     while (account.dirty && account.unwritable === undefined && !closing.signal.aborted) {
       try {
-        await options.sleep(defaults.persistRetryMs, closing.signal);
+        await options.sleep(waitMs, closing.signal);
       } catch (error) {
         if (closing.signal.aborted) return;
         throw error;
       }
       await persistAttempt(account);
+      waitMs = Math.min(2 * waitMs, defaults.persistRetryMaxMs);
     }
   };
 
