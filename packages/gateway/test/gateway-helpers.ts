@@ -10,7 +10,7 @@ import type { FixedModelsOptions, Gateway, GatewayConfig, GatewayOptions, Provid
 import type { Telemetry } from '@momonga/observability';
 import { parseCanon } from '@momonga/protocol';
 import type { MomongaModelRoles, StreamEvent, TargetAnswers, TargetBilling } from '@momonga/protocol';
-import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator, closeOnceStarted } from '@momonga/testkit';
+import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
 export const START_MS = 1_800_000_000_000;
@@ -38,11 +38,6 @@ afterEach(async () => {
 
 export const registerCleanup = (cleanup: () => void | Promise<void>): void => {
   cleanups.push(cleanup);
-};
-
-export const closedAtCleanup = <Handle extends { close: () => Promise<unknown> }>(started: Promise<Handle>): Promise<Handle> => {
-  registerCleanup(closeOnceStarted(started));
-  return started;
 };
 
 export const makeDir = (): string => {
@@ -197,6 +192,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const config = buildConfig(options.config);
   const model = Object.keys(config.models.chains)[0] ?? NO_START_MODEL;
   const gateway = await createGateway({
+    lock: testKernelLock(),
     role: options.role ?? fixedRolePort('serving'),
     ...(options.probeFlights === undefined ? {} : { probeFlights: options.probeFlights }),
     random: options.random ?? (() => 0.5),

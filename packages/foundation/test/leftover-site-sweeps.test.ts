@@ -1,16 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createKernelLockMechanism, hostKernelLock, leftoverDirectories, momongaPaths, nodeFileLockOps, sweepLeftovers } from '@momonga/foundation';
+import { leftoverDirectories, momongaPaths, nodeFileLockOps, sweepLeftovers } from '@momonga/foundation';
 import type { FileLockOps, HeldKernelLock } from '@momonga/foundation';
 import { createLockedFile } from '../src/platform/lock-capability.ts';
 import { OPEN_FLAGS } from '../src/node-file-system.ts';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
+import { expectedKernelLockOn, testKernelLock } from '@momonga/testkit';
 
 const PID_NO_PROCESS_HAS = 99_999_999;
 
 const holdEntry = async (entry: string): Promise<HeldKernelLock> => {
-  const outcome = await hostKernelLock().claim(entry);
+  const outcome = await testKernelLock().claim(entry);
   if (outcome.kind !== 'claimed') throw new Error(`${entry} could not be claimed by the test`);
   if (!fs.existsSync(entry)) fs.writeFileSync(entry, 'in flight', { mode: 0o600 });
   return outcome.lock;
@@ -19,8 +20,8 @@ const holdEntry = async (entry: string): Promise<HeldKernelLock> => {
 describe('secret-key-file.ts:41-49 replaced (S1): the gateway start sweeps dirname(gatewayKey) through the registered list, by lock alone', () => {
   for (const platform of ['darwin', 'linux'] as const) {
     it(`${platform} mechanism: keeps a held temporary whose name carries a pid the probe reports dead, and removes an unheld one, with its sidecar, named with this live pid`, async () => {
-      const lock = createKernelLockMechanism(platform);
-      const paths = momongaPaths(makeTemporaryDirectory());
+      const lock = expectedKernelLockOn(platform);
+      const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
       const directory = path.dirname(paths.gatewayKey);
       fs.mkdirSync(directory, { recursive: true });
       const held = path.join(directory, `.gateway.key.${PID_NO_PROCESS_HAS}aabbcc.tmp`);
@@ -89,21 +90,21 @@ describe('lock-capability.ts:43,79: two creators of one locked file never remove
 describe('C3: the registered list of leftover directories is data in momonga-paths.ts', () => {
   it('registers the plan sessions, the state directory of the secret key, the spawn scratch and the session scratch', () => {
     const home = makeTemporaryDirectory();
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     const registered = leftoverDirectories(paths).map((entry) => entry.directory);
     expect(registered).toEqual(expect.arrayContaining([paths.planSessions, path.dirname(paths.gatewayKey), paths.tmp.spawn, paths.tmp.sessions]));
     expect(new Set(registered).size).toBe(registered.length);
   });
 
   it('names only temporaries as leftovers, never a published file', () => {
-    const paths = momongaPaths(makeTemporaryDirectory());
+    const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
     const stateDirectory = leftoverDirectories(paths).find((entry) => entry.directory === path.dirname(paths.gatewayKey));
     expect(stateDirectory?.isLeftover(`.${path.basename(paths.gatewayKey)}.0a1b2c.tmp`)).toBe(true);
     expect(stateDirectory?.isLeftover(path.basename(paths.gatewayKey))).toBe(false);
   });
 
   it('registers run/ for the temporaries of its atomic writes, and never names run/current, the counter, a lock or a generation directory (20.66)', () => {
-    const paths = momongaPaths(makeTemporaryDirectory());
+    const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
     const run = leftoverDirectories(paths).find((entry) => entry.directory === paths.run);
     expect(run?.isLeftover('.current.0a1b2c.tmp')).toBe(true);
     expect(run?.isLeftover('.generation.counter.0a1b2c.tmp')).toBe(true);
@@ -115,15 +116,15 @@ describe('S8: every directory the product writes entries in is swept, including 
   const blobsOf = (paths: ReturnType<typeof momongaPaths>): string => path.join(path.dirname(paths.databases.runtime), 'blobs');
 
   it('registers the store blobs directory and the probe record directory', () => {
-    const paths = momongaPaths(makeTemporaryDirectory());
+    const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
     const registered = leftoverDirectories(paths).map((entry) => entry.directory);
     expect(registered).toEqual(expect.arrayContaining([blobsOf(paths), paths.probe]));
   });
 
   for (const platform of ['darwin', 'linux'] as const) {
     it(`${platform} mechanism: one sweep removes a crashed blob temporary with its sidecar and keeps a held one`, async () => {
-      const lock = createKernelLockMechanism(platform);
-      const paths = momongaPaths(makeTemporaryDirectory());
+      const lock = expectedKernelLockOn(platform);
+      const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
       const blobs = blobsOf(paths);
       fs.mkdirSync(blobs, { recursive: true, mode: 0o700 });
       const sha = 'ab'.repeat(32);

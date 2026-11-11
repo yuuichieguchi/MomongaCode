@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords, writeAppliedRecord } from '@momonga/config';
 import { systemRandom } from '@momonga/foundation';
+import { testKernelLock } from '@momonga/testkit';
 
 const NOT_ABORTED = new AbortController().signal;
 
@@ -64,7 +65,7 @@ describe('S7: an unreadable applied record is no newer copy (design-settings-liv
       const tree = makeTree();
       tree.write(JSON.stringify(settingsWithModel('c')));
       fs.writeFileSync(tree.record, text, { mode: 0o600 });
-      await expect(writeAppliedRecord(tree.home, tree.record, undefined, { signal: NOT_ABORTED, random: systemRandom })).resolves.toBeDefined();
+      await expect(writeAppliedRecord(tree.home, tree.record, undefined, { signal: NOT_ABORTED, random: systemRandom, lock: testKernelLock() })).resolves.toBeDefined();
       expect(JSON.parse(fs.readFileSync(tree.record, 'utf8'))).toMatchObject({ seq: expect.any(Number), settings: settingsWithModel('c') });
     });
   }

@@ -20,7 +20,7 @@ import {
   writeProjectSettings,
   writeUserSettings,
 } from './helpers.ts';
-import { NEVER_CANCELLED } from '@momonga/testkit';
+import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 
 const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   try {
@@ -50,7 +50,7 @@ describe('settings composition hooks and auto mode', () => {
     const session = createSession(f.store, f.temp.project);
 
     expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop']);
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop', 'project-stop']);
     expect(f.composition.settings.autoModeClassifier()).toBe('x');
     expect((await f.composition.sessionCreateSettings(f.temp.project, signalNever())).autoModeClassifier).toBe('fake/x');
@@ -76,7 +76,7 @@ describe('settings composition hooks and auto mode', () => {
     const binary = path.join(makeDir(f.temp.home, 'bin'), 'fm');
     fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     writeUserSettings(f.temp.home, { autoMode: { classifier: 'system' }, models: { connections: [{ adapter: 'managed', server: 'fm', binary, models: [{ id: 'system', toolCalling: 'native' }] }] } });
-    const composition = runtime.createSettingsComposition({ signal: new AbortController().signal, home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
+    const composition = runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
     const created = await composition.sessionCreateSettings(f.temp.project, signalNever());
     expect(created.autoModeClassifier).toBe('apple/system');
     expect(created.autoModeKey).toBeUndefined();
@@ -142,7 +142,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { permissions: { defaultMode: 'acceptEdits' } });
     writeProjectSettings(f.temp.project, { permissions: { defaultMode: 'plan' } });
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
 
     const result = await f.composition.sessionCreateSettings(f.temp.project, signalNever());
 
@@ -156,7 +156,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeInvalidUserSettings(temp.home);
     const f = await makeRuntimeFixture({ temp });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
-    const runId = createRun(f.store, session.id);
+    const runId = await createRun(f.store, session.id);
 
     expect(await rejectionOf(f.composition.sessionCreateSettings(f.temp.project, signalNever()))).toBeInstanceOf(ConfigError);
     expect(await rejectionOf(f.composition.settings.rules(session))).toBeInstanceOf(ConfigError);
@@ -200,7 +200,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { permissions: { allow: ['Bash(ls)'] } });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
-    const runId = createRun(f.store, session.id);
+    const runId = await createRun(f.store, session.id);
     const delta = async (call: () => unknown): Promise<number> => {
       const before = f.cache.snapshots;
       await call();
@@ -238,16 +238,15 @@ describe('settings composition (fake timers, not used by the code under test)', 
     expect(loaded.rules.map((rule) => rule.text)).toEqual(['Bash(ls)']);
   });
 
-  it('trusted(session) is synchronous and reflects the store', async () => {
+  it('trusted(session) reflects the store', async () => {
     const f = await makeRuntimeFixture();
     const session = createSession(f.store, f.temp.project);
 
-    const first = f.composition.settings.trusted(session);
-    expect(first).toBe(false);
-    f.store.trust.set(f.temp.project, 'trusted');
-    expect(f.composition.settings.trusted(session)).toBe(true);
-    f.store.trust.set(f.temp.project, 'untrusted');
-    expect(f.composition.settings.trusted(session)).toBe(false);
+    expect(await f.composition.settings.trusted(session)).toBe(false);
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
+    expect(await f.composition.settings.trusted(session)).toBe(true);
+    await f.store.trust.setAsked(f.temp.project, 'untrusted', NEVER_CANCELLED);
+    expect(await f.composition.settings.trusted(session)).toBe(false);
     expect(await f.composition.trustOracle.isTrusted(f.temp.project, new AbortController().signal)).toBe(false);
   });
 
@@ -259,11 +258,11 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const session = createSession(f.store, sub);
     expect(await f.composition.settings.rules(session)).toEqual([]);
 
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
 
     const rules = await f.composition.settings.rules(session);
     expect(rules.map((rule) => [rule.text, rule.origin])).toEqual([['Bash(make)', 'project']]);
-    expect(f.composition.settings.trusted(session)).toBe(true);
+    expect(await f.composition.settings.trusted(session)).toBe(true);
     expect(await f.composition.trustOracle.isTrusted(sub, new AbortController().signal)).toBe(true);
   });
 
@@ -272,11 +271,11 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeUserSettings(f.temp.home, {});
     const inside = makeDir(f.temp.home, 'code', 'app');
     writeProjectSettings(inside, { permissions: { allow: ['Bash(make)'] } });
-    f.store.trust.set(f.temp.home, 'trusted');
+    await f.store.trust.setAsked(f.temp.home, 'trusted', NEVER_CANCELLED);
     const session = createSession(f.store, inside);
 
     expect(await f.composition.trustOracle.isTrusted(inside, new AbortController().signal)).toBe(false);
-    expect(f.composition.settings.trusted(session)).toBe(false);
+    expect(await f.composition.settings.trusted(session)).toBe(false);
     expect(await f.composition.settings.rules(session)).toEqual([]);
   });
 
@@ -327,7 +326,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const temp = await makeTempHome();
     const { store } = openStore(temp);
 
-    const error = await thrownBy(() => runtime.createSettingsComposition({ signal: new AbortController().signal, home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
+    const error = await thrownBy(() => runtime.createSettingsComposition({ lock: testKernelLock(), signal: new AbortController().signal, home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
 
     expect(error).toBeInstanceOf(TypeError);
     expect((error as Error).message).toContain('relative/home');

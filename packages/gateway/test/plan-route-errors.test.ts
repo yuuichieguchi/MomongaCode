@@ -50,9 +50,9 @@ describe('every plan route error passes one mapping (P-162, N-G5-1, G5-4)', () =
   it('host/reset whose identity file cannot be written answers 500 plan_host_identity_unavailable, as begin does', async () => {
     const gateway = await startPlanGateway();
     registerCleanup(() => gateway.close());
-    const directory = path.dirname(momongaLayout(gateway.home).planHost);
+    const directory = path.dirname(momongaLayout(gateway.home, process.platform, process.env).planHost);
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const hostFile = momongaLayout(gateway.home).planHost;
+    const hostFile = momongaLayout(gateway.home, process.platform, process.env).planHost;
     fs.mkdirSync(hostFile, { recursive: true });
     registerCleanup(() => fs.rmSync(hostFile, { recursive: true, force: true }));
     const answer = await gateway.post(PLAN_ROUTES.hostReset, {});

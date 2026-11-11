@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, waitFor, testKernelLock } from '@momonga/testkit';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir, run } from './helpers.ts';
 
@@ -40,7 +40,7 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
   });
 
   const newSandbox = (): Sandbox =>
-    createBubblewrapSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')), holders: heldMountPoints });
+    createBubblewrapSandbox({ lock: testKernelLock(), tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')), holders: heldMountPoints });
 
   const sh = async (script: string, overrides: Partial<SandboxPolicy> = {}): Promise<SandboxedProcess> => {
     const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: BASE_ENV }, policy(overrides), new AbortController().signal);

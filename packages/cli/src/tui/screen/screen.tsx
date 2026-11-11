@@ -1,7 +1,8 @@
 import { Box, measureElement } from 'ink';
 import type { DOMElement } from 'ink';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { VIEWPORT_ROWS, panelRowsCap } from './layout.ts';
 import type { RowAllocation } from './layout.ts';
 
 export type ScreenRegions = {
@@ -23,11 +24,8 @@ export type ScreenProps = {
   allocation: RowAllocation;
   regions: ScreenRegions;
   panel: ReactNode | undefined;
-  panelRows: number | undefined;
   onPanelRows(rows: number | undefined): void;
 };
-
-type MeasuredPanel = { node: ReactNode; rows: number };
 
 function Region({ rows, children }: { rows: number; children: ReactNode }) {
   if (rows === 0) return null;
@@ -38,16 +36,22 @@ function Region({ rows, children }: { rows: number; children: ReactNode }) {
   );
 }
 
-export function Screen({ view, columns, rows, allocation, regions, panel, panelRows, onPanelRows }: ScreenProps) {
+function NewestRows({ children }: { children: ReactNode }) {
+  return (
+    <Box flexGrow={1} flexShrink={1} flexBasis={0} minHeight={VIEWPORT_ROWS} flexDirection="column" justifyContent="flex-end" overflow="hidden">
+      <Box flexShrink={0} flexDirection="column">
+        {children}
+      </Box>
+      <Box flexGrow={1} flexShrink={1} flexBasis={0} />
+    </Box>
+  );
+}
+
+export function Screen({ view, columns, rows, allocation, regions, panel, onPanelRows }: ScreenProps) {
   const measuring = useRef<DOMElement>(null);
-  const [measured, setMeasured] = useState<MeasuredPanel | undefined>(undefined);
   const fullscreen = view === 'fullscreen';
   useLayoutEffect(() => {
-    const height = fullscreen && panel !== undefined && measuring.current !== null ? measureElement(measuring.current).height : undefined;
-    onPanelRows(height);
-    if (height === undefined) {
-      if (measured !== undefined) setMeasured(undefined);
-    } else if (measured?.node !== panel || measured?.rows !== height) setMeasured({ node: panel, rows: height });
+    onPanelRows(fullscreen && panel !== undefined && measuring.current !== null ? measureElement(measuring.current).height : undefined);
   });
   if (view === 'blank') return <Box />;
   if (view === 'scrollback') {
@@ -65,20 +69,21 @@ export function Screen({ view, columns, rows, allocation, regions, panel, panelR
   }
   return (
     <Box flexDirection="column" width={columns} height={rows} overflow="hidden">
-      <Region rows={allocation.viewport}>{regions.transcript}</Region>
+      {panel === undefined ? <Region rows={allocation.viewport}>{regions.transcript}</Region> : <NewestRows>{regions.transcript}</NewestRows>}
       <Region rows={allocation.menu}>{regions.menu}</Region>
       <Region rows={allocation.waiting}>{regions.waiting}</Region>
       <Region rows={allocation.lines}>{regions.lines}</Region>
-      <Region rows={allocation.input}>{panel !== undefined && panelRows !== undefined && measured !== undefined ? measured.node : regions.input}</Region>
-      <Region rows={allocation.footer}>{regions.footer}</Region>
-      <Region rows={allocation.subagents}>{regions.subagents}</Region>
-      {panel !== undefined ? (
-        <Box height={rows} flexShrink={0} flexDirection="column" overflow="hidden">
+      {panel === undefined ? (
+        <Region rows={allocation.input}>{regions.input}</Region>
+      ) : (
+        <Box maxHeight={panelRowsCap(rows)} flexShrink={0} flexDirection="column" overflow="hidden">
           <Box ref={measuring} flexDirection="column" flexShrink={0} width={columns}>
             {panel}
           </Box>
         </Box>
-      ) : null}
+      )}
+      <Region rows={allocation.footer}>{regions.footer}</Region>
+      <Region rows={allocation.subagents}>{regions.subagents}</Region>
     </Box>
   );
 }

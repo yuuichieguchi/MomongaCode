@@ -4,9 +4,10 @@ import path from 'node:path';
 import type { ElicitationRequestView, PermissionOption, RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
 import type { Claim, Run, RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { UNASKED_COMMANDS } from '../helpers.ts';
+import { nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 export const CONTRACT_START_MS = 1_900_000_000_000;
 const LEASE_MS = 1000;
@@ -20,7 +21,7 @@ export const REQUESTS: ElicitationRequestView[] = [{ key: 'who', mode: 'form', m
 export type ContractStore = { store: RuntimeStore; clock: FakeClock; dbPath: string; close(): void };
 
 export const openContractStore = (dbPath: string, clock: FakeClock = createFakeClock(CONTRACT_START_MS)): ContractStore => {
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: path.dirname(dbPath), clock, leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000 });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: path.dirname(dbPath), clock, leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000 });
   return { store, clock, dbPath, close: () => store.close() };
 };
 
@@ -35,8 +36,8 @@ export const copyTemplate = (template: string): { dbPath: string; remove(): void
 
 export const call = (callId: string): RunEventPayload => ({ type: 'tool.call', callId, providerCallId: callId, name: 'Write', kind: 'edit', title: callId, rawInput: { file_path: `/work/contract/${callId}.txt` }, locations: [{ path: `/work/contract/${callId}.txt` }] });
 
-export const enqueue = (store: RuntimeStore, sessionId: string, input: string): Run => {
-  const result = store.createRunAndEnqueue(sessionId, { input, timeoutMs: TIMEOUT_MS, limits: { maxSteps: 10 }, pins: { model: 'fm' } });
+export const enqueue = async (store: RuntimeStore, sessionId: string, input: string): Promise<Run> => {
+  const result = await store.createRunAndEnqueue(sessionId, { input, timeoutMs: TIMEOUT_MS, limits: { maxSteps: 10 }, pins: { model: 'fm' } });
   if (result.kind !== 'created') throw new Error(`expected a run, got ${result.kind}`);
   return result.run;
 };
@@ -54,7 +55,7 @@ export const ok = <T extends { kind: string }>(result: T, label: string): Extrac
 
 export const writeContractRows = async (store: RuntimeStore, tag: string): Promise<void> => {
   const session = store.createSession({ cwd: '/work/contract', env: { PATH: '/usr/bin' }, permissionMode: 'manual', model: 'fm' });
-  const run = enqueue(store, session.id, `written by ${tag}`);
+  const run = await enqueue(store, session.id, `written by ${tag}`);
   const claim = claimOf(store, run.id, `writer-${tag}`);
   ok(store.append(claim, [call(`${tag}-c1`), { type: 'notice', level: 'info', message: `written by ${tag}`, code: 'contract.writer' }]), 'append');
   ok(await store.release(claim, 'COMPLETED'), 'release');

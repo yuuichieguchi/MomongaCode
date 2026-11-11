@@ -6,7 +6,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createChatCompletionsAdapter, createManagedServer, createGateway, createManagedTarget, unauthenticatedSource } from '@momonga/gateway';
 import type { ExecResult, ManagedServer, ManagedServerTimers, ProviderAdapter } from '@momonga/gateway';
-import { createFakeClock, createFakeTimers, createScriptedAdapter, startFakeChatCompletions } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createScriptedAdapter, startFakeChatCompletions, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway, stateDbPath } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, TARGET } from './cc-support.ts';
@@ -70,6 +70,8 @@ const managedFm = async () => {
   const children: Child[] = [];
   const warnings: string[] = [];
   const fmServe: ManagedServer = createManagedServer({
+    inspector: testProcessInspector(),
+    lock: testKernelLock(),
     description: FM_SERVER,
     target: 'scripted/system',
     lockPath: `${socketPath}.lock`,
@@ -168,6 +170,7 @@ describe('adapter and gateway shutdown', () => {
     const socketPath = path.join(dir, 'gw.sock');
     const clock = createFakeClock(START_MS);
     const gateway = await createGateway({
+      lock: testKernelLock(),
       role: fixedRolePort('serving'),
       random: () => 0.5,
       credentials: [],
@@ -196,7 +199,7 @@ describe('adapter and gateway shutdown', () => {
 describe('count-tokens', () => {
   const calibrated = async (ratio: number, counted: string, signals: AbortSignal[]) => {
     const dir = makeDir();
-    await saveProbeRecord(dir, KEY, { ...makeReport(1, 1), tokenCalibration: { ratio, errorBound: 0.1 } }, FM_CURRENCY);
+    await saveProbeRecord(dir, KEY, { ...makeReport(1, 1), tokenCalibration: { ratio, errorBound: 0.1 } }, FM_CURRENCY, testKernelLock());
     return createManagedTarget({
       ...fmTargetBase(),
       server: { restarts: 0, start: async () => ({ kind: 'unix', path: '/s' }), ensureRunning: async () => ({ kind: 'unix', path: '/s' }), stop: async () => undefined, health: async () => ({ ok: true }) },

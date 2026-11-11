@@ -2,11 +2,11 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { canonicalJson, ensureMomongaDirs, groupAlive, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, ensureMomongaDirs, groupAlive, sha256Hex, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { McpPoolOptions } from '@momonga/mcp';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, testKernelLock } from '@momonga/testkit';
 import { START_MS, trackGroup } from './helpers.ts';
 import { eventTypes, launchRuntime, readDb, sessionEnvFor, startStack, waitForStatus, prepareGeneration, scopedPaths } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -67,14 +67,14 @@ type SeedCall = { callId: string; name: string; args: Record<string, unknown>; k
 
 const openSeedStore = async (temp: RunHome) => {
   await prepareGeneration(temp);
-  return openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  return openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
 };
 
 const seedCancellingRun = async (temp: RunHome, call: SeedCall, holderScript?: string) => {
   const store = await openSeedStore(temp);
   try {
     const session = store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'bypassPermissions', model: 'default', bypassAllowed: true });
-    const created = store.createRunAndEnqueue(session.id, { input: 'Work', timeoutMs: 6 * 3_600_000, limits: {}, pins: {} }) as { run?: { id: string } };
+    const created = (await store.createRunAndEnqueue(session.id, { input: 'Work', timeoutMs: 6 * 3_600_000, limits: {}, pins: {} })) as { run?: { id: string } };
     const runId = created.run?.id;
     if (runId === undefined) throw new Error('the seed run was not created');
     const key = toolKey(runId, 1, call.callId);

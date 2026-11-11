@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
-import { createRedactor } from '@momonga/foundation';
+import { createRedactor, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { buildRunReport } from '@momonga/observability';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { HISTORY_INDEX_BATCH_CHARS } from '@momonga/store';
@@ -13,6 +13,7 @@ import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread
 import { journalReaderPreparer, makeEnv } from '../worker/harness.ts';
 import type { Env } from '../worker/harness.ts';
 import { foldedThrough, seedLargeRun } from '../worker/large-run.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const SIZES = [15, 50, 150, 1000] as const;
 const BODY_TOKENS = [100_000, 400_000, 1_000_000] as const;
@@ -69,7 +70,7 @@ const threadOf = (dbPath: () => string): { preparer: ContributionPreparer; clien
     started ??= (() => {
       const databasePath = dbPath();
       const { dev, ino } = fs.statSync(databasePath);
-      return startJournalThread({ databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      return startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     })();
     return started;
   };
@@ -126,7 +127,7 @@ const measureSize = async (steps: number): Promise<Measured> => {
     const lastSeq = env.run(run.id).lastSeq;
     const spawn = await timed(async () => {
       const { dev, ino } = fs.statSync(env.dbPath);
-      return startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      return startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     });
     await spawn.value.close();
 
@@ -231,7 +232,7 @@ const measureSize = async (steps: number): Promise<Measured> => {
 
 const bodyDecode = async (tokens: number): Promise<Measured> => {
   const env = await makeEnv({ mode: 'bypassPermissions' });
-  const run = env.enqueue('Read one body', { history: 'fresh' });
+  const run = await env.enqueue('Read one body', { history: 'fresh' });
   const half = (tokens * CHARS_PER_TOKEN) / 2;
   const content = `${'src/module/file.ts handler '.repeat(Math.ceil(half / 27)).slice(0, half)}${'設定ファイルの読み込みに失敗しました。'.repeat(Math.ceil(half / 19)).slice(0, half)}`;
   const request: RunEventPayload = { type: 'model.requested', step: 1, attempt: 1, digest: 'digest-1', body: { model: 'fm', input: [{ type: 'message', role: 'user', content }] } };

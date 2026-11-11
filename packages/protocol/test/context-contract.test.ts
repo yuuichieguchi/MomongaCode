@@ -70,7 +70,7 @@ describe('context types', () => {
       | { kind: 'commit'; sha: string }
       | { kind: 'check'; runId: string; conditionId: string; seq: number; command: string; exitCode: number }
     >();
-    expectTypeOf<MemoryView['evidence']>().toEqualTypeOf<(MemoryEvidence | { kind: 'unknown' })[]>();
+    expectTypeOf<MemoryView['evidence']>().toEqualTypeOf<(MemoryEvidence | { kind: 'check'; runId: string; modelCallId: string; seq: number; command: string; exitCode: number } | { kind: 'unknown' })[]>();
     expectTypeOf<MemoryView['state']>().toEqualTypeOf<MemoryState | 'unknown'>();
     expectTypeOf<MemoryView['kind']>().toEqualTypeOf<MemoryKind | 'unknown'>();
     expectTypeOf<MemoryView['duplicateOf']>().toEqualTypeOf<string | null>();

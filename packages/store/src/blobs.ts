@@ -1,8 +1,7 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { immediateTx, modeIsPrivate, nodeFileSystem, sha256Hex, systemRandom, writeFileAtomically } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import { immediateTx, modeIsPrivate, sha256Hex, writeFileAtomically } from '@momonga/foundation';
+import type { Clock, FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
 import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobScope, BlobSlice, BlobStore } from './types.ts';
 
@@ -11,9 +10,15 @@ const BLOB_FILE_MODE = 0o600;
 const HANDLE_PATTERN = /^[0-9a-f]{64}$/;
 const NEWLINE = 0x0a;
 
-export const prepareBlobDirectory = (dir: string): void => {
-  fs.mkdirSync(dir, { recursive: true, mode: BLOB_DIRECTORY_MODE });
-  const stat = fs.statSync(dir);
+const READ_PAGE_BYTES = 64 * 1024;
+
+export type BlobFileSystem = Pick<FileSystem, 'mkdir' | 'stat' | 'readFile' | 'readRange' | 'open' | 'descriptors' | 'rename' | 'link' | 'rm'>;
+
+export type BlobPorts = { fileSystem: BlobFileSystem; random: Random; lock: KernelLockMechanism };
+
+export const prepareBlobDirectory = async (fileSystem: Pick<FileSystem, 'mkdir' | 'stat'>, dir: string): Promise<void> => {
+  await fileSystem.mkdir(dir, BLOB_DIRECTORY_MODE);
+  const stat = await fileSystem.stat(dir);
   if (!modeIsPrivate(stat, 'directory')) {
     throw new Error(`blob directory ${dir} has mode ${(stat.mode & 0o777).toString(8).padStart(4, '0')} but must be 0700; run: chmod 700 ${dir}`);
   }
@@ -37,45 +42,6 @@ const assertUtf8 = (bytes: Uint8Array): void => {
 };
 
 const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
-
-const heldBytes = async (target: string): Promise<Uint8Array | undefined> => {
-  try {
-    return await nodeFileSystem.readFile(target);
-  } catch (error) {
-    if (isMissing(error)) return undefined;
-    throw error;
-  }
-};
-
-const holdsContent = async (target: string, sha256: string, byteLength: number): Promise<boolean> => {
-  const held = await heldBytes(target);
-  return held !== undefined && held.length === byteLength && sha256Hex(held) === sha256;
-};
-
-const readLines = async (file: string, lineStart: number, lineEnd: number): Promise<string> => {
-  const stream = fs.createReadStream(file);
-  const kept: Buffer[] = [];
-  let line = 1;
-  try {
-    for await (const chunk of stream) {
-      const buffer: Buffer = chunk;
-      let position = 0;
-      while (position < buffer.length) {
-        const newline = buffer.indexOf(NEWLINE, position);
-        const end = newline === -1 ? buffer.length : newline + 1;
-        if (line >= lineStart) kept.push(buffer.subarray(position, end));
-        position = end;
-        if (newline !== -1) {
-          if (line === lineEnd) return Buffer.concat(kept).toString('utf8');
-          line += 1;
-        }
-      }
-    }
-    return Buffer.concat(kept).toString('utf8');
-  } finally {
-    stream.destroy();
-  }
-};
 
 const isContinuation = (byte: number): boolean => (byte & 0xc0) === 0x80;
 
@@ -104,30 +70,65 @@ const characterSpan = (buffer: Buffer, windowLength: number): { start: number; e
 
 const MAX_CHARACTER_OVERRUN = 7;
 
-const readBytes = (file: string, handle: string, offset: number, length: number, totalBytes: number): Buffer => {
-  const wanted = Math.max(0, Math.min(length + MAX_CHARACTER_OVERRUN, totalBytes - offset));
-  const buffer = Buffer.alloc(wanted);
-  const fd = fs.openSync(file, 'r');
-  try {
-    let filled = 0;
-    while (filled < wanted) {
-      const read = fs.readSync(fd, buffer, filled, wanted - filled, offset + filled);
-      if (read === 0) throw new Error(`blob ${handle} is shorter than its recorded length ${totalBytes}`);
-      filled += read;
-    }
-  } finally {
-    fs.closeSync(fd);
-  }
-  return buffer;
-};
-
 const assertNonNegativeInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 0) throw new RangeError(`blob range ${name} must be a non-negative integer, got ${value}`);
 };
 
 export const blobDirectoryOf = (databasePath: string): string => path.join(path.dirname(databasePath), 'blobs');
 
-export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): BlobStore => {
+export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, { fileSystem, random, lock }: BlobPorts): BlobStore => {
+  let directoryPrepared: Promise<void> | undefined;
+  const prepare = (): Promise<void> => {
+    directoryPrepared ??= prepareBlobDirectory(fileSystem, dir).catch((error: unknown) => {
+      directoryPrepared = undefined;
+      throw error;
+    });
+    return directoryPrepared;
+  };
+
+  const heldBytes = async (target: string): Promise<Uint8Array | undefined> => {
+    try {
+      return await fileSystem.readFile(target);
+    } catch (error) {
+      if (isMissing(error)) return undefined;
+      throw error;
+    }
+  };
+
+  const holdsContent = async (target: string, sha256: string, byteLength: number): Promise<boolean> => {
+    const held = await heldBytes(target);
+    return held !== undefined && held.length === byteLength && sha256Hex(held) === sha256;
+  };
+
+  const readPage = async (file: string, handle: string, position: number, length: number, totalBytes: number): Promise<Buffer> => {
+    const page = await fileSystem.readRange(file, position, length);
+    if (page.length < length) throw new Error(`blob ${handle} is shorter than its recorded length ${totalBytes}`);
+    return Buffer.from(page.buffer, page.byteOffset, page.byteLength);
+  };
+
+  const readLines = async (file: string, handle: string, lineStart: number, lineEnd: number, totalBytes: number): Promise<string> => {
+    const kept: Buffer[] = [];
+    let line = 1;
+    for (let offset = 0; offset < totalBytes; offset += READ_PAGE_BYTES) {
+      const page = await readPage(file, handle, offset, Math.min(READ_PAGE_BYTES, totalBytes - offset), totalBytes);
+      let position = 0;
+      while (position < page.length) {
+        const newline = page.indexOf(NEWLINE, position);
+        const end = newline === -1 ? page.length : newline + 1;
+        if (line >= lineStart) kept.push(page.subarray(position, end));
+        position = end;
+        if (newline !== -1) {
+          if (line === lineEnd) return Buffer.concat(kept).toString('utf8');
+          line += 1;
+        }
+      }
+    }
+    return Buffer.concat(kept).toString('utf8');
+  };
+
+  const readBytes = (file: string, handle: string, offset: number, length: number, totalBytes: number): Promise<Buffer> =>
+    readPage(file, handle, offset, Math.max(0, Math.min(length + MAX_CHARACTER_OVERRUN, totalBytes - offset)), totalBytes);
+
   const insert = db.prepare(
     `INSERT INTO blobs (sha256, byte_length, line_count, media_type, created_at)
      VALUES (:sha256, :byteLength, :lineCount, :mediaType, :createdAt)
@@ -160,12 +161,12 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): Bl
       if (!Number.isInteger(range.lineStart) || range.lineStart < 1 || !Number.isInteger(range.lineEnd) || range.lineEnd < range.lineStart) {
         throw new RangeError(`blob line range must satisfy 1 <= lineStart <= lineEnd, got ${range.lineStart}..${range.lineEnd}`);
       }
-      return { text: await readLines(file, range.lineStart, range.lineEnd), totalLines, totalBytes };
+      return { text: await readLines(file, handle, range.lineStart, range.lineEnd, totalBytes), totalLines, totalBytes };
     }
     assertNonNegativeInteger('offset', range.offset);
     assertNonNegativeInteger('length', range.length);
     if (range.length === 0) return { text: '', totalLines, totalBytes, offset: range.offset, length: 0 };
-    const raw = readBytes(file, handle, range.offset, range.length, totalBytes);
+    const raw = await readBytes(file, handle, range.offset, range.length, totalBytes);
     const { start, end } = characterSpan(raw, range.length);
     return {
       text: raw.subarray(start, end).toString('utf8'),
@@ -177,14 +178,16 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): Bl
   }
 
   return {
+    prepare,
     handleFor: (content) => handleOfBytes(Buffer.from(content, 'utf8')),
     put: async (data, options) => {
       const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
       assertUtf8(bytes);
       const sha256 = handleOfBytes(bytes);
       const target = path.join(dir, sha256);
+      await prepare();
       if (!(await holdsContent(target, sha256, bytes.length))) {
-        await writeFileAtomically(nodeFileSystem, systemRandom, target, bytes, { mode: BLOB_FILE_MODE });
+        await writeFileAtomically(fileSystem, random, target, bytes, { mode: BLOB_FILE_MODE, lock });
       }
       const lineCount = countLines(bytes);
       immediateTx(db, () => {

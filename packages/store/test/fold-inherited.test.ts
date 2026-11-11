@@ -194,10 +194,10 @@ describe('a closure entry from the projection folds like any output', () => {
 });
 
 describe('snapshot plus tail equals the full fold for an inheriting run', () => {
-  it('holds at every seq over a journal with the event, modes, deltas, a compaction through the task, a truncation and a rejection', () => {
+  it('holds at every seq over a journal with the event, modes, deltas, a compaction through the task, a truncation and a rejection', async () => {
     const { store } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id, 'continue');
+    const run = await enqueue(store, session.id, 'continue');
     const claim = mustClaim(store, 'w1');
     const journal: RunEventPayload[] = [
       INHERITED,

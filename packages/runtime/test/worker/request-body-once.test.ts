@@ -26,7 +26,7 @@ describe('within one model step the recorded request body is decoded once across
         }
       },
     });
-    const run = env.enqueue(INPUT);
+    const run = await env.enqueue(INPUT);
     env.gateway.script.push(
       callsStep([{ callId: 'call_once_1', name: 'Write', args: { file_path: `${env.project}/one.txt`, content: 'one' } }]),
       callsStep([{ callId: 'call_once_2', name: 'Write', args: { file_path: `${env.project}/two.txt`, content: 'two' } }]),

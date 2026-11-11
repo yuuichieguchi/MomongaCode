@@ -30,7 +30,7 @@ const seededRandom = (seed: number): (() => number) => {
 };
 
 const recallAt = async (size: number, query = 'unrelated words') => {
-  const seeded = seededStore(size, noteText);
+  const seeded = await seededStore(size, noteText);
   const counter = newCounter();
   const port = portFor(seeded.store, counter);
   const measured = await countStatements(async () => {
@@ -90,7 +90,7 @@ describe('recall cost does not grow with the store', () => {
   });
 
   it('a pinned note outside the prefix is still returned, and the pinned message is unchanged', async () => {
-    const seeded = seededStore(200, noteText);
+    const seeded = await seededStore(200, noteText);
     const pinned = seeded.store.memories.addByCommand({ scope: 'project', project: seeded.project, text: 'the pinned note', evidence: [] });
     seeded.store.memories.observe(pinned.id, 'stale');
     const counter = newCounter();
@@ -121,7 +121,7 @@ describe('recall cost does not grow with the store', () => {
     for (let trial = 0; trial < 12; trial += 1) {
       const count = 3 + Math.floor(random() * 60);
       const lengths = Array.from({ length: count }, () => 20 + Math.floor(random() * LARGEST_BUDGET));
-      const seeded = seededStore(count, (index) => `note ${index} ${'w'.repeat(lengths[index] ?? 20)}`);
+      const seeded = await seededStore(count, (index) => `note ${index} ${'w'.repeat(lengths[index] ?? 20)}`);
       const window = [8000, 12000, 16000][Math.floor(random() * 3)] ?? 8000;
       const capabilities = capabilitiesFor(window);
       const counter = newCounter();

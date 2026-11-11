@@ -182,7 +182,7 @@ describe('tasks extension over streamable HTTP', () => {
     expect(timers.pending().map((timer) => timer.delayMs)).toContain(MIN_TASK_POLL_MS);
 
     fixture.completeTask(taskId, 'task finished');
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     const settled = await outcome;
     expect('value' in settled && textOf(settled.value)).toBe('task finished');
 
@@ -202,11 +202,11 @@ describe('tasks extension over streamable HTTP', () => {
     expect(timers.pending().map((timer) => timer.delayMs)).toContain(4000);
 
     const second = timers.nextScheduled(isPoll);
-    timers.advance(4000);
+    await timers.advanceAsync(4000);
     await second;
     expect(fixture.rpcRecords('tasks/get')).toHaveLength(1);
     fixture.completeTask(taskId, 'late');
-    timers.advance(4000);
+    await timers.advanceAsync(4000);
     const settled = await outcome;
     expect('value' in settled && textOf(settled.value)).toBe('late');
     expect(fixture.rpcRecords('tasks/get')).toHaveLength(2);
@@ -233,7 +233,7 @@ describe('tasks extension over streamable HTTP', () => {
       (error: unknown) => ({ error }),
     );
     await scheduled;
-    timers.advance(5000);
+    await timers.advanceAsync(5000);
     const settled = await outcome;
     expect('error' in settled && (settled.error as Error).message).toContain('did not finish within 5000ms');
     await fixture.until(() => fixture.notes.some((note) => note.type === 'task_cancel'));
@@ -248,7 +248,7 @@ describe('tasks extension over streamable HTTP', () => {
     await connection.listTools();
     const { outcome, taskId } = await startLongTask(fixture, timers, connection);
     clock.set(1_005_001);
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     const settled = await outcome;
     expect('error' in settled && settled.error).toBeInstanceOf(McpTaskError);
     expect('error' in settled && (settled.error as Error).message).toContain('ttl of 5000ms');
@@ -264,7 +264,7 @@ describe('tasks extension over streamable HTTP', () => {
     await connection.listTools();
     const { outcome, taskId } = await startLongTask(fixture, timers, connection);
     fixture.completeTask(taskId, 'still healthy');
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     const settled = await outcome;
     expect('value' in settled && textOf(settled.value)).toBe('still healthy');
     expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toEqual([]);
@@ -299,7 +299,7 @@ describe('tasks extension over streamable HTTP', () => {
     await connection.listTools();
     const { outcome, taskId } = await startLongTask(fixture, timers, connection);
     fixture.completeTask(taskId, 'done at once');
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     const settled = await outcome;
     expect('value' in settled && textOf(settled.value)).toBe('done at once');
   });
@@ -312,7 +312,7 @@ describe('tasks extension over streamable HTTP', () => {
     await connection.listTools();
     const { outcome, taskId } = await startLongTask(fixture, timers, connection);
     clock.set(1_000_001);
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     const settled = await outcome;
     expect('error' in settled && settled.error).toBeInstanceOf(McpTaskError);
     expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toEqual([{ type: 'task_cancel', taskId }]);
@@ -327,7 +327,7 @@ describe('tasks extension over streamable HTTP', () => {
     const { outcome, taskId } = await startLongTask(fixture, timers, connection);
     clock.set(1_100_000);
     fixture.completeTask(taskId, 'late but done');
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     const settled = await outcome;
     expect('value' in settled && textOf(settled.value)).toBe('late but done');
   });
@@ -336,7 +336,7 @@ describe('tasks extension over streamable HTTP', () => {
     const { fixture, timers, connection } = await setup();
     const { outcome, taskId } = await startLongTask(fixture, timers, connection);
     fixture.failTask(taskId, 'rate limited');
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     const settled = await outcome;
     expect('error' in settled && settled.error).toBeInstanceOf(McpTaskError);
     expect('error' in settled && (settled.error as Error).message).toContain('rate limited');
@@ -356,7 +356,7 @@ describe('tasks extension over streamable HTTP', () => {
     const { outcome, taskId } = await startLongTask(fixture, timers, connection);
     expect(timers.pending().map((timer) => timer.delayMs)).toContain(DEFAULT_TASK_POLL_MS);
     fixture.completeTask(taskId, 'done');
-    timers.advance(DEFAULT_TASK_POLL_MS);
+    await timers.advanceAsync(DEFAULT_TASK_POLL_MS);
     const settled = await outcome;
     expect('value' in settled && textOf(settled.value)).toBe('done');
   });
@@ -370,7 +370,7 @@ describe('tasks extension over streamable HTTP', () => {
     const [taskId] = fixture.taskIds();
     expect(checkpoints).toEqual([{ kind: 'task', taskId, answered: [] }]);
     fixture.completeTask(taskId as string, 'done');
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     await outcome;
   });
 
@@ -404,7 +404,7 @@ describe('tasks extension over streamable HTTP', () => {
       (error: unknown) => ({ error }),
     );
     await scheduled;
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     const suspended = await outcome;
     const suspension = 'error' in suspended ? suspended.error : undefined;
     expect(suspension).toBeInstanceOf(McpInputSuspension);
@@ -423,7 +423,7 @@ describe('tasks extension over streamable HTTP', () => {
       resume: { checkpoint, answers: { name: { action: 'accept', content: { name: 'Ada' } } } },
     });
     await resumedScheduled;
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     expect(textOf(await resumed)).toBe('hello Ada');
     const [update] = fixture.rpcRecords('tasks/update');
     expect(update?.headers['mcp-name']).toBe(taskId);
@@ -440,7 +440,7 @@ describe('tasks extension over streamable HTTP', () => {
       (error: unknown) => ({ error }),
     );
     await scheduled;
-    timers.advance(MIN_TASK_POLL_MS);
+    await timers.advanceAsync(MIN_TASK_POLL_MS);
     const suspended = await outcome;
     const { checkpoint } = ('error' in suspended ? suspended.error : undefined) as McpInputSuspension;
     expect(checkpoint.kind).toBe('task');

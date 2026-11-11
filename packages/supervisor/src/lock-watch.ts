@@ -3,7 +3,6 @@ import type { KernelLockMechanism, ProcessLockInspection } from '@momonga/founda
 import { LINE_MAX_BYTES } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import type { ChildRole } from './launcher.ts';
-import { omitUndefined } from './omit-undefined.ts';
 
 export type ExternalProbe = 'pending' | 'healthy' | 'unhealthy' | 'unresponsive' | 'unreachable';
 
@@ -19,7 +18,7 @@ export type LockWatchOptions = {
   lockWatchIntervalMs: number;
   externalPollMs: number;
   timers: SupervisorTimers;
-  mechanism?: KernelLockMechanism;
+  mechanism: KernelLockMechanism;
   inspect?: typeof inspectProcessLock;
   probe?: HealthProbe;
   onFree(): void;
@@ -169,7 +168,7 @@ export const watchLock = (options: LockWatchOptions): LockWatch => {
   const poll = async (): Promise<void> => {
     let inspection: ProcessLockInspection;
     try {
-      inspection = await inspect(options.lockPath, omitUndefined({ mechanism: options.mechanism }));
+      inspection = await inspect(options.lockPath, { mechanism: options.mechanism });
     } catch (error) {
       if (stopped) return;
       report(error, 'lock-poll');

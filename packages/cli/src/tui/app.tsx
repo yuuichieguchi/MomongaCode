@@ -43,11 +43,13 @@ import { a11yOf, applyA11y, NOTHING_ASKED, statusLine, statusLines } from './scr
 import type { AskedA11y, StoredA11y } from './screen/a11y.ts';
 import { AtList, AttachmentLines, heldAttachments } from './screen/attachments.tsx';
 import type { Attachment } from './screen/attachments.tsx';
-import { contextPercentOf, Footer, formatTokens, newlineHintText, planRowFits } from './screen/footer.tsx';
+import { contextPercentOf, Footer, newlineHintText, planRowFits } from './screen/footer.tsx';
+import { formatTokens } from '../format-tokens.ts';
 import { HistoryView } from './screen/history-view.tsx';
 import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
 import type { ScreenTerminal } from './screen/input.ts';
-import { allocate, menuRowsCap, panelRowsCap, regionAt } from './screen/layout.ts';
+import type { RowRequests } from './screen/layout.ts';
+import { allocate, drawnTranscriptRows, inputTopOf, menuRowsCap, naturalRows, panelRowsCap, regionAt } from './screen/layout.ts';
 import { chordContextsOf, keyRouteOf } from './screen/key-route.ts';
 import type { KeyRoute, KeyRouteFacts } from './screen/key-route.ts';
 import { INVITATION_ROWS, InvitationLine, invitationKeyOf, isMenuAction, useSlashMenu } from './screen/menu.tsx';
@@ -1458,8 +1460,7 @@ export function App(props: AppProps) {
   const fullscreen = terminalState.screen === 'fullscreen';
   const panelFacts = { trustPath: phase.kind === 'trust' ? phase.path : undefined, ready: phase.kind === 'ready' };
   const panel = prompts.panel(panelFacts);
-  const shownPanel = fullscreen && panelRows === undefined ? undefined : panel;
-  const inputShown = (phase.kind === 'starting' || phase.kind === 'ready' || phase.kind === 'unconnected') && shownPanel === undefined;
+  const inputShown = (phase.kind === 'starting' || phase.kind === 'ready' || phase.kind === 'unconnected') && panel === undefined;
   const completionOpen = slashMenu.open || atMenu.open;
   const menuShown = inputShown && (invitationShown || completionOpen);
   const shownAttachments = heldAttachments(attachments, editor.text);
@@ -1477,15 +1478,17 @@ export function App(props: AppProps) {
     panelOwnsEscape: overlay !== undefined,
     loading: phase.kind === 'ready' ? loading : undefined,
   });
-  const allocation = allocate(rows, {
+  const rowRequests: RowRequests = {
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
     inputRows: inputRowsOf(shownEditor, columns),
-    menu: !menuShown ? 0 : invitationInMenu ? INVITATION_ROWS : atMenu.open ? atMenu.rows : slashMenu.rows,
+    invitation: invitationInMenu ? INVITATION_ROWS : 0,
+    menu: !menuShown || invitationInMenu ? 0 : atMenu.open ? atMenu.rows : slashMenu.rows,
     subagents: transcript.subagents.length,
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
     lines: inputShown ? shownAttachments.length + waitingLines.length : 0,
-    panel: shownPanel === undefined ? undefined : panelRows,
-  });
+    panel: panel === undefined ? undefined : (panelRows ?? 0),
+  };
+  const allocation = allocate(rows, rowRequests);
   const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const transcriptWidth = fullscreen ? Math.max(1, columns - SCROLLBAR_COLUMNS) : columns;
   const view = useTranscriptView({
@@ -1520,7 +1523,7 @@ export function App(props: AppProps) {
     terminal,
     active: fullscreen && !switching,
     allocation,
-    panelOpen: shownPanel !== undefined,
+    panelOpen: panel !== undefined,
     menuOpen: inputShown && completionOpen,
     panelPress: (row) => prompts.press(panelFacts, row),
     panelWheel: (wheelRows) => prompts.wheel(panelFacts, wheelRows),
@@ -1603,7 +1606,8 @@ export function App(props: AppProps) {
           tokens: sessionTokens(transcript),
           contextPercent: contextPercentOf(transcript.contextTokens, capabilities?.contextWindow),
           imageInput,
-          right: shownHint ?? newlineHintText(newlineKeyHint(keys, terminalState.negotiation)),
+          answer: shownHint,
+          newline: newlineHintText(newlineKeyHint(keys, terminalState.negotiation)),
         }
       : undefined;
 
@@ -1614,13 +1618,12 @@ export function App(props: AppProps) {
       rows={rows}
       allocation={allocation}
       panel={panel ?? (fullscreen || !toolView.shown ? undefined : toolView.view)}
-      panelRows={panelRows}
       onPanelRows={setPanelRows}
       regions={{
         transcript: fullscreen && toolView.shown ? (
           toolView.view
         ) : fullscreen ? (
-          <TranscriptView window={view.window} height={allocation.viewport} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
+          <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : drawnTranscriptRows(allocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
         ) : (
           <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} />
         ),
@@ -1636,7 +1639,7 @@ export function App(props: AppProps) {
             ))}
           </>
         ) : null,
-        input: inputShown ? <InputBox editor={shownEditor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={fullscreen ? allocation.viewport + allocation.menu + allocation.waiting + allocation.lines : undefined} /> : null,
+        input: inputShown ? <InputBox editor={shownEditor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledCount()).length, rowRequests))} /> : null,
         footer: (
           <>
             <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />

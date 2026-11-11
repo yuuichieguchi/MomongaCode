@@ -5,7 +5,6 @@ import type { KernelLockMechanism, StopValues } from '@momonga/foundation';
 import type { ErrorBody, SupervisorHealth, SupervisorShutdownResponse } from '@momonga/protocol';
 import { CONTROL_CLOSE_ALL_AFTER_MS, CONTROL_REQUEST_TIMEOUT_MS, SHUTDOWN_BODY_LIMIT_BYTES } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
-import { omitUndefined } from './omit-undefined.ts';
 
 export type ShutdownResponseWriter = {
   writeHead(status: number, headers: Readonly<Record<string, string | number>>): unknown;
@@ -26,7 +25,7 @@ export type ControlServerOptions = ControlHandlerOptions & {
   startSignal?: AbortSignal;
   socketPath: string;
   timers: SupervisorTimers;
-  mechanism?: KernelLockMechanism;
+  mechanism: KernelLockMechanism;
 };
 
 export type ControlServer = {
@@ -200,7 +199,7 @@ export const startControlServer = async (options: ControlServerOptions): Promise
   const server = http.createServer(createControlRequestHandler(options));
   server.requestTimeout = CONTROL_REQUEST_TIMEOUT_MS;
   server.headersTimeout = CONTROL_REQUEST_TIMEOUT_MS;
-  await listenUnix(server, options.socketPath, omitUndefined({ mechanism: options.mechanism }), startDeadlineSignal(options.startSignal));
+  await listenUnix(server, options.socketPath, { mechanism: options.mechanism }, startDeadlineSignal(options.startSignal));
   server.on('error', options.onError);
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => {

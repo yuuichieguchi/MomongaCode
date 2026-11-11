@@ -38,7 +38,7 @@ const called = (callId: string, name: string): RunEventPayload => ({
 
 const pastRun = async (env: Env, payloads: readonly RunEventPayload[]): Promise<string> => {
   env.clock.advance(1);
-  const run = env.enqueue('Past work', { history: 'fresh' });
+  const run = await env.enqueue('Past work', { history: 'fresh' });
   const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'manual' }, ...payloads], 'hold');
   expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   return run.id;
@@ -61,7 +61,7 @@ const warmWindow = async (env: Env): Promise<void> => {
   const worker = env.worker('warm', { toolList: toolsOf(env, WORK_TOOLS) });
   for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
     env.gateway.script.push(callsStep([{ callId: `warm-${index}`, name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    env.enqueue(`warm ${index}`, { history: 'fresh' });
+    await env.enqueue(`warm ${index}`, { history: 'fresh' });
     await env.runOnce(worker);
   }
 };
@@ -99,7 +99,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     await warmWindow(env);
     env.setMode('plan');
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('Use the tools', { history: 'fresh' });
+    const run = await env.enqueue('Use the tools', { history: 'fresh' });
     await env.runOnce(env.worker('main', { toolList: toolsOf(env, WORK_TOOLS) }));
     expect(env.ofType(run.id, 'run.started')[0]?.pins['token']).toEqual({ deferred: ['Counter', 'Write'] });
     expect(namesSentTo(env, run.id)).toEqual([LOADER, 'Echo']);
@@ -120,7 +120,7 @@ describe('the tool usage window reads one offered-names record per run (person i
       createAgentsPort({
         home: env.home,
         fileSystem: createNodeSkillFileSystem(),
-        settings: { trusted: () => env.settings.trustedValue },
+        settings: { trusted: async () => env.settings.trustedValue },
         runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
       });
     const rootWorker = env.worker('root', { agents: agents(), toolList: toolsOf(env, ['Echo']) });
@@ -130,7 +130,7 @@ describe('the tool usage window reads one offered-names record per run (person i
       textStep('counted'),
       textStep('Done.'),
     );
-    const root = env.enqueue('Delegate the count', { history: 'fresh' });
+    const root = await env.enqueue('Delegate the count', { history: 'fresh' });
     await env.runOnce(rootWorker);
     const [child] = env.store.listChildRuns(root.id);
     if (child === undefined) throw new Error('the root run created no child run');
@@ -153,7 +153,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     const env = await deferralEnv();
     await warmWindow(env);
     env.gateway.script.push(callsStep([{ callId: 'load-1', name: LOADER, args: { names: ['Write'] } }]), textStep('Done.'));
-    const run = env.enqueue('Use the tools', { history: 'fresh' });
+    const run = await env.enqueue('Use the tools', { history: 'fresh' });
     await env.runOnce(env.worker('main', { toolList: toolsOf(env, WORK_TOOLS) }));
     const events = eventsOf(env, run.id);
     const loadedAt = events.find((event) => event.type === 'tool.loaded')?.seq;
@@ -176,7 +176,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     const env = await makeEnv();
     const target = path.join(env.project, 'w.txt');
     env.gateway.script.push(callsStep([{ callId: 'write-1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Use the tools', { history: 'fresh' });
+    const run = await env.enqueue('Use the tools', { history: 'fresh' });
     await env.runOnce(env.worker('first', { toolList: toolsOf(env, ['Echo', 'Write']) }));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     await env.resolveApproval(run.id, 'allow_once');

@@ -86,7 +86,7 @@ describe('worker gateway failures', () => {
   it.each(REQUEUED)('requeues with backoff after %s and re-sends the same key and body', async (_label, failure) => {
     const env = await makeEnv();
     env.gateway.script.push(failure(), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -117,7 +117,7 @@ describe('worker gateway failures', () => {
       gatewayErrorStep({ status: 502, type: 'server_error', code: 'upstream_error', message: 'the upstream responded with HTTP 503' }),
       textStep('never sent'),
     );
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -132,7 +132,7 @@ describe('worker gateway failures', () => {
   it.each(FAILED_ON_FIRST_CLAIM)('fails the step on the first claim after %s', async (_label, failure, error) => {
     const env = await makeEnv({ maxAttempts: 20, maxTotalAttempts: 20 });
     env.gateway.script.push(failure(), textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -146,7 +146,7 @@ describe('worker gateway failures', () => {
   it('requeues a deferral at exactly its Retry-After time and then completes', async () => {
     const env = await makeEnv();
     env.gateway.script.push(deferredStep(), textStep('After the deferral.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const deferredAt = env.clock.now();
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
@@ -164,7 +164,7 @@ describe('worker gateway failures', () => {
   it('fails the step instead of requeueing a deferral whose Retry-After time is past the run deadline', async () => {
     const env = await makeEnv();
     env.gateway.script.push(deferredStep(), textStep('never sent'));
-    const run = env.enqueue('Work', { deadlineAt: env.clock.now() + DEFERRED_RETRY_AFTER_MS / 2 });
+    const run = await env.enqueue('Work', { deadlineAt: env.clock.now() + DEFERRED_RETRY_AFTER_MS / 2 });
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -178,7 +178,7 @@ describe('worker gateway failures', () => {
   it('fails the step with rate_limited instead of requeueing a deferral beyond the attempt limit', async () => {
     const env = await makeEnv({ maxAttempts: 2, maxTotalAttempts: 2 });
     env.gateway.script.push(deferredStep(), deferredStep(), textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
     const requeued = env.run(run.id);
@@ -195,7 +195,7 @@ describe('worker gateway failures', () => {
   it('requeues a stream interrupted mid-flight, as the client reports any error while reading the body', async () => {
     const env = await makeEnv();
     env.gateway.script.push(streamInterrupted(), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -205,7 +205,7 @@ describe('worker gateway failures', () => {
   it('requeues a gateway stream that ends cleanly without a terminal event, a hop failure, instead of failing it as internal_error', async () => {
     const env = await makeEnv();
     env.gateway.script.push(endsWithoutTerminal(), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -228,7 +228,7 @@ describe('worker gateway failures', () => {
   it('fails with rate_limited, not the upstream code, a deferral whose Retry-After time is past the run deadline', async () => {
     const env = await makeEnv();
     env.gateway.script.push(upstreamCodedDeferral(), textStep('never sent'));
-    const run = env.enqueue('Work', { deadlineAt: env.clock.now() + DEFERRED_RETRY_AFTER_MS / 2 });
+    const run = await env.enqueue('Work', { deadlineAt: env.clock.now() + DEFERRED_RETRY_AFTER_MS / 2 });
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -238,7 +238,7 @@ describe('worker gateway failures', () => {
   it('fails with rate_limited, not the upstream code, a deferral beyond the attempt limit', async () => {
     const env = await makeEnv({ maxAttempts: 2, maxTotalAttempts: 2 });
     env.gateway.script.push(upstreamCodedDeferral(), upstreamCodedDeferral(), textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
     env.clock.set(env.run(run.id).availableAt);
@@ -250,7 +250,7 @@ describe('worker gateway failures', () => {
   it('dead-letters the run as FAILED once the store attempt limit is exhausted by requeued hop failures', async () => {
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: 3 });
     env.gateway.script.push(connectionLost(), connectionLost(), connectionLost(), textStep('never sent'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       expect(await env.runOnce(env.worker(`worker-${attempt}`))).toBe('yielded');

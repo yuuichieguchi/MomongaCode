@@ -3,7 +3,7 @@ import path from 'node:path';
 import { Agent, request } from 'undici';
 import { describe, expect, it } from 'vitest';
 import { createGateway } from '@momonga/gateway';
-import { createFakeClock, createFakeTimers, createScriptedAdapter } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createScriptedAdapter, testKernelLock } from '@momonga/testkit';
 import { isLoopbackAddress } from '../src/server/config-check.ts';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway, stateDbPath } from './gateway-helpers.ts';
 
@@ -11,6 +11,7 @@ const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string;
   const dir = makeDir();
   const clock = createFakeClock(START_MS);
   return createGateway({
+    lock: testKernelLock(),
     role: fixedRolePort('serving'),
     random: () => 0.5,
     credentials: [],
@@ -79,6 +80,7 @@ describe('readerStallMs', () => {
     const config = buildConfig({ limits: { readerStallMs: 0 } });
     await expect(
       createGateway({
+        lock: testKernelLock(),
         role: fixedRolePort('serving'),
         random: () => 0.5,
         credentials: [],

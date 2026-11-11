@@ -8,7 +8,7 @@ import { createMcpPool, inheritedEnvOf } from '@momonga/mcp';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_LEASE, UNCONFIGURED_NETWORK, MCP_MODERN_SERVER_PATH, modelSettings, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_LEASE, UNCONFIGURED_NETWORK, MCP_MODERN_SERVER_PATH, modelSettings, waitFor, NEVER_CANCELLED, testLocks, testKernelLock } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { ToolSource } from '@momonga/tools';
 import {
@@ -56,7 +56,7 @@ const realFixture = async (): Promise<RuntimeFixture & { counting: Counting }> =
 
 const markerCount = (f: RuntimeFixture): number => fs.readdirSync(f.temp.paths.markers.mcp).length;
 
-const newRun = (f: RuntimeFixture, cwd = f.temp.project): string => createRun(f.store, createSession(f.store, cwd).id);
+const newRun = async (f: RuntimeFixture, cwd = f.temp.project): Promise<string> => createRun(f.store, createSession(f.store, cwd).id);
 
 const claimRun = (store: RuntimeStore, runId: string) => {
   for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -100,8 +100,8 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
   it('two runs in one project share one pool (one spawn)', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-    const first = newRun(f);
-    const second = newRun(f);
+    const first = await newRun(f);
+    const second = await newRun(f);
 
     const a = await f.toolRuntime.port.toolSet(first, { signal: signalNever(), env: toolEnv() });
     const b = await f.toolRuntime.port.toolSet(second, { signal: signalNever(), env: toolEnv() });
@@ -120,7 +120,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
 
-    await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
+    await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
     expect(f.counting.created[0]?.clientVersion).toBe(FIXTURE_RUNTIME_VERSION);
   });
@@ -128,7 +128,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
   it('G2: passes mcp.toolIdleTimeoutMs and mcp.toolTotalTimeoutMs from the user settings to the pool and its tools', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer }, mcp: { toolIdleTimeoutMs: 600_000, toolTotalTimeoutMs: 7_200_000 } });
-    const set = await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
+    const set = await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
     expect(f.counting.created[0]).toMatchObject({ toolIdleTimeoutMs: 600_000, toolTotalTimeoutMs: 7_200_000 });
     expect(set.tools.find((tool) => tool.name === 'mcp__fx__echo')).toMatchObject({ idleTimeoutMs: 600_000, timeoutMs: 7_200_000 });
   });
@@ -138,7 +138,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     writeUserSettings(f.temp.home, { mcpServers: { taken: fixtureServer } });
     const session = createSession(f.store, f.temp.project, { mcpServers: { fx: fixtureServer, taken: fixtureServer } });
 
-    const set = await f.toolRuntime.port.toolSet(createRun(f.store, session.id), { signal: signalNever(), env: toolEnv() });
+    const set = await f.toolRuntime.port.toolSet(await createRun(f.store, session.id), { signal: signalNever(), env: toolEnv() });
 
     expect(set.tools.map((tool) => tool.name)).toContain('mcp__fx__echo');
     expect(set.notices.filter((notice) => notice.startsWith('MCP server taken was skipped: '))).toHaveLength(1);
@@ -152,13 +152,13 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
   describe('a new pool for the next run after', () => {
     it('an approval change', async () => {
       const f = await makeRuntimeFixture();
-      f.store.trust.set(f.temp.project, 'trusted');
+      await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
       writeJson(path.join(f.temp.project, '.mcp.json'), { mcpServers: { a: fixtureServer, b: fixtureServer } });
       writeUserSettings(f.temp.home, { enabledMcpjsonServers: ['a'] });
-      await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
+      await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
       writeUserSettings(f.temp.home, { enabledMcpjsonServers: ['a', 'b'] });
-      await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
+      await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
       expect(f.pools.pools).toHaveLength(2);
       expect(f.pools.pools[0]?.options?.servers.map((server) => server.name)).toEqual(['a']);
@@ -168,12 +168,12 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     it('a trust change', async () => {
       const f = await makeRuntimeFixture();
       writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-      await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
-      await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
+      await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
+      await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
       expect(f.pools.pools).toHaveLength(1);
 
-      f.store.trust.set(f.temp.project, 'untrusted');
-      await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
+      await f.store.trust.setAsked(f.temp.project, 'untrusted', NEVER_CANCELLED);
+      await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
       expect(f.pools.pools).toHaveLength(2);
     });
@@ -181,11 +181,11 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     it('an inherited env change', async () => {
       const f = await makeRuntimeFixture();
       writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-      await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv('/usr/bin:/bin') });
-      await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv('/usr/bin:/bin', { NOT_INHERITED: 'x' }) });
+      await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv('/usr/bin:/bin') });
+      await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv('/usr/bin:/bin', { NOT_INHERITED: 'x' }) });
       expect(f.pools.pools).toHaveLength(1);
 
-      await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv('/usr/bin:/bin:/usr/sbin') });
+      await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv('/usr/bin:/bin:/usr/sbin') });
 
       expect(f.pools.pools).toHaveLength(2);
     });
@@ -194,7 +194,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
   it('an idle pool closes after 5 minutes and its marker is removed', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-    const runId = newRun(f);
+    const runId = await newRun(f);
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() });
     expect(markerCount(f)).toBe(1);
 
@@ -213,7 +213,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
   it('the reference is held while WAITING_HUMAN', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-    const runId = newRun(f);
+    const runId = await newRun(f);
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() });
     const claim = claimRun(f.store, runId);
     expect((await f.store.transition(claim, ['RUNNING'], 'WAITING_HUMAN')).kind).toBe('ok');
@@ -229,7 +229,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
   it('concurrent toolSet calls create one pool', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-    const runs = [newRun(f), newRun(f), newRun(f)];
+    const runs = [await newRun(f), await newRun(f), await newRun(f)];
 
     const sets = await Promise.all(runs.map((runId) => f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() })));
 
@@ -240,11 +240,11 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
 
   it('a failed server and a server pending approval become run notices, in order', async () => {
     const f = await makeRuntimeFixture();
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     writeJson(path.join(f.temp.project, '.mcp.json'), { mcpServers: { waiting: fixtureServer } });
     writeUserSettings(f.temp.home, { mcpServers: { broken: { command: 'x', args: ['${MOMONGA_TEST_UNSET_VARIABLE}'] }, fx: fixtureServer } });
 
-    const set = await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
+    const set = await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
     const skipped = set.notices.findIndex((notice) => notice.startsWith('MCP server broken was skipped: '));
     const pending = set.notices.indexOf('MCP server waiting needs approval before it can run');
@@ -260,7 +260,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
       ...modelSettings({ models: [{ provider: 'fake', id: 'x', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }),
     });
 
-    const set = await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
+    const set = await f.toolRuntime.port.toolSet(await newRun(f), { signal: signalNever(), env: toolEnv() });
 
     expect(new Set(set.notices).size).toBe(set.notices.length);
   });
@@ -287,7 +287,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
       },
     });
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-    const runId = newRun(f);
+    const runId = await newRun(f);
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() });
     if (pool === undefined) throw new Error('expected a pool');
     pool.sources.push(gate.source);
@@ -306,7 +306,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     const gate = gatedSource();
     const f = await makeRuntimeFixture({ createPool: () => ({ ...makeFakePool(), sources: [gate.source] }) });
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-    const runId = newRun(f);
+    const runId = await newRun(f);
     const controller = new AbortController();
     const reason = new Error('the claim was abandoned');
 
@@ -325,13 +325,13 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     writeUserSettings(f.temp.home, { enableAllProjectMcpServers: true });
     const sub = makeDir(f.temp.project, 'pkg');
     writeJson(path.join(sub, '.mcp.json'), { mcpServers: { proj: fixtureServer } });
-    f.store.trust.set(f.temp.project, 'trusted');
+    await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     const inHome = makeDir(f.temp.home, 'code', 'app');
     writeJson(path.join(inHome, '.mcp.json'), { mcpServers: { homeproj: fixtureServer } });
-    f.store.trust.set(f.temp.home, 'trusted');
+    await f.store.trust.setAsked(f.temp.home, 'trusted', NEVER_CANCELLED);
 
-    await f.toolRuntime.port.toolSet(newRun(f, sub), { signal: signalNever(), env: toolEnv() });
-    const homeSet = await f.toolRuntime.port.toolSet(newRun(f, inHome), { signal: signalNever(), env: toolEnv() });
+    await f.toolRuntime.port.toolSet(await newRun(f, sub), { signal: signalNever(), env: toolEnv() });
+    const homeSet = await f.toolRuntime.port.toolSet(await newRun(f, inHome), { signal: signalNever(), env: toolEnv() });
 
     expect(f.pools.pools).toHaveLength(1);
     expect(f.pools.pools[0]?.options?.servers.map((server) => server.name)).toEqual(['proj']);
@@ -342,12 +342,12 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
   it('a run with no enabled servers holds no reference, and the no-servers branch releases a reference left by an earlier claim', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-    const runId = newRun(f);
+    const runId = await newRun(f);
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() });
 
     writeUserSettings(f.temp.home, {});
     const set = await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() });
-    const fresh = newRun(f);
+    const fresh = await newRun(f);
     await f.toolRuntime.port.toolSet(fresh, { signal: signalNever(), env: toolEnv() });
 
     expect(set.tools.some((tool) => tool.name.startsWith('mcp__'))).toBe(false);
@@ -365,7 +365,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     const controller = new AbortController();
     const reason = new Error('cancelled while connecting');
 
-    const pending = f.toolRuntime.port.toolSet(newRun(f), { signal: controller.signal, env: toolEnv() });
+    const pending = f.toolRuntime.port.toolSet(await newRun(f), { signal: controller.signal, env: toolEnv() });
     await waitFor(() => markerCount(f) === 1, { description: 'the slow server to be spawned' });
     controller.abort(reason);
 
@@ -375,7 +375,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
   it('the pool key hash is never logged', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
-    const runId = newRun(f);
+    const runId = await newRun(f);
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() });
     await finishRun(f.store, runId);
     await flushMicrotasks();
@@ -407,6 +407,8 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     let error: unknown;
     try {
       runtime.createToolRuntime({
+        kernelLock: testKernelLock(),
+        lockCapability: testLocks().capability,
         version: '0.0.0-test',
         network: UNCONFIGURED_NETWORK,
         paths: f.temp.paths,

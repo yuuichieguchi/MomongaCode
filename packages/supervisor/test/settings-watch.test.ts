@@ -99,18 +99,14 @@ describe('watchSettings', () => {
     const { fake, timers, calls, watcher } = setup();
     for (let index = 0; index < 10; index += 1) {
       fake.fire('settings.json', index % 2 === 0 ? 'rename' : 'change');
-      timers.advance(15);
-      await afterMicrotasks();
+      await timers.advanceAsync(15);
     }
     expect(calls()).toBe(0);
-    timers.advance(184);
-    await afterMicrotasks();
+    await timers.advanceAsync(184);
     expect(calls()).toBe(0);
-    timers.advance(1);
-    await afterMicrotasks();
+    await timers.advanceAsync(1);
     expect(calls()).toBe(1);
-    timers.advance(200);
-    await afterMicrotasks();
+    await timers.advanceAsync(200);
     expect(calls()).toBe(1);
     watcher.stop();
   });
@@ -119,8 +115,7 @@ describe('watchSettings', () => {
     const { fake, timers, calls, watcher } = setup();
     fake.fire('other.json');
     fake.fire('settings.json.tmp');
-    timers.advance(10_000);
-    await afterMicrotasks();
+    await timers.advanceAsync(10_000);
     expect(calls()).toBe(0);
     watcher.stop();
   });
@@ -128,8 +123,7 @@ describe('watchSettings', () => {
   it('null filename counts as a change', async () => {
     const { fake, timers, calls, watcher } = setup();
     fake.fire(null);
-    timers.advance(200);
-    await afterMicrotasks();
+    await timers.advanceAsync(200);
     expect(calls()).toBe(1);
     watcher.stop();
   });
@@ -139,21 +133,12 @@ describe('watchSettings', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toBeInstanceOf(Error);
     expect(warnings[0]?.message).toContain('EMFILE');
-    timers.advance(2000);
-    await afterMicrotasks();
-    timers.advance(200);
-    await afterMicrotasks();
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(0);
     setKey('k2');
-    timers.advance(2000);
-    await afterMicrotasks();
-    timers.advance(200);
-    await afterMicrotasks();
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(1);
-    timers.advance(2000);
-    await afterMicrotasks();
-    timers.advance(200);
-    await afterMicrotasks();
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(1);
     expect(warnings).toHaveLength(1);
     expect(errors).toEqual([]);
@@ -170,10 +155,7 @@ describe('watchSettings', () => {
     expect(() => fake.watchers[0]?.emit('error', Object.assign(new Error('watch failed again'), { code: 'EIO' }))).not.toThrow();
     expect(warnings).toHaveLength(1);
     setKey('k2');
-    timers.advance(2000);
-    await afterMicrotasks();
-    timers.advance(200);
-    await afterMicrotasks();
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(1);
     expect(warnings).toHaveLength(1);
     expect(errors).toEqual([]);
@@ -183,8 +165,7 @@ describe('watchSettings', () => {
   it('a working watch reports no warning and no error', async () => {
     const { fake, timers, warnings, errors, watcher } = setup();
     fake.fire('settings.json');
-    timers.advance(10_000);
-    await afterMicrotasks();
+    await timers.advanceAsync(10_000);
     expect(warnings).toEqual([]);
     expect(errors).toEqual([]);
     watcher.stop();
@@ -192,10 +173,7 @@ describe('watchSettings', () => {
 
   it('seeds from initialKey, not from a key read at construction', async () => {
     const { timers, calls, watcher } = setup({ initialKey: 'seed', key: () => 'already-newer' });
-    timers.advance(2000);
-    await afterMicrotasks();
-    timers.advance(200);
-    await afterMicrotasks();
+    await timers.advanceAsync(2000 + 200);
     expect(calls()).toBe(1);
     watcher.stop();
   });
@@ -209,10 +187,7 @@ describe('watchSettings', () => {
       },
     });
     fail = true;
-    expect(() => timers.advance(2000)).not.toThrow();
-    await afterMicrotasks();
-    expect(() => timers.advance(200)).not.toThrow();
-    await afterMicrotasks();
+    await expect(timers.advanceAsync(2000 + 200)).resolves.toBeUndefined();
     expect(calls()).toBe(1);
     watcher.stop();
   });
@@ -241,8 +216,7 @@ describe('watchSettings', () => {
     expect(timers.pending()).toEqual([]);
     expect(fake.watchers[0]?.closed).toBe(1);
     fake.fire('settings.json');
-    timers.advance(10_000);
-    await afterMicrotasks();
+    await timers.advanceAsync(10_000);
     expect(calls()).toBe(0);
     expect(timers.pending()).toEqual([]);
   });

@@ -7,6 +7,8 @@ import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { journalReaderPreparer, makeEnv } from '../worker/harness.ts';
+import { testKernelLock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -29,7 +31,7 @@ const throughTheThread = (dbPath: () => string): { preparer: ContributionPrepare
     started ??= (() => {
       const databasePath = dbPath();
       const { dev, ino } = fs.statSync(databasePath);
-      return startJournalThread({ databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+      return startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     })();
     return started;
   };
@@ -56,12 +58,12 @@ describe('the contribution handler of the embedded journal thread', () => {
     const thread = throughTheThread(() => dbPath);
     const env = await makeEnv({ preparer: thread.preparer });
     dbPath = env.dbPath;
-    const saver = env.enqueue('Save notes', { history: 'fresh' });
+    const saver = await env.enqueue('Save notes', { history: 'fresh' });
     const saverClaim = await env.seed(saver.id, [callOf(0), callOf(1)], 'hold');
     const memoryIds = await Promise.all([0, 1].map(async (index) => (await env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: `note zorpWord${index}`, runId: saver.id, step: 1, callId: `save_${index}` })).memory.id));
     expect((await env.store.transition(saverClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     env.clock.advance(1);
-    const run = env.enqueue('Work through it', { history: 'fresh' });
+    const run = await env.enqueue('Work through it', { history: 'fresh' });
     const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'manual' }, { type: 'context.memories_loaded', memories: memoryIds.map((id) => ({ id, status: 'unbound' as const })) }, responded('the answer mentions zorpWord1 only')], 'hold');
     const inProcess = await journalReaderPreparer(env.dbPath).measure({ runId: run.id, leading: [] });
 
@@ -79,7 +81,7 @@ describe('the contribution handler of the embedded journal thread', () => {
     const env = await makeEnv({ preparer: thread.preparer });
     dbPath = env.dbPath;
     const { dev, ino } = fs.statSync(dbPath);
-    const client = await startJournalThread({ databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const client = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
 
     await expect(client.request({ kind: 'contribution', leading: [] })).rejects.toBeInstanceOf(JournalThreadError);
     expect(await client.ping()).toMatchObject({ threadId: expect.any(Number) });

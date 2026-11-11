@@ -24,7 +24,7 @@ const openedCopy = async (): Promise<ContractStore> => {
 
 describe('the contract suite against a template this build writes', () => {
   it('reads the rows the contract writer wrote', async () => {
-    expect((await openedCopy()).store.listSessions()).toHaveLength(1);
+    expect((await openedCopy()).store.listSessions({ limit: 100, cursor: null }).sessions).toHaveLength(1);
   });
 
   it.each(CONTRACT_OPERATIONS.map((operation) => [operation.name, operation] as const))('%s', async (_name, operation) => {

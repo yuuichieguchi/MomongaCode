@@ -16,7 +16,7 @@ describe('worker final answer', () => {
   it('completes a run with a single answer and records events in order', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello there, friend.', { chunks: ['Hello ', 'there, ', 'friend.'], usage: usageOf(120, 7), itemId: 'msg_final' }));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -58,7 +58,7 @@ describe('worker final answer', () => {
   it('sends the documented request body under the step idempotency key', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue('Say hello');
+    const run = await env.enqueue('Say hello');
 
     await env.runOnce(env.worker());
 
@@ -93,7 +93,7 @@ describe('worker final answer', () => {
     const env = await makeEnv();
     env.gateway.capabilitiesValue = { ...env.gateway.capabilitiesValue, parallelToolCalls: true };
     env.gateway.script.push(textStep('done'));
-    env.enqueue();
+    await env.enqueue();
     await env.runOnce(env.worker());
     expect(env.gateway.streams[0]?.body.parallel_tool_calls).toBe(true);
     expect(env.gateway.capabilityRequests).toContain(MODEL_ID);
@@ -102,7 +102,7 @@ describe('worker final answer', () => {
   it('pins the model, prompt digest, tool set digest and capabilities on the first attempt', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue();
+    const run = await env.enqueue();
     await env.runOnce(env.worker());
     const toolSet = await env.snapshotTools(env.toolbox.tools());
     const [started] = env.ofType(run.id, 'run.started');

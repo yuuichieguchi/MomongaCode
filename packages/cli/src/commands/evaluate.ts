@@ -22,8 +22,8 @@ import {
 import type { ContextDataset, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
 import { decodeReliabilityReport } from '@momonga/reliability';
 import type { ReliabilityReport } from '@momonga/reliability';
-import { codeDigestOfRunningProcess, createOwnedDirectory, currentSocketResolver, momongaPaths } from '@momonga/foundation';
-import type { MomongaPaths, OwnedDirectory } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, createOwnedDirectory, currentSocketResolver, momongaPaths, resolveLayoutLocks } from '@momonga/foundation';
+import type { MomongaPaths, OwnedDirectory, KernelLockMechanism } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
@@ -35,6 +35,7 @@ import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { shellModelsOf } from '../plain-http.ts';
 import { UsageError } from '../usage-error.ts';
+import { pathsOf } from '../paths.ts';
 
 export class EvaluateUsageError extends UsageError {
   constructor(message: string) {
@@ -73,17 +74,18 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
   try {
     return await runDataset(dataset, {
       open: async (golden) => {
-        const workspace = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX });
+        const workspace = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX, lock: resolveLayoutLocks(paths).mechanism });
         workspaces.push(workspace);
         const cwd = workspace.path;
         await populate(ports, cwd, golden);
         if (golden.oracle === undefined) return { api, workspace: { cwd, env }, close: async () => undefined };
-        const base = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX });
+        const base = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX, lock: resolveLayoutLocks(paths).mechanism });
         workspaces.push(base);
         await populate(ports, base.path, golden);
         return { api, workspace: { cwd, env }, oracle: { base: base.path, probe: nodeWorkspaceProbe(env), files: ports.files }, close: async () => undefined };
       },
       ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
+      ...(interrupt === undefined ? {} : { signal: interrupt }),
     });
   } finally {
     await Promise.all(workspaces.map((workspace) => workspace.dispose()));
@@ -114,7 +116,7 @@ const assertLiveOptions = (options: EvaluateContextOptions): { model: string } =
 
 const runContextLiveCommand = async (
   ports: CliPorts,
-  hostEffects: (ports: CliPorts) => ContextHostEffects,
+  hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => ContextHostEffects,
   dataset: ContextDataset,
   options: { model: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal },
 ): Promise<Transcript[]> => {
@@ -122,14 +124,14 @@ const runContextLiveCommand = async (
   if (options.record !== undefined) await ports.files.mkdir(options.record);
   const { record } = options;
   const models = await shellModelsOf(ports, options.interrupt);
-  return runContextLive(hostEffects(ports), {
+  return runContextLive(hostEffects(ports, resolveLayoutLocks(await pathsOf(ports)).mechanism), {
     dataset,
     seed: options.seed,
     model: pinnedModelOf(models, options.model),
     policy: options.policy,
     codeDigest: await codeDigestOfRunningProcess(),
     models,
-    planRelaySocket: currentSocketResolver(momongaPaths(ports.home), 'gateway'),
+    planRelaySocket: currentSocketResolver(momongaPaths(ports.home, ports.platform, ports.env), 'gateway'),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
@@ -143,7 +145,7 @@ export const evaluateContext = async (
   ports: CliPorts,
   datasetFile: string,
   options: EvaluateContextOptions,
-  hostEffects: (ports: CliPorts) => ContextHostEffects = nodeContextEffects,
+  hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => ContextHostEffects = nodeContextEffects,
 ): Promise<number> => {
   if (options.record !== undefined && options.replay !== undefined) throw new EvaluateUsageError('--record and --replay cannot be combined');
   const { replay } = options;

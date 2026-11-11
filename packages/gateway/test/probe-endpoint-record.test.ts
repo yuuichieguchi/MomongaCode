@@ -5,6 +5,7 @@ import { endpointIdentityOf, loadEndpointRecord, saveEndpointRecord, stableIdent
 import { makeDir } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const KEY = { endpoint: 'http://127.0.0.1:11434/v1', model: 'qwen3.8:27b' };
 
@@ -59,16 +60,16 @@ describe('endpoint probe records', () => {
   it('stores the report under the endpoint and the model, with the identity the server showed', async () => {
     const dir = makeDir();
     const report = makeReport(1, 1);
-    await saveEndpointRecord(dir, KEY, 'identity-1', ['id', 'owned_by'], report, CURRENT_DIALECTS);
+    await saveEndpointRecord(dir, KEY, 'identity-1', ['id', 'owned_by'], report, CURRENT_DIALECTS, testKernelLock());
 
     expect(await loadEndpointRecord(dir, KEY, CURRENT_DIALECTS)).toEqual({ identity: 'identity-1', identityFields: ['id', 'owned_by'], report });
   });
 
   it('keeps one record per endpoint and model', async () => {
     const dir = makeDir();
-    await saveEndpointRecord(dir, KEY, 'a', FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
-    await saveEndpointRecord(dir, { ...KEY, model: 'other' }, 'b', FIELDS, makeReport(0.5, 1), CURRENT_DIALECTS);
-    await saveEndpointRecord(dir, { ...KEY, endpoint: 'http://127.0.0.1:8080/v1' }, 'c', FIELDS, makeReport(0.2, 1), CURRENT_DIALECTS);
+    await saveEndpointRecord(dir, KEY, 'a', FIELDS, makeReport(1, 1), CURRENT_DIALECTS, testKernelLock());
+    await saveEndpointRecord(dir, { ...KEY, model: 'other' }, 'b', FIELDS, makeReport(0.5, 1), CURRENT_DIALECTS, testKernelLock());
+    await saveEndpointRecord(dir, { ...KEY, endpoint: 'http://127.0.0.1:8080/v1' }, 'c', FIELDS, makeReport(0.2, 1), CURRENT_DIALECTS, testKernelLock());
 
     expect((await loadEndpointRecord(dir, KEY, CURRENT_DIALECTS))?.identity).toBe('a');
     expect((await loadEndpointRecord(dir, { ...KEY, model: 'other' }, CURRENT_DIALECTS))?.identity).toBe('b');
@@ -77,8 +78,8 @@ describe('endpoint probe records', () => {
 
   it('replaces the record of the same endpoint and model', async () => {
     const dir = makeDir();
-    await saveEndpointRecord(dir, KEY, 'old', FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
-    await saveEndpointRecord(dir, KEY, 'new', FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
+    await saveEndpointRecord(dir, KEY, 'old', FIELDS, makeReport(1, 1), CURRENT_DIALECTS, testKernelLock());
+    await saveEndpointRecord(dir, KEY, 'new', FIELDS, makeReport(1, 1), CURRENT_DIALECTS, testKernelLock());
 
     expect((await loadEndpointRecord(dir, KEY, CURRENT_DIALECTS))?.identity).toBe('new');
   });
@@ -89,7 +90,7 @@ describe('endpoint probe records', () => {
 
   it('refuses a record that is not a valid probe report, naming the file', async () => {
     const dir = makeDir();
-    await saveEndpointRecord(dir, KEY, 'a', FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
+    await saveEndpointRecord(dir, KEY, 'a', FIELDS, makeReport(1, 1), CURRENT_DIALECTS, testKernelLock());
     const [file] = fs.readdirSync(dir);
     const stored = JSON.parse(fs.readFileSync(path.join(dir, file as string), 'utf8'));
     fs.writeFileSync(path.join(dir, file as string), JSON.stringify({ ...stored, report: { nope: true, schemaDialect: stored.report.schemaDialect } }));
@@ -99,7 +100,7 @@ describe('endpoint probe records', () => {
 
   it('refuses a record whose identity fields are not a list of names, naming the file', async () => {
     const dir = makeDir();
-    await saveEndpointRecord(dir, KEY, 'a', FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
+    await saveEndpointRecord(dir, KEY, 'a', FIELDS, makeReport(1, 1), CURRENT_DIALECTS, testKernelLock());
     const [file] = fs.readdirSync(dir);
     const { identityFields: _identityFields, ...stored } = JSON.parse(fs.readFileSync(path.join(dir, file as string), 'utf8'));
     fs.writeFileSync(path.join(dir, file as string), JSON.stringify(stored));
@@ -109,7 +110,7 @@ describe('endpoint probe records', () => {
 
   it('is never keyed by a binary hash', async () => {
     const dir = makeDir();
-    await saveEndpointRecord(dir, KEY, 'a', FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
+    await saveEndpointRecord(dir, KEY, 'a', FIELDS, makeReport(1, 1), CURRENT_DIALECTS, testKernelLock());
     const [file] = fs.readdirSync(dir);
     const stored = JSON.parse(fs.readFileSync(path.join(dir, file as string), 'utf8')) as Record<string, unknown>;
     expect(Object.keys(stored).sort()).toEqual(['dialectsDigest', 'endpoint', 'identity', 'identityFields', 'model', 'probeMethod', 'report']);

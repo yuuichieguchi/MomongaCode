@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { askedPaths, endpointFormsOfPlatform, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
+import { askedPaths, endpointHostOf, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import type { PathAsking } from '@momonga/foundation';
 import {
   DEFAULT_ANTHROPIC_API_VERSION,
@@ -119,7 +119,7 @@ const unknownServerMessage = (where: string, id: string, servers: ServerRegistry
 const resolveManaged = (target: ManagedTarget, { connection, entry }: Where, servers: ServerRegistry): ResolvedManagedTarget => {
   const description = registeredServer(servers, target.server);
   if (description === undefined) throw new ConfigError(unknownServerMessage(connection, target.server, servers));
-  requireOfferedEndpointForm(description, endpointFormsOfPlatform(), connection);
+  requireOfferedEndpointForm(description, endpointHostOf(), connection);
   for (const field of Object.keys(target.capabilities ?? {})) {
     if (!(description.declarable as readonly string[]).includes(field)) throw new ConfigError(`${entry}: capabilities.${field} is not a field the server ${JSON.stringify(description.id)} lets a model declare; declarable: ${description.declarable.join(', ')}`);
   }

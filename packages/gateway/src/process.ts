@@ -50,9 +50,8 @@ import {
   createHeldHostReadings,
   managedInstancePaths,
   momongaPaths,
-  secretKeyFile,
+  createSecretKeyFile,
   sweepLeftovers,
-  hostKernelLock,
   leftoverDirectories,
   requireGenerationDirs,
   generationLayout,
@@ -62,6 +61,8 @@ import {
   CONTROL_REQUEST_TIMEOUT_MS,
   EXIT_RETIRED,
   SWEEP_INTERVAL_MS,
+  BUSY_WAIT_LIMIT_MS,
+  nodeFileSystemSync,
 } from '@momonga/foundation';
 import type { EndpointProbeKey, PlanProfiles, ServerRegistry, StopValuesReader } from '@momonga/config';
 import type {
@@ -82,7 +83,8 @@ import type {
   StopValues,
   TextStream,
 } from '@momonga/foundation';
-import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, nodeFileSystem, outboundFetch, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
+import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, layoutProcessInspector, nodeFileSystem, outboundFetch, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
+import type { KernelLockMechanism, LayoutLocks, ProcessInspector } from '@momonga/foundation';
 import {
   buildCostReport,
   definePriceTable,
@@ -185,6 +187,7 @@ export type StartGatewayProcessOptions = {
   logger?: JsonLogger;
   stdout?: TextStream;
   signal?: AbortSignal;
+  locks: LayoutLocks;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
@@ -387,6 +390,7 @@ type MeasureEndpointPort<Measurement> = (request: { key: EndpointKey; signal: Ab
 
 type ProbeWiring = {
   autoProbe: AutoProbe;
+  lock: KernelLockMechanism;
   outputPolicy: () => ProbeOutputPolicy;
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
@@ -410,6 +414,8 @@ type ManagedAdapterWiring = {
   target: Extract<ResolvedTarget, { adapter: 'managed' }>;
   description: ManagedServerDescription;
   paths: MomongaPaths;
+  lock: KernelLockMechanism;
+  inspector: ProcessInspector;
   generation: number;
   childEnv: Readonly<Record<string, string>>;
   exec: ExecFn;
@@ -444,7 +450,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   const { target, description, paths } = wiring;
   const { provider } = target;
   const name = managedModelName(provider, { declared: target.model });
-  const form = requireOfferedEndpointForm(description, wiring.hostForms, wiring.connectionPlace);
+  const form = requireOfferedEndpointForm(description, { platform: wiring.platform, forms: wiring.hostForms }, wiring.connectionPlace);
   const inForm = (instance: ManagedInstancePaths): ManagedInstancePaths => ({ ...instance, socketPath: instanceSocketOf(form, instance.socketPath, wiring.home, wiring.generation) });
   const serving = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }));
   const probing = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }));
@@ -460,6 +466,8 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     binary: target.binary,
     socketPath: serving.socketPath,
     lockPath: serving.lockPath,
+    lock: wiring.lock,
+    inspector: wiring.inspector,
     markerDirectory: serving.markerDirectory,
     readyTimeoutMs: target.readyTimeoutMs,
     env: wiring.childEnv,
@@ -480,6 +488,8 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     target: name,
     binary: target.binary,
     instance: probing,
+    lock: wiring.lock,
+    inspector: wiring.inspector,
     readyTimeoutMs: target.readyTimeoutMs,
     env: wiring.childEnv,
     exec: wiring.exec,
@@ -496,6 +506,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     target: name,
     precondition: managedPrecondition(description, name, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
     probeRecordDir: paths.probe,
+    lock: wiring.lock,
     readKey: freshKey,
     keySignal: () => wiring.timeoutSignal(wiring.requestLimitMs),
     measure,
@@ -571,6 +582,7 @@ const createAutoChatCompletionsAdapter = async (
     target: endpointLockKeyOf(key).target,
     key,
     probeRecordDir,
+    lock: probes.lock,
     precondition: endpointPrecondition(display, upstream, target.model, apiKeyNow),
     measure:
       (probes.measureEndpoint === undefined ? undefined : onRecordKey(probes.measureEndpoint)) ??
@@ -598,7 +610,7 @@ const createAutoChatCompletionsAdapter = async (
       return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, signal);
     },
     saveRecord: (record) =>
-      saveEndpointRecord(probeRecordDir, key, record.identity, record.identityFields, record.report, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects)),
+      saveEndpointRecord(probeRecordDir, key, record.identity, record.identityFields, record.report, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects), probes.lock),
   });
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async (_target, signal) => {
@@ -640,6 +652,7 @@ const createProbedOllamaAdapter = async (
     target: endpointLockKeyOf(key).target,
     key,
     probeRecordDir,
+    lock: probes.lock,
     precondition: ollamaPrecondition(upstream, target.model),
     measure:
       (probes.measureOllama === undefined ? undefined : onRecordKey(probes.measureOllama)) ??
@@ -882,15 +895,17 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const pid = options.pid ?? systemProcessPorts.pid;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const { signal } = options;
-  const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, platform, {}), generation: options.generation, logger });
+  const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, platform, options.env), generation: options.generation, logger });
   const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
-  const paths = momongaPaths(options.home, platform, {});
+  const paths = momongaPaths(options.home, platform, options.env);
   signal?.throwIfAborted();
   const own = generationLayout(options.home, options.generation);
   await requireGenerationDirs(paths, options.generation);
   signal?.throwIfAborted();
-  const lock = await (options.acquireLock ?? acquireProcessLock)(own.locks.gateway);
+  const kernelLock = options.locks.mechanism;
+  const inspector = layoutProcessInspector(options.locks.capability);
+  const lock = await (options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, { mechanism: kernelLock })))(own.locks.gateway);
   const cleanups: Array<(values: StopValues | undefined) => void | Promise<void>> = [() => lock.release()];
   const lifetime = new AbortController();
   const unwind = async (values: StopValues | undefined): Promise<Error[]> => {
@@ -969,7 +984,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const cache = createUserSettingsCache({
       home: options.home,
       onWarning: (message) => logger.warn(message),
-      keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(options.home)),
+      keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(options.home), kernelLock),
       ...appliedRecordOf(options.env),
       planProfiles,
       onLoaded: (loaded) => stopValues.remember(stopValuesOfSettings(loaded.settings)),
@@ -984,12 +999,12 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       return outbound;
     };
     signal?.throwIfAborted();
-    await sweepLeftovers({ directories: leftoverDirectories(paths), lock: hostKernelLock(), warn: (message) => logger.warn(message) });
-    const hmacKey = secretKeyFile(paths.gatewayKey, {
+    await sweepLeftovers({ directories: leftoverDirectories(paths), lock: kernelLock, warn: (message) => logger.warn(message) });
+    const hmacKey = createSecretKeyFile(nodeFileSystemSync, systemRandom, kernelLock)(paths.gatewayKey, {
       mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
     });
-    const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock });
+    const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock, busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     cleanups.push(() => traceStore.close());
     const telemetryOf = (current: ResolvedSettings, outbound: OutboundNetwork): Telemetry => {
       const resolved = resolveTelemetrySettings(current.telemetry);
@@ -1031,6 +1046,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
 
     const autoProbe = createAutoProbe({
       dir: paths.probe,
+      lock: kernelLock,
       clock,
       retryAfterMs: PROBE_RETRY_AFTER_MS,
       role,
@@ -1046,6 +1062,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     cleanups.push(closeProbes);
     const probePorts: Omit<ProbeWiring, 'outputPolicy'> = {
       autoProbe,
+      lock: kernelLock,
       ...(options.measureEndpoint === undefined ? {} : { measureEndpoint: options.measureEndpoint }),
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
@@ -1098,6 +1115,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           : { kind: 'available', store: options.secretStore },
       plaintextTokenFiles: () => planScopes.current().plaintextTokenFiles,
       keyOfPlaintext: planRecordKeyOfPlaintext,
+      lock: kernelLock,
     });
     const sessions = await openPlanSessions({
       profiles: planProfiles,
@@ -1105,6 +1123,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       store: options.planStore === undefined ? planRecordStore : options.planStore(planRecordStore),
       ...(secretStore.backend === undefined ? {} : { storeBackend: secretStore.backend }),
       fileSystem: nodeFileSystem,
+      lock: kernelLock,
       accounts: [],
       clock,
       outbound: withOutboundNetwork,
@@ -1117,11 +1136,12 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       warn: (message) => logger.warn(message),
     });
     cleanups.push(() => sessions.close());
-    const catalog = createPlanCatalog({ store: createFileCredentialStore(paths.planCatalog), clock, outbound: withOutboundNetwork, sleep: planSleep, events: planEvents });
+    const catalog = createPlanCatalog({ store: createFileCredentialStore(paths.planCatalog, { lock: kernelLock }), clock, outbound: withOutboundNetwork, sleep: planSleep, events: planEvents });
     const planApi = createPlanApi({
       catalog,
       home: options.home,
       settingsFile: paths.settingsFile,
+      lock: kernelLock,
       profiles: planProfiles,
       sessions,
       signIn: createPlanSignIn({
@@ -1132,6 +1152,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         lifetime: sessions.lifetime,
         sleep: planSleep,
         fileSystem: nodeFileSystem,
+        lock: kernelLock,
         hostFile: paths.planHost,
         events: planEvents,
       }),
@@ -1247,6 +1268,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               target,
               description: server,
               paths,
+              lock: kernelLock,
+              inspector,
               childEnv,
               exec,
               execWithStdin,
@@ -1485,6 +1508,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       random,
       pid,
       dbPath: paths.databases.gateway,
+      lock: kernelLock,
       hmacKey,
       socketPath: own.sockets.gateway,
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),

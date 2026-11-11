@@ -22,6 +22,7 @@ import { DEFAULT_STOP_VALUES, nodeFileSystem, systemRandom } from '@momonga/foun
 import type { FileSystem } from '@momonga/foundation';
 import { makeTree, projectSettingsPath, userSettingsPath, writeJson, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const unaborted = (): AbortSignal => new AbortController().signal;
 
@@ -144,7 +145,7 @@ describe('config: the models writer refuses what the loader refuses about a sock
     fs.mkdirSync(run, { recursive: true });
     const link = path.join(tree.project, 'run-link');
     fs.symlinkSync(run, link);
-    const edit = editModelsSettings(tree.home, file, [{ kind: 'setConnectionField', provider: 'home', path: ['socketPath'], value: path.join(link, 'own.sock') }], { signal: unaborted() });
+    const edit = editModelsSettings(tree.home, file, [{ kind: 'setConnectionField', provider: 'home', path: ['socketPath'], value: path.join(link, 'own.sock') }], { lock: testKernelLock(), signal: unaborted() });
     await expect(edit).rejects.toBeInstanceOf(ModelsEditRefused);
     await expect(edit).rejects.toMatchObject({ code: 'would_not_load', message: expect.stringMatching(/^Not saved: models\.connections\[0\]: socketPath .* must not be inside /) });
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(before);
@@ -231,7 +232,7 @@ describe('config: the settings writers write asynchronously under the signal of 
     const file = userSettingsPath(tree);
     writeText(file, '{"autoUpdates":false}');
     const reason = new Error('the asker left');
-    await expect(editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { signal: abortedWith(reason) })).rejects.toBe(reason);
+    await expect(editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { lock: testKernelLock(), signal: abortedWith(reason) })).rejects.toBe(reason);
     expect(fs.readFileSync(file, 'utf8')).toBe('{"autoUpdates":false}');
   });
 
@@ -240,8 +241,8 @@ describe('config: the settings writers write asynchronously under the signal of 
     const file = userSettingsPath(tree);
     writeJson(file, { autoUpdates: false });
     const synchronous = synchronousFileCalls();
-    await editSettings({ home: tree.home, projectDir: tree.project }, 'project', { kind: 'set', path: ['env', 'TZ'], value: 'UTC' }, { signal: unaborted() });
-    await editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { signal: unaborted() });
+    await editSettings({ home: tree.home, projectDir: tree.project }, 'project', { kind: 'set', path: ['env', 'TZ'], value: 'UTC' }, { lock: testKernelLock(), signal: unaborted() });
+    await editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { lock: testKernelLock(), signal: unaborted() });
     expect(synchronous()).toEqual([]);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ autoUpdates: true });
   });
@@ -252,10 +253,10 @@ describe('config: the settings writers write asynchronously under the signal of 
     const record = path.join(tree.home, '.momonga', 'run', 'settings-applied.json');
     fs.mkdirSync(path.dirname(record), { recursive: true });
     const reason = new Error('the asker left');
-    await expect(writeAppliedRecord(tree.home, record, undefined, { signal: abortedWith(reason), random: systemRandom })).rejects.toBe(reason);
+    await expect(writeAppliedRecord(tree.home, record, undefined, { signal: abortedWith(reason), random: systemRandom, lock: testKernelLock() })).rejects.toBe(reason);
     expect(fs.existsSync(record)).toBe(false);
     const synchronous = synchronousFileCalls();
-    const written = await writeAppliedRecord(tree.home, record, undefined, { signal: unaborted(), random: systemRandom });
+    const written = await writeAppliedRecord(tree.home, record, undefined, { signal: unaborted(), random: systemRandom, lock: testKernelLock() });
     expect(synchronous()).toEqual([]);
     expect(written).toEqual({ kind: 'written', seq: 1 });
     expect(JSON.parse(fs.readFileSync(record, 'utf8'))).toEqual({ seq: 1, settings: { autoUpdates: false } });
@@ -265,7 +266,7 @@ describe('config: the settings writers write asynchronously under the signal of 
     const tree = makeTree();
     const directory = keptSettingsDirectory(tree.home);
     const counted = countedFiles();
-    const records = diskKeptRecords(counted.files, systemRandom, directory);
+    const records = diskKeptRecords(counted.files, systemRandom, directory, testKernelLock());
     const synchronous = synchronousFileCalls();
     expect(await records.load('/some/settings.json', unaborted())).toBeUndefined();
     await records.save('/some/settings.json', { found: true, value: { autoUpdates: false } }, unaborted());

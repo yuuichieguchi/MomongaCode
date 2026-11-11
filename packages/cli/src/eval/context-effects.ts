@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
-import { createBinaryHashCache, createHostExec, createOwnedDirectory, ensureMomongaDirs, hostKernelLock, isProcessAlive, refuseUnfitGenerationSocketsBeforeCreation, shortTempBase } from '@momonga/foundation';
+import { createBinaryHashCache, createHostExec, createOwnedDirectory, ensureMomongaDirs, isProcessAlive, refuseUnfitGenerationSocketsBeforeCreation, shortTempBase } from '@momonga/foundation';
 import type { KernelLockMechanism, OwnedDirectory, ProcessPort } from '@momonga/foundation';
 import { loadUserModels, registeredServer } from '@momonga/config';
 import type { ServerRegistry } from '@momonga/config';
@@ -106,7 +106,7 @@ const ownedRoots = (ports: CliPorts, lock: KernelLockMechanism): OwnedRoots => {
   };
 };
 
-export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = hostKernelLock()): ContextHostEffects => {
+export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism): ContextHostEffects => {
   const roots = ownedRoots(ports, lock);
   return {
     lock,
@@ -146,7 +146,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
   };
 };
 
-export const nodeYieldEffects = (ports: CliPorts, lock: KernelLockMechanism = hostKernelLock()): YieldHostEffects => ({
+export const nodeYieldEffects = (ports: CliPorts, lock: KernelLockMechanism): YieldHostEffects => ({
   ...nodeContextEffects(ports, lock),
   connect: (paths) => connectRuntime(ports, paths),
   copyWorkspace: (from, to) => ports.files.copyTreeVerbatim(from, to),

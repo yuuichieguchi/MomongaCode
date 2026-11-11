@@ -13,7 +13,7 @@ const documentCountOf = (dbPath: string, runId: string): number =>
 describe('DerivedRepair.tla, the draft deletion of the indexer is an actor of the repair (C17)', () => {
   it('a repair that reads the run after the index deleted its drafts reads and writes no draft (RepairNeverReadsDeleted)', async () => {
     const { store, dbPath } = harness();
-    const run = enqueue(store, newSession(store).id, 'a task with one step');
+    const run = await enqueue(store, newSession(store).id, 'a task with one step');
     const claim = store.claim('worker-draft');
     if (claim?.runId !== run.id) throw new Error(`expected to claim ${run.id}`);
     expect(store.append(claim, stepEvents(1, { text: 'step one says widget', tool: { name: 'Read', path: '/work/a.ts', output: 'content' } })).kind).toBe('ok');

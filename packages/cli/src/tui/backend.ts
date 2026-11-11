@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { findProgramOnPath } from '@momonga/foundation';
+import { findProgramOnPath, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
 import { editSettings, readSettingsSnapshot } from '@momonga/config';
@@ -13,6 +13,8 @@ import { withIdentityReadFetch } from '../network.ts';
 import { loopbackSignInListener } from '../plan/sign-in.ts';
 import type { SandboxKind, SignInListener, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
 import { dismissNotice, readDismissedNotices } from './dismissed-notices.ts';
+import { listedSessions, ownRunsOf } from './session-list.ts';
+import type { SessionSummary } from './session-list.ts';
 import type { DismissedNotices } from './dismissed-notices.ts';
 import type { MemoryFilter, RunEventFrame, RuntimeClient, UserShellEnd } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
@@ -23,7 +25,7 @@ import { newerListenerOf } from '../handover/stream.ts';
 import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
-import { continuedSession, hasRun, newestFirst, resolveSession } from '../run/resolve-session.ts';
+import { continuedSession, resolveSession } from '../run/resolve-session.ts';
 import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
@@ -42,7 +44,7 @@ export type FollowHandlers = {
   onReconnecting(attempt: number): void;
 };
 
-export type ListedSession = { id: string; createdAt: number; runs: number; firstPrompt: string };
+export type { SessionSummary };
 
 export type StartRunOptions = { skill?: string; images?: readonly ImageAttachment[]; attachMentions?: boolean; mandate?: Mandate };
 
@@ -63,7 +65,7 @@ export type TuiBackend = {
   openSession(model?: string, permissionMode?: PermissionMode): Promise<SessionView>;
   resumeSession(id: string): Promise<SessionView>;
   continueSession(): Promise<SessionView>;
-  sessions(): Promise<readonly ListedSession[]>;
+  sessions(): Promise<readonly SessionSummary[]>;
   runs(): Promise<readonly RunView[]>;
   setMode(mode: PermissionMode): Promise<SessionView>;
   models(): Promise<readonly MomongaModelEntry[]>;
@@ -145,23 +147,7 @@ export const createTuiBackend = (
     }
   };
 
-  const conversationRuns = async (sessionId: string): Promise<RunView[]> => (await runtime().listRuns(sessionId)).filter((run) => run.parentRunId === null).sort((left, right) => left.ordinal - right.ordinal);
-
-  const firstPromptOf = async (runId: string): Promise<string> => {
-    const reading = new AbortController();
-    try {
-      for await (const frame of runtime().streamEvents(runId, { signal: AbortSignal.any([closing.signal, reading.signal]) })) return frame.data.type === 'user.message' ? frame.data.text : '';
-      return '';
-    } finally {
-      reading.abort();
-    }
-  };
-
-  const listed = async (stored: SessionView): Promise<ListedSession> => {
-    const runs = await conversationRuns(stored.id);
-    const [first] = runs;
-    return { id: stored.id, createdAt: stored.createdAt, runs: runs.length, firstPrompt: first === undefined ? '' : await firstPromptOf(first.id) };
-  };
+  const conversationRuns = (sessionId: string): Promise<RunView[]> => ownRunsOf(runtime(), sessionId);
 
   const adopt = (view: SessionView): SessionView => {
     session = view;
@@ -194,6 +180,7 @@ export const createTuiBackend = (
       return {
         home: paths.home,
         settingsFile: paths.settingsFile,
+        lock: () => resolveLayoutLocks(paths).mechanism,
         platform: ports.platform,
         interrupt,
         files: ports.files,
@@ -204,9 +191,9 @@ export const createTuiBackend = (
     },
     storeSecret: (name, value, signal) => storeSecretValue(ports, name, value, AbortSignal.any([closing.signal, signal])),
     dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
-    dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now()), closing.signal),
+    dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now()), closing.signal, onNotice),
     settings: async () => readSettingsSnapshot({ home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal: closing.signal }),
-    editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { signal }),
+    editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { lock: resolveLayoutLocks(paths).mechanism, signal }),
     mcpServers: () => runtime().mcpServers(current().id),
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
     boot: async () => {
@@ -231,13 +218,7 @@ export const createTuiBackend = (
     },
     resumeSession: async (id) => adopt(await resolveSession(runtime(), ports.cwd, id)),
     continueSession: async () => adopt(await continuedSession(runtime(), ports.cwd)),
-    sessions: async () => {
-      const found: ListedSession[] = [];
-      for (const stored of newestFirst((await runtime().listSessions(ports.cwd)).filter(hasRun))) {
-        if (stored.id !== session?.id) found.push(await listed(stored));
-      }
-      return found;
-    },
+    sessions: () => listedSessions(runtime(), ports.cwd, session?.id, closing.signal),
     runs: () => conversationRuns(current().id),
     setMode: async (mode) => {
       session = await runtime().setPermissionMode(current().id, mode);

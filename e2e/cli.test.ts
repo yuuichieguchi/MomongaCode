@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { EXIT_WAITING_FOR_APPROVAL } from '@momonga/foundation';
 import { createFakeFm, modelSettings, startFakeChatCompletions } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import type { FakeScriptedReply } from '@momonga/testkit';
@@ -113,27 +114,29 @@ describe('cli: momonga -p', () => {
   it(titleOf('cli-approve'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home, target } = await prepare(editTask);
 
-    const running = startCli(home, ['-p', 'Update the greeting']);
-    const listed = await until(
-      async () => {
-        const result = await runCli(home, ['approve']);
-        return /^\S+\s+Edit /m.test(result.stdout) ? result : undefined;
-      },
-      { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'a pending Edit approval to be listed by momonga approve' },
-    );
+    const waiting = await runCli(home, ['-p', 'Update the greeting']);
+    expect(waiting.code).toBe(EXIT_WAITING_FOR_APPROVAL);
+    expect(waiting.stdout).toBe('');
+    const runId = /momonga attach (\S+)/.exec(waiting.stderr)?.[1] ?? '';
+    expect(runId).not.toBe('');
+    expect(waiting.stderr).toContain(`momonga: run ${runId} waits for an answer this command cannot give, and stays in the daemon`);
+
+    const listed = await runCli(home, ['approve']);
+    expect(listed.stdout).toMatch(/^\S+\s+Edit /m);
     const approvalId = listed.stdout.split('\n')[0]?.split(/\s+/)[0] ?? '';
     expect(approvalId).not.toBe('');
     for (const kind of ['allow_once', 'allow_always', 'reject_once', 'reject_always']) expect(listed.stdout).toContain(kind);
+    expect(waiting.stderr).toContain(`momonga approve ${approvalId} allow_once`);
+    expect(waiting.stderr).toContain(`  ${approvalId}  momonga approve ${approvalId}`);
     expect(fs.readFileSync(target, 'utf8')).toBe(ORIGINAL);
 
     const resolved = await runCli(home, ['approve', approvalId, 'allow_once']);
     expect(resolved.code).toBe(0);
     expect(resolved.stdout).toContain('resolved: allow_once');
 
-    const finished = await running.result;
+    const finished = await runCli(home, ['attach', runId]);
     expect(finished.code).toBe(0);
     expect(finished.stdout).toBe(`${FINAL_TEXT}\n`);
-    expect(finished.stderr).toContain(`momonga approve ${approvalId} allow_once`);
     expect(fs.readFileSync(target, 'utf8')).toBe(EDITED);
   });
 
@@ -179,11 +182,14 @@ describe('cli: momonga -p', () => {
     const resolved = await runCli(home, ['approve', approvalId, 'allow_once']);
     expect(resolved.code).toBe(0);
 
-    expect((await attached.result).code).toBe(0);
+    const followed = await attached.result;
+    expect(followed.code).toBe(0);
+    expect(followed.stdout).toBe(`${FINAL_TEXT}\n`);
 
     const finished = await running.result;
-    expect(finished.code).toBe(0);
-    expect(finished.stdout).toBe(`${FINAL_TEXT}\n`);
+    expect(finished.code).toBe(EXIT_WAITING_FOR_APPROVAL);
+    expect(finished.stdout).toBe('');
+    expect(finished.stderr).toContain(`momonga attach ${parent.id}`);
     expect(finished.stderr).toContain('momonga: waiting for subagent editor');
     expect(finished.stderr).toContain(`momonga: waiting for approval ${approvalId} (subagent editor): editor: Edit`);
     expect(finished.stderr).toContain(`momonga approve ${approvalId} allow_once`);

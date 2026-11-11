@@ -1,6 +1,5 @@
 import path from 'node:path';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
-import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import { claimNewEntry, claimNewEntrySync, lockFormOf } from './platform/lock-form.ts';
 import type { LockForm } from './platform/lock-form.ts';
 import type { Random } from './random.ts';
@@ -82,7 +81,7 @@ export const atomicWriteSteps = (form: LockForm, publish: PublishMode): AtomicWr
   ...DISPOSAL_STEPS[form],
 ];
 
-type WriterLock = { lock?: KernelLockMechanism; onStep?(step: AtomicWriteStep): void };
+type WriterLock = { lock: KernelLockMechanism; onStep?(step: AtomicWriteStep): void };
 
 export type AtomicWriteOptions = WriterLock & {
   mode: number;
@@ -398,7 +397,7 @@ export function writeFileAtomically(
 ): Promise<CreateOutcome>;
 export function writeFileAtomically(fs: AtomicWriteFileSystem, random: Random, file: string, content: FileContent, options: AtomicWriteOptions): Promise<CreateOutcome | undefined>;
 export function writeFileAtomically(fs: AtomicWriteFileSystem, random: Random, file: string, content: FileContent, options: AtomicWriteOptions): Promise<CreateOutcome | undefined> {
-  const mechanism = options.lock ?? hostKernelLock();
+  const mechanism = options.lock;
   return performedLater(atomicWriteSequence(mechanism, random, file, content, options), {
     claim: (entry, form) => claimNewEntry(mechanism, entry, form),
     openClaimed: async (held, entry, mode) => openFileOf(await openClaimedEntry(fs, held, entry, mode)),
@@ -433,7 +432,7 @@ export function writeFileAtomicallySync<Handle>(
   content: FileContent,
   options: AtomicWriteOptionsSync,
 ): CreateOutcome | undefined {
-  const mechanism = options.lock ?? hostKernelLock();
+  const mechanism = options.lock;
   return performedNow(atomicWriteSequence(mechanism, random, file, content, options), {
     claim: (entry, form) => claimNewEntrySync(mechanism, entry, form),
     openClaimed: (held, entry, mode) => openClaimedEntrySync(fs, held, entry, mode),

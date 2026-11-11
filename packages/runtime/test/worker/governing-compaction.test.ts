@@ -37,7 +37,7 @@ describe('a path-scoped governing fact across a compaction', () => {
       textStep('done'),
     );
     env.gateway.compactSummaries.push('S1');
-    const run = env.enqueue('Work on the parser');
+    const run = await env.enqueue('Work on the parser');
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [readTool, bigTool()], systemPrompt: () => WITHIN_TURN_PROMPT }));
 

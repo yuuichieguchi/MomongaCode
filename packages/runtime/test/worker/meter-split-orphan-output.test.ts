@@ -29,7 +29,7 @@ describe('a count after an in-turn eviction on a target that renders outputs by 
       throw gatewayError(400, 'invalid_request', 'unknown_call_id');
     };
     env.gateway.script.push(...[...'abcdefgh'].map((letter, index) => bigStep(`k${index}`, { letter, size: 1800, pad: '' })), textStep('done'));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 

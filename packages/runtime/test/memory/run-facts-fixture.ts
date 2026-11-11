@@ -4,13 +4,14 @@ import { afterEach } from 'vitest';
 import { openRuntimeStore } from '@momonga/store';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { RuntimeStore, RuntimeStoreOptions } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { START_MS, enqueue, makeStoreDir, newSession, registerCleanup } from '../../../store/test/helpers.ts';
 import { finishClaimed } from './reflection-fixture.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
+import { nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 export const SHA = 'a'.repeat(64);
 
@@ -42,7 +43,7 @@ export const lazyThread = (dbPath: () => string, override: ThreadOverride = {}) 
     started ??= (() => {
       const databasePath = dbPath();
       const { dev, ino } = fs.statSync(databasePath);
-      return startJournalThread({ databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS }) as Promise<RunFactsClient>;
+      return startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS }) as Promise<RunFactsClient>;
     })();
     return started;
   };
@@ -65,13 +66,13 @@ export const lazyThread = (dbPath: () => string, override: ThreadOverride = {}) 
   return { preparer: forwarded as unknown as Preparer, client };
 };
 
-export const factsStore = (override: ThreadOverride = {}) => {
+export const factsStore = async (override: ThreadOverride = {}) => {
   const dir = makeStoreDir();
   const dbPath = path.join(dir, 'runtime.db');
   const clock = createFakeClock(START_MS);
   const decoded = { rows: 0, bytes: 0 };
   const thread = lazyThread(() => dbPath, override);
-  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: dir,
     clock,
@@ -86,10 +87,10 @@ export const factsStore = (override: ThreadOverride = {}) => {
   });
   registerCleanup(() => store.close());
   const project = fs.realpathSync(makeStoreDir());
-  store.trust.set(project, 'trusted');
+  await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
   const session = newSession(store, project);
   const finished = async (events: readonly RunEventPayload[], outcome: 'COMPLETED' | 'FAILED' = 'COMPLETED', input = 'fix the bug') => {
-    const run = enqueue(store, session.id, input);
+    const run = await enqueue(store, session.id, input);
     await finishClaimed(store, events, outcome);
     return run;
   };

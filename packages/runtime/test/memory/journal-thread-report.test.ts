@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { buildRunReport } from '@momonga/observability';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { createJournalReader } from '@momonga/store';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import { reportHandler } from '../../src/memory/journal-thread.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { makeEnv } from '../worker/harness.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -25,7 +26,7 @@ const work = (now: number): RunEventPayload[] => [
 describe('the report request of the journal thread', () => {
   it('answers with the report buildRunReport gives for every event of the run, and the lastSeq it read', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh', limits: { maxSteps: 7, maxTotalTokens: 90_000, maxCostUsd: 9.1 } });
+    const run = await env.enqueue('Work', { history: 'fresh', limits: { maxSteps: 7, maxTotalTokens: 90_000, maxCostUsd: 9.1 } });
     await env.seed(run.id, work(env.clock.now()), 'hold');
     env.clock.advance(250);
     const stored = env.run(run.id);
@@ -38,7 +39,7 @@ describe('the report request of the journal thread', () => {
       },
     };
     const { dev, ino } = fs.statSync(env.dbPath);
-    const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
 
     try {
       expect(await thread.report({ runId: run.id })).toEqual({ lastSeq: env.run(run.id).lastSeq, report: expected });
@@ -50,7 +51,7 @@ describe('the report request of the journal thread', () => {
 
   it('refuses a request without the id of its run and a run that does not exist', async () => {
     const env = await makeEnv();
-    const db = openDatabase(env.dbPath);
+    const db = openDatabase(env.dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     try {
       const handler = reportHandler(db, createJournalReader(db));
       expect(() => handler({}, () => undefined)).toThrow(/runId/);
@@ -62,7 +63,7 @@ describe('the report request of the journal thread', () => {
 
   it('is what the store answers through journalFacts.report', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = await env.enqueue('Work', { history: 'fresh' });
     await env.seed(run.id, work(env.clock.now()), 'hold');
 
     const reply = await env.store.journalFacts.report({ runId: run.id });

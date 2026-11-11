@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
-import { expectError, startService, waitUntil } from './helpers.ts';
+import { expectError, startService, pollFor } from './helpers.ts';
 
 const SQLITE_IOERR = 10;
 const SQLITE_CORRUPT = 11;
@@ -65,7 +65,7 @@ describe('service fatal routing (fake timers)', () => {
     const fatal = sqliteError(SQLITE_CORRUPT, 'database disk image is malformed');
     faults.set('expireApprovals', fatal);
 
-    env.timers?.advance(SWEEP_INTERVAL_MS);
+    await env.timers?.advanceAsync(SWEEP_INTERVAL_MS);
 
     expect(env.fatals).toEqual([fatal]);
     expect(env.errors).toEqual([]);
@@ -77,7 +77,7 @@ describe('service fatal routing (fake timers)', () => {
     const fatal = sqliteError(SQLITE_IOERR, 'disk I/O error');
     faults.set('dataVersion', fatal);
 
-    env.timers?.advance(POLL_INTERVAL_MS);
+    await env.timers?.advanceAsync(POLL_INTERVAL_MS);
 
     expect(env.fatals).toEqual([fatal]);
     expect(env.errors).toEqual([]);
@@ -97,9 +97,9 @@ describe('service fatal routing (fake timers)', () => {
     const run = await env.createRun(session.id);
 
     expect((await env.http('POST', `/v1/runs/${run.id}/cancel`)).status).toBe(202);
-    env.timers?.advance(1000);
+    await env.timers?.advanceAsync(1000);
 
-    await waitUntil(() => env.fatals.length > 0 || env.errors.length > 0, 3000, 'the cancelUpstream failure to be reported');
+    await pollFor(() => env.fatals.length > 0 || env.errors.length > 0, 3000, 'the cancelUpstream failure to be reported');
     expect(env.fatals).toEqual([fatal]);
     expect(env.errors).toEqual([]);
   });
@@ -114,7 +114,7 @@ describe('service fatal routing (fake timers)', () => {
 
     const runStream = await env.stream(`/v1/runs/${run.id}/events`, { headers: { 'last-event-id': '0' } });
     expect(runStream.status).toBe(200);
-    await waitUntil(() => env.fatals.length > 0 || env.errors.length > 0, 3000, 'the run stream read failure to be reported');
+    await pollFor(() => env.fatals.length > 0 || env.errors.length > 0, 3000, 'the run stream read failure to be reported');
     expect(env.fatals).toEqual([corrupt]);
     expect(env.errors).toEqual([]);
 
@@ -122,7 +122,7 @@ describe('service fatal routing (fake timers)', () => {
     faults.set('readSessionEventStream', ioerr);
     const sessionStream = await env.stream(`/v1/sessions/${session.id}/events`, { headers: { 'last-event-id': '0' }, idField: 'id' });
     expect(sessionStream.status).toBe(200);
-    await waitUntil(() => env.fatals.length > 1 || env.errors.length > 0, 3000, 'the session stream read failure to be reported');
+    await pollFor(() => env.fatals.length > 1 || env.errors.length > 0, 3000, 'the session stream read failure to be reported');
     expect(env.fatals).toEqual([corrupt, ioerr]);
     expect(env.errors).toEqual([]);
   });
@@ -175,7 +175,7 @@ describe('service fatal routing (fake timers)', () => {
 
     const sweepFatal = sqliteError(SQLITE_CORRUPT, 'database disk image is malformed');
     faults.set('expireApprovals', sweepFatal);
-    env.timers?.advance(SWEEP_INTERVAL_MS);
+    await env.timers?.advanceAsync(SWEEP_INTERVAL_MS);
 
     expect(env.errors).toEqual([handlerFatal, sweepFatal]);
     expect(env.fatals).toEqual([]);

@@ -3,11 +3,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   claimNewEntry,
-  createKernelLockMechanism,
   handoverDirectoryOf,
   handoverLeftovers,
   handoverRecordOwner,
-  hostKernelLock,
   leftoverDirectories,
   momongaPaths,
   reapDeadGenerations,
@@ -16,6 +14,7 @@ import {
 } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
+import { expectedKernelLockOn, testKernelLock } from '@momonga/testkit';
 
 const PID_NO_PROCESS_HAS = 99_999_999;
 
@@ -24,7 +23,7 @@ const recordText = (pid: unknown): string => JSON.stringify({ format: 'handover/
 type Site = { paths: MomongaPaths; directory: string; record: string };
 
 const siteOf = (): Site => {
-  const paths = momongaPaths(makeTemporaryDirectory());
+  const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
   const directory = handoverDirectoryOf(paths);
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   return { paths, directory, record: path.join(directory, 'session-1.json') };
@@ -58,7 +57,7 @@ describe('16.8: the leftover sweep of the handover records', () => {
 
   for (const platform of ['darwin', 'linux'] as const) {
     describe(`${platform} mechanism`, () => {
-      const lock = createKernelLockMechanism(platform);
+      const lock = expectedKernelLockOn(platform);
 
       it('keeps a record whose writer holds its lock, even when the pid in it names no process', async () => {
         const { paths, directory, record } = siteOf();
@@ -110,7 +109,7 @@ describe('16.8: the leftover sweep of the handover records', () => {
 
   it('is swept with the whole registered list, as the gateway start sweeps it, and never by the pass that reaps the dead generations (T-L2-11)', async () => {
     const { paths, record } = siteOf();
-    const lock = hostKernelLock();
+    const lock = testKernelLock();
     await leaveRecord(lock, record, recordText(PID_NO_PROCESS_HAS));
     await reapDeadGenerations({ paths, lock, signal: new AbortController().signal, warn: () => undefined, reapMarkers: async () => undefined });
     expect(fs.existsSync(record)).toBe(true);

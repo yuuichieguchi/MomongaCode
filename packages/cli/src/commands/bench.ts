@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { runBenchmark, validateBenchmark } from '@momonga/eval';
 import type { BenchProblem, BenchRunApi, TaskValidation } from '@momonga/eval';
-import { codeDigestOfRunningProcess, createOwnedDirectory } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, createOwnedDirectory, resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { MAIN_AGENT } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
@@ -15,7 +15,7 @@ import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { EvaluateUsageError } from './evaluate.ts';
 
-export type EvaluateBenchOptions = { validate: boolean; model?: string; report?: string };
+export type EvaluateBenchOptions = { validate: boolean; model?: string; report?: string; interrupt: AbortSignal };
 
 export const BENCHMARK_FILE = 'benchmark.json';
 
@@ -39,8 +39,8 @@ const validationLine = (task: TaskValidation): string => {
   return `Task ${task.id}: ${verdict}; labelled ${task.difficulty} by ${task.labelledBy} on ${task.labelledAt}; the reference changes ${countText(files, 'file', 'files')}, ${countText(linesAdded, 'line', 'lines')} added and ${linesRemoved} removed\n`;
 };
 
-const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tmpdir'>, benchmarkFile: string): Promise<number> => {
-  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe, files: ports.files, tmpdir: ports.tmpdir });
+const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tmpdir'>, paths: MomongaPaths, benchmarkFile: string): Promise<number> => {
+  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe, files: ports.files, tmpdir: ports.tmpdir, lock: resolveLayoutLocks(paths).mechanism });
   for (const task of tasks) ports.stdout.write(validationLine(task));
   const wrong = tasks.filter((task) => task.problems.length > 0).length;
   if (wrong === 0) {
@@ -105,12 +105,12 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
   };
 };
 
-const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, options: { model: string; report?: string }): Promise<number> => {
-  const model = pinnedModelOf(await shellModelsOf(ports, ports.interrupt), options.model);
+const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, options: { model: string; report?: string; interrupt: AbortSignal }): Promise<number> => {
+  const model = pinnedModelOf(await shellModelsOf(ports, options.interrupt), options.model);
   await ensureCurrentDaemon(ports, paths);
-  const env = await environmentSnapshot(ports, ports.interrupt);
+  const env = await environmentSnapshot(ports, options.interrupt);
   const client = connectRuntime(ports, paths);
-  const scratch = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX });
+  const scratch = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX, lock: resolveLayoutLocks(paths).mechanism });
   try {
     const { report, invalidSetup } = await runBenchmark(benchmarkFile, {
       api: benchRunApi(client, env),
@@ -120,6 +120,7 @@ const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, 
       codeDigest: await codeDigestOfRunningProcess(),
       groupBy: 'model',
       scratch: scratch.path,
+      signal: options.interrupt,
     });
     if (options.report !== undefined) await ports.files.writeText(path.resolve(ports.cwd, options.report), encodeReliabilityReport(report));
     ports.stdout.write(formatReliabilityReport(report));
@@ -135,8 +136,8 @@ export const evaluateBench = async (ports: CliPorts, paths: MomongaPaths, direct
   const benchmarkFile = path.join(path.resolve(ports.cwd, directory), BENCHMARK_FILE);
   if (options.validate) {
     if (options.model !== undefined || options.report !== undefined) throw new EvaluateUsageError('--validate runs no model and builds no report, so it takes neither --model nor --report');
-    return validate(ports, benchmarkFile);
+    return validate(ports, paths, benchmarkFile);
   }
   if (options.model === undefined) throw new EvaluateUsageError('--model <model> is required for a run of the benchmark: it names the model every task runs on');
-  return run(ports, paths, benchmarkFile, { model: options.model, ...(options.report === undefined ? {} : { report: options.report }) });
+  return run(ports, paths, benchmarkFile, { model: options.model, interrupt: options.interrupt, ...(options.report === undefined ? {} : { report: options.report }) });
 };

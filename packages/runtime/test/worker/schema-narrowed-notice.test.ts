@@ -44,7 +44,7 @@ describe('a tool parameter the dialect narrowed', () => {
     const env = await makeEnv();
     const file = seededFile(env.project);
     env.gateway.script.push(answeredWith(readStep(file, 'call_n_1'), PRIMARY_TARGET, [OPTIONS]), answeredWith(textStep('Done.'), PRIMARY_TARGET, [OPTIONS]));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
@@ -61,7 +61,7 @@ describe('a tool parameter the dialect narrowed', () => {
     const env = await makeEnv();
     const file = seededFile(env.project);
     env.gateway.script.push(answeredWith(readStep(file, 'call_n_2'), PRIMARY_TARGET, [OPTIONS]), answeredWith(textStep('Done.'), PRIMARY_TARGET, [OPTIONS, LABELS]));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
@@ -77,7 +77,7 @@ describe('a tool parameter the dialect narrowed', () => {
     env.gateway.chainsByModel[MODEL_ID] = [PRIMARY_TARGET, SECONDARY_TARGET];
     const file = seededFile(env.project);
     env.gateway.script.push(answeredWith(readStep(file, 'call_n_3'), PRIMARY_TARGET, [OPTIONS]), answeredWith(textStep('Done.'), SECONDARY_TARGET, [OPTIONS], FALLBACK_FROM_PRIMARY));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
@@ -88,11 +88,11 @@ describe('a tool parameter the dialect narrowed', () => {
   it('tells the person again in a new run', async () => {
     const env = await makeEnv();
     env.gateway.script.push(answeredWith(textStep('First.'), PRIMARY_TARGET, [OPTIONS]));
-    const first = env.enqueue('Work');
+    const first = await env.enqueue('Work');
     await env.runOnce(env.worker());
 
     env.gateway.script.push(answeredWith(textStep('Second.'), PRIMARY_TARGET, [OPTIONS]));
-    const second = env.enqueue('More work');
+    const second = await env.enqueue('More work');
     await env.runOnce(env.worker());
 
     expect(env.ofType(first.id, 'model.responded')).toHaveLength(1);
@@ -104,7 +104,7 @@ describe('a tool parameter the dialect narrowed', () => {
   it('says nothing when the response reports no narrowing', async () => {
     const env = await makeEnv();
     env.gateway.script.push(answeredWith(textStep('Done.'), PRIMARY_TARGET, []));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     await env.runOnce(env.worker());
 

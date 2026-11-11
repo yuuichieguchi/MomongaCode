@@ -1,5 +1,5 @@
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
-import { EXIT_FAILURE, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, currentSocketResolver } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
@@ -13,6 +13,7 @@ import { probeModel } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
 import { showReport } from './commands/report.ts';
+import { sessionSocketResolver } from './daemon/generations.ts';
 import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
 import { createGatewayClient } from './client/gateway-client.ts';
 import { pathsOf } from './paths.ts';
@@ -108,8 +109,17 @@ const returnInsteadOfExit = (command: Command): void => {
   for (const sub of command.commands) returnInsteadOfExit(sub);
 };
 
-export const exitOfFailure = (error: unknown, stderr: { write(text: string): unknown }): number => {
+const isInterruption = (error: unknown, interrupt: AbortSignal | undefined): boolean => {
+  if (interrupt?.aborted !== true) return false;
+  for (let current = error; current !== undefined && current !== null; current = current instanceof Error ? current.cause : undefined) {
+    if (current === interrupt.reason) return true;
+  }
+  return false;
+};
+
+export const exitOfFailure = (error: unknown, stderr: { write(text: string): unknown }, interrupt?: AbortSignal): number => {
   if (error instanceof CommanderError) return error.exitCode === EXIT_OK ? EXIT_OK : EXIT_USAGE;
+  if (isInterruption(error, interrupt)) return EXIT_INTERRUPTED;
   stderr.write(`momonga: ${describeFailure(error)}\n`);
   return error instanceof UsageError ? EXIT_USAGE : EXIT_FAILURE;
 };
@@ -166,7 +176,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         const resumed = headlessReopenOf(reopen);
         const paths = await pathsOf(ports);
         const capabilitiesOf = async (model: string) => {
-          const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
+          const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'gateway') });
           try {
             return await gateway.capabilitiesOf(model);
           } finally {
@@ -176,7 +186,10 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }), ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
         return;
       }
-      if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
+      if (ports.terminal === undefined) {
+        const read = prompt === undefined ? '' : ` "${prompt}" is not the name of a command and was read as its first prompt;`;
+        throw new Error(`the interactive session needs a terminal;${read} pass --print <prompt> to run without one`);
+      }
       const { runInteractive } = await import('./tui/run-interactive.tsx');
       deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session, ...(reopen === undefined ? {} : { reopen }), screenReader: options.screenReader === true }, await deps.update(), createShellPort(given)));
     });

@@ -11,7 +11,7 @@ const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/
 describe('the TUI backend', () => {
   it('stops starting the daemon when the interface is closed during boot', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const holder: { backend?: ReturnType<typeof createTuiBackend> } = {};
     const { spawn, spawned } = recordingSpawn(() => {

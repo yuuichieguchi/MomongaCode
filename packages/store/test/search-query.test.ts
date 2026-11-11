@@ -3,7 +3,7 @@ import { HISTORY_SNIPPET_MAX_CHARS } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { anchorsOf, harness } from './helpers.ts';
 import { finishedRun, indexAll, projectDir } from './search-fixture.ts';
-import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { PROPERTY_TIMEOUT_MS, NEVER_CANCELLED } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -13,21 +13,21 @@ const output = (text: string) => [{ tool: { name: 'Read', path: '/work/a/f', out
 
 const search = (store: RuntimeStore, query: string, extra: { scanLimit?: number } = {}) => store.search.query(OWN, { query, scope: 'project', ...extra });
 
-const foundRuns = (store: RuntimeStore, query: string, extra: { scanLimit?: number } = {}): string[] => anchorsOf(search(store, query, extra)).map((anchor) => anchor.runId);
+const foundRuns = async (store: RuntimeStore, query: string, extra: { scanLimit?: number } = {}): Promise<string[]> => anchorsOf(await search(store, query, extra)).map((anchor) => anchor.runId);
 
 describe('search terms of three characters or more', () => {
   it('finds a substring through the trigram index, case-insensitively', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', output('the CompactionSweeper ran'));
     await indexAll(store);
-    expect(foundRuns(store, 'compactionsweep')).toEqual([run.id]);
+    expect(await foundRuns(store, 'compactionsweep')).toEqual([run.id]);
   });
 
   it('finds a three-character Japanese word', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', output('これはテストです'));
     await indexAll(store);
-    expect(foundRuns(store, 'テスト')).toEqual([run.id]);
+    expect(await foundRuns(store, 'テスト')).toEqual([run.id]);
   });
 
   it('requires every term', async () => {
@@ -35,23 +35,23 @@ describe('search terms of three characters or more', () => {
     const both = await finishedRun(store, '/work/a', 'task', output('alpha and gamma'));
     await finishedRun(store, '/work/a', 'task', output('alpha only'));
     await indexAll(store);
-    expect(foundRuns(store, 'alpha gamma')).toEqual([both.id]);
+    expect(await foundRuns(store, 'alpha gamma')).toEqual([both.id]);
   });
 
   it.each(['foo*', 'body:deploy', 'NEAR(deploy', '-deploy', 'deploy"', '"deploy', '(deploy)', 'deploy AND'])('treats %s as literal text, not FTS syntax', async (query) => {
     const { store } = harness();
     await finishedRun(store, '/work/a', 'task', output('foolish deployment notes'));
     await indexAll(store);
-    expect(foundRuns(store, query)).toEqual([]);
+    expect(await foundRuns(store, query)).toEqual([]);
   });
 
   it('finds a literal that contains a double quote and other FTS operators', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', output('config say"hi" body:deploy foo*bar'));
     await indexAll(store);
-    expect(foundRuns(store, 'say"hi"')).toEqual([run.id]);
-    expect(foundRuns(store, 'body:deploy')).toEqual([run.id]);
-    expect(foundRuns(store, 'foo*bar')).toEqual([run.id]);
+    expect(await foundRuns(store, 'say"hi"')).toEqual([run.id]);
+    expect(await foundRuns(store, 'body:deploy')).toEqual([run.id]);
+    expect(await foundRuns(store, 'foo*bar')).toEqual([run.id]);
   });
 });
 
@@ -60,14 +60,14 @@ describe('search terms shorter than three characters', () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', output('この設計を見直す'));
     await indexAll(store);
-    expect(foundRuns(store, '設計')).toEqual([run.id]);
+    expect(await foundRuns(store, '設計')).toEqual([run.id]);
   });
 
   it('counts characters, not UTF-16 units, so two emoji are a short term', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', output('status 😀😀 done'));
     await indexAll(store);
-    expect(foundRuns(store, '😀😀')).toEqual([run.id]);
+    expect(await foundRuns(store, '😀😀')).toEqual([run.id]);
   });
 
   it('combines a short term with a long one', async () => {
@@ -76,14 +76,14 @@ describe('search terms shorter than three characters', () => {
     await finishedRun(store, '/work/a', 'task', output('sweeper の実装'));
     await finishedRun(store, '/work/a', 'task', output('別の設計'));
     await indexAll(store);
-    expect(foundRuns(store, 'sweeper 設計')).toEqual([both.id]);
+    expect(await foundRuns(store, 'sweeper 設計')).toEqual([both.id]);
   });
 
   it('matches short ASCII terms case-insensitively, as the trigram index does', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', output('the DB is down'));
     await indexAll(store);
-    expect(foundRuns(store, 'db')).toEqual([run.id]);
+    expect(await foundRuns(store, 'db')).toEqual([run.id]);
   });
 
   it('scans newest first up to the bound, and says how many documents it searched', async () => {
@@ -94,10 +94,10 @@ describe('search terms shorter than three characters', () => {
     clock.advance(1000);
     const newest = await finishedRun(store, '/work/a', '新しい設計');
     await indexAll(store);
-    const bounded = search(store, '設計', { scanLimit: 1 });
+    const bounded = await search(store, '設計', { scanLimit: 1 });
     expect(anchorsOf(bounded).map((anchor) => anchor.runId)).toEqual([newest.id]);
     expect(bounded.searched).toBe(1);
-    const open = search(store, '設計', { scanLimit: 1000 });
+    const open = await search(store, '設計', { scanLimit: 1000 });
     expect(anchorsOf(open).map((anchor) => anchor.runId).sort()).toEqual([old.id, newest.id].sort());
     expect(open.searched).toBeUndefined();
   });
@@ -108,14 +108,14 @@ describe('search terms shorter than three characters', () => {
     clock.advance(1000);
     await finishedRun(store, '/work/b', '他の設計');
     await indexAll(store);
-    expect(foundRuns(store, '設計', { scanLimit: 1 })).toEqual([mine.id]);
+    expect(await foundRuns(store, '設計', { scanLimit: 1 })).toEqual([mine.id]);
   });
 
   it('reports no searched count for a query that used only the index', async () => {
     const { store } = harness();
     await finishedRun(store, '/work/a', 'indexed words');
     await indexAll(store);
-    expect(search(store, 'indexed', { scanLimit: 1 }).searched).toBeUndefined();
+    expect((await search(store, 'indexed', { scanLimit: 1 })).searched).toBeUndefined();
   });
 });
 
@@ -125,7 +125,7 @@ describe('search results', () => {
     const long = `${'p'.repeat(600)} needleterm ${'q'.repeat(600)}`;
     const run = await finishedRun(store, '/work/a', 'unrelated task', [{ text: 'nothing here' }, { tool: { name: 'Read', path: '/work/a/f', output: long } }]);
     await indexAll(store);
-    const [anchor] = anchorsOf(search(store, 'needleterm'));
+    const [anchor] = anchorsOf(await search(store, 'needleterm'));
     expect(anchor).toMatchObject({ runId: run.id, sessionId: run.sessionId, project: '/work/a', outcome: 'COMPLETED', origin: 'untrusted' });
     expect(anchor?.steps.map((step) => step.step)).toEqual([2]);
     const [hit] = anchor?.steps ?? [];
@@ -144,7 +144,7 @@ describe('search results', () => {
     clock.advance(1000);
     const weak = await finishedRun(store, '/work/a', `needleterm ${'padding words '.repeat(40)}`);
     await indexAll(store);
-    expect(foundRuns(store, 'needleterm')).toEqual([strong.id, weak.id]);
+    expect(await foundRuns(store, 'needleterm')).toEqual([strong.id, weak.id]);
   });
 
   it('breaks a BM25 tie with COMPLETED over other outcomes, even when older', async () => {
@@ -153,7 +153,7 @@ describe('search results', () => {
     clock.advance(1000);
     const cancelled = await finishedRun(store, '/work/a', 'needleterm twin', [], 'CANCELLED');
     await indexAll(store);
-    expect(foundRuns(store, 'needleterm')).toEqual([completed.id, cancelled.id]);
+    expect(await foundRuns(store, 'needleterm')).toEqual([completed.id, cancelled.id]);
   });
 
   it('breaks the remaining tie by recency', async () => {
@@ -162,7 +162,7 @@ describe('search results', () => {
     clock.advance(1000);
     const newer = await finishedRun(store, '/work/a', 'needleterm twin');
     await indexAll(store);
-    expect(foundRuns(store, 'needleterm')).toEqual([newer.id, older.id]);
+    expect(await foundRuns(store, 'needleterm')).toEqual([newer.id, older.id]);
   });
 });
 
@@ -174,8 +174,8 @@ describe('search visibility', () => {
     const untrustedOriginInA = await finishedRun(store, a, 'needleterm a before trust');
     const untrustedC = await finishedRun(store, c, 'needleterm c');
     await indexAll(store);
-    store.trust.set(a, 'trusted');
-    store.trust.set(b, 'trusted');
+    await store.trust.setAsked(a, 'trusted', NEVER_CANCELLED);
+    await store.trust.setAsked(b, 'trusted', NEVER_CANCELLED);
     const trustedA = await finishedRun(store, a, 'needleterm a');
     const trustedB = await finishedRun(store, b, 'needleterm b');
     await indexAll(store);
@@ -184,19 +184,19 @@ describe('search visibility', () => {
 
   it('shows a trusted session its project, marking an untrusted-origin run', async () => {
     const { store, own, trustedA, untrustedOriginInA } = await seeded();
-    const anchors = anchorsOf(store.search.query(own, { query: 'needleterm', scope: 'project' }));
+    const anchors = anchorsOf(await store.search.query(own, { query: 'needleterm', scope: 'project' }));
     expect(Object.fromEntries(anchors.map((anchor) => [anchor.runId, anchor.origin]))).toEqual({ [trustedA.id]: 'trusted', [untrustedOriginInA.id]: 'untrusted' });
   });
 
   it("adds other projects' trusted-origin runs with scope all, and never their untrusted ones", async () => {
     const { store, own, trustedA, trustedB, untrustedOriginInA } = await seeded();
-    const anchors = anchorsOf(store.search.query(own, { query: 'needleterm', scope: 'all' }));
+    const anchors = anchorsOf(await store.search.query(own, { query: 'needleterm', scope: 'all' }));
     expect(anchors.map((anchor) => anchor.runId).sort()).toEqual([trustedA.id, trustedB.id, untrustedOriginInA.id].sort());
   });
 
   it.each(['project', 'all'] as const)('limits an untrusted session to its own project with scope %s', async (scope) => {
     const { store, c, untrustedC } = await seeded();
-    const anchors = anchorsOf(store.search.query({ trusted: false, project: c }, { query: 'needleterm', scope }));
+    const anchors = anchorsOf(await store.search.query({ trusted: false, project: c }, { query: 'needleterm', scope }));
     expect(anchors.map((anchor) => anchor.runId)).toEqual([untrustedC.id]);
   });
 
@@ -206,7 +206,7 @@ describe('search visibility', () => {
     clock.advance(1);
     await finishedRun(store, '/work/d', '設計 d');
     await indexAll(store);
-    const anchors = anchorsOf(store.search.query({ trusted: false, project: '/work/c' }, { query: '設計', scope: 'all' }));
+    const anchors = anchorsOf(await store.search.query({ trusted: false, project: '/work/c' }, { query: '設計', scope: 'all' }));
     expect(anchors.map((anchor) => anchor.runId)).toEqual([mine.id]);
   });
 });

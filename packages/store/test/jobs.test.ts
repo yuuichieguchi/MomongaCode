@@ -5,17 +5,17 @@ import { DEADLINE_MS, START_MS, enqueue, harness, mustClaim, mustRun, newSession
 const startJob = (store: RuntimeStore, sessionId: string, runId: string, id = 'bash_aaaaaaaaaaaa') =>
   store.jobs.start({ id, idemKey: `${id}-key`, sessionId, runId, callId: 'call-1', command: 'sleep 30' });
 
-const setup = () => {
+const setup = async () => {
   const h = harness();
   const session = newSession(h.store);
-  const run = enqueue(h.store, session.id);
+  const run = await enqueue(h.store, session.id);
   const claim = mustClaim(h.store, 'w1');
   return { h, session, run, claim };
 };
 
 describe('background jobs', () => {
   it('records a running job once per idempotency key', async () => {
-    const { h, session, run } = setup();
+    const { h, session, run } = await setup();
     const first = startJob(h.store, session.id, run.id);
     expect(first.created).toBe(true);
     expect(first.job).toMatchObject({ id: 'bash_aaaaaaaaaaaa', sessionId: session.id, runId: run.id, status: 'running', readOffset: 0, startedAt: START_MS });
@@ -28,8 +28,8 @@ describe('background jobs', () => {
   });
 
   it('files a job started in a child session under the root session', async () => {
-    const { h, session, run } = setup();
-    const child = h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, model: 'fm' });
+    const { h, session, run } = await setup();
+    const child = await h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, model: 'fm' });
     if (child.kind !== 'created') throw new Error('expected a child');
     const { job } = startJob(h.store, child.session.id, child.run.id);
     expect(job.sessionId).toBe(session.id);
@@ -38,7 +38,7 @@ describe('background jobs', () => {
   });
 
   it('finishes a job once, records the output reference and tells the active run', async () => {
-    const { h, session, run } = setup();
+    const { h, session, run } = await setup();
     const { job } = startJob(h.store, session.id, run.id);
     const finished = h.store.jobs.finish(job.id, { status: 'exited', exitCode: 3, output: { handle: 'h'.repeat(64), start: 0, total: 12 } });
     expect(finished).toMatchObject({ kind: 'finished', job: { status: 'exited', exitCode: 3, outputHandle: 'h'.repeat(64), outputTotal: 12, endedAt: START_MS } });
@@ -50,7 +50,7 @@ describe('background jobs', () => {
   });
 
   it('records no event when no run is active', async () => {
-    const { h, session, run, claim } = setup();
+    const { h, session, run, claim } = await setup();
     const { job } = startJob(h.store, session.id, run.id);
     await h.store.transition(claim, ['RUNNING'], 'COMPLETED');
     const before = mustRun(h.store, run.id).lastSeq;
@@ -59,8 +59,8 @@ describe('background jobs', () => {
   });
 
   it('wakes a run parked on the job, including one in a child session', async () => {
-    const { h, session, run, claim } = setup();
-    const child = h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, model: 'fm' });
+    const { h, session, run, claim } = await setup();
+    const child = await h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, model: 'fm' });
     if (child.kind !== 'created') throw new Error('expected a child');
     await h.store.release(claim, 'WAITING_TOOL', DEADLINE_MS);
     const childClaim = mustClaim(h.store, 'w2');
@@ -73,7 +73,7 @@ describe('background jobs', () => {
   });
 
   it('queues a run that tries to park on a job that already finished', async () => {
-    const { h, session, run, claim } = setup();
+    const { h, session, run, claim } = await setup();
     const { job } = startJob(h.store, session.id, run.id);
     h.store.jobs.finish(job.id, { status: 'exited', exitCode: 0 });
     await h.store.release(claim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [], jobIds: [job.id] } });
@@ -81,7 +81,7 @@ describe('background jobs', () => {
   });
 
   it('only moves the read offset forward', async () => {
-    const { h, session, run } = setup();
+    const { h, session, run } = await setup();
     const { job } = startJob(h.store, session.id, run.id);
     h.store.jobs.advanceRead(job.id, 40, 'call-a');
     h.store.jobs.advanceRead(job.id, 10, 'call-b');

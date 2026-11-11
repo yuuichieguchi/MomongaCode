@@ -390,6 +390,7 @@ const registerEvaluate: CommandGroup = (program, deps) => {
       deps.complete(
         await evaluateBench(deps.ports, await pathsOf(deps.ports), directory, {
           validate: options.validate === true,
+          interrupt: deps.interrupt,
           ...(options.model === undefined ? {} : { model: options.model }),
           ...(options.report === undefined ? {} : { report: options.report }),
         }),

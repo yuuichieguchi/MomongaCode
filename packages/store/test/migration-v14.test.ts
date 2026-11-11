@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, migrate, openDatabase } from '@momonga/foundation';
+import { canonicalJson, migrate, openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { createJournalReader } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
@@ -55,7 +55,7 @@ describe('an upgrade from version 13 over rows that already exist', () => {
     const db = rawDb(dbPath);
     expect(db.prepare("SELECT pinned_digest FROM events WHERE type = 'model.requested' ORDER BY seq").all().map((row) => row['pinned_digest'])).toEqual([null, null]);
     expect(db.prepare('SELECT dropped_json FROM reflection_jobs').all().map((row) => row['dropped_json'])).toEqual([null]);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 39 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 42 });
   });
 
   it('still decodes an old reflection job, with no dropped candidates and the reason it had', () => {
@@ -76,7 +76,7 @@ describe('an upgrade from version 13 over rows that already exist', () => {
     const seen: RunEvent[][] = [];
     const dbPath = versionThirteen();
     openStoreAt(dbPath, createFakeClock(START_MS + 10));
-    const reader = openDatabase(dbPath);
+    const reader = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     registerCleanup(() => reader.close());
 
     createJournalReader(reader).measure(
@@ -109,9 +109,9 @@ describe('an upgrade from version 13 over rows that already exist', () => {
 });
 
 describe('migration v14', () => {
-  it('records the pinned-layer digest of a request appended after the migration in the events column and leaves other events without one', () => {
+  it('records the pinned-layer digest of a request appended after the migration in the events column and leaves other events without one', async () => {
     const h = harness();
-    enqueue(h.store, newSession(h.store).id);
+    await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const digest = 'c'.repeat(64);
 

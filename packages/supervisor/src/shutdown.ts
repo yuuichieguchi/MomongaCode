@@ -1,4 +1,4 @@
-import type { JsonLogger, StopValues } from '@momonga/foundation';
+import type { JsonLogger, ProcessInspector, StopValues } from '@momonga/foundation';
 import { SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, managedServerReapBoundMs } from '@momonga/foundation';
 import { DEFAULT_INTERVALS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -20,6 +20,7 @@ export type ShutdownControllerOptions = {
   timers: SupervisorTimers;
   recordStop(values: StopValues): Promise<void>;
   logger: JsonLogger;
+  inspector: ProcessInspector;
   markerPorts?: MarkerPorts;
   stopReason(): StopReason;
   beginDraining(): void;
@@ -95,7 +96,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
     const reapMarker = async (marker: string, attemptsMade: number): Promise<void> => {
       let made = attemptsMade;
       while (made < MAX_REAP_ATTEMPTS && !expired) {
-        const result = await reapDaemonMarker({ marker, logger, signal: reapStop.signal, ...omitUndefined({ markerPorts: options.markerPorts }) });
+        const result = await reapDaemonMarker({ marker, logger, inspector: options.inspector, signal: reapStop.signal, ...omitUndefined({ markerPorts: options.markerPorts }) });
         made += 1;
         if (result.removed) break;
       }

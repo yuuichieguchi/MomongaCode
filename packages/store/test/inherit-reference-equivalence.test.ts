@@ -29,7 +29,7 @@ const CASES = 40;
 const CHAIN_LENGTHS = [1, 1, 2, 2, 3, 10] as const;
 
 const inheritingChild = async (h: ReferenceHarness, b: ChainBuilder, mode: PermissionMode = 'manual'): Promise<Run> => {
-  const child = b.createRun('the child task');
+  const child = await b.createRun('the child task');
   const claim = b.claimNext(child.id);
   const result = await b.inherit(claim, mode);
   expect(result).toEqual({ kind: 'inherited' });
@@ -139,11 +139,11 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
   it('a task the user cancelled in the queue is not a link, and is omitted', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const first = b.createRun('Say hello', { history: 'fresh' });
+    const first = await b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
     b.text(claim);
-    const retracted = b.createRun('Never mind this');
+    const retracted = await b.createRun('Never mind this');
     const requested = await h.store.requestCancel(retracted.id);
     expect(requested.kind).toBe('ok');
     await h.store.finishCancelled((error) => {
@@ -160,11 +160,11 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
   it('a never-started run that timed out in the queue is a via link with its task and the unprocessed marker', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const first = b.createRun('Say hello', { history: 'fresh' });
+    const first = await b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
     b.text(claim);
-    const timedOut = b.createRun('Too late', { timeoutMs: 1000 });
+    const timedOut = await b.createRun('Too late', { timeoutMs: 1000 });
     h.clock.advance(2000);
     expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([timedOut.id]);
     await b.end(claim, { to: 'COMPLETED' });
@@ -192,8 +192,8 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
   it('a compaction in a later run whose cut lies inside an earlier run stops the walk at floorSeq', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    await answeredRun(h, b, 'one', (claim) => {
-      b.tool(claim);
+    await answeredRun(h, b, 'one', async (claim) => {
+      await b.tool(claim);
       b.text(claim);
     }, { fresh: true });
     await answeredRun(h, b, 'two', (claim) => {
@@ -226,8 +226,8 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
     let callId = '';
-    await answeredRun(h, b, 'one', (claim) => {
-      callId = b.tool(claim, { outputChars: 3000 });
+    await answeredRun(h, b, 'one', async (claim) => {
+      callId = await b.tool(claim, { outputChars: 3000 });
     }, { fresh: true });
     await answeredRun(h, b, 'two', (claim) => b.evict(claim, callId, 750));
     const child = await inheritingChild(h, b);
@@ -259,8 +259,8 @@ describe('known difference (d) of 13.7: evicted holds only delivered ids', () =>
     const h = referenceHarness();
     const b = chainBuilder(h);
     let evicted = '';
-    await answeredRun(h, b, 'one', (claim) => {
-      evicted = b.tool(claim, { evict: true });
+    await answeredRun(h, b, 'one', async (claim) => {
+      evicted = await b.tool(claim, { evict: true });
       b.text(claim);
       b.compact(claim, 3);
       b.text(claim);
@@ -278,9 +278,9 @@ describe('R16: the backward count meets each run task seq', () => {
   const twoRuns = async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const first = await answeredRun(h, b, 'one', (claim) => {
+    const first = await answeredRun(h, b, 'one', async (claim) => {
       b.text(claim);
-      b.tool(claim);
+      await b.tool(claim);
     }, { fresh: true });
     const child = await inheritingChild(h, b);
     return { h, first, child };

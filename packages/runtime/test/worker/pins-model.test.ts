@@ -53,7 +53,7 @@ describe('what a run pins about its model (design-model-names 3.4, 3.10, 3.11, 1
   it('pins the model of the session and the roles of the listing as full references', async () => {
     const env = await onListedModels();
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await drive(env, run.id);
     const [started] = env.ofType(run.id, 'run.started');
     expect(started?.pins['model']).toBe(FIRST);
@@ -64,7 +64,7 @@ describe('what a run pins about its model (design-model-names 3.4, 3.10, 3.11, 1
   it('pins each member of the chain the gateway lists under its full reference, with its adapter, its own name and what answers', async () => {
     const env = await onListedModels();
     env.gateway.script.push(textStep('done'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     await drive(env, run.id);
     expect(env.ofType(run.id, 'run.started')[0]?.pins['targets']).toEqual({
       [FIRST]: { adapter: 'ollama', model: 'devstral-small-2:latest', answers: 'model' },
@@ -74,7 +74,7 @@ describe('what a run pins about its model (design-model-names 3.4, 3.10, 3.11, 1
 
   it('keeps the pinned model, roles and chain members of a running run when the start model, the fallback order and the entry change between its claims', async () => {
     const env = await onListedModels();
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     await env.seed(run.id, conversation(), 'release');
     env.gateway.compactSummaries.push(CLEAN);
     env.gateway.script.push(textStep('Done.'));
@@ -102,10 +102,10 @@ describe('what a run pins about its model (design-model-names 3.4, 3.10, 3.11, 1
 
   it('fails a run whose role no longer names a configured model when it is claimed, and falls back to no other model', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-    const created = env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' });
+    const created = await env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' });
     if (created.kind !== 'created') throw new Error(`the parent run was not created: ${created.kind}`);
     const claim = await env.seed(created.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: env.session.model, roles: { compaction: 'x' } }, mode: 'manual' }], 'hold');
-    const child = env.store.createChildRun({ parentRunId: created.run.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: env.session.model });
+    const child = await env.store.createChildRun({ parentRunId: created.run.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: env.session.model });
     if (child.kind !== 'created') throw new Error(`the child run was not created: ${child.kind}`);
     expect((await env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 })).kind).toBe('ok');
     env.gateway.script.push(textStep('Child done.'));

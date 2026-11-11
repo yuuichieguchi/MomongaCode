@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, protectedSetFor } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup, waitFor, testKernelLock } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -54,7 +54,7 @@ describe.runIf(HAS_BWRAP)('git in a normal repository with bubblewrap placeholde
   beforeEach(() => {
     repo = tempDir();
     outside = tempDir();
-    sandbox = createBubblewrapSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')), holders: heldMountPoints });
+    sandbox = createBubblewrapSandbox({ lock: testKernelLock(), tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')), holders: heldMountPoints });
     expect(hostGit('init', '-q').status).toBe(0);
     expect(hostGit('config', 'user.name', 'Momonga Test').status).toBe(0);
     expect(hostGit('config', 'user.email', 'momonga-test@example.invalid').status).toBe(0);
@@ -152,7 +152,7 @@ describe.runIf(HAS_BWRAP)('git in a root that is not a repository, inside a pare
     outside = tempDir();
     child = path.join(parent, 'sub');
     fs.mkdirSync(child);
-    sandbox = createBubblewrapSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')), holders: heldMountPoints });
+    sandbox = createBubblewrapSandbox({ lock: testKernelLock(), tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')), holders: heldMountPoints });
     expect(git(parent, 'init', '-q').status).toBe(0);
     expect(fs.existsSync(path.join(child, '.git'))).toBe(false);
   });

@@ -2,11 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, migrate } from '@momonga/foundation';
+import { canonicalJson, migrate, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, testKernelLock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
 import { LEASE_MS, START_MS, callEvent, enqueue, makeStoreDir, mustClaim, newSession, openStoreAt, rawDb, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
 
@@ -15,7 +15,7 @@ type Decoded = { rows: number; bytes: number };
 type CallSeqStore = RuntimeStore & { toolCallSeq(runId: string, callId: string): number | undefined };
 
 const countingStore = (dbPath: string, decoded: Decoded): CallSeqStore => {
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock: createFakeClock(START_MS),
@@ -44,11 +44,11 @@ const permissionRequested = (approvalId: string, callId: string): RunEventPayloa
 
 const elicitationRequested = (inputId: string, callId: string): RunEventPayload => ({ type: 'tool.elicitation.requested', inputId, callId, server: 'srv', requests: [] });
 
-const journalWithCalls = (calls: number) => {
+const journalWithCalls = async (calls: number) => {
   const dbPath = path.join(makeStoreDir(), 'runtime.db');
   const decoded: Decoded = { rows: 0, bytes: 0 };
   const store = countingStore(dbPath, decoded);
-  const run = enqueue(store, newSession(store).id, 'do the task');
+  const run = await enqueue(store, newSession(store).id, 'do the task');
   const claim = mustClaim(store, 'w1');
   const ids = Array.from({ length: calls }, (_, index) => `c${index + 1}`);
   expect(store.append(claim, ids.map(bulkyCall)).kind).toBe('ok');
@@ -57,7 +57,7 @@ const journalWithCalls = (calls: number) => {
 
 describe('the id a payload carries is a column written at append (row 16), so a lookup by id reads no payload', () => {
   it('copies callId into call_id for tool.call, approvalId into approval_id for a permission request and inputId into approval_id for an elicitation request', async () => {
-    const { dbPath, store, claim, run } = journalWithCalls(2);
+    const { dbPath, store, claim, run } = await journalWithCalls(2);
     expect(store.append(claim, [permissionRequested('a1', 'c1'), elicitationRequested('i1', 'c2')]).kind).toBe('ok');
     const rows = rawDb(dbPath)
       .prepare("SELECT type, call_id, approval_id FROM events WHERE run_id = ? AND type IN ('tool.call', 'tool.permission.requested', 'tool.elicitation.requested') ORDER BY seq")
@@ -71,7 +71,7 @@ describe('the id a payload carries is a column written at append (row 16), so a 
   });
 
   it('indexes call_id and approval_id by run, so the lookup does not scan the run', async () => {
-    const { dbPath } = journalWithCalls(1);
+    const { dbPath } = await journalWithCalls(1);
     const db = rawDb(dbPath);
     const indexed = (db.prepare('PRAGMA index_list(events)').all() as { name: string }[]).map((index) =>
       (db.prepare(`PRAGMA index_info(${JSON.stringify(index.name)})`).all() as { name: string }[]).map((column) => column.name),
@@ -81,7 +81,7 @@ describe('the id a payload carries is a column written at append (row 16), so a 
   });
 
   it('agrees with the payload for every row it was written for (the column is a fold of the journal)', async () => {
-    const { dbPath, store, claim, run } = journalWithCalls(3);
+    const { dbPath, store, claim, run } = await journalWithCalls(3);
     expect(store.append(claim, [permissionRequested('a1', 'c3')]).kind).toBe('ok');
     const mismatched = rawDb(dbPath)
       .prepare(
@@ -97,7 +97,7 @@ describe('the id a payload carries is a column written at append (row 16), so a 
 
 describe('the seq of a tool call is read from its column (row 7): toolCallSeq', () => {
   it('returns the seq of the tool.call event, and undefined for an unknown call', async () => {
-    const { store, run } = journalWithCalls(3);
+    const { store, run } = await journalWithCalls(3);
     const seqs = store.readRunEvents(run.id, 0, 100).filter((event) => event.type === 'tool.call').map((event) => event.seq);
     expect(await store.toolCallSeq(run.id, 'c2')).toBe(seqs[1]);
     expect(await store.toolCallSeq(run.id, 'missing')).toBeUndefined();
@@ -105,7 +105,7 @@ describe('the seq of a tool call is read from its column (row 7): toolCallSeq', 
 
   it('decodes no journal payload on the main thread, at 5 calls and at 200 calls alike', async () => {
     for (const calls of [5, 200]) {
-      const { store, run, decoded } = journalWithCalls(calls);
+      const { store, run, decoded } = await journalWithCalls(calls);
       decoded.rows = 0;
       decoded.bytes = 0;
       expect(await store.toolCallSeq(run.id, `c${calls}`)).toBeGreaterThan(0);
@@ -153,7 +153,7 @@ const modelCallRecords = (requestedSeq: number) => [
 
 describe('the anatomy, prefix and timing of a model call are read as before, from columns written at append (row 10)', () => {
   it('returns the same records for a run appended today', async () => {
-    const { store, claim, run } = journalWithCalls(1);
+    const { store, claim, run } = await journalWithCalls(1);
     const appended = store.append(claim, [requestedWithAnatomy, respondedWithTiming]);
     if (appended.kind !== 'ok') throw new Error('append refused');
     expect(await store.readModelCallEvents(run.id)).toEqual(modelCallRecords(appended.lastSeq - 1));

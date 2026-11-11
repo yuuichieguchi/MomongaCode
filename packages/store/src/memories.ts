@@ -39,6 +39,12 @@ const decodeStringList = (identity: string, reader: RowReader, column: string): 
   return value as string[];
 };
 
+const checkEvidenceOf = (reader: RowReader): StoredMemoryEvidence => {
+  const recorded = { runId: reader.string('run_id'), seq: reader.number('seq'), command: reader.string('command'), exitCode: reader.number('exit_code') };
+  const conditionId = reader.nullableString('condition_id');
+  return conditionId === null ? { kind: 'check', ...recorded, modelCallId: reader.string('call_id') } : { kind: 'check', ...recorded, conditionId };
+};
+
 const decodeEvidence = (context: DecodeContext, memoryId: string, row: Row): StoredMemoryEvidence => {
   const identity = `${memoryId}/${String(row['ordinal'])}`;
   const reader = readerFor('memory_evidence', identity, row);
@@ -51,7 +57,7 @@ const decodeEvidence = (context: DecodeContext, memoryId: string, row: Row): Sto
     case 'commit':
       return { kind, sha: reader.string('sha') };
     case 'check':
-      return { kind, runId: reader.string('run_id'), conditionId: reader.string('call_id'), seq: reader.number('seq'), command: reader.string('command'), exitCode: reader.number('exit_code') };
+      return checkEvidenceOf(reader);
   }
 };
 
@@ -135,8 +141,8 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
      VALUES (:id, :scope, 'trusted', :project, :text, :now, :now, :kind, 'command')`,
   );
   const insertEvidence = db.prepare(
-    `INSERT INTO memory_evidence (memory_id, ordinal, kind, project, path, sha256, sha, run_id, call_id, seq, command, exit_code)
-     VALUES (:memoryId, :ordinal, :kind, :project, :path, :sha256, :sha, :runId, :callId, :seq, :command, :exitCode)`,
+    `INSERT INTO memory_evidence (memory_id, ordinal, kind, project, path, sha256, sha, run_id, condition_id, seq, command, exit_code)
+     VALUES (:memoryId, :ordinal, :kind, :project, :path, :sha256, :sha, :runId, :conditionId, :seq, :command, :exitCode)`,
   );
   const successors = db.prepare('SELECT m.* FROM memory_replacements r JOIN memories m ON m.id = r.successor_id WHERE r.replaced_id = :id');
   const retireOnce = db.prepare('UPDATE memories SET retired_at = :now WHERE id = :id AND retired_at IS NULL');
@@ -254,7 +260,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
     sha256: entry.kind === 'file' ? entry.sha256 : null,
     sha: entry.kind === 'commit' ? entry.sha : null,
     runId: entry.kind === 'check' ? entry.runId : null,
-    callId: entry.kind === 'check' ? entry.conditionId : null,
+    conditionId: entry.kind === 'check' ? entry.conditionId : null,
     seq: entry.kind === 'check' ? entry.seq : null,
     command: entry.kind === 'check' ? entry.command : null,
     exitCode: entry.kind === 'check' ? entry.exitCode : null,
@@ -276,7 +282,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
     }
     if (short.length > 0) {
       parts.push(
-        `SELECT id FROM (SELECT id, text FROM memories WHERE ${scope.sql} AND ${RECALLABLE} ORDER BY created_at DESC, id DESC LIMIT :scanLimit)
+        `SELECT id FROM (SELECT id, text FROM memories INDEXED BY memories_by_created WHERE ${scope.sql} AND ${RECALLABLE} ORDER BY created_at DESC, id DESC LIMIT :scanLimit)
          WHERE ${short.map((_term, index) => `instr(lower(text), :recallShort${index}) > 0`).join(' OR ')}`,
       );
       params['scanLimit'] = MEMORY_SCAN_LIMIT;
@@ -480,7 +486,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
           indexed.length > 0
             ? `SELECT memories.* FROM memories_index JOIN memories ON memories.id = memories_index.memory_id
                WHERE memories_index MATCH :match AND ${scope.sql}${live} ORDER BY memories_index.rowid DESC LIMIT :matchLimit`
-            : `SELECT * FROM memories WHERE ${scope.sql}${live} ORDER BY created_at DESC, id DESC LIMIT :scanLimit`;
+            : `SELECT * FROM memories INDEXED BY memories_by_created WHERE ${scope.sql}${live} ORDER BY created_at DESC, id DESC LIMIT :scanLimit`;
         if (indexed.length > 0) {
           params['match'] = indexed.map(quoted).join(' ');
           params['matchLimit'] = MEMORY_MATCH_LIMIT;

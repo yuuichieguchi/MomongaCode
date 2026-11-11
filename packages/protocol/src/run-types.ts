@@ -127,14 +127,16 @@ export const inboxFullMessage = (): string => `${INBOX_MAX_PENDING} messages are
 export type InboxRowView = {
   id: string;
   sessionId: string;
-  delivery: InboxDelivery;
+  delivery: Stored<InboxDelivery>;
   text: string;
   images?: { mediaType: ImageMediaType; byteLength: number }[];
   seq: number;
-  state: InboxState;
+  state: Stored<InboxState>;
   createdAt: number;
   settledAt: number | null;
 };
+
+export type InboxChangeRow = Pick<InboxRowView, 'id' | 'delivery' | 'state' | 'seq'>;
 
 export type ElicitationRequestView =
   | { key: string; mode: 'form'; message: string; requestedSchema: Record<string, unknown> }
@@ -178,6 +180,15 @@ export const JOB_STATUSES = ['running', 'exited', 'killed', 'unknown'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 export type DiffHunk = { oldStart: number; newStart: number; lines: string[] };
+
+export type AppliedDiffFields = { hunks?: DiffHunk[]; added?: number; removed?: number; diffOmitted?: string };
+
+export const diffFieldsOf = ({ hunks, added, removed, diffOmitted }: AppliedDiffFields): AppliedDiffFields => ({
+  ...(hunks === undefined ? {} : { hunks }),
+  ...(added === undefined ? {} : { added }),
+  ...(removed === undefined ? {} : { removed }),
+  ...(diffOmitted === undefined ? {} : { diffOmitted }),
+});
 
 export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: string } | { kind: 'job'; jobId: string };
 
@@ -266,7 +277,7 @@ export type RunEventPayload =
   | { type: 'mcp.authorization.required'; server: string; callId?: string }
   | { type: 'tool.started'; callId: string; idemKey: string; basis?: ApprovalBasis }
   | { type: 'tool.updated'; callId: string; content: unknown[] }
-  | {
+  | ({
       type: 'tool.completed';
       callId: string;
       status: 'completed' | 'failed';
@@ -282,12 +293,8 @@ export type RunEventPayload =
       memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
-      hunks?: DiffHunk[];
-      added?: number;
-      removed?: number;
-      diffOmitted?: string;
       effect?: OperationEffectRecord;
-    }
+    } & AppliedDiffFields)
   | { type: 'verification.started'; round: number; conditionId: string; command: string; mutationSeq: number; attempt: number }
   | {
       type: 'verification.completed';
@@ -335,7 +342,7 @@ export type RunEventPayload =
       tokenErrorRatio?: number;
       tokenCounting: 'exact' | 'calibrated' | 'estimated';
     }
-  | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string; interrupted?: 'timeout' | 'cancelled'; files?: ToolFile[]; command?: string; effect?: OperationEffectRecord }
+  | ({ type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string; interrupted?: 'timeout' | 'cancelled'; files?: ToolFile[]; command?: string; effect?: OperationEffectRecord } & AppliedDiffFields)
   | { type: 'tool.waiting'; callId: string; awaits: ToolAwait; wakeAt?: number }
   | { type: 'job.finished'; jobId: string; status: Exclude<JobStatus, 'running'>; exitCode?: number; signal?: string }
   | {
@@ -384,7 +391,7 @@ export type RunEventPayload =
 export type SessionEventPayload =
   | { type: 'mode.changed'; mode: Stored<PermissionMode> }
   | { type: 'model.changed'; model: string; previousModel: string }
-  | { type: 'inbox.changed'; pending: InboxRowView[] }
+  | { type: 'inbox.changed'; pending: InboxChangeRow[] }
   | ({ type: 'user_shell' } & UserShellRecord);
 
 export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMemoryPort } from '@momonga/runtime';
 import type { Worker } from '@momonga/runtime';
-import { within } from './deferred.ts';
+
 import { LEASE_MS, makeEnv, textOf, unavailableEvidenceRun } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, callsStep, gated, incompleteStep, refusalStep, textStep, textThenCallsStep } from './scripts.ts';
@@ -10,7 +10,7 @@ const memoryWorker = (env: Env, id: string): Worker => env.worker(id, { memories
 
 const saveNote = async (env: Env, text: string, callId = 'call_m_1'): Promise<string> => {
   env.gateway.script.push(callsStep([{ callId, name: 'MemorySave', args: { text, scope: 'user' } }]), textStep('Remembered.'));
-  const run = env.enqueue('Remember this', { history: 'fresh' });
+  const run = await env.enqueue('Remember this', { history: 'fresh' });
   await env.runOnce(memoryWorker(env, `saver-${callId}`));
   expect(env.run(run.id).status).toBe('COMPLETED');
   const saved = env.store.memories.list().find((memory) => memory.text === text);
@@ -26,7 +26,7 @@ describe('context.contribution at terminal', () => {
     const id = await saveNote(env, NOTE);
     env.clock.advance(60_000);
     env.gateway.script.push(textStep('Running zorpLauncher.'));
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     await env.runOnce(memoryWorker(env, 'worker-2'));
 
@@ -39,7 +39,7 @@ describe('context.contribution at terminal', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const id = await saveNote(env, NOTE);
     env.gateway.script.push(textStep('Hello.'));
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     await env.runOnce(memoryWorker(env, 'worker-2'));
 
@@ -51,7 +51,7 @@ describe('context.contribution at terminal', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const id = await saveNote(env, NOTE);
     env.gateway.script.push(textStep('Running zorpLauncher.'));
-    const run = env.enqueue('Start zorpLauncher', { history: 'fresh' });
+    const run = await env.enqueue('Start zorpLauncher', { history: 'fresh' });
 
     await env.runOnce(memoryWorker(env, 'worker-2'));
 
@@ -62,7 +62,7 @@ describe('context.contribution at terminal', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const id = await saveNote(env, NOTE);
     env.gateway.script.push(incompleteStep([assistantMessage('m1', 'Running zorpLauncher.')]));
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     await env.runOnce(memoryWorker(env, 'worker-2'));
 
@@ -75,7 +75,7 @@ describe('context.contribution at terminal', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const id = await saveNote(env, NOTE);
     env.gateway.script.push(refusalStep('No.'));
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     await env.runOnce(memoryWorker(env, 'worker-2'));
 
@@ -87,7 +87,7 @@ describe('context.contribution at terminal', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const id = await saveNote(env, NOTE);
     env.gateway.script.push(incompleteStep([assistantMessage('m1', 'Running zorpLauncher.')], 'server_cut'));
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     await env.runOnce(memoryWorker(env, 'worker-2'));
 
@@ -101,13 +101,13 @@ describe('context.contribution at terminal', () => {
     const id = await saveNote(env, NOTE);
     const blocked = gated(textStep('Done.'), 1);
     env.gateway.script.push(textThenCallsStep('Running zorpLauncher.', [{ callId: 'call_e', name: 'Echo', args: { value: 'x' } }]), blocked);
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     const running = env.runOnce(memoryWorker(env, 'worker-2'));
-    await within(blocked.gate.reached.promise, 5_000, 'the second stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the second stream to start');
     await env.cancel(run.id);
     blocked.gate.release.resolve();
-    await within(running, 5_000, 'the worker to settle');
+    await env.settled(running, 'the worker to settle');
     if (env.run(run.id).status !== 'CANCELLED') await env.runOnce(memoryWorker(env, 'worker-3'));
 
     expect(env.run(run.id).status).toBe('CANCELLED');
@@ -120,7 +120,7 @@ describe('context.contribution at terminal', () => {
     const id = await saveNote(env, NOTE);
     env.setMode('manual');
     env.gateway.script.push(textThenCallsStep('Running zorpLauncher.', [{ callId: 'call_w', name: 'MemorySave', args: { text: 'other', scope: 'user' } }]));
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
     await env.runOnce(memoryWorker(env, 'worker-2'));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
 
@@ -140,16 +140,16 @@ describe('context.contribution at terminal', () => {
     const before = env.gateway.streams.length;
     const blocked = gated(textStep('Done.'), 1);
     env.gateway.script.push(textThenCallsStep('Running zorpLauncher.', [{ callId: 'call_e', name: 'Echo', args: { value: 'x' } }]), blocked);
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     const abandoned = env.runOnce(memoryWorker(env, 'worker-a'));
-    await within(blocked.gate.reached.promise, 5_000, 'the second stream to start');
+    await env.settled(blocked.gate.reached.promise, 'the second stream to start');
     env.clock.advance(LEASE_MS + 1);
     const recovering = env.runOnce(memoryWorker(env, 'worker-b'));
-    await within(env.gateway.nthStream(before + 2), 5_000, 'the recovery re-send');
+    await env.settled(env.gateway.nthStream(before + 2), 'the recovery re-send');
     blocked.gate.release.resolve();
-    await within(recovering, 5_000, 'the recovering worker');
-    await within(abandoned, 5_000, 'the abandoned worker to stop');
+    await env.settled(recovering, 'the recovering worker');
+    await env.settled(abandoned, 'the abandoned worker to stop');
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'context.contribution').map((event) => event.items)).toEqual([[{ kind: 'memory', id, contributed: true }]]);
@@ -163,12 +163,12 @@ describe('context.contribution at terminal', () => {
     const second = await saveNote(env, NOTE, 'call_m_2');
     env.clock.advance(1);
     env.gateway.script.push(textStep('Running zorpLauncher.'));
-    env.enqueue('Say hello', { history: 'fresh' });
+    await env.enqueue('Say hello', { history: 'fresh' });
     await env.runOnce(memoryWorker(env, 'worker-2'));
     env.clock.advance(1);
     const next = env.gateway.streams.length;
     env.gateway.script.push(textStep('Hello.'));
-    env.enqueue('Say hello again', { history: 'fresh' });
+    await env.enqueue('Say hello again', { history: 'fresh' });
 
     await env.runOnce(memoryWorker(env, 'worker-3'));
 

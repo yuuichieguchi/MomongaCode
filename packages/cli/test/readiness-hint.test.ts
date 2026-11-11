@@ -45,7 +45,7 @@ const UNAVAILABLE = {
 
 const headless = async (context: Parameters<typeof withTempDir>[0], capabilities: MomongaModelEntry['capabilities']) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const stderr: string[] = [];
   const stdout: string[] = [];

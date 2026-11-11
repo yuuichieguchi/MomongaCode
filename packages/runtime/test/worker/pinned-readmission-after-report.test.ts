@@ -55,7 +55,7 @@ const firstRequestTokens = async (task: string, tools: () => ReturnType<typeof t
   const env = await estimatedEnv();
   if (governed) denyGlob(env);
   env.gateway.script.push(textStep('Done.'));
-  env.enqueue(task);
+  await env.enqueue(task);
   await env.runOnce(env.worker('probe', { toolList: tools, governance: createGovernancePort({ store: env.store, settings: env.settings }) }));
   const body = env.gateway.streams[0]?.body;
   if (body === undefined) throw new Error('the probe made no model call');
@@ -81,7 +81,7 @@ const retireMidRun = async (globDescription: string, spare: number): Promise<Sce
   const fact = denyGlob(env);
   const tools = () => [toolNamed('Glob', globDescription), toolNamed('Retire', 'Retires the rule', () => env.store.governing.retire(fact.id))];
   env.gateway.script.push(callsStep([{ callId: 'call_r_1', name: 'Retire', args: {} }], usageOf(reported, 5)), textStep('Done.'));
-  const run = env.enqueue(task);
+  const run = await env.enqueue(task);
   await env.runOnce(env.worker('w1', { toolList: tools, governance: createGovernancePort({ store: env.store, settings: env.settings }) }));
   return { env, runId: run.id, reported, firstEstimate, globTokens };
 };

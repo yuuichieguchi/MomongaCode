@@ -32,7 +32,7 @@ const ATTACH: StreamRecord = { ...COMMON, kind: 'attach', session: 'session-7', 
 
 const HEADLESS: StreamRecord = { ...ATTACH, kind: 'headless' };
 
-const ACP: AcpRecord = { ...COMMON, kind: 'acp', session: 'acp-1731300000000', lastSeq: {}, initialize: {}, sessions: ['session-a', 'session-b'] };
+const ACP: AcpRecord = { ...COMMON, kind: 'acp', session: 'acp-1731300000000', lastSeq: {}, initialize: {}, sessions: ['session-a', 'session-b'], input: '' };
 
 const program = () => {
   const sink = { write: (): boolean => true };

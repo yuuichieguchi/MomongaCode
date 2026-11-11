@@ -7,6 +7,8 @@ import * as storeModule from '@momonga/store';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { makeEnv } from '../worker/harness.ts';
+import { testKernelLock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -26,7 +28,7 @@ const responded: RunEventPayload = {
 describe('the runFacts request of the embedded journal thread (P2: the stored facts equal the fold)', () => {
   it('answers with the facts and the call rows foldRunRecord computes over the same journal and the same run row', async () => {
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = await env.enqueue('Work', { history: 'fresh' });
     const claim = await env.seed(
       run.id,
       [
@@ -39,7 +41,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     );
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
-    const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     try {
       const record = await thread.runFacts(run.id);
       const stored = env.store.getRun(run.id);
@@ -70,11 +72,11 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
   it('rejects a run whose journal has no run.started as a fold refusal, so the sweeper records it as unavailable', async () => {
     const FactsRefused = factsRefusedError();
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = await env.enqueue('Work', { history: 'fresh' });
     const claim = await env.seed(run.id, [responded], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
-    const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     try {
       const refusal = await thread.runFacts(run.id).then(
         () => undefined,
@@ -90,11 +92,11 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
   it('gap A1: a request on a closed client rejects as a JournalThreadError that is not a fold refusal', async () => {
     const FactsRefused = factsRefusedError();
     const env = await makeEnv();
-    const run = env.enqueue('Work', { history: 'fresh' });
+    const run = await env.enqueue('Work', { history: 'fresh' });
     const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'manual' }, responded], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
-    const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     await thread.close();
     const failure = await thread.runFacts(run.id).then(
       () => undefined,

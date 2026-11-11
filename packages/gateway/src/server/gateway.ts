@@ -192,7 +192,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     countRequests(unixServer, tracker);
     webSocket.attach(unixServer);
     servers.push(unixServer);
-    await listenUnix(unixServer, options.socketPath, undefined, startDeadlineSignal(options.startSignal));
+    await listenUnix(unixServer, options.socketPath, { mechanism: options.lock }, startDeadlineSignal(options.startSignal));
     if (options.onFatal !== undefined) watchServerErrors(unixServer, options.onFatal);
 
     let tcpPort: number | undefined;

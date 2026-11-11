@@ -6,6 +6,7 @@ import type { HostExec, HostExecAnswer, MomongaPaths, ProcessLock } from '@momon
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { SupervisorChildHealth, SupervisorHealth } from '@momonga/protocol';
 import type { CliClock, DetachedExit, SpawnDetached } from '../src/ports.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 export type FakeSupervisorOptions = {
   paths: MomongaPaths;
@@ -118,7 +119,7 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
   fs.mkdirSync(layout.dir, { recursive: true, mode: 0o700 });
   if (!fs.existsSync(layout.startRecord)) fs.writeFileSync(layout.startRecord, formatStartRecord({ version: options.startRecordVersion ?? options.version, foldVersion: FIDELITY_FOLD_VERSION }), { mode: 0o600 });
   let kernelLock: ProcessLock | undefined;
-  if (options.holdsKernelLock !== false) kernelLock = await acquireProcessLock(layout.locks.supervisor);
+  if (options.holdsKernelLock !== false) kernelLock = await acquireProcessLock(layout.locks.supervisor, undefined, { mechanism: testKernelLock() });
   else fs.writeFileSync(layout.locks.supervisor, String(process.pid));
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -126,7 +127,7 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
   });
   const publish = async (): Promise<void> => {
     await options.publishGate;
-    await publishCurrentGeneration(paths, { generation, version: options.version, sockets: layout.sockets });
+    await publishCurrentGeneration(paths, { generation, version: options.version, sockets: layout.sockets }, { lock: testKernelLock() });
   };
   const publishWhenServing = (): Promise<void> =>
     options.publishes !== false && phase === 'running' && children.every((child) => child.state === 'ready') ? work.track(publish()) : Promise.resolve();

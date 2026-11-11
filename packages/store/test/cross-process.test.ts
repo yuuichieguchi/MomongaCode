@@ -3,19 +3,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
+import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { enqueue, harness, makeStoreDir, mustClaim, newSession, registerCleanup } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const STORE_ENTRY = pathToFileURL(path.resolve(import.meta.dirname, '../src/index.ts')).href;
+const FOUNDATION_ENTRY = pathToFileURL(path.resolve(import.meta.dirname, '../../foundation/src/index.ts')).href;
 const ROUNDS = 200;
 
 const CHILD_SCRIPT = `
 import { dirname } from 'node:path';
 const { openRuntimeStore } = await import(process.argv[2]);
 const [dbPath, runId, rounds] = [process.argv[3], process.argv[4], Number(process.argv[5])];
-const store = openRuntimeStore({ unaskedCommands: { readOnly: [], edit: [] }, path: dbPath, home: dirname(dbPath), clock: { now: () => Date.now() }, leaseMs: 60000, maxAttempts: 5, maxTotalAttempts: 1000 });
+const { kernelLockNamed } = await import(${JSON.stringify(FOUNDATION_ENTRY)});
+const store = openRuntimeStore({ lock: kernelLockNamed(${JSON.stringify(testKernelLock().name)}), busyTimeoutMs: ${BUSY_WAIT_LIMIT_MS}, unaskedCommands: { readOnly: [], edit: [] }, path: dbPath, home: dirname(dbPath), clock: { now: () => Date.now() }, leaseMs: 60000, maxAttempts: 5, maxTotalAttempts: 1000 });
 process.stdout.write('ready\\n');
 let written = 0;
 let tries = 0;
@@ -35,7 +38,7 @@ store.close();
 describe('writers in separate processes', () => {
   it('serialize through BEGIN IMMEDIATE and busy_timeout without losing or duplicating seq', async () => {
     const { dbPath, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'parent');
     const scriptDir = makeStoreDir();
     const script = path.join(scriptDir, 'child.mjs');

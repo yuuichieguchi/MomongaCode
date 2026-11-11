@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { JOURNAL_SCAN_RANGE_ROWS, JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
-import { createFakeClock, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { createFakeClock, PROPERTY_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { START_MS, enqueue, harness, makeStoreDir, mustClaim, mustRun, newSession, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
@@ -28,19 +28,19 @@ const visiting = (reader: unknown): VisitingReader => {
   return reader as VisitingReader;
 };
 
-const seeded = () => {
+const seeded = async () => {
   const h = harness();
-  const run = enqueue(h.store, newSession(h.store).id);
+  const run = await enqueue(h.store, newSession(h.store).id);
   const claim = mustClaim(h.store, 'w1');
   expect(h.store.append(claim, [responded(1), ...Array.from({ length: DELTAS }, (_unused, index) => delta(index)), responded(2)]).kind).toBe('ok');
-  const db = openDatabase(h.dbPath);
+  const db = openDatabase(h.dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   registerCleanup(() => db.close());
   return { h, run, db };
 };
 
 describe('visitRun: the reader the new request kinds fold through', () => {
-  it('visits exactly the events of the asked types in seq order and returns the run row of the same snapshot', () => {
-    const { h, run, db } = seeded();
+  it('visits exactly the events of the asked types in seq order and returns the run row of the same snapshot', async () => {
+    const { h, run, db } = await seeded();
     const seen: string[] = [];
 
     const visited = visiting(createJournalReader(db)).visitRun(run.id, ['model.responded'], (event) => seen.push(`${event.type}:${event.seq}`));
@@ -50,8 +50,8 @@ describe('visitRun: the reader the new request kinds fold through', () => {
     expect(visited).toMatchObject({ id: run.id, lastSeq });
   });
 
-  it('decodes at most one row and steps at most K rows between two unit() calls, whatever the type mix', () => {
-    const { run, db } = seeded();
+  it('decodes at most one row and steps at most K rows between two unit() calls, whatever the type mix', async () => {
+    const { run, db } = await seeded();
     const trace = { units: 0, decodedSinceUnit: 0, maxDecodedBetweenUnits: 0, steppedSinceUnit: 0, maxSteppedBetweenUnits: 0, visits: 0 };
     const reader = createJournalReader(db, {
       unit: () => {
@@ -79,8 +79,8 @@ describe('visitRun: the reader the new request kinds fold through', () => {
     expect(trace.decodedSinceUnit).toBe(0);
   });
 
-  it('calls unit() once per visited event, so the caller fold work of one event sits in one unit', () => {
-    const { run, db } = seeded();
+  it('calls unit() once per visited event, so the caller fold work of one event sits in one unit', async () => {
+    const { run, db } = await seeded();
     const order: string[] = [];
     const reader = createJournalReader(db, { unit: () => order.push('unit') });
 
@@ -110,7 +110,7 @@ describe('store.journalFacts: the main thread reaches the new kinds only through
     const calls: unknown[] = [];
     let decoded = 0;
     const answer = { lastSeq: 7, verified: true, facts: [] };
-    const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+    const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
       path: path.join(dir, 'runtime.db'),
       home: dir,
       clock: createFakeClock(START_MS),
@@ -128,7 +128,7 @@ describe('store.journalFacts: the main thread reaches the new kinds only through
       },
     });
     registerCleanup(() => store.close());
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     decoded = 0;
 
     const reply = await journalFactsOf(store).verdict({ runId: run.id, commands: ['npm test'], manifests: [] });
@@ -140,7 +140,7 @@ describe('store.journalFacts: the main thread reaches the new kinds only through
 
   it.each(['verdict', 'evidence', 'reflectionInput'] as const)('rejects %s with a JournalThreadError when the store has no journal thread, and never computes it inline', async (method) => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const facts = journalFactsOf(h.store);
     const requests = {
       verdict: () => facts.verdict({ runId: run.id, commands: [], manifests: [] }),

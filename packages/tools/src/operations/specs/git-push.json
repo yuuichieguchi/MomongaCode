@@ -19,7 +19,7 @@
   },
   "timeoutMs": 120000,
   "observe": [
-    { "id": "remoteRef", "via": { "argv": ["git", "ls-remote", "{call.destination}", "refs/heads/{input.branch}"], "network": "destination", "extract": "firstField", "each": "pushUrls" } },
+    { "id": "remoteRef", "via": { "argv": ["git", "ls-remote", "{call.destination}", "refs/heads/{input.branch}"], "network": "destination", "extract": "firstField", "each": "destinations" } },
     { "id": "localSha", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "refs/heads/{input.branch}"], "extract": "trim" } }
   ],
   "require": [{ "if": "input.delete", "then": [], "else": [{ "observed": "before.localSha", "otherwise": "the local branch {input.branch} does not exist" }] }],

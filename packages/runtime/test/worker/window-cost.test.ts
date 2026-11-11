@@ -32,7 +32,7 @@ const windowCounts = async (logEvents: number): Promise<Counts> => {
   env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: true, autoCompact: true };
   for (let index = 0; index < RUNS; index += 1) {
     env.clock.advance(1);
-    const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+    const run = await createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const claim = await env.seed(
       run.id,
       [
@@ -46,7 +46,7 @@ const windowCounts = async (logEvents: number): Promise<Counts> => {
     env.scriptContribution(run.id, [{ kind: 'memory', id: `past-${index}`, contributed: index % 2 === 0 }]);
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   }
-  const next = env.enqueue('Next', { history: 'fresh' });
+  const next = await env.enqueue('Next', { history: 'fresh' });
 
   counting.on = true;
   const listed = env.store.lastTerminalRootRuns(env.session.cwd, CONTRIBUTION_WINDOW_RUNS);

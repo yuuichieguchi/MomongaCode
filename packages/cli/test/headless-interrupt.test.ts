@@ -11,7 +11,7 @@ import { capabilitiesOf, runView } from './fake-backend.ts';
 describe('an interrupt that arrives before the run is followed', () => {
   it('starts no daemon and no run when it arrived before the daemon was ensured', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const { spawn, spawned } = recordingSpawn(() => undefined);
     const ports = {
@@ -37,7 +37,7 @@ describe('an interrupt that arrives before the run is followed', () => {
 
   it('cancels the run at once when it arrived while the run was being created', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     const cancelled: string[] = [];
     const client = {
       cancel: async (runId: string) => {
@@ -51,7 +51,7 @@ describe('an interrupt that arrives before the run is followed', () => {
     const interrupt = new AbortController();
     interrupt.abort();
 
-    const code = await watchRun(ports, paths, { client, runId: 'run-1', format: 'text', verbose: false, interrupt: interrupt.signal });
+    const code = await watchRun(ports, paths, { client, runId: 'run-1', format: 'text', verbose: false, interrupt: interrupt.signal, onInterrupt: 'cancel' });
 
     expect(cancelled).toEqual(['run-1']);
     expect(code).toBe(EXIT_INTERRUPTED);

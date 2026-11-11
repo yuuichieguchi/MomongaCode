@@ -7,6 +7,7 @@ import { nodeFileSystem } from '@momonga/foundation';
 import { ensureHostIdentity, hostIdOf, jwkThumbprint, resetHostIdentity } from '../src/plan/host-identity.ts';
 import { PROFILE_ID, planError, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 const RFC7638_RSA_EXAMPLE = {
   kty: 'RSA',
@@ -54,7 +55,7 @@ describe('the host ID is the RFC 9278 URN of the RFC 7638 thumbprint of an EC P-
 describe('plan-host.json', () => {
   it('is created once with an EC P-256 key, mode 0600 in a 0700 directory, and read back unchanged', async () => {
     const file = await hostFile();
-    const created = await ensureHostIdentity(nodeFileSystem, file, { accountsExist: false });
+    const created = await ensureHostIdentity(nodeFileSystem, file, { lock: testKernelLock(), accountsExist: false });
     expect(created.hostId).toMatch(/^urn:ietf:params:oauth:jwk-thumbprint:sha-256:[A-Za-z0-9_-]{43}$/);
     expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
     expect((await fs.stat(path.dirname(file))).mode & 0o777).toBe(0o700);
@@ -63,30 +64,30 @@ describe('plan-host.json', () => {
     expect(stored.privateKey).toMatchObject({ kty: 'EC', crv: 'P-256' });
     expect(typeof stored.privateKey.d).toBe('string');
     expect(hostIdOf(stored.privateKey)).toBe(created.hostId);
-    expect((await ensureHostIdentity(nodeFileSystem, file, { accountsExist: true })).hostId).toBe(created.hostId);
+    expect((await ensureHostIdentity(nodeFileSystem, file, { lock: testKernelLock(), accountsExist: true })).hostId).toBe(created.hostId);
   });
 
   it('is never recreated silently: missing while an account record exists fails with a message naming the file', async () => {
     const file = await hostFile();
-    await expect(ensureHostIdentity(nodeFileSystem, file, { accountsExist: true })).rejects.toThrow(file);
+    await expect(ensureHostIdentity(nodeFileSystem, file, { lock: testKernelLock(), accountsExist: true })).rejects.toThrow(file);
     await expect(fs.stat(file)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('an unreadable file fails with a message naming the file and is not replaced', async () => {
     const file = await hostFile();
-    await ensureHostIdentity(nodeFileSystem, file, { accountsExist: false });
+    await ensureHostIdentity(nodeFileSystem, file, { lock: testKernelLock(), accountsExist: false });
     await fs.chmod(file, 0o644);
     const before = await fs.readFile(file, 'utf8');
-    await expect(ensureHostIdentity(nodeFileSystem, file, { accountsExist: true })).rejects.toThrow(file);
+    await expect(ensureHostIdentity(nodeFileSystem, file, { lock: testKernelLock(), accountsExist: true })).rejects.toThrow(file);
     expect(await fs.readFile(file, 'utf8')).toBe(before);
   });
 
   it('only an explicit reset creates a new key, and the host ID changes', async () => {
     const file = await hostFile();
-    const first = await ensureHostIdentity(nodeFileSystem, file, { accountsExist: false });
-    const reset = await resetHostIdentity(nodeFileSystem, file);
+    const first = await ensureHostIdentity(nodeFileSystem, file, { lock: testKernelLock(), accountsExist: false });
+    const reset = await resetHostIdentity(nodeFileSystem, file, testKernelLock());
     expect(reset.hostId).not.toBe(first.hostId);
-    expect((await ensureHostIdentity(nodeFileSystem, file, { accountsExist: true })).hostId).toBe(reset.hostId);
+    expect((await ensureHostIdentity(nodeFileSystem, file, { lock: testKernelLock(), accountsExist: true })).hostId).toBe(reset.hostId);
   });
 
   it('is not created by opening the session engine', async () => {

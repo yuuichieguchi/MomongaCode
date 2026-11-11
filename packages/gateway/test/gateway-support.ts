@@ -188,5 +188,5 @@ export const advanceToNextWait = async (timers: FakeTimers, waits: ReadonlySet<n
     .pending()
     .filter((timer) => waits.has(timer.delayMs))
     .sort((a, b) => a.dueAt - b.dueAt)[0];
-  if (!done() && next !== undefined) timers.advance(Math.max(0, next.dueAt - timers.now()));
+  if (!done() && next !== undefined) await timers.advanceAsync(Math.max(0, next.dueAt - timers.monotonicMs()));
 };

@@ -32,7 +32,7 @@ const visibleTo = (memory: MemoryRecord, visibility: MemoryVisibility): boolean 
 
 export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts = createEvidencePorts }: MemoryPortOptions): MemoryPort => ({
   load: async (session, signal) => {
-    const trusted = settings.trusted(session);
+    const trusted = await settings.trusted(session);
     const visibility: MemoryVisibility = trusted ? { trusted: true, project: session.cwd } : { trusted: false };
     const run = evidenceRun(session.cwd);
     const recordViews = createRecordViews({ store, evidenceRun, evidencePorts });

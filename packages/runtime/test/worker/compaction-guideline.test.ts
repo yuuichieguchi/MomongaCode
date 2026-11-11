@@ -34,7 +34,7 @@ const conversation = (): RunEventPayload[] => [
 const prepared = async (adopted?: string) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
   if (adopted !== undefined) env.store.guidelines.adopt({ text: adopted, parent: null, report: { source: 'test' } });
-  const run = env.enqueue('question one');
+  const run = await env.enqueue('question one');
   await env.seed(run.id, conversation(), 'release');
   env.gateway.compactSummaries.push(CLEAN);
   env.gateway.script.push(textStep('Done.'));
@@ -124,9 +124,9 @@ describe('the pinned guideline version', () => {
   const childOf = async (pinned: Record<string, unknown>) => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     env.store.guidelines.adopt({ text: FIRST, parent: null, report: { source: 'test' } });
-    const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+    const parent = await createdRun(await env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const claim = await env.seed(parent.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm', ...pinned }, mode: 'manual' }], 'hold');
-    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
+    const created = await env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     expect((await env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 })).kind).toBe('ok');
     env.store.guidelines.adopt({ text: SECOND, parent: 1, report: { source: 'test' } });

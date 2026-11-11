@@ -11,7 +11,7 @@ const NOTE = 'launch with zorpLauncher';
 
 const saveNote = async (env: Env): Promise<string> => {
   env.gateway.script.push(callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text: NOTE, scope: 'user' } }]), textStep('Remembered.'));
-  env.enqueue('Remember this', { history: 'fresh' });
+  await env.enqueue('Remember this', { history: 'fresh' });
   await env.runOnce(memoryWorker(env, 'saver'));
   const saved = env.store.memories.list().find((memory) => memory.text === NOTE);
   if (saved === undefined) throw new Error('the note was not saved');
@@ -24,7 +24,7 @@ describe('context.contribution on the terminals the worker does not reach', () =
     const id = await saveNote(env);
     env.setMode('manual');
     env.gateway.script.push(textThenCallsStep('Running zorpLauncher.', [{ callId: 'call_w', name: 'MemorySave', args: { text: 'other', scope: 'user' } }]));
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
     await env.runOnce(memoryWorker(env, 'worker-2'));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const [approval] = await env.store.pendingApprovalViews(run.id);
@@ -44,7 +44,7 @@ describe('context.contribution on the terminals the worker does not reach', () =
   it('records no event for a run that was cancelled in the queue, because nothing was injected', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const id = await saveNote(env);
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     expect((await env.cancelToEnd(run.id)).status).toBe('CANCELLED');
     expect(env.ofType(run.id, 'context.contribution')).toEqual([]);
@@ -54,7 +54,7 @@ describe('context.contribution on the terminals the worker does not reach', () =
   it('records no event for a run that was stopped in the queue by its deadline', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     await saveNote(env);
-    const run = env.enqueue('Say hello', { history: 'fresh' });
+    const run = await env.enqueue('Say hello', { history: 'fresh' });
 
     expect(await env.store.expireApprovals(env.run(run.id).deadlineAt, (error: unknown) => { throw error; })).toEqual([run.id]);
 

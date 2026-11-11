@@ -5,7 +5,8 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Readable, Writable } from 'node:stream';
+import { Writable } from 'node:stream';
+import type { Readable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { nodeEvalFiles, nodeWorkspaceFiles } from '@momonga/eval';
 import type { WorkspaceProbe } from '@momonga/eval';
@@ -17,7 +18,9 @@ import {
   createExecWithStdin,
   createHostExec,
   createPlatformSecretStore,
-  hostKernelLock,
+  guardStandardStreams,
+  momongaLayout,
+  resolveLayoutLocks,
   minimalChildEnv,
   nodeFileSystem,
   nodeFileSystemSync,
@@ -28,13 +31,13 @@ import {
   writeFileAtomicallySync,
   launchApart,
 } from '@momonga/foundation';
-import type { HeldKernelLock, HelperHost, LaunchProgram, ProcessPort } from '@momonga/foundation';
+import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
 import { sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
 import { HANDOVER_RECORD_MAX_BYTES } from './handover/record.ts';
-import type { CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
+import type { AcpInput, CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
 
 const ABSENT_FILE = '\u0001absent';
 
@@ -139,7 +142,14 @@ export const nodeProcess: ProcessPort = { pid: process.pid, uid: () => process.g
 
 export const nodeHelperHost = (): Omit<HelperHost, 'args'> => ({ env: process.env, stdin: process.stdin, stdout: process.stdout, stderr: process.stderr });
 
-export const nodeFiles: CliFiles = {
+type LockSource = () => KernelLockMechanism;
+
+const layoutLockOf = (home: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): LockSource => {
+  let resolved: KernelLockMechanism | undefined;
+  return () => (resolved ??= resolveLayoutLocks(momongaLayout(home, platform, env)).mechanism);
+};
+
+export const nodeFiles: Omit<CliFiles, 'writeTextAtomically'> = {
   ...nodeEvalFiles,
   ...nodeWorkspaceFiles,
   copyTreeVerbatim: (from, to) => fs.cp(from, to, { recursive: true, verbatimSymlinks: true }),
@@ -172,10 +182,14 @@ export const nodeFiles: CliFiles = {
       throw error;
     }
   },
-  writeTextAtomically: async (file, text, mode) => {
-    await writeFileAtomically(nodeFileSystem, systemRandom, file, text, { mode });
-  },
 };
+
+export const nodeFilesLockedBy = (lock: LockSource): CliFiles => ({
+  ...nodeFiles,
+  writeTextAtomically: async (file, text, mode) => {
+    await writeFileAtomically(nodeFileSystem, systemRandom, file, text, { mode, lock: lock() });
+  },
+});
 
 export const WINDOWS_KEEPER_BUILD_SCRIPT = path.resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'windows-keeper.ts');
 
@@ -229,11 +243,11 @@ const PRIVATE_FILE_MODE = 0o600;
 
 const heldRecords = new Map<string, HeldKernelLock>();
 
-const claimRecord = (file: string): HeldKernelLock | undefined => {
+const claimRecord = (lock: KernelLockMechanism, file: string): HeldKernelLock | undefined => {
   const mine = heldRecords.get(file);
   if (mine !== undefined) return mine;
   try {
-    return claimNewEntrySync(hostKernelLock(), file, 'sidecar');
+    return claimNewEntrySync(lock, file, 'sidecar');
   } catch (error) {
     if (error instanceof EntryLockHeldError) return undefined;
     throw error;
@@ -251,18 +265,18 @@ const dropRecord = (file: string, held: HeldKernelLock | undefined): void => {
   held?.dispose();
 };
 
-export const nodeRecordFiles: RecordFiles = {
+export const nodeRecordFiles = (lock: LockSource): RecordFiles => ({
   read: (file) => {
     if (statSync(file).size > HANDOVER_RECORD_MAX_BYTES) throw new Error('it is larger than 1 MiB');
     return readFileSync(file, 'utf8');
   },
   write: (file, text) => {
     mkdirSync(path.dirname(file), { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
-    const held = claimRecord(file);
+    const held = claimRecord(lock(), file);
     if (held === undefined) throw new EntryLockHeldError(file);
     heldRecords.set(file, held);
     try {
-      writeFileAtomicallySync(nodeFileSystemSync, systemRandom, file, text, { mode: PRIVATE_FILE_MODE });
+      writeFileAtomicallySync(nodeFileSystemSync, systemRandom, file, text, { mode: PRIVATE_FILE_MODE, lock: lock() });
     } catch (error) {
       heldRecords.delete(file);
       held.dispose();
@@ -270,22 +284,66 @@ export const nodeRecordFiles: RecordFiles = {
     }
   },
   remove: (file) => {
-    dropRecord(file, claimRecord(file));
+    dropRecord(file, claimRecord(lock(), file));
   },
+});
+
+type Arrival = { resolve(kind: 'bytes' | 'end'): void; reject(error: unknown): void };
+
+export const acpInputOf = (stdin: Readable): AcpInput => {
+  let ended = false;
+  let failure: { error: unknown } | undefined;
+  let waiting: Arrival[] = [];
+  const settle = (): void => {
+    if (failure === undefined && stdin.readableLength === 0 && !ended) return;
+    const arrivals = waiting;
+    waiting = [];
+    for (const arrival of arrivals) {
+      if (failure !== undefined) arrival.reject(failure.error);
+      else arrival.resolve(stdin.readableLength > 0 ? 'bytes' : 'end');
+    }
+  };
+  stdin.on('readable', () => {
+    if (stdin.readableLength === 0) stdin.read();
+    settle();
+  });
+  stdin.on('end', () => {
+    ended = true;
+    settle();
+  });
+  stdin.on('error', (error) => {
+    failure = { error };
+    settle();
+  });
+  return {
+    take: () => {
+      const chunk: unknown = stdin.read();
+      if (chunk === null) return undefined;
+      if (!(chunk instanceof Uint8Array)) throw new Error('standard input gave text where the Agent Client Protocol reads bytes');
+      return chunk;
+    },
+    arrival: () =>
+      new Promise((resolve, reject) => {
+        waiting.push({ resolve, reject });
+        settle();
+      }),
+  };
 };
 
-export const nodePorts = (version: string, interrupt: AbortSignal): CliPorts => {
+export const nodePorts = (version: string, interrupt: AbortSignal, streams: GuardedStandardStreams = guardStandardStreams(process)): CliPorts => {
   const self = nodeSelf(process.argv, isSea);
+  const home = process.env['HOME'] ?? os.homedir();
+  const lock = layoutLockOf(home, process.platform, process.env);
   return {
     version,
     interrupt,
     platform: process.platform,
     env: process.env,
     cwd: process.cwd(),
-    home: process.env['HOME'] ?? os.homedir(),
+    home,
     stdin: { isTerminal: process.stdin.isTTY === true, bytes: () => process.stdin },
-    stdout: process.stdout,
-    stderr: process.stderr,
+    stdout: streams.stdout,
+    stderr: streams.stderr,
     clock: nodeClock,
     timers: systemTiming,
     random: Math.random,
@@ -293,14 +351,14 @@ export const nodePorts = (version: string, interrupt: AbortSignal): CliPorts => 
     process: nodeProcess,
     tmpdir: os.tmpdir(),
     self,
-    handover: createHandoverHost({ version, pid: process.pid, self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles }),
+    handover: createHandoverHost({ version, pid: process.pid, self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles(lock) }),
     spawnDetached: nodeSpawnDetached,
     terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
-    files: nodeFiles,
+    files: nodeFilesLockedBy(lock),
     exec: createHostExec(minimalChildEnv(process.env)),
     probe: createWorkspaceProbe(minimalChildEnv(process.env)),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
-    acpStdio: () => ({ input: Readable.toWeb(process.stdin), output: Writable.toWeb(process.stdout) }),
+    acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
   };
 };

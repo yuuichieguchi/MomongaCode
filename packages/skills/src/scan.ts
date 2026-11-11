@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { momongaLayout } from '@momonga/foundation';
+import { homeLayout } from '@momonga/foundation';
 import type { SkillScope } from '@momonga/protocol';
 import {
   DESCRIPTION_MAX_LENGTH,
@@ -27,7 +27,7 @@ export const isValidSkillName = (name: string): boolean => name.length <= NAME_M
 const locationsOf = ({ home, projectRoot }: ScanRequest): Location[] => [
   { scope: 'project', directory: path.join(projectRoot, SKILL_DIRECTORY_SEGMENTS.native) },
   { scope: 'project', directory: path.join(projectRoot, SKILL_DIRECTORY_SEGMENTS.crossClient) },
-  { scope: 'user', directory: momongaLayout(home).skills },
+  { scope: 'user', directory: homeLayout(home).skills },
   { scope: 'user', directory: path.join(home, SKILL_DIRECTORY_SEGMENTS.crossClient) },
 ];
 

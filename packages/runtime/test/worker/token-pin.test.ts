@@ -91,7 +91,7 @@ describe('the token pin recorded at run start', () => {
   it('records an all-off pin on run.started with the default settings', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('say done');
+    const run = await env.enqueue('say done');
     await env.runOnce(env.worker());
     const [first] = env.ofType(run.id, 'run.started');
     expect(first?.pins['token']).toEqual({});
@@ -101,7 +101,7 @@ describe('the token pin recorded at run start', () => {
     const env = await makeEnv();
     env.settings.contextValue = { ...env.settings.contextValue, cachePrefix: true, outputFormatters: ['log'], observedCapacity: true };
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('say done');
+    const run = await env.enqueue('say done');
     await env.runOnce(env.worker());
     const [first] = env.ofType(run.id, 'run.started');
     expect(first?.pins['token']).toEqual({ cachePrefix: true, outputFormatters: ['log'], observedCapacity: true });

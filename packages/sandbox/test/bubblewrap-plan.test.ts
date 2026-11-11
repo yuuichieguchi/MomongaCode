@@ -7,7 +7,7 @@ import { SandboxPolicyError, nodeFilesystemPort, planBubblewrap } from '@momonga
 import type { FilesystemPort, SandboxPolicy } from '@momonga/sandbox';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir } from './helpers.ts';
-import { NEVER_CANCELLED } from '@momonga/testkit';
+import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 
 let base = '';
 let work = '';
@@ -49,7 +49,7 @@ const FILE_RULES = async (specs: ReturnType<typeof fileSpec>[]): Promise<FileRul
 describe('planBubblewrap refuses a protected name that is a symlink (review item 7)', () => {
   const refusal = async (literal: string) => {
     try {
-      await planBubblewrap(policy({ writeDeniedLiterals: [literal] }), { cwd: work }, NEVER_CANCELLED);
+      await planBubblewrap(policy({ writeDeniedLiterals: [literal] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     } catch (error) {
       return error;
     }
@@ -98,7 +98,7 @@ describe('planBubblewrap refuses a protected name that is a symlink (review item
 
   it('control: a regular file or a directory at the protected name is still pinned', async () => {
     fs.mkdirSync(path.join(work, '.git'));
-    const { args } = await planBubblewrap(policy({ writeDeniedLiterals: [path.join(work, '.git')] }), { cwd: work }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy({ writeDeniedLiterals: [path.join(work, '.git')] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(indexOfTriple(args, '--ro-bind', path.join(work, '.git'))).toBeGreaterThan(-1);
   });
 });
@@ -109,7 +109,7 @@ describe('planBubblewrap refuses only where the sandboxed process could change w
   it('does not refuse a symlinked write-denied literal outside every writable area: the read-only root already holds it', async () => {
     const launcher = path.join(home, 'momonga');
     fs.symlinkSync('target', launcher);
-    const { args } = await planBubblewrap(policy({ writeDeniedLiterals: [launcher] }), { cwd: work }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy({ writeDeniedLiterals: [launcher] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(indexOfTriple(args, '--ro-bind', launcher)).toBe(-1);
   });
 
@@ -120,7 +120,7 @@ describe('planBubblewrap refuses only where the sandboxed process could change w
     fs.chmodSync(locked, 0o000);
     try {
       const target = path.join(locked, 'secret');
-      await expect((async () => { await await planBubblewrap(policy({ writeDeniedLiterals: [target] }), { cwd: work }, NEVER_CANCELLED); })()).resolves.toBeUndefined();
+      await expect((async () => { await await planBubblewrap(policy({ writeDeniedLiterals: [target] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock())); })()).resolves.toBeUndefined();
     } finally {
       fs.chmodSync(locked, 0o700);
     }
@@ -133,7 +133,7 @@ describe('planBubblewrap refuses only where the sandboxed process could change w
     fs.chmodSync(locked, 0o000);
     try {
       const target = path.join(locked, 'secret');
-      await expect(planBubblewrap(policy({ writeDeniedLiterals: [target] }), { cwd: work }, NEVER_CANCELLED)).rejects.toThrowError(expect.objectContaining({ code: 'protected_path_unreadable', path: target }));
+      await expect(planBubblewrap(policy({ writeDeniedLiterals: [target] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()))).rejects.toThrowError(expect.objectContaining({ code: 'protected_path_unreadable', path: target }));
     } finally {
       fs.chmodSync(locked, 0o700);
     }
@@ -141,7 +141,7 @@ describe('planBubblewrap refuses only where the sandboxed process could change w
 
   it('refuses an unreachable ancestor of a writable root, and ignores an unreachable path elsewhere', async () => {
     const elsewhere = path.join(sessions, 'x');
-    const port: FilesystemPort = { ...nodeFilesystemPort, kindOf: (target) => (target === base || target === elsewhere ? 'unreachable' : nodeFilesystemPort.kindOf(target)) };
+    const port: FilesystemPort = { ...nodeFilesystemPort(testKernelLock()), kindOf: (target) => (target === base || target === elsewhere ? 'unreachable' : nodeFilesystemPort(testKernelLock()).kindOf(target)) };
     await expect(planBubblewrap(policy({ writeDeniedLiterals: [base] }), { cwd: work }, NEVER_CANCELLED, port)).rejects.toThrowError(expect.objectContaining({ code: 'protected_path_unreadable', path: base }));
     await expect((async () => { await await planBubblewrap(policy({ writeDeniedLiterals: [elsewhere] }), { cwd: work }, NEVER_CANCELLED, port); })()).resolves.toBeUndefined();
   });
@@ -149,7 +149,7 @@ describe('planBubblewrap refuses only where the sandboxed process could change w
   it('applies the same rule to a directory that cannot be listed while a deny pattern expands', async () => {
     const elsewhere = path.join(base, 'elsewhere');
     fs.mkdirSync(elsewhere);
-    const unlistable: FilesystemPort = { ...nodeFilesystemPort, children: () => 'unreachable' };
+    const unlistable: FilesystemPort = { ...nodeFilesystemPort(testKernelLock()), children: () => 'unreachable' };
     const outsideRules = await fileRulesOf([fileSpec('**/.env', { roots: [elsewhere], home, tool: 'Read' })], [elsewhere]);
     await expect((async () => { await await planBubblewrap(policy({ fileRules: await outsideRules }), { cwd: work }, NEVER_CANCELLED, unlistable); })()).resolves.toBeUndefined();
     const insideRules = await FILE_RULES([fileSpec('**/.env', { roots: [work], home, tool: 'Read' })]);
@@ -159,20 +159,20 @@ describe('planBubblewrap refuses only where the sandboxed process could change w
 
 describe('planBubblewrap', () => {
   it('starts from a read-only view of the host with devices, a private proc and a masked /run', async () => {
-    const { args } = await planBubblewrap(policy(), { cwd: work }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(args.slice(args.indexOf('--ro-bind'), args.indexOf('--ro-bind') + 11)).toEqual(['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/run', '--bind', work]);
     expect(args).toEqual(expect.arrayContaining(['--unshare-pid', '--unshare-ipc', '--die-with-parent']));
     expect(args.slice(-2)).toEqual(['--chdir', work]);
   });
 
   it('isolates the network exactly when the policy denies it', async () => {
-    expect((await planBubblewrap(policy({ network: 'deny' }), { cwd: work }, NEVER_CANCELLED)).args).toContain('--unshare-net');
-    expect((await planBubblewrap(policy({ network: 'allow' }), { cwd: work }, NEVER_CANCELLED)).args).not.toContain('--unshare-net');
+    expect((await planBubblewrap(policy({ network: 'deny' }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()))).args).toContain('--unshare-net');
+    expect((await planBubblewrap(policy({ network: 'allow' }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()))).args).not.toContain('--unshare-net');
   });
 
   it('keeps the systemd resolver reachable only when the network is allowed and the directory exists', async () => {
     const port: FilesystemPort = {
-      ...nodeFilesystemPort,
+      ...nodeFilesystemPort(testKernelLock()),
       kindOf: (target) => (target === '/run/systemd/resolve' ? 'directory' : fs.statSync(target, { throwIfNoEntry: false })?.isDirectory() ? 'directory' : undefined),
       realpath: (target) => target,
       children: () => [],
@@ -185,7 +185,7 @@ describe('planBubblewrap', () => {
   it('binds every writable root read-write', async () => {
     const extra = path.join(base, 'extra');
     fs.mkdirSync(extra);
-    const { args } = await planBubblewrap(policy({ writableRoots: [work, extra] }), { cwd: work }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy({ writableRoots: [work, extra] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(indexOfTriple(args, '--bind', work)).toBeGreaterThan(0);
     expect(indexOfTriple(args, '--bind', extra)).toBeGreaterThan(0);
   });
@@ -195,7 +195,7 @@ describe('planBubblewrap', () => {
     const config = path.join(work, '.git', 'config');
     fs.mkdirSync(hooks, { recursive: true });
     fs.writeFileSync(config, '');
-    const plan = await planBubblewrap(policy({ writeDenied: [hooks], writeDeniedLiterals: [config] }), { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(policy({ writeDenied: [hooks], writeDeniedLiterals: [config] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(indexOfTriple(plan.args, '--ro-bind', hooks)).toBeGreaterThan(indexOfTriple(plan.args, '--bind', work));
     expect(indexOfTriple(plan.args, '--ro-bind', config)).toBeGreaterThan(0);
     expect(plan.placeholders).toEqual([]);
@@ -206,7 +206,7 @@ describe('planBubblewrap', () => {
     fs.mkdirSync(wide);
     const fileRules = await fileRulesOf([fileSpec(`/${wide}/**`, { roots: [work], home, tool: 'Edit', effect: 'allow' })], [work]);
     const hooks = path.join(wide, '.git', 'hooks');
-    const plan = await planBubblewrap(policy({ fileRules: await fileRules, writeDeniedLiterals: [hooks] }), { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(policy({ fileRules: await fileRules, writeDeniedLiterals: [hooks] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(indexOfTriple(plan.args, '--bind', wide)).toBeGreaterThan(0);
     expect(plan.placeholders).toEqual([path.join(wide, '.git')]);
     expect(indexOfTriple(plan.args, '--ro-bind', path.join(wide, '.git'), path.join(wide, '.git'))).toBeGreaterThan(0);
@@ -216,12 +216,12 @@ describe('planBubblewrap', () => {
     const git = path.join(work, '.git');
     fs.writeFileSync(git, '');
     const held = new Set([git]);
-    const below = await planBubblewrap(policy({ writeDeniedLiterals: [path.join(git, 'hooks')] }), { cwd: work, heldPlaceholders: held }, NEVER_CANCELLED);
+    const below = await planBubblewrap(policy({ writeDeniedLiterals: [path.join(git, 'hooks')] }), { cwd: work, heldPlaceholders: held }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(below.placeholders).toEqual([git]);
     expect(indexOfTriple(below.args, '--ro-bind', git, git)).toBeGreaterThan(0);
-    const itself = await planBubblewrap(policy({ writeDeniedLiterals: [git] }), { cwd: work, heldPlaceholders: held }, NEVER_CANCELLED);
+    const itself = await planBubblewrap(policy({ writeDeniedLiterals: [git] }), { cwd: work, heldPlaceholders: held }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(itself.placeholders).toEqual([git]);
-    const unrelated = await planBubblewrap(policy({ writeDeniedLiterals: [git] }), { cwd: work }, NEVER_CANCELLED);
+    const unrelated = await planBubblewrap(policy({ writeDeniedLiterals: [git] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(unrelated.placeholders).toEqual([]);
   });
 
@@ -229,7 +229,7 @@ describe('planBubblewrap', () => {
     const hooks = path.join(work, '.git', 'hooks');
     const config = path.join(work, '.git', 'config');
     const mcp = path.join(work, '.mcp.json');
-    const plan = await planBubblewrap(policy({ writeDenied: [hooks], writeDeniedLiterals: [config, mcp] }), { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(policy({ writeDenied: [hooks], writeDeniedLiterals: [config, mcp] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     const reserved = plan.args.flatMap((value, index) => (value === '--ro-bind' && plan.args[index + 1] === plan.args[index + 2] && plan.args[index + 1] !== '/' ? [plan.args[index + 1]] : []));
     expect(reserved.sort()).toEqual([path.join(work, '.git'), mcp].sort());
     expect(plan.placeholders.sort()).toEqual([path.join(work, '.git'), mcp].sort());
@@ -240,7 +240,7 @@ describe('planBubblewrap', () => {
     fs.mkdirSync(path.join(work, '.git'));
     const hooks = path.join(work, '.git', 'hooks');
     const outside = path.join(home, 'missing', 'deep');
-    const plan = await planBubblewrap(policy({ writeDenied: [hooks, outside] }), { cwd: work }, NEVER_CANCELLED);
+    const plan = await planBubblewrap(policy({ writeDenied: [hooks, outside] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(plan.placeholders).toEqual([hooks]);
     expect(indexOfTriple(plan.args, '--bind', path.join(work, '.git'))).toBeGreaterThan(0);
   });
@@ -248,7 +248,7 @@ describe('planBubblewrap', () => {
   it('pins the directories between a protected path and the writable root so they cannot be renamed away', async () => {
     const hooks = path.join(work, '.git', 'hooks');
     fs.mkdirSync(hooks, { recursive: true });
-    const { args } = await planBubblewrap(policy({ writeDenied: [hooks] }), { cwd: work }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy({ writeDenied: [hooks] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     const pin = indexOfTriple(args, '--bind', path.join(work, '.git'));
     expect(pin).toBeGreaterThan(indexOfTriple(args, '--bind', work));
     expect(pin).toBeLessThan(indexOfTriple(args, '--ro-bind', hooks));
@@ -258,7 +258,7 @@ describe('planBubblewrap', () => {
   it('masks read-denied directories with a tmpfs and files with /dev/null, then restores read-allowed entries', async () => {
     const secretFile = path.join(home, 'token');
     fs.writeFileSync(secretFile, 'x');
-    const { args } = await planBubblewrap(policy({ readDenied: [sessions, secretFile], readAllowed: [mine], writeDenied: [sessions] }), { cwd: work, tmpDir: mine }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy({ readDenied: [sessions, secretFile], readAllowed: [mine], writeDenied: [sessions] }), { cwd: work, tmpDir: mine }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     const maskIndex = args.findIndex((value, index) => value === '--tmpfs' && args[index + 1] === sessions);
     expect(maskIndex).toBeGreaterThan(0);
     expect(args.findIndex((value, index) => value === '--ro-bind' && args[index + 1] === '/dev/null' && args[index + 2] === secretFile)).toBeGreaterThan(0);
@@ -269,7 +269,7 @@ describe('planBubblewrap', () => {
   });
 
   it('remounts every masked directory read-only after the masks and the restored entries, so a write to it fails instead of vanishing into the tmpfs', async () => {
-    const { args } = await planBubblewrap(policy({ readDenied: [sessions], readAllowed: [mine], writeDenied: [sessions] }), { cwd: work, tmpDir: mine }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy({ readDenied: [sessions], readAllowed: [mine], writeDenied: [sessions] }), { cwd: work, tmpDir: mine }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     const remount = args.findIndex((value, index) => value === '--remount-ro' && args[index + 1] === sessions);
     expect(remount).toBeGreaterThan(args.findIndex((value, index) => value === '--tmpfs' && args[index + 1] === sessions));
     expect(remount).toBeGreaterThan(indexOfTriple(args, '--bind', mine));
@@ -279,7 +279,7 @@ describe('planBubblewrap', () => {
   it('gives the private scratch directory last, after every mask', async () => {
     const scratch = path.join(base, 'scratch');
     fs.mkdirSync(scratch);
-    const { args } = await planBubblewrap(policy({ readDenied: [secrets] }), { cwd: work, scratchDir: scratch }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy({ readDenied: [secrets] }), { cwd: work, scratchDir: scratch }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(indexOfTriple(args, '--bind', scratch)).toBeGreaterThan(args.findIndex((value, index) => value === '--tmpfs' && args[index + 1] === secrets));
   });
 
@@ -289,7 +289,7 @@ describe('planBubblewrap', () => {
     fs.writeFileSync(path.join(work, '.env'), 'k');
     fs.writeFileSync(path.join(work, 'keep.txt'), 'k');
     const rules = await FILE_RULES([fileSpec('**/.env', { roots: [work], home, tool: 'Read' })]);
-    const { args } = await planBubblewrap(policy({ fileRules: await rules }), { cwd: work }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy({ fileRules: await rules }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     const masked = args.flatMap((value, index) => (value === '--ro-bind' && args[index + 1] === '/dev/null' ? [args[index + 2]] : []));
     expect(masked.sort()).toEqual([path.join(work, '.env'), path.join(work, 'a', '.env')].sort());
   });
@@ -298,7 +298,7 @@ describe('planBubblewrap', () => {
     fs.writeFileSync(path.join(work, 'locked.txt'), 'k');
     fs.writeFileSync(path.join(work, 'free.txt'), 'k');
     const rules = await FILE_RULES([fileSpec('locked.txt', { roots: [work], home, tool: 'Edit' })]);
-    const { args } = await planBubblewrap(policy({ fileRules: await rules }), { cwd: work }, NEVER_CANCELLED);
+    const { args } = await planBubblewrap(policy({ fileRules: await rules }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     expect(indexOfTriple(args, '--ro-bind', path.join(work, 'locked.txt'))).toBeGreaterThan(0);
     expect(indexOfTriple(args, '--ro-bind', path.join(work, 'free.txt'))).toBe(-1);
   });
@@ -320,7 +320,7 @@ describe('planBubblewrap', () => {
 
     it('reserves a missing modules directory with a placeholder so the kernel refuses a new module', async () => {
       fs.mkdirSync(gitDir());
-      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
       expect(plan.placeholders).toContain(modules());
       expect(indexOfTriple(plan.args, '--ro-bind', '/dev/null', modules())).toBe(-1);
       expect(plan.args.findIndex((value, index) => value === '--ro-bind' && plan.args[index + 1] === modules() && plan.args[index + 2] === modules())).toBeGreaterThan(0);
@@ -328,7 +328,7 @@ describe('planBubblewrap', () => {
 
     it('binds an existing modules directory read-only and each module git directory writable after it', async () => {
       moduleAt(path.join(modules(), 'a'));
-      const { args } = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+      const { args } = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
       const anchor = positionOf(args, '--ro-bind', modules());
       const module = positionOf(args, '--bind', path.join(modules(), 'a'));
       expect(anchor).toBeGreaterThan(0);
@@ -339,7 +339,7 @@ describe('planBubblewrap', () => {
       const module = path.join(modules(), 'a');
       moduleAt(module);
       fs.mkdirSync(path.join(module, 'hooks'));
-      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
       expect(positionOf(plan.args, '--ro-bind', path.join(module, 'hooks'))).toBeGreaterThan(0);
       expect(plan.placeholders).toEqual(expect.arrayContaining([path.join(module, 'config'), path.join(module, 'config.worktree')]));
       expect(plan.placeholders).not.toContain(path.join(module, 'hooks'));
@@ -349,7 +349,7 @@ describe('planBubblewrap', () => {
       const module = path.join(modules(), 'a');
       moduleAt(module);
       moduleAt(path.join(module, 'modules', 'b'));
-      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
       expect(positionOf(plan.args, '--ro-bind', path.join(module, 'modules'))).toBeGreaterThan(positionOf(plan.args, '--bind', module));
       expect(positionOf(plan.args, '--bind', path.join(module, 'modules', 'b'))).toBeGreaterThan(positionOf(plan.args, '--ro-bind', path.join(module, 'modules')));
       expect(plan.placeholders).toContain(path.join(module, 'modules', 'b', 'config'));
@@ -357,13 +357,13 @@ describe('planBubblewrap', () => {
 
     it('reserves the modules directory of a module that has none', async () => {
       moduleAt(path.join(modules(), 'a'));
-      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
       expect(plan.placeholders).toContain(path.join(modules(), 'a', 'modules'));
     });
 
     it('walks through a plain directory to a module whose name has a slash and leaves the plain directory read-only', async () => {
       moduleAt(path.join(modules(), 'group', 'b'));
-      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
       expect(positionOf(plan.args, '--bind', path.join(modules(), 'group', 'b'))).toBeGreaterThan(0);
       expect(positionOf(plan.args, '--bind', path.join(modules(), 'group'))).toBe(-1);
       expect(plan.placeholders).toContain(path.join(modules(), 'group', 'b', 'config'));
@@ -371,13 +371,13 @@ describe('planBubblewrap', () => {
 
     it('does not mistake a directory without HEAD, objects and refs for a module', async () => {
       fs.mkdirSync(path.join(modules(), 'a', 'objects'), { recursive: true });
-      const { args } = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+      const { args } = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
       expect(positionOf(args, '--bind', path.join(modules(), 'a'))).toBe(-1);
     });
 
     it('pins config.worktree of each existing worktree and leaves the worktrees directory writable', async () => {
       fs.mkdirSync(path.join(gitDir(), 'worktrees', 'wt'), { recursive: true });
-      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+      const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
       expect(plan.placeholders).toContain(path.join(gitDir(), 'worktrees', 'wt', 'config.worktree'));
       expect(positionOf(plan.args, '--ro-bind', path.join(gitDir(), 'worktrees'))).toBe(-1);
     });
@@ -385,7 +385,7 @@ describe('planBubblewrap', () => {
     describe('a symlink where a mount must land (a mount lands on the target, so the name stays replaceable)', () => {
       const refusal = async (overrides: Partial<SandboxPolicy> = {}): Promise<unknown> => {
         try {
-          await planBubblewrap({ ...anchored(), ...overrides }, { cwd: work }, NEVER_CANCELLED);
+          await planBubblewrap({ ...anchored(), ...overrides }, { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
         } catch (error) {
           return error;
         }
@@ -428,7 +428,7 @@ describe('planBubblewrap', () => {
         const admin = path.join(gitDir(), 'worktrees', 'x');
         fs.mkdirSync(admin, { recursive: true });
         fs.writeFileSync(path.join(admin, 'config.worktree'), '');
-        const { args } = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+        const { args } = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
         expect(positionOf(args, '--ro-bind', path.join(admin, 'config.worktree'))).toBeGreaterThan(0);
         expect(positionOf(args, '--bind', admin)).toBeGreaterThan(0);
       });
@@ -437,7 +437,7 @@ describe('planBubblewrap', () => {
         fs.mkdirSync(path.join(work, 'sub'));
         fs.writeFileSync(path.join(work, 'sub', 'locked.txt'), '');
         const rules = await FILE_RULES([fileSpec('**/locked.txt', { roots: [work], home, tool: 'Edit' })]);
-        const { args } = await planBubblewrap(policy({ fileRules: await rules }), { cwd: work }, NEVER_CANCELLED);
+        const { args } = await planBubblewrap(policy({ fileRules: await rules }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
         expect(positionOf(args, '--ro-bind', path.join(work, 'sub', 'locked.txt'))).toBeGreaterThan(0);
         expect(positionOf(args, '--bind', path.join(work, 'sub'))).toBeGreaterThan(0);
       });
@@ -447,7 +447,7 @@ describe('planBubblewrap', () => {
         moduleAt(module);
         const admin = path.join(module, 'worktrees', 't');
         fs.mkdirSync(admin, { recursive: true });
-        const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+        const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
         expect(plan.placeholders).toContain(path.join(admin, 'config.worktree'));
         expect(positionOf(plan.args, '--bind', admin)).toBeGreaterThan(0);
       });
@@ -458,7 +458,7 @@ describe('planBubblewrap', () => {
         const admin = path.join(module, 'worktrees', 't');
         fs.mkdirSync(admin, { recursive: true });
         fs.writeFileSync(path.join(admin, 'config.worktree'), '');
-        const { args } = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+        const { args } = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
         expect(positionOf(args, '--ro-bind', path.join(admin, 'config.worktree'))).toBeGreaterThan(0);
         expect(positionOf(args, '--bind', admin)).toBeGreaterThan(0);
       });
@@ -470,7 +470,7 @@ describe('planBubblewrap', () => {
         fs.mkdirSync(admin, { recursive: true });
         fs.writeFileSync(path.join(admin, 'HEAD'), 'ref: refs/heads/t\n');
         const target = path.join(admin, 'config.worktree');
-        const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+        const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
         expect(plan.placeholders).toContain(target);
         expect(plan.args.findIndex((value, index) => value === '--ro-bind' && plan.args[index + 1] === target && plan.args[index + 2] === target)).toBeGreaterThan(0);
         expect(positionOf(plan.args, '--ro-bind', path.join(module, 'worktrees'))).toBe(-1);
@@ -480,7 +480,7 @@ describe('planBubblewrap', () => {
         const module = path.join(modules(), 'a');
         moduleAt(module);
         const missing = path.join(module, 'worktrees');
-        const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED);
+        const plan = await planBubblewrap(anchored(), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
         expect(plan.placeholders.filter((placeholder) => placeholder.startsWith(missing))).toEqual([]);
         expect(plan.args.filter((value) => value.startsWith(missing))).toEqual([]);
         expect(plan.placeholders).toEqual(expect.arrayContaining([path.join(module, 'config.worktree'), path.join(module, 'hooks')]));
@@ -490,14 +490,14 @@ describe('planBubblewrap', () => {
     it('ignores an anchor that lies outside every writable root', async () => {
       const elsewhere = path.join(base, 'elsewhere', 'modules');
       fs.mkdirSync(elsewhere, { recursive: true });
-      const plan = await planBubblewrap(policy({ protectedSet: { ...EMPTY_PROTECTED_SET, moduleAnchors: [elsewhere] } }), { cwd: work }, NEVER_CANCELLED);
+      const plan = await planBubblewrap(policy({ protectedSet: { ...EMPTY_PROTECTED_SET, moduleAnchors: [elsewhere] } }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
       expect(plan.placeholders).toEqual([]);
       expect(positionOf(plan.args, '--ro-bind', elsewhere)).toBe(-1);
     });
   });
 
   it('rejects the same invalid policies as the seatbelt profile', async () => {
-    await expect(planBubblewrap(policy({ readAllowed: [mine] }), { cwd: work }, NEVER_CANCELLED)).rejects.toThrowError(expect.objectContaining({ code: 'read_allowed_not_inside_denied' }));
-    await expect(planBubblewrap(policy({ writeDenied: ['relative'] }), { cwd: work }, NEVER_CANCELLED)).rejects.toThrowError(expect.objectContaining({ code: 'entry_not_absolute' }));
+    await expect(planBubblewrap(policy({ readAllowed: [mine] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()))).rejects.toThrowError(expect.objectContaining({ code: 'read_allowed_not_inside_denied' }));
+    await expect(planBubblewrap(policy({ writeDenied: ['relative'] }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()))).rejects.toThrowError(expect.objectContaining({ code: 'entry_not_absolute' }));
   });
 });

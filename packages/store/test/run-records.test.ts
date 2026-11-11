@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, migrate } from '@momonga/foundation';
+import { canonicalJson, migrate, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { assistantTextOf } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { fixtureCompactionItem, materializeEvents, createFakeClock } from '@momonga/testkit';
+import { fixtureCompactionItem, materializeEvents, createFakeClock, testKernelLock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
 import { LEASE_MS, START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, openStoreAt, registerCleanup, UNASKED_COMMANDS } from './helpers.ts';
 
@@ -96,7 +96,7 @@ const recordedFacts = async (store: RuntimeStore, runId: string): Promise<Facts>
 });
 
 const countingStore = (dbPath: string, decoded: { rows: number }): RuntimeStore => {
-  const store = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock: createFakeClock(START_MS),
@@ -114,7 +114,7 @@ const countingStore = (dbPath: string, decoded: { rows: number }): RuntimeStore 
 describe('the final text, the in-flight request and the started calls of a run are records written at append, and answer as the fold of the journal does (row 3)', () => {
   it.each(Object.entries(SCENARIOS))('%s', async (_name, payloads) => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id, 'do the task');
+    const run = await enqueue(store, newSession(store).id, 'do the task');
     const claim = mustClaim(store, 'w1');
     expect(store.append(claim, payloads).kind).toBe('ok');
     expect(await recordedFacts(store, run.id)).toEqual(todaysFacts(payloads));
@@ -129,7 +129,7 @@ describe('the final text, the in-flight request and the started calls of a run a
       respondedWith(2, 1, [functionCall('c1')]),
     ];
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id, 'do the task');
+    const run = await enqueue(store, newSession(store).id, 'do the task');
     const claim = mustClaim(store, 'w1');
     expect(store.append(claim, payloads).kind).toBe('ok');
     expect(todaysFacts(payloads).finalText).toBe('');
@@ -138,7 +138,7 @@ describe('the final text, the in-flight request and the started calls of a run a
 
   it('answers an empty text and no request or call for a run that recorded nothing', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id, 'do the task');
+    const run = await enqueue(store, newSession(store).id, 'do the task');
     expect(await recordedFacts(store, run.id)).toEqual({ finalText: '', inFlight: undefined, started: [] });
   });
 
@@ -146,7 +146,7 @@ describe('the final text, the in-flight request and the started calls of a run a
     const decoded = { rows: 0 };
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     const store = countingStore(dbPath, decoded);
-    const run = enqueue(store, newSession(store).id, 'do the task');
+    const run = await enqueue(store, newSession(store).id, 'do the task');
     const claim = mustClaim(store, 'w1');
     const payloads = SCENARIOS['started calls, some finished and some not'];
     if (payloads === undefined) throw new Error('missing scenario');
@@ -254,7 +254,7 @@ describe('the meter record of a session keeps the latest observation and the las
   it('is updated at append', async () => {
     const { store } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id, 'do the task');
+    const run = await enqueue(store, session.id, 'do the task');
     const claim = mustClaim(store, 'w1');
     const payloads = meterJournal(0, 27);
     expect(store.append(claim, payloads.slice(0, 10)).kind).toBe('ok');
@@ -278,7 +278,7 @@ describe('the meter record of a session keeps the latest observation and the las
   it('has no record for a key that was never observed', async () => {
     const { store } = harness();
     const session = newSession(store);
-    enqueue(store, session.id, 'do the task');
+    await enqueue(store, session.id, 'do the task');
     expect(await store.meterRecordOf(session.id, { counter: 'counter-a', contextWindow: 1000, tokenCounting: 'exact' })).toBeUndefined();
   });
 });
@@ -290,7 +290,7 @@ describe('the codes of the notices of a run are a column, so asking for one read
 
   it('answers for a run appended today', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id, 'do the task');
+    const run = await enqueue(store, newSession(store).id, 'do the task');
     const claim = mustClaim(store, 'w1');
     expect(store.append(claim, journals.dropped).kind).toBe('ok');
     expect([await store.hasNoticeCode(run.id, 'memories_dropped'), await store.hasNoticeCode(run.id, 'other'), await store.hasNoticeCode(run.id, 'absent')]).toEqual([true, true, false]);

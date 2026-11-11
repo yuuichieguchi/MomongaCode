@@ -138,7 +138,7 @@ export const recordChatResponse = (span: Span, response: ChatResponse): void => 
       : { [A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS]: response.usage.cachedInputTokens }),
     ...(response.usage.cacheWriteInputTokens === undefined
       ? {}
-      : { [MOMONGA_ATTRIBUTES.cacheWriteInputTokens]: response.usage.cacheWriteInputTokens }),
+      : { [A.ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS]: response.usage.cacheWriteInputTokens }),
     ...(response.usage.reasoningTokens === undefined
       ? {}
       : { [A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS]: response.usage.reasoningTokens }),

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, assertSocketPathLength, ensureMomongaDirs, generationLayout, ensureSessionTmpDir, isPipePath, listenUnix, momongaLayout, momongaPaths, pipePathFor } from '@momonga/foundation';
-import { createTempDir, realProcessTestSignal, removeTempDir } from '@momonga/testkit';
+import { createTempDir, realProcessTestSignal, removeTempDir, testKernelLock } from '@momonga/testkit';
 import type { CommandRunner } from '@momonga/foundation';
 
 describe('win32 layout', () => {
@@ -71,20 +71,20 @@ describe('listening on a named pipe', () => {
   it('binds the pipe without touching the filesystem', async () => {
     const pipe = pipePathFor('C:\\Users\\Alice', 'gateway');
     const { server, listened } = fakeServer('listening');
-    await listenUnix(server, pipe, undefined, realProcessTestSignal());
+    await listenUnix(server, pipe, { mechanism: testKernelLock() }, realProcessTestSignal());
     expect(listened).toEqual([pipe]);
   });
 
   it('reports a second server on the same pipe as already in use', async () => {
     const pipe = pipePathFor('C:\\Users\\Alice', 'gateway');
     const { server } = fakeServer(Object.assign(new Error('EADDRINUSE'), { code: 'EADDRINUSE' }));
-    await expect(listenUnix(server, pipe, undefined, realProcessTestSignal())).rejects.toThrow(`${pipe} is already in use by a live server`);
+    await expect(listenUnix(server, pipe, { mechanism: testKernelLock() }, realProcessTestSignal())).rejects.toThrow(`${pipe} is already in use by a live server`);
   });
 
   it('propagates other bind failures unchanged', async () => {
     const pipe = pipePathFor('C:\\Users\\Alice', 'gateway');
     const { server } = fakeServer(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
-    await expect(listenUnix(server, pipe, undefined, realProcessTestSignal())).rejects.toThrow('EACCES');
+    await expect(listenUnix(server, pipe, { mechanism: testKernelLock() }, realProcessTestSignal())).rejects.toThrow('EACCES');
   });
 });
 
@@ -169,17 +169,17 @@ describe('windows session temporary directories', () => {
 
   it('creates the session directory directly under the sessions root', async () => {
     await withSessions(async (layout) => {
-      const { dir: directory } = await ensureSessionTmpDir(layout, 'abc', { platform: 'win32' });
+      const { dir: directory } = await ensureSessionTmpDir(layout, 'abc', { platform: 'win32', lock: testKernelLock() });
       expect(directory).toBe(path.join(layout.tmp.sessions, 'abc'));
       expect(fs.statSync(directory).isDirectory()).toBe(true);
-      expect((await ensureSessionTmpDir(layout, 'abc', { platform: 'win32' })).dir).toBe(directory);
+      expect((await ensureSessionTmpDir(layout, 'abc', { platform: 'win32', lock: testKernelLock() })).dir).toBe(directory);
     });
   });
 
   it('refuses a session directory that is a link', async () => {
     await withSessions(async (layout, base) => {
       fs.symlinkSync(base, path.join(layout.tmp.sessions, 'linked'));
-      await expect(ensureSessionTmpDir(layout, 'linked', { platform: 'win32' })).rejects.toThrow('link or not a directory');
+      await expect(ensureSessionTmpDir(layout, 'linked', { platform: 'win32', lock: testKernelLock() })).rejects.toThrow('link or not a directory');
     });
   });
 
@@ -187,13 +187,13 @@ describe('windows session temporary directories', () => {
     await withSessions(async (layout, base) => {
       fs.rmSync(layout.tmp.sessions, { recursive: true });
       fs.symlinkSync(base, layout.tmp.sessions);
-      await expect(ensureSessionTmpDir(layout, 'abc', { platform: 'win32' })).rejects.toThrow('missing, a link');
+      await expect(ensureSessionTmpDir(layout, 'abc', { platform: 'win32', lock: testKernelLock() })).rejects.toThrow('missing, a link');
     });
   });
 
   it('rejects session ids that carry separators of either style', async () => {
     await withSessions(async (layout) => {
-      await expect(ensureSessionTmpDir(layout, '..\\x', { platform: 'win32' })).rejects.toThrow('invalid session id');
+      await expect(ensureSessionTmpDir(layout, '..\\x', { platform: 'win32', lock: testKernelLock() })).rejects.toThrow('invalid session id');
     });
   });
 });

@@ -2,14 +2,14 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CHAIN_ROOM_REFUSED_CODE, MODEL_ID_CHANGED_CODE, OUTPUT_RESERVE, ceilRatio, marginFloorFor } from '@momonga/protocol';
 import type { Capabilities, ChainRoomFacts, ProviderAdapter } from '@momonga/protocol';
-import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
+import { createScriptedAdapter, startFakeChatCompletions, textResponseEvents, testKernelLock } from '@momonga/testkit';
 import type { ScriptedAdapter } from '@momonga/testkit';
 import { createManagedTarget, saveProbeRecord } from '../src/index.ts';
 import { invalidRequest } from '../src/core/errors.ts';
 import { mergeCapabilities } from '../src/core/router.ts';
 import { capabilityFailingAdapter } from './capability-failing-adapter.ts';
 import { FM_CURRENCY, fmRecordKey, fmTargetBase, idleServer, recordKeyOptions } from './fm-record-support.ts';
-import { getJson, makeDir, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+import { getJson, makeDir, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 
 const FIRST = 'a/first';
@@ -113,10 +113,12 @@ describe('rule M: a managed server that lists another id than its entry is never
   it('answers model_id_changed with the id the server lists and the id of the entry', async () => {
     const probeRecordDir = path.join(makeDir(), 'probe');
     const key = fmRecordKey('cd'.repeat(32), '25A100');
-    await saveProbeRecord(probeRecordDir, key, { ...makeReport(1, 1), modelId: 'renamed-by-the-server' }, FM_CURRENCY);
+    await saveProbeRecord(probeRecordDir, key, { ...makeReport(1, 1), modelId: 'system' }, FM_CURRENCY, testKernelLock());
+    const renamed = await startFakeChatCompletions({ scenario: 'tools-ok', wire: 'fm', modelId: 'renamed-by-the-server' });
+    registerCleanup(() => renamed.close());
     const managed = await createManagedTarget({
       ...fmTargetBase('apple'),
-      server: idleServer,
+      server: { ...idleServer, ensureRunning: async () => ({ kind: 'unix', path: renamed.socketPath }) },
       binary: '/opt/fake/fm',
       exec: async () => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
       probeRecordDir,

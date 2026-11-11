@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createLockedEntry, hostKernelLock, sha256Hex, sweepLeftovers } from '@momonga/foundation';
+import { createLockedEntry, sha256Hex, sweepLeftovers } from '@momonga/foundation';
 import type { FileSystem, KernelLockMechanism, LockedEntry } from '@momonga/foundation';
 
 export const RIPGREP_MANIFEST_ASSET = 'ripgrep-manifest.json';
@@ -30,7 +30,7 @@ export type RipgrepDistributionPorts = {
   executablesRoot: string;
   random(): number;
   ownerId: string;
-  lock?: KernelLockMechanism;
+  lock: KernelLockMechanism;
   files: RipgrepDistributionFiles;
 };
 
@@ -232,7 +232,7 @@ const nextState = async (state: ResolutionState, resolution: Resolution): Promis
 export const ensureBundledRipgrep = async (ports: RipgrepDistributionPorts): Promise<BundledRipgrep> => {
   const manifest = parseRipgrepManifest(new TextDecoder().decode(ports.asset(RIPGREP_MANIFEST_ASSET)));
   const directory = path.join(ports.executablesRoot, ripgrepDirectoryName(manifest));
-  const resolution: Resolution = { ports, lock: ports.lock ?? hostKernelLock(), manifest, directory, final: path.join(directory, manifest.binary.name) };
+  const resolution: Resolution = { ports, lock: ports.lock, manifest, directory, final: path.join(directory, manifest.binary.name) };
   let state: ResolutionState | BundledRipgrep = { step: 'start' };
   while ('step' in state) state = await nextState(state, resolution);
   return state;

@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, generationLayout, hostKernelLock, inspectProcessLock, syncPaths } from '@momonga/foundation';
+import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, generationLayout, inspectProcessLock, syncPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, prepareGenerationForTest } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, prepareGenerationForTest, testKernelLock } from '@momonga/testkit';
 import { TEST_VERSION, pump, pumpUntil, quiesce, settledFlag, startHarness } from './fixtures/p3-harness.ts';
 import type { Harness } from './fixtures/p3-harness.ts';
 
@@ -58,7 +58,7 @@ describe('a supervisor runs the generation its starter allocated (15.3 S1, S2)',
     expect(h.fake.spawnCount()).toBe(0);
     expect(fs.existsSync(h.paths.current)).toBe(false);
     expect(h.log.withMsg('start.abandoned')).toMatchObject([{ generation: 2, reason }]);
-    expect((await inspectProcessLock(layoutOf(h.home, 2).locks.supervisor)).state).toBe('free');
+    expect((await inspectProcessLock(layoutOf(h.home, 2).locks.supervisor, { mechanism: testKernelLock() })).state).toBe('free');
     expect(h.stdout.lines()).toEqual([]);
   });
 
@@ -162,7 +162,7 @@ describe('the retiring supervisor (15.5, 15.6, P6, 20.1)', () => {
     expect(closed.value()).toEqual({ clean: true, killed: [], leaked: [] });
     expect(signalsIn(h)).toEqual([]);
     expect(h.fake.spawnCount()).toBe(2);
-    expect((await inspectProcessLock(layoutOf(h.home, 1).locks.supervisor)).state).toBe('free');
+    expect((await inspectProcessLock(layoutOf(h.home, 1).locks.supervisor, { mechanism: testKernelLock() })).state).toBe('free');
     expect(h.log.withMsg('generation.ended')).toMatchObject([{ generation: 1 }]);
   });
 
@@ -256,7 +256,7 @@ describe('a child of another version (A7, 15.6, 15.14 P4, 20.11, 20.12)', () => 
     expect(counterOf(h)).toBe('2\n');
     expect(JSON.parse(fs.readFileSync(layoutOf(h.home, 2).startRecord, 'utf8'))).toEqual({ version: '9.9.10-replaced', foldVersion: FOLD_VERSION });
     expect(h.successorLaunches).toEqual([2]);
-    expect(await hostKernelLock().isHeld(layoutOf(h.home, 2).startingLock)).toBe(true);
+    expect(await testKernelLock().isHeld(layoutOf(h.home, 2).startingLock)).toBe(true);
     expect(h.log.withMsg('generation.successor')).toMatchObject([{ generation: 1, successor: 2, version: '9.9.10-replaced', outcome: 'started' }]);
     await pump(h.timers, h.realWork, 120_000);
     expect(h.fake.spawnCount('runtime')).toBe(2);
@@ -287,7 +287,7 @@ describe('a child of another version (A7, 15.6, 15.14 P4, 20.11, 20.12)', () => 
     expect(launched).toEqual([2]);
     expect(h.log.withMsg('generation.successor').at(-1)).toMatchObject({ generation: 1, successor: 2, version: '9.9.10-replaced', outcome: 'spawn-failed', level: 'warn' });
     expect(h.log.withMsg('supervisor.background_transient')).toMatchObject([{ source: 'successor', err: { message: 'spawn /gone/momonga ENOENT' } }]);
-    expect(await hostKernelLock().isHeld(layoutOf(h.home, 2).startingLock)).toBe(false);
+    expect(await testKernelLock().isHeld(layoutOf(h.home, 2).startingLock)).toBe(false);
     expect(h.supervisor.role()).toBe('serving');
     expect(h.health().phase).toBe('running');
     expect(fatal.settled()).toBe(false);
@@ -299,7 +299,7 @@ describe('a child of another version (A7, 15.6, 15.14 P4, 20.11, 20.12)', () => 
     await restartedWith(h, 'runtime', '9.9.10-replaced');
     await pumpUntil(h.timers, () => h.successorLaunches.length === 1, { realWork: h.realWork, maxMs: 5000 });
     await pump(h.timers, h.realWork, STARTUP_TIMEOUT_MS + GENERATION_POLL_INTERVAL_MS);
-    expect(await hostKernelLock().isHeld(layoutOf(h.home, 2).startingLock)).toBe(false);
+    expect(await testKernelLock().isHeld(layoutOf(h.home, 2).startingLock)).toBe(false);
   });
 
   it('an older installed version is refused below the floor: nothing is allocated, the child is held and never spawned again', async (context) => {
@@ -329,7 +329,7 @@ describe('a child of another version (A7, 15.6, 15.14 P4, 20.11, 20.12)', () => 
     const h = await servingWithCounter(context);
     prepareGenerationForTest(h.home, 2, '9.9.10-replaced');
     fs.writeFileSync(h.paths.generationCounter, '2\n');
-    const starter = await hostKernelLock().claim(layoutOf(h.home, 2).startingLock);
+    const starter = await testKernelLock().claim(layoutOf(h.home, 2).startingLock);
     if (starter.kind !== 'claimed') throw new Error('the starting lock of generation 2 was not free');
     try {
       await restartedWith(h, 'runtime', '9.9.10-replaced');

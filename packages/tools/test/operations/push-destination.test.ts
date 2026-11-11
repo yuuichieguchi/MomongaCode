@@ -22,8 +22,8 @@ const worldWithRewrites = (rewrite: (world: ReturnType<typeof makeGitWorld>, els
 
 const REWRITES: ReadonlyArray<readonly [string, (world: ReturnType<typeof makeGitWorld>, elsewhere: string) => void]> = [
   ['remote.origin.pushurl', (world, elsewhere) => world.git(world.work, 'config', 'remote.origin.pushurl', `file://${elsewhere}`)],
-  ['url.<base>.pushInsteadOf', (world, elsewhere) => world.git(world.work, 'config', `url.file://${elsewhere}.pushInsteadOf`, `file://${world.bare}`)],
-  ['url.<base>.insteadOf', (world, elsewhere) => world.git(world.work, 'config', `url.file://${elsewhere}.insteadOf`, `file://${world.bare}`)],
+  ['url.<base>.pushInsteadOf in the configuration of the person', (world, elsewhere) => world.git(world.work, 'config', '--global', `url.file://${elsewhere}.pushInsteadOf`, `file://${world.bare}`)],
+  ['url.<base>.insteadOf in the configuration of the person', (world, elsewhere) => world.git(world.work, 'config', '--global', `url.file://${elsewhere}.insteadOf`, `file://${world.bare}`)],
 ];
 
 describe.each(REWRITES)('GitPush when %s makes git push somewhere other than the raw remote url', (_name, rewrite) => {
@@ -73,7 +73,7 @@ describe('GitPush with several push urls, or a destination that moves after the 
     const tool = operationTool('GitPush', { runArgv: countingRunner().run });
     const parts = partsOf(tool, { remote: 'origin', branch: 'main' }, contextFor(world.work, world.env));
     const prepared = await parts.prepare();
-    expect(prepared).toMatchObject({ before: { pushUrls: [`file://${second}`, `file://${third}`] } });
+    expect(prepared).toMatchObject({ before: { destinations: [`file://${second}`, `file://${third}`] } });
     const result = await parts.execute(prepared);
     expect(result.status).toBe('completed');
     expect(shaIn(world, second)).toBe(head);

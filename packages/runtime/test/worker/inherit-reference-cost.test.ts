@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import v8 from 'node:v8';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openDatabase } from '@momonga/foundation';
+import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { Claim, RuntimeStore } from '@momonga/store';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient } from '../../src/memory/journal-thread-client.ts';
@@ -17,6 +17,7 @@ import { callsStep, textStep } from './scripts.ts';
 import { settle } from './inheritance-support.ts';
 import { builderOf, harnessOf, referenceFactsOf } from './inherit-reference-support.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
+import { testKernelLock } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 600_000 });
 
@@ -33,7 +34,7 @@ afterEach(async () => {
 
 const threadOn = async (dbPath: string): Promise<ReferenceClient> => {
   const { dev, ino } = fs.statSync(dbPath);
-  const client = await startJournalThread({ databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+  const client = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
   clients.push(client);
   const candidate = client as Partial<ReferenceClient>;
   if (typeof candidate.inheritedWindow !== 'function') throw new Error('the journal thread client has no inheritedWindow');
@@ -55,12 +56,12 @@ const sourceWithChain = async (steps: number) => {
   }, { fresh: true });
   const links: string[] = [];
   for (let link = 1; link <= 100; link += 1) links.push((await answeredRun(h, b, `link ${link}`, (claim) => b.text(claim, 300))).id);
-  const queued = b.createRun('queued child');
+  const queued = await b.createRun('queued child');
   return { h, links, queued };
 };
 
 const snapshotOfDb = (dbPath: string) => {
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   try {
     return {
       events: db.prepare('SELECT count(*) AS n, max(id) AS last FROM events').get(),
@@ -101,11 +102,11 @@ describe('R6: what crosses the thread boundary is bounded by W and the item boun
     const h = referenceHarness();
     const b = chainBuilder(h);
     let callId = '';
-    await answeredRun(h, b, 'one', (claim) => {
-      callId = b.tool(claim, { outputChars: 30_000, evict: true });
+    await answeredRun(h, b, 'one', async (claim) => {
+      callId = await b.tool(claim, { outputChars: 30_000, evict: true });
       b.text(claim);
     }, { fresh: true });
-    const child = b.createRun('child');
+    const child = await b.createRun('child');
     await b.inherit(b.claimNext(child.id), 'manual');
     const client = await threadOn(h.dbPath);
     const reply = await client.inheritedWindow({ runId: child.id, windowTokens: 100_000, floorTokens: 1 });
@@ -137,12 +138,12 @@ const loopDecodeDuringInheritance = async (steps: number) => {
     },
   });
   const b = builderOf(env);
-  const source = b.createRun('base task', { history: 'fresh' });
+  const source = await b.createRun('base task', { history: 'fresh' });
   const claim = b.claimNext(source.id);
   b.started(claim, 'manual');
   for (let step = 0; step < steps; step += 1) b.text(claim, 20);
   await b.end(claim, { to: 'COMPLETED' });
-  const child = b.createRun('child task');
+  const child = await b.createRun('child task');
   const counted = <T,>(work: () => Promise<T>): Promise<T> => {
     decoded.counting = true;
     return work().finally(() => {
@@ -204,12 +205,12 @@ const inlineWindowOnLoop = (env: Env, runId: string): number => {
 const childSnapshotBytes = async (steps: number): Promise<number> => {
   const env = await makeEnv();
   const b = builderOf(env);
-  const source = b.createRun('base task', { history: 'fresh' });
+  const source = await b.createRun('base task', { history: 'fresh' });
   const claim = b.claimNext(source.id);
   b.started(claim, 'manual');
   for (let step = 0; step < steps; step += 1) b.text(claim, 20);
   await b.end(claim, { to: 'COMPLETED' });
-  const child = b.createRun('child task');
+  const child = await b.createRun('child task');
   env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
   expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
   expect(env.run(child.id).status).toBe('WAITING_HUMAN');
@@ -239,7 +240,7 @@ describe('R14: no history is read before the window is installed', () => {
     const h: ReferenceHarness = harnessOf(env);
     const b = builderOf(env);
     await answeredRun(h, b, 'Say hello', (claim) => b.text(claim), { fresh: true });
-    const child = b.createRun('And again');
+    const child = await b.createRun('And again');
     const claim = b.claimNext(child.id);
     expect(await env.store.inheritContext(claim, { mode: 'manual' })).toEqual({ kind: 'inherited' });
     const journal = openJournal({

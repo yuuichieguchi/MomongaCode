@@ -17,8 +17,8 @@ export type HistoryPortOptions = {
 };
 
 export const createHistoryPort = ({ store, settings, clock, home, redactor, enforcement }: HistoryPortOptions): HistoryPort => ({
-  load: (session) => {
-    const trusted = settings.trusted(session);
+  load: async (session) => {
+    const trusted = await settings.trusted(session);
     const visibility: HistoryVisibility = { trusted, project: session.cwd };
     const denialFor = async (project: string, signal: AbortSignal): Promise<ReadDenial> => {
       const own = project === session.cwd;
@@ -35,22 +35,7 @@ export const createHistoryPort = ({ store, settings, clock, home, redactor, enfo
           if (denial === undefined) throw new Error(`no read denial was built for project ${project}`);
           return denial;
         };
-        const verdicts = new Map<string, boolean>();
-        const keyOf = (target: string, project: string): string => JSON.stringify([project, target]);
-        for (;;) {
-          const unanswered: Array<{ target: string; project: string }> = [];
-          const result = store.search.query(visibility, {
-            ...request,
-            readDenied: (target, project) => {
-              const verdict = verdicts.get(keyOf(target, project));
-              if (verdict !== undefined) return verdict;
-              unanswered.push({ target, project });
-              return false;
-            },
-          });
-          if (unanswered.length === 0) return result;
-          for (const { target, project } of unanswered) verdicts.set(keyOf(target, project), await denialOf(project)(target));
-        }
+        return store.search.query(visibility, { ...request, readDenied: (target, project) => denialOf(project)(target) });
       },
       read: async (request) => {
         const result = await store.search.readRange(visibility, { ...request, limit: HISTORY_READ_PAGE_EVENTS, redactor });

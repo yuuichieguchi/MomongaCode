@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { probeKeyOf } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
 import { nodeClock, nodeFiles, nodeProcess } from '../src/node-ports.ts';
@@ -89,7 +89,7 @@ describe('the homes a sweep may consider', () => {
 });
 
 describe('the timer of a case', () => {
-  const effects = (): ReturnType<typeof nodeContextEffects> => nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles, clock: nodeClock, process: nodeProcess } as unknown as CliPorts);
+  const effects = (): ReturnType<typeof nodeContextEffects> => nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles, clock: nodeClock, process: nodeProcess } as unknown as CliPorts, testKernelLock());
 
   it('resolves when the time has passed', async () => {
     await expect(effects().after(1, new AbortController().signal)).resolves.toBeUndefined();
@@ -112,7 +112,7 @@ describe('the timer of a case', () => {
 });
 
 describe('the environment of a session inside a case', () => {
-  const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles, process: nodeProcess }) as unknown as CliPorts;
+  const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles, process: nodeProcess, interrupt: new AbortController().signal }) as unknown as CliPorts;
 
   const personEnv = {
     PATH: process.env['PATH'] ?? '/usr/bin',
@@ -145,7 +145,7 @@ describe('the environment of a session inside a case', () => {
   it('is built by the function that builds the environment of the case daemon, with the case home, no relocated cache and no credential', async () => {
     const root = temporary();
     const ports = portsWith(personHome(), personEnv);
-    const env = await nodeContextEffects(ports).sessionEnv(root);
+    const env = await nodeContextEffects(ports, testKernelLock()).sessionEnv(root);
     expect(env['HOME']).toBe(root);
     for (const name of ['XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'APPDATA', 'LOCALAPPDATA', 'UPSTREAM_KEY', 'UPSTREAM_VARIABLE']) {
       expect(env).not.toHaveProperty(name);
@@ -156,7 +156,7 @@ describe('the environment of a session inside a case', () => {
 
   it('is what a shell command in the case sees: the home of the case, never the home of the person', async () => {
     const root = fs.realpathSync(temporary());
-    const env = await nodeContextEffects(portsWith(personHome(), personEnv)).sessionEnv(root);
+    const env = await nodeContextEffects(portsWith(personHome(), personEnv), testKernelLock()).sessionEnv(root);
     const seen = execFileSync('/bin/bash', ['-c', 'printf %s "$HOME"'], { env }).toString();
     expect(seen).toBe(root);
   });
@@ -227,7 +227,7 @@ describe('the credentials a live run reads with the store of the person', () => 
   ];
 
   const effectsOver = (store: CliPorts['secretStore']): ReturnType<typeof nodeContextEffects> =>
-    nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles, process: nodeProcess, secretStore: store } as unknown as CliPorts);
+    nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles, process: nodeProcess, secretStore: store } as unknown as CliPorts, testKernelLock());
 
   it('readCredentials ends at the command limit for all secrets together', async () => {
     useLimitTimers();

@@ -31,7 +31,7 @@ describe('the token pin under the shipped defaults (design core-on 1, test 4)', 
   it('records the run-scoped core keys on run.started of the first run of a folder: the on token pin with an empty deferred set, and the memory share of the adaptive budget', async () => {
     const env = await defaultsEnv();
     env.gateway.script.push(textStep('Done.'));
-    const run = env.enqueue('say done');
+    const run = await env.enqueue('say done');
     await env.runOnce(env.worker());
 
     expect(env.ofType(run.id, 'run.started')[0]?.pins['token']).toEqual({
@@ -53,12 +53,12 @@ describe('a deferred tool called before LoadTools under the shipped defaults (de
     const warm = env.worker('warm', { toolList });
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
       env.gateway.script.push(callsStep([{ callId: `warm-${index}`, name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-      env.enqueue(`warm ${index}`, { history: 'fresh' });
+      await env.enqueue(`warm ${index}`, { history: 'fresh' });
       await env.runOnce(warm);
     }
 
     env.gateway.script.push(callsStep([{ callId: 'count-1', name: 'Counter', args: { value: 'x' } }]), textStep('Done.'));
-    const run = env.enqueue('Use the tools', { history: 'fresh' });
+    const run = await env.enqueue('Use the tools', { history: 'fresh' });
     await env.runOnce(env.worker('main', { toolList }));
     const call = env.ofType(run.id, 'tool.call').find((event) => event.name === 'Counter');
     const completed = env.ofType(run.id, 'tool.completed').find((event) => event.callId === call?.callId);
