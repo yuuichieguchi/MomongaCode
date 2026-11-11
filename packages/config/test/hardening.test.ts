@@ -14,7 +14,7 @@ const NEVER_ABORTED = new AbortController().signal;
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const load = (tree: ReturnType<typeof makeTree>) =>
-  loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+  loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 
 describe('B5 project additionalDirectories confinement', () => {
   it.each(['~', '..', '/'])('discards %j from project settings with a warning naming entry and file', async (entry) => {
@@ -103,7 +103,7 @@ describe('B7 local settings live in user scope', () => {
     const tree = makeTree();
     writeJson(repoLocalSettingsPath(tree), { enableAllProjectMcpServers: true, enabledMcpjsonServers: ['x'] });
     writeJson(mcpJsonPath(tree), { mcpServers: { x: { command: 'x' } } });
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval.map((s) => s.name)).toEqual(['x']);
   });
@@ -158,7 +158,7 @@ describe('S6 credential variables in project .mcp.json', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { gh: { command: 'gh-mcp', env: { T: '${GITHUB_TOKEN}' } }, ok: { command: 'ok' } } });
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { GITHUB_TOKEN: 'secret' } });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { GITHUB_TOKEN: 'secret' } });
     expect(result.enabled.map((s) => s.name)).toEqual(['ok']);
     expect(result.pendingApproval).toEqual([]);
     expect(JSON.stringify(result)).not.toContain('secret');
@@ -180,7 +180,7 @@ describe('S6 credential variables in project .mcp.json', () => {
       },
     });
     writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: ['${MY_MODEL_KEY}'] } } });
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { MY_MODEL_KEY: 'v' } });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { MY_MODEL_KEY: 'v' } });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.filter((w) => w.includes('"s"') && w.includes('MY_MODEL_KEY'))).toHaveLength(1);
@@ -189,14 +189,14 @@ describe('S6 credential variables in project .mcp.json', () => {
   it('still lets user-scope servers expand credentials', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcpServers: { gh: { command: 'gh-mcp', env: { T: '${GITHUB_TOKEN}' } } } });
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { GITHUB_TOKEN: 's' } });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { GITHUB_TOKEN: 's' } });
     expect(result.enabled[0]?.config).toMatchObject({ env: { T: 's' } });
   });
 
   it('throws ConfigError for an invalid expansion in a user-scope server', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcpServers: { gh: { command: 'gh-mcp', args: ['${1BAD}'] } } });
-    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const failure = loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
     await expect(failure).rejects.toBeInstanceOf(ConfigError);
     await expect(failure).rejects.toThrow('"gh"');
   });
@@ -214,7 +214,7 @@ describe('N1 prototype-pollution keys', () => {
   it('rejects __proto__ in .mcp.json', async () => {
     const tree = makeTree();
     const file = writeText(mcpJsonPath(tree), '{"mcpServers": {"a": {"command": "x", "__proto__": {"polluted": true}}}}');
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.filter((w) => w.includes(file) && w.includes('/mcpServers/a/__proto__'))).toHaveLength(1);
@@ -243,7 +243,7 @@ describe('N2 file type checks', () => {
     const tree = makeTree();
     const outside = writeJson(path.join(makeDir(), 'm.json'), { mcpServers: { a: { command: 'a' } } });
     fs.symlinkSync(outside, mcpJsonPath(tree));
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.filter((w) => w.includes(mcpJsonPath(tree)) && /outside the project/.test(w))).toHaveLength(1);
@@ -275,7 +275,7 @@ describe('a regular file named .momonga in the project, as a bubblewrap placehol
   it('loads the MCP servers as if the project had no settings files', async () => {
     const tree = makeTree();
     plantPlaceholder(tree);
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
   });
@@ -283,7 +283,7 @@ describe('a regular file named .momonga in the project, as a bubblewrap placehol
   it('loads the settings of an untrusted project as if it had no settings files', async () => {
     const tree = makeTree();
     plantPlaceholder(tree);
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
     expect(result.files).toEqual([]);
   });
 });
@@ -313,7 +313,7 @@ describe('S6 follow-up: sensitive variable names in project .mcp.json', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: [`\${${variable}}`] } } });
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { [variable]: 'v' } });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { [variable]: 'v' } });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.filter((w) => w.includes('"s"') && w.includes(variable))).toHaveLength(1);

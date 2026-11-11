@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -15,7 +16,7 @@ import {
   runDaemonEntry,
 } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, RotatingLogFile } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
 
 const HOME = '/Users/alice';
 const OWN_LOCK = path.join(HOME, '.momonga', 'run', 'runtime.lock');
@@ -713,16 +714,47 @@ describe('usage errors before the sink exists', () => {
     expect(fake.stderrRaw()).toContain('unknown flag --app-version');
   });
 
-  it('a throwing path resolution is a usage error', async () => {
+  it('a home that cannot be resolved is a usage error, before any hook of the daemon sees it', async () => {
     const fake = fakeIo(['--home=relative/home', '--log-target=file']);
+    const asked: string[] = [];
     const daemon = scriptedDaemon({
       logPath: (home) => {
-        throw new Error(`home must be absolute: ${home}`);
+        asked.push(home);
+        return `${home}/daemon.log`;
       },
     });
     expectUsageExit(fake, daemon, await runDaemonEntry(fake.io, daemon.definition));
     expect(fake.opened).toEqual([]);
-    expect(fake.stderrRaw()).toContain('home must be absolute: relative/home');
+    expect(asked).toEqual([]);
+    expect(fake.stderrRaw()).toContain('path must be absolute: relative/home');
+  });
+
+  it('the hooks of the daemon see the home in its canonical form', async (context) => {
+    const directory = withTempDir(context);
+    const real = path.join(directory, 'real');
+    const alias = path.join(directory, 'alias');
+    fs.mkdirSync(real);
+    fs.symlinkSync(real, alias);
+    const fake = fakeIo([`--home=${alias}`, '--log-target=file']);
+    const daemon = scriptedDaemon({
+      logPath: (home) => {
+        throw new Error(`asked for the log under ${home}`);
+      },
+    });
+    expectUsageExit(fake, daemon, await runDaemonEntry(fake.io, daemon.definition));
+    expect(fake.stderrRaw()).toContain(`asked for the log under ${fs.realpathSync(real)}`);
+  });
+
+  it('a throwing logPath is a usage error', async () => {
+    const fake = fakeIo(['--home=/', '--log-target=file']);
+    const daemon = scriptedDaemon({
+      logPath: (home) => {
+        throw new Error(`no log file under ${home}`);
+      },
+    });
+    expectUsageExit(fake, daemon, await runDaemonEntry(fake.io, daemon.definition));
+    expect(fake.opened).toEqual([]);
+    expect(fake.stderrRaw()).toContain('no log file under /');
   });
 
   it('a throwing ownLockPath is a usage error', async () => {

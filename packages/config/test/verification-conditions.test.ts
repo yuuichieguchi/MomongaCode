@@ -5,7 +5,7 @@ import { distrusting, makeTree, projectSettingsPath, trusting, userSettingsPath,
 type Standing = { conditions?: unknown; required?: unknown; commands?: unknown };
 
 const verificationOf = async (tree: ReturnType<typeof makeTree>, trust = trusting(tree)): Promise<Standing> => {
-  const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust });
+  const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
   return result.settings.verification as unknown as Standing;
 };
 
@@ -44,7 +44,7 @@ describe('verification.required', () => {
   it('is accepted and resolved when a layer sets it', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { verification: { required: true } });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.warnings).toEqual([]);
     expect((result.settings.verification as unknown as Standing).required).toBe(true);
   });

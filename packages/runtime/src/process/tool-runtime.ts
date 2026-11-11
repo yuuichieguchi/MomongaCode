@@ -202,12 +202,12 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     const session = store.getSession(run.sessionId);
     if (session === undefined) throw new Error(`session ${run.sessionId} does not exist`);
     const snapshot = settings.takeUserSnapshot();
-    const trust = store.trust.decisionFor(session.cwd).decision;
+    const trust = (await store.trust.decisionAsked(session.cwd, signal)).decision;
 
     let acquiredHere = false;
     try {
       const loaded = await settings.loadSessionSettings(session.cwd, snapshot);
-      const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user, 'read');
+      const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user, 'read', signal);
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;

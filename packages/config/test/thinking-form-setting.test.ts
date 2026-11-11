@@ -15,13 +15,13 @@ const anthropicTarget = (reasoning?: Record<string, unknown>): Record<string, un
 const load = async (target: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', target)] } });
-  return loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+  return loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 };
 
 const expectRejected = async (target: Record<string, unknown>, ...fragments: (string | RegExp)[]): Promise<void> => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', target)] } });
-  const failure = loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+  const failure = loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
   await expect(failure).rejects.toThrow(userSettingsPath(tree));
   for (const fragment of fragments) await expect(failure).rejects.toThrow(fragment);
 };

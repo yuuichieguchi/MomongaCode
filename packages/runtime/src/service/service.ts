@@ -1,7 +1,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
-import { SWEEP_INTERVAL_MS, encodeSse, listenUnix, startDeadlineSignal, syncPaths } from '@momonga/foundation';
+import { SWEEP_INTERVAL_MS, encodeSse, hostPaths, listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
 import type { MarkerOwners } from '@momonga/tools';
 import type { Clock, Redactor, RolePort } from '@momonga/foundation';
@@ -99,11 +99,12 @@ const reportToStderr = (error: unknown): void => {
   console.error(error);
 };
 
-const assertInsideMomongaHome = (home: string, socketPath: string): void => {
-  const canonicalHome = syncPaths.canonicalPath(home);
-  const socketDirectory = syncPaths.canonicalPath(path.dirname(socketPath));
+const assertInsideMomongaHome = async (home: string, socketPath: string, signal: AbortSignal): Promise<void> => {
+  const paths = hostPaths(signal);
+  const canonicalHome = await paths.canonicalPath(home);
+  const socketDirectory = await paths.canonicalPath(path.dirname(socketPath));
   const allowed = path.join(canonicalHome, '.momonga');
-  if (!syncPaths.comparableContains(allowed, socketDirectory)) {
+  if (!(await paths.comparableContains(allowed, socketDirectory))) {
     throw new Error(`the run socket must live under ${allowed}, but ${socketPath} resolves to ${socketDirectory}`);
   }
 };
@@ -119,7 +120,8 @@ const closeServer = (server: http.Server): Promise<void> =>
 
 export const createRunService = async (options: RunServiceOptions): Promise<RunService> => {
   if (!path.isAbsolute(options.home)) throw new TypeError(`home must be an absolute path, received ${JSON.stringify(options.home)}`);
-  assertInsideMomongaHome(options.home, options.socketPath);
+  const startSignal = startDeadlineSignal(options.startSignal);
+  await assertInsideMomongaHome(options.home, options.socketPath, startSignal);
 
   const timers = options.timers ?? systemTimers;
   const onError = options.onError ?? reportToStderr;
@@ -197,7 +199,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     }
     void listener(request, response);
   });
-  await listenUnix(server, options.socketPath, undefined, startDeadlineSignal(options.startSignal));
+  await listenUnix(server, options.socketPath, undefined, startSignal);
 
   type Sweepers = { approval: { close(): Promise<void> }; terminal: { close(): Promise<void> }; search: { close(): Promise<void> } };
   let sweepers: Sweepers | undefined;

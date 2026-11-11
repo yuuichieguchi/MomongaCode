@@ -15,7 +15,7 @@ import type { SettingsComposition } from './settings-port.ts';
 
 export type McpAdmin = {
   servers(sessionId: string, signal: AbortSignal): Promise<McpServerView[]>;
-  startAuthorization(sessionId: string, name: string): Promise<McpAuthorizationView>;
+  startAuthorization(sessionId: string, name: string, signal: AbortSignal): Promise<McpAuthorizationView>;
   authorization(sessionId: string, name: string): McpAuthorizationView | undefined;
   cancelAuthorization(sessionId: string, name: string): boolean;
   close(graceMs: number): Promise<void>;
@@ -51,12 +51,14 @@ export const loadSessionMcpServers = (
   env: ToolEnv,
   user: UserLayer,
   use: SettingsUse,
+  signal: AbortSignal,
 ): ReturnType<typeof loadMcpServers> =>
   loadMcpServers({
     home: options.home,
     projectDir: session.cwd,
     trust: options.settings.trustOracle,
     env,
+    signal,
     user,
     kept: options.settings.keptLayers(use),
     sessionServers: session.mcpServers,
@@ -82,8 +84,8 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     return session;
   };
 
-  const serverOf = async (session: Session, name: string): Promise<McpServerEntry> => {
-    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session), options.settings.admitUserSnapshot().user, 'admit');
+  const serverOf = async (session: Session, name: string, signal: AbortSignal): Promise<McpServerEntry> => {
+    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session), options.settings.admitUserSnapshot().user, 'admit', signal);
     const entry = loaded.enabled.find((candidate) => candidate.name === name);
     if (entry === undefined) throw notFound(`session ${session.id} has no enabled MCP server named ${name}`);
     return entry;
@@ -133,7 +135,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
 
   const servers: McpAdmin['servers'] = async (sessionId, signal) => {
     const session = sessionOf(sessionId);
-    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session), options.settings.admitUserSnapshot().user, 'admit');
+    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session), options.settings.admitUserSnapshot().user, 'admit', signal);
     const key = sha256Hex(canonicalJson({ session: session.id, cwd: session.cwd, servers: loaded.enabled }));
     const held = acquireProbePool(key, () => poolFor(loaded.enabled, session, options.remote));
     const { pool } = held;
@@ -159,9 +161,9 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     }
   };
 
-  const startAuthorization: McpAdmin['startAuthorization'] = async (sessionId, name) => {
+  const startAuthorization: McpAdmin['startAuthorization'] = async (sessionId, name, signal) => {
     const session = sessionOf(sessionId);
-    const entry = await serverOf(session, name);
+    const entry = await serverOf(session, name, signal);
     if (!('url' in entry.config)) throw invalidRequest(`MCP server ${name} is a stdio server and has no authorization`, 'name');
     const key = keyOf(sessionId, name);
     const running = attempts.get(key);

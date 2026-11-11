@@ -50,7 +50,7 @@ const runCli = async (home: string, args: readonly string[]): Promise<{ codes: n
   const stderr: string[] = [];
   const codes: number[] = [];
   const ports: CliPorts = {
-    ...nodePorts('9.9.9'),
+    ...nodePorts('9.9.9', new AbortController().signal),
     home,
     cwd: home,
     env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home },

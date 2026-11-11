@@ -29,7 +29,7 @@ describe('settings files and the one JSON depth bound', () => {
   ])(`refuses %s settings nested ${MAX_JSON_DEPTH + 1} deep, naming the file and the depth`, async (_scope, pathOf) => {
     const tree = makeTree();
     const file = writeText(pathOf(tree), withExtra(MAX_JSON_DEPTH + 1));
-    const failure = await failureOf(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }));
+    const failure = await failureOf(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }));
     expect(failure.message).toContain(file);
     expect(namesDepth(failure.message)).toBe(true);
   });
@@ -37,7 +37,7 @@ describe('settings files and the one JSON depth bound', () => {
   it(`passes settings nested exactly ${MAX_JSON_DEPTH} deep on to schema validation`, async () => {
     const tree = makeTree();
     const file = writeText(projectSettingsPath(tree), withExtra(MAX_JSON_DEPTH));
-    const failure = await failureOf(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }));
+    const failure = await failureOf(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }));
     expect(failure.message).toContain(file);
     expect(failure.message).toContain('/env/A');
     expect(/depth/i.test(failure.message)).toBe(false);
@@ -48,7 +48,7 @@ describe('.mcp.json and the one JSON depth bound', () => {
   it(`warns about a .mcp.json nested ${MAX_JSON_DEPTH + 1} deep, naming the file and the depth`, async () => {
     const tree = makeTree();
     const file = writeText(mcpJsonPath(tree), mcpJsonText(MAX_JSON_DEPTH + 1));
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.filter((warning) => warning.includes(file) && namesDepth(warning))).toHaveLength(1);
@@ -57,7 +57,7 @@ describe('.mcp.json and the one JSON depth bound', () => {
   it(`does not name the depth for a .mcp.json nested exactly ${MAX_JSON_DEPTH} deep`, async () => {
     const tree = makeTree();
     writeText(mcpJsonPath(tree), mcpJsonText(MAX_JSON_DEPTH));
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
     expect(result.warnings.filter((warning) => /depth/i.test(warning))).toEqual([]);
   });
 });

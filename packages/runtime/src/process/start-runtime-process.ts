@@ -28,13 +28,13 @@ import {
   reapMarkerDirectory,
   resolveKernelLock,
   ruleEnforcementOf,
+  hostPaths,
   startDeadlineSignal,
   SETTINGS_APPLIED_ENV,
   systemClock,
   nodeFileSystem,
   nodeFileSystemSync,
   runtimeTeardownBudgetMs,
-  syncPaths,
 } from '@momonga/foundation';
 import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
@@ -199,7 +199,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
   const startedAtMs = clock.now();
   const startedAt = new Date(startedAtMs).toISOString();
-  const canonicalHome = syncPaths.canonicalPath(home);
+  const canonicalHome = await hostPaths(startDeadlineSignal(signal)).canonicalPath(home);
   const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
   const onWarning = (message: string): void => logger.warn(message);
@@ -579,7 +579,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({ name: 'gateway-client', run: () => gatewayClient.destroy() });
 
     const ports = await step('ports', async () => {
-      const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store });
+      const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, signal: lifetime.signal });
       const mcpNetwork = await outboundNetworkOf(settings.network, startDeadlineSignal(undefined));
       const runtime: ToolRuntime = createToolRuntime({
         owners: markerOwners,
@@ -701,7 +701,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             const { limits, ceilings, mandates } = settingsComposition.takeUserSnapshot().settings;
             return { ...(limits === undefined ? {} : { limits }), ...(ceilings === undefined ? {} : { ceilings }), ...(mandates === undefined ? {} : { mandates }) };
           },
-          projectMandate: (cwd) => loadProjectMandate({ projectDir: cwd, trusted: settingsComposition.trustOracle.isTrusted(cwd) }),
+          projectMandate: async (cwd, requestSignal) => loadProjectMandate({ projectDir: cwd, trusted: await settingsComposition.trustOracle.isTrusted(cwd, requestSignal), signal: requestSignal }),
           chainBilling: async (model, requestSignal) => {
             const { chain } = await gatewayClient.model(model, { signal: requestSignal });
             const quote = await gatewayClient.quote(model, { signal: requestSignal });

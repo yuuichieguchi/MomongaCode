@@ -15,8 +15,8 @@ describe('pathsOf', () => {
   it('lays the paths out for the platform of the ports, not the platform of the process', async () => {
     const home = '/tmp';
 
-    const windows = await pathsOf({ home, platform: 'win32' });
-    const linux = await pathsOf({ home, platform: 'linux' });
+    const windows = await pathsOf({ home, platform: 'win32', interrupt: new AbortController().signal });
+    const linux = await pathsOf({ home, platform: 'linux', interrupt: new AbortController().signal });
 
     expect(windows.current).not.toBe(linux.current);
   });
@@ -24,7 +24,7 @@ describe('pathsOf', () => {
   it('hands the paths out only after ensuring the private tree for the platform of the ports', async () => {
     ensured.calls.length = 0;
 
-    const paths = await pathsOf({ home: '/tmp', platform: 'linux' });
+    const paths = await pathsOf({ home: '/tmp', platform: 'linux', interrupt: new AbortController().signal });
 
     expect(ensured.calls).toEqual([{ root: paths.root, platform: 'linux' }]);
   });

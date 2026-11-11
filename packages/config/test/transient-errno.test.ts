@@ -33,7 +33,7 @@ const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   throw new Error('expected a rejection');
 };
 
-const load = (tree: Tree) => loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+const load = (tree: Tree) => loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 
 describe('config transient errno propagation', () => {
   for (const code of ['EMFILE', 'EIO']) {
@@ -61,7 +61,7 @@ describe('config transient errno propagation', () => {
       const file = writeJson(mcpJsonPath(tree), { mcpServers: { demo: { command: '/bin/echo' } } });
       const injected = errnoError(code);
       failAsyncRead(file, injected);
-      const error = await rejectionOf(loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { PATH: '/usr/bin:/bin' } }));
+      const error = await rejectionOf(loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { PATH: '/usr/bin:/bin' } }));
       expect(error).toBe(injected);
     });
 

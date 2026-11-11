@@ -41,7 +41,7 @@ describe('one registry for every reader of the user settings, built from the one
 
   it('the layered loader of a session resolves it from the user layer', async () => {
     const { tree, command } = await declaredHome();
-    expectWorkbench(modelOf((await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings, 'workbench'), command);
+    expectWorkbench(modelOf((await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings, 'workbench'), command);
   });
 
   it("the gateway's pinned inputs cover the declared server it resolved", async () => {

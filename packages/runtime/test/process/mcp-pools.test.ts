@@ -372,7 +372,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     f.timers.advance(POOL_IDLE_CLOSE_MS);
     await waitFor(() => markerCount(f) === 0, { description: 'the idle pool to close' });
 
-    const mcp = await loadMcpServers({ home: f.temp.home, projectDir: f.temp.project, trust: { isTrusted: () => false }, env: toolEnv() });
+    const mcp = await loadMcpServers({ signal: new AbortController().signal, home: f.temp.home, projectDir: f.temp.project, trust: { isTrusted: () => false }, env: toolEnv() });
     const key = sha256Hex(canonicalJson({ project: f.temp.project, servers: mcp.enabled, trust: 'unset', env: inheritedEnvOf(toolEnv()) }));
     const logged = JSON.stringify(f.logger.entries);
     expect(mcp.enabled.map((server) => server.name)).toEqual(['fx']);

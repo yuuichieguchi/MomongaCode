@@ -311,11 +311,11 @@ describe('session create validation (fake timers)', () => {
   it('?cwd= answers 500 through onError when canonicalPath throws a transient EMFILE', async () => {
     const env = await startService({ fakeTimers: true });
     const injected = Object.assign(new Error('EMFILE: injected'), { code: 'EMFILE' });
-    const realNative = fs.realpathSync.native;
-    vi.spyOn(fs.realpathSync, 'native').mockImplementation(((candidate: fs.PathLike, options?: unknown) => {
+    const realRealpath = fs.promises.realpath;
+    vi.spyOn(fs.promises, 'realpath').mockImplementation((async (candidate: fs.PathLike, options?: unknown) => {
       if (String(candidate) === env.layout.projectReal) throw injected;
-      return realNative(candidate, options as never);
-    }) as typeof fs.realpathSync.native);
+      return realRealpath(candidate, options as never);
+    }) as typeof fs.promises.realpath);
     const response = await env.http('GET', `/v1/sessions?cwd=${encodeURIComponent(env.layout.projectReal)}`);
     expectError(response, 500, 'internal_error');
     expect(env.errors).toEqual([injected]);

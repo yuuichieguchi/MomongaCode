@@ -20,6 +20,7 @@ const unusedPort = (name: string): never =>
 const cliPortsFor = (home: string): CliPorts =>
   ({
     version: '1.0.0',
+    interrupt: new AbortController().signal,
     platform: 'linux',
     env: { PATH: '/usr/bin', UNSET: undefined },
     cwd: home,

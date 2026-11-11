@@ -72,7 +72,7 @@ describe('createPolicyFor builds the file rules of the batch', () => {
     const { temp, store, policyFor } = await setup();
     fs.mkdirSync(path.join(temp.project, '.momonga'), { recursive: true });
     fs.writeFileSync(path.join(temp.project, '.momonga', 'settings.json'), JSON.stringify({ permissions: { deny: ['Read(.env)'] } }));
-    const loaded = await loadSettings({ home: temp.home, projectDir: temp.project, cli: {}, trust: { isTrusted: () => trusted } });
+    const loaded = await loadSettings({ signal: new AbortController().signal, home: temp.home, projectDir: temp.project, cli: {}, trust: { isTrusted: () => trusted } });
     const session = createSession(store, temp.project);
     const policy = (await policyFor(session, { signal: NEVER_CANCELLED, env: env(), rules: loaded.rules } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
     const projectEntries = (await policy.sandboxPolicy.fileRules).entries.filter((entry) => entry.provenance.layer === 'project');

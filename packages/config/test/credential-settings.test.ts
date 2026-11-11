@@ -5,7 +5,7 @@ import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } 
 const CREDENTIALS = { env: ['MYCO_*', 'SERVICE_ID'], keep: ['SSH_AUTH_SOCK'], valuePatterns: ['^ghp_'] };
 
 const load = (tree: ReturnType<typeof makeTree>, cli: Record<string, unknown> = {}) =>
-  loadSettings({ home: tree.home, projectDir: tree.project, cli: cli as never, trust: trusting(tree) });
+  loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: cli as never, trust: trusting(tree) });
 
 const credentialsOf = (settings: unknown): unknown => (settings as { credentials?: unknown }).credentials;
 

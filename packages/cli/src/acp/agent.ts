@@ -41,7 +41,7 @@ export type AcpDeps = {
   models(): Promise<ModelViews>;
   environment(): Promise<Record<string, string>>;
   autoModeAvailable(): Promise<boolean>;
-  canonicalCwd(cwd: string): string;
+  canonicalCwd(cwd: string): Promise<string>;
   daemonReady(): Promise<void>;
   retryAfterRestore<T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T>;
   follow(request: FollowRequest): Promise<RunView>;
@@ -453,7 +453,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
       if (error instanceof RunApiError && error.status === 404) throw RequestError.sessionNotFound(params.sessionId);
       throw error;
     });
-    if (deps.canonicalCwd(params.cwd) !== existing.cwd) {
+    if ((await deps.canonicalCwd(params.cwd)) !== existing.cwd) {
       throw RequestError.invalidParams({ cwd: params.cwd, sessionCwd: existing.cwd }, `session ${existing.id} belongs to ${existing.cwd}, not ${params.cwd}`);
     }
     const view = await viaRunApi(deps.runtime.setMcpServers(existing.id, mcpServers));

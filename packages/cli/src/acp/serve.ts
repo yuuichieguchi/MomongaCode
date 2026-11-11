@@ -1,5 +1,5 @@
 import { ndJsonStream } from '@agentclientprotocol/sdk';
-import { syncPaths } from '@momonga/foundation';
+import { hostPaths } from '@momonga/foundation';
 import { agentReadiness } from '@momonga/protocol';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient, listingViewsOf } from '../client/gateway-client.ts';
@@ -34,7 +34,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     models: async () => listingViewsOf(await gateway.models()),
     environment: () => environmentSnapshot(ports),
     autoModeAvailable: () => autoModeConfigured(ports),
-    canonicalCwd: syncPaths.canonicalPath,
+    canonicalCwd: (cwd) => hostPaths(interrupt).canonicalPath(cwd),
     daemonReady: async () => {
       await ensureSessionDaemon(ports, paths, { signal: interrupt, ...(onNewer === undefined ? {} : { onNewer }) });
     },

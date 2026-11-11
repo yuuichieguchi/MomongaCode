@@ -15,7 +15,7 @@ export const PUBLIC_KEY_ENV = 'MOMONGA_FIXTURE_RELEASE_PUBLIC_KEY';
 export const runUpdateFixture = async (version: string): Promise<void> => {
   const interrupt = new AbortController();
   process.once('SIGINT', () => interrupt.abort());
-  const ports = nodePorts(version);
+  const ports = nodePorts(version, interrupt.signal);
   const releaseUrl = process.env[RELEASE_URL_ENV];
   const wiring = nodeUpdateWiring(ports, await pathsOf(ports));
   const program = buildProgram({

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { Context } from 'hono';
-import { syncPaths } from '@momonga/foundation';
+import { hostPaths } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
@@ -19,33 +19,33 @@ const requiredPathQuery = (context: Context): string => {
 export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<RuntimeStore, 'trust'>; maxBodyBytes: number }): void => {
   const { store } = deps;
 
-  const viewOf = (canonical: string): Response => json({ trust: { path: canonical, ...store.trust.decisionFor(canonical) } }, 200);
+  const viewOf = async (canonical: string, signal: AbortSignal): Promise<Response> => json({ trust: { path: canonical, ...(await store.trust.decisionAsked(canonical, signal)) } }, 200);
 
-  const getTrust: Handler = (context) => {
+  const getTrust: Handler = async (context) => {
     const input = requiredPathQuery(context);
-    const result = syncPaths.canonicalDirectory(input);
+    const result = await hostPaths(context.req.raw.signal).canonicalDirectory(input);
     if (!result.ok) {
       if (result.code === 'missing') throw notFound(`path ${input} ${result.reason}`);
       throw invalidRequest(`path ${input} ${result.reason}`, 'path');
     }
-    return viewOf(result.path);
+    return viewOf(result.path, context.req.raw.signal);
   };
 
   const putTrust: Handler = async (context) => {
     const body = validateBody<PutTrustBody>('PutTrustRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    const result = syncPaths.canonicalDirectory(body.path);
+    const result = await hostPaths(context.req.raw.signal).canonicalDirectory(body.path);
     if (!result.ok) throw invalidRequest(`path ${body.path} ${result.reason}`, 'path');
     if (body.decision === 'trusted' && path.dirname(result.path) === result.path) {
       throw invalidRequest('the filesystem root cannot be trusted', 'decision');
     }
-    store.trust.set(result.path, body.decision);
-    return viewOf(result.path);
+    await store.trust.setAsked(result.path, body.decision, context.req.raw.signal);
+    return viewOf(result.path, context.req.raw.signal);
   };
 
-  const deleteTrust: Handler = (context) => {
+  const deleteTrust: Handler = async (context) => {
     const input = requiredPathQuery(context);
     if (!path.isAbsolute(input)) throw invalidRequest(`path ${input} must be an absolute path`, 'path');
-    store.trust.clear(input);
+    await store.trust.clearAsked(input, context.req.raw.signal);
     return new Response(null, { status: 204 });
   };
 

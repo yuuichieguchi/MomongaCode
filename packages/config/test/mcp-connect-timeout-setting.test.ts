@@ -37,7 +37,7 @@ describe('mcp.connectTimeoutMs is one global user setting for the connect of eve
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcp: { connectTimeoutMs: 45_000 } });
     const file = writeJson(locate(tree), { mcp: { connectTimeoutMs: 1 } });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.warnings).toContain(`${file}: mcp.connectTimeoutMs is only honored in user settings; discarded`);
     expect(result.settings.mcp.connectTimeoutMs).toBe(45_000);
   });

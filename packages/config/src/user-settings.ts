@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { DEFAULT_STOP_VALUES, canonicalJson, isTransientErrno, nodeFileSystemSync, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, answeredNow, canonicalJson, isTransientErrno, nodeFileSystemSync, syncPaths, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { readJsonFileSync } from './json-file.ts';
@@ -11,7 +11,7 @@ import type { Kept } from './last-good.ts';
 import { layoutOf } from './layout.ts';
 import { readUserJsonFile, readUserLayer, userLayerFrom, userSettingsFile } from './layers.ts';
 import type { UserLayer } from './layers.ts';
-import { mergeLayers, parseLayerRules } from './load-settings.ts';
+import { mergingLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
 import type { SandboxSetting } from './settings.ts';
@@ -28,7 +28,7 @@ const userSettingsFrom = (home: string, read: JsonFile, planProfiles?: PlanProfi
     const warnings = [...user.warnings];
     const layers = user.layer === undefined ? [] : [user.layer];
     for (const layer of layers) parseLayerRules(layer, home, home, warnings);
-    const settings = mergeLayers(layers, user.models, home, home, warnings);
+    const settings = answeredNow(mergingLayers(layers, user.models, home, home, warnings), syncPaths);
     return { settings, user, warnings };
   } catch (error) {
     rethrowIfTransient(error);

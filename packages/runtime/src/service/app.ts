@@ -7,8 +7,8 @@ import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
-import { canonicalJson, isTransientErrno, sha256Hex, syncPaths } from '@momonga/foundation';
-import type { Clock, GenerationRole } from '@momonga/foundation';
+import { canonicalJson, hostPaths, isTransientErrno, sha256Hex } from '@momonga/foundation';
+import type { Clock, GenerationRole, PathResolver } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
@@ -144,8 +144,12 @@ const requireAbsolute = (value: string, label: string): void => {
   if (!path.isAbsolute(value)) throw invalidRequest(`${label} must be an absolute path`, label);
 };
 
-const protectedAreaOf = (areas: readonly string[], target: string): string | undefined =>
-  areas.find((area) => syncPaths.comparableContains(area, target));
+const protectedAreaOf = async (areas: readonly string[], target: string, paths: PathResolver): Promise<string | undefined> => {
+  for (const area of areas) {
+    if (await paths.comparableContains(area, target)) return area;
+  }
+  return undefined;
+};
 
 const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
@@ -288,23 +292,24 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   const createSession: Handler = async (context) => {
     refuseNewWork();
     const body = validateBody<CreateSessionBody>('CreateSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    const resolved = syncPaths.canonicalDirectory(body.cwd);
+    const paths = hostPaths(context.req.raw.signal);
+    const resolved = await paths.canonicalDirectory(body.cwd);
     if (!resolved.ok) throw invalidRequest(`cwd ${body.cwd} ${resolved.reason}`, 'cwd');
     const cwd = resolved.path;
-    const cwdArea = protectedAreaOf(deps.protectedRootAreas, cwd);
+    const cwdArea = await protectedAreaOf(deps.protectedRootAreas, cwd, paths);
     if (cwdArea !== undefined) throw invalidRequest(`cwd ${body.cwd} is inside ${cwdArea} and cannot be a session root`, 'cwd');
     const { views, start } = await gatewayListing(context.req.raw.signal);
     if (views.length === 0 || start === null) throw targetNotReady(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
     const model = body.model === undefined ? start : requestedModelOf(body.model, views);
     const settings = await sessionSettingsOf(cwd, context.req.raw.signal);
     const additionalDirectories: string[] = [];
-    const seen = new Set<string>([syncPaths.comparablePath(cwd)]);
+    const seen = new Set<string>([await paths.comparablePath(cwd)]);
     for (const entry of settings.additionalDirectories) {
-      const area = protectedAreaOf(deps.protectedRootAreas, entry);
+      const area = await protectedAreaOf(deps.protectedRootAreas, entry, paths);
       if (area !== undefined) {
         throw configError(`additionalDirectories entry ${entry} is inside ${area} and cannot be a session root`, 'additionalDirectories');
       }
-      const key = syncPaths.comparablePath(entry);
+      const key = await paths.comparablePath(entry);
       if (seen.has(key)) continue;
       seen.add(key);
       additionalDirectories.push(entry);
@@ -320,13 +325,13 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ session: await sessionViewOf(session, context.req.raw.signal, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
-  const listSessions: Handler = (context) => {
+  const listSessions: Handler = async (context) => {
     const requested = context.req.query('cwd');
     if (requested === undefined) return json({ sessions: store.listSessions().map((session) => toSessionView(store, session)) });
     requireAbsolute(requested, 'cwd');
     let cwd: string;
     try {
-      cwd = syncPaths.canonicalPath(requested);
+      cwd = await hostPaths(context.req.raw.signal).canonicalPath(requested);
     } catch (error) {
       if (isTransientErrno(error)) throw error;
       throw invalidRequest(`cwd ${requested} cannot be resolved: ${(error as Error).message}`, 'cwd');
@@ -603,7 +608,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       requireAbsolute(requestedCwd, 'cwd');
       let cwd: string;
       try {
-        cwd = syncPaths.canonicalPath(requestedCwd);
+        cwd = await hostPaths(context.req.raw.signal).canonicalPath(requestedCwd);
       } catch (error) {
         if (isTransientErrno(error)) throw error;
         throw invalidRequest(`cwd ${requestedCwd} cannot be resolved: ${(error as Error).message}`, 'cwd');

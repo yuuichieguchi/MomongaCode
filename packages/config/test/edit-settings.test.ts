@@ -78,7 +78,7 @@ describe('editSettings', () => {
     await editSettings(placeOf(tree), 'local', { kind: 'set', path: ['context', 'cachePrefix'], value: true }, UNABORTED);
     expect(stored(projectSettingsPath(tree))).toEqual({ context: { loopGuidance: false } });
     expect(stored(localSettingsPath(tree))).toEqual({ context: { cachePrefix: true } });
-    const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toMatchObject({ loopGuidance: false, cachePrefix: true });
   });
 
@@ -166,7 +166,7 @@ describe('tui.screen, tui.mouse and tui.copyOnSelect', () => {
   it('cannot be set by a project or local file, which keeps its other tui keys', async () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { tui: { screen: 'scrollback', mouse: false, copyOnSelect: false, theme: 'dark' } });
-    const { settings, warnings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings, warnings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.tui).toMatchObject({ screen: 'fullscreen', mouse: true, copyOnSelect: true, theme: 'dark' });
     expect(warnings).toEqual(['screen', 'mouse', 'copyOnSelect'].map((key) => `${projectSettingsPath(tree)}: tui.${key} is only honored in user settings; discarded`));
   });

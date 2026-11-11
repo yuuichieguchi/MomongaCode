@@ -32,6 +32,8 @@ export interface FileSystem extends AtomicWriteFileSystem {
   writeFile(file: string, content: FileContent): Promise<void>;
   access(file: string, check?: AccessCheck): Promise<void>;
   readlink(file: string): Promise<string>;
+  readlinkBytes(file: string): Promise<Uint8Array>;
+  readStart(file: string, bytes: number): Promise<Uint8Array>;
   realpath(file: string): Promise<string>;
   openDirectory(directory: string): Promise<DirectoryReader>;
   cp(from: string, to: string): Promise<void>;
@@ -145,6 +147,17 @@ export const nodeFileSystem: FileSystem = {
   writeFile: (file, content) => fs.promises.writeFile(file, content),
   access: (file, check = 'exists') => fs.promises.access(file, accessMode(check)),
   readlink: (file) => fs.promises.readlink(file),
+  readlinkBytes: (file) => fs.promises.readlink(file, 'buffer'),
+  readStart: async (file, bytes) => {
+    const handle = await fs.promises.open(file, 'r');
+    try {
+      const buffer = Buffer.alloc(bytes);
+      const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
+      return buffer.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+  },
   realpath: (file) => fs.promises.realpath(file),
   openDirectory: async (directory) => {
     const handle = await fs.promises.opendir(directory);

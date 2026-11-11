@@ -438,7 +438,7 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}, replayedInitialize?
     readinessOf: async () => ({ state: 'ready' }),
     environment: async () => ({ HOME: '/h' }),
     autoModeAvailable: async () => false,
-    canonicalCwd: (cwd) => cwd,
+    canonicalCwd: async (cwd) => cwd,
     daemonReady: async () => undefined,
     retryAfterRestore: (operation) => operation(),
     follow: async (request) => {

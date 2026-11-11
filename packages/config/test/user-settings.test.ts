@@ -164,7 +164,7 @@ describe('project directory equal to home', () => {
     writeJson(path.join(localSettingsDir({ home: tree.home, project: tree.home }), 'settings.local.json'), {
       permissions: { allow: ['Bash(curl:*)'] },
     });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.home, cli: {}, trust: { isTrusted: () => true } });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.home, cli: {}, trust: { isTrusted: () => true } });
     expect(result.rules.map((rule) => [rule.text, rule.origin])).toEqual([['Bash(git status)', 'user']]);
     expect(result.files).toEqual([user]);
   });
@@ -177,7 +177,7 @@ describe('project directory equal to home', () => {
     writeJson(path.join(localSettingsDir({ home: tree.home, project: tree.home }), 'settings.local.json'), {
       permissions: { allow: ['Bash(curl:*)'] },
     });
-    const result = await loadSettings({ home: tree.home, projectDir: link, cli: {}, trust: { isTrusted: () => true } });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: link, cli: {}, trust: { isTrusted: () => true } });
     expect(result.rules.map((rule) => [rule.text, rule.origin])).toEqual([['Bash(git status)', 'user']]);
     expect(result.files).toEqual([user]);
   });
@@ -185,14 +185,14 @@ describe('project directory equal to home', () => {
   it('still loads the project layer for a different directory', async () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { permissions: { allow: ['Read(./src/**)'] } });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.rules.map((rule) => rule.origin)).toEqual(['project']);
   });
 });
 
 describe('defaultModeOrigin', () => {
   const load = (tree: Tree, cli: Record<string, unknown> = {}) =>
-    loadSettings({ home: tree.home, projectDir: tree.project, cli, trust: trusting(tree) });
+    loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli, trust: trusting(tree) });
 
   it('is undefined when no layer sets defaultMode', async () => {
     const result = await load(makeTree());

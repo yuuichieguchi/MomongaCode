@@ -259,10 +259,11 @@ export const nodeRecordFiles: RecordFiles = {
   },
 };
 
-export const nodePorts = (version: string): CliPorts => {
+export const nodePorts = (version: string, interrupt: AbortSignal): CliPorts => {
   const self = nodeSelf(process.argv, isSea);
   return {
     version,
+    interrupt,
     platform: process.platform,
     env: process.env,
     cwd: process.cwd(),

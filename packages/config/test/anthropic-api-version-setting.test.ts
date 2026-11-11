@@ -16,7 +16,7 @@ const anthropicTarget = (extra: Record<string, unknown> = {}, capabilities: Reco
 const settingsWith = (target: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', target)] } });
-  return { tree, loaded: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loaded: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 const expectRefused = async (target: Record<string, unknown>, ...fragments: (string | RegExp)[]): Promise<void> => {

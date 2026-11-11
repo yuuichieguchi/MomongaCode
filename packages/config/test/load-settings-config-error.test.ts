@@ -6,7 +6,7 @@ import { makeTree, projectSettingsPath, trusting, writeJson, writeText } from '.
 import type { Tree } from './helpers.ts';
 
 const failureOf = async (tree: Tree): Promise<Error> => {
-  const outcome = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }).then(
+  const outcome = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }).then(
     () => undefined,
     (error: unknown) => error,
   );

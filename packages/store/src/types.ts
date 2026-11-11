@@ -356,11 +356,16 @@ export type TrustDecision = 'trusted' | 'untrusted';
 
 export type StoredTrustDecision = Stored<TrustDecision>;
 
+export type TrustAnswer = { decision: StoredTrustDecision | null; inheritedFrom?: string };
+
 export type TrustStore = {
   get(path: string): StoredTrustDecision | undefined;
-  decisionFor(path: string): { decision: StoredTrustDecision | null; inheritedFrom?: string };
+  decisionFor(path: string): TrustAnswer;
+  decisionAsked(path: string, signal: AbortSignal): Promise<TrustAnswer>;
   set(path: string, decision: TrustDecision): void;
+  setAsked(path: string, decision: TrustDecision, signal: AbortSignal): Promise<void>;
   clear(path: string): void;
+  clearAsked(path: string, signal: AbortSignal): Promise<void>;
 };
 
 export type { MemoryRecord };

@@ -7,7 +7,6 @@ import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol
 import { formatGovernanceVerification } from '../rule/format.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
-import { interruptOf } from '../ports.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import type { PolicyVerifyHost } from '../verify/host.ts';
@@ -51,9 +50,9 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   } finally {
     await runtime.close();
   }
-  const loaded = await loadSettings({ home: ports.home, projectDir: ports.cwd, cli: {}, trust: { isTrusted: () => trusted } });
+  const loaded = await loadSettings({ home: ports.home, projectDir: ports.cwd, cli: {}, trust: { isTrusted: () => trusted }, signal: ports.interrupt });
   const governanceRules = governance.rules.map((entry) => parseGovernanceRule(entry, { home: ports.home, project: ports.cwd }));
-  const signal = interruptOf(ports);
+  const signal = ports.interrupt;
   const resolver = hostPaths(signal);
   const roots = await rootsOf(ports.cwd, loaded.settings.permissions.additionalDirectories, resolver);
   const mode = options.mode ?? loaded.settings.permissions.defaultMode ?? 'manual';

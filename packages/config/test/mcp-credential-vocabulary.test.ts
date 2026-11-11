@@ -8,7 +8,7 @@ const load = async (variable: string, secret: string) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true });
   writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: [`\${${variable}}`] } } });
-  return loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { [variable]: secret } });
+  return loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { [variable]: secret } });
 };
 
 describe('the security vocabulary decides which variables a project .mcp.json may reference', () => {

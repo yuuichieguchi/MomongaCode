@@ -47,7 +47,7 @@ const decodeCursor = (raw: string | undefined): MemoryListCursor | null => {
   return { createdAt: parsed[0] as number, id: parsed[1] };
 };
 
-const projectOf = (raw: string | undefined): string | undefined => (raw === undefined ? undefined : canonicalProject(raw, 'project'));
+const projectOf = async (raw: string | undefined, signal: AbortSignal): Promise<string | undefined> => (raw === undefined ? undefined : canonicalProject(raw, 'project', signal));
 
 export type MemoryRoutesDeps = {
   store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'contextCharges'>;
@@ -72,7 +72,7 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
 
   const listMemories: Handler = async (context) => {
     const scope = scopeOf(context.req.query('scope'));
-    const project = projectOf(context.req.query('project'));
+    const project = await projectOf(context.req.query('project'), context.req.raw.signal);
     if (project !== undefined && scope === 'user') throw invalidRequest('a project filter cannot be combined with the user scope', 'project');
     const state = stateOf(context.req.query('state'));
     const page = memories.listPage(
@@ -114,10 +114,10 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
 
   const addMemory: Handler = async (context) => {
     const body = validateBody<AddMemoryRequest>('AddMemoryRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    const request: AddMemoryRequest = body.project === undefined ? body : { ...body, project: canonicalProject(body.project, 'project') };
+    const request: AddMemoryRequest = body.project === undefined ? body : { ...body, project: await canonicalProject(body.project, 'project', context.req.raw.signal) };
     try {
       const prepared = await prepareCommandMemory(request, {
-        trusted: (project) => trust.decisionFor(project).decision === 'trusted',
+        trusted: async (project) => (await trust.decisionAsked(project, context.req.raw.signal)).decision === 'trusted',
         evidenceRun: deps.evidenceRun,
         signal: boundOf(context),
       });
@@ -142,10 +142,10 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     return new Response(null, { status: 204 });
   };
 
-  const latestReflection: Handler = (context) => {
+  const latestReflection: Handler = async (context) => {
     const raw = context.req.query('project');
     if (raw === undefined) throw invalidRequest('project is required', 'project');
-    const job = reflection.latestForProject(canonicalProject(raw, 'project'));
+    const job = reflection.latestForProject(await canonicalProject(raw, 'project', context.req.raw.signal));
     const view: ReflectionResponse = {
       job: job === undefined ? null : { runId: job.runId, state: job.state, attempts: job.attempts, reason: job.lastError, dropped: job.dropped, updatedAt: job.updatedAt },
     };

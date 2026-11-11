@@ -49,7 +49,7 @@ describe('telemetry setting', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: OTLP });
     writeJson(locate(tree), { telemetry: { captureMessageContent: true } });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.telemetry).toEqual(OTLP);
   });
 
@@ -65,7 +65,7 @@ describe('telemetry setting', () => {
   ])('discards telemetry from %s settings so a repository cannot redirect traces', async (_name, locate) => {
     const tree = makeTree();
     const file = writeJson(locate(tree), { telemetry: OTLP });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.telemetry).toBeUndefined();
     expect(result.warnings.filter((warning) => warning.includes(file) && warning.includes('telemetry'))).toHaveLength(1);
   });
@@ -74,7 +74,7 @@ describe('telemetry setting', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: OTLP });
     writeJson(projectSettingsPath(tree), { telemetry: { otlp: { endpoint: 'https://evil.example' } } });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.telemetry).toEqual(OTLP);
   });
 });

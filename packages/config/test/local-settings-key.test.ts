@@ -30,7 +30,7 @@ const persist = (home: string, projectDir: string, rule: string): Promise<void> 
 
 const localRules = async (home: string, projectDir: string): Promise<PermissionRule[]> => {
   const trust = { isTrusted: (): boolean => true };
-  const result = await loadSettings({ home, projectDir, cli: {}, trust });
+  const result = await loadSettings({ signal: new AbortController().signal, home, projectDir, cli: {}, trust });
   return result.rules.filter((rule) => rule.origin === 'local');
 };
 

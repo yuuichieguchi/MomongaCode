@@ -1,9 +1,8 @@
 import { spawn } from 'node:child_process';
 import type { EventEmitter } from 'node:events';
-import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
-import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, hostPaths, programKeysOfConfig, someAsync, unresolvableReasonOf } from '@momonga/foundation';
+import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, hostPaths, nodeFileSystem, programKeysOfConfig, someAsync, unresolvableReasonOf } from '@momonga/foundation';
 import type { ConfigPrograms, EntryRead, GitlinkRead, StepRead, Unresolved } from '@momonga/foundation';
 import { systemProgramDirectories } from '@momonga/policy';
 import type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyHostFilesystem, ProgramResolution, WritableCheck } from '@momonga/policy';
@@ -30,8 +29,8 @@ type Holder = { apple: boolean; exact: boolean; unsafe: boolean; program: string
 const holdsProgram = async (directory: string, name: string): Promise<boolean> => {
   const file = path.join(directory, name);
   try {
-    if (!(await fs.promises.stat(file)).isFile()) return false;
-    await fs.promises.access(file, fs.constants.X_OK);
+    if (!(await nodeFileSystem.stat(file)).isFile()) return false;
+    await nodeFileSystem.access(file, 'execute');
     return true;
   } catch (error) {
     if (SKIPPED_ERRNO.has(codeOf(error) ?? '')) return false;
@@ -84,11 +83,11 @@ const typedRead = async <T>(read: () => Promise<T>, notThere: ReadonlySet<string
 const readEntry = (absolute: string): Promise<EntryRead> =>
   typedRead<EntryRead>(
     async () => {
-      const stat = await fs.promises.stat(absolute);
-      if (stat.isDirectory()) return { kind: 'directory', canonical: await fs.promises.realpath(absolute) };
+      const stat = await nodeFileSystem.stat(absolute);
+      if (stat.isDirectory()) return { kind: 'directory', canonical: await nodeFileSystem.realpath(absolute) };
       if (!stat.isFile()) return { kind: 'file', text: '' };
       if (stat.size > MAX_POINTER_FILE_BYTES) return { kind: 'oversize' };
-      const raw = await fs.promises.readFile(absolute);
+      const raw = Buffer.from(await nodeFileSystem.readFile(absolute));
       const text = raw.toString('utf8');
       return Buffer.from(text, 'utf8').equals(raw) ? { kind: 'file', text } : { unresolvable: { kind: 'dynamic' } };
     },
@@ -99,9 +98,9 @@ const readEntry = (absolute: string): Promise<EntryRead> =>
 const readNoFollow = (absolute: string): Promise<StepRead> =>
   typedRead<StepRead>(
     async () => {
-      const stat = await fs.promises.lstat(absolute);
+      const stat = await nodeFileSystem.lstat(absolute);
       if (stat.isSymbolicLink()) {
-        const raw = await fs.promises.readlink(absolute, 'buffer');
+        const raw = Buffer.from(await nodeFileSystem.readlinkBytes(absolute));
         const target = raw.toString('utf8');
         return Buffer.from(target, 'utf8').equals(raw) ? { kind: 'symlink', target } : { unresolvable: { kind: 'dynamic' } };
       }
@@ -126,41 +125,34 @@ const rejectedByGit = async <T>(read: () => Promise<T>, rejected: T): Promise<T>
 const readHead = (absolute: string): Promise<HeadRead> =>
   rejectedByGit<HeadRead>(
     async () => {
-      const stat = await fs.promises.lstat(absolute);
-      if (stat.isSymbolicLink()) return { kind: 'symlink', target: (await fs.promises.readlink(absolute, 'buffer')).toString('latin1') };
+      const stat = await nodeFileSystem.lstat(absolute);
+      if (stat.isSymbolicLink()) return { kind: 'symlink', target: Buffer.from(await nodeFileSystem.readlinkBytes(absolute)).toString('latin1') };
       if (!stat.isFile()) return { kind: 'invalid' };
-      const handle = await fs.promises.open(absolute, 'r');
-      try {
-        const buffer = Buffer.alloc(HEAD_BYTES);
-        const { bytesRead } = await handle.read(buffer, 0, HEAD_BYTES, 0);
-        return { kind: 'text', text: buffer.toString('latin1', 0, bytesRead) };
-      } finally {
-        await handle.close();
-      }
+      return { kind: 'text', text: Buffer.from(await nodeFileSystem.readStart(absolute, HEAD_BYTES)).toString('latin1') };
     },
     { kind: 'invalid' },
   );
 
 const isSearchable = (absolute: string): Promise<boolean> =>
   rejectedByGit(async () => {
-    await fs.promises.lstat(absolute);
-    await fs.promises.access(absolute, fs.constants.X_OK);
+    await nodeFileSystem.lstat(absolute);
+    await nodeFileSystem.access(absolute, 'execute');
     return true;
   }, false);
 
 const readGitlinks = (gitDirectory: string): Promise<GitlinkRead | Unresolved> =>
-  typedRead<GitlinkRead | Unresolved>(async () => gitlinksOfIndex(await fs.promises.readFile(path.join(gitDirectory, 'index'))), NOT_THERE, { paths: [] });
+  typedRead<GitlinkRead | Unresolved>(async () => gitlinksOfIndex(Buffer.from(await nodeFileSystem.readFile(path.join(gitDirectory, 'index')))), NOT_THERE, { paths: [] });
 
 const readConfigPrograms = (gitDirectory: string): Promise<ConfigPrograms | Unresolved> =>
   typedRead<ConfigPrograms | Unresolved>(
-    async () => ({ keys: [...programKeysOfConfig(await fs.promises.readFile(path.join(gitDirectory, 'config'), 'utf8')), ...(await configWorktreeKeys(gitDirectory))] }),
+    async () => ({ keys: [...programKeysOfConfig(await nodeFileSystem.readTextFile(path.join(gitDirectory, 'config'))), ...(await configWorktreeKeys(gitDirectory))] }),
     NOT_THERE,
     { keys: [] },
   );
 
 const configWorktreeKeys = async (gitDirectory: string): Promise<string[]> => {
   try {
-    return programKeysOfConfig(await fs.promises.readFile(path.join(gitDirectory, 'config.worktree'), 'utf8'));
+    return programKeysOfConfig(await nodeFileSystem.readTextFile(path.join(gitDirectory, 'config.worktree')));
   } catch (error) {
     if (isNotThere(error)) return [];
     throw error;

@@ -17,7 +17,7 @@ export class MemoryAddRefusal extends Error {
 }
 
 export type MemoryAddContext = {
-  trusted(project: string): boolean;
+  trusted(project: string): boolean | Promise<boolean>;
   evidenceRun(project: string): EvidenceRun;
   signal: AbortSignal;
 };
@@ -51,7 +51,7 @@ export const prepareCommandMemory = async (request: AddMemoryRequest, context: M
   if (request.scope === 'user' && request.project !== undefined) throw new MemoryAddRefusal('a user memory belongs to no project, so project cannot be given', 'project');
   if (request.scope === 'project') {
     if (request.project === undefined) throw new MemoryAddRefusal('a project memory needs the project folder', 'project');
-    if (!context.trusted(request.project)) {
+    if (!(await context.trusted(request.project))) {
       throw new MemoryAddRefusal(
         `${request.project} is not a trusted folder, so a project memory cannot be added there; trust the folder first or add a user memory`,
         'project',

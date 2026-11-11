@@ -76,7 +76,7 @@ describe('settings composition hooks and auto mode', () => {
     const binary = path.join(makeDir(f.temp.home, 'bin'), 'fm');
     fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     writeUserSettings(f.temp.home, { autoMode: { classifier: 'system' }, models: { connections: [{ adapter: 'managed', server: 'fm', binary, models: [{ id: 'system', toolCalling: 'native' }] }] } });
-    const composition = runtime.createSettingsComposition({ home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
+    const composition = runtime.createSettingsComposition({ signal: new AbortController().signal, home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
     const created = await composition.sessionCreateSettings(f.temp.project, signalNever());
     expect(created.autoModeClassifier).toBe('apple/system');
     expect(created.autoModeKey).toBeUndefined();
@@ -242,7 +242,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     expect(f.composition.settings.trusted(session)).toBe(true);
     f.store.trust.set(f.temp.project, 'untrusted');
     expect(f.composition.settings.trusted(session)).toBe(false);
-    expect(f.composition.trustOracle.isTrusted(f.temp.project)).toBe(false);
+    expect(await f.composition.trustOracle.isTrusted(f.temp.project, new AbortController().signal)).toBe(false);
   });
 
   it('a session in a subdirectory of a trusted project loads project rules', async () => {
@@ -258,7 +258,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const rules = await f.composition.settings.rules(session);
     expect(rules.map((rule) => [rule.text, rule.origin])).toEqual([['Bash(make)', 'project']]);
     expect(f.composition.settings.trusted(session)).toBe(true);
-    expect(f.composition.trustOracle.isTrusted(sub)).toBe(true);
+    expect(await f.composition.trustOracle.isTrusted(sub, new AbortController().signal)).toBe(true);
   });
 
   it('a decision on home is not inherited', async () => {
@@ -269,7 +269,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     f.store.trust.set(f.temp.home, 'trusted');
     const session = createSession(f.store, inside);
 
-    expect(f.composition.trustOracle.isTrusted(inside)).toBe(false);
+    expect(await f.composition.trustOracle.isTrusted(inside, new AbortController().signal)).toBe(false);
     expect(f.composition.settings.trusted(session)).toBe(false);
     expect(await f.composition.settings.rules(session)).toEqual([]);
   });
@@ -321,7 +321,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const temp = await makeTempHome();
     const { store } = openStore(temp);
 
-    const error = await thrownBy(() => runtime.createSettingsComposition({ home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
+    const error = await thrownBy(() => runtime.createSettingsComposition({ signal: new AbortController().signal, home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
 
     expect(error).toBeInstanceOf(TypeError);
     expect((error as Error).message).toContain('relative/home');

@@ -55,7 +55,7 @@ describe('token settings values', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { context: { cachePrefix: true, outputFormatters: ['log'] }, tools: { deferral: true } });
     writeJson(projectSettingsPath(tree), { context: { outputFormatters: ['json'] }, tools: { conciseDescriptions: true } });
-    const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toEqual({ ...DEFAULT_CONTEXT, outputFormatters: ['json'] });
     expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
   });

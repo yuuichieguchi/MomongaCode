@@ -12,6 +12,7 @@ import {
   daemonStopBoundMs,
   generationLayout,
   hostKernelLock,
+  hostPaths,
   listGenerations,
   momongaPaths,
   orphanReapGraceMs,
@@ -22,9 +23,9 @@ import {
   roleEndpoint,
   runtimeMaxCloseMs,
   scopeToGeneration,
+  startDeadlineSignal,
   systemClock,
   writeStopRecord,
-  syncPaths,
 } from '@momonga/foundation';
 import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
@@ -179,7 +180,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const logger = options.logger ?? createJsonLogger({ service: SUPERVISOR_SERVICE, clock });
   const intervals = resolveIntervals(options.intervals);
   const restart = resolveRestartPolicy(options.restart);
-  const canonicalHome = syncPaths.canonicalPath(options.home);
+  const canonicalHome = await hostPaths(startDeadlineSignal(options.signal)).canonicalPath(options.home);
   const startTiming = resolveStartTiming(options);
   const { startupTimeoutMs } = startTiming;
   const homePaths = momongaPaths(canonicalHome, process.platform, {});

@@ -67,7 +67,7 @@ describe('network setting', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { network: { noProxy: 'user.example' } });
     const file = writeJson(locate(tree), { network: NETWORK });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.network).toEqual({ noProxy: 'user.example' });
     expect(result.warnings.filter((warning) => warning.includes(file) && warning.includes('network is only honored in user settings; discarded'))).toHaveLength(1);
   });

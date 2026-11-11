@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { askerOf, rethrowIfUnread } from './asker.ts';
+import type { Asker } from './asker.ts';
 import { readJsonFile } from './json-file.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { exists, loadLayers } from './layers.ts';
 import { credentialEnvNames } from './models.ts';
-import type { KeptLayers, LoadedLayers } from './layers.ts';
+import type { KeptLayers, LayerOptions, LoadedLayers } from './layers.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import type { TrustOracle, UserLayer } from './layers.ts';
 import { assertMcpServer, assertMcpServersFile } from './settings.ts';
@@ -21,6 +23,7 @@ export type LoadMcpServersOptions = {
   projectDir: string;
   trust: TrustOracle;
   env: Readonly<Record<string, string | undefined>>;
+  signal: AbortSignal;
   user?: UserLayer;
   kept?: KeptLayers;
   sessionServers?: Readonly<Record<string, unknown>>;
@@ -119,11 +122,11 @@ const SENSITIVE_VARIABLE = /(URL|DSN|PAT|CREDENTIAL|CONN|SESSION|COOKIE)/i;
 
 const allowAnyVariable: VariableGuard = () => false;
 
-const loadLayersForUser = async (options: Pick<LoadMcpServersOptions, 'home' | 'projectDir' | 'trust' | 'user' | 'kept'>): Promise<LoadedLayers> => {
+const loadLayersForUser = async (options: LayerOptions): Promise<LoadedLayers> => {
   try {
     return await loadLayers(options);
   } catch (error) {
-    rethrowIfTransient(error);
+    rethrowIfUnread(error, options.asker.signal);
     throw toConfigError(error);
   }
 };
@@ -164,14 +167,15 @@ const readProjectServers = async (
   projectDir: string,
   userNames: ReadonlySet<string>,
   warnings: string[],
+  { signal, paths }: Asker,
 ): Promise<McpServersFile['mcpServers']> => {
   let file: McpServersFile;
   try {
-    const read = await readJsonFile(mcpJson, { confineTo: projectDir });
+    const read = await readJsonFile(mcpJson, { confine: { to: projectDir, paths } });
     if (!read.found) return undefined;
     file = assertMcpServersFile(read.value, mcpJson);
   } catch (error) {
-    rethrowIfTransient(error);
+    rethrowIfUnread(error, signal);
     if (!(error instanceof Error)) throw toConfigError(error);
     warnings.push(`${error.message}; skipped the project MCP servers in ${mcpJson}`);
     return undefined;
@@ -196,8 +200,9 @@ export const assertSessionMcpServers = (value: unknown): Record<string, McpServe
   );
 };
 
-export const loadMcpServers = async ({ home, projectDir, trust, env, user, kept, sessionServers }: LoadMcpServersOptions): Promise<LoadMcpServersResult> => {
-  const loaded = await loadLayersForUser({ home, projectDir, trust, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
+export const loadMcpServers = async ({ home, projectDir, trust, env, signal, user, kept, sessionServers }: LoadMcpServersOptions): Promise<LoadMcpServersResult> => {
+  const asker = askerOf(signal);
+  const loaded = await loadLayersForUser({ home, projectDir, trust, asker, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
   const warnings = [...loaded.warnings];
   const userSettings = loaded.layers.find((layer) => layer.origin === 'user');
   const approvingSettings = loaded.layers.filter((layer) => layer.origin === 'user' || layer.origin === 'local').map((layer) => layer.settings);
@@ -248,14 +253,14 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, user, kept,
   }
 
   const mcpJson = path.join(projectDir, '.mcp.json');
-  if (!trust.isTrusted(projectDir)) {
+  if (!(await trust.isTrusted(projectDir, signal))) {
     if (await exists(mcpJson)) warnings.push(`project ${projectDir} is not trusted; ${mcpJson} was not read`);
     return { enabled, pendingApproval, failed, warnings };
   }
 
   const protectedNames = new Set(credentialEnvNames(loaded.models));
   const refuseCredentialVariable: VariableGuard = (variable) => looksLikeCredentialName(variable) || SENSITIVE_VARIABLE.test(variable) || protectedNames.has(variable);
-  const projectServers = await readProjectServers(mcpJson, projectDir, seen, warnings);
+  const projectServers = await readProjectServers(mcpJson, projectDir, seen, warnings, asker);
   for (const [name, rawConfig] of Object.entries(projectServers ?? {})) {
     const isEnabled = !disabled.has(name) && (approveAll || approved.has(name));
     const outcome = evaluateProjectServer(name, rawConfig, mcpJson, isEnabled, env, refuseCredentialVariable);

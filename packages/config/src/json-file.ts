@@ -1,5 +1,6 @@
 import fs from 'node:fs';
-import { JsonDepthError, MAX_JSON_DEPTH, parseOutsideJson, syncPaths } from '@momonga/foundation';
+import { JsonDepthError, MAX_JSON_DEPTH, parseOutsideJson } from '@momonga/foundation';
+import type { PathResolver } from '@momonga/foundation';
 
 export type JsonFile = { found: false } | { found: true; value: unknown };
 
@@ -175,13 +176,15 @@ export const parseJsonText = (text: string, source: string): unknown => {
   return value;
 };
 
-export type ReadJsonFileOptions = { confineTo?: string };
+export type Confinement = { to: string; paths: PathResolver };
+
+export type ReadJsonFileOptions = { confine?: Confinement };
 
 const ABSENT_CODES: ReadonlySet<string | undefined> = new Set(['ENOENT', 'ENOTDIR']);
 
 export const isAbsentPathError = (error: unknown): boolean => ABSENT_CODES.has((error as NodeJS.ErrnoException).code);
 
-const assertReadable = async (file: string, confineTo: string | undefined): Promise<boolean> => {
+const assertReadable = async (file: string, confine: Confinement | undefined): Promise<boolean> => {
   let link: fs.Stats;
   try {
     link = await fs.promises.lstat(file);
@@ -198,10 +201,10 @@ const assertReadable = async (file: string, confineTo: string | undefined): Prom
       throw error;
     }
     if (!target.isFile()) throw new Error(`${file}: not a regular file`);
-    if (confineTo !== undefined) {
-      const real = syncPaths.canonicalPath(file);
-      const root = syncPaths.canonicalPath(confineTo);
-      if (!syncPaths.comparableContains(root, real)) throw new Error(`${file}: symlink target ${real} is outside the project ${root}`);
+    if (confine !== undefined) {
+      const real = await confine.paths.canonicalPath(file);
+      const root = await confine.paths.canonicalPath(confine.to);
+      if (!(await confine.paths.comparableContains(root, real))) throw new Error(`${file}: symlink target ${real} is outside the project ${root}`);
     }
     return true;
   }
@@ -210,7 +213,7 @@ const assertReadable = async (file: string, confineTo: string | undefined): Prom
 };
 
 export const readJsonFile = async (file: string, options: ReadJsonFileOptions = {}): Promise<JsonFile> => {
-  if (!(await assertReadable(file, options.confineTo))) return { found: false };
+  if (!(await assertReadable(file, options.confine))) return { found: false };
   let text: string;
   try {
     text = await fs.promises.readFile(file, 'utf8');

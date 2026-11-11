@@ -20,7 +20,7 @@ describe('sandboxUnixSockets setting', () => {
   it('is honoured from user settings', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { sandbox: 'seatbelt', sandboxUnixSockets: { allow: ['/var/run/agent', '/tmp/x.sock'] } });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.sandboxUnixSockets).toEqual({ allow: ['/var/run/agent', '/tmp/x.sock'] });
     expect(result.warnings).toEqual([]);
   });
@@ -32,7 +32,7 @@ describe('sandboxUnixSockets setting', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { sandbox: 'seatbelt', sandboxUnixSockets: { allow: ['/var/run/agent'] } });
     const file = writeJson(fileOf(tree), { sandboxUnixSockets: { allow: ['/var/run/docker.sock'] } });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.sandboxUnixSockets).toEqual({ allow: ['/var/run/agent'] });
     expect(result.warnings).toEqual([`${file}: sandboxUnixSockets is only honored in user settings; discarded`]);
   });

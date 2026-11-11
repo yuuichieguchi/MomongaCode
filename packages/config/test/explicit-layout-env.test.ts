@@ -31,7 +31,7 @@ describe('config passes an explicit env to momongaLayout', () => {
   it('in loadSettings', async () => {
     layoutCalls.length = 0;
     const tree = makeTree();
-    await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expectExplicitEnv();
   });
 
@@ -46,7 +46,7 @@ describe('config passes an explicit env to momongaLayout', () => {
   it('in loadMcpServers and appendPermissionRule', async () => {
     layoutCalls.length = 0;
     const tree = makeTree();
-    await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
     await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', signal: NEVER_ABORTED });
     expectExplicitEnv();
   });

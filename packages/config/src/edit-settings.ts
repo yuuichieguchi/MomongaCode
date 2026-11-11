@@ -1,12 +1,12 @@
 import path from 'node:path';
-import { canonicalJson, isRecord, systemFileLockPorts } from '@momonga/foundation';
+import { answeredNow, canonicalJson, isRecord, syncPaths, systemFileLockPorts } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { editUserSettings } from './edit-user-settings.ts';
 import { appendPermissionRule } from './append-rule.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { readJsonFile } from './json-file.ts';
 import { repositoryLayerFrom, userLayerFrom, userSettingsFile } from './layers.ts';
-import { mergeLayers, parseLayerRules } from './load-settings.ts';
+import { mergingLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
 import { localSettingsFile, worktreeRootOf } from './local-settings.ts';
 import type { RuleEffect } from './rule.ts';
@@ -55,7 +55,7 @@ const locate = async (place: SettingsPlace, layer: SettingsLayer): Promise<Locat
   return { file: await localSettingsFile(place.home, place.projectDir), root: await worktreeRootOf(place.home, place.projectDir) };
 };
 
-const defaultsOf = (home: string): ResolvedSettings => mergeLayers([], userLayerFrom(home, { found: false }).models, home, home, []);
+const defaultsOf = (home: string): ResolvedSettings => answeredNow(mergingLayers([], userLayerFrom(home, { found: false }).models, home, home, []), syncPaths);
 
 const loaderWarnings = (place: SettingsPlace, layer: SettingsLayer, located: Located, document: unknown): string[] => {
   if (layer === 'user') return userDocumentWarnings(place.home, document);
@@ -64,7 +64,7 @@ const loaderWarnings = (place: SettingsPlace, layer: SettingsLayer, located: Loc
     const built = repositoryLayerFrom(document, located.file, layer, located.root, warnings);
     if (built === undefined) return warnings;
     parseLayerRules(built, place.home, place.projectDir, warnings);
-    mergeLayers([built], defaultsOf(place.home).models, place.home, place.projectDir, warnings);
+    answeredNow(mergingLayers([built], defaultsOf(place.home).models, place.home, place.projectDir, warnings), syncPaths);
     return warnings;
   } catch (error) {
     rethrowIfTransient(error);

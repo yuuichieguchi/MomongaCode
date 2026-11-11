@@ -22,7 +22,7 @@ describe('the roles a setting can pin', () => {
   });
 });
 
-const load = (tree: Tree) => loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+const load = (tree: Tree) => loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 
 const loadWithModels = (tree: Tree, models: Record<string, unknown>) => {
   writeJson(userSettingsPath(tree), { models });

@@ -10,7 +10,7 @@ import { toRunView } from './views.ts';
 
 export type McpAdminPort = {
   servers(sessionId: string, signal: AbortSignal): Promise<McpServerView[]>;
-  startAuthorization(sessionId: string, name: string): Promise<McpAuthorizationView>;
+  startAuthorization(sessionId: string, name: string, signal: AbortSignal): Promise<McpAuthorizationView>;
   authorization(sessionId: string, name: string): McpAuthorizationView | undefined;
   cancelAuthorization(sessionId: string, name: string): boolean;
 };
@@ -84,7 +84,7 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
 
   const startAuthorization: Handler = async (context) => {
     deps.refuseWhileRetiring();
-    return json({ authorization: await mcp.startAuthorization(context.req.param('id') ?? '', context.req.param('name') ?? '') }, 202);
+    return json({ authorization: await mcp.startAuthorization(context.req.param('id') ?? '', context.req.param('name') ?? '', context.req.raw.signal) }, 202);
   };
 
   const getAuthorization: Handler = (context) => {

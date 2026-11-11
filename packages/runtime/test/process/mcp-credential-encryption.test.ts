@@ -69,7 +69,7 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
   const session = createSession(f.store, f.temp.project, { mcpServers: { docs: { type: 'http', url: 'https://mcp.example.test/' } } });
   const authorize = async (value: string) => {
     tokens = value;
-    await toolRuntime.mcpAdmin.startAuthorization(session.id, 'docs');
+    await toolRuntime.mcpAdmin.startAuthorization(session.id, 'docs', new AbortController().signal);
     for (let turn = 0; turn < 200; turn += 1) {
       const view = toolRuntime.mcpAdmin.authorization(session.id, 'docs');
       if (view !== undefined && view.status !== 'awaiting_user') return view;

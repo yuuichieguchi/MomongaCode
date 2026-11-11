@@ -58,7 +58,7 @@ describe('tui.theme and tui.notify', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { theme: 'dark', notify: 'bell' } });
     writeJson(projectSettingsPath(tree), { tui: { theme: 'light-colorblind' } });
-    const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.tui).toEqual({ theme: 'light-colorblind', notify: 'bell', ...A11Y_OFF });
   });
 });

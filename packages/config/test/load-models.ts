@@ -46,6 +46,6 @@ export const loadWithProject = async (user: unknown, project: unknown) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), user);
   const projectFile = writeJson(projectSettingsPath(tree), project);
-  const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+  const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
   return { tree, projectFile, models: result.settings.models as unknown as LoadedModels, warnings: result.warnings };
 };

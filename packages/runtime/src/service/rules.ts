@@ -24,10 +24,10 @@ export type RuleRoutesDeps = {
 const json = (body: unknown, status: number): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-const requiredProject = (context: Context): string => {
+const requiredProject = (context: Context): Promise<string> => {
   const raw = new URL(context.req.url).searchParams.get('project');
-  if (raw === null || raw === '') throw invalidRequest('the project query parameter is required', 'project');
-  return canonicalProject(raw, 'project');
+  if (raw === null || raw === '') return Promise.reject(invalidRequest('the project query parameter is required', 'project'));
+  return canonicalProject(raw, 'project', context.req.raw.signal);
 };
 
 const overlapWarning = (existing: GoverningFactView): string =>
@@ -76,7 +76,7 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     const body = validateBody<AddRuleRequest>('AddRuleRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
     deps.refuseWhileRetiring();
     const scope: GoverningFactView['scope'] =
-      body.scope.level === 'user' ? body.scope : { level: 'project', project: canonicalProject(body.scope.project, 'scope.project'), paths: body.scope.paths };
+      body.scope.level === 'user' ? body.scope : { level: 'project', project: await canonicalProject(body.scope.project, 'scope.project', context.req.raw.signal), paths: body.scope.paths };
     const input = {
       kind: body.kind,
       target: normalizeTarget(body.target),
@@ -101,7 +101,7 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     return json({ fact, size: sized.size, warnings } satisfies RuleAddResponse, 201);
   };
 
-  const listRules: Handler = (context) => json({ facts: governing.list({ project: requiredProject(context) }) }, 200);
+  const listRules: Handler = async (context) => json({ facts: governing.list({ project: await requiredProject(context) }) }, 200);
 
   const retireRule: Handler = (context) => {
     const { id } = requireFact(context);
@@ -112,8 +112,8 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
 
   const ruleHistory: Handler = (context) => json({ facts: governing.history(requireFact(context).id) }, 200);
 
-  const policyGovernance: Handler = (context) => {
-    const project = requiredProject(context);
+  const policyGovernance: Handler = async (context) => {
+    const project = await requiredProject(context);
     const { active } = resolveGoverning(governing.list({ project }), { now: deps.clock.now(), project, touchedPaths: [], ignorePaths: true });
     const response: PolicyGovernanceResponse = {
       rules: active.flatMap((fact) => (fact.enforcement === null ? [] : [{ id: fact.id, behavior: enforcedBehaviorOf(fact.enforcement.behavior), rule: fact.enforcement.rule }])),

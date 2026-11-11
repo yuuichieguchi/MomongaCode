@@ -18,6 +18,7 @@ export type SettingsCompositionOptions = {
   platform: NodeJS.Platform;
   cache: UserSettingsCache;
   store: Pick<RuntimeStore, 'trust'>;
+  signal: AbortSignal;
 };
 
 export type SettingsComposition = {
@@ -33,10 +34,10 @@ export type SettingsComposition = {
   admitted<T>(admit: () => Promise<T> | T): Promise<T>;
 };
 
-export const createSettingsComposition = ({ home, platform, cache, store }: SettingsCompositionOptions): SettingsComposition => {
+export const createSettingsComposition = ({ home, platform, cache, store, signal: lifetime }: SettingsCompositionOptions): SettingsComposition => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
 
-  const trustOracle: TrustOracle = { isTrusted: (dir) => store.trust.decisionFor(dir).decision === 'trusted' };
+  const trustOracle: TrustOracle = { isTrusted: async (dir, signal) => (await store.trust.decisionAsked(dir, signal)).decision === 'trusted' };
 
   const classifierKeyPorts = { exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform };
 
@@ -70,10 +71,10 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
 
   const keptLayers = (use: SettingsUse): KeptLayers => ({ store: cache.kept, use });
 
-  const settingsFor = (cwd: string, snapshot: UserSnapshot, use: SettingsUse): Promise<LoadSettingsResult> =>
-    loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, user: snapshot.user, kept: keptLayers(use) });
+  const settingsFor = (cwd: string, snapshot: UserSnapshot, use: SettingsUse, signal: AbortSignal): Promise<LoadSettingsResult> =>
+    loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, signal, user: snapshot.user, kept: keptLayers(use) });
 
-  const loadSessionSettings = (cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult> => settingsFor(cwd, snapshot, 'read');
+  const loadSessionSettings = (cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult> => settingsFor(cwd, snapshot, 'read', lifetime);
 
   const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const { permissions } = loaded.settings;
@@ -93,12 +94,12 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
 
   const sessionCreateSettings = async (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const snapshot = admitUserSnapshot();
-    return sessionSettingsFrom(snapshot, await admitted(() => settingsFor(cwd, snapshot, 'admit')), signal);
+    return sessionSettingsFrom(snapshot, await admitted(() => settingsFor(cwd, snapshot, 'admit', signal)), signal);
   };
 
   const sessionReadSettings = async (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const snapshot = takeUserSnapshot();
-    return sessionSettingsFrom(snapshot, await loadSessionSettings(cwd, snapshot), signal);
+    return sessionSettingsFrom(snapshot, await settingsFor(cwd, snapshot, 'read', signal), signal);
   };
 
   const envFor = (session: Session): ToolEnv => {

@@ -47,7 +47,7 @@ export type CliPorts = {
   env: Readonly<Record<string, string | undefined>>;
   cwd: string;
   home: string;
-  interrupt?: AbortSignal | undefined;
+  interrupt: AbortSignal;
   stdout: Sink;
   stderr: Sink;
   clock: CliClock;
@@ -63,7 +63,3 @@ export type CliPorts = {
   acpStdio?: () => AcpStdio;
   handover?: HandoverHost;
 };
-
-const UNINTERRUPTED: AbortSignal = new AbortController().signal;
-
-export const interruptOf = (ports: Pick<CliPorts, 'interrupt'>): AbortSignal => ports.interrupt ?? UNINTERRUPTED;

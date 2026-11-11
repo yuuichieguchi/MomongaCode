@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { isRecord, isTransientErrno } from '@momonga/foundation';
+import type { Asker } from './asker.ts';
 import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/protocol';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
@@ -20,7 +21,7 @@ import type { RuleOrigin } from './rule.ts';
 import { assertSettings, KNOWN_SETTINGS_KEYS } from './settings.ts';
 import type { Settings } from './settings.ts';
 
-export type TrustOracle = { isTrusted: (directory: string) => boolean };
+export type TrustOracle = { isTrusted: (directory: string, signal: AbortSignal) => boolean | Promise<boolean> };
 
 export type Layer = { origin: RuleOrigin; source: string; root: string; ruleRoot: string; settings: Settings };
 
@@ -28,7 +29,7 @@ export type LoadedLayers = { layers: Layer[]; models: ResolvedModels; files: str
 
 export type KeptLayers = { store: KeptSettings; use: SettingsUse };
 
-export type LayerOptions = { home: string; projectDir: string; trust: TrustOracle; user?: UserLayer; kept?: KeptLayers };
+export type LayerOptions = { home: string; projectDir: string; trust: TrustOracle; asker: Asker; user?: UserLayer; kept?: KeptLayers };
 
 const PROJECT_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
   'NODE_ENV', 'RUST_LOG', 'RUST_BACKTRACE', 'LOG_LEVEL', 'DEBUG', 'TZ', 'LANG', 'LANGUAGE', 'CI', 'FORCE_COLOR', 'NO_COLOR', 'TERM',
@@ -224,14 +225,16 @@ const readLayer = async (
   root: string,
   warnings: string[],
   kept: KeptLayers | undefined,
+  asker: Asker,
   confineTo?: string,
 ): Promise<Layer | undefined> => {
   try {
-    const read = await readJsonFile(file, confineTo === undefined ? {} : { confineTo });
+    const read = await readJsonFile(file, confineTo === undefined ? {} : { confine: { to: confineTo, paths: asker.paths } });
     const layer = buildLayer(read, file, origin, root, root, true, warnings);
     kept?.store.remember(file, read);
     return layer;
   } catch (error) {
+    if (asker.signal.aborted) throw asker.signal.reason;
     const failure = isTransientErrno(error) ? error : toConfigError(error);
     if (kept === undefined) throw failure;
     const copy = keptOrThrow(kept.use, kept.store.recall(file), failure);
@@ -294,7 +297,7 @@ const realpath = async (target: string): Promise<string> => {
   }
 };
 
-export const loadLayers = async ({ home, projectDir, trust, user: snapshot, kept }: LayerOptions): Promise<LoadedLayers> => {
+export const loadLayers = async ({ home, projectDir, trust, asker, user: snapshot, kept }: LayerOptions): Promise<LoadedLayers> => {
   const user = snapshot ?? readUserLayer(home);
   const warnings = [...user.warnings];
   const layers: Layer[] = user.layer === undefined ? [] : [user.layer];
@@ -316,13 +319,13 @@ export const loadLayers = async ({ home, projectDir, trust, user: snapshot, kept
     warnings.push(`${repositoryLocalFile} is ignored; local settings now live in ${localFile}`);
   }
 
-  if (trust.isTrusted(projectDir)) {
-    const project = await readLayer(projectFile, 'project', projectDir, warnings, kept, projectDir);
+  if (await trust.isTrusted(projectDir, asker.signal)) {
+    const project = await readLayer(projectFile, 'project', projectDir, warnings, kept, asker, projectDir);
     if (project !== undefined) layers.push(project);
   } else if (await exists(projectFile)) {
     warnings.push(`project ${projectDir} is not trusted; skipped settings files: ${projectFile}`);
   }
-  const local = await readLayer(localFile, 'local', await worktreeRootOf(home, projectDir), warnings, kept);
+  const local = await readLayer(localFile, 'local', await worktreeRootOf(home, projectDir), warnings, kept, asker);
   if (local !== undefined) layers.push(local);
 
   return result();

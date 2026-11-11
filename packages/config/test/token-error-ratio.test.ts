@@ -16,7 +16,7 @@ const targetWith = (capabilities: Record<string, unknown>) => ({
 const load = (models: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models });
-  return { tree, loading: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loading: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 describe('capabilities.tokenErrorRatio in the settings', () => {

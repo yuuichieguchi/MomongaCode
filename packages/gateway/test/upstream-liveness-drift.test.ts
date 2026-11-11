@@ -55,7 +55,7 @@ describe('the upstream liveness numbers have one source', () => {
 
   it('UPSTREAM_LIVENESS_DEFAULTS is exactly the defaults of models.headersTimeoutMs and models.idleTimeoutMs', async () => {
     const tree = makeTree();
-    const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     const models = settings.models as unknown as Record<string, unknown>;
     expect(UPSTREAM_LIVENESS_DEFAULTS).toEqual({ headersTimeoutMs: models['headersTimeoutMs'], idleTimeoutMs: models['idleTimeoutMs'] });
     expect(UPSTREAM_LIVENESS_DEFAULTS).toEqual({ headersTimeoutMs: 300_000, idleTimeoutMs: 300_000 });

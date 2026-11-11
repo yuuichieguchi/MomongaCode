@@ -159,7 +159,7 @@ describe('loaders taking a user layer', () => {
     writeAt(file, { env: { TZ: 'snapshot' }, autoUpdates: false }, T0);
     const user = snapshotUser(tree);
     fs.rmSync(file);
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
     expect(result.settings.env).toEqual({ TZ: 'snapshot' });
     expect(result.settings.autoUpdates).toBe(false);
     expect(result.files).toContain(file);
@@ -171,14 +171,14 @@ describe('loaders taking a user layer', () => {
     writeAt(file, { env: { TZ: 'snapshot' } }, T0);
     const user = snapshotUser(tree);
     writeAt(file, { env: { TZ: 'rewritten' } }, T1);
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
     expect(result.settings.env).toEqual({ TZ: 'snapshot' });
   });
 
   it('loadSettings without a user layer still reads the user settings file', async () => {
     const tree = makeTree();
     writeAt(userSettingsPath(tree), { env: { TZ: 'file' } }, T0);
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.env).toEqual({ TZ: 'file' });
   });
 
@@ -188,7 +188,7 @@ describe('loaders taking a user layer', () => {
     writeAt(file, { mcpServers: { snap: { command: 'snap-server' } } }, T0);
     const user = snapshotUser(tree);
     fs.rmSync(file);
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, user });
+    const result = await loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, user });
     expect(result.enabled.map((entry) => [entry.name, entry.scope, entry.config])).toEqual([['snap', 'user', { command: 'snap-server' }]]);
   });
 });

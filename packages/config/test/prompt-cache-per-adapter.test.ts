@@ -21,7 +21,7 @@ const targetOf = (adapter: Adapter, promptCache: unknown): Record<string, unknow
 const load = (adapter: Adapter, promptCache: unknown) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', targetOf(adapter, promptCache))] } });
-  return { tree, loaded: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loaded: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 const BREAKPOINTS = { kind: 'breakpoints', maxBreakpoints: 4 };

@@ -59,7 +59,7 @@ describe('user additionalDirectories resolution', () => {
   it('a missing user entry also fails loadSettings with ConfigError', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['~/missing-extra'] } });
-    const error = await failureOf(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }));
+    const error = await failureOf(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }));
     expect(error.message).toMatch(/additionalDirectories entry .* does not exist$/);
   });
 });

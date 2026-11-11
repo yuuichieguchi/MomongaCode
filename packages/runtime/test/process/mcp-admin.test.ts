@@ -203,7 +203,7 @@ describe('createMcpAdmin authorization', () => {
   it('starts an attempt, returns the url once it is surfaced and reports completion in the server view', async () => {
     const { admin, session, pools } = await setup();
 
-    const started = await admin.startAuthorization(session.id, 'remote');
+    const started = await admin.startAuthorization(session.id, 'remote', new AbortController().signal);
 
     expect(started).toMatchObject({ server: 'remote', status: 'awaiting_user', url: AUTHORIZE_URL });
     expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'awaiting_user' });
@@ -217,8 +217,8 @@ describe('createMcpAdmin authorization', () => {
   it('returns the running attempt instead of starting a second one', async () => {
     const { admin, session, pools } = await setup();
 
-    const first = await admin.startAuthorization(session.id, 'remote');
-    const second = await admin.startAuthorization(session.id, 'remote');
+    const first = await admin.startAuthorization(session.id, 'remote', new AbortController().signal);
+    const second = await admin.startAuthorization(session.id, 'remote', new AbortController().signal);
 
     expect(second).toEqual(first);
     expect(pools).toHaveLength(1);
@@ -227,7 +227,7 @@ describe('createMcpAdmin authorization', () => {
 
   it('records the typed failure of an attempt that the user denied', async () => {
     const { admin, session, pools } = await setup();
-    await admin.startAuthorization(session.id, 'remote');
+    await admin.startAuthorization(session.id, 'remote', new AbortController().signal);
 
     pools[0]?.failAuthorization(new McpAuthorizationError('denied', 'the user denied access'));
     await admin.close(CLOSE_GRACE_MS);
@@ -237,7 +237,7 @@ describe('createMcpAdmin authorization', () => {
 
   it('records an untyped failure with the code error', async () => {
     const { admin, session, pools } = await setup();
-    await admin.startAuthorization(session.id, 'remote');
+    await admin.startAuthorization(session.id, 'remote', new AbortController().signal);
 
     pools[0]?.failAuthorization(new Error('the token endpoint is down'));
     await admin.close(CLOSE_GRACE_MS);
@@ -247,7 +247,7 @@ describe('createMcpAdmin authorization', () => {
 
   it('a sign-in that ended by a store limit has code error and the sentence', async () => {
     const { admin, session, pools } = await setup();
-    await admin.startAuthorization(session.id, 'remote');
+    await admin.startAuthorization(session.id, 'remote', new AbortController().signal);
 
     pools[0]?.failAuthorization(new StoreCallEndedError({ action: 'read', name: undefined, backend: KEYCHAIN_BACKEND }, new OperationLimitError(30_000, 'the MCP connect limit')));
     await admin.close(CLOSE_GRACE_MS);
@@ -265,7 +265,7 @@ describe('createMcpAdmin authorization', () => {
   it('cancels an awaiting attempt and refuses to cancel anything else', async () => {
     const { admin, session } = await setup();
     expect(admin.cancelAuthorization(session.id, 'remote')).toBe(false);
-    await admin.startAuthorization(session.id, 'remote');
+    await admin.startAuthorization(session.id, 'remote', new AbortController().signal);
 
     expect(admin.cancelAuthorization(session.id, 'remote')).toBe(true);
     await admin.close(CLOSE_GRACE_MS);
@@ -277,15 +277,15 @@ describe('createMcpAdmin authorization', () => {
   it('refuses a stdio server, an unknown server and an unknown session', async () => {
     const { admin, session } = await setup();
 
-    await expect(admin.startAuthorization(session.id, 'local')).rejects.toMatchObject({ status: 400, param: 'name' });
-    await expect(admin.startAuthorization(session.id, 'nope')).rejects.toMatchObject({ status: 404 });
-    await expect(admin.startAuthorization('missing', 'remote')).rejects.toMatchObject({ status: 404 });
+    await expect(admin.startAuthorization(session.id, 'local', new AbortController().signal)).rejects.toMatchObject({ status: 400, param: 'name' });
+    await expect(admin.startAuthorization(session.id, 'nope', new AbortController().signal)).rejects.toMatchObject({ status: 404 });
+    await expect(admin.startAuthorization('missing', 'remote', new AbortController().signal)).rejects.toMatchObject({ status: 404 });
     expect(() => admin.authorization('missing', 'remote')).toThrow('session missing does not exist');
   });
 
   it('aborts a running attempt on close with the shutdown reason', async () => {
     const { admin, session } = await setup();
-    await admin.startAuthorization(session.id, 'remote');
+    await admin.startAuthorization(session.id, 'remote', new AbortController().signal);
 
     await admin.close(CLOSE_GRACE_MS);
 

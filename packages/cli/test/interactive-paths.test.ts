@@ -33,7 +33,7 @@ describe('interactive session on a HOME that has never run momonga', () => {
   it('receives its paths only once the private ~/.momonga tree exists, since its history lives in the state directory', async () => {
     const home = createTempDir({ asHome: true });
     cleanups.push(() => removeTempDir(home));
-    const ports: CliPorts = { ...nodePorts('9.9.9'), home, cwd: home, env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home }, terminal: {} as CliPorts['terminal'] };
+    const ports: CliPorts = { ...nodePorts('9.9.9', new AbortController().signal), home, cwd: home, env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home }, terminal: {} as CliPorts['terminal'] };
     const entry = async (): Promise<number> => 0;
     const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
     const program = buildProgram({

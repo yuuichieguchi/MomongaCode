@@ -150,7 +150,7 @@ describe('a declaration outside the user settings is discarded with a warning (1
     const tree = makeTree();
     userFile(tree, { connections: [connectionOf('remote', { adapter: 'chat-completions', model: 'm', baseUrl: 'https://example.invalid/v1', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } })] });
     const file = writeJson(fileOf(tree), { models: projectModels });
-    const loaded = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const loaded = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(loaded.warnings).toContain(`${file}: models.servers is only honored in user settings; discarded`);
     expect(canonsOf(loaded.settings)).toEqual(['remote/m']);
   });

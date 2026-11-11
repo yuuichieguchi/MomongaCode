@@ -65,7 +65,7 @@ describe('runtime.drainTimeoutMs and mcp.closeGraceMs are user settings read as 
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { runtime: { drainTimeoutMs: 4000 }, mcp: { closeGraceMs: 200 } });
     const file = writeJson(locate(tree), { runtime: { drainTimeoutMs: 0 }, mcp: { closeGraceMs: 0 } });
-    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.warnings).toContain(`${file}: runtime is only honored in user settings; discarded`);
     expect(result.warnings).toContain(`${file}: mcp.closeGraceMs is only honored in user settings; discarded`);
     expect((result.settings as unknown as { runtime: unknown }).runtime).toEqual({ drainTimeoutMs: 4000 });

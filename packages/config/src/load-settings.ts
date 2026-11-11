@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
-import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, lexicallyWithin, syncPaths } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, answeredLater, askedPaths, lexicallyWithin } from '@momonga/foundation';
+import type { PathAsking } from '@momonga/foundation';
+import { askerOf } from './asker.ts';
+import type { Asker } from './asker.ts';
 import type { SandboxNetworkSetting, StopValues } from '@momonga/foundation';
 
 export type GatewayStopValues = Pick<StopValues, 'closeGraceMs' | 'managedServerStopGraceMs'>;
@@ -74,6 +77,7 @@ export type LoadSettingsOptions = {
   projectDir: string;
   cli: Settings;
   trust: TrustOracle;
+  signal: AbortSignal;
   user?: UserLayer;
   kept?: KeptLayers;
 };
@@ -131,12 +135,12 @@ export const parseLayerRules = (layer: Layer, home: string, projectDir: string, 
     return attachNegations(effect, parsed, layer, warnings);
   });
 
-const resolveDirectory = (directory: string, layer: Layer, home: string): string => {
+function* resolveDirectory(directory: string, layer: Layer, home: string): PathAsking<string> {
   const expanded = directory === '~' ? home : directory.startsWith('~/') ? path.join(home, directory.slice(2)) : directory;
-  const resolved = syncPaths.canonicalDirectory(path.resolve(layer.root, expanded));
+  const resolved = yield* askedPaths.canonicalDirectory(path.resolve(layer.root, expanded));
   if (!resolved.ok) throw new ConfigError(`${layer.source}: additionalDirectories entry ${JSON.stringify(directory)} ${resolved.reason}`);
   return resolved.path;
-};
+}
 
 const UNIX_SOCKET_ALLOW_UNSUPPORTED = 'unix socket allow-lists are not supported by the Linux sandbox; all Unix sockets are denied';
 
@@ -155,10 +159,10 @@ const enforceableUnixSockets = ({ source, allow }: { source: string; allow: stri
   });
 };
 
-export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[]): ResolvedSettings => {
+export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[]): PathAsking<ResolvedSettings> {
   let projectReal: string;
   try {
-    projectReal = syncPaths.realPath(projectDir);
+    projectReal = yield* askedPaths.realPath(projectDir);
   } catch (error) {
     rethrowIfTransient(error);
     throw toConfigError(error);
@@ -228,9 +232,9 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     }
     for (const effect of EFFECTS) merged.permissions[effect].push(...(permissions?.[effect] ?? []));
     for (const directory of permissions?.additionalDirectories ?? []) {
-      const resolved = resolveDirectory(directory, layer, home);
+      const resolved = yield* resolveDirectory(directory, layer, home);
       const repositoryControlled = layer.origin === 'project' || layer.origin === 'local';
-      if (repositoryControlled && !syncPaths.comparableContains(projectReal, resolved)) {
+      if (repositoryControlled && !(yield* askedPaths.comparableContains(projectReal, resolved))) {
         warnings.push(`${layer.source}: additionalDirectories entry ${JSON.stringify(directory)} is outside the project and only honored in user settings; discarded`);
       } else {
         merged.permissions.additionalDirectories.push(resolved);
@@ -269,10 +273,14 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
   }
   if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: enforceableUnixSockets(unixSockets, merged.sandbox, home, warnings) };
   return merged;
-};
+}
 
-export const loadSettings = async ({ home, projectDir, cli, trust, user, kept }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
-  const loaded = await loadLayers({ home, projectDir, trust, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
+export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[], { signal, paths }: Asker): Promise<ResolvedSettings> =>
+  answeredLater(mergingLayers(layers, models, home, projectDir, warnings), paths, signal);
+
+export const loadSettings = async ({ home, projectDir, cli, trust, signal, user, kept }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
+  const asker = askerOf(signal);
+  const loaded = await loadLayers({ home, projectDir, trust, asker, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
   let cliSettings: Settings;
   const cliWarnings: string[] = [];
   try {
@@ -285,6 +293,6 @@ export const loadSettings = async ({ home, projectDir, cli, trust, user, kept }:
   const layers: Layer[] = [...loaded.layers, { origin: 'cli', source: 'cli', root: projectDir, ruleRoot: projectDir, settings: cliSettings }];
   const warnings = [...loaded.warnings, ...cliWarnings];
   const rules = layers.flatMap((layer) => parseLayerRules(layer, home, projectDir, warnings));
-  const settings = mergeLayers(layers, loaded.models, home, projectDir, warnings);
+  const settings = await mergeLayers(layers, loaded.models, home, projectDir, warnings, asker);
   return { settings, rules, warnings, files: loaded.files };
 };

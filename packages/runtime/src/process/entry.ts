@@ -1,5 +1,5 @@
 import { ConfigError, createStopValuesReader, readUserStopValues } from '@momonga/config';
-import { CHILD_ENTRY_FLAGS, generationLayout, momongaPaths, runDaemonEntry, runtimeMaxCloseMs, syncPaths } from '@momonga/foundation';
+import { CHILD_ENTRY_FLAGS, generationLayout, momongaPaths, runDaemonEntry, runtimeMaxCloseMs } from '@momonga/foundation';
 import type { EntryIo, FlagSpec } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startRuntimeProcess } from './start-runtime-process.ts';
@@ -21,9 +21,9 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
     version: deps.version,
     flags: RUNTIME_ENTRY_FLAGS,
     maxCloseMs: (_flags, values) => runtimeMaxCloseMs(values),
-    readStopValues: ({ home, logger }) => createStopValuesReader({ load: () => readUserStopValues(syncPaths.canonicalPath(home)), onNotice: (message) => logger.warn(message) }).read(),
-    ownLockPath: (home, flags) => generationLayout(syncPaths.canonicalPath(home), flags.generation).locks.runtime,
-    logPath: (home) => momongaPaths(syncPaths.canonicalPath(home), process.platform, {}).logFiles.runtime,
+    readStopValues: ({ home, logger }) => createStopValuesReader({ load: () => readUserStopValues(home), onNotice: (message) => logger.warn(message) }).read(),
+    ownLockPath: (home, flags) => generationLayout(home, flags.generation).locks.runtime,
+    logPath: (home) => momongaPaths(home, process.platform, {}).logFiles.runtime,
     isConfigError: (error) => error instanceof ConfigError,
     start: async ({ version, flags, home, signal, logger, stdout, acquireLock, requestShutdown }) => {
       installOtelErrorHandler((error) => logger.warn('otel.error', { err: error }));

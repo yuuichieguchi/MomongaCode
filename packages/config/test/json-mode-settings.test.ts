@@ -13,7 +13,7 @@ const target = (jsonMode: unknown): Record<string, unknown> => ({
 const load = (jsonMode: unknown) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('local', target(jsonMode))] } });
-  return { tree, loaded: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loaded: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 describe('the JSON-only mode declared in settings', () => {
@@ -39,7 +39,7 @@ describe('a declared JSON-only mode on an adapter with no native form', () => {
         connections: [connectionOf('claude', { adapter: 'anthropic', model: 'claude-fake', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', capabilities: { contextWindow: 200000, maxOutputTokens: 8192, jsonMode: 'json_object' } })],
       },
     });
-    const loaded = loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const loaded = loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     await expect(loaded).rejects.toThrow('models.connections[0].models[0]');
     await expect(loaded).rejects.toThrow(/anthropic/);
     await expect(loaded).rejects.toThrow(/jsonMode/);
@@ -53,7 +53,7 @@ describe('a declared JSON-only mode on an adapter with no native form', () => {
         connections: [connectionOf('claude', { adapter: 'anthropic', model: 'claude-fake', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', capabilities: { contextWindow: 200000, maxOutputTokens: 8192, jsonMode: 'none' } })],
       },
     });
-    const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect((modelOf(settings, 'claude') as { capabilities?: Record<string, unknown> }).capabilities?.['jsonMode']).toBe('none');
   });
 });

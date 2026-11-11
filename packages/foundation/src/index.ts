@@ -360,6 +360,8 @@ export type { SignalSender } from './process-alive.ts';
 export { PIPE_NAME_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, comparableFromParts, containsByComponents, createPathResolver, createSyncPathResolver, hostPaths, setCaseSensitivityProbe, walkPath } from './path-compare.ts';
 export { displayToolPathSync, syncPaths } from './sync-paths.ts';
+export { answeredLater, answeredNow, askedPaths } from './path-asking.ts';
+export type { PathAsking } from './path-asking.ts';
 export type { EndpointForm, SocketBind, SocketBindRefusal } from './socket-path.ts';
 export { createAsyncCapabilityProbe, createCapabilityProbe, unmeasuredBecause } from './capability-probe.ts';
 export type { CapabilityResult } from './capability-probe.ts';

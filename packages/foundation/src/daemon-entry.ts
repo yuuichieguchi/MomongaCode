@@ -12,6 +12,7 @@ import type { DescribeHolder, ProcessLock } from './process-lock.ts';
 import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
 import type { RotatingLogFile } from './rotating-log.ts';
+import { syncPaths } from './sync-paths.ts';
 
 export type EntrySignal = 'SIGTERM' | 'SIGINT';
 
@@ -127,7 +128,7 @@ type ResolvedEntry<F extends FlagSpec> = {
 const resolveEntry = <F extends FlagSpec>(io: EntryIo, definition: DaemonDefinition<F>): ResolvedEntry<F> => {
   const flags = parseFlags(io.argv, definition.flags);
   const common = commonFlagsOf(flags);
-  const home = common.home ?? io.home;
+  const home = syncPaths.canonicalPath(common.home ?? io.home);
   const logTarget = parseLogTarget(common.logTarget);
   return { flags, home, logPath: definition.logPath(home), ownLockPath: definition.ownLockPath(home, flags), logTarget, lifelineFd: common.lifelineFd };
 };
