@@ -214,7 +214,7 @@ export type NoticeCode =
   | 'recent_turns_shrunk'
   | 'recent_steps_shrunk';
 
-export type ContextNotice = { code: NoticeCode; message: string; reduction?: NoticeReduction };
+export type ContextNotice = { code: NoticeCode; message: string; reduction?: NoticeReduction; key?: string };
 
 export type EvictionKind = 'omitted' | 'truncated' | 'reference';
 

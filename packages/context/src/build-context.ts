@@ -1,3 +1,4 @@
+import { canonicalJson } from '@momonga/foundation';
 import {
   COMPACT_AT,
   EVICT_LOW_WATER,
@@ -277,13 +278,15 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     const kept: FunctionTool[] = [...required];
     const droppedForRoom: string[] = [];
     const droppedTiers: (string | undefined)[] = [];
+    let stopped = false;
     for (const tool of inFitOrder) {
       if (required.includes(tool)) continue;
       if (!standsWith(tool, kept)) {
         droppedForRoom.push(`${tool.name} (with ${hostOf[tool.name]})`);
         droppedTiers.push(tierOf.get(tool.name));
-      } else if (await stableFitsFloor([...kept, tool])) kept.push(tool);
+      } else if (!stopped && (await stableFitsFloor([...kept, tool]))) kept.push(tool);
       else {
+        stopped = true;
         droppedForRoom.push(tool.name);
         droppedTiers.push(tierOf.get(tool.name));
       }
@@ -298,7 +301,8 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   if (leftOut.length > 0) {
     notices.push({
       code: 'tools_dropped',
-      message: `Tools ${leftOut.join('; ')} were left out because the declared context window leaves no room for them`,
+      message: `Tools ${leftOut.join('; ')} were left out because the declared context window of ${input.model} (${capabilities.contextWindow} tokens) leaves no room for them; raise the declared context window of that model, or shorten the instructions`,
+      key: canonicalJson({ contextWindow: capabilities.contextWindow, model: input.model }),
     });
   }
   const evaluate = async (layerItems: InputItem[]): Promise<Evaluation> => {

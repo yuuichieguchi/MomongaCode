@@ -791,6 +791,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       message: string,
       code: string,
       toolKey: string,
+      key: string,
       reduction: closed({ turn: nonNegativeInteger, from: nonNegativeInteger, to: nonNegativeInteger }, ['turn', 'from', 'to']),
     },
     required: ['level', 'message'],

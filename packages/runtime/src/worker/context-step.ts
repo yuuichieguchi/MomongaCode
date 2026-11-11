@@ -537,6 +537,7 @@ const unrecordedNoticePayloads = (ctx: ClaimContext, notices: readonly ContextNo
       message: notice.message,
       code: notice.code,
       ...(notice.reduction === undefined ? {} : { reduction: notice.reduction }),
+      ...(notice.key === undefined ? {} : { key: notice.key }),
     });
   }
   return payloads;

@@ -395,6 +395,7 @@ describe('run event payloads', () => {
       message: string;
       code?: string;
       toolKey?: string;
+      key?: string;
       reduction?: { turn: number; from: number; to: number };
     }>();
   });
@@ -406,6 +407,7 @@ describe('run event payloads', () => {
       message: string;
       code?: string;
       toolKey?: string;
+      key?: string;
       reduction?: { turn: number; from: number; to: number };
       id: number;
       runId: string;
