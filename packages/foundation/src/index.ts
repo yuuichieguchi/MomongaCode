@@ -150,7 +150,6 @@ export type { GenerationRole, RolePort } from './generation-role.ts';
 export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, MOVED_CODE } from './generation-codes.ts';
 export { formatStartRecord, generationIsLive, listGenerationNumbers, listGenerations, lockReadsHeld, probeGenerationLocks, readStartRecord } from './generation-registry.ts';
 export {
-  ABANDON_REASON_TEXTS,
   CurrentGenerationUnreadableError,
   GenerationCounterError,
   GenerationPrepareError,
@@ -162,6 +161,7 @@ export {
 } from './generation-start.ts';
 export type {
   AbandonReason,
+  StartFailureReason,
   GenerationRef,
   GenerationStartFiles,
   HeldStart,
@@ -345,9 +345,9 @@ export type { HostEntry, NetworkRequest, NetworkScope, NetworkScopeKind, Sandbox
 export type { RuleEnforcement } from './file-rules.ts';
 export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleBlockingForm, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEntry, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
-export { nodeCommandRunner } from './platform/command-runner.ts';
+export { nodeBoundedCommandRunner, nodeCommandRunner } from './platform/command-runner.ts';
 export { discoverGitConfigFiles } from './git-config-files.ts';
-export type { CommandOptions, CommandResult, CommandRunner } from './platform/command-runner.ts';
+export type { BoundedCommandRunner, CommandOptions, CommandResult, CommandRunner, CommandTimedOut } from './platform/command-runner.ts';
 export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, probeFailed, valueOrThrow } from './platform/inspector-types.ts';
 export type { ProbeOptions, ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
 export { createProcessInspector, defaultProcessInspector, hostInspectorPorts, hostProcessInspector } from './platform/process-inspector.ts';

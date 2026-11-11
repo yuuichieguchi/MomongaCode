@@ -1,4 +1,4 @@
-import type { CommandRunner } from '@momonga/foundation';
+import type { BoundedCommandRunner } from '@momonga/foundation';
 import type { CliClock, SelfExecutable, Sink, SpawnDetached } from '../ports.ts';
 
 export type HttpRequest = { headers: Readonly<Record<string, string>>; signal: AbortSignal };
@@ -26,7 +26,7 @@ export type UpdateStateStore = { read(): Promise<unknown>; write(state: unknown)
 
 export type RetiringWork = { steps: number; jobs: number; versions: string[] };
 
-export type DaemonProbe = { running(): Promise<boolean>; retiring(): Promise<RetiringWork>; restartBoundMs(): Promise<number> };
+export type DaemonProbe = { running(): Promise<boolean>; retiring(): Promise<RetiringWork>; readyBoundMs(): Promise<number> };
 
 export type UpdatePorts = {
   version: string;
@@ -38,7 +38,7 @@ export type UpdatePorts = {
   clock: CliClock;
   http: UpdateHttp;
   fs: UpdateFs;
-  run: CommandRunner;
+  run: BoundedCommandRunner;
   lock: UpdateLock;
   state: UpdateStateStore;
   daemon: DaemonProbe;

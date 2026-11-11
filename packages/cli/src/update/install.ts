@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { RELEASE_SIGNATURE_ASSET, RELEASE_SIGNATURE_TOOL, parseChecksumListing, verifyReleaseSignature } from '@momonga/foundation';
-import type { PlaceFile, ReleaseSignatureVerdict } from '@momonga/foundation';
+import type { CommandResult, CommandRunner, CommandTimedOut, PlaceFile, ReleaseSignatureVerdict } from '@momonga/foundation';
 import { escapedLines } from '../terminal-writer.ts';
 import { UpdateError } from './errors.ts';
 import type { RetiringWork, StagedFile, UpdatePorts } from './ports.ts';
@@ -10,10 +10,25 @@ import type { Release } from './release.ts';
 import { CHECKSUMS_ASSET, assetNameFor, resolveUpdateSource } from './source.ts';
 import type { BuildUpdateInputs, UpdateEndpoints, UpdateSource } from './source.ts';
 import { MOMONGA_LAUNCHES } from '../daemon/launcher.ts';
+import { daemonNotStartedText } from '../daemon/start-failure.ts';
 
 export const CANDIDATE_CHECK_TIMEOUT_MS = 30_000;
 
 export const DAEMON_RESTART_REMEDIATION = 'run `momonga daemon start`';
+
+export const daemonStartCommandBoundMs = (readyBoundMs: number): number => CANDIDATE_CHECK_TIMEOUT_MS + readyBoundMs;
+
+const withinText = (boundMs: number): string => `within ${boundMs / 1000} s`;
+
+const timedOut = (result: CommandResult | CommandTimedOut): result is CommandTimedOut => 'timedOut' in result;
+
+const checkedWithinBound =
+  (ports: Pick<UpdatePorts, 'run'>, refusal: (result: CommandTimedOut) => UpdateError): CommandRunner =>
+  async (file, args, options) => {
+    const result = await ports.run(file, args, { ...options, timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS });
+    if (timedOut(result)) throw refusal(result);
+    return result;
+  };
 
 export type UpdateTarget = { source: UpdateSource; asset: string };
 
@@ -68,13 +83,19 @@ const verifyChecksumsSignature = async (ports: UpdatePorts, source: UpdateSource
   let verdict: ReleaseSignatureVerdict;
   try {
     verdict = await verifyReleaseSignature({
-      run: ports.run,
+      run: checkedWithinBound(
+        ports,
+        (result) =>
+          new UpdateError('signature_tool_unusable', `${RELEASE_SIGNATURE_TOOL} did not finish verifying the release signature ${withinText(result.timeoutMs)}`, {
+            detail: `${result.stderr}${result.stdout}`.trim(),
+            remediation: 'run `momonga update` again; nothing was installed',
+          }),
+      ),
       env: ports.env,
       place: placeSigningFile(ports, directory),
       publicKey: source.publicKey,
       checksums,
       signature,
-      timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS,
       signal,
     });
   } catch (error) {
@@ -91,9 +112,9 @@ const verifyChecksumsSignature = async (ports: UpdatePorts, source: UpdateSource
     });
   }
   if (verdict.kind === 'invalid') {
-    throw new UpdateError('signature_rejected', `${CHECKSUMS_ASSET} of ${release.tag} is not signed by the release key this build pins`, {
+    throw new UpdateError('signature_rejected', `${CHECKSUMS_ASSET} of ${release.tag} is not signed by the release key this build pins; nothing was installed`, {
       detail: verdict.detail,
-      remediation: 'nothing was installed',
+      remediation: 'install the latest release with the install script',
     });
   }
 };
@@ -135,11 +156,12 @@ export const CODESIGN = '/usr/bin/codesign';
 const verifyCodesign = async (ports: UpdatePorts, source: UpdateSource, file: string, signal: AbortSignal): Promise<void> => {
   if (source.codesign.kind === 'none') return;
   const { teamId } = source.codesign;
-  const result = await ports.run(CODESIGN, ['--verify', '--strict', '--verbose=2', `-R=${developerIdRequirement(teamId)}`, file], {
-    env: ports.env,
-    timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS,
-    signal,
-  });
+  const check = checkedWithinBound(
+    ports,
+    (result) =>
+      new UpdateError('candidate_unusable', `the code signature check of the downloaded executable did not finish ${withinText(result.timeoutMs)}`, { detail: `${result.stdout}${result.stderr}`.trim() }),
+  );
+  const result = await check(CODESIGN, ['--verify', '--strict', '--verbose=2', `-R=${developerIdRequirement(teamId)}`, file], { env: ports.env, signal });
   if (result.exitCode !== 0) {
     throw new UpdateError('signature_rejected', `the downloaded executable is not a valid Developer ID signature of Apple Team ID ${teamId}`, {
       detail: result.stderr.trim(),
@@ -148,7 +170,11 @@ const verifyCodesign = async (ports: UpdatePorts, source: UpdateSource, file: st
 };
 
 const verifyCandidateRuns = async (ports: UpdatePorts, file: string, release: Release, signal: AbortSignal): Promise<void> => {
-  const result = await ports.run(file, MOMONGA_LAUNCHES.reportVersion.args, { env: ports.env, timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS, signal });
+  const check = checkedWithinBound(
+    ports,
+    (result) => new UpdateError('candidate_unusable', `the downloaded executable did not answer --version ${withinText(result.timeoutMs)}`, { detail: `${result.stdout}${result.stderr}`.trim() }),
+  );
+  const result = await check(file, MOMONGA_LAUNCHES.reportVersion.args, { env: ports.env, signal });
   if (result.exitCode !== 0) {
     throw new UpdateError('candidate_unusable', `the downloaded executable exited with code ${result.exitCode} for --version`, { detail: result.stderr.trim() });
   }
@@ -187,13 +213,17 @@ export type InstallOptions = { signal: AbortSignal };
 
 export type DaemonRestart = { kind: 'not_running' } | { kind: 'restarted'; retiring: RetiringWork } | { kind: 'failed'; error: unknown };
 
-export const daemonNotStartedText = (to: string, reason: string, from: string | undefined): string =>
-  `The new daemon (v${to}) did not start (${reason})${from === undefined ? '.' : `; v${from} keeps running.`}`;
-
 export type InstallResult = { from: string; to: string; target: string; restart: DaemonRestart };
 
 const startNewDaemon = async (ports: UpdatePorts, target: string, to: string, signal: AbortSignal): Promise<void> => {
-  const result = await ports.run(target, MOMONGA_LAUNCHES.startDaemon.args, { env: ports.env, timeoutMs: await ports.daemon.restartBoundMs(), signal });
+  const readyBoundMs = await ports.daemon.readyBoundMs();
+  const result = await ports.run(target, MOMONGA_LAUNCHES.startDaemon.args, { env: ports.env, timeoutMs: daemonStartCommandBoundMs(readyBoundMs), signal });
+  if (timedOut(result)) {
+    throw new UpdateError('daemon_restart_failed', daemonNotStartedText(to, `did not become ready ${withinText(readyBoundMs)}`, ports.version), {
+      detail: `${result.stdout}${result.stderr}`.trim(),
+      remediation: DAEMON_RESTART_REMEDIATION,
+    });
+  }
   if (result.exitCode !== 0) {
     throw new UpdateError('daemon_restart_failed', daemonNotStartedText(to, `exit code ${result.exitCode}`, ports.version), {
       detail: `${result.stdout}${result.stderr}`.trim(),

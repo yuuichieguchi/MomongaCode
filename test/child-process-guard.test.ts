@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, credentialReadScript, credentialWriteScript, minimalChildEnv, nodeCommandRunner } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, credentialReadScript, credentialWriteScript, minimalChildEnv, nodeBoundedCommandRunner } from '@momonga/foundation';
 import { fakeSecretProgramsBin, productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
 import childProcessDefault, * as childProcessNamespace from '@momonga/testkit/child-process';
 import { exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } from '@momonga/testkit/child-process';
@@ -283,7 +283,7 @@ describe('the worker guard refuses a product launch of a MomongaCode binary that
 
   it('the update restart, through the real command runner with a hand-built PATH of /usr/bin, is refused before exec', async () => {
     await expectRefusedBeforeLaunch(/\(iii\) it is the product launch of a MomongaCode binary with daemon start/, (d) =>
-      nodeCommandRunner(binaryOf('single-binary', [], d).command, MOMONGA_LAUNCHES.startDaemon.args, { env: { PATH: '/usr/bin:/bin', HOME: d.dir }, timeoutMs: 30_000, signal: new AbortController().signal }),
+      nodeBoundedCommandRunner(binaryOf('single-binary', [], d).command, MOMONGA_LAUNCHES.startDaemon.args, { env: { PATH: '/usr/bin:/bin', HOME: d.dir }, timeoutMs: 30_000, signal: new AbortController().signal }),
     );
   });
 
