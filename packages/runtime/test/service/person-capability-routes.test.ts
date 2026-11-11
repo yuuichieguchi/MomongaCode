@@ -57,13 +57,29 @@ describe('the routes that act for the person', () => {
     }
   });
 
+  it('creating and changing a session are refused without the capability and served with it', async () => {
+    const env = await startService({ fakeTimers: true });
+    const create = (person: boolean): Promise<JsonResponse> => env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: SESSION_ENV }, person });
+    expectPersonOnly(await create(false));
+    const created = await create(true);
+    expect(created.status).toBe(201);
+    const id: string = created.json.session.id;
+    const patch = (body: Record<string, unknown>, person: boolean): Promise<JsonResponse> =>
+      env.http('PATCH', `/v1/sessions/${id}`, { body, person, contentType: 'application/merge-patch+json' });
+    const servers = { mcpServers: { fx: { type: 'stdio', command: 'node', args: ['server.js'] } } };
+    expectPersonOnly(await patch(servers, false));
+    expectPersonOnly(await patch({ permissionMode: 'plan' }, false));
+    expect((await patch(servers, true)).status).toBe(200);
+    expect((await patch({ permissionMode: 'plan' }, true)).status).toBe(200);
+  });
+
   it('a session that may bypass is refused without the capability, whatever the body says, and created with it', async () => {
     const env = await startService({ fakeTimers: true });
     const create = (body: Record<string, unknown>, person: boolean): Promise<JsonResponse> =>
       env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: SESSION_ENV, ...body }, person });
     expectPersonOnly(await create({ bypassAllowed: true }, false));
     expectPersonOnly(await create({ bypassAllowed: true, permissionMode: 'bypassPermissions' }, false));
-    expect((await create({}, false)).status).toBe(201);
+    expectPersonOnly(await create({}, false));
     const allowed = await create({ bypassAllowed: true }, true);
     expect(allowed.status).toBe(201);
     const id: string = allowed.json.session.id;

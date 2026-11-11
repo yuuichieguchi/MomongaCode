@@ -336,7 +336,6 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'manual';
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
-    if (bypassAllowed || permissionMode === 'bypassPermissions') requirePerson(context);
     checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, views);
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
@@ -380,7 +379,6 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
-    if (body.permissionMode === 'bypassPermissions') requirePerson(context);
     if (body.permissionMode !== undefined) {
       const settings = await sessionReadSettingsOf(session.cwd, context.req.raw.signal);
       checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, (await gatewayListing(context.req.raw.signal)).views);
@@ -757,8 +755,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   route('/v1/health', { GET: health });
-  route('/v1/sessions', { GET: listSessions, POST: createSession });
-  route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession });
+  route('/v1/sessions', { GET: listSessions, POST: createSession }, { person: ['POST'] });
+  route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession }, { person: ['PATCH'] });
   route('/v1/sessions/:id/runs', { GET: listRuns, POST: createRun });
   route('/v1/sessions/:id/compact', { POST: compactSession });
   route('/v1/sessions/:id/skills', { GET: listSkills });
