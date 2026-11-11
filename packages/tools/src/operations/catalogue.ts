@@ -12,7 +12,7 @@ import pullRequestStatus from './specs/pull-request-status.json' with { type: 'j
 import { defineProductSchema } from '@momonga/foundation';
 import type { CoveredProgram } from '@momonga/policy';
 import programs from './programs.json' with { type: 'json' };
-import { OperationSpecError, parseOperationSpec, supersededForms } from './spec.ts';
+import { OperationSpecError, parseOperationSpec, replacedForms } from './spec.ts';
 import type { SupersededForm } from './spec.ts';
 import type { OperationSpec } from './spec.ts';
 
@@ -48,6 +48,6 @@ export const OPERATION_SPECS: readonly OperationSpec[] = SPEC_DATA.map(parseOper
 export type OperationCatalogueFacts = { supersededForms: SupersededForm[]; alwaysOperations: string[] };
 
 export const operationCatalogueFacts = (): OperationCatalogueFacts => ({
-  supersededForms: supersededForms(OPERATION_SPECS),
+  supersededForms: replacedForms(OPERATION_SPECS),
   alwaysOperations: OPERATION_SPECS.filter((spec) => spec.approval === 'always').map((spec) => spec.name),
 });

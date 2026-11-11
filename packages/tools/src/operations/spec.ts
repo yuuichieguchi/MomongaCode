@@ -49,6 +49,8 @@ export type SubjectSpec =
   | { readonly kind: 'repo'; readonly remote?: string; readonly refs?: readonly string[]; readonly alwaysWhen?: readonly string[]; readonly direction?: RemoteDirection }
   | { readonly kind: 'forge'; readonly pr?: string; readonly headSha?: string };
 
+export type RefusedForm = { readonly argv: readonly string[]; readonly word: string; readonly reason: string };
+
 export type PrePushHook = { readonly remote: string; readonly ref: string; readonly localSha: string; readonly remoteProbe: string; readonly delete: string };
 
 export type OperationSpec = {
@@ -69,6 +71,7 @@ export type OperationSpec = {
   readonly unchanged: readonly ClauseItem[];
   readonly guard?: Guard;
   readonly supersedes: ReadonlyArray<readonly string[]>;
+  readonly refuses: readonly RefusedForm[];
   readonly report: string;
 };
 
@@ -175,13 +178,22 @@ const SPEC_SCHEMA = {
     unchanged: { type: 'array', items: CLAUSE_ITEM },
     guard: { enum: [...OPERATION_GUARDS] },
     supersedes: { type: 'array', items: { type: 'array', items: { type: 'string' }, minItems: 1 } },
+    refuses: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { argv: { type: 'array', items: { type: 'string' }, minItems: 1 }, word: { type: 'string', minLength: 1 }, reason: { type: 'string', minLength: 1 } },
+        required: ['argv', 'word', 'reason'],
+        additionalProperties: false,
+      },
+    },
     report: { type: 'string', minLength: 1 },
   },
   required: ['name', 'description', 'kind', 'sideEffect', 'title', 'subject', 'approval', 'input', 'timeoutMs', 'observe', 'applied', 'unchanged', 'supersedes', 'report'],
   additionalProperties: false,
 } as const;
 
-const validateSpec = defineProductSchema<OperationSpec & { require?: readonly ClauseItem[] }>('tools/operation-spec', SPEC_SCHEMA);
+const validateSpec = defineProductSchema<OperationSpec & { require?: readonly ClauseItem[]; refuses?: readonly RefusedForm[] }>('tools/operation-spec', SPEC_SCHEMA);
 
 const INPUT_REFERENCE = /\{(input\.[A-Za-z0-9_]+)\}/g;
 
@@ -272,7 +284,7 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
   spec.observe.forEach((probe, index) => checkForgeProbe(spec.name, probe, spec.observe.slice(0, index)));
   const ids = spec.observe.map((probe) => probe.id);
   if (new Set(ids).size !== ids.length) throw new OperationSpecError(`${spec.name} declares a probe id twice`);
-  return { ...spec, input: withRefNameRule(spec.input), require: spec.require ?? [] };
+  return { ...spec, input: withRefNameRule(spec.input), require: spec.require ?? [], refuses: spec.refuses ?? [] };
 };
 
 const resolveOperand = (operand: Operand, scope: Scope): string | undefined => (typeof operand === 'string' ? lookup(scope, operand) : operand.literal);
@@ -313,7 +325,11 @@ export const describeClause = (clause: Clause, scope: Scope): string => {
   return `${side(clause[0])} should equal ${side(clause[1])}`;
 };
 
-export type SupersededForm = { operation: string; argv: readonly string[] };
+export type SupersededForm = { operation: string; argv: readonly string[]; refusal?: { readonly word: string; readonly reason: string } };
 
-export const supersededForms = (specs: readonly OperationSpec[]): SupersededForm[] =>
-  specs.flatMap((spec) => spec.supersedes.map((argv) => ({ operation: spec.name, argv })));
+export const replacedForms = (specs: readonly OperationSpec[]): SupersededForm[] => specs.flatMap((spec) => spec.supersedes.map((argv) => ({ operation: spec.name, argv })));
+
+export const supersededForms = (specs: readonly OperationSpec[]): SupersededForm[] => [
+  ...replacedForms(specs),
+  ...specs.flatMap((spec) => spec.refuses.map(({ argv, word, reason }) => ({ operation: spec.name, argv, refusal: { word, reason } }))),
+];
