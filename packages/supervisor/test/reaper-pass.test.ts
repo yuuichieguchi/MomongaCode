@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, generationMarkerDirectories, momongaPaths, runtimeMaxCloseMs, writeStopRecord } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, DAEMON_MARKER_KILL_GRACE_MS, DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, generationMarkerDirectories, momongaPaths, runtimeMaxCloseMs, writeStopRecord } from '@momonga/foundation';
 import type { GenerationReaperOptions, MarkerKind, ReapMarkerDirectoryOptions, StopValues } from '@momonga/foundation';
 import { createFakeClock, createFakeKernelLock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { DAEMON_MARKER_KILL_GRACE_MS } from '../src/constants.ts';
-import { DEAD_GENERATION_MARKER_KILL_GRACE_MS, createReaperPass, entryReaperPass } from '../src/reaper-pass.ts';
+import * as reaperPass from '../src/reaper-pass.ts';
+import * as supervisorConstants from '../src/constants.ts';
+import { createReaperPass, entryReaperPass } from '../src/reaper-pass.ts';
 import type { ReaperPassOptions } from '../src/reaper-pass.ts';
 import { captureLog, createRealWorkScope, pumpUntil, settledFlag } from './fixtures/p3-harness.ts';
 
@@ -67,14 +68,17 @@ describe('the reaper pass of the serving supervisor (20.61, 20.62)', () => {
     await createReaperPass(s.options)({ signal: new AbortController().signal });
     const expected: Array<{ kind: MarkerKind; label: string; killGraceMs: number }> = [
       { kind: 'daemons', label: 'daemon', killGraceMs: DAEMON_MARKER_KILL_GRACE_MS },
-      { kind: 'mcp', label: 'mcp', killGraceMs: DEAD_GENERATION_MARKER_KILL_GRACE_MS },
-      { kind: 'tools', label: 'tool', killGraceMs: DEAD_GENERATION_MARKER_KILL_GRACE_MS },
+      { kind: 'mcp', label: 'mcp', killGraceMs: ABANDON_KILL_GRACE_MS },
+      { kind: 'tools', label: 'tool', killGraceMs: ABANDON_KILL_GRACE_MS },
       { kind: 'targets', label: 'managed server', killGraceMs: MANAGED_STOP_GRACE_MS },
     ];
     expect(s.reaps.map(({ dir, label, killGraceMs, occasion }) => ({ dir, label, killGraceMs, occasion }))).toEqual(
       expected.map(({ kind, label, killGraceMs }) => ({ dir: markers[kind], label, killGraceMs, occasion: 'sweep' })),
     );
-    expect(DEAD_GENERATION_MARKER_KILL_GRACE_MS).toBe(2000);
+    expect(DAEMON_MARKER_KILL_GRACE_MS).toBe(2000);
+    expect(ABANDON_KILL_GRACE_MS).toBe(2000);
+    expect(Object.keys(reaperPass).filter((name) => name.endsWith('_MS'))).toEqual([]);
+    expect(supervisorConstants.DAEMON_MARKER_KILL_GRACE_MS).toBe(DAEMON_MARKER_KILL_GRACE_MS);
   });
 
   it('removes a dead generation and leaves a live one, through the real reaper', async (context) => {
@@ -118,8 +122,8 @@ describe('the reaper pass of the serving supervisor (20.61, 20.62)', () => {
     await pass({ signal: new AbortController().signal });
     expect(s.reaps.map(({ label, killGraceMs }) => ({ label, killGraceMs }))).toEqual([
       { label: 'daemon', killGraceMs: DAEMON_MARKER_KILL_GRACE_MS },
-      { label: 'mcp', killGraceMs: DEAD_GENERATION_MARKER_KILL_GRACE_MS },
-      { label: 'tool', killGraceMs: DEAD_GENERATION_MARKER_KILL_GRACE_MS },
+      { label: 'mcp', killGraceMs: ABANDON_KILL_GRACE_MS },
+      { label: 'tool', killGraceMs: ABANDON_KILL_GRACE_MS },
       { label: 'managed server', killGraceMs: MANAGED_STOP_GRACE_MS },
     ]);
   });

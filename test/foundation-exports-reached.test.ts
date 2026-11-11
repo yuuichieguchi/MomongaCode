@@ -181,7 +181,7 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'launchKept',
   'listGenerationNumbers',
   'lockFormOf',
-  'managedServerReapBoundMs',
+  'managedServerStopBoundMs',
   'matchesNoProxy',
   'mcpPoolCloseBoundMs',
   'meetNetworkScopes',

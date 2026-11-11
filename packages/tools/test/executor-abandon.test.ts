@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { KILL_CONFIRM_MS, POLL_INTERVAL_MS, createUninspectableRegistry, defaultProcessInspector, findHolders, groupAlive } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, KILL_CONFIRM_MS, POLL_INTERVAL_MS, createUninspectableRegistry, defaultProcessInspector, findHolders, groupAlive } from '@momonga/foundation';
 import type { ProcessInspector, Timing, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -327,6 +327,32 @@ describe('executor abandon', () => {
     );
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
     expect(timing.sleeps).toBe(1 + KILL_CONFIRM_MS / POLL_INTERVAL_MS);
+  });
+
+  it('the grace an abandoned group is given before its kill is the one abandon kill grace of the foundation', async () => {
+    let now = 0;
+    const slept: number[] = [];
+    const timing = sleepDrivenTiming({
+      now: () => now,
+      sleep: async (ms: number) => {
+        slept.push(ms);
+        now += ms;
+      },
+    });
+    let stubborn = 0;
+    const kill: SignalSender = (pid, signal) => {
+      if (signal !== 0 && (pid === stubborn || pid === -stubborn)) return;
+      process.kill(pid, signal);
+    };
+    const harness = harnessWith({ kill, timing, inspector: firstListingKept() });
+    const marker = markerOf(harness, KEY_A);
+    stubborn = spawnHolder(marker, 'exec sleep 30');
+    seedPending(harness, KEY_A, stubborn);
+
+    await expect(harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() })).rejects.toMatchObject({ reason: 'survived' });
+
+    expect(ABANDON_KILL_GRACE_MS).toBe(2000);
+    expect(slept[0]).toBe(ABANDON_KILL_GRACE_MS);
   });
 
   it('a target whose marker cannot be removed is a typed failure while the others are still reaped and every target is CAS-ed', async () => {

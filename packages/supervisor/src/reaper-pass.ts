@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { StopValuesReader } from '@momonga/config';
-import { GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, generationLayout, hostKernelLock, momongaPaths, readStopRecord, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, generationLayout, hostKernelLock, momongaPaths, readStopRecord, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
 import type { Clock, GenerationMarkerReap, JsonLogger, KernelLockMechanism, MarkerKind, MomongaPaths, Timing } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -10,8 +10,6 @@ import { reapOrphans } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
 import { resolveStartTiming } from './start-supervisor.ts';
 import type { SupervisorOptions } from './start-supervisor.ts';
-
-export const DEAD_GENERATION_MARKER_KILL_GRACE_MS = 2000;
 
 export type ReaperPass = NonNullable<SupervisorOptions['reaperPass']>;
 
@@ -32,8 +30,8 @@ export type ReaperPassOptions = {
 type GenericMarkerKind = Exclude<MarkerKind, 'daemons'>;
 
 const GENERIC_KILL_GRACE_MS: Readonly<Record<GenericMarkerKind, (options: ReaperPassOptions) => number>> = {
-  mcp: () => DEAD_GENERATION_MARKER_KILL_GRACE_MS,
-  tools: () => DEAD_GENERATION_MARKER_KILL_GRACE_MS,
+  mcp: () => ABANDON_KILL_GRACE_MS,
+  tools: () => ABANDON_KILL_GRACE_MS,
   targets: (options) => options.managedServerStopGraceMs(),
 };
 
