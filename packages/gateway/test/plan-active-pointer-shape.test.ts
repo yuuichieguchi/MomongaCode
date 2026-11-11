@@ -7,7 +7,7 @@ const FILE = '/state/plan-active.json';
 
 const PROFILE_KEY = 'zz-profile-key';
 
-const holding = (content: unknown): FileSystem => ({ ...nodeFileSystem, readTextFile: async () => JSON.stringify(content) });
+const holding = (content: unknown): FileSystem => ({ ...nodeFileSystem, readOwnerOnlyTextFile: async () => JSON.stringify(content) });
 
 const refusal = async (content: unknown): Promise<string> => {
   try {

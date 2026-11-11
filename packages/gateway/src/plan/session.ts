@@ -25,6 +25,7 @@ import type { PlanEvents } from './events.ts';
 import { ensureHostIdentity } from './host-identity.ts';
 import type { PlanOutbound } from './outbound.ts';
 import { ownEntry } from './own-entry.ts';
+import { parsePlanJson } from './plan-json.ts';
 import { describeError, endedByOperation, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
 import { grantsScope, lazyRefreshMarginMs, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, PlanTokenResponse, RefreshEnd } from './refresh.ts';
@@ -236,16 +237,8 @@ const labelField = (source: Record<string, unknown>, name: 'profile' | 'account'
   return value;
 };
 
-const parsedRecordText = (text: string): unknown => {
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new Error('the plan record is not valid JSON', { cause: error });
-  }
-};
-
 const parseRecord = (text: string): PlanRecord => {
-  const value: unknown = parsedRecordText(text);
+  const value = parsePlanJson(text, (problem) => new Error(`the plan record ${problem}`));
   if (!isRecord(value)) throw new Error('the plan record is not a JSON object');
   const version = numberField(value, 'version');
   if (version !== RECORD_VERSION) throw new Error(`the plan record has a version this build does not read; it reads version ${RECORD_VERSION}`);

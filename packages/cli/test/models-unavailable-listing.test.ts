@@ -86,7 +86,7 @@ describe('the CLI shows a model that is not listed with capabilities by its stat
         () => undefined,
         (error: unknown) => (error instanceof Error ? error.message : String(error)),
       );
-      return { refusal, expected: `GET /v1/momonga/models answered a body that is not a model list: ${JSON.stringify({ object: 'list', data, start: null, roles: {} })}` };
+      return { refusal, expected: 'GET /v1/momonga/models answered a body that is not a model list' };
     };
     const base = { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local' };
     const entryLevel = await answerTo({ ...base, capabilities: malformed, chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] });

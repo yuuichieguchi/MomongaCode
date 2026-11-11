@@ -1,5 +1,5 @@
 import type { PlanProfile } from '@momonga/config';
-import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { isRecord } from '@momonga/foundation';
 import type { Clock, CredentialStore, EventPayload } from '@momonga/foundation';
 import { maxOutputTokensFor } from '@momonga/protocol';
 import type { PlanCatalogEntry, PlanModelsResponse } from '@momonga/protocol';
@@ -18,6 +18,7 @@ import { PLAN_EVENT_INTERNAL, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
 import type { PlanOutbound } from './outbound.ts';
 import { ownEntry } from './own-entry.ts';
+import { parsePlanJson } from './plan-json.ts';
 import { recordAccess } from './record-io.ts';
 import type { PlanFetch, PlanSleep } from './refresh.ts';
 
@@ -56,15 +57,6 @@ const listErrorOf = (response: ListAnswer, clock: Clock): UpstreamHttpError => {
 
 export const catalogKey = (profile: string, account: string): string => `${profile}/${account}`;
 
-const parsedRecordText = (text: string): unknown => {
-  try {
-    return parseOutsideJson(text);
-  } catch (error) {
-    if (error instanceof JsonDepthError) throw error;
-    throw new Error('the plan catalog record is not valid JSON', { cause: error });
-  }
-};
-
 const recordEntryOf = (entry: unknown): RecordEntry => {
   if (isRecord(entry) && ownEntry(entry, 'unreported') === true) return { unreported: true };
   const contextWindow = isRecord(entry) ? ownEntry(entry, 'contextWindow') : undefined;
@@ -74,7 +66,7 @@ const recordEntryOf = (entry: unknown): RecordEntry => {
 };
 
 const parseRecord = (text: string): CatalogRecord => {
-  const value: unknown = parsedRecordText(text);
+  const value = parsePlanJson(text, (problem) => new Error(`the plan catalog record ${problem}`));
   if (!isRecord(value)) throw new Error('the plan catalog record has an unrecognised shape');
   const readAt = ownEntry(value, 'readAt');
   const stored = ownEntry(value, 'models');

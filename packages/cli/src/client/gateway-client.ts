@@ -1,4 +1,4 @@
-import { GENERATION_RETIRED_CODE, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
 import { checkTraceContent } from './contract.ts';
 import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME } from '@momonga/protocol';
@@ -47,14 +47,29 @@ export class GatewayAnswerError extends Error {
   }
 }
 
-const answerBodyOf = (text: string): GatewayAnswerBody | undefined => {
-  let parsed: unknown;
+type HttpMethod = 'GET' | 'POST';
+
+const routeOf = (path: string): string => {
+  const query = path.indexOf('?');
+  return query === -1 ? path : path.slice(0, query);
+};
+
+export const malformedAnswerText = (method: HttpMethod, path: string, what: string): string => `${method} ${routeOf(path)} answered a body that is not ${what}`;
+
+type ParsedBody = { json: true; value: unknown } | { json: false };
+
+const parsedBodyOf = (text: string): ParsedBody => {
   try {
-    parsed = parseOutsideJson(text);
-  } catch {
-    return undefined;
+    return { json: true, value: parseOutsideJson(text) };
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof JsonDepthError) return { json: false };
+    throw error;
   }
-  const error = isRecord(parsed) ? parsed['error'] : undefined;
+};
+
+const answerBodyOf = (text: string): GatewayAnswerBody | undefined => {
+  const body = parsedBodyOf(text);
+  const error = body.json && isRecord(body.value) ? body.value['error'] : undefined;
   return isRecord(error) && typeof error['code'] === 'string' && typeof error['message'] === 'string' ? { code: error['code'], message: error['message'] } : undefined;
 };
 
@@ -248,16 +263,16 @@ const isUsageReport = (value: unknown): value is UsageReport =>
   isCount(value['total']['total_tokens']);
 
 const retiredRefusalOf = (text: string): string | undefined => {
-  let body: unknown;
-  try {
-    body = JSON.parse(text);
-  } catch (error) {
-    if (error instanceof SyntaxError) return undefined;
-    throw error;
-  }
-  const error = isRecord(body) ? body['error'] : undefined;
+  const body = parsedBodyOf(text);
+  const error = body.json && isRecord(body.value) ? body.value['error'] : undefined;
   return isRecord(error) && error['code'] === GENERATION_RETIRED_CODE && typeof error['message'] === 'string' ? error['message'] : undefined;
 };
+
+const MODELS_PATH = '/v1/momonga/models';
+
+const MODEL_LIST_KIND = 'a model list';
+
+const USAGE_REPORT_KIND = 'a usage report';
 
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
   const http = createUdsClient(options.resolveSocket);
@@ -267,26 +282,28 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     return { status: response.status, text: await response.text() };
   };
 
-  const getJson = async (path: string, signal?: AbortSignal): Promise<unknown> => {
+  const getJson = async (path: string, what: string, signal?: AbortSignal): Promise<unknown> => {
     const first = await send(path, signal);
     const settled = retiredRefusalOf(first.text) === undefined ? first : await send(path, signal);
     const refusal = retiredRefusalOf(settled.text);
     if (refusal !== undefined) throw new Error(refusal);
     if (settled.status !== 200) throw new Error(`GET ${path} answered ${settled.status}: ${settled.text}`);
-    return JSON.parse(settled.text);
+    const body = parsedBodyOf(settled.text);
+    if (!body.json) throw new Error(malformedAnswerText('GET', path, what));
+    return body.value;
   };
 
-  const answer = async (method: 'GET' | 'POST', path: string, body: unknown): Promise<unknown> => {
+  const answer = async (method: HttpMethod, path: string, body: unknown): Promise<string> => {
     const response = await http.request({ method, path, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) });
     const text = await response.text();
     if (response.status < 200 || response.status > 299) throw new GatewayAnswerError(`${method} ${path} answered ${response.status}: ${text}`, response.status, answerBodyOf(text));
-    return text === '' ? undefined : JSON.parse(text);
+    return text;
   };
 
-  const checked = async <T>(method: 'GET' | 'POST', path: string, body: unknown, holds: (value: unknown) => value is T, what: string): Promise<T> => {
-    const value = await answer(method, path, body);
-    if (!holds(value)) throw new GatewayAnswerError(`${method} ${path} answered a body that is not ${what}: ${JSON.stringify(value)}`, OK_STATUS, undefined);
-    return value;
+  const checked = async <T>(method: HttpMethod, path: string, body: unknown, holds: (value: unknown) => value is T, what: string): Promise<T> => {
+    const answered = parsedBodyOf(await answer(method, path, body));
+    if (!answered.json || !holds(answered.value)) throw new GatewayAnswerError(malformedAnswerText(method, path, what), OK_STATUS, undefined);
+    return answered.value;
   };
 
   const plan: PlanGatewayClient = {
@@ -307,8 +324,8 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
   const health = (): Promise<GatewayHealth> => checked('GET', '/v1/momonga/health', undefined, isGatewayHealth, 'a gateway health report');
 
   const modelList = async (signal?: AbortSignal): Promise<MomongaModelList> => {
-    const body = await getJson('/v1/momonga/models', signal);
-    if (!isModelList(body)) throw new Error(`GET /v1/momonga/models answered a body that is not a model list: ${JSON.stringify(body)}`);
+    const body = await getJson(MODELS_PATH, MODEL_LIST_KIND, signal);
+    if (!isModelList(body)) throw new Error(malformedAnswerText('GET', MODELS_PATH, MODEL_LIST_KIND));
     return body;
   };
 
@@ -331,14 +348,14 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
 
   const usageOf = async (runId: string): Promise<UsageReport> => {
     const path = `/v1/momonga/usage?run_id=${encodeURIComponent(runId)}`;
-    const body = await getJson(path);
-    if (!isUsageReport(body)) throw new Error(`GET ${path} answered a body that is not a usage report: ${JSON.stringify(body)}`);
+    const body = await getJson(path, USAGE_REPORT_KIND);
+    if (!isUsageReport(body)) throw new Error(malformedAnswerText('GET', path, USAGE_REPORT_KIND));
     return body;
   };
 
   const contentOf = async (runId: string, request: { after: number; limit: number }): Promise<TraceContentPage> => {
     const path = `/v1/momonga/content?${new URLSearchParams({ run_id: runId, after: String(request.after), limit: String(request.limit) }).toString()}`;
-    return checkTraceContent(await getJson(path), `GET ${path}`);
+    return checkTraceContent(await getJson(path, 'a trace content page'), `GET ${path}`);
   };
 
   return { modelList, models, modelOf, capabilitiesOf, contextWindowOf, usageOf, contentOf, health, plan, close: () => http.close() };

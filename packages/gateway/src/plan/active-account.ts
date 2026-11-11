@@ -1,7 +1,8 @@
 import path from 'node:path';
-import { isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
+import { AUTH_DOCUMENT_MAX_BYTES, isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
 import { PLAN_LABEL_PATTERN, isPlanLabel } from '@momonga/protocol';
+import { parsePlanJson } from './plan-json.ts';
 
 export type ActivePointer = Record<string, string>;
 
@@ -9,23 +10,12 @@ const FILE_MODE = 0o600;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const parsedPointer = (file: string, text: string): unknown => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`the active plan account file ${file} is not valid JSON`);
-  }
-};
-
 export const readActivePointer = async (fileSystem: FileSystem, file: string): Promise<ActivePointer> => {
-  let text: string;
-  try {
-    text = await fileSystem.readTextFile(file);
-  } catch (error) {
-    if (isRecord(error) && error['code'] === 'ENOENT') return {};
+  const text = await fileSystem.readOwnerOnlyTextFile(file, 'it', AUTH_DOCUMENT_MAX_BYTES).catch((error: unknown) => {
     throw new Error(`could not read the active plan account file ${file}: ${messageOf(error)}`);
-  }
-  const parsed = parsedPointer(file, text);
+  });
+  if (text === undefined) return {};
+  const parsed = parsePlanJson(text, (problem) => new Error(`the active plan account file ${file} ${problem}`));
   if (!isRecord(parsed)) throw new Error(`the active plan account file ${file} is not a JSON object`);
   return Object.fromEntries(
     Object.entries(parsed).map(([profile, account]): [string, string] => {
