@@ -143,9 +143,9 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
   };
 
   route('/v1/mcp/servers', { POST: listFolderServers });
-  route('/v1/mcp/servers/:name/authorization', { GET: getFolderAuthorization, POST: startFolderAuthorization, DELETE: cancelFolderAuthorization });
+  route('/v1/mcp/servers/:name/authorization', { GET: getFolderAuthorization, POST: startFolderAuthorization, DELETE: cancelFolderAuthorization }, { person: ['POST', 'DELETE'] });
   route('/v1/runs/:id/elicitations', { GET: runElicitations });
-  route('/v1/elicitations/:id', { GET: getElicitation, POST: resolveElicitation });
+  route('/v1/elicitations/:id', { GET: getElicitation, POST: resolveElicitation }, { person: ['POST'] });
   route('/v1/sessions/:id/mcp/servers', { GET: listServers });
-  route('/v1/sessions/:id/mcp/servers/:name/authorization', { GET: getAuthorization, POST: startAuthorization, DELETE: cancelAuthorization });
+  route('/v1/sessions/:id/mcp/servers/:name/authorization', { GET: getAuthorization, POST: startAuthorization, DELETE: cancelAuthorization }, { person: ['POST', 'DELETE'] });
 };

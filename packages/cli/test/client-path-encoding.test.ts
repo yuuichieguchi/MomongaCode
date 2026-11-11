@@ -7,6 +7,8 @@ import { createRuntimeClient } from '../src/client/runtime-client.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import { UsageError } from '../src/usage-error.ts';
 
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
+
 const OUTSIDE_ID = 'a/../b?c=d#e f';
 
 const PLAIN_ID = 'PLAINID';
@@ -68,7 +70,7 @@ const recordingRuntime = async (context: TestContext): Promise<{ client: Runtime
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
-  const client = createRuntimeClient({ resolveSocket: async () => socketPath, clock: { now: () => 0, sleep: async () => undefined } });
+  const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket: async () => socketPath, clock: { now: () => 0, sleep: async () => undefined } });
   registerCleanup(context, () => client.close());
   return { client, urls };
 };

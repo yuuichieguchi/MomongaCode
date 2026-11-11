@@ -14,6 +14,8 @@ import { ReconnectBoundExceeded, followRun, isTransientStreamError } from '../sr
 import { runView } from './fake-backend.ts';
 import { virtualClock } from './fake-supervisor.ts';
 
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
+
 const frame = (id: number): RunEventFrame => ({
   id,
   event: 'agent.message.delta',
@@ -108,7 +110,7 @@ const serveStream = async (context: TestContext, body: string): Promise<{ client
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' }).end(body);
   });
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-  const client = createRuntimeClient({ resolveSocket: fixedSocket(socketPath), clock: nodeClock });
+  const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket: fixedSocket(socketPath), clock: nodeClock });
   registerCleanup(context, async () => {
     await client.close();
     server.closeAllConnections();

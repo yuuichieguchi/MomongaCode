@@ -3,6 +3,8 @@ import { HOST_READ_BOUND_MS, fixedSocket } from '@momonga/foundation';
 import { createRuntimeClient } from '../src/client/runtime-client.ts';
 import { nodeClock } from '../src/node-ports.ts';
 
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
+
 const created = vi.hoisted(() => ({ options: [] as unknown[] }));
 
 vi.mock('@momonga/foundation', async (importOriginal) => {
@@ -16,7 +18,7 @@ vi.mock('@momonga/foundation', async (importOriginal) => {
 
 describe('the limit of a request to the runtime is stated by the product', () => {
   it('gives the client the host read bound as the limit for the headers of an answer', async () => {
-    const client = createRuntimeClient({ resolveSocket: fixedSocket('/unused.sock'), clock: nodeClock });
+    const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket: fixedSocket('/unused.sock'), clock: nodeClock });
     await client.close();
 
     expect(created.options).toEqual([{ headersTimeoutMs: HOST_READ_BOUND_MS }]);

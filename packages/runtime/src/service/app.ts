@@ -61,6 +61,7 @@ import { canonicalProject } from './project-query.ts';
 import { registerReportRoutes } from './report-routes.ts';
 import type { ReportRouteDeps } from './report-routes.ts';
 import { registerTrustRoutes, undecidedFolderNotice } from './trust.ts';
+import { requirePersonCapability } from './person-capability.ts';
 import type { ServiceTimers } from './timers.ts';
 import { answeredByOf } from './answered-by.ts';
 import { runTermsOf } from './delegation.ts';
@@ -98,6 +99,7 @@ export type RunAppDeps = {
   store: RuntimeStore;
   clock: Clock;
   home: string;
+  personCapability: string;
   version: string;
   modelListing: (signal: AbortSignal) => Promise<ModelListing>;
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
@@ -138,7 +140,9 @@ export type RunAppDeps = {
 
 export type Handler = (context: Context) => Response | Promise<Response>;
 
-export type RouteRegistrar = (routePath: string, handlers: Readonly<Record<string, Handler>>) => void;
+export type RouteAccess = { person: readonly string[] };
+
+export type RouteRegistrar = (routePath: string, handlers: Readonly<Record<string, Handler>>, access?: RouteAccess) => void;
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -224,11 +228,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return run;
   };
 
-  const route: RouteRegistrar = (routePath: string, handlers: Readonly<Record<string, Handler>>): void => {
+  const requirePerson = (context: Context): void => requirePersonCapability(context.req.raw, deps.personCapability);
+
+  const route: RouteRegistrar = (routePath, handlers, access) => {
     app.all(routePath, (context) => {
       const method = context.req.method;
       const handler = method === 'HEAD' ? handlers['GET'] : handlers[method];
       if (handler === undefined) throw methodNotAllowed(handlers['GET'] === undefined ? Object.keys(handlers) : [...Object.keys(handlers), 'HEAD']);
+      if (access?.person.includes(method) === true) requirePerson(context);
       return handler(context);
     });
   };
@@ -329,6 +336,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'manual';
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
+    if (bypassAllowed || permissionMode === 'bypassPermissions') requirePerson(context);
     checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, views);
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
@@ -372,6 +380,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
+    if (body.permissionMode === 'bypassPermissions') requirePerson(context);
     if (body.permissionMode !== undefined) {
       const settings = await sessionReadSettingsOf(session.cwd, context.req.raw.signal);
       checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, (await gatewayListing(context.req.raw.signal)).views);
@@ -767,7 +776,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/cost', { GET: cost });
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
-  route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });
+  route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval }, { person: ['POST'] });
   registerReportRoutes(route, { store, now: () => deps.clock.now(), maxBodyBytes: deps.maxBodyBytes, reportCost: deps.reportCost, runTraceContent: deps.runTraceContent, recomputeFacts: deps.recomputeFacts });
   registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerMemoryRoutes(route, {

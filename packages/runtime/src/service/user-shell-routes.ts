@@ -86,5 +86,5 @@ export const registerUserShellRoutes = (route: RouteRegistrar, deps: UserShellRo
     return json({ pending: store.userShell.pending(session.id) });
   };
 
-  route('/v1/sessions/:id/user-shell', { GET: pending, POST: run, DELETE: stopRunning });
+  route('/v1/sessions/:id/user-shell', { GET: pending, POST: run, DELETE: stopRunning }, { person: ['POST', 'DELETE'] });
 };

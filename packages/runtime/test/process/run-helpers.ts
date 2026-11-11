@@ -17,7 +17,7 @@ import type { ModelSpec } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
 import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
 import type { LogEntry, RecordingLogger } from './helpers.ts';
-import { openEventStream, sendJson } from '../service/helpers.ts';
+import { PERSON_CAPABILITY_TEST_HEADER, openEventStream, personCapabilityFileOf, sendJson } from '../service/helpers.ts';
 import type { EventStream, JsonResponse, RequestInit } from '../service/helpers.ts';
 
 const SCRIPTED_COMPLETION_TOKENS = 5;
@@ -304,7 +304,8 @@ export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}):
 export const clientOf = (temp: RunHome, generation: number = FIRST_GENERATION) => {
   const client = createUdsClient(fixedSocket(generationLayout(temp.home, generation).sockets.runtime), { connectTimeoutMs: 0 });
   onCleanup(() => client.close());
-  const http = (method: string, target: string, init?: RequestInit): Promise<JsonResponse> => sendJson(client, method, target, init);
+  const http = (method: string, target: string, init: RequestInit = {}): Promise<JsonResponse> =>
+    sendJson(client, method, target, init.person === false ? init : { ...init, headers: { [PERSON_CAPABILITY_TEST_HEADER]: fs.readFileSync(personCapabilityFileOf(temp.home), 'utf8'), ...init.headers } });
   const createSession = async (body: Record<string, unknown> = {}): Promise<any> => {
     const response = await http('POST', '/v1/sessions', { body: { cwd: temp.project, env: sessionEnvFor(temp.home), ...body } });
     if (response.status !== 201) throw new Error(`session creation failed with ${response.status}: ${response.text}`);

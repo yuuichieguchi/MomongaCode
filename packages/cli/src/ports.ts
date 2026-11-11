@@ -72,6 +72,7 @@ export type CliPorts = {
   probe: WorkspaceProbe;
   openUrl: OpenUrl;
   secretStore(): SecretStore;
+  personCapability(): Promise<string>;
   acpStdio?: () => AcpStdio;
   handover?: HandoverHost;
 };

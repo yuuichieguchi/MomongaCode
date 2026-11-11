@@ -32,6 +32,7 @@ import {
   writeFileAtomically,
   writeFileAtomicallySync,
   launchApart,
+  personCapabilityOf,
 } from '@momonga/foundation';
 import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
 import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
@@ -390,6 +391,7 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
     probe: createWorkspaceProbe(minimalChildEnv(process.env)),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
+    personCapability: () => personCapabilityOf({ files: nodeFileSystem, random: systemRandom, lock: lock() }, home),
     acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
   };
 };

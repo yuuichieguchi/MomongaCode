@@ -35,6 +35,9 @@ export const invalidRequest = (message: string, param?: string): ApiError =>
 export const modeNotAllowed = (message: string): ApiError =>
   new ApiError({ status: 403, type: 'forbidden', code: 'mode_not_allowed', message });
 
+export const personOnly = (): ApiError =>
+  new ApiError({ status: 403, type: 'forbidden', code: 'person_only', message: 'only the person can do this: send the capability of the person from the Momonga home' });
+
 export const notFound = (message: string): ApiError => new ApiError({ status: 404, type: 'not_found', code: 'not_found', message });
 
 export const modelNotConfigured = (message: string): ApiError => new ApiError({ status: 404, type: 'not_found', code: MODEL_NOT_FOUND_CODE, message, param: 'model' });

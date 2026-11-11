@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
-import { DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
@@ -307,10 +307,12 @@ export const pathSegment = (value: string): string => {
   return encodeURIComponent(value);
 };
 
-export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; onMoved?: () => Promise<void> };
+export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; personCapability: () => Promise<string>; onMoved?: () => Promise<void> };
 
 export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
   const http = createUdsClient(options.resolveSocket, { connectTimeoutMs: HOST_READ_BOUND_MS, headersTimeoutMs: HOST_READ_BOUND_MS });
+
+  const personHeaders = async (): Promise<Record<string, string>> => ({ [PERSON_CAPABILITY_HEADER]: await options.personCapability() });
 
   const send = async (
     method: string,
@@ -319,7 +321,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     init: { body?: unknown; headers?: Record<string, string>; raw?: true } = {},
   ): Promise<{ response: UdsResponse; body: unknown }> => {
     const description = `${method} ${path}`;
-    const headers: Record<string, string> = { ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
+    const headers: Record<string, string> = { ...(await personHeaders()), ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
     const repeatable = REPEATABLE_METHODS.has(method) || (method === 'POST' && headers['idempotency-key'] !== undefined);
     let socketResends = 0;
     for (let movedResends = 0; ; ) {
@@ -328,7 +330,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
         response = await http.request({
           method,
           path,
-          ...(Object.keys(headers).length === 0 ? {} : { headers }),
+          headers,
           ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
         });
       } catch (error) {
@@ -844,7 +846,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     userShell: async (sessionId, command, include, onOutput) => {
       const path = `/v1/sessions/${pathSegment(sessionId)}/user-shell`;
       const description = `POST ${path}`;
-      const response = await http.request({ method: 'POST', path, headers: JSON_HEADERS, body: JSON.stringify({ command, include }) });
+      const response = await http.request({ method: 'POST', path, headers: { ...(await personHeaders()), ...JSON_HEADERS }, body: JSON.stringify({ command, include }) });
       if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
       for await (const event of decodeSse(response.body)) {
         const frame = checkUserShellFrame(parsed(event.data, description), description);
