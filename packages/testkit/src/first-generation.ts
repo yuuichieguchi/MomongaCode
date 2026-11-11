@@ -6,6 +6,7 @@ import type { GenerationLayout, KernelLockMechanism, MomongaPaths } from '@momon
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import { canonicalPathSync } from './canonical-path-sync.ts';
 import { testKernelLock } from './test-locks.ts';
+import { testEndpointScope } from './endpoint-scope.ts';
 
 export const firstGeneration = (paths: MomongaPaths): GenerationLayout => generationLayout(path.dirname(paths.root), FIRST_GENERATION);
 
@@ -31,8 +32,9 @@ export const startGenerationForTest = async (home: string, options: { version: s
   const paths = momongaPaths(canonicalHome, process.platform, {});
   await ensureMomongaDirs(paths);
   const lock = options.lock ?? testKernelLock();
+  const scope = await testEndpointScope(paths);
   for (let waited = 0; waited <= STARTUP_TIMEOUT_MS; waited += START_RETRY_MS) {
-    const outcome = await beginGenerationStart(paths, { version: options.version, foldVersion: FIDELITY_FOLD_VERSION, lock, trigger: 'restart' });
+    const outcome = await beginGenerationStart(paths, { version: options.version, foldVersion: FIDELITY_FOLD_VERSION, lock, scope, trigger: 'restart' });
     if (outcome.kind === 'allocated') return { generation: outcome.generation, layout: generationLayout(canonicalHome, outcome.generation), release: outcome.starting.release };
     await delay(START_RETRY_MS);
   }

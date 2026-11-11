@@ -1,5 +1,5 @@
 import type { WorkspaceFiles, WorkspaceProbe } from '@momonga/eval';
-import type { FileSystem, HostExec, OpenUrl, ProcessPort, SecretStore, Timing } from '@momonga/foundation';
+import type { FileSystem, HostExec, OpenUrl, ProcessPort, SecretStore, Timing, EndpointScope, MomongaPaths } from '@momonga/foundation';
 import type { HandoverHost } from './handover/host.ts';
 
 export type CliClock = {
@@ -73,6 +73,7 @@ export type CliPorts = {
   openUrl: OpenUrl;
   secretStore(): SecretStore;
   personCapability(): Promise<string>;
+  endpointScope(paths: Pick<MomongaPaths, 'run'>): Promise<EndpointScope>;
   acpStdio?: () => AcpStdio;
   handover?: HandoverHost;
 };

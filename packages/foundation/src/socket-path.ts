@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import net from 'node:net';
 import path from 'node:path';
 import { createAsyncCapabilityProbe } from './capability-probe.ts';
@@ -23,9 +22,17 @@ export type EndpointHost = { readonly platform: string; readonly forms: readonly
 
 export const endpointHostOf = (platform: NodeJS.Platform = process.platform): EndpointHost => ({ platform, forms: ENDPOINT_FORMS_OF_PATH_FLAVOUR[platform === 'win32' ? 'pipe' : 'filesystem'] });
 
-export const pipePathFor = (home: string, name: string): string => {
-  const scope = createHash('sha256').update(home.toLowerCase()).digest('hex').slice(0, 16);
-  return `${PIPE_PREFIX}momonga-${scope}-${name}`;
+export type EndpointScope = { readonly form: 'unix' } | { readonly form: 'pipe'; readonly token: string };
+
+const ENDPOINT_TOKEN_TEXT = /^[0-9a-f]{32}$/;
+
+export class EndpointScopeMissingError extends Error {}
+
+export const pipePathFor = (scope: EndpointScope | undefined, name: string): string => {
+  if (scope?.form !== 'pipe' || !ENDPOINT_TOKEN_TEXT.test(scope.token)) {
+    throw new EndpointScopeMissingError(`the named pipe ${name} needs the random part of this home (its token file in run/), so it is not served or dialled`);
+  }
+  return `${PIPE_PREFIX}momonga-${scope.token}-${name}`;
 };
 
 export const assertSocketPathLength = (socketPath: string): void => {

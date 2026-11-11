@@ -31,8 +31,8 @@ vi.mock('../src/run/headless.ts', async (importOriginal) => ({
 
 vi.mock('../src/daemon/generations.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/daemon/generations.ts')>()),
-  sessionSocketResolver: (_paths: unknown, version: string, role: string) => {
-    seen.resolvers.push({ version, role });
+  sessionSocketResolver: (ports: { version: string }, _paths: unknown, role: string) => {
+    seen.resolvers.push({ version: ports.version, role });
     return async () => seen.socket;
   },
 }));

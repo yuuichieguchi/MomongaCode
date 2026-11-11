@@ -25,6 +25,7 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'DaemonDefinition',
   'DaemonHandle',
   'DaemonStartContext',
+  'ENDPOINT_TOKEN_FILE',
   'ENTRY_HARD_EXIT_MARGIN_MS',
   'EXIT_CODES',
   'Engine',
