@@ -17,7 +17,7 @@ export const sameToolName = (ruleTool: string, subjectTool: string): boolean =>
 export const READ_FAMILY: ReadonlySet<string> = new Set(PATH_TOOLS.filter((tool: PathToolName) => PATH_TOOL_RULES[tool].access === 'read'));
 
 export const ruleCoversToolName = (rule: PermissionRule, toolName: string): boolean => {
-  if (rule.tool === 'Read' && rule.specifier !== undefined && READ_FAMILY.has(toolName)) return true;
+  if (rule.tool === 'Read' && READ_FAMILY.has(toolName)) return true;
   if (rule.tool.startsWith('mcp__') && !rule.tool.slice('mcp__'.length).includes('__')) return toolName.startsWith(`${rule.tool}__`);
   return sameToolName(rule.tool, toolName);
 };
