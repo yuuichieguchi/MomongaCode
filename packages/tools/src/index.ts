@@ -150,7 +150,7 @@ export { createMarkerSettle, settleFinishedCommand, unnamedLivenessNotes } from 
 export type { MarkerSettle, MarkerSettleOptions } from './marker-settle.ts';
 export { COVERED_PROGRAMS, OPERATION_SPECS, operationCatalogueFacts } from './operations/catalogue.ts';
 export type { OperationCatalogueFacts } from './operations/catalogue.ts';
-export { OPERATION_CRASH_POINTS, OPERATION_GUARDS, OperationSpecError, evaluateClauses, parseOperationSpec, supersededForms } from './operations/spec.ts';
+export { OPERATION_CRASH_POINTS, OPERATION_GUARDS, OperationSpecError, describeClause, evaluateClauses, failedClauses, parseOperationSpec, supersededForms } from './operations/spec.ts';
 export type { Clause, ClauseItem, Guard, OperationSpec } from './operations/spec.ts';
 export type { GateCall, GateFacts, OperationEffect } from './types.ts';
 export { openGitCredentialChannel } from './operations/git-credential.ts';

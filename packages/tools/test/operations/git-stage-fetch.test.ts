@@ -74,6 +74,21 @@ describe('GitStage', () => {
     expect(runner.calls.some((argv) => argv.includes('add'))).toBe(false);
   });
 
+  it.each([
+    ['a path that names nothing', 'absent.txt'],
+    ['a tracked file with no change', 'b.txt'],
+  ])('fails, and runs no git add, for %s', async (_case, target) => {
+    const world = baseWorld();
+    world.write('a.txt', 'two\n');
+    const runner = countingRunner();
+    const parts = partsOf(operationTool('GitStage', { runArgv: runner.run }), { paths: [target] }, contextFor(world.work, world.env));
+    const result = await parts.execute(await parts.prepare());
+    expect(result).toMatchObject({ status: 'failed', effect: { outcome: 'failed' } });
+    expect(result.output).toContain('the given paths matched no change to stage');
+    expect(runner.calls.some((argv) => argv.includes('add'))).toBe(false);
+    expect(staged(world)).toEqual([]);
+  });
+
   it('after a kill inside the effect finds the staging applied and does not stage again (crash c2)', async () => {
     const world = baseWorld();
     world.write('a.txt', 'two\n');
