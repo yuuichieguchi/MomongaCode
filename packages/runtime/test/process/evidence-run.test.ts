@@ -189,4 +189,30 @@ describe('the evidence runner', () => {
     const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
     await expect(run({ argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal)).rejects.toThrow('reading the output failed');
   });
+
+  it('reads the output of the command through the bounded window: ten megabytes come back as the last bytes the window holds, with the count of the bytes left out', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const paths = momongaPaths(home);
+    await ensureMomongaDirs(paths);
+    const project = fs.realpathSync(withTempDir(context));
+    const windowBytes = 1024;
+    const chunkBytes = 64 * 1024;
+    const chunkCount = 160;
+    const flood = (fill: string) =>
+      (async function* (): AsyncGenerator<Uint8Array> {
+        for (let index = 0; index < chunkCount; index += 1) yield Buffer.alloc(chunkBytes, index === chunkCount - 1 ? 'z' : fill);
+      })();
+    const sandbox: Sandbox = {
+      kind: 'none',
+      spawn: (_command, _policy, _signal, descriptors) => {
+        if (descriptors?.markerFd !== undefined) closeMarkerDescriptor(descriptors.markerFd);
+        return { pid: 999_988, pgid: 999_988, stdout: flood('a'), stderr: flood('e'), exited: Promise.resolve({ code: 0, signal: null }) };
+      },
+    };
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {}, outputWindowBytes: windowBytes })(project);
+
+    const result = await run({ argv: ['git', 'log'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal);
+
+    expect(result).toEqual({ exitCode: 0, stdout: 'z'.repeat(windowBytes), stdoutOmittedBytes: chunkCount * chunkBytes - windowBytes });
+  });
 });

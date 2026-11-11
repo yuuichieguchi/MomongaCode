@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { findHolders } from '@momonga/foundation';
+import { findHolders, readMarkerGroup } from '@momonga/foundation';
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createTransport, descriptorPath, eventually, groupExists, makeDir, pidAlive, rawConfig, startRaw, trackPid } from './raw-transport.ts';
 
@@ -21,7 +21,7 @@ const markerSetup = () => {
 const markerFiles = (dir: string): string[] => fs.readdirSync(dir).map((name) => path.join(dir, name));
 
 describe('MCP stdio transport markers', () => {
-  it('creates a 0600 marker before spawn, passes it as fd 3 and writes the pid', async () => {
+  it('creates a 0600 marker before spawn, passes it as fd 3 and records the process group', async () => {
     const { dir, markers } = markerSetup();
     const { transport, request } = await startRaw({ config: rawConfig(), markers });
     const { pid } = (await request('pid')) as { pid: number };
@@ -31,7 +31,7 @@ describe('MCP stdio transport markers', () => {
     const [marker] = files as [string];
     expect(path.basename(marker)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(fs.statSync(marker).mode & 0o777).toBe(0o600);
-    expect(fs.readFileSync(marker, 'utf8')).toBe(`${pid}\n`);
+    expect(await readMarkerGroup(marker)).toBe(pid);
     expect(transport.pgid).toBe(pid);
     expect(await descriptorPath(pid, 3)).toBe(fs.realpathSync(marker));
     expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([pid]);
@@ -147,6 +147,6 @@ describe('MCP stdio transport markers', () => {
     const [marker] = markerFiles(dir) as [string];
     expect(marker).toBeDefined();
     expect(await descriptorPath(pid, 3)).toBe(fs.realpathSync(marker));
-    expect(fs.readFileSync(marker, 'utf8')).toBe(`${pid}\n`);
+    expect(await readMarkerGroup(marker)).toBe(pid);
   });
 });

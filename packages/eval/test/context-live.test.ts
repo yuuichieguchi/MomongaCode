@@ -7,6 +7,7 @@ import {
   CONTEXT_DATASET_FORMAT,
   EvalError,
   applyWorkspaceStep,
+  nodeWorkspaceFiles,
   caseSettingsFor,
   compareContextReports,
   datasetDigestOf,
@@ -348,7 +349,7 @@ describe('applyWorkspaceStep', () => {
   it('writes and removes files of the case workspace', async () => {
     const root = temporary();
     fs.writeFileSync(path.join(root, 'old.ts'), 'old');
-    await applyWorkspaceStep(root, { beforeRun: 1, write: { 'src/new.ts': 'new' }, remove: ['old.ts'] });
+    await applyWorkspaceStep(nodeWorkspaceFiles, root, { beforeRun: 1, write: { 'src/new.ts': 'new' }, remove: ['old.ts'] });
     expect(fs.readFileSync(path.join(root, 'src/new.ts'), 'utf8')).toBe('new');
     expect(fs.existsSync(path.join(root, 'old.ts'))).toBe(false);
   });
@@ -357,7 +358,7 @@ describe('applyWorkspaceStep', () => {
     const root = temporary();
     const outside = temporary();
     fs.symlinkSync(outside, path.join(root, 'link'));
-    await expect(applyWorkspaceStep(root, { beforeRun: 1, write: { 'link/x.ts': 'x' } })).rejects.toThrow(EvalError);
+    await expect(applyWorkspaceStep(nodeWorkspaceFiles, root, { beforeRun: 1, write: { 'link/x.ts': 'x' } })).rejects.toThrow(EvalError);
     expect(fs.readdirSync(outside)).toEqual([]);
   });
 
@@ -366,7 +367,7 @@ describe('applyWorkspaceStep', () => {
     const outside = temporary();
     fs.writeFileSync(path.join(outside, 'keep.ts'), 'keep');
     fs.symlinkSync(outside, path.join(root, 'link'));
-    await expect(applyWorkspaceStep(root, { beforeRun: 1, remove: ['link/keep.ts'] })).rejects.toThrow(EvalError);
+    await expect(applyWorkspaceStep(nodeWorkspaceFiles, root, { beforeRun: 1, remove: ['link/keep.ts'] })).rejects.toThrow(EvalError);
     expect(fs.existsSync(path.join(outside, 'keep.ts'))).toBe(true);
   });
 });

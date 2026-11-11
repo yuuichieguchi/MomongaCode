@@ -1,4 +1,3 @@
-import os from 'node:os';
 import path from 'node:path';
 import { runBenchmark, validateBenchmark } from '@momonga/eval';
 import type { BenchProblem, BenchRunApi, TaskValidation } from '@momonga/eval';
@@ -40,8 +39,8 @@ const validationLine = (task: TaskValidation): string => {
   return `Task ${task.id}: ${verdict}; labelled ${task.difficulty} by ${task.labelledBy} on ${task.labelledAt}; the reference changes ${countText(files, 'file', 'files')}, ${countText(linesAdded, 'line', 'lines')} added and ${linesRemoved} removed\n`;
 };
 
-const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe'>, benchmarkFile: string): Promise<number> => {
-  const { name, tasks } = await validateBenchmark(benchmarkFile, ports.probe);
+const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tmpdir'>, benchmarkFile: string): Promise<number> => {
+  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe, files: ports.files, tmpdir: ports.tmpdir });
   for (const task of tasks) ports.stdout.write(validationLine(task));
   const wrong = tasks.filter((task) => task.problems.length > 0).length;
   if (wrong === 0) {
@@ -110,12 +109,13 @@ const run = async (ports: CliPorts, paths: MomongaPaths, benchmarkFile: string, 
   const model = pinnedModelOf(shellModelsOf(ports), options.model);
   await ensureCurrentDaemon(ports, paths);
   const env = await environmentSnapshot(ports);
-  const client = connectRuntime(paths);
-  const scratch = await createOwnedDirectory({ parent: os.tmpdir(), prefix: WORKSPACE_PREFIX });
+  const client = connectRuntime(ports, paths);
+  const scratch = await createOwnedDirectory({ parent: ports.tmpdir, prefix: WORKSPACE_PREFIX });
   try {
     const { report, invalidSetup } = await runBenchmark(benchmarkFile, {
       api: benchRunApi(client, env),
       probe: ports.probe,
+      files: ports.files,
       model,
       codeDigest: await codeDigestOfRunningProcess(),
       groupBy: 'model',

@@ -5,18 +5,18 @@ import path from 'node:path';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { SECRET_STORE_SEARCHED_PROGRAMS, createExecWithStdin, createSecretServiceStore, findProgramOnPath } from '@momonga/foundation';
 import {
-  createFakeSecretPrograms,
+  createFakePrograms,
   fakeSecretProgramsBin,
   REAL_PROCESS_TEST_TIMEOUT_MS,
   getFakeSecretEnded,
   getFakeSecretHanging,
-  installFakeSecretPrograms,
-  removeFakeSecretPrograms,
+  installFakePrograms,
+  removeFakePrograms,
   resetFakeSecretControl,
   setFakeSecretControl,
   waitFor,
 } from '@momonga/testkit';
-import type { FakeControl, FakeSecretPrograms } from '@momonga/testkit';
+import type { FakeControl, FakePrograms } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -33,14 +33,14 @@ afterEach(() => {
 
 const WINDOWS_PATHEXT = '.COM;.EXE;.BAT;.CMD';
 
-describe('installFakeSecretPrograms', () => {
+describe('installFakePrograms', () => {
   it.each(SECRET_STORE_SEARCHED_PROGRAMS)('installs a fake %s that the PATH lookup of this host finds in the fake directory', (program) => {
-    const bin = installFakeSecretPrograms(freshRoot());
+    const bin = installFakePrograms(freshRoot());
     expect(findProgramOnPath(program, { PATH: `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin` })).toBe(path.join(bin, program));
   });
 
   it.each(SECRET_STORE_SEARCHED_PROGRAMS)('installs a fake %s.cmd that a simulated Windows PATHEXT lookup resolves in the fake directory; starting it is not verified on a Windows host', (program) => {
-    const bin = installFakeSecretPrograms(freshRoot(), 'win32');
+    const bin = installFakePrograms(freshRoot(), 'win32');
     const found = findProgramOnPath(program, { PATH: bin, PATHEXT: WINDOWS_PATHEXT });
     expect(found).toBe(path.join(bin, `${program}.cmd`));
     expect(fs.readFileSync(found as string, 'utf8')).toContain(JSON.stringify(process.execPath).slice(1, -1));
@@ -70,14 +70,14 @@ const FAKE_PROGRAM_MAIN = path.join(import.meta.dirname, '..', 'src', 'fake-secr
 const ROOT_ENTRIES = ['.momonga-fake-secret-programs', 'bin', 'items'];
 
 describe('the fake security program and its control file', () => {
-  const created: FakeSecretPrograms[] = [];
+  const created: FakePrograms[] = [];
 
   afterEach(() => {
-    for (const programs of created.splice(0)) removeFakeSecretPrograms(programs.root, programs.token);
+    for (const programs of created.splice(0)) removeFakePrograms(programs.root, programs.token);
   });
 
-  const privatePrograms = (): FakeSecretPrograms & { items: string } => {
-    const programs = createFakeSecretPrograms();
+  const privatePrograms = (): FakePrograms & { items: string } => {
+    const programs = createFakePrograms();
     created.push(programs);
     return { ...programs, items: path.join(programs.root, 'items') };
   };

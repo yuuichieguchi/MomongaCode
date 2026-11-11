@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createSlashRegistry, BUILTIN_SLASH_COMMANDS } from '../src/tui/slash.ts';
 import { App } from '../src/tui/app.tsx';
 import { SESSION, fakeBackend, runView } from './fake-backend.ts';
-import { KEYS, renderObservable, untilFrame, untilOutput } from './ink-helpers.ts';
+import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 import { startPlan } from './fake-plan-gateway.tsx';
 import { fakeScreenTerminal } from './tui/screen-fakes.ts';
@@ -229,8 +229,9 @@ describe('App run rendering', () => {
     await untilFrame(app, 'Permission requested: Bash c1');
     app.stdin.write(KEYS.down);
     backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o3' }));
-    await untilFrame(app, 'Permission requested: Bash c2');
-    app.stdin.write(KEYS.enter);
+    const next = await untilFrame(app, (shown) => shown.includes('Permission requested: Bash c2') && shown.includes('1-9 to choose'));
+    expect(next).toContain('› 1. Allow once');
+    app.stdin.write('1');
     await backend.called('approve:ap2:o1');
     app.unmount();
   });
@@ -339,7 +340,7 @@ describe('App slash commands', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/help', '> /help');
     app.stdin.write(KEYS.enter);
-    const output = await untilOutput(app, 'ctrl+j: new line (shift+enter works only if this terminal reports it; this one has not)');
+    const output = await untilOutput(app, 'ctrl+j  new line (shift+enter works only if this terminal reports it; this one has not)');
     for (const name of ['Commands', '/help', '/clear', '/mode', '/model [model] [--start]', '/exit', 'Keys', 'Mouse']) expect(output).toContain(name);
     app.unmount();
   });
@@ -452,12 +453,37 @@ describe('App slash commands', () => {
       { name: 'review', description: 'review the diff', run: async (args) => void seen.push(args) },
     ]);
     const backend = fakeBackend();
-    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} timers={systemTiming} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
     await untilFrame(app, 'mode: manual');
     await type(app, '/review main', '> /review main');
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'mode: manual');
     expect(seen).toEqual(['main']);
+    app.unmount();
+  });
+
+  it('a list tells its highlight once for the row it opens on, before any key, and again at every move', async () => {
+    const highlighted: number[] = [];
+    const registry = createSlashRegistry([
+      ...BUILTIN_SLASH_COMMANDS,
+      {
+        name: 'rows',
+        description: 'a list that opens on its third row',
+        run: async (_args, context) => {
+          await context.overlays.choose({ title: 'Rows', rows: [{ label: 'a' }, { label: 'b' }, { label: 'c' }], initial: 2, decideOn: 'enter', filter: false, onHighlight: (index) => void highlighted.push(index) });
+        },
+      },
+    ]);
+    const backend = fakeBackend();
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    await untilFrame(app, 'mode: manual');
+    await type(app, '/rows', '> /rows');
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, '› 3. c');
+    expect(highlighted).toEqual([2]);
+    app.stdin.write(KEYS.up);
+    await untilFrame(app, '› 2. b');
+    expect(highlighted).toEqual([2, 1]);
     app.unmount();
   });
 });

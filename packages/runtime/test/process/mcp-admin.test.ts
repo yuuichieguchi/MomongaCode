@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { OperationLimitError, StoreCallEndedError } from '@momonga/foundation';
 import { KEYCHAIN_BACKEND } from '@momonga/foundation/secret-store';
 import { McpAuthorizationError } from '@momonga/mcp';
@@ -58,6 +58,7 @@ const makeAuthPool = (options: McpPoolOptions, plan: ProbePlan): FakeAuthPool =>
 };
 
 const CLOSE_GRACE_MS = 40;
+const ADMIN_CLIENT_VERSION = '0.0.0-admin-test';
 const CONNECT_TIMEOUT_MS = 45_000;
 
 const setup = async () => {
@@ -70,8 +71,13 @@ const setup = async () => {
   const cache = makeCache(temp.home);
   const reporter = makeReporter();
   const pools: FakeAuthPool[] = [];
+  const created: McpPoolOptions[] = [];
   const plan: ProbePlan = { next: { state: 'required' } };
+  const ended = { count: 0 };
   const admin: McpAdmin = createMcpAdmin({
+    onAuthorizationEnded: () => {
+      ended.count += 1;
+    },
     home: temp.home,
     store,
     clock,
@@ -91,18 +97,29 @@ const setup = async () => {
       keptLayers: (use) => ({ store: cache.kept, use }),
     },
     remote: { openAuthorizationUrl: () => Promise.reject(new Error('the admin must supply its own opener')) } as never,
+    clientVersion: ADMIN_CLIENT_VERSION,
     createPool: (options) => {
+      created.push(options);
       const pool = makeAuthPool(options, plan);
       pools.push(pool);
       return pool;
     },
   });
-  return { admin, session, pools, plan, timers, reporter };
+  return { admin, session, pools, created, plan, timers, reporter, ended };
 };
 
 const controllerSignal = (): AbortSignal => new AbortController().signal;
 
 describe('createMcpAdmin servers', () => {
+  it('gives every pool it creates the client version it was given', async () => {
+    const { admin, session, created } = await setup();
+
+    await admin.servers(session.id, controllerSignal());
+
+    expect(created.length).toBeGreaterThan(0);
+    for (const options of created) expect(options.clientVersion).toBe(ADMIN_CLIENT_VERSION);
+  });
+
   it('servers passes the request signal to authState', async () => {
     const { admin, session, pools } = await setup();
     const request = controllerSignal();
@@ -290,5 +307,35 @@ describe('createMcpAdmin authorization', () => {
     await admin.close(CLOSE_GRACE_MS);
 
     expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { message: 'the authorization of MCP server "remote" failed: the runtime is shutting down' } });
+  });
+});
+
+describe('createMcpAdmin counts the authorizations that wait for the person', () => {
+  it('counts an attempt from its start until the person answers, and tells its owner when it ends', async () => {
+    const { admin, session, pools, ended } = await setup();
+    expect(admin.pendingAuthorizations()).toBe(0);
+
+    await admin.startAuthorization(session.id, 'remote', controllerSignal());
+
+    expect(admin.pendingAuthorizations()).toBe(1);
+    expect(ended.count).toBe(0);
+    pools.at(-1)?.finishAuthorization();
+    await vi.waitFor(() => expect(admin.authorization(session.id, 'remote')?.status).toBe('completed'));
+    expect(admin.pendingAuthorizations()).toBe(0);
+    await vi.waitFor(() => expect(ended.count).toBe(1));
+  });
+
+  it('an attempt that fails or is cancelled no longer counts', async () => {
+    const { admin, session, pools, ended } = await setup();
+    await admin.startAuthorization(session.id, 'remote', controllerSignal());
+    pools.at(-1)?.failAuthorization(new McpAuthorizationError('denied', 'the person refused'));
+    await vi.waitFor(() => expect(ended.count).toBe(1));
+    expect(admin.pendingAuthorizations()).toBe(0);
+
+    await admin.startAuthorization(session.id, 'remote', controllerSignal());
+    expect(admin.pendingAuthorizations()).toBe(1);
+    expect(admin.cancelAuthorization(session.id, 'remote')).toBe(true);
+    await vi.waitFor(() => expect(ended.count).toBe(2));
+    expect(admin.pendingAuthorizations()).toBe(0);
   });
 });

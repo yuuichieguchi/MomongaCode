@@ -7,6 +7,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { repoRoot } from './bundle.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
+import { RUN_LOCK_DEFAULT_WAIT_SECONDS } from './support/run-lock.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -39,13 +40,17 @@ afterEach(async () => {
   removeTempRoot(root);
 });
 
-const childEnv = (extra: Record<string, string> = {}): Record<string, string> => {
+type ChildEnv = Record<string, string | undefined>;
+
+const NO_WAIT_NAMED: ChildEnv = { MOMONGA_RUN_LOCK_WAIT_SECONDS: undefined };
+
+const childEnv = (extra: ChildEnv = {}): ChildEnv => {
   const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) if (value !== undefined && key !== 'MOMONGA_RUN_LOCK' && key !== 'MOMONGA_RUN_LOCK_WAIT_SECONDS') env[key] = value;
-  return { ...env, MOMONGA_DEV_STATE_DIR: state, ...extra };
+  for (const [key, value] of Object.entries(process.env)) if (value !== undefined && key !== 'MOMONGA_RUN_LOCK') env[key] = value;
+  return { ...env, MOMONGA_RUN_LOCK_WAIT_SECONDS: '0', MOMONGA_DEV_STATE_DIR: state, ...extra };
 };
 
-const wrapper = (args: string[], extra: Record<string, string> = {}): Started => {
+const wrapper = (args: string[], extra: ChildEnv = {}): Started => {
   const child = spawn(process.execPath, [WRAPPER, ...args], { cwd: repoRoot, env: childEnv(extra), stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = '';
   let stdout = '';
@@ -175,6 +180,17 @@ describe.skipIf(!HAS_POSIX_SHELL)('node scripts/run-lock.ts', () => {
     expect(await variable.exit).toBe(0);
     expect(fs.existsSync(path.join(root, 'variable-ran'))).toBe(true);
     expect(fs.existsSync(path.join(root, 'option-ran'))).toBe(false);
+  });
+
+  it('waits up to the default limit when the caller names none, and runs once the holder releases', async () => {
+    const first = await holdHeavy();
+    const unnamed = wrapper(['light', '--', ...quick(path.join(root, 'unnamed-ran'))], NO_WAIT_NAMED);
+    await until(() => unnamed.stderr().includes(`run-lock: light run waits up to ${RUN_LOCK_DEFAULT_WAIT_SECONDS} s for heavy pid ${first.run.child.pid} `), unnamed);
+    expect(fs.existsSync(path.join(root, 'unnamed-ran'))).toBe(false);
+    fs.writeFileSync(first.release, '');
+
+    expect(await unnamed.exit).toBe(0);
+    expect(fs.existsSync(path.join(root, 'unnamed-ran'))).toBe(true);
   });
 
   it.each([

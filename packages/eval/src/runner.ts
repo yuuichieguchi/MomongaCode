@@ -1,5 +1,6 @@
 import type { Mandate, PublicRunEvent } from '@momonga/protocol';
 import { gradeChecks } from './oracle-grade.ts';
+import type { WorkspaceFiles } from './files.ts';
 import type { WorkspaceProbe } from './oracle-grade.ts';
 import { gateVerdictOf } from './oracle.ts';
 import type { GoldenCase, GoldenDataset } from './dataset.ts';
@@ -25,7 +26,7 @@ export type EvalRunApi = {
   cancelRun(runId: string): Promise<void>;
 };
 
-export type EvalOracle = { base: string; probe: WorkspaceProbe };
+export type EvalOracle = { base: string; probe: WorkspaceProbe; files: WorkspaceFiles };
 
 export type EvalRunScope = { api: EvalRunApi; workspace: EvalWorkspace; oracle?: EvalOracle; close(): Promise<void> };
 
@@ -133,7 +134,7 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
     const oracle =
       golden.oracle === undefined || scope.oracle === undefined
         ? undefined
-        : await gradeChecks({ checks: golden.oracle, graderFiles: {}, workspace: scope.workspace.cwd, base: scope.oracle.base, probe: scope.oracle.probe });
+        : await gradeChecks({ checks: golden.oracle, graderFiles: {}, workspace: scope.workspace.cwd, base: scope.oracle.base, probe: scope.oracle.probe, files: scope.oracle.files });
     const transcript: RecordedRun = {
       caseId: golden.id,
       runIndex,

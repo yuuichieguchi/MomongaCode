@@ -5,14 +5,13 @@ import path from 'node:path';
 import { systemTiming } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { loadUserSettings, writeTuiSetting } from '@momonga/config';
-import { TARGET_NOT_READY } from '@momonga/protocol';
+import { TARGET_NOT_READY, reopenSessionCommand } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
 import { noTargetLines } from '../readiness.ts';
 import { createHistoryStore } from '../history-store.ts';
 import type { CliPorts, Terminal } from '../ports.ts';
 import type { SessionOptions } from '../run/open-session.ts';
-import { reopenCommand } from '../run/resolve-session.ts';
 import type { Reopen } from '../run/resolve-session.ts';
 import type { UpdateWiring } from '../update/background.ts';
 import { App } from './app.tsx';
@@ -65,6 +64,11 @@ const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, laye
     return surface;
   };
   const detach = mover.attach({
+    surface: 'tui',
+    kept: () => {
+      const session = surface?.session();
+      return { kind: 'sessions', sessionIds: session === undefined ? [] : [session] };
+    },
     recordFile: () => {
       const session = surface?.session();
       return session === undefined ? undefined : recordFileOf(paths, session);
@@ -229,5 +233,5 @@ export const exitCodeOf = (ports: Pick<CliPorts, 'stderr'>, outcome: TuiOutcome)
 };
 
 export const writeReopenLine = (ports: Pick<CliPorts, 'stdout'>, outcome: TuiOutcome): void => {
-  if (outcome.reopen !== undefined) ports.stdout.write(`${reopenCommand(outcome.reopen)}\n`);
+  if (outcome.reopen !== undefined) ports.stdout.write(`${reopenSessionCommand(outcome.reopen)}\n`);
 };

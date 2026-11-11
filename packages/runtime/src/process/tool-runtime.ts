@@ -55,7 +55,9 @@ export type ToolRuntimeOptions = {
   generation: number;
   role: Pick<RolePort, 'current'>;
   onJobSettled?: () => void;
+  onAuthorizationEnded?: () => void;
   home: string;
+  version: string;
   store: RuntimeStore;
   notifier: Pick<RunNotifier, 'watchRun'>;
   clock: Clock;
@@ -167,9 +169,11 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     settings,
     remote: mcpRemote,
     createPool: options.createAdminPool ?? createMcpPool,
+    clientVersion: options.version,
     readCloseGraceMs,
     readConnectTimeoutMs: () => settings.takeUserSnapshot().settings.mcp.connectTimeoutMs,
     markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
+    ...(options.onAuthorizationEnded === undefined ? {} : { onAuthorizationEnded: options.onAuthorizationEnded }),
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report, readCloseGraceMs });
   const sessionStates = createSessionStates({ clock, store, logger, releaseScratch: (sessionId) => releaseSessionScratch(path.join(paths.tmp.sessions, sessionId)) });
@@ -228,6 +232,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               projectDir: session.cwd,
               baseEnv: env,
               clock,
+              clientVersion: options.version,
               credentials,
               credentialNames,
               timers,

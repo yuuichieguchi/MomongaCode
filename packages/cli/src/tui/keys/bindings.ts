@@ -7,7 +7,12 @@ export const KEY_FILE_MAX_BYTES = 64 * 1024;
 
 export const TEXT_CONTEXTS: readonly KeyContext[] = ['chat', 'menu', 'shell'];
 
-export const KEPT_WITH_A_KEY: readonly ActionId[] = ['select.decide', 'select.escape'];
+export const KEPT_WITH_A_KEY: readonly ActionId[] = ['select.decide', 'select.escape', 'prompt.submit'];
+
+const IDLE_ENTER: ActionId = 'prompt.submit';
+const BUSY_ENTERS: readonly string[] = ['prompt.steer', 'prompt.queue'];
+
+const keepsItsKey = (holder: string, taker: string | null): boolean => holder === IDLE_ENTER && taker !== null && BUSY_ENTERS.includes(taker);
 
 const MODIFIER_ALIASES: Readonly<Record<string, string>> = { ctrl: 'ctrl', control: 'ctrl', alt: 'alt', opt: 'alt', option: 'alt', meta: 'alt', shift: 'shift', cmd: 'cmd', super: 'cmd', hyper: 'hyper' };
 const KEY_ALIASES: Readonly<Record<string, string>> = { esc: 'escape', return: 'enter' };
@@ -113,7 +118,7 @@ const applied = (base: readonly ActionRow[], entries: readonly BindingEntry[]): 
     if (entry.rejected !== undefined || entry.spec === undefined) continue;
     const { spec } = entry;
     for (const row of base) {
-      if (row.context !== entry.context || row.id === entry.action) continue;
+      if (row.context !== entry.context || row.id === entry.action || keepsItsKey(row.id, entry.action)) continue;
       const held = keys.get(row.id) ?? [];
       if (!held.includes(spec)) continue;
       keys.set(row.id, held.filter((key) => key !== spec));

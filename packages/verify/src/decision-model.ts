@@ -1,5 +1,6 @@
 import { isGoverningRule as isGoverning, ruleCoversSubject } from '@momonga/policy';
 import type { PermissionRule, PermissionSubject } from '@momonga/policy';
+import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 import type { Bool, Seq } from 'z3-solver';
 import type { CommandModel } from './command-model.ts';
@@ -39,12 +40,17 @@ export type SubjectModel = {
   planDeny: Bool;
   dynamicAsk: Bool;
   defaultAllow: Bool;
+  askingModeDefaults: readonly ModeDefault[];
   witness(read: (term: Seq) => string, readBool: (term: Bool) => boolean): Witness;
   bind(witness: Witness): readonly Bool[];
   exclusion?(witness: Witness): Bool | undefined;
   resolvedTerm: Seq | undefined;
   commandTerm: Seq | undefined;
 };
+
+export type ModeDefault = { modes: readonly PermissionMode[]; allow: Bool };
+
+export const ASKING_MODES: readonly PermissionMode[] = PERMISSION_MODES.filter((mode) => mode !== 'bypassPermissions');
 
 export type DecisionModels = { smt: Smt; paths: PathModel; commands: CommandModel; rules: readonly PermissionRule[]; mode: PermissionMode };
 
@@ -82,12 +88,13 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
     return {
       tool,
       kind: 'command',
-      domain: [readsGoverned ? ctx.Or(commands.domain(command), dynamicRead) : commands.domain(command)],
+      domain: [readsGoverned ? ctx.Or(commands.domain(command), dynamicRead) : commands.domain(command), ...terms.map((term) => ctx.Not(commands.optionGap(command, term.rule)))],
       terms,
       guard: no,
       planDeny: no,
       dynamicAsk: dynamicRead,
       defaultAllow: bypass ? yes : defaultAllowTerm,
+      askingModeDefaults: [{ modes: ASKING_MODES, allow: defaultAllowTerm }],
       witness: (read, readBool) => ({ kind: 'command', command: read(command), defaultAllow: readBool(defaultAllowTerm) }),
       bind: (witness) => (witness.kind === 'command' ? [command.eq(smt.stringValue(witness.command))] : []),
       exclusion: (witness) => (witness.kind === 'command' ? commands.excludedBlock(command, witness.command) : undefined),
@@ -118,6 +125,7 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
       planDeny: mode === 'plan' ? ctx.Not(readOnly) : no,
       dynamicAsk: no,
       defaultAllow: bypass ? yes : no,
+      askingModeDefaults: [{ modes: ASKING_MODES, allow: no }],
       witness: (read, readBool) => {
         const text = read(full).slice(MCP_PREFIX.length);
         const cut = text.indexOf(MCP_SEPARATOR);
@@ -140,6 +148,11 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
     return [{ index, rule, position: match, incidental: no, strict: match }];
   });
   const inside = paths.inside(vars.resolved);
+  const insideModes = ASKING_MODES.filter((asking) => access === 'read' || asking === 'acceptEdits');
+  const askingModeDefaults: ModeDefault[] = [
+    { modes: insideModes, allow: inside },
+    { modes: ASKING_MODES.filter((asking) => !insideModes.includes(asking)), allow: no },
+  ].filter((entry) => entry.modes.length > 0);
   return {
     tool,
     kind: 'path',
@@ -148,7 +161,8 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
     guard: access === 'write' ? paths.protectedWrite(vars.resolved) : no,
     planDeny: mode === 'plan' && access === 'write' ? yes : no,
     dynamicAsk: no,
-    defaultAllow: bypass ? yes : access === 'read' ? inside : mode === 'acceptEdits' ? inside : no,
+    defaultAllow: bypass ? yes : (askingModeDefaults.find((entry) => entry.modes.includes(mode)) as ModeDefault).allow,
+    askingModeDefaults,
     witness: (read) => ({ kind: 'path', tool, access, requested: read(vars.requested), resolved: read(vars.resolved) }),
     bind: (witness) => (witness.kind === 'path' ? [vars.requested.eq(smt.stringValue(witness.requested)), vars.resolved.eq(smt.stringValue(witness.resolved))] : []),
     resolvedTerm: vars.resolved,
@@ -156,31 +170,26 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
   };
 };
 
-export const ruleEffectCases = (models: DecisionModels, subject: SubjectModel, term: RuleTerms): Bool[] => {
-  const { smt, mode } = models;
+export type RuleEffectCases = { cases: Bool[]; unlessDefaultAllows: boolean };
+
+export const ruleEffectCases = (models: DecisionModels, subject: SubjectModel, term: RuleTerms): RuleEffectCases => {
+  const { smt } = models;
   const ctx = smt.ctx;
-  const bypass = mode === 'bypassPermissions';
   const others = subject.terms.filter((other) => other.index !== term.index);
   const ofEffect = (effect: PermissionRule['effect']): RuleTerms[] => others.filter((other) => other.rule.effect === effect);
   const denyPosition = anyOf(smt, ofEffect('deny').map((other) => other.position));
   const denyIncidental = anyOf(smt, ofEffect('deny').map((other) => ctx.And(ctx.Not(other.position), other.incidental)));
   const askMatch = anyOf(smt, ofEffect('ask').map((other) => ctx.Or(other.position, other.incidental)));
-  const governingAskMatch = anyOf(smt, ofEffect('ask').filter((other) => isGoverning(other.rule)).map((other) => ctx.Or(other.position, other.incidental)));
   const allowMatch = anyOf(smt, ofEffect('allow').map((other) => other.strict));
-  const noDenyOrPlan = ctx.And(ctx.Not(bypass ? ctx.Or(denyPosition, denyIncidental) : denyPosition), ctx.Not(subject.planDeny));
-  const unguarded = ctx.And(noDenyOrPlan, ctx.Not(subject.guard), ctx.Not(subject.dynamicAsk));
+  const undenied = ctx.Not(denyPosition);
+  const undecided = ctx.And(undenied, ctx.Not(subject.guard), ctx.Not(subject.dynamicAsk), ctx.Not(askMatch), ctx.Not(denyIncidental));
   switch (term.rule.effect) {
     case 'allow':
-      return [ctx.And(term.strict, unguarded, ctx.Not(askMatch), ctx.Not(denyIncidental), ctx.Not(allowMatch), ctx.Not(subject.defaultAllow))];
-    case 'deny': {
-      const decisive = ctx.And(term.position, noDenyOrPlan);
-      if (bypass) return [decisive, ctx.And(ctx.Not(term.position), term.incidental, noDenyOrPlan)];
-      const incidentalOnly = ctx.And(ctx.Not(term.position), term.incidental, unguarded, ctx.Not(askMatch), ctx.Not(denyIncidental), ctx.Or(allowMatch, subject.defaultAllow));
-      return [decisive, incidentalOnly];
-    }
+      return { cases: [ctx.And(term.strict, undecided, ctx.Not(allowMatch))], unlessDefaultAllows: true };
+    case 'deny':
+      return { cases: [ctx.And(term.position, undenied), ctx.And(ctx.Not(term.position), term.incidental, undecided)], unlessDefaultAllows: false };
     case 'ask':
-      if (bypass) return isGoverning(term.rule) ? [ctx.And(ctx.Or(term.position, term.incidental), unguarded, ctx.Not(governingAskMatch))] : [];
-      return [ctx.And(ctx.Or(term.position, term.incidental), unguarded, ctx.Not(askMatch), ctx.Not(denyIncidental), ctx.Or(allowMatch, subject.defaultAllow))];
+      return { cases: [ctx.And(ctx.Or(term.position, term.incidental), undecided)], unlessDefaultAllows: false };
   }
 };
 

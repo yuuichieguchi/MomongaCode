@@ -2,7 +2,7 @@ export type CredentialRules = { env?: readonly string[]; keep?: readonly string[
 
 const STRONG_WORD = /KEY|TOKEN|SECRET|PASSW(OR)?D|PASSPHRASE|CREDENTIAL|CREDS/i;
 
-const WEAK_WORDS: ReadonlySet<string> = new Set(['AUTH', 'COOKIE', 'SESSION', 'PRIVATE', 'PASS']);
+const WEAK_WORDS: ReadonlySet<string> = new Set(['AUTH', 'COOKIE', 'SESSION', 'PRIVATE', 'PASS', 'URL', 'DSN', 'CONN', 'PAT']);
 
 const LAST_WORD_ONLY = 'PWD';
 

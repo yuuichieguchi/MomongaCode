@@ -163,7 +163,6 @@ export { GENERIC_SERVER_KIND, SERVER_ADAPTER_LABELS, SERVER_KINDS } from './serv
 export type { JsonCheck, ServerKind, ServerKindAdapter, ServerKindRead, ServerKindRecognise, ServerKinds } from './server-kinds.ts';
 export {
   ModelRefError,
-  NO_MODEL_CONNECTED_TEXT,
   PROVIDER_NAME_PATTERN,
   STORED_MODEL_KEYS,
   canonOf,
@@ -175,13 +174,29 @@ export {
   parseCanon,
   resolveStoredModelRef,
   resolveTypedModelRef,
-  serverCountText,
   shortOf,
   storedModelRef,
   typedModelText,
   withDefaultTag,
 } from './model-ref.ts';
 export type { ModelRefErrorCode, ModelView, ModelViews, StoredModelRef, TypedModelText, TypedResolution } from './model-ref.ts';
+export {
+  ADD_MODEL_COMMAND,
+  CHOOSE_SESSION_COMMAND,
+  CONCEPTS,
+  MESSAGE_KEYS,
+  SIGN_IN_COMMAND,
+  SURFACES,
+  TUI_SIGN_IN_COMMAND,
+  VOCABULARY,
+  WORDS,
+  attachRunCommand,
+  bannedVariantsIn,
+  messageOf,
+  reopenSessionCommand,
+  serverCountText,
+} from './vocabulary.ts';
+export type { BannedUse, BannedVariant, Concept, KeptWork, MessageInput, MessageInputs, MessageKey, Surface, VocabularyRow } from './vocabulary.ts';
 export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_ENDPOINT_FORMS, MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
 export type { ManagedDeclarableField, ManagedEndpointForm, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
 export {
@@ -547,8 +562,8 @@ export {
   hookTimeoutMs,
 } from './hooks.ts';
 export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
-export { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, RULE_FINGERPRINT_PATTERN, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice } from './rule-verdict.ts';
-export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleRefutation, RuleVerdict, RuleVerdictKind } from './rule-verdict.ts';
+export { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_FINGERPRINT_PATTERN, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from './rule-verdict.ts';
+export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind } from './rule-verdict.ts';
 export {
   CONDITION_SOURCES,
   CONDITION_STATES,
@@ -645,7 +660,7 @@ export type {
   ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
-export { cachedDetailOf, CHAT_REASONING_FIELDS, reportedCachedTokensOf, wireUsageOf, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
+export { cachedDetailOf, CHAT_REASONING_FIELDS, reportedCachedTokensOf, wireUsageOf, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES, TOOL_NAME_PATTERN, isToolName } from './open-responses.ts';
 export type {
   Annotation,
   CompactMomongaExtension,
@@ -763,3 +778,18 @@ export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './
 export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';
 export type { NamedPlanAccountRef } from './plan-account.ts';
 export type { JsonSchema } from './schema-helpers.ts';
+export {
+  ACTIVATE_SKILL_TOOL_NAME,
+  AGENT_TOOL_NAME,
+  BUILTIN_TOOL_NAMES,
+  COMMAND_TOOL_NAME,
+  HISTORY_READ_TOOL_NAME,
+  HISTORY_SEARCH_TOOL_NAME,
+  LOAD_TOOLS_TOOL_NAME,
+  MEMORY_SAVE_TOOL_NAME,
+  MEMORY_SEARCH_TOOL_NAME,
+  OPERATION_RULE_TOOLS,
+  PATH_TOOL_NAMES,
+  RULE_PROPOSE_TOOL_NAME,
+  TOOL_NAMES,
+} from './tool-names.ts';

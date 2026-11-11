@@ -25,6 +25,7 @@ const modernServer = { command: process.execPath, args: [MCP_MODERN_SERVER_PATH]
 
 const connectionFor = (extra: Partial<McpConnectionOptions> = {}): McpServerConnection => {
   const connection = createManagedConnection({
+    clientVersion: '0.0.0-test',
     name: 'modern',
     config: modernServer,
     scope: 'user',
@@ -89,6 +90,7 @@ describe('MCP listTools signal', () => {
     const onWarning = (): void => undefined;
     transportCalls.length = 0;
     const pool = createMcpPool({
+      clientVersion: '0.0.0-test',
       servers: [{ name: 'modern', scope: 'user', config: modernServer }],
       projectDir: makeDir(),
       baseEnv: BASE_ENV,

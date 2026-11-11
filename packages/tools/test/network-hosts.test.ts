@@ -107,23 +107,54 @@ describe('a Bash call that asks for named hosts, before it runs', () => {
   });
 });
 
-describe('a network request is granted by a person, never by a hook or the classifier', () => {
+describe('a network request is an ask of the mode, which a hook or the classifier may answer', () => {
   const allowingHooks = { matchesPreToolUse: () => true, matchesPostToolUse: () => false, preToolUse: async () => ({ decision: 'allow' as const }) } as unknown as NonNullable<ExecutionBatchInput['hooks']>;
+  const NETWORKS = [['open', 'open' as const], ['named hosts', { hosts: ['registry.example.org'] }]] as const;
 
-  it.each([['open', 'open' as const], ['named hosts', { hosts: ['registry.example.org'] }]])('still asks the person for %s when a hook allows everything', async (_name, network) => {
+  const stoppingAtSpawn = (): { sandbox: Sandbox; spawns: () => number } => {
+    let spawns = 0;
+    return {
+      sandbox: {
+        kind: 'seatbelt',
+        spawn: () => {
+          spawns += 1;
+          throw new Error('stopped at the spawn');
+        },
+      },
+      spawns: () => spawns,
+    };
+  };
+
+  it.each(NETWORKS)('asks for %s in manual mode with an ask that is not for a person only', async (_name, network) => {
     const tools = await makeBuiltins({ sandbox: neverSpawning('seatbelt') });
-    const asked = approvalOf(await tools.run('Bash', { command: 'npm install', network }, { mode: 'manual', hooks: allowingHooks }));
-    expect(asked.decision.humanOnly).toBe(true);
+    const asked = approvalOf(await tools.run('Bash', { command: 'npm install', network }, { mode: 'manual' }));
+    expect(asked.decision.humanOnly).toBeUndefined();
     expect(asked.decision.reason).toContain('the command requests');
   });
 
-  it.each([['open', 'open' as const], ['named hosts', { hosts: ['registry.example.org'] }]])('still asks the person for %s in auto mode when the classifier allows, and the classifier is not consulted', async (_name, network) => {
+  it.each(NETWORKS)('a hook that allows answers the request for %s: the call goes to the sandbox and the person is not asked', async (_name, network) => {
+    const stopped = stoppingAtSpawn();
+    const tools = await makeBuiltins({ sandbox: stopped.sandbox });
+    const outcome = await tools.run('Bash', { command: 'npm install', network }, { mode: 'manual', hooks: allowingHooks });
+    expect(outcome?.kind).toBe('result');
+    expect(stopped.spawns()).toBe(1);
+  });
+
+  it.each(NETWORKS)('in auto mode the classifier is asked about %s and told the scope; when it does not allow, the person is asked', async (_name, network) => {
     const tools = await makeBuiltins({ sandbox: neverSpawning('seatbelt') });
-    let consulted = 0;
-    const classifier = { classify: async () => ((consulted += 1), 'allow' as const) };
+    const reasons: string[] = [];
+    const classifier = { classify: async (request: { reason: string }) => (reasons.push(request.reason), 'ask' as const) };
     const asked = approvalOf(await tools.run('Bash', { command: 'npm install', network }, { mode: 'auto', classifier }));
-    expect(asked.decision.humanOnly).toBe(true);
-    expect(consulted).toBe(0);
+    expect(asked.decision.reason).toContain('the command requests');
+    expect(reasons).toEqual([expect.stringContaining('the command requests')]);
+  });
+
+  it.each(NETWORKS)('in auto mode a classifier that allows answers the request for %s', async (_name, network) => {
+    const stopped = stoppingAtSpawn();
+    const tools = await makeBuiltins({ sandbox: stopped.sandbox });
+    const outcome = await tools.run('Bash', { command: 'npm install', network }, { mode: 'auto', classifier: { classify: async () => 'allow' as const } });
+    expect(outcome?.kind).toBe('result');
+    expect(stopped.spawns()).toBe(1);
   });
 });
 

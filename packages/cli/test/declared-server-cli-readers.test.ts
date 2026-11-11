@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { systemTiming } from '@momonga/foundation';
 import { loadUserModels } from '@momonga/config';
 import { momongaPaths } from '@momonga/foundation';
 import { NotAProbeableModel, probeModel } from '../src/commands/gateway.ts';
@@ -71,7 +72,7 @@ describe('the CLI readers resolve a declared server through the registry of the 
 
   it('the outbound network reader (R13, network.ts) loads settings that declare a server', async () => {
     const home = declaredHome('/opt/loom/bin/loom-server');
-    const ports = { home, env: {}, stderr: sink(), files: nodeFiles } as unknown as CliPorts;
+    const ports = { home, env: {}, timers: systemTiming, stderr: sink(), files: nodeFiles } as unknown as CliPorts;
     await expect(withOutboundNetwork(ports, new AbortController().signal, async (network) => network)).resolves.toMatchObject({ config: expect.anything() });
   });
 });

@@ -4,7 +4,7 @@ import { App } from '../src/tui/app.tsx';
 import type { AppProps, TuiOutcome } from '../src/tui/app.tsx';
 import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
-import { KEYS, renderObservable, untilFrame, untilOutput } from './ink-helpers.ts';
+import { KEYS, TEST_KEY_SETTLE_MS, renderObservable, untilFrame, untilOutput, settleAtOnce } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { fakeScreenTerminal } from './tui/screen-fakes.ts';
 import { systemTiming } from '@momonga/foundation';
@@ -18,19 +18,22 @@ export const frame = (event: Record<string, unknown>): RunEventFrame => {
   return { id: sequence, event: String(event['type']), data: { ...base, id: sequence, seq: sequence, ...event } as PublicRunEvent };
 };
 
-export const start = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'copyOnSelect' | 'now' | 'timers' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption'>> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
+export const start = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'copyOnSelect' | 'now' | 'timers' | 'keySettleMs' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption'>> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
   const backend = fakeBackend(options);
   const terminal = fakeScreenTerminal(screen);
   const outcomes: TuiOutcome[] = [];
   const exited = Promise.withResolvers<TuiOutcome>();
+  const keySettleMs = extra.keySettleMs ?? TEST_KEY_SETTLE_MS;
+  const given = extra.timers ?? systemTiming;
   const app = renderObservable(
     <App
       backend={backend}
       terminal={terminal}
       initialMode={undefined}
       now={Date.now}
-      timers={systemTiming}
       {...extra}
+      keySettleMs={keySettleMs}
+      timers={keySettleMs === TEST_KEY_SETTLE_MS ? settleAtOnce(given) : given}
       onExit={(outcome) => {
         outcomes.push(outcome);
         exited.resolve(outcome);

@@ -6,16 +6,16 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type GroupLaunch, type TerminateOutcome, type Timing } from '@momonga/foundation';
+import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
-export const DEFAULT_CLOSE_GRACE_MS = 2000;
 const NEWLINE = 0x0a;
+const CLOSE_REAP_OCCASION: RetryKind = 'shutdown';
 
 export type CloseGrace = number | (() => number);
 
-export const closeGraceOf = (grace: CloseGrace | undefined): number => (typeof grace === 'function' ? grace() : (grace ?? DEFAULT_CLOSE_GRACE_MS));
+export const closeGraceOf = (grace: CloseGrace | undefined): number => (typeof grace === 'function' ? grace() : (grace ?? SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.default));
 
 export type McpMarkerOptions = { dir: string; onWarning(message: string): void };
 
@@ -160,7 +160,7 @@ class StdioTransportImpl implements StdioTransport {
       if (markerPath !== undefined) fs.rmSync(markerPath, { force: true });
       throw error;
     }
-    if (markerPath !== undefined) fs.writeFileSync(markerPath, `${launched.pgid}\n`);
+    if (markerPath !== undefined && launched.pgid !== undefined) await recordMarkerGroup(markerPath, launched.pgid);
     this.exited = new Promise<void>((resolve) => {
       const ended = (exit: StdioTransportExit): void => {
         this.exit = exit;
@@ -245,15 +245,19 @@ class StdioTransportImpl implements StdioTransport {
         if (this.markerPath !== undefined && this.options.markers !== undefined) {
           const sweep = operationSignal(undefined);
           try {
-            await reapMarkedProcesses({
-              marker: this.markerPath,
-              pgid: group,
-              killGraceMs: graceMs,
-              label: 'mcp',
-              onWarning: this.options.markers.onWarning,
-              timing: this.timing,
-              signal: sweep.signal,
-            });
+            const claim = await claimRetry(this.markerPath, CLOSE_REAP_OCCASION, { signal: sweep.signal });
+            if (claim === 'failed') throw new Error(`the ${CLOSE_REAP_OCCASION} retry of the MCP marker ${this.markerPath} could not be recorded, so its processes were not reaped`);
+            if (claim === 'claimed') {
+              await reapMarkedProcesses({
+                marker: this.markerPath,
+                pgid: group,
+                killGraceMs: graceMs,
+                label: 'mcp',
+                onWarning: this.options.markers.onWarning,
+                timing: this.timing,
+                signal: sweep.signal,
+              });
+            }
           } catch (error) {
             sweepFailure = { error };
           } finally {

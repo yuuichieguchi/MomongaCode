@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { systemTiming } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { GatewayAnswerError } from '../src/client/gateway-client.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
@@ -41,7 +42,7 @@ describe('a callback carrying error= reaches the gateway whole, which judges it 
     const outcome = await signIn(
       {
         plan: fake.plan,
-        startListener: loopbackSignInListener(new AbortController().signal),
+        startListener: loopbackSignInListener(systemTiming, new AbortController().signal),
         authorize: async () => undefined,
         pasted: (_state, signal) => {
           callbackUrl = `http://127.0.0.1:${fake.ports[0]}/auth/callback?error=access_denied&state=st-1`;

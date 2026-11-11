@@ -3,11 +3,12 @@ export type { ParseRuleOptions, PermissionRule, RuleEffect, RuleOrigin } from '@
 export { decide, decidePrimary, denyingRuleFor, isGoverningRule } from './decide.ts';
 export type { DecideInput, Decision } from './decide.ts';
 export { foldedKey } from './fold.ts';
-export { matchPathlessRule, matchRule, ruleCoversSubject, wildcardMatches } from './match-rule.ts';
+export { matchPathlessRule, matchRule, ruleCoversSubject } from './match-rule.ts';
+export { wildcardMatches } from './wildcard.ts';
 export type { RuleResolution } from './match-rule.ts';
 export { supersededFormOf, supersededVerdictOf } from './superseded.ts';
 export type { CoveredProgram, SupersededForm, SupersededVerdict } from './superseded.ts';
-export { commandPatternOf } from './command-match.ts';
+export { commandPatternOf, comparesByAdjacency } from './command-match.ts';
 export { inertPrinterSet } from './command-specs.ts';
 export type { CommandPattern } from './command-match.ts';
 export { RESERVED_WORDS, allWriteTargets, analyzeCommand, programNameOf, readPathsOfCommand } from './shell.ts';

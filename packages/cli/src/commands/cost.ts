@@ -25,7 +25,7 @@ const filterOf = (ports: Pick<CliPorts, 'cwd'>, options: CostOptions): CostFilte
 export const showCost = async (ports: CliPorts, paths: MomongaPaths, options: CostOptions): Promise<number> => {
   const filter = filterOf(ports, options);
   await ensureCurrentDaemon(ports, paths);
-  const client = connectRuntime(paths);
+  const client = connectRuntime(ports, paths);
   try {
     if (options.breakdown === true) {
       ports.stdout.write(options.json ? `${JSON.stringify(await client.costBreakdown(filter))}\n` : await client.costBreakdownText(filter));

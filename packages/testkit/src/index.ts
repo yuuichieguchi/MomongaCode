@@ -242,7 +242,7 @@ export {
 } from './fake-plan-responses.ts';
 export type { BearerVerdict, FakePlanResponses, PlanResponsesOptions } from './fake-plan-responses.ts';
 export { FAKE_KEYCHAIN_PATH, READY_CONTROL, createFakeSecretFiles, createFakeSecretStore, createFakeSecurityPort, fakeReadinessAnswer } from './fake-secrets.ts';
-export type { FakeSecretPrograms } from './fake-secret-programs.ts';
+export type { FakePrograms, OpenerCall } from './fake-programs.ts';
 export type { FakeCallMode, FakeControl, FakeReadiness, FakeSecretStore, FakeSecretStoreOptions, FakeSecurityPort, FakeSecurityPortOptions } from './fake-secrets.ts';
 export { readBody, sendJson, startLoopbackServer } from './loopback-http.ts';
 export type { LoopbackHandler, LoopbackServer } from './loopback-http.ts';
@@ -267,17 +267,22 @@ export { firstGeneration, prepareGenerationForTest, startGenerationForTest } fro
 export type { StartedGenerationForTest } from './first-generation.ts';
 export { PROPERTY_TIMEOUT_MS } from './property-timeout.ts';
 export {
+  TEST_OPENER_RECORD_ENV,
   TEST_SECRET_PROGRAMS_ENV,
-  createFakeSecretPrograms,
+  createFakePrograms,
+  fakeBrowserOf,
+  fakeOpenerRecordOf,
   fakeSecretProgramsBin,
   getFakeSecretEnded,
   getFakeSecretHanging,
-  installFakeSecretPrograms,
-  removeFakeSecretPrograms,
+  installFakePrograms,
+  posixEnvLine,
+  readOpenerRecord,
+  removeFakePrograms,
   resetFakeSecretControl,
   setFakeSecretControl,
   testHostPath,
-} from './fake-secret-programs.ts';
+} from './fake-programs.ts';
 export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
 export { productTestEnv } from './product-spawn.ts';
 export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } from './model-settings.ts';

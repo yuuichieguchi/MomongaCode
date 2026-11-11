@@ -9,6 +9,7 @@ export type RunClass = 'heavy' | 'light';
 
 export const RUN_LOCK_ENV = 'MOMONGA_RUN_LOCK';
 export const RUN_LOCK_WAIT_ENV = 'MOMONGA_RUN_LOCK_WAIT_SECONDS';
+export const RUN_LOCK_DEFAULT_WAIT_SECONDS = 3600;
 export const RUN_LOCK_POLL_MS = 1000;
 export const RUN_LOCK_EXIT = { usage: 64, refused: 71, waitedOut: 72, unusable: 73, interrupted: 130, terminated: 143 } as const;
 export const LIGHT_STEPS = ['claimOwn', 'checkHeavy'] as const;
@@ -47,7 +48,7 @@ const WAIT_SOURCE_NAMES = { option: '--wait', env: RUN_LOCK_WAIT_ENV } as const;
 export type WaitSource = keyof typeof WAIT_SOURCE_NAMES;
 
 export const parseWaitSeconds = (text: string | undefined, source: WaitSource): number => {
-  if (source === 'env' && (text === undefined || text === '')) return 0;
+  if (source === 'env' && (text === undefined || text === '')) return RUN_LOCK_DEFAULT_WAIT_SECONDS;
   if (text === undefined || !/^\d+$/.test(text) || !Number.isSafeInteger(Number(text))) {
     throw new Error(`run-lock: ${WAIT_SOURCE_NAMES[source]} must be a whole number of seconds, got "${text ?? ''}"`);
   }
