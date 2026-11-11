@@ -132,9 +132,31 @@ describe('PreToolUse hook processes', () => {
     expect(executions).toMatchObject([{ outcome: 'error', exitCode: 1, message: 'boom' }]);
   });
 
-  it('finds its shell through the injected host and not through the platform of this machine', async () => {
-    const { context } = contextFor(settings('PreToolUse', 'true'), { shellHost: { ...nodeShellHost(), platform: 'win32', isExecutable: () => false } });
-    await expect(createToolHooks(context).preToolUse(call)).rejects.toThrow('Git for Windows');
+  it('finds its shell through the injected host and not through the platform of this machine, and asks when the shell cannot be found', async () => {
+    const { context, executions } = contextFor(settings('PreToolUse', 'true'), { shellHost: { ...nodeShellHost(), platform: 'win32', isExecutable: () => false } });
+    expect(await createToolHooks(context).preToolUse(call)).toMatchObject({ decision: 'ask', reason: expect.stringContaining('Git for Windows') });
+    expect(executions).toMatchObject([{ outcome: 'error', message: expect.stringContaining('the hook could not start') }]);
+  });
+
+  it('turns a hook that cannot start into an ask carrying the start failure, and never throws', async () => {
+    const refusing: HookRunContext['sandbox'] = {
+      kind: 'none',
+      spawn: () => {
+        throw new Error('spawn EACCES');
+      },
+    };
+    const { context, executions } = contextFor(settings('PreToolUse', 'true'), { sandbox: refusing });
+    expect(await createToolHooks(context).preToolUse(call)).toMatchObject({ decision: 'ask', reason: expect.stringContaining('the hook could not start: spawn EACCES') });
+    expect(executions).toMatchObject([{ outcome: 'error', message: 'the hook could not start: spawn EACCES' }]);
+    expect(executions[0]).not.toHaveProperty('exitCode');
+  });
+
+  it('does not honour a JSON allow printed by a hook that exits with a failure code', async () => {
+    const json = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } });
+    const { context, executions } = contextFor(settings('PreToolUse', `echo '${json}'; exit 1`));
+    expect(await createToolHooks(context).preToolUse(call)).toMatchObject({ decision: 'ask', reason: expect.stringContaining('the hook exited with code 1') });
+    expect(executions).toMatchObject([{ outcome: 'error', exitCode: 1, message: 'the hook exited with code 1' }]);
+    expect(executions[0]).not.toHaveProperty('decision');
   });
 
   it('reports invalid and unsupported JSON as an error and asks', async () => {
@@ -261,6 +283,25 @@ describe('PostToolUse hook processes', () => {
     });
     const feedback = await createToolHooks(context).postToolUse({ ...call, output: 'ok' });
     expect(feedback).toEqual({ feedback: 'tests fail\nsee log\nfrom-stderr' });
+  });
+
+  it('returns a note for a hook that cannot start, for one that exits with a failure code and for one that times out', async () => {
+    const refusing: HookRunContext['sandbox'] = {
+      kind: 'none',
+      spawn: () => {
+        throw new Error('spawn EACCES');
+      },
+    };
+    const unstarted = contextFor(settings('PostToolUse', 'true'), { sandbox: refusing });
+    expect(await createToolHooks(unstarted.context).postToolUse({ ...call, output: 'ok' })).toEqual({
+      feedback: 'the PostToolUse hook true failed (the hook could not start: spawn EACCES), so what it checks was not checked',
+    });
+    const failing = contextFor(settings('PostToolUse', 'echo lint-crashed >&2; exit 3'));
+    expect(await createToolHooks(failing.context).postToolUse({ ...call, output: 'ok' })).toEqual({
+      feedback: 'the PostToolUse hook echo lint-crashed >&2; exit 3 failed (lint-crashed), so what it checks was not checked',
+    });
+    const slow = contextFor(settings('PostToolUse', 'sleep 30'), { deadlineAt: Date.now() + 300 });
+    expect(await createToolHooks(slow.context).postToolUse({ ...call, output: 'ok' })).toMatchObject({ feedback: expect.stringContaining('the PostToolUse hook sleep 30 failed (the hook exceeded its') });
   });
 
   it('returns nothing when no hook has feedback', async () => {

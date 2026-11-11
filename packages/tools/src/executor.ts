@@ -19,7 +19,7 @@ import { contextWithNetwork, readOnlyContextOf } from './read-only-call.ts';
 import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
-import type { PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
+import type { PostToolHookResult, PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
 import { RetiringYield } from './ports.ts';
 import type { ShellHost } from './builtins/shell.ts';
 import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, ToolTimers, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
@@ -1299,7 +1299,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const applyPostToolHooks = async (batch: ExecutionBatchInput, call: ToolCall, tool: AnyTool, input: unknown, result: ToolResult): Promise<ToolResult> => {
     if (batch.hooks === undefined || result.status !== 'completed') return result;
-    const hooked = await batch.hooks.postToolUse({ callId: call.callId, toolName: tool.name, input, output: result.output });
+    let hooked: PostToolHookResult | undefined;
+    try {
+      hooked = await batch.hooks.postToolUse({ callId: call.callId, toolName: tool.name, input, output: result.output });
+    } catch (error) {
+      hooked = { feedback: `the PostToolUse hooks failed (${error instanceof Error ? error.message : String(error)}), so what they check was not checked` };
+    }
     if (hooked === undefined) return result;
     if (hooked.halt !== undefined) haltBatch(batch, hooked.halt.reason, 'PostToolUse');
     return hooked.feedback === undefined ? result : { ...result, output: `${result.output}\n\n[PostToolUse hook]\n${hooked.feedback}` };
