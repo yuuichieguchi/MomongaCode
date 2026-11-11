@@ -2,6 +2,7 @@ import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, largestSummaryCapFor, outputTokensFor, summaryInputLimitFor, wireUsageOf } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
+  AdapterContext,
   Capabilities,
   AdapterInputItem,
   AdapterRequest,
@@ -39,6 +40,8 @@ import type { UnknownFields } from './unknown-fields.ts';
 import { resolveToolChoice } from './tool-choice.ts';
 import { textOfWire } from './wire-text.ts';
 import type { RequestValidator } from './validation.ts';
+import { upstreamCallKey } from './upstream-call-key.ts';
+import type { CallIdentity } from './upstream-call-key.ts';
 
 export type UnaryService = {
   countTokens(rawBody: unknown, signal: AbortSignal, deadlineHeader: string | undefined): Promise<CountTokensResult>;
@@ -65,6 +68,16 @@ type InflightCompaction = {
 };
 
 const identifier = (services: Services, prefix: string): string => `${prefix}_${uuidv7(services.clock).replaceAll('-', '')}`;
+
+type Sent = { callKey: string; retryOfSeq: number | undefined };
+
+const recordSendOf = (services: Services, call: CallIdentity, target: TargetRuntime, runId: string | undefined): Sent => {
+  const callKey = upstreamCallKey(call, target.name);
+  const { retryOfSeq } = services.store.recordSend({ callKey, target: target.name, runId: runId ?? null, step: null, sentAtMs: services.clock.now() });
+  return { callKey, retryOfSeq };
+};
+
+const unkeyedCallOf = (services: Services): CallIdentity => ({ kind: 'unkeyed', nonce: uuidv7(services.clock) });
 
 const callTargets = <T>(
   services: Services,
@@ -120,13 +133,14 @@ const countWireOnce = async (
   wire: Record<string, unknown>,
   signal: AbortSignal,
   attemptNumber: number,
+  call: CallIdentity,
 ): Promise<Counted> => {
-  const context = adapterContextOf(services, target, capabilities, signal, attemptNumber);
+  const sentContext = (): AdapterContext => adapterContextOf(services, target, capabilities, signal, attemptNumber, recordSendOf(services, call, target, undefined).callKey);
   const adapterCountWire = target.adapter.countWire;
-  if (adapterCountWire !== undefined) return { result: await adapterCountWire.call(target.adapter, wire, context), contacted: true };
+  if (adapterCountWire !== undefined) return { result: await adapterCountWire.call(target.adapter, wire, sentContext()), contacted: true };
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) return { result: estimatedCountOf(wireTokensOf(wire, capabilities.imageTokens)), contacted: false };
-  const counted = await adapterCountTokens.call(target.adapter, { model: target.model, input: textOfWire(wire) }, context);
+  const counted = await adapterCountTokens.call(target.adapter, { model: target.model, input: textOfWire(wire) }, sentContext());
   const imageTokens = imageTokensOfWire(wire, capabilities.imageTokens);
   return { result: imageTokens === 0 ? counted : estimatedCountOf(counted.input_tokens + imageTokens), contacted: true };
 };
@@ -144,6 +158,7 @@ const countOnTarget = async (
   resolved: ResolvedInput,
   signal: AbortSignal,
   attemptNumber: number,
+  call: CallIdentity,
 ): Promise<Counted> => {
   const capabilities = await narrowed.capabilitiesOf(target);
   const toolChoiceWire = target.adapter.toolChoiceWire(capabilities, adapterTargetOf(target));
@@ -167,7 +182,7 @@ const countOnTarget = async (
         },
       ),
     );
-    return countWireOnce(services, target, capabilities, wire, signal, attemptNumber);
+    return countWireOnce(services, target, capabilities, wire, signal, attemptNumber, call);
   }
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) {
@@ -191,7 +206,7 @@ const countOnTarget = async (
       ...(counted.tools === undefined ? {} : { tools: counted.tools }),
       ...(counted.tool_choice === undefined ? {} : { tool_choice: counted.tool_choice }),
     },
-    adapterContextOf(services, target, capabilities, signal, attemptNumber),
+    adapterContextOf(services, target, capabilities, signal, attemptNumber, recordSendOf(services, call, target, undefined).callKey),
   );
   return { result, contacted: true };
 };
@@ -221,8 +236,9 @@ const countTokens = async (
     toolChoice: { tools: request.tools, tool_choice: request.tool_choice },
     unknownFields: { keys: Object.keys(unknownFields), operation: 'count_tokens' },
   });
+  const call = unkeyedCallOf(services);
   const outcome = await callTargets(services, narrowed.targets, narrowed, signal, deadlineAt, (chosen, attemptNumber, guarded) =>
-    countOnTarget(services, chosen, narrowed, request, resolved, guarded, attemptNumber),
+    countOnTarget(services, chosen, narrowed, request, resolved, guarded, attemptNumber, call),
   );
   return settleCounted(outcome);
 };
@@ -242,8 +258,10 @@ const compactOnce = async (
   signal: AbortSignal,
   deadlineAt: number | undefined,
   trace: CompactTrace,
+  call: CallIdentity,
 ): Promise<CompactResource> => {
   const { router } = services;
+  const sizingCall = unkeyedCallOf(services);
   const model = router.resolveRequestModel(request.model, request.momonga?.exact_model === true);
   const targets = router.chainOf(model);
   const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
@@ -287,7 +305,7 @@ const compactOnce = async (
           ...(trace.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
         });
   const spans = new Map<TargetRuntime, AttemptSpan>();
-  const startSpan = (target: TargetRuntime, attemptNumber: number, cap: number | undefined): AttemptSpan =>
+  const startSpan = (target: TargetRuntime, attemptNumber: number, cap: number | undefined, retryOf?: number): AttemptSpan =>
     startAttemptSpan({
       telemetry: services.telemetry,
       parent,
@@ -299,7 +317,7 @@ const compactOnce = async (
       runId: trace.runId,
       step: undefined,
       attempt: attemptNumber,
-      retryOf: undefined,
+      retryOf,
       targetName: target.name,
       role: COMPACTION_ROLE,
       startedAtMs: services.clock.now(),
@@ -311,6 +329,7 @@ const compactOnce = async (
     if (compact === undefined) throw new TypeError(`model "${target.display}" lost its compact capability`);
     let capabilities: Capabilities;
     let cap: number;
+    let sent: Sent;
     try {
       capabilities = await narrowed.capabilitiesOf(target);
       cap = outputBoundWithinCostCeiling(
@@ -327,18 +346,19 @@ const compactOnce = async (
         services.clock.now(),
       );
       const wire = wireFor(target, capabilities, cap);
-      if (wire !== undefined && !fitsWindow(capabilities, cap, (await countWireOnce(services, target, capabilities, wire, guarded, attemptNumber)).result)) {
+      if (wire !== undefined && !fitsWindow(capabilities, cap, (await countWireOnce(services, target, capabilities, wire, guarded, attemptNumber, sizingCall)).result)) {
         throw new CandidateRefused(sizeRefusal);
       }
+      sent = recordSendOf(services, call, target, trace.runId);
     } catch (error) {
       if (error instanceof CandidateRefused || error instanceof CandidateDropped || error instanceof UnprobedTarget) throw error;
       const failure = failureFrom(target.adapter, error, guarded);
       failSpan(startSpan(target, attemptNumber, undefined), failure);
       throw failure;
     }
-    const span = startSpan(target, attemptNumber, cap);
+    const span = startSpan(target, attemptNumber, cap, sent.retryOfSeq);
     try {
-      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, capabilities, guarded, attemptNumber));
+      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, capabilities, guarded, attemptNumber, sent.callKey));
       spans.set(target, span);
       return result;
     } catch (error) {
@@ -480,7 +500,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
       work: inFlight.beginWork(),
       promise: Promise.resolve().then(async () => {
         try {
-          const resource = await withPinnedServices(services, controller.signal, (pinned) => compactOnce(pinned, request, unknownFields, controller.signal, deadlineAt, trace));
+          const resource = await withPinnedServices(services, controller.signal, (pinned) => compactOnce(pinned, request, unknownFields, controller.signal, deadlineAt, trace, { kind: 'keyed', key, digest }));
           if (isRunCancelled(controller.signal.reason)) throw controller.signal.reason;
           const now = services.clock.now();
           services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs });
@@ -519,7 +539,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
       const unknownFields = validator.unknownCompactFields(rawBody);
       const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
       const compactSignal = AbortSignal.any([signal, services.closeSignal]);
-      return withPinnedServices(services, compactSignal, (pinned) => compactOnce(pinned, request, unknownFields, compactSignal, deadlineAt, trace));
+      return withPinnedServices(services, compactSignal, (pinned) => compactOnce(pinned, request, unknownFields, compactSignal, deadlineAt, trace, unkeyedCallOf(pinned)));
     },
     cancel: (idempotencyKeyHeader) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);

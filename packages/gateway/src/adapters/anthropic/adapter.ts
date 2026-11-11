@@ -169,7 +169,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const response = await sendAuthorized(options.authSource(ctx.target), signal, (key) =>
         pool.clientFor(endpoint).post({
-          headers: headersFor(key, 'application/json'),
+          headers: { ...idempotencyHeaderOf(ctx), ...headersFor(key, 'application/json') },
           body: JSON.stringify(body),
           signal,
           subpath: ANTHROPIC_COUNT_TOKENS_SUBPATH,
