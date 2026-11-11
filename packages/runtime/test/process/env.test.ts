@@ -21,6 +21,7 @@ import {
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SENTINEL = 'MOMONGA_ENV_TEST_SENTINEL';
+const FORGE_TOKEN = 'FORGE_ACCESS_VALUE';
 const withSentinel = async <T>(task: () => Promise<T>): Promise<T> => {
   process.env[SENTINEL] = 'leaked-from-process-env';
   try {
@@ -107,6 +108,21 @@ describe('tool env at use time (system timers)', () => {
       const mcpEnv = await mcpEnvDump(f, runId, dump);
       expect(mcpEnv).toContain('SEEN_DECLARED=absent');
       expect(mcpEnv).not.toContain(`${DECLARED_CREDENTIAL}=`);
+    });
+
+    it('the variable a forge names for its token is absent from Bash, which the session runs', async () => {
+      const temp = await makeTempHome();
+      const f = await makeRuntimeFixture({ temp, sandbox: createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 }) });
+      writeUserSettings(temp.home, { forges: [{ id: 'gh', descriptor: 'github', host: 'github.com', apiBaseUrl: 'https://api.github.com', credentialEnv: FORGE_TOKEN }] });
+      const session = createSession(f.store, temp.project, { env: { PATH: '/usr/bin:/bin', HOME: temp.home, [FORGE_TOKEN]: 'forge-value' } });
+      const runId = await createRun(f.store, session.id);
+
+      const { outcome } = await runBashThroughPort(f, session, runId, `printf '%s' "\${${FORGE_TOKEN}:-absent}"`);
+
+      expect(outcome.kind).toBe('result');
+      const output = outcome.kind === 'result' ? outcome.result.output : '';
+      expect(output).toContain('absent');
+      expect(output).not.toContain('forge-value');
     });
   });
 
