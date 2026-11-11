@@ -4,7 +4,6 @@ import { diffFieldsOf, termsOf } from '@momonga/protocol';
 import type { HeldLink, PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
 import { COVERED_PROGRAMS, OPERATION_SPECS, TOOL_VALIDATOR_FAILED_CODE, supersededForms, toolRefusalKey, validateToolInput } from '@momonga/tools';
-import { rejectionKeyOf } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
 import { createAutoClassifier } from './auto-classifier.ts';
@@ -387,10 +386,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   if (halt.hookEvent !== undefined) return haltRun(ctx, halt.hookEvent, halt.reason);
 
   const rejectedBefore = journal.state.rejectedCalls ?? [];
-  const rejectedEarlier = (outcome: NeedsApprovalOutcome): boolean => {
-    const call = calls.find((candidate) => candidate.callId === outcome.callId);
-    return call !== undefined && rejectedBefore.includes(rejectionKeyOf(call.name, call.arguments));
-  };
+  const rejectedEarlier = (outcome: NeedsApprovalOutcome): boolean => rejectedBefore.includes(outcome.subjectDigest);
   const repeated = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval' && rejectedEarlier(outcome));
   if (repeated.length > 0) journal.append(repeated.map((outcome): RunEventPayload => ({ type: 'tool.completed', callId: outcome.callId, status: 'failed', output: REJECTED_AGAIN_OUTPUT })));
   const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval' && !rejectedEarlier(outcome));

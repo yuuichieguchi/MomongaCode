@@ -46,6 +46,7 @@ const binding = (events: RunEvent[], paths: string[], overrides: { trusted?: boo
     scope: 'project',
     paths,
     project: PROJECT,
+    platform: 'linux',
     trusted: overrides.trusted ?? true,
     facts: async (resolved) => {
       const fold = createEvidenceFold({ paths: resolved });
@@ -84,6 +85,39 @@ describe('bindMemoryEvidence', () => {
   it('refuses a path only attempted: the failed call recorded no file', async () => {
     const events = [call(1, 'c1', 'Read', { file_path: '/work/a/src/a.ts' }), done(2, 'c1', { status: 'failed', output: 'no such file' })];
     await expect(binding(events, ['src/a.ts'])).rejects.toBeInstanceOf(MemoryEvidenceError);
+  });
+
+  it('stores the path of a file on a Windows host with forward slashes, relative to the project', async () => {
+    const project = 'C:\\work\\a';
+    const evidence = await bindMemoryEvidence({
+      scope: 'project',
+      paths: ['src\\deep\\a.ts', 'C:\\work\\a\\src\\b.ts'],
+      project,
+      platform: 'win32',
+      trusted: false,
+      facts: async (resolved) => {
+        expect(resolved).toEqual(['C:\\work\\a\\src\\deep\\a.ts', 'C:\\work\\a\\src\\b.ts']);
+        return { recorded: [{ sha256: HASH }, { sha256: HASH }], check: null };
+      },
+      head: async () => undefined,
+    });
+    expect(evidence).toEqual([
+      { kind: 'file', project, path: 'src/deep/a.ts', sha256: HASH },
+      { kind: 'file', project, path: 'src/b.ts', sha256: HASH },
+    ]);
+  });
+
+  it('refuses a Windows path beside the project that shares its prefix', async () => {
+    const refused = bindMemoryEvidence({
+      scope: 'project',
+      paths: ['C:\\work\\ab\\x.ts'],
+      project: 'C:\\work\\a',
+      platform: 'win32',
+      trusted: false,
+      facts: async () => ({ recorded: [{ sha256: HASH }], check: null }),
+      head: async () => undefined,
+    });
+    await expect(refused).rejects.toThrow('outside the project');
   });
 
   it('refuses a path outside the project', async () => {

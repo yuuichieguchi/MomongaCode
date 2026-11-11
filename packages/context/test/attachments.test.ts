@@ -41,13 +41,13 @@ const fakeHost = (files: Readonly<Record<string, FakeFile | string>>, overrides:
     read: async (absolute, maxBytes) => {
       reads.push(absolute);
       const entry = entryOf(absolute.slice('/root/'.length));
-      if (entry === undefined || !('bytes' in entry)) throw new Error('not a file');
-      if (entry.unreadable === true) throw new Error('EACCES');
+      if (entry === undefined || !('bytes' in entry)) throw Object.assign(new Error('not a file'), { code: 'EISDIR' });
+      if (entry.unreadable === true) throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
       return entry.bytes.subarray(0, maxBytes);
     },
     list: async (absolute) => {
       const entry = entryOf(absolute.slice('/root/'.length));
-      if (entry === undefined || !('directory' in entry)) throw new Error('not a directory');
+      if (entry === undefined || !('directory' in entry)) throw Object.assign(new Error('not a directory'), { code: 'ENOTDIR' });
       return entry.directory;
     },
     ...overrides,
@@ -229,6 +229,17 @@ describe('attaching the mentioned files', () => {
       { type: 'attachment_note', path: 'nul.dat', text: 'nul.dat is not a text file', shown: 'nul.dat is not a text file' },
       { type: 'attachment_note', path: 'latin.txt', text: 'latin.txt is not a text file', shown: 'latin.txt is not a text file' },
     ]);
+  });
+
+  it('lets an abort or a defect of the read reach the caller instead of a note', async () => {
+    const ended = new Error('the request ended');
+    const failing = async (): Promise<never> => {
+      throw ended;
+    };
+    const file = fakeHost({ 'a.txt': { bytes: new TextEncoder().encode('a') } }, { read: failing });
+    await expect(attachMentions('@a.txt', file)).rejects.toBe(ended);
+    const folder = fakeHost({ src: { directory: ['a.ts'] } }, { list: failing });
+    await expect(attachMentions('@src', folder)).rejects.toBe(ended);
   });
 
   it('turns a failed read into a note, never a failure', async () => {

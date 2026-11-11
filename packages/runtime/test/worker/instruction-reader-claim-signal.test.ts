@@ -7,7 +7,7 @@ describe('the instruction reads of a claim are bounded by the claim, not by the 
   it('asks for an instruction reader under the signal of the claim that reads', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const asked: AbortSignal[] = [];
-    const reader: InstructionReader = { contains: async () => true, read: async () => undefined, exists: async () => false, realpath: async (target: string) => target };
+    const reader: InstructionReader = { platform: process.platform, contains: async () => true, read: async () => undefined, exists: async () => false, realpath: async (target: string) => target };
     env.gateway.script.push(textStep('Done.'));
     await env.enqueue('Read the rules');
 
