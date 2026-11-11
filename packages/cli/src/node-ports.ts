@@ -304,17 +304,20 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
   let ended = false;
   let failure: { error: unknown } | undefined;
   let waiting: Arrival[] = [];
+  let queued: Uint8Array[] = [];
   const settle = (): void => {
-    if (failure === undefined && stdin.readableLength === 0 && !ended) return;
+    if (failure === undefined && queued.length === 0 && !ended) return;
     const arrivals = waiting;
     waiting = [];
     for (const arrival of arrivals) {
       if (failure !== undefined) arrival.reject(failure.error);
-      else arrival.resolve(stdin.readableLength > 0 ? 'bytes' : 'end');
+      else arrival.resolve(queued.length > 0 ? 'bytes' : 'end');
     }
   };
-  stdin.on('readable', () => {
-    if (stdin.readableLength === 0) stdin.read();
+  stdin.on('data', (chunk: unknown) => {
+    if (!(chunk instanceof Uint8Array)) {
+      failure = { error: new Error('standard input gave text where the Agent Client Protocol reads bytes') };
+    } else queued.push(chunk);
     settle();
   });
   stdin.on('end', () => {
@@ -327,16 +330,18 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
   });
   return {
     take: () => {
-      const chunk: unknown = stdin.read();
-      if (chunk === null) return undefined;
-      if (!(chunk instanceof Uint8Array)) throw new Error('standard input gave text where the Agent Client Protocol reads bytes');
-      return chunk;
+      if (queued.length === 0) return undefined;
+      const whole = Buffer.concat(queued);
+      queued = [];
+      return whole;
     },
     arrival: () =>
       new Promise((resolve, reject) => {
         waiting.push({ resolve, reject });
         settle();
       }),
+    pause: () => void stdin.pause(),
+    resume: () => void stdin.resume(),
   };
 };
 

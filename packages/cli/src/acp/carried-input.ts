@@ -176,9 +176,13 @@ export const carriedStream = (stdio: AcpStdio, carried: Uint8Array): CarriedStre
     },
     idle: () => unanswered.size === 0,
     onIdle: (listener) => void idleListeners.add(listener),
-    hold: (reason) => void holds.add(reason),
+    hold: (reason) => {
+      if (holds.size === 0) stdio.input.pause();
+      holds.add(reason);
+    },
     release: (reason) => {
-      holds.delete(reason);
+      if (!holds.delete(reason)) return;
+      if (holds.size === 0) stdio.input.resume();
       changed();
     },
   };
