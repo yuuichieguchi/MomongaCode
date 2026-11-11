@@ -190,6 +190,7 @@ type Accumulator = {
   moneyOverK: number;
   moneyOverN: number;
   delegation: Indicators['delegation'];
+  verification: Indicators['verification'];
   budgetStops: number;
   timeN: number;
   activeSum: number;
@@ -222,6 +223,7 @@ const emptyAccumulator = (): Accumulator => ({
   moneyOverK: 0,
   moneyOverN: 0,
   delegation: { n: 0, intervened: 0, unattended: 0, waited: 0, held: 0, denied: 0 },
+  verification: { firstRoundPassed: { k: 0, n: 0 }, failedRound: { k: 0, n: 0 }, coverage: { k: 0, n: 0 }, checkMs: 0, elapsedMs: 0, fixRoundTokens: 0 },
   budgetStops: 0,
   timeN: 0,
   activeSum: 0,
@@ -322,6 +324,23 @@ const accumulate = (accumulator: Accumulator, root: RunFacts, task: TaskPartial,
     if (root.delegation.waited) delegation.waited += 1;
     if (root.status === 'COMPLETED' && root.delegation.held === 0) delegation.unattended += 1;
   }
+  const { verification } = accumulator;
+  if (root.verification.rounds > 0) {
+    verification.firstRoundPassed.n += 1;
+    verification.failedRound.n += 1;
+    if (root.verification.firstRoundPassed === true) verification.firstRoundPassed.k += 1;
+    if (root.verification.failedRounds > 0) {
+      verification.failedRound.k += 1;
+      markOf(marks, 'averted false completion', root.runId);
+    }
+    verification.checkMs += root.verification.checkMs;
+    verification.elapsedMs += root.elapsedMs;
+    verification.fixRoundTokens += root.verification.fixRoundTokens;
+  }
+  if (root.mutated) {
+    verification.coverage.n += 1;
+    if (root.owed) verification.coverage.k += 1;
+  }
   if (root.status === 'STOPPED' && root.stopReason === 'budget') {
     accumulator.budgetStops += 1;
     markOf(marks, 'budget stop', root.runId);
@@ -370,6 +389,14 @@ const finish = (accumulator: Accumulator): Indicators => {
     intervention: { k: accumulator.interventionK, n: accumulator.counted },
     overrun: { k: accumulator.overrunK, n: accumulator.overrunN, budgetStops: accumulator.budgetStops, money: { k: accumulator.moneyOverK, n: accumulator.moneyOverN } },
     delegation: { ...accumulator.delegation },
+    verification: {
+      firstRoundPassed: { ...accumulator.verification.firstRoundPassed },
+      failedRound: { ...accumulator.verification.failedRound },
+      coverage: { ...accumulator.verification.coverage },
+      checkMs: accumulator.verification.checkMs,
+      elapsedMs: accumulator.verification.elapsedMs,
+      fixRoundTokens: accumulator.verification.fixRoundTokens,
+    },
     time: {
       n: accumulator.timeN,
       meanActiveMs: accumulator.timeN === 0 ? null : accumulator.activeSum / accumulator.timeN,

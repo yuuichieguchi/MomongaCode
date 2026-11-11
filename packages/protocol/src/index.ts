@@ -410,6 +410,7 @@ export type {
   RunFactsRecord,
   RunFactsDelegation,
   RunFactsLimits,
+  RunFactsVerification,
   RunFactsView,
   UnavailableRunView,
 } from './reliability.ts';

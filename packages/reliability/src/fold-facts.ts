@@ -1,5 +1,5 @@
-import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, heldEndOf, pinnedCompletionOf, pinnedDelegationOf } from '@momonga/protocol';
-import type { RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView } from '@momonga/protocol';
+import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, completionMutates, heldEndOf, pinnedCompletionOf, pinnedDelegationOf, reconciliationMutates } from '@momonga/protocol';
+import type { MutationFacts, PinnedCompletion, RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView, RunFactsVerification } from '@momonga/protocol';
 import type { RunInfo } from './types.ts';
 
 type Episode = {
@@ -17,7 +17,20 @@ const basisKey = (basis: keyof typeof BASIS_KEYS): (typeof BASIS_KEYS)[keyof typ
 
 const isTerminal = (status: string): boolean => TERMINAL_STATUSES.some((terminal) => terminal === status);
 
-const declaredCompletion = (event: Extract<FactsEvent, { type: 'run.started' }>): boolean => (pinnedCompletionOf(event.pins)?.conditions.length ?? 0) > 0;
+const conditionsOf = (completion: PinnedCompletion | undefined): PinnedCompletion['conditions'] => completion?.conditions ?? [];
+
+type Rounds = { outcomes: Map<number, boolean>; checkMs: number; firstFailedSeq: number | undefined; fixRoundTokens: number };
+
+const verificationOf = (rounds: Rounds): RunFactsVerification => {
+  const ordered = [...rounds.outcomes.entries()].sort(([left], [right]) => left - right);
+  return {
+    rounds: ordered.length,
+    firstRoundPassed: ordered[0]?.[1] ?? null,
+    failedRounds: ordered.filter(([, passed]) => !passed).length,
+    checkMs: rounds.checkMs,
+    fixRoundTokens: rounds.fixRoundTokens,
+  };
+};
 
 export const FACTS_EVENT_TYPES = [
   'run.started',
@@ -33,6 +46,8 @@ export const FACTS_EVENT_TYPES = [
   'tool.held.resolved',
   'run.quiescent',
   'tool.permission.requested',
+  'tool.permission.resolved',
+  'verification.completed',
   'tool.unknown.requested',
   'tool.elicitation.requested',
   'mcp.authorization.required',
@@ -52,7 +67,12 @@ export const createFactsFold = (): FactsFold => {
   const recoveries: RecoveryEpisodeView[] = [];
   let pending: Episode | undefined;
   let ordinal = 0;
-  let declared: boolean | undefined;
+  let completion: PinnedCompletion | undefined;
+  let started = false;
+  const calls = new Map<string, MutationFacts>();
+  const approvals = new Map<string, { callId: string; rejecting: Set<string> }>();
+  let mutated = false;
+  const rounds: Rounds = { outcomes: new Map(), checkMs: 0, firstFailedSeq: undefined, fixRoundTokens: 0 };
   let mandated: boolean | undefined;
   const heldCalls = new Set<string>();
   let resolvedByPerson = 0;
@@ -112,7 +132,8 @@ export const createFactsFold = (): FactsFold => {
     if (ended !== undefined && ended.outcome !== 'withdrawn') resolvedByPerson += 1;
     switch (event.type) {
       case 'run.started': {
-        declared ??= declaredCompletion(event);
+        if (!started) completion = pinnedCompletionOf(event.pins);
+        started = true;
         mandated ??= pinnedDelegationOf(event.pins) !== undefined;
         break;
       }
@@ -139,13 +160,24 @@ export const createFactsFold = (): FactsFold => {
         break;
       }
       case 'model.responded':
+        if (rounds.firstFailedSeq !== undefined) rounds.fixRoundTokens += event.response.usage.total_tokens;
         progress(event);
         break;
       case 'tool.call':
         if (event.sideEffect !== 'read_only') sideEffecting.add(event.callId);
+        calls.set(event.callId, { rejected: false, ...(event.sideEffect === undefined ? {} : { sideEffect: event.sideEffect }) });
         break;
+      case 'verification.completed': {
+        const passed = event.outcome === 'passed';
+        rounds.outcomes.set(event.round, (rounds.outcomes.get(event.round) ?? true) && passed);
+        rounds.checkMs += event.durationMs;
+        if (!passed) rounds.firstFailedSeq ??= event.seq;
+        break;
+      }
       case 'tool.started': {
         if (event.basis !== undefined) basis[basisKey(event.basis)] += 1;
+        const startedCall = calls.get(event.callId);
+        if (startedCall !== undefined && event.basis !== undefined) startedCall.basis = event.basis;
         if (sideEffecting.has(event.callId) && startedSinceNotApplied.has(event.callId)) repeatedStarts += 1;
         startedSinceNotApplied.add(event.callId);
         openCalls.add(event.callId);
@@ -157,12 +189,17 @@ export const createFactsFold = (): FactsFold => {
       case 'run.quiescent':
         waited = true;
         break;
-      case 'tool.completed':
+      case 'tool.completed': {
         if (event.denial?.source === 'mandate') denied += 1;
+        const completedCall = calls.get(event.callId);
+        if (completedCall !== undefined && completionMutates(completedCall, event)) mutated = true;
         settle(event.callId);
         progress(event);
         break;
+      }
       case 'tool.reconciled': {
+        const reconciledCall = calls.get(event.callId);
+        if (reconciledCall !== undefined && reconciliationMutates(reconciledCall, event.outcome)) mutated = true;
         if (event.outcome === 'already_applied') reconciledAlreadyApplied += 1;
         else if (event.outcome === 'not_applied') {
           reconciledNotApplied += 1;
@@ -176,6 +213,15 @@ export const createFactsFold = (): FactsFold => {
         break;
       }
       case 'tool.permission.requested':
+        approvals.set(event.approvalId, { callId: event.callId, rejecting: new Set(event.options.filter((option) => option.kind.startsWith('reject')).map((option) => option.optionId)) });
+        asked += 1;
+        break;
+      case 'tool.permission.resolved': {
+        const approval = approvals.get(event.approvalId);
+        const call = approval === undefined ? undefined : calls.get(approval.callId);
+        if (approval !== undefined && call !== undefined && approval.rejecting.has(event.optionId)) call.rejected = true;
+        break;
+      }
       case 'tool.unknown.requested':
         asked += 1;
         break;
@@ -224,8 +270,11 @@ export const createFactsFold = (): FactsFold => {
       reconciledNotApplied,
       reconciledUnknown,
       basis,
-      declared: declared ?? false,
+      declared: conditionsOf(completion).length > 0,
       met: info.status === 'COMPLETED',
+      mutated,
+      owed: conditionsOf(completion).some((condition) => condition.when === 'always' || mutated),
+      verification: verificationOf(rounds),
       recoveries,
     };
   };

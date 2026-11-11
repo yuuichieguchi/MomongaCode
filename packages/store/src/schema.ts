@@ -1249,6 +1249,16 @@ ALTER TABLE run_facts ADD COLUMN mandate_denied INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE run_facts ADD COLUMN quiescent INTEGER NOT NULL DEFAULT 0 CHECK (quiescent IN (0, 1));
 `;
 
+const RUN_FACTS_VERIFICATION = `
+ALTER TABLE run_facts ADD COLUMN mutated INTEGER NOT NULL DEFAULT 0 CHECK (mutated IN (0, 1));
+ALTER TABLE run_facts ADD COLUMN owed INTEGER NOT NULL DEFAULT 0 CHECK (owed IN (0, 1));
+ALTER TABLE run_facts ADD COLUMN verification_rounds INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN first_round_passed INTEGER CHECK (first_round_passed IN (0, 1));
+ALTER TABLE run_facts ADD COLUMN failed_rounds INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN check_ms INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE run_facts ADD COLUMN fix_round_tokens INTEGER NOT NULL DEFAULT 0;
+`;
+
 const MEMORY_ROWS_WITHOUT_DELETE_RULES = `
 DROP TRIGGER memories_index_delete;
 DROP TRIGGER memories_replacements_insert;
@@ -1449,5 +1459,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 44,
     name: 'record the call id of every tool.reconciled event in the call_id column of its row, so the reconciliation of a call is found through the index of call ids and not by reading the JSON of every reconciliation of the run',
     sql: RECONCILED_CALL_IDS,
+  },
+  {
+    version: 45,
+    name: 'record in the facts of a run whether it mutated the work tree, whether it owed a completion condition, and its verification rounds: how many ran, whether the first passed, how many failed, the time its checks took and the tokens of the rounds that fixed a failed check',
+    sql: RUN_FACTS_VERIFICATION,
   },
 ];

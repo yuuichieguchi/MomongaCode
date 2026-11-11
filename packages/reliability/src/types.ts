@@ -46,6 +46,7 @@ export type Indicators = {
   overrun: { k: number; n: number; budgetStops: number; money: Rate };
   delegation: { n: number; intervened: number; unattended: number; waited: number; held: number; denied: number };
   time: { n: number; meanActiveMs: number | null; meanElapsedMs: number | null };
+  verification: { firstRoundPassed: Rate; failedRound: Rate; coverage: Rate; checkMs: number; elapsedMs: number; fixRoundTokens: number };
 };
 
 export type IndicatorGroups = { total: Indicators; groups: Record<string, Indicators> };

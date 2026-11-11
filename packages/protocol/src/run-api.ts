@@ -434,6 +434,12 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   basis: runFactsBasis,
   declared: boolean,
   met: boolean,
+  mutated: boolean,
+  owed: boolean,
+  verification: closed(
+    { rounds: nonNegativeInteger, firstRoundPassed: nullable(boolean), failedRounds: nonNegativeInteger, checkMs: nonNegativeInteger, fixRoundTokens: nonNegativeInteger },
+    ['rounds', 'firstRoundPassed', 'failedRounds', 'checkMs', 'fixRoundTokens'],
+  ),
   recoveries: { type: 'array', items: recoveryEpisodeView },
 };
 

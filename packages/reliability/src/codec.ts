@@ -49,6 +49,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
   const overrun = fieldsAt(fields['overrun'], `${path}.overrun`);
   const time = fieldsAt(fields['time'], `${path}.time`);
   const delegation = fieldsAt(fields['delegation'], `${path}.delegation`);
+  const verification = fieldsAt(fields['verification'], `${path}.verification`);
   const mandateRuns = { key: 'n', count: countAt(delegation, 'n', `${path}.delegation`) };
   return {
     buckets: {
@@ -98,6 +99,14 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       n: countAt(time, 'n', `${path}.time`),
       meanActiveMs: meanAt(time, 'meanActiveMs', `${path}.time`),
       meanElapsedMs: meanAt(time, 'meanElapsedMs', `${path}.time`),
+    },
+    verification: {
+      firstRoundPassed: rateAt(verification['firstRoundPassed'], `${path}.verification.firstRoundPassed`),
+      failedRound: rateAt(verification['failedRound'], `${path}.verification.failedRound`),
+      coverage: rateAt(verification['coverage'], `${path}.verification.coverage`),
+      checkMs: countAt(verification, 'checkMs', `${path}.verification`),
+      elapsedMs: countAt(verification, 'elapsedMs', `${path}.verification`),
+      fixRoundTokens: countAt(verification, 'fixRoundTokens', `${path}.verification`),
     },
   };
 };

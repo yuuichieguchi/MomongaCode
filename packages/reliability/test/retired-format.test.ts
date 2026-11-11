@@ -4,7 +4,7 @@ import { aggregate, buildReliabilityReport, decodeReliabilityReport, encodeRelia
 
 describe('a reliability report of a retired format', () => {
   it('is refused with a message that names the version and says the report must be rebuilt', () => {
-    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/5');
+    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/6');
     const current = JSON.parse(encodeReliabilityReport(buildReliabilityReport({ kind: 'real', aggregate: aggregate([], { groupBy: 'model' }) }))) as Record<string, unknown>;
     const old = JSON.stringify({ ...current, format: 'momonga-reliability/1' });
     expect(() => decodeReliabilityReport(old)).toThrow(

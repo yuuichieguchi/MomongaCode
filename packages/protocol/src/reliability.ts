@@ -4,19 +4,20 @@ import type { JsonSchema } from './schema-helpers.ts';
 import type { ApprovalBasis } from './permission-denial.ts';
 import type { PermissionMode, RunStatus, SideEffect, StopReason } from './run-types.ts';
 
-export const RELIABILITY_FORMAT = 'momonga-reliability/5';
+export const RELIABILITY_FORMAT = 'momonga-reliability/6';
 
 export const RETIRED_RELIABILITY_FORMATS: Readonly<Record<string, string>> = {
   'momonga-reliability/1': 'the tasks whose run facts hold a value the build does not know',
   'momonga-reliability/2': 'the model of each run (it was recorded as an alias name)',
   'momonga-reliability/3': 'the money limit in the budget overrun and the figures of mandate runs',
   'momonga-reliability/4': 'the root runs a period or a grouping could not place and the runs without cost data',
+  'momonga-reliability/5': 'the verification indicators, the permission decisions per mode and the work and latency of held calls',
 };
 export const MIN_RATE_POPULATION = 35;
 export const REVIEW_SAMPLE_SIZE = 73;
 export const REPORT_PAGE_ROWS = 500;
 export const FACTS_SWEEP_BATCH_RUNS = 3;
-export const INDICATOR_DEFINITIONS_VERSION = 4;
+export const INDICATOR_DEFINITIONS_VERSION = 5;
 
 export const MAIN_AGENT = 'main';
 
@@ -41,6 +42,8 @@ export type RunFactsLimits = { maxSteps?: number; maxTotalTokens?: number; maxCo
 export type RunFactsDelegation = { held: number; resolvedByPerson: number; denied: number; waited: boolean };
 
 export type RunFactsBasis = { readOnly: number; rule: number; mode: number; hook: number; classifier: number; person: number };
+
+export type RunFactsVerification = { rounds: number; firstRoundPassed: boolean | null; failedRounds: number; checkMs: number; fixRoundTokens: number };
 
 export type RunFactsView = {
   runId: string;
@@ -74,6 +77,9 @@ export type RunFactsView = {
   basis: RunFactsBasis;
   declared: boolean;
   met: boolean;
+  mutated: boolean;
+  owed: boolean;
+  verification: RunFactsVerification;
   recoveries: RecoveryEpisodeView[];
 };
 
@@ -125,7 +131,7 @@ export const RELIABILITY_DERIVATIONS = {
   FACTS_SWEEP_BATCH_RUNS:
     'Equal to SEARCH_INDEX_BATCH_RUNS: the bounded background folds of the daemon share one cadence, and each run of a tick costs one journal thread request.',
   INDICATOR_DEFINITIONS_VERSION:
-    'A counter, not a measure: a change to any indicator formula raises it by one, and stored run facts of an older version are folded again. 2 is the set of formulas that has the money limit in the Budget Overrun Rate and the figures of mandate runs; 4 folds a root run again when a member of its tree ends after it.',
+    'A counter, not a measure: a change to any indicator formula raises it by one, and stored run facts of an older version are folded again. 2 is the set of formulas that has the money limit in the Budget Overrun Rate and the figures of mandate runs; 4 folds a root run again when a member of its tree ends after it; 5 adds the facts of the verification rounds, the answers to asks, the denials by source and the holds of a run.',
   MAIN_AGENT: 'The name under which a report groups the work a root run did itself, beside the names of its subagents. A product word, not a measure.',
   COST_CURRENCY:
     'The one currency of the product: every price of the price table is stated in US dollars, so a cost is never converted and a report never adds amounts of two currencies.',

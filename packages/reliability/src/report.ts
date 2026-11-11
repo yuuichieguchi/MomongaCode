@@ -78,7 +78,7 @@ export const describeRate = ({ k, n }: Rate): string => {
 const milliseconds = (value: number | null): string => (value === null ? 'n/a' : `${value} ms`);
 
 const indicatorLines = (indicators: Indicators, cost?: CostIndicators): string[] => {
-  const { completion, recovery, recoveryTime, duplicates, intervention, overrun, delegation, time } = indicators;
+  const { completion, recovery, recoveryTime, duplicates, intervention, overrun, delegation, time, verification } = indicators;
   return [
     completion.n === 0
       ? `Task Completion Rate: not measurable: no task declared a completion condition (${completion.undeclared} tasks without one)`
@@ -90,6 +90,10 @@ const indicatorLines = (indicators: Indicators, cost?: CostIndicators): string[]
     `Budget Overrun Rate: ${describeRate(overrun)}; over the money limit ${describeRate(overrun.money)}; budget stops ${overrun.budgetStops}`,
     `Delegation (mandate runs): n=${delegation.n}; a person resolved a held call in ${describeRate({ k: delegation.intervened, n: delegation.n })}; completed with no held call ${describeRate({ k: delegation.unattended, n: delegation.n })}; waited for a person at least once ${delegation.waited}; held calls ${delegation.held}; denied outside the mandate ${delegation.denied}`,
     `Time per Successful Task: n=${time.n}, active mean ${milliseconds(time.meanActiveMs)}, elapsed mean ${milliseconds(time.meanElapsedMs)}`,
+    `Verification Success Rate (first round passed): ${describeRate(verification.firstRoundPassed)}`,
+    `Averted False Completion (runs with a failed round): ${describeRate(verification.failedRound)}`,
+    `Gate Coverage (runs with a mutation that owed a condition): ${describeRate(verification.coverage)}`,
+    `Verification Effort: checks took ${verification.checkMs} ms of ${verification.elapsedMs} ms elapsed in the runs with a round (${verification.elapsedMs === 0 ? 'n/a' : percent(verification.checkMs / verification.elapsedMs)}); tokens of fix rounds ${verification.fixRoundTokens}`,
     ...(cost === undefined ? [] : costLines(cost)),
   ];
 };

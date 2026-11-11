@@ -67,6 +67,7 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[], context: DecodeCon
   const maxTotalTokens = reader.nullableNumber('max_total_tokens');
   const maxCostNano = reader.nullableNumber('max_cost_nano');
   const deadlineAt = reader.nullableNumber('deadline_at');
+  const firstRoundPassed = reader.nullableNumber('first_round_passed');
   return {
     runId: identity,
     rootRunId: reader.string('root_run_id'),
@@ -108,6 +109,15 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[], context: DecodeCon
     },
     declared: reader.flag('declared'),
     met: reader.flag('met'),
+    mutated: reader.flag('mutated'),
+    owed: reader.flag('owed'),
+    verification: {
+      rounds: reader.number('verification_rounds'),
+      firstRoundPassed: firstRoundPassed === null ? null : firstRoundPassed === 1,
+      failedRounds: reader.number('failed_rounds'),
+      checkMs: reader.number('check_ms'),
+      fixRoundTokens: reader.number('fix_round_tokens'),
+    },
     recoveries,
   };
 };
@@ -142,14 +152,16 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
        asked, elicited, authorization_required, side_effecting_calls, repeated_starts,
        reconciled_already_applied, reconciled_not_applied, reconciled_unknown,
        basis_read_only, basis_rule, basis_mode, basis_hook, basis_classifier, basis_person, declared, met,
-       cost_nano, max_cost_nano, mandate, held, held_resolved, mandate_denied, quiescent
+       cost_nano, max_cost_nano, mandate, held, held_resolved, mandate_denied, quiescent,
+       mutated, owed, verification_rounds, first_round_passed, failed_rounds, check_ms, fix_round_tokens
      ) VALUES (
        :runId, 0, :definitionsVersion, :rootRunId, :sessionId, :model, :mode, :agent, :origin, :status, :stopReason,
        :createdAt, :endedAt, :elapsedMs, :humanWaitMs, :tokensTotal, :steps, :maxSteps, :maxTotalTokens, :deadlineAt,
        :asked, :elicited, :authorizationRequired, :sideEffectingCalls, :repeatedStarts,
        :reconciledAlreadyApplied, :reconciledNotApplied, :reconciledUnknown,
        :basisReadOnly, :basisRule, :basisMode, :basisHook, :basisClassifier, :basisPerson, :declared, :met,
-       :costNano, :maxCostNano, :mandate, :held, :heldResolved, :mandateDenied, :quiescent
+       :costNano, :maxCostNano, :mandate, :held, :heldResolved, :mandateDenied, :quiescent,
+       :mutated, :owed, :verificationRounds, :firstRoundPassed, :failedRounds, :checkMs, :fixRoundTokens
      )`,
   );
   const upsertUnavailable = db.prepare(
@@ -218,6 +230,13 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
       basisPerson: facts.basis.person,
       declared: facts.declared ? 1 : 0,
       met: facts.met ? 1 : 0,
+      mutated: facts.mutated ? 1 : 0,
+      owed: facts.owed ? 1 : 0,
+      verificationRounds: facts.verification.rounds,
+      firstRoundPassed: facts.verification.firstRoundPassed === null ? null : facts.verification.firstRoundPassed ? 1 : 0,
+      failedRounds: facts.verification.failedRounds,
+      checkMs: facts.verification.checkMs,
+      fixRoundTokens: facts.verification.fixRoundTokens,
       costNano: facts.costNano,
       maxCostNano: facts.limits.maxCostNano ?? null,
       mandate: facts.delegation === undefined ? 0 : 1,
