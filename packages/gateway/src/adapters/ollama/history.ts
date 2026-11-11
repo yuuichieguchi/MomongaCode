@@ -1,6 +1,6 @@
 import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, ContentPart, ReasoningOrigin } from '@momonga/protocol';
-import { callArgumentsObject } from '../shared/call-arguments.ts';
+import { callArgumentsObject, readableHistoryOf } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageSourceOf, isImagePart } from '../shared/image-part.ts';
 import { reasoningTextOf, textOfContent } from '../shared/input-text.ts';
@@ -45,7 +45,7 @@ export const ollamaHistoryOf = (input: readonly AdapterInputItem[], origin: Reas
     return draft;
   };
 
-  for (const item of input) {
+  for (const item of readableHistoryOf(input)) {
     if (item.type === 'reasoning') {
       const own = ownReasoning(item, origin);
       if (own === undefined) continue;
