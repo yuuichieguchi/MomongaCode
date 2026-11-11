@@ -30,7 +30,7 @@ describe('usage observation by the token meter', () => {
     observations.length = 0;
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(textStep('Done.', { usage: usageOf(321, 5) }));
-    env.enqueue('Say done');
+    await env.enqueue('Say done');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -47,7 +47,7 @@ describe('usage observation by the token meter', () => {
         : event,
     );
     env.gateway.script.push({ ...step, events });
-    env.enqueue('Say done');
+    await env.enqueue('Say done');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
@@ -58,7 +58,7 @@ describe('usage observation by the token meter', () => {
     observations.length = 0;
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(bigStep('k0', { letter: 'a', size: 0, pad: 'p'.repeat(7400) }), textStep('Here is what I did.', { usage: usageOf(999, 5) }));
-    const run = env.enqueue('Fill the context');
+    const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker('d'.repeat(4000))));
 

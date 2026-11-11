@@ -33,7 +33,7 @@ type IndexedDocument = { level: string; body: string; paths: string[] };
 const indexedDocumentsOf = async (events: readonly RunEventPayload[]): Promise<IndexedDocument[]> => {
   const { store, dbPath } = harness();
   const session = newSession(store);
-  const run = enqueue(store, session.id, 'task');
+  const run = await enqueue(store, session.id, 'task');
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, [...events]).kind).toBe('ok');
   expect((await store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');

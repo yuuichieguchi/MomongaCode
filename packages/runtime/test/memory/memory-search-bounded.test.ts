@@ -3,7 +3,7 @@ import { MEMORY_SEARCH_RESULT_LIMIT, MEMORY_SEARCH_TOOL_NAME } from '@momonga/to
 import { SIGNAL, newCounter, portFor, seededStore } from './recall-fixture.ts';
 
 const searchWith = async (count: number) => {
-  const seeded = seededStore(count, (index) => `the generated parser note ${index}`);
+  const seeded = await seededStore(count, (index) => `the generated parser note ${index}`);
   const counter = newCounter();
   const set = await portFor(seeded.store, counter).load(seeded.session, SIGNAL);
   const loadCalls = counter.calls;

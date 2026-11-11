@@ -42,7 +42,7 @@ const settingsFileOf = (home: string): string => momongaLayout(home, process.pla
 const storedIn = (home: string): unknown => JSON.parse(fs.readFileSync(settingsFileOf(home), 'utf8'));
 
 const portOf = async (home: string): Promise<TuiSettingsPort> => ({
-  initial: (await loadUserSettings({ home })).settings.tui,
+  initial: (await loadUserSettings({ home, signal: new AbortController().signal })).settings.tui,
   save: (name, value, signal) => writeTuiSetting(home, settingsFileOf(home), name, value, { signal }),
 });
 
@@ -136,7 +136,7 @@ describe('/theme', () => {
     first.app.stdin.write(KEYS.enter);
     await untilOutput(first.app, 'theme: dark');
     first.app.unmount();
-    expect((await loadUserSettings({ home })).settings.tui.theme).toBe('dark');
+    expect((await loadUserSettings({ home, signal: new AbortController().signal })).settings.tui.theme).toBe('dark');
     const second = await startIn(home, TRUECOLOR, LIGHT);
     await paints(second.app, USER_PAINT.dark);
     second.app.unmount();

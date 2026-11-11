@@ -1,7 +1,7 @@
 import { defineProductSchema } from '@momonga/foundation';
 import type { ToolKind } from '@momonga/protocol';
 import { withRefNameRule } from './ref-name.ts';
-import { REFERENCE_PATTERN, isTruthy, lookup } from './template.ts';
+import { REFERENCE_PATTERN, isTruthy, lookup, renderTemplate } from './template.ts';
 import type { Scope } from './template.ts';
 
 export class OperationSpecError extends Error {
@@ -22,8 +22,10 @@ export const FORGE_VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPu
 export type ForgeOperationName = (typeof FORGE_VOCABULARY)[number];
 
 export type Operand = string | { readonly literal: string };
-export type Clause = readonly [Operand, Operand];
-export type ConditionalClauses = { readonly if: string; readonly then: readonly Clause[]; readonly else: readonly Clause[] };
+export type Comparison = readonly [Operand, Operand];
+export type Observed = { readonly observed: string; readonly otherwise: string };
+export type Clause = Comparison | Observed;
+export type ConditionalClauses = ({ readonly if: string } | { readonly ifObserved: string }) & { readonly then: readonly Clause[]; readonly else: readonly Clause[] };
 export type ClauseItem = Clause | ConditionalClauses;
 
 export type ArgvItem = string | { readonly if: string; readonly then: readonly string[]; readonly else?: readonly string[] } | { readonly each: string };
@@ -37,7 +39,7 @@ export type ArgvCall = { readonly argv: readonly ArgvItem[]; readonly network?: 
 export type ForgeCall = { readonly forge: ForgeOperationName; readonly args: Readonly<Record<string, string>> };
 
 export type ProbeSource =
-  | (ArgvCall & { readonly extract?: 'trim' | 'firstField'; readonly emptyOnFailure?: true; readonly each?: 'pushUrls' })
+  | (ArgvCall & { readonly extract?: 'trim' | 'firstField'; readonly emptyOnFailure?: true; readonly each?: 'destinations' })
   | (ForgeCall & { readonly shape: 'one' | 'list' | 'count'; readonly contains?: { readonly field: string; readonly value: string } });
 
 export type Probe = { readonly id: string; readonly via: ProbeSource };
@@ -46,6 +48,8 @@ export type SubjectSpec =
   | { readonly kind: 'none' }
   | { readonly kind: 'repo'; readonly remote?: string; readonly refs?: readonly string[]; readonly alwaysWhen?: readonly string[]; readonly direction?: RemoteDirection }
   | { readonly kind: 'forge'; readonly pr?: string; readonly headSha?: string };
+
+export type PrePushHook = { readonly remote: string; readonly ref: string; readonly localSha: string; readonly remoteProbe: string; readonly delete: string };
 
 export type OperationSpec = {
   readonly name: string;
@@ -60,6 +64,7 @@ export type OperationSpec = {
   readonly observe: readonly Probe[];
   readonly require: readonly ClauseItem[];
   readonly effect?: ArgvCall | ForgeCall;
+  readonly prePush?: PrePushHook;
   readonly applied: readonly ClauseItem[];
   readonly unchanged: readonly ClauseItem[];
   readonly guard?: Guard;
@@ -69,16 +74,16 @@ export type OperationSpec = {
 
 const REFERENCE = { type: 'string', pattern: REFERENCE_PATTERN } as const;
 const OPERAND = { oneOf: [REFERENCE, { type: 'object', properties: { literal: { type: 'string' } }, required: ['literal'], additionalProperties: false }] } as const;
-const CLAUSE = { type: 'array', items: OPERAND, minItems: 2, maxItems: 2 } as const;
+const COMPARISON = { type: 'array', items: OPERAND, minItems: 2, maxItems: 2 } as const;
+const OBSERVED = { type: 'object', properties: { observed: REFERENCE, otherwise: { type: 'string', minLength: 1 } }, required: ['observed', 'otherwise'], additionalProperties: false } as const;
+const CLAUSE = { oneOf: [COMPARISON, OBSERVED] } as const;
+const CLAUSES = { type: 'array', items: CLAUSE } as const;
 const CLAUSE_ITEM = {
   oneOf: [
-    CLAUSE,
-    {
-      type: 'object',
-      properties: { if: REFERENCE, then: { type: 'array', items: CLAUSE }, else: { type: 'array', items: CLAUSE } },
-      required: ['if', 'then', 'else'],
-      additionalProperties: false,
-    },
+    COMPARISON,
+    OBSERVED,
+    { type: 'object', properties: { if: REFERENCE, then: CLAUSES, else: CLAUSES }, required: ['if', 'then', 'else'], additionalProperties: false },
+    { type: 'object', properties: { ifObserved: REFERENCE, then: CLAUSES, else: CLAUSES }, required: ['ifObserved', 'then', 'else'], additionalProperties: false },
   ],
 } as const;
 const STRINGS = { type: 'array', items: { type: 'string' } } as const;
@@ -98,6 +103,13 @@ const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } 
 const FORGE_NAME = { enum: [...FORGE_VOCABULARY] } as const;
 const ARGV_CALL = { type: 'object', properties: { argv: ARGV, network: NETWORK }, required: ['argv'], additionalProperties: false } as const;
 const FORGE_CALL = { type: 'object', properties: { forge: FORGE_NAME, args: STRING_MAP }, required: ['forge', 'args'], additionalProperties: false } as const;
+
+const PRE_PUSH = {
+  type: 'object',
+  properties: { remote: { type: 'string', minLength: 1 }, ref: { type: 'string', minLength: 1 }, localSha: REFERENCE, remoteProbe: { type: 'string', minLength: 1 }, delete: REFERENCE },
+  required: ['remote', 'ref', 'localSha', 'remoteProbe', 'delete'],
+  additionalProperties: false,
+} as const;
 
 const SPEC_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -133,7 +145,7 @@ const SPEC_SCHEMA = {
             oneOf: [
               {
                 type: 'object',
-                properties: { argv: ARGV, network: NETWORK, extract: { enum: ['trim', 'firstField'] }, emptyOnFailure: { const: true }, each: { const: 'pushUrls' } },
+                properties: { argv: ARGV, network: NETWORK, extract: { enum: ['trim', 'firstField'] }, emptyOnFailure: { const: true }, each: { const: 'destinations' } },
                 required: ['argv'],
                 additionalProperties: false,
               },
@@ -157,6 +169,7 @@ const SPEC_SCHEMA = {
     },
     require: { type: 'array', items: CLAUSE_ITEM },
     effect: { oneOf: [ARGV_CALL, FORGE_CALL] },
+    prePush: PRE_PUSH,
     applied: { type: 'array', items: CLAUSE_ITEM },
     unchanged: { type: 'array', items: CLAUSE_ITEM },
     guard: { enum: [...OPERATION_GUARDS] },
@@ -179,6 +192,10 @@ const subjectInputs = (subject: SubjectSpec): string[] => {
   return [...inputsIn(subject.pr ?? ''), ...inputsIn(subject.headSha ?? '')];
 };
 
+const isComparison = (clause: Clause): clause is Comparison => Array.isArray(clause);
+
+const isClause = (item: ClauseItem): item is Clause => Array.isArray(item) || 'observed' in item;
+
 const isInputOperand = (operand: Operand): operand is string => typeof operand === 'string' && operand.startsWith('input.');
 
 const boundInputs = (effect: ArgvCall | ForgeCall, require: readonly ClauseItem[]): Set<string> => {
@@ -188,8 +205,22 @@ const boundInputs = (effect: ArgvCall | ForgeCall, require: readonly ClauseItem[
     return [item.if, ...item.then.flatMap(inputsIn), ...(item.else ?? []).flatMap(inputsIn)];
   };
   const fromEffect = 'argv' in effect ? effect.argv.flatMap(inputsOfItem) : Object.values(effect.args).flatMap(inputsIn);
-  const clauses = require.flatMap((item): Clause[] => (Array.isArray(item) ? [item as Clause] : [...(item as ConditionalClauses).then, ...(item as ConditionalClauses).else]));
-  return new Set([...fromEffect, ...clauses.flatMap((clause) => clause.filter(isInputOperand))]);
+  const clauses = require.flatMap((item): Clause[] => (isClause(item) ? [item] : [...item.then, ...item.else]));
+  return new Set([...fromEffect, ...clauses.flatMap((clause) => (isComparison(clause) ? clause.filter(isInputOperand) : []))]);
+};
+
+export const asksForge = (spec: Pick<OperationSpec, 'subject' | 'observe' | 'effect'>): boolean =>
+  spec.subject.kind === 'forge' || spec.observe.some((probe) => 'forge' in probe.via) || (spec.effect !== undefined && 'forge' in spec.effect);
+
+export const FORGE_REMOTE_INPUT = 'remote';
+
+const takesOptionalForgeRemote = (input: Record<string, unknown>): boolean => {
+  const properties = input['properties'];
+  const required = input['required'];
+  if (typeof properties !== 'object' || properties === null) return false;
+  const declared = (properties as Record<string, unknown>)[FORGE_REMOTE_INPUT];
+  const isString = typeof declared === 'object' && declared !== null && (declared as Record<string, unknown>)['type'] === 'string';
+  return isString && !(Array.isArray(required) && required.includes(FORGE_REMOTE_INPUT));
 };
 
 export const parseOperationSpec = (value: unknown): OperationSpec => {
@@ -212,6 +243,15 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
     const unbound = subjectInputs(spec.subject).find((reference) => !bound.has(reference));
     if (unbound !== undefined) throw new OperationSpecError(`${spec.name}: the approval names ${unbound}, which is neither an argument of the effect nor required against an observation`);
   }
+  if (spec.prePush !== undefined) {
+    const sends = spec.effect !== undefined && 'argv' in spec.effect && spec.effect.network === 'destinations';
+    if (!sends) throw new OperationSpecError(`${spec.name} declares the pre-push hook, which belongs only to an effect that sends to the push destinations`);
+    const remoteProbe = spec.observe.find((probe) => probe.id === spec.prePush?.remoteProbe);
+    if (remoteProbe === undefined || !('argv' in remoteProbe.via) || remoteProbe.via.each !== 'destinations') {
+      throw new OperationSpecError(`${spec.name}: the pre-push hook reads the remote value from ${spec.prePush.remoteProbe}, which must be a probe that observes each push destination`);
+    }
+  }
+  if (asksForge(spec) && !takesOptionalForgeRemote(spec.input)) throw new OperationSpecError(`${spec.name} asks a forge and must take the optional string input ${FORGE_REMOTE_INPUT}, which names the remote whose forge is asked`);
   const ids = spec.observe.map((probe) => probe.id);
   if (new Set(ids).size !== ids.length) throw new OperationSpecError(`${spec.name} declares a probe id twice`);
   return { ...spec, input: withRefNameRule(spec.input), require: spec.require ?? [] };
@@ -219,24 +259,34 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
 
 const resolveOperand = (operand: Operand, scope: Scope): string | undefined => (typeof operand === 'string' ? lookup(scope, operand) : operand.literal);
 
-const holds = (clause: Clause, scope: Scope): boolean => {
-  const left = resolveOperand(clause[0], scope);
-  const right = resolveOperand(clause[1], scope);
-  return left !== undefined && right !== undefined && left === right;
+const isLiteral = (operand: Operand): boolean => typeof operand !== 'string';
+
+const wasObserved = (scope: Scope, reference: string): boolean => {
+  const value = lookup(scope, reference);
+  return value !== undefined && value !== '';
 };
 
-export const flattenClauses = (items: readonly ClauseItem[], scope: Scope): Clause[] =>
-  items.flatMap((item): Clause[] => {
-    if (Array.isArray(item)) return [item as Clause];
-    const conditional = item as ConditionalClauses;
-    return [...(isTruthy(scope, conditional.if) ? conditional.then : conditional.else)];
-  });
+const holds = (clause: Clause, scope: Scope): boolean => {
+  if (!isComparison(clause)) return wasObserved(scope, clause.observed);
+  const left = resolveOperand(clause[0], scope);
+  const right = resolveOperand(clause[1], scope);
+  if (left === undefined || right === undefined || left !== right) return false;
+  return left !== '' || isLiteral(clause[0]) || isLiteral(clause[1]);
+};
+
+const chosenClauses = (conditional: ConditionalClauses, scope: Scope): readonly Clause[] => {
+  const chosen = 'if' in conditional ? isTruthy(scope, conditional.if) : wasObserved(scope, conditional.ifObserved);
+  return chosen ? conditional.then : conditional.else;
+};
+
+export const flattenClauses = (items: readonly ClauseItem[], scope: Scope): Clause[] => items.flatMap((item): Clause[] => (isClause(item) ? [item] : [...chosenClauses(item, scope)]));
 
 export const evaluateClauses = (items: readonly ClauseItem[], scope: Scope): boolean => flattenClauses(items, scope).every((clause) => holds(clause, scope));
 
 export const failedClauses = (items: readonly ClauseItem[], scope: Scope): Clause[] => flattenClauses(items, scope).filter((clause) => !holds(clause, scope));
 
 export const describeClause = (clause: Clause, scope: Scope): string => {
+  if (!isComparison(clause)) return renderTemplate(clause.otherwise, scope);
   const side = (operand: Operand): string => {
     if (typeof operand !== 'string') return JSON.stringify(operand.literal);
     const value = lookup(scope, operand);

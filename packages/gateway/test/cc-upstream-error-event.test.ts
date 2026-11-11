@@ -29,6 +29,7 @@ const NOT_THE_ERROR_ITSELF = ['context_window_exceeded', 'upstream_protocol_erro
 const startFmStyleUpstream = async (errorBody: unknown): Promise<FakeUpstreamServer> => {
   const upstream = await startFakeSseUpstream({
     path: '/v1/chat/completions',
+    listedModel: 'system',
     respond: () => ({ kind: 'stream', frames: [{ data: FM_ROLE_CHUNK }, { event: 'error', data: errorBody }] }),
   });
   registerCleanup(() => upstream.close());

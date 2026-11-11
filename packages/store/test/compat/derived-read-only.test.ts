@@ -16,10 +16,10 @@ const journalConnection = (dbPath: string): DatabaseSync => {
 };
 
 describe('the read-only journal connection derives the part past the watermark in memory (H7, 11.5 correction rule 1)', () => {
-  it('returns each row its pinned_digest and call_id derived from its payload, and writes nothing', () => {
+  it('returns each row its pinned_digest and call_id derived from its payload, and writes nothing', async () => {
     const { store, dbPath } = harness();
     const session = newSession(store);
-    const run = enqueue(store, session.id, 'task');
+    const run = await enqueue(store, session.id, 'task');
     mustClaim(store, 'w-old');
     const writer = rawDb(dbPath);
     const requested = appendForeignRunEvent(writer, run.id, 'model.requested', { step: 1, attempt: 1, digest: 'd1', pinnedDigest: PINNED, body: { model: 'fm', input: [] } });

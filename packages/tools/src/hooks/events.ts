@@ -1,3 +1,4 @@
+import { HOOK_BLOCKING_EXIT_CODE } from '@momonga/protocol';
 import type { HookPreToolDecision } from '@momonga/protocol';
 import { runHooks, selectHookCommands } from './run.ts';
 import type { HookReply, HookRunContext } from './run.ts';
@@ -30,12 +31,16 @@ const DECISION_RANK: Record<HookPreToolDecision, number> = { allow: 0, ask: 1, d
 const haltOf = (replies: readonly HookReply[]): { reason: string | undefined } | undefined =>
   replies.find((reply) => reply.output?.halt !== undefined)?.output?.halt;
 
+const failureOf = (reply: HookReply): string | undefined => {
+  const { outcome, message, command, hookEvent } = reply.execution;
+  if (outcome !== 'error' && outcome !== 'timed_out') return undefined;
+  return `the ${hookEvent} hook ${command} failed (${message === undefined || message === '' ? outcome : message})`;
+};
+
 const decisionOf = (reply: HookReply): { decision: HookPreToolDecision; reason: string | undefined } | undefined => {
   if (reply.execution.outcome === 'blocked') return { decision: 'deny', reason: reply.execution.message };
-  if (reply.execution.outcome === 'error' || reply.execution.outcome === 'timed_out') {
-    const detail = reply.execution.message === undefined || reply.execution.message === '' ? reply.execution.outcome : reply.execution.message;
-    return { decision: 'ask', reason: `the PreToolUse hook ${reply.execution.command} failed (${detail}), so its verdict is unknown` };
-  }
+  const failure = failureOf(reply);
+  if (failure !== undefined) return { decision: 'ask', reason: `${failure}, so its verdict is unknown` };
   const decision = reply.output?.decision;
   if (decision === undefined || decision === 'block') return undefined;
   return { decision, reason: reply.output?.reason };
@@ -61,7 +66,10 @@ export const resolvePreToolUse = (replies: readonly HookReply[]): PreToolHookVer
 
 const feedbackOf = (reply: HookReply): string[] => {
   const parts: string[] = [];
-  if (reply.execution.outcome === 'error' && reply.execution.exitCode === 2 && reply.stderr.trim() !== '') parts.push(reply.stderr.trim());
+  const failure = failureOf(reply);
+  if (reply.execution.exitCode === HOOK_BLOCKING_EXIT_CODE) {
+    if (reply.stderr.trim() !== '') parts.push(reply.stderr.trim());
+  } else if (failure !== undefined) parts.push(`${failure}, so what it checks was not checked`);
   if (reply.output?.decision === 'block' && reply.output.reason !== undefined) parts.push(reply.output.reason);
   if (reply.output?.additionalContext !== undefined) parts.push(reply.output.additionalContext);
   return parts;

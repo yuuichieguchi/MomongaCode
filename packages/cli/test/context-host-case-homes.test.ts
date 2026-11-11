@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { loadUserModels } from '@momonga/config';
 import { liveSettingsFor, pinnedModelOf } from '../src/eval/context-host.ts';
 import { THREE_DISPLAYS, homeWith, threeModels } from './models-shell-harness.ts';
+import { userModelsAt } from './user-models.ts';
 
 describe('the settings of a case home', () => {
   it('are written through the writer operations and hold the servers that the chain of the pinned model needs, in the new shape', (context) => {
-    const user = loadUserModels({ home: homeWith(context, threeModels({ fallback: ['lmstudio/gemma-3-4b'] })).home });
+    const user = userModelsAt(homeWith(context, threeModels({ fallback: ['lmstudio/gemma-3-4b'] })).home);
 
     const live = liveSettingsFor(user, ['ollama/qwen3.8:27b']);
 
@@ -21,7 +21,7 @@ describe('the settings of a case home', () => {
   });
 
   it('an unknown --model is refused with the sentence that lists the configured models', (context) => {
-    const user = loadUserModels({ home: homeWith(context, threeModels()).home });
+    const user = userModelsAt(homeWith(context, threeModels()).home);
 
     expect(pinnedModelOf(user, 'qwen3.8:27b')).toBe('ollama/qwen3.8:27b');
     expect(() => pinnedModelOf(user, 'nope')).toThrow(`The model "nope" is not configured. Configured models: ${THREE_DISPLAYS}.`);

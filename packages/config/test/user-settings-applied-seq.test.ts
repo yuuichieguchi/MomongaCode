@@ -4,6 +4,9 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords, writeAppliedRecord } from '@momonga/config';
 import type { UserSettingsCacheOptions } from '@momonga/config';
+import { systemRandom } from '@momonga/foundation';
+
+const NOT_ABORTED = new AbortController().signal;
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -41,38 +44,38 @@ const makeTree = () => {
 const cacheOf = (home: string, appliedRecord: string) =>
   createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords, appliedRecord } as UserSettingsCacheOptions);
 
-const modelOf = (cache: ReturnType<typeof cacheOf>): string | undefined => servedModelOf(cache.get());
+const modelOf = async (cache: ReturnType<typeof cacheOf>): Promise<string | undefined> => servedModelOf((await cache.loadOrKeep(NOT_ABORTED)).settings);
 
 describe('S7: the applied record is ordered by seq (design-settings-live 15.1, NoRollbackAfterApply)', () => {
-  it('a record at seq 2 wins over an own copy noted at seq 1', () => {
+  it('a record at seq 2 wins over an own copy noted at seq 1', async () => {
     const tree = makeTree();
     tree.writeRecord(1, settingsWithModel('a'));
     tree.write(JSON.stringify(settingsWithModel('a')));
     const cache = cacheOf(tree.home, tree.record);
-    expect(modelOf(cache)).toBe('a');
+    expect(await modelOf(cache)).toBe('a');
     tree.writeRecord(2, settingsWithModel('b'));
     tree.write('{ "models": ');
-    expect(modelOf(cache)).toBe('b');
+    expect(await modelOf(cache)).toBe('b');
   });
 
-  it('a process that read c validly while the record was at seq 2 keeps c when the file breaks', () => {
+  it('a process that read c validly while the record was at seq 2 keeps c when the file breaks', async () => {
     const tree = makeTree();
     tree.writeRecord(2, settingsWithModel('b'));
     tree.write(JSON.stringify(settingsWithModel('c')));
     const cache = cacheOf(tree.home, tree.record);
-    expect(modelOf(cache)).toBe('c');
+    expect(await modelOf(cache)).toBe('c');
     tree.write('{ "models": ');
-    expect(modelOf(cache)).toBe('c');
+    expect(await modelOf(cache)).toBe('c');
   });
 
-  it('an invalid file leaves the record byte-identical: no write and no deletion', () => {
+  it('an invalid file leaves the record byte-identical: no write and no deletion', async () => {
     const tree = makeTree();
     tree.writeRecord(3, settingsWithModel('b'));
     const before = fs.readFileSync(tree.record);
     tree.write('{ "models": ');
     const cache = cacheOf(tree.home, tree.record);
-    expect(modelOf(cache)).toBe('b');
-    expect(writeAppliedRecord(tree.home, tree.record)).toEqual({ kind: 'invalid' });
+    expect(await modelOf(cache)).toBe('b');
+    expect(await writeAppliedRecord(tree.home, tree.record, undefined, { signal: NOT_ABORTED, random: systemRandom })).toEqual({ kind: 'invalid' });
     expect(fs.readFileSync(tree.record).equals(before)).toBe(true);
   });
 });

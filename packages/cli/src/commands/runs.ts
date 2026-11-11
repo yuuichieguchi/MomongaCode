@@ -30,7 +30,7 @@ export const attachRun = async (ports: CliPorts, paths: MomongaPaths, options: A
   const move = streamMoveOf(ports, paths, 'attach');
   try {
     const runId = options.runId ?? (await latestRunIdOf(client, ports.cwd));
-    return await watchRun(ports, paths, { client, runId, format: options.format, verbose: options.verbose, after: options.after, interrupt: options.interrupt, ...(move === undefined ? {} : { move }) });
+    return await watchRun(ports, paths, { client, runId, format: options.format, verbose: options.verbose, after: options.after, interrupt: options.interrupt, onInterrupt: 'detach', ...(move === undefined ? {} : { move }) });
   } finally {
     await client.close();
   }

@@ -16,7 +16,7 @@ describe('a worker terminal awaits the contribution port', () => {
   it('a completed run carries the measurement of the port immediately before its terminal status, measured for that run only', async () => {
     const { env, fake } = await envWithPreparer();
     env.gateway.script.push(textStep('the final answer'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
 
@@ -29,7 +29,7 @@ describe('a worker terminal awaits the contribution port', () => {
   it('P6: while the terminal awaits the preparer the heartbeat keeps the lease, so no other claim takes the run', async () => {
     const { env, fake } = await envWithPreparer();
     env.gateway.script.push(textStep('the final answer'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const timers = createFakeTimers(env.clock);
     const open = fake.hold();
 
@@ -55,7 +55,7 @@ describe('a worker terminal awaits the contribution port', () => {
     env.gateway.script.push(textStep('the final answer'));
     env.gateway.script.push(textStep('a second, paid answer'));
     fake.failures.push(new JournalThreadError('the journal thread exited'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
 

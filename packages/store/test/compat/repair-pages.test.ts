@@ -22,7 +22,7 @@ const lagOf = (dbPath: string, runId: string, count: number): number => {
 describe('the repair of a lag longer than one page (H7, 11.5; a bound per transaction)', () => {
   it('claim repairs one page in its transaction, and a read repairs the rest and leaves each watermark at the last seq', async () => {
     const { store, dbPath, clock } = harness();
-    const run = enqueue(store, newSession(store).id, 'task');
+    const run = await enqueue(store, newSession(store).id, 'task');
     mustClaim(store, 'w-old');
     const start = watermarks(dbPath, run.id)[0] ?? 0;
     const lastSeq = lagOf(dbPath, run.id, 2 * REPAIR_PAGE_EVENTS + 200);
@@ -38,7 +38,7 @@ describe('the repair of a lag longer than one page (H7, 11.5; a bound per transa
 
   it('commits each page in its own transaction, so a stop between pages keeps the pages before it', async () => {
     const { store, dbPath, clock } = harness();
-    const run = enqueue(store, newSession(store).id, 'task');
+    const run = await enqueue(store, newSession(store).id, 'task');
     mustClaim(store, 'w-old');
     const start = Number(rawDb(dbPath).prepare('SELECT last_seq FROM runs WHERE id = ?').get(run.id)?.['last_seq']);
     lagOf(dbPath, run.id, REPAIR_PAGE_EVENTS + 50);

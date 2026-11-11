@@ -1,11 +1,13 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { readTx } from '@momonga/foundation/sqlite';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR, TERMINAL_STATUSES, floorRatio, userMessageContent } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR, TERMINAL_STATUSES, floorRatio, tokensForText } from '@momonga/protocol';
 import type { ContentPart, InheritedReferencePayload, InheritedViaLink, InputItem, PermissionMode, RunEvent, RunState, RunStatus, TerminalStatus } from '@momonga/protocol';
 import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
 import { createDerivedSnapshot } from './derived-repair.ts';
 import { isFatalStoreError } from './fatal.ts';
 import { foldRunState, initialRunState } from './fold.ts';
+import { ITEM_EVENT_TYPES, itemsOfEvent } from './history-items.ts';
+import type { ItemFacts } from './history-items.ts';
 import { InheritanceError, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
 import type { InheritanceOutcome, UnaskedCommands } from './inherit.ts';
 import { createRecordWalker } from './record-walk.ts';
@@ -86,7 +88,7 @@ type WalkContext = {
   oldEvicted: Set<string>;
 };
 
-const ITEM_EVENT_TYPES = ['user.message', 'model.responded', 'tool.completed', 'tool.reconciled', 'context.truncated', 'context.compaction_rejected'] as const;
+const WALKED_EVENT_TYPES = [...ITEM_EVENT_TYPES, 'context.truncated', 'context.compaction_rejected'] as const;
 
 const TERMINAL_STATUS_LIST: readonly string[] = TERMINAL_STATUSES;
 
@@ -128,8 +130,12 @@ const charsOf = (item: InputItem): number => {
   }
 };
 
+const outputTextOf = (output: string | readonly ContentPart[]): string => (typeof output === 'string' ? output : output.map((part) => ('text' in part ? part.text : '')).join(''));
+
 export const lowerBoundTokens = (item: InputItem, floorTokens: number): number =>
-  item.type === 'function_call_output' ? Math.max(1, floorTokens) : Math.max(1, discountedFloor(Math.ceil(charsOf(item) / ESTIMATED_CHARACTERS_PER_TOKEN)));
+  item.type === 'function_call_output'
+    ? Math.max(1, Math.min(floorTokens, discountedFloor(tokensForText(outputTextOf(item.output)))))
+    : Math.max(1, discountedFloor(Math.ceil(charsOf(item) / ESTIMATED_CHARACTERS_PER_TOKEN)));
 
 const isStub = (entry: WindowEntry): entry is EvictedStub => !('item' in entry);
 
@@ -138,29 +144,24 @@ const outputCallIdOf = (entry: WindowEntry): string | undefined => {
   return entry.item.type === 'function_call_output' ? entry.item.call_id : undefined;
 };
 
-const itemsOfEvent = (event: RunEvent): { item: InputItem; callId?: string; handle?: string }[] => {
-  switch (event.type) {
-    case 'user.message':
-      return [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images, event) } }];
-    case 'model.responded':
-      return (event.response.output as InputItem[]).map((item) => ({ item }));
-    case 'tool.completed':
-      return [{ item: { type: 'function_call_output', call_id: event.callId, output: event.output }, callId: event.callId, ...(event.handle === undefined ? {} : { handle: event.handle }) }];
-    case 'tool.reconciled':
-      return [{ item: { type: 'function_call_output', call_id: event.callId, output: event.output }, callId: event.callId }];
-    default:
-      return [];
-  }
-};
-
 export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): ReferenceReader => {
   const { unit, stepped } = hooks;
   const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
   const firstInherited = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.inherited' ORDER BY seq LIMIT 1");
   const eventAt = db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq = :seq');
   const itemRows = db.prepare(
-    `SELECT * FROM events INDEXED BY events_by_run_type WHERE run_id = :runId AND type IN (${ITEM_EVENT_TYPES.map((type) => `'${type}'`).join(', ')}) AND seq >= :from AND seq <= :to ORDER BY seq DESC`,
+    `SELECT * FROM events INDEXED BY events_by_run_type WHERE run_id = :runId AND type IN (${WALKED_EVENT_TYPES.map((type) => `'${type}'`).join(', ')}) AND seq >= :from AND seq <= :to ORDER BY seq DESC`,
   );
+  const callName = db.prepare("SELECT tool_name FROM events INDEXED BY events_by_run_type WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId ORDER BY seq");
+  const itemFactsOf = (runId: string): ItemFacts => ({
+    providerCallIdOf: (callId) => callId,
+    heldToolNameOf: (callId) => {
+      const row = callName.get({ runId, callId });
+      const name = row?.['tool_name'];
+      if (typeof name !== 'string') throw inconsistent(`run ${runId}: the held call ${callId} has no tool.call record that names its tool`);
+      return name;
+    },
+  });
   const firstTask = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'user.message' AND seq <= :bound ORDER BY seq LIMIT 1");
   const latestCompacted = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.compacted' AND seq <= :bound ORDER BY seq DESC LIMIT 1");
   const derived = createDerivedSnapshot(db);
@@ -226,7 +227,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
           if (valid && afterPointer) context.rejections.push({ runId, seq: event.seq, item: event.item });
           continue;
         }
-        const produced = itemsOfEvent(event);
+        const produced = itemsOfEvent(event, itemFactsOf(runId));
         for (let index = produced.length - 1; index >= 0; index -= 1) {
           const { item, callId, handle } = produced[index] as (typeof produced)[number];
           yield { seq: top, item, ...(callId === undefined ? {} : { callId }), ...(handle === undefined ? {} : { handle }) };
@@ -269,7 +270,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     hooks.onHop?.(link.runId);
     const row = firstTask.get({ runId: link.runId, bound: link.lastSeq });
     if (row === undefined) throw inconsistent(`run ${link.runId}: its task record is missing`);
-    const [entry] = itemsOfEvent(decode(row));
+    const [entry] = itemsOfEvent(decode(row), itemFactsOf(link.runId));
     if (entry === undefined) throw inconsistent(`run ${link.runId}: its first user.message produced no item`);
     yield { seq: link.nextItemSeq, item: entry.item };
     yield* mergeDescending(link.synthesised, previousTop, omitting(lower, link.omitSeqs));

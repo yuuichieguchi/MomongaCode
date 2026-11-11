@@ -6,9 +6,9 @@ import { START_MS, enqueue, harness, mustClaim, newSession, rawDb } from './help
 const EXPIRES_AT = START_MS + 86_400_000;
 const KEY = 'a'.repeat(64);
 
-const leased = () => {
+const leased = async () => {
   const h = harness();
-  enqueue(h.store, newSession(h.store).id);
+  await enqueue(h.store, newSession(h.store).id);
   const claim = mustClaim(h.store, 'w1');
   return { ...h, ledger: h.store.idempotency.holding(claim) };
 };
@@ -24,8 +24,8 @@ describe('the authorised mark of an idempotency record', () => {
     expect(columns).toContainEqual({ name: 'authorised_at', notNull: 0 });
   });
 
-  it('is absent after begin and set to the clock time by authorise, in the same write that adopts the lease token', () => {
-    const { clock, store, ledger } = leased();
+  it('is absent after begin and set to the clock time by authorise, in the same write that adopts the lease token', async () => {
+    const { clock, store, ledger } = await leased();
     ledger.begin(KEY, { expiresAt: EXPIRES_AT, meta: { tool: 'GitPush' } });
     expect(hasAuthorisedAt(store.idempotency.get(KEY))).toBe(false);
     clock.advance(7);
@@ -33,8 +33,8 @@ describe('the authorised mark of an idempotency record', () => {
     expect(store.idempotency.get(KEY)).toMatchObject({ s: 'PENDING', rec: { key: KEY, authorisedAt: START_MS + 7, leaseToken: 1 } });
   });
 
-  it('stays set when the record later becomes UNKNOWN', () => {
-    const { clock, store, ledger } = leased();
+  it('stays set when the record later becomes UNKNOWN', async () => {
+    const { clock, store, ledger } = await leased();
     ledger.begin(KEY, { expiresAt: EXPIRES_AT, meta: { tool: 'GitPush' } });
     clock.advance(3);
     ledger.authorise(KEY);
@@ -42,8 +42,8 @@ describe('the authorised mark of an idempotency record', () => {
     expect(store.idempotency.get(KEY)).toMatchObject({ s: 'UNKNOWN', rec: { authorisedAt: START_MS + 3 } });
   });
 
-  it('is not set by attaching a process, and is kept beside the started time once authorise ran', () => {
-    const { clock, store, ledger } = leased();
+  it('is not set by attaching a process, and is kept beside the started time once authorise ran', async () => {
+    const { clock, store, ledger } = await leased();
     ledger.begin(KEY, { expiresAt: EXPIRES_AT, meta: { tool: 'Bash' } });
     ledger.attachProcess(KEY, { pgid: 4242, startedAt: START_MS + 1 });
     expect(hasAuthorisedAt(store.idempotency.get(KEY))).toBe(false);
@@ -52,8 +52,8 @@ describe('the authorised mark of an idempotency record', () => {
     expect(store.idempotency.get(KEY)).toMatchObject({ s: 'PENDING', rec: { pgid: 4242, startedAt: START_MS + 1, authorisedAt: START_MS + 2 } });
   });
 
-  it('is left as it was by an authorise that only adopts the lease for a reconcile', () => {
-    const { clock, store, ledger } = leased();
+  it('is left as it was by an authorise that only adopts the lease for a reconcile', async () => {
+    const { clock, store, ledger } = await leased();
     ledger.begin(KEY, { expiresAt: EXPIRES_AT, meta: { tool: 'GitPush' } });
     expect(ledger.authorise(KEY, 'reconcile')).toEqual({ kind: 'ok' });
     expect(hasAuthorisedAt(store.idempotency.get(KEY))).toBe(false);

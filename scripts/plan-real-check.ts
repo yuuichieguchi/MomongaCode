@@ -398,8 +398,8 @@ const writtenEntries = (paths: MomongaPaths, connection: number): readonly unkno
   return isRecord(written) && Array.isArray(written['models']) ? (written['models'] as readonly unknown[]) : [];
 };
 
-const planModelOf = (paths: MomongaPaths, typed: string): PlanModel | undefined => {
-  const { resolved } = loadUserModels({ home: paths.home });
+const planModelOf = async (paths: MomongaPaths, typed: string, signal: AbortSignal): Promise<PlanModel | undefined> => {
+  const { resolved } = await loadUserModels({ home: paths.home, signal });
   const resolution = resolveTypedModelRef(typedModelText(typed), resolved.views);
   if (resolution.kind !== 'found') return undefined;
   const { canon, provider } = resolution.model;
@@ -477,9 +477,9 @@ const throughGateway = async (command: Exclude<Command, 'collect'>, paths: Momon
   const steps = STEPS_OF[command];
   const socketPath = await gatewaySocket(paths);
   if (socketPath === undefined) return steps.map((step) => notRun(step, 'no running gateway for this home'));
-  const model = planModelOf(paths, typed);
-  if (model === undefined) return steps.map((step) => notRun(step, notOnePlanModel(typed)));
   const interrupt = new AbortController();
+  const model = await planModelOf(paths, typed, interrupt.signal);
+  if (model === undefined) return steps.map((step) => notRun(step, notOnePlanModel(typed)));
   const client = createUdsClient(fixedSocket(socketPath));
   try {
     return command === 'carriage' ? await carriage(client, paths, model, interrupt.signal) : await requestSize(client, model);

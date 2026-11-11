@@ -10,7 +10,7 @@ import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { usageOf, NEVER_CANCELLED } from '@momonga/testkit';
-import { createBuiltinTools, createOperationTools, harnessOutputToolsOf, hostGitReader } from '@momonga/tools';
+import { createBuiltinTools, createOperationTools, harnessOutputToolsOf } from '@momonga/tools';
 import type { ArgvRunner, ForgeAccess } from '@momonga/tools';
 import { budgetFor, capacityFor, inputCeilingFor, itemCapFor } from '../../packages/context/src/budget.ts';
 import { errorBoundFor } from '../../packages/gateway/src/core/estimate.ts';
@@ -460,7 +460,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       bypassAllowed: true,
       model: E2E_MODEL,
     });
-    const created = env.store.createRunAndEnqueue(session.id, { input: ACCEPTANCE_TASK, timeoutMs: RUNTIME_DEFAULTS.runTimeoutMs, limits: {}, pins: {} });
+    const created = await env.store.createRunAndEnqueue(session.id, { input: ACCEPTANCE_TASK, timeoutMs: RUNTIME_DEFAULTS.runTimeoutMs, limits: {}, pins: {} });
     if (created.kind !== 'created') throw new Error(`dry run: the run was not created (${created.kind})`);
     const runId = created.run.id;
     const worker = env.worker('planner', {
@@ -469,7 +469,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       home: plan.home.home,
       instructionReader: createFsInstructionReader(NEVER_CANCELLED),
       defaults: RUNTIME_DEFAULTS.limits,
-      toolList: () => [...createBuiltinTools(), ...createOperationTools({ runArgv: noOperationRuns, readGit: hostGitReader, forge: NO_FORGE, settings: {} })],
+      toolList: () => [...createBuiltinTools(), ...createOperationTools({ runArgv: noOperationRuns, forge: NO_FORGE, settings: {} })],
       memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),
       history: createHistoryPort({
         store: env.store,

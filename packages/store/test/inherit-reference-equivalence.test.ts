@@ -29,7 +29,7 @@ const CASES = 40;
 const CHAIN_LENGTHS = [1, 1, 2, 2, 3, 10] as const;
 
 const inheritingChild = async (h: ReferenceHarness, b: ChainBuilder, mode: PermissionMode = 'manual'): Promise<Run> => {
-  const child = b.createRun('the child task');
+  const child = await b.createRun('the child task');
   const claim = b.claimNext(child.id);
   const result = await b.inherit(claim, mode);
   expect(result).toEqual({ kind: 'inherited' });
@@ -139,11 +139,11 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
   it('a task the user cancelled in the queue is not a link, and is omitted', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const first = b.createRun('Say hello', { history: 'fresh' });
+    const first = await b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
     b.text(claim);
-    const retracted = b.createRun('Never mind this');
+    const retracted = await b.createRun('Never mind this');
     const requested = await h.store.requestCancel(retracted.id);
     expect(requested.kind).toBe('ok');
     await h.store.finishCancelled((error) => {
@@ -160,11 +160,11 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
   it('a never-started run that timed out in the queue is a via link with its task and the unprocessed marker', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const first = b.createRun('Say hello', { history: 'fresh' });
+    const first = await b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
     b.started(claim, 'manual');
     b.text(claim);
-    const timedOut = b.createRun('Too late', { timeoutMs: 1000 });
+    const timedOut = await b.createRun('Too late', { timeoutMs: 1000 });
     h.clock.advance(2000);
     expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([timedOut.id]);
     await b.end(claim, { to: 'COMPLETED' });

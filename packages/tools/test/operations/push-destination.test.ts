@@ -73,7 +73,7 @@ describe('GitPush with several push urls, or a destination that moves after the 
     const tool = operationTool('GitPush', { runArgv: countingRunner().run });
     const parts = partsOf(tool, { remote: 'origin', branch: 'main' }, contextFor(world.work, world.env));
     const prepared = await parts.prepare();
-    expect(prepared).toMatchObject({ before: { pushUrls: [`file://${second}`, `file://${third}`] } });
+    expect(prepared).toMatchObject({ before: { destinations: [`file://${second}`, `file://${third}`] } });
     const result = await parts.execute(prepared);
     expect(result.status).toBe('completed');
     expect(shaIn(world, second)).toBe(head);
@@ -124,6 +124,6 @@ describe('GitPush with several push urls, or a destination that moves after the 
     const tool = operationTool('GitPush', { runArgv: countingRunner().run });
     const aborted = new AbortController();
     aborted.abort();
-    await expect(tool.gateFacts?.({ remote: 'origin', branch: 'main' }, { paths: testPaths(), cwd: world.work, workingDirectory: world.work, home: world.home, roots: [world.work] }, { signal: aborted.signal, env: world.env })).rejects.toThrow('cancelled or ran out of time');
+    await expect(tool.gateFacts?.({ remote: 'origin', branch: 'main' }, { paths: testPaths(), cwd: world.work, workingDirectory: world.work, home: world.home, roots: [world.work] }, { signal: aborted.signal, env: world.env, context: contextFor(world.work, world.env) })).rejects.toThrow('cancelled or ran out of time');
   });
 });

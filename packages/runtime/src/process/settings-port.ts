@@ -26,9 +26,10 @@ export type SettingsComposition = {
   sessionCreateSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   sessionReadSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   keptLayers(use: SettingsUse): KeptLayers;
-  envFor(session: Session): ToolEnv;
+  envFor(session: Session, signal: AbortSignal): Promise<ToolEnv>;
   takeUserSnapshot(): UserSnapshot;
-  admitUserSnapshot(): UserSnapshot;
+  userSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
+  admitUserSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
   loadSessionSettings(cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult>;
   trustOracle: TrustOracle;
   admitted<T>(admit: () => Promise<T> | T): Promise<T>;
@@ -63,8 +64,10 @@ export const createSettingsComposition = ({ home, platform, cache, store, signal
 
   const takeUserSnapshot = (): UserSnapshot => cache.read();
 
-  const admitUserSnapshot = (): UserSnapshot => {
-    const snapshot = cache.snapshot();
+  const userSnapshot = (signal: AbortSignal): Promise<UserSnapshot> => cache.loadOrKeep(signal);
+
+  const admitUserSnapshot = async (signal: AbortSignal): Promise<UserSnapshot> => {
+    const snapshot = await cache.load(signal);
     if ('error' in snapshot) throw refusalOf(snapshot.error);
     return { settings: snapshot.settings, user: snapshot.user };
   };
@@ -75,6 +78,8 @@ export const createSettingsComposition = ({ home, platform, cache, store, signal
     loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, signal, user: snapshot.user, kept: keptLayers(use) });
 
   const loadSessionSettings = (cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult> => settingsFor(cwd, snapshot, 'read', lifetime);
+
+  const currentSessionSettings = async (cwd: string): Promise<LoadSettingsResult> => loadSessionSettings(cwd, await userSnapshot(lifetime));
 
   const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const { permissions } = loaded.settings;
@@ -93,31 +98,31 @@ export const createSettingsComposition = ({ home, platform, cache, store, signal
   };
 
   const sessionCreateSettings = async (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => {
-    const snapshot = admitUserSnapshot();
+    const snapshot = await admitUserSnapshot(signal);
     return sessionSettingsFrom(snapshot, await admitted(() => settingsFor(cwd, snapshot, 'admit', signal)), signal);
   };
 
   const sessionReadSettings = async (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => {
-    const snapshot = takeUserSnapshot();
+    const snapshot = await userSnapshot(signal);
     return sessionSettingsFrom(snapshot, await settingsFor(cwd, snapshot, 'read', signal), signal);
   };
 
-  const envFor = (session: Session): ToolEnv => {
-    const { settings: userSettings } = takeUserSnapshot();
+  const envFor = async (session: Session, signal: AbortSignal): Promise<ToolEnv> => {
+    const { settings: userSettings } = await userSnapshot(signal);
     return Object.freeze(stripCredentialEnv(session.env, credentialEnvNames(userSettings.models), userSettings.credentials).env);
   };
 
   const settings: SettingsPort = {
-    rules: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).rules,
-    hooks: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.hooks,
-    verification: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.verification,
-    memory: async (target) => (await loadSessionSettings(target.cwd, takeUserSnapshot())).settings.memory,
-    context: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.context,
-    tools: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.tools,
+    rules: async (session) => (await currentSessionSettings(session.cwd)).rules,
+    hooks: async (session) => (await currentSessionSettings(session.cwd)).settings.hooks,
+    verification: async (session) => (await currentSessionSettings(session.cwd)).settings.verification,
+    memory: async (target) => (await currentSessionSettings(target.cwd)).settings.memory,
+    context: async (session) => (await currentSessionSettings(session.cwd)).settings.context,
+    tools: async (session) => (await currentSessionSettings(session.cwd)).settings.tools,
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
     appendRule: (session, { effect, rule }, signal) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect, signal }),
-    trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
+    trusted: async (session) => (await store.trust.decisionAsked(session.cwd, lifetime)).decision === 'trusted',
   };
 
-  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, takeUserSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle, admitted };
+  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle, admitted };
 };

@@ -53,6 +53,7 @@ export type {
   ChatCompletionsEndpoint,
 } from './adapters/chat-completions/types.ts';
 export { createManagedTarget } from './managed/target.ts';
+export { MODEL_NOT_LISTED_YET, managedConnectionPlace, managedModelName } from './managed/name.ts';
 export type { ExecWithStdinFn, ManagedTarget, ManagedTargetOptions } from './managed/target.ts';
 export type { KeywordSupport } from './dialect/keyword-support.ts';
 export type { UserDialects } from './dialect/choice.ts';

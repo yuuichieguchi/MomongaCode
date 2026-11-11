@@ -364,7 +364,7 @@ const drive = async (
   const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform, ...(toolLess ? { tools: 'none' as const } : {}) });
   const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
   const systemPromptDigest = sha256Hex(systemPrompt);
-  const env = tools.envFor(session);
+  const env = await tools.envFor(session, control.signal);
   const skills = await options.skills.load(session);
   const admit = createSkillAdmission(() => ctx);
   const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name), admit });
@@ -374,7 +374,7 @@ const drive = async (
   const toolSet = await tools.toolSet(run.id, {
     signal: control.signal,
     env,
-    additionalTools: [activationTool, agentTool, ...recalled.tools, ...options.history.load(session).tools, ...options.governance.load(session).tools].filter(
+    additionalTools: [activationTool, agentTool, ...recalled.tools, ...(await options.history.load(session)).tools, ...(await options.governance.load(session)).tools].filter(
       (tool) => tool !== undefined,
     ),
     ...(agentPin?.tools === undefined ? {} : { only: agentPin.tools }),

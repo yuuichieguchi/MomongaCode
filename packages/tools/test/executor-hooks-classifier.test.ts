@@ -109,6 +109,29 @@ describe('PreToolUse hooks in the permission gate', () => {
   });
 });
 
+describe('a PostToolUse hook set that fails after the effect', () => {
+  it('completes the call with a note and leaves no pending record', async () => {
+    const harness = makeHarness();
+    const executed: string[] = [];
+    const hooks: ToolHooks = {
+      matchesPreToolUse: () => false,
+      preToolUse: async () => undefined,
+      postToolUse: async () => {
+        throw new Error('the hook runner lost its marker directory');
+      },
+    };
+    const rules = [ruleFor(harness.layout)('allow', 'Bash(make build)')];
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
+    expect(outcomes).toMatchObject([
+      { callId: 'c1', kind: 'result', result: { status: 'completed', output: 'built\n\n[PostToolUse hook]\nthe PostToolUse hooks failed (the hook runner lost its marker directory), so what they check was not checked' } },
+    ]);
+    expect(executed).toEqual(['run']);
+    const begun = harness.idempotency.log.filter((entry) => entry.op === 'begin').map((entry) => entry.key);
+    expect(begun).toHaveLength(1);
+    expect(harness.idempotency.port.get(begun[0] as string)).toMatchObject({ s: 'COMPLETED' });
+  });
+});
+
 describe('questions only a person may answer: protected writes and removal of the workspace', () => {
   const commandTool = (command: string, executed: string[]) =>
     makeTool('Bash', {

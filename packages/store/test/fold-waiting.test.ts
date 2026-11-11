@@ -3,9 +3,9 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import { callEvent, enqueue, harness, mustClaim, newSession } from './helpers.ts';
 
 describe('tool.waiting', () => {
-  it('records what a call awaits without changing its status, and ignores job.finished', () => {
+  it('records what a call awaits without changing its status, and ignores job.finished', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     store.append(claim, [
       callEvent('c1'),
@@ -17,9 +17,9 @@ describe('tool.waiting', () => {
     expect(state.pendingCalls['c1']).toMatchObject({ status: 'started', awaiting: { kind: 'run', runId: 'child', agent: 'helper' } });
   });
 
-  it('survives a snapshot round trip', () => {
+  it('survives a snapshot round trip', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     store.append(claim, [callEvent('c1'), { type: 'tool.waiting', callId: 'c1', awaits: { kind: 'job', jobId: 'bash_x' } }]);
     const state = store.readRunEvents(run.id, 0, 100).reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));

@@ -32,7 +32,7 @@ describe('a provider that stayed unreachable for the gateway retry window is a t
   it('records attempt.failed with provider_unavailable and yields the run to QUEUED on the first claim', async () => {
     const env = await makeEnv();
     env.gateway.script.push(throwing(unreachable()));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -46,7 +46,7 @@ describe('a provider that stayed unreachable for the gateway retry window is a t
   it('ends the run FAILED under the attempt limit rule, naming the last unreachable-provider failure, once the attempts are exhausted', async () => {
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: 3 });
     env.gateway.script.push(throwing(unreachable()), throwing(unreachable()), throwing(unreachable()));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       expect(await env.runOnce(env.worker(`worker-${attempt}`))).toBe('yielded');

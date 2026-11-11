@@ -186,7 +186,7 @@ const drive = async (seed: number) => {
   };
   env.gateway.script.push(...plan.script);
   env.gateway.compactSummaries.push(...plan.summaries);
-  const run = env.enqueue('Drive the context', plan.maxSteps === undefined ? {} : { limits: { maxSteps: plan.maxSteps } });
+  const run = await env.enqueue('Drive the context', plan.maxSteps === undefined ? {} : { limits: { maxSteps: plan.maxSteps } });
   const tools = (): AnyTool[] => [bigTool(), grepTool, ...env.toolbox.tools().filter((tool) => tool.name === 'Echo')];
   for (let claim = 0; claim < 12 && !TERMINAL.has(env.run(run.id).status); claim += 1) {
     const current = env.run(run.id);

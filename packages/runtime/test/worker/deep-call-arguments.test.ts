@@ -42,7 +42,7 @@ const runTreeCall = async (depth: number): Promise<{ env: Env; runId: string; re
   const env = await makeEnv();
   const received: unknown[] = [];
   env.gateway.script.push(outputStep([treeCall(depth)]), textStep('Done.'));
-  const run = env.enqueue('Send a tree');
+  const run = await env.enqueue('Send a tree');
   await env.runOnce(env.worker('w1', { toolList: () => [...env.toolbox.tools(), treeTool(received)] }));
   return { env, runId: run.id, received };
 };

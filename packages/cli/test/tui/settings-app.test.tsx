@@ -19,7 +19,7 @@ const openRow = async (started: Started, label: string, shown: string | RegExp):
 };
 
 const realPort = async (place: Place): Promise<TuiSettingsPort> => ({
-  initial: (await loadUserSettings({ home: place.home })).settings.tui,
+  initial: (await loadUserSettings({ home: place.home, signal: new AbortController().signal })).settings.tui,
   save: (name, value, signal) => writeTuiSetting(place.home, place.userFile, name, value, { signal }),
 });
 
@@ -263,7 +263,7 @@ describe('/config, the settings screen', () => {
     await press(started, '2', '› 2. scrollback');
     await press(started, KEYS.enter, `Screen mode at start  scrollback  user  ${APPLIES_NEXT_SESSION}`);
     expect(stored(place.userFile)).toEqual({ tui: { mouse: false, copyOnSelect: false, screen: 'scrollback' } });
-    expect((await loadUserSettings({ home: place.home })).settings.tui).toMatchObject({ mouse: false, copyOnSelect: false, screen: 'scrollback' });
+    expect((await loadUserSettings({ home: place.home, signal: new AbortController().signal })).settings.tui).toMatchObject({ mouse: false, copyOnSelect: false, screen: 'scrollback' });
     started.app.unmount();
   });
 

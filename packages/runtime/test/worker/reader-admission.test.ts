@@ -60,7 +60,7 @@ const envFor = async (observedCapacity: boolean): Promise<Env> => {
 describe.for([false, true])('the reader of the replaced range joins the admitted tool list at the first compaction (observed capacity %s)', (observedCapacity) => {
   it('is dropped at admission, because no range was replaced yet, and carried by the next request after the compaction', async () => {
     const env = await envFor(observedCapacity);
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     await env.seed(run.id, history(), 'release');
     env.gateway.compactSummaries.push(SUMMARY);
     env.gateway.script.push(callsStep([{ callId: 'call_pad_1', name: 'Pad', args: {} }]), textStep('Done.'));
@@ -77,7 +77,7 @@ describe.for([false, true])('the reader of the replaced range joins the admitted
 
   it('journals the join as a tool load when the admitted list was frozen', async () => {
     const env = await envFor(observedCapacity);
-    const run = env.enqueue('question one');
+    const run = await env.enqueue('question one');
     await env.seed(run.id, history(), 'release');
     env.gateway.compactSummaries.push(SUMMARY);
     env.gateway.script.push(callsStep([{ callId: 'call_pad_1', name: 'Pad', args: {} }]), textStep('Done.'));

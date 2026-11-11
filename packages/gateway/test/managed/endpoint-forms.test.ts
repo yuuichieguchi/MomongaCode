@@ -34,11 +34,11 @@ describe('the endpoint forms of a managed server are data (design-update 18.2.6,
     expect(FM_SERVER.endpoint).toEqual({ forms: ['unix'] });
   });
 
-  it('refuses a description with no offered form with the text of 18.2.6', () => {
-    expect(() => requireOfferedEndpointForm(accepting(['unix']), ['pipe'], 'models.connections[0]')).toThrow(
-      'models.connections[0]: server "loom" accepts only the endpoint forms [unix], and this host offers [pipe]; the target cannot be used on this platform',
+  it('refuses a description with no offered form, naming the platform and both lists of forms', () => {
+    expect(() => requireOfferedEndpointForm(accepting(['unix']), { platform: 'win32', forms: ['pipe'] }, 'models.connections[0]')).toThrow(
+      'models.connections[0]: the server "loom" cannot be used on win32: it accepts only the socket forms [unix], and win32 offers [pipe]',
     );
-    expect(() => requireOfferedEndpointForm(accepting(['unix', 'pipe']), [], 'models.connections[0]')).toThrow('accepts only the endpoint forms [unix, pipe], and this host offers []');
+    expect(() => requireOfferedEndpointForm(accepting(['unix', 'pipe']), { platform: 'linux', forms: [] }, 'models.connections[0]')).toThrow('it accepts only the socket forms [unix, pipe], and linux offers []');
   });
 
   it('places a pipe instance at pipePathFor(home, g<N>-managed-<stem>) and leaves a unix instance at its socket file', () => {
@@ -54,7 +54,7 @@ describe.skipIf(process.platform === 'win32')('a server declared in the user set
     const home = makeHome();
     writeSettings(home, declaring(undefined));
 
-    const { settings } = await loadUserSettings({ home });
+    const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
 
     expect(registeredServer(settings.models.servers, 'loom')?.endpoint).toEqual({ forms: ['unix'] });
   });
@@ -63,7 +63,7 @@ describe.skipIf(process.platform === 'win32')('a server declared in the user set
     const home = makeHome();
     writeSettings(home, declaring({ forms: ['pipe', 'unix'] }));
 
-    const { settings } = await loadUserSettings({ home });
+    const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
 
     expect(registeredServer(settings.models.servers, 'loom')?.endpoint).toEqual({ forms: ['pipe', 'unix'] });
   });
@@ -73,16 +73,16 @@ describe.skipIf(process.platform === 'win32')('a server declared in the user set
     writeSettings(home, declaring({ forms: ['pipe'] }));
     const file = fs.realpathSync(path.join(home, '.momonga', 'settings.json'));
 
-    const refusal = await loadUserSettings({ home }).catch((error: unknown) => error);
+    const refusal = await loadUserSettings({ home, signal: new AbortController().signal }).catch((error: unknown) => error);
 
     expect(refusal).toBeInstanceOf(ConfigError);
-    expect((refusal as Error).message).toContain(`${file}: models.connections[0]: server "loom" accepts only the endpoint forms [pipe], and this host offers [unix]; the target cannot be used on this platform`);
+    expect((refusal as Error).message).toContain(`${file}: models.connections[0]: the server "loom" cannot be used on ${process.platform}: it accepts only the socket forms [pipe], and ${process.platform} offers [unix]`);
   });
 
   it('refuses an endpoint form that is not one of unix and pipe by the schema', async () => {
     const home = makeHome();
     writeSettings(home, declaring({ forms: ['tcp'] }));
 
-    expect(await loadUserSettings({ home }).catch((error: unknown) => error)).toBeInstanceOf(ConfigError);
+    expect(await loadUserSettings({ home, signal: new AbortController().signal }).catch((error: unknown) => error)).toBeInstanceOf(ConfigError);
   });
 });

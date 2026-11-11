@@ -38,8 +38,8 @@ describe('config passes an explicit env to momongaLayout', () => {
   it('in loadUserSettings and the user settings cache', async () => {
     layoutCalls.length = 0;
     const tree = makeTree();
-    await loadUserSettings({ home: tree.home });
-    createUserSettingsCache({ home: tree.home, onWarning: () => {}, keptRecords: noKeptRecords }).get();
+    await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    await createUserSettingsCache({ home: tree.home, onWarning: () => {}, keptRecords: noKeptRecords }).load(new AbortController().signal);
     expectExplicitEnv();
   });
 

@@ -6,24 +6,24 @@ import path from 'node:path';
 const leaseGeneration = (dbPath: string, runId: string): unknown => rawDb(dbPath).prepare('SELECT lease_generation FROM runs WHERE id = ?').get(runId)?.['lease_generation'];
 
 describe('runs.lease_generation (17.3, 20.37)', () => {
-  it('is written by claim with the generation the store was opened for', () => {
+  it('is written by claim with the generation the store was opened for', async () => {
     const { dbPath, store } = harness({ generation: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     expect(leaseGeneration(dbPath, run.id)).toBeNull();
     mustClaim(store, 'w1');
     expect(leaseGeneration(dbPath, run.id)).toBe(1);
   });
 
-  it('is null for a claim by a store opened without a generation', () => {
+  it('is null for a claim by a store opened without a generation', async () => {
     const { dbPath, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     expect(leaseGeneration(dbPath, run.id)).toBeNull();
   });
 
   it('is cleared by release', async () => {
     const { dbPath, store } = harness({ generation: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     await store.release(mustClaim(store, 'w1'), 'QUEUED', START_MS);
     expect(leaseGeneration(dbPath, run.id)).toBeNull();
     expect(mustRun(store, run.id).leaseOwner).toBeNull();
@@ -31,7 +31,7 @@ describe('runs.lease_generation (17.3, 20.37)', () => {
 
   it('is cleared by releaseLease, and the attempt is refunded as before', async () => {
     const { dbPath, store } = harness({ generation: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const result = await store.releaseLease(mustClaim(store, 'w1'), { availableAt: START_MS, refundAttempt: true });
     expect(result.kind).toBe('ok');
     expect(leaseGeneration(dbPath, run.id)).toBeNull();
@@ -40,7 +40,7 @@ describe('runs.lease_generation (17.3, 20.37)', () => {
 
   it('is cleared by the terminal transition', async () => {
     const { dbPath, store } = harness({ generation: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const result = await store.transition(mustClaim(store, 'w1'), ['RUNNING'], 'COMPLETED');
     expect(result.kind).toBe('ok');
     expect(leaseGeneration(dbPath, run.id)).toBeNull();
@@ -48,7 +48,7 @@ describe('runs.lease_generation (17.3, 20.37)', () => {
 
   it('is cleared by the dead letter', async () => {
     const { clock, dbPath, store } = harness({ generation: 1, maxAttempts: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS + 1);
     expect(await deadLetterAll(store)).toEqual([run.id]);
@@ -57,7 +57,7 @@ describe('runs.lease_generation (17.3, 20.37)', () => {
 
   it('is cleared by finishCancelled', async () => {
     const { clock, dbPath, store } = harness({ generation: 1 });
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS + 1);
     rawDb(dbPath).prepare("UPDATE runs SET status = 'QUEUED', lease_owner = NULL, lease_expires_at = NULL WHERE id = ?").run(run.id);
@@ -71,7 +71,7 @@ describe('runs.lease_generation (17.3, 20.37)', () => {
     const clock = createFakeClock(START_MS);
     const first = openStoreAt(dbPath, clock, { generation: 1 });
     const second = openStoreAt(dbPath, clock, { generation: 2 });
-    const run = enqueue(first, newSession(first).id);
+    const run = await enqueue(first, newSession(first).id);
     const stale = mustClaim(first, 'w1');
     clock.advance(LEASE_MS + 1);
     const taken = mustClaim(second, 'w2');

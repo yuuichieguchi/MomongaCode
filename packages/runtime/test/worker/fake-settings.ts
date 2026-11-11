@@ -53,7 +53,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
         settings.stored.push({ effect: entry.effect, rule: entry.rule });
       }
     },
-    trusted: () => settings.trustedValue,
+    trusted: async () => settings.trustedValue,
   };
   return settings;
 };

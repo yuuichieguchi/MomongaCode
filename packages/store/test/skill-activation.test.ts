@@ -15,8 +15,8 @@ const foldAll = (payloads: readonly RunEventPayload[]): RunState =>
     initialRunState(IDS),
   );
 
-const createRun = (store: RuntimeStore, sessionId: string, skill?: { name: string; content: string }) => {
-  const result = store.createRunAndEnqueue(sessionId, {
+const createRun = async (store: RuntimeStore, sessionId: string, skill?: { name: string; content: string }) => {
+  const result = await store.createRunAndEnqueue(sessionId, {
     input: 'use the skill',
     timeoutMs: TIMEOUT_MS,
     limits: {},
@@ -62,19 +62,19 @@ describe('skill.activated in the fold', () => {
 });
 
 describe('explicit skill activation at run creation', () => {
-  it('appends skill.activated right after the user message', () => {
+  it('appends skill.activated right after the user message', async () => {
     const { store } = harness();
     const session = newSession(store);
-    const run = createRun(store, session.id, { name: 'pdf', content: '<skill_content name="pdf">x</skill_content>' });
+    const run = await createRun(store, session.id, { name: 'pdf', content: '<skill_content name="pdf">x</skill_content>' });
     expect(store.readRunEvents(run.id, 0, 10).map((event) => event.type)).toEqual(['user.message', 'skill.activated']);
     const loaded = store.load(run.id);
     const state = loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
     expect(state.activatedSkills).toEqual([{ name: 'pdf', content: '<skill_content name="pdf">x</skill_content>', seq: 2 }]);
   });
 
-  it('appends nothing extra without a skill', () => {
+  it('appends nothing extra without a skill', async () => {
     const { store } = harness();
-    const run = createRun(store, newSession(store).id);
+    const run = await createRun(store, newSession(store).id);
     expect(store.readRunEvents(run.id, 0, 10).map((event) => event.type)).toEqual(['user.message']);
   });
 });
@@ -83,10 +83,10 @@ describe('skill inheritance across runs of a session', () => {
   it('carries the activated skills into the next run and keeps the next run explicit activation', async () => {
     const { store } = harness({ leaseMs: 10 * TIMEOUT_MS, inheritance: true });
     const session = newSession(store);
-    createRun(store, session.id, { name: 'pdf', content: 'pdf body' });
+    await createRun(store, session.id, { name: 'pdf', content: 'pdf body' });
     await finish(store, mustClaim(store, 'w1'));
 
-    const second = createRun(store, session.id, { name: 'review', content: 'review body' });
+    const second = await createRun(store, session.id, { name: 'review', content: 'review body' });
     const claim = mustClaim(store, 'w1');
     expect((await store.inheritContext(claim, { mode: 'manual' })).kind).not.toBe('conflict');
 
@@ -103,9 +103,9 @@ describe('skill inheritance across runs of a session', () => {
   it('keeps one copy when the next run activates a skill that was inherited', async () => {
     const { store } = harness({ leaseMs: 10 * TIMEOUT_MS, inheritance: true });
     const session = newSession(store);
-    createRun(store, session.id, { name: 'pdf', content: 'pdf body' });
+    await createRun(store, session.id, { name: 'pdf', content: 'pdf body' });
     await finish(store, mustClaim(store, 'w1'));
-    const second = createRun(store, session.id, { name: 'pdf', content: 'changed body' });
+    const second = await createRun(store, session.id, { name: 'pdf', content: 'changed body' });
     await store.inheritContext(mustClaim(store, 'w1'), { mode: 'manual' });
     const state = store.readRunEvents(second.id, 0, 100).reduce(foldRunState, initialRunState({ runId: second.id, sessionId: second.sessionId }));
     expect(state.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body', seq: 3 }]);
@@ -114,9 +114,9 @@ describe('skill inheritance across runs of a session', () => {
   it('does not add the field when no skill was activated', async () => {
     const { store } = harness({ leaseMs: 10 * TIMEOUT_MS, inheritance: true });
     const session = newSession(store);
-    createRun(store, session.id);
+    await createRun(store, session.id);
     await finish(store, mustClaim(store, 'w1'));
-    const second = createRun(store, session.id);
+    const second = await createRun(store, session.id);
     await store.inheritContext(mustClaim(store, 'w1'), { mode: 'manual' });
     const inherited = store.readRunEvents(second.id, 0, 100).find((event) => event.type === 'context.inherited');
     expect(inherited).toBeDefined();
@@ -125,9 +125,9 @@ describe('skill inheritance across runs of a session', () => {
 });
 
 describe('skill snapshots', () => {
-  it('round-trips activated skills through a snapshot', () => {
+  it('round-trips activated skills through a snapshot', async () => {
     const { store } = harness();
-    const run = createRun(store, newSession(store).id, { name: 'pdf', content: 'pdf body' });
+    const run = await createRun(store, newSession(store).id, { name: 'pdf', content: 'pdf body' });
     const claim = mustClaim(store, 'w1');
     const events = store.readRunEvents(run.id, 0, 100);
     const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));

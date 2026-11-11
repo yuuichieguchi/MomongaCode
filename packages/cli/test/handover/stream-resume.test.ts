@@ -35,13 +35,13 @@ const setup = (context: Parameters<typeof withTempDir>[0], frames: readonly RunE
 };
 
 const watch = (s: ReturnType<typeof setup>, format: OutputFormat, after: number | undefined) =>
-  watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format, verbose: false, interrupt: new AbortController().signal, ...(after === undefined ? {} : { after }) });
+  watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format, verbose: false, interrupt: new AbortController().signal, onInterrupt: 'cancel', ...(after === undefined ? {} : { after }) });
 
 describe('a stream client continues after the last event it wrote (16.7, red test 19)', () => {
-  it('writes no line twice in the text format', async (context) => {
+  it('writes the whole answer once in the text format: the process before it wrote none of it, because the run had not ended', async (context) => {
     const s = setup(context, FRAMES);
     expect(await watch(s, 'text', 3)).toBe(0);
-    expect(s.stdout.join('')).toBe('three\nfour\n');
+    expect(s.stdout.join('')).toBe('one\ntwo\nthree\nfour\n');
   });
 
   it('writes the same text as a client that never moved', async (context) => {
@@ -49,7 +49,7 @@ describe('a stream client continues after the last event it wrote (16.7, red tes
     await watch(whole, 'text', undefined);
     const moved = setup(context, FRAMES);
     await watch(moved, 'text', 3);
-    expect(`one\ntwo\n${moved.stdout.join('')}`).toBe(whole.stdout.join(''));
+    expect(moved.stdout.join('')).toBe(whole.stdout.join(''));
   });
 
   it('builds the json result from the events, not from the memory of the old process', async (context) => {
@@ -87,7 +87,7 @@ describe('the quiet point and the record of a stream client (16.5, 16.7, O4)', (
         if (surface !== undefined) quietAtCheck.push(surface.quiet());
       },
     };
-    const watching = watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format: 'stream-json', verbose: true, interrupt: new AbortController().signal, move: { mover, kind: 'headless', recordFile: (session) => `/run/handover/${session}.json` } });
+    const watching = watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format: 'stream-json', verbose: true, interrupt: new AbortController().signal, onInterrupt: 'cancel', move: { mover, kind: 'headless', recordFile: (session) => `/run/handover/${session}.json` } });
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(quietAtCheck).toEqual([true, true, true, false, true]);
     const surface = surfaces[0];

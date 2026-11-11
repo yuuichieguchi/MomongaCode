@@ -29,6 +29,6 @@ describe('gateway unavailable (system timers)', () => {
       retryAfter: '1',
     });
     expect(errors).toEqual([]);
-    expect(store.listSessions()).toEqual([]);
+    expect(store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });
 });

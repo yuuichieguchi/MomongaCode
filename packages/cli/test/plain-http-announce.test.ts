@@ -30,10 +30,10 @@ describe('plain http to another computer, in the shell commands and headless', (
     expect(harness.out()).not.toContain('plain http');
   });
 
-  it('is printed by the load of headless and of the other shell commands', (context) => {
+  it('is printed by the load of headless and of the other shell commands', async (context) => {
     const { home } = homeWith(context, PLAIN);
     const written: string[] = [];
-    const models = shellModelsOf({ home, stderr: { write: (text) => void written.push(text) } });
+    const models = await shellModelsOf({ home, stderr: { write: (text) => void written.push(text) } }, new AbortController().signal);
     expect([...models.resolved.models.keys()]).toEqual(['gpu-box/m']);
     expect(written).toEqual([TEXT]);
   });

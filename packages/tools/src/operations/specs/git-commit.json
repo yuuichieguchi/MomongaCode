@@ -24,12 +24,12 @@
   ],
   "effect": { "argv": ["git", "commit", "-q", "--cleanup=verbatim", "-m", "{input.message}"] },
   "applied": [
-    ["after.headParent", "before.head"],
+    { "ifObserved": "before.head", "then": [["after.headParent", "before.head"]], "else": [["after.headParent", { "literal": "" }]] },
     ["after.headTree", "before.indexTree"],
     ["after.headMessage", "input.message"]
   ],
   "unchanged": [
-    ["after.head", "before.head"],
+    { "ifObserved": "before.head", "then": [["after.head", "before.head"]], "else": [["after.head", { "literal": "" }]] },
     ["after.indexTree", "before.indexTree"]
   ],
   "guard": "compare_and_set",

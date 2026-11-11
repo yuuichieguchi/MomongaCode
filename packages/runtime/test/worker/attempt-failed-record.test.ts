@@ -48,7 +48,7 @@ describe('the failing worker records attempt.failed before it yields to QUEUED (
   it.each(REQUEUED)('after %s, attempt.failed {attempt, code, retryAt, limit} is the event immediately before RUNNING -> QUEUED', async (_label, failure, code) => {
     const env = await makeEnv();
     env.gateway.script.push(failure(), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -62,7 +62,7 @@ describe('the failing worker records attempt.failed before it yields to QUEUED (
     const env = await makeEnv();
     const lost = (): ScriptStep => gatewayErrorStep({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'the gateway connection was lost', provenNotSent: false });
     env.gateway.script.push(lost(), lost(), textStep('Recovered.'));
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
     env.clock.set(env.run(run.id).availableAt);
@@ -87,7 +87,7 @@ describe('the failing worker records attempt.failed before it yields to QUEUED (
       gatewayErrorStep({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'the gateway connection was lost', provenNotSent: false }),
       textStep('Done.'),
     );
-    const run = env.enqueue('Echo then finish');
+    const run = await env.enqueue('Echo then finish');
 
     await env.runOnce(first);
     await shutdown;
@@ -114,7 +114,7 @@ describe('a crash between attempt.failed and the yield (RunRecord FailedBeforeYi
       gatewayErrorStep({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'the gateway connection was lost', provenNotSent: false }),
       textStep('Recovered.'),
     );
-    const run = env.enqueue('Work');
+    const run = await env.enqueue('Work');
     const crash = new Error('the process died before the yield');
     const dying = new Proxy(env.store, {
       get: (target, key, receiver) => {

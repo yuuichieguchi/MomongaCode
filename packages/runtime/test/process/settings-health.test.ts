@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { chatTargetSettings, createRun, createSession, makeRuntimeFixture, signalNever, writeInvalidUserSettings, writeJson, writeProjectSettings, writeUserSettings } from './helpers.ts';
 import type { RuntimeFixture } from './helpers.ts';
+import { NEVER_CANCELLED } from '@momonga/testkit';
 
 const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   try {
@@ -42,7 +43,7 @@ const LAYERS: readonly Layer[] = [
 const prepared = async (layer: Layer, allow: string): Promise<RuntimeFixture> => {
   const f = await makeRuntimeFixture();
   writeUserSettings(f.temp.home, {});
-  f.store.trust.set(f.temp.project, 'trusted');
+  await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
   layer.write(f, { permissions: { allow: [allow] }, memory: { forgetAfterDays: 30 } });
   return f;
 };
@@ -59,7 +60,7 @@ describe.each(LAYERS)('one rule for the $name settings file (SettingsHealth)', (
     breakFile(layer.fileOf(f));
 
     expect(await ruleTexts(f, session)).toEqual(['Bash(ls)']);
-    expect((await f.composition.settings.hooks(session))).toEqual({});
+    expect(await f.composition.settings.hooks(session)).toEqual({});
     expect((await f.composition.settings.memory({ cwd: f.temp.project })).forgetAfterDays).toBe(30);
   });
 
@@ -94,13 +95,15 @@ describe('the in-run readers of the user file all keep the last good copy (Setti
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { ...chatTargetSettings('UPSTREAM_KEY'), autoMode: { classifier: 'x' } });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
-    const runId = createRun(f.store, session.id);
+    const runId = await createRun(f.store, session.id);
+    await f.cache.load(signalNever());
     expect(f.composition.settings.autoModeClassifier()).toBe('x');
 
     writeInvalidUserSettings(f.temp.home);
+    expect('error' in (await f.cache.load(signalNever()))).toBe(true);
 
-    expect(f.composition.envFor(session)).toEqual({ PLAIN: '1' });
-    expect(f.toolRuntime.port.envFor(session)).toEqual({ PLAIN: '1' });
+    expect(await f.composition.envFor(session, signalNever())).toEqual({ PLAIN: '1' });
+    expect(await f.toolRuntime.port.envFor(session, signalNever())).toEqual({ PLAIN: '1' });
     expect(f.composition.settings.autoModeClassifier()).toBe('x');
     await expect(f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) })).resolves.toBeDefined();
   });
@@ -110,9 +113,11 @@ describe('the memory upkeep pass has no Run and never throws on a broken file (S
   it('reads forgetAfterDays from the last good user copy after the user file broke', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { memory: { forgetAfterDays: 12 } });
+    await f.cache.load(signalNever());
     expect(f.composition.takeUserSnapshot().settings.memory.forgetAfterDays).toBe(12);
 
     writeInvalidUserSettings(f.temp.home);
+    expect('error' in (await f.cache.load(signalNever()))).toBe(true);
 
     expect(f.composition.takeUserSnapshot().settings.memory.forgetAfterDays).toBe(12);
     expect((await f.composition.settings.memory({ cwd: f.temp.project })).forgetAfterDays).toBe(12);

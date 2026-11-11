@@ -49,18 +49,18 @@ describe('the claim start folds the reports of the meter counter and reads only 
     env.gateway.chainsByModel['twin-model'] = [PRIMARY_TARGET];
     env.gateway.chainsByModel['other-model'] = [OTHER_TARGET];
     env.gateway.script.push(...threeSteps('a'));
-    const first = env.enqueue('First task');
+    const first = await env.enqueue('First task');
     await env.runOnce(env.worker());
     env.gateway.script.push(...threeSteps('c'));
-    const third = env.enqueue('Second task');
+    const third = await env.enqueue('Second task');
     await env.runOnce(env.worker());
     env.setModel('twin-model');
     env.gateway.script.push(...threeSteps('t'));
-    const twin = env.enqueue('Task for the twin model with a longer text than the others');
+    const twin = await env.enqueue('Task for the twin model with a longer text than the others');
     await env.runOnce(env.worker());
     env.setModel('other-model');
     env.gateway.script.push(...threeSteps('b'));
-    const other = env.enqueue('Task for the other model, whose first target counts with another counter');
+    const other = await env.enqueue('Task for the other model, whose first target counts with another counter');
     await env.runOnce(env.worker());
     env.setModel(aliasOf);
 
@@ -84,7 +84,7 @@ describe('the claim start folds the reports of the meter counter and reads only 
     const streamsBefore = env.gateway.streams.length;
     const { store, returned } = countingUntilFirstRequest(env);
     env.gateway.script.push(textStep('New run done.'));
-    const next = env.enqueue('The new task');
+    const next = await env.enqueue('The new task');
     await env.runOnce(env.worker('worker-2', { store }));
 
     expect(env.run(next.id).status).toBe('COMPLETED');

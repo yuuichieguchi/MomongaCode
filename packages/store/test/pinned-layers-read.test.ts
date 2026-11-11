@@ -29,7 +29,7 @@ const readSteps = async (payloads: readonly RunEventPayload[]): Promise<{ steps:
       },
     },
   });
-  enqueue(h.store, newSession(h.store).id);
+  await enqueue(h.store, newSession(h.store).id);
   const claim = mustClaim(h.store, 'w1');
   expect(h.store.append(claim, [...payloads]).kind).toBe('ok');
   expect((await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');

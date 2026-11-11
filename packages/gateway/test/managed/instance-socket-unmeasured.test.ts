@@ -49,7 +49,7 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that coul
     const refused = await readJson(await postJson(client, '/v1/responses', { model: `${TARGET}/system`, input: userInput('hello') }));
     expect(refused.status).toBe(412);
     expect(refused.body.error.code).toBe(TARGET_NOT_READY);
-    expect(refused.body.error.message).toBe(`the model "system": a socket path of ${Buffer.byteLength(socket)} bytes could not be tested in ${directory}: EACCES`);
+    expect(refused.body.error.message).toBe(`the model "${TARGET}/system": a socket path of ${Buffer.byteLength(socket)} bytes could not be tested in ${directory}: EACCES`);
     expect(fs.existsSync(socket)).toBe(false);
     expect(fs.existsSync(instanceMarkers(home, `${TARGET}${FIRST_INCARNATION_SUFFIX}`))).toBe(false);
   });

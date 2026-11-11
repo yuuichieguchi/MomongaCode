@@ -1,10 +1,11 @@
+import type { StoredRenames } from './stored-names.ts';
+
 export const MOMONGA_ATTRIBUTES = {
   runId: 'momonga.run_id',
   step: 'momonga.step',
   attempt: 'momonga.attempt',
   retryOf: 'momonga.retry_of',
   billing: 'momonga.billing',
-  cacheWriteInputTokens: 'momonga.usage.cache_write_input_tokens',
   usageSource: 'momonga.usage_source',
   target: 'momonga.target',
   role: 'momonga.role',
@@ -13,6 +14,10 @@ export const MOMONGA_ATTRIBUTES = {
   toolBackendSource: 'tool.backend.source',
   toolBackendVersion: 'tool.backend.version',
 } as const;
+
+export const SPAN_ATTRIBUTE_RENAMES: StoredRenames = {
+  'momonga.usage.cache_write_input_tokens': 'gen_ai.usage.cache_creation.input_tokens',
+};
 
 export const ERROR_TYPE_ATTRIBUTE = 'error.type';
 

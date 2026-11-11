@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DEADLINE_MS, LEASE_MS, START_MS, cancel, enqueue, harness, mustClaim, mustRun, newSession, payloadOf } from './helpers.ts';
 import type { Harness } from './helpers.ts';
 
-const takenOverTwice = ({ clock, store }: Harness) => {
-  const run = enqueue(store, newSession(store).id);
+const takenOverTwice = async ({ clock, store }: Harness) => {
+  const run = await enqueue(store, newSession(store).id);
   mustClaim(store, 'w1');
   clock.advance(LEASE_MS + 1);
   mustClaim(store, 'w2');
@@ -15,7 +15,7 @@ const takenOverTwice = ({ clock, store }: Harness) => {
 describe('release with refundAttempt', () => {
   it('gives back the attempt and resets failed_attempts', async () => {
     const fixture = harness();
-    const { run, claim } = takenOverTwice(fixture);
+    const { run, claim } = await takenOverTwice(fixture);
     expect(mustRun(fixture.store, run.id)).toMatchObject({ attempts: 3, failedAttempts: 2 });
 
     const result = await fixture.store.release(claim, 'QUEUED', START_MS + 5000, { refundAttempt: true });
@@ -26,7 +26,7 @@ describe('release with refundAttempt', () => {
 
   it('lets the next claim reuse the refunded attempt number', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const first = mustClaim(store, 'w1');
     expect(first.attempt).toBe(1);
     await store.release(first, 'QUEUED', clock.now(), { refundAttempt: true });
@@ -37,7 +37,7 @@ describe('release with refundAttempt', () => {
 describe('releaseLease', () => {
   it('moves a RUNNING run back to QUEUED, clears the lease and sets available_at', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     const before = mustRun(store, run.id);
     clock.advance(10);
@@ -62,7 +62,7 @@ describe('releaseLease', () => {
 
   it('refunds the attempt from RUNNING when asked', async () => {
     const fixture = harness();
-    const { run, claim } = takenOverTwice(fixture);
+    const { run, claim } = await takenOverTwice(fixture);
 
     const result = await fixture.store.releaseLease(claim, { availableAt: fixture.clock.now(), refundAttempt: true });
 
@@ -72,7 +72,7 @@ describe('releaseLease', () => {
 
   it('keeps a CANCELLING run CANCELLING with the lease cleared so the next claim takes the cancel path', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     await cancel(store, run.id);
     const before = mustRun(store, run.id);
@@ -100,7 +100,7 @@ describe('releaseLease', () => {
 
   it('returns lease_lost for a stale claim and leaves the run alone', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const stale = mustClaim(store, 'w1');
     clock.advance(LEASE_MS + 1);
     const fresh = mustClaim(store, 'w2');
@@ -114,7 +114,7 @@ describe('releaseLease', () => {
 
   it('returns lease_lost once the run has already been released', async () => {
     const { clock, store } = harness();
-    enqueue(store, newSession(store).id);
+    await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     expect(await store.releaseLease(claim, { availableAt: clock.now() })).toMatchObject({ kind: 'ok' });
     expect(await store.releaseLease(claim, { availableAt: clock.now() })).toEqual({ kind: 'lease_lost' });
@@ -124,7 +124,7 @@ describe('releaseLease', () => {
 describe('deadline sweep of QUEUED runs', () => {
   it('stops a QUEUED run whose deadline has passed with timeout', async () => {
     const { clock, store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const before = mustRun(store, run.id);
 
     expect(await store.expireApprovals(DEADLINE_MS - 1, (error: unknown) => { throw error; })).toEqual([]);
@@ -143,10 +143,10 @@ describe('deadline sweep of QUEUED runs', () => {
 
   it('stops a requeued run that waits past its deadline but leaves RUNNING runs to their worker', async () => {
     const { clock, store } = harness();
-    const requeued = enqueue(store, newSession(store, '/a').id);
+    const requeued = await enqueue(store, newSession(store, '/a').id);
     await store.release(mustClaim(store, 'w1'), 'QUEUED', DEADLINE_MS + 10);
     clock.advance(1);
-    const running = enqueue(store, newSession(store, '/b').id);
+    const running = await enqueue(store, newSession(store, '/b').id);
     mustClaim(store, 'w2');
 
     expect(await store.expireApprovals(DEADLINE_MS + 1, (error: unknown) => { throw error; })).toEqual([requeued.id]);

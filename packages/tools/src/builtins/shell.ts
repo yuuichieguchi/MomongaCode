@@ -1,27 +1,44 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import type { Awaitable, FileSystem, FileSystemSync } from '@momonga/foundation';
+import type { ChildPorts } from '../ports.ts';
+
+export type ExecutableCheck = (file: string) => Awaitable<boolean>;
 
 export type ShellPorts = {
-  isExecutable(file: string): boolean;
+  isExecutable: ExecutableCheck;
   env: Readonly<Record<string, string | undefined>>;
 };
 
-export const nodeShellPorts = (): ShellPorts => ({
-  isExecutable: (file) => {
+export type ShellHost = { platform: NodeJS.Platform; isExecutable: ExecutableCheck; child: ChildPorts };
+
+export type ShellPortsNow = { isExecutable(file: string): boolean; env: ShellPorts['env'] };
+
+const absentOrThrown = (error: unknown): false => {
+  if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+  throw error;
+};
+
+export const executableCheckOn =
+  (files: Pick<FileSystem, 'access' | 'stat'>): ExecutableCheck =>
+  async (file) => {
     try {
-      fs.accessSync(file, fs.constants.X_OK);
-      return fs.statSync(file).isFile();
+      await files.access(file, 'execute');
+      return (await files.stat(file)).isFile();
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-      throw error;
+      return absentOrThrown(error);
     }
-  },
-  env: process.env,
-});
+  };
 
-export type ShellHost = { platform: NodeJS.Platform; isExecutable(file: string): boolean };
-
-export const nodeShellHost = (): ShellHost => ({ platform: process.platform, isExecutable: nodeShellPorts().isExecutable });
+export const executableCheckNowOn =
+  (files: Pick<FileSystemSync, 'accessSync' | 'statSync'>): ShellPortsNow['isExecutable'] =>
+  (file) => {
+    try {
+      files.accessSync(file, 'execute');
+      return files.statSync(file).isFile();
+    } catch (error) {
+      return absentOrThrown(error);
+    }
+  };
 
 export class ShellNotFoundError extends Error {
   constructor(message: string) {
@@ -38,28 +55,34 @@ const pathEntries = (env: ShellPorts['env']): string[] => {
   return raw === undefined ? [] : raw.split(';').filter((entry) => entry !== '');
 };
 
-const gitForWindowsBash = (ports: ShellPorts): string | undefined => {
-  for (const directory of pathEntries(ports.env)) {
-    const git = path.win32.join(directory, 'git.exe');
-    if (!ports.isExecutable(git)) continue;
-    let ancestor = directory;
-    for (let level = 0; level < GIT_ANCESTOR_LEVELS; level += 1) {
-      const bash = path.win32.join(ancestor, 'bin', 'bash.exe');
-      if (ports.isExecutable(bash)) return bash;
-      ancestor = path.win32.dirname(ancestor);
-    }
-  }
-  return undefined;
-};
-
-export const resolveBashPath = (platform: NodeJS.Platform = process.platform, ports: ShellPorts = nodeShellPorts()): string => {
+function* bashPathAsking(platform: NodeJS.Platform, env: ShellPorts['env']): Generator<string, string, boolean> {
   if (platform === 'darwin') return '/bin/bash';
   if (platform === 'win32') {
-    const bash = gitForWindowsBash(ports);
-    if (bash === undefined) throw new ShellNotFoundError('Bash needs Git for Windows: no bin\\bash.exe was found next to a git.exe on PATH; install Git for Windows and put git.exe on PATH');
-    return bash;
+    for (const directory of pathEntries(env)) {
+      if (!(yield path.win32.join(directory, 'git.exe'))) continue;
+      let ancestor = directory;
+      for (let level = 0; level < GIT_ANCESTOR_LEVELS; level += 1) {
+        const bash = path.win32.join(ancestor, 'bin', 'bash.exe');
+        if (yield bash) return bash;
+        ancestor = path.win32.dirname(ancestor);
+      }
+    }
+    throw new ShellNotFoundError('Bash needs Git for Windows: no bin\\bash.exe was found next to a git.exe on PATH; install Git for Windows and put git.exe on PATH');
   }
-  const found = POSIX_BASH_CANDIDATES.find((candidate) => ports.isExecutable(candidate));
-  if (found === undefined) throw new ShellNotFoundError(`Bash needs bash at ${POSIX_BASH_CANDIDATES.join(' or ')}; install bash`);
-  return found;
+  for (const candidate of POSIX_BASH_CANDIDATES) if (yield candidate) return candidate;
+  throw new ShellNotFoundError(`Bash needs bash at ${POSIX_BASH_CANDIDATES.join(' or ')}; install bash`);
+}
+
+export const resolveBashPath = async (platform: NodeJS.Platform, ports: ShellPorts): Promise<string> => {
+  const asking = bashPathAsking(platform, ports.env);
+  let turn = asking.next();
+  while (turn.done !== true) turn = asking.next(await ports.isExecutable(turn.value));
+  return turn.value;
+};
+
+export const resolveBashPathNow = (platform: NodeJS.Platform, ports: ShellPortsNow): string => {
+  const asking = bashPathAsking(platform, ports.env);
+  let turn = asking.next();
+  while (turn.done !== true) turn = asking.next(ports.isExecutable(turn.value));
+  return turn.value;
 };

@@ -15,9 +15,9 @@ const chargesOf = (store: RuntimeStore): Charges => {
   return found;
 };
 
-const setup = () => {
+const setup = async () => {
   const { store } = harness();
-  const run = enqueue(store, newSession(store).id);
+  const run = await enqueue(store, newSession(store).id);
   return { run, charges: chargesOf(store) };
 };
 
@@ -33,20 +33,20 @@ const charge = (overrides: Partial<ChargeInput> = {}): ChargeInput => ({
 });
 
 describe('context charges', () => {
-  it('stores a charge of a run with its clock time', () => {
-    const { run, charges } = setup();
+  it('stores a charge of a run with its clock time', async () => {
+    const { run, charges } = await setup();
     const input = charge({ runId: run.id });
     expect(charges.record(input)).toEqual({ ...input, id: 1, createdAt: START_MS });
     expect(charges.list()).toEqual([{ ...input, id: 1, createdAt: START_MS }]);
   });
 
-  it('stores a charge with no run, which is how context improve is billed', () => {
-    const { charges } = setup();
+  it('stores a charge with no run, which is how context improve is billed', async () => {
+    const { charges } = await setup();
     expect(charges.record(charge({ purpose: 'guideline' }))).toMatchObject({ purpose: 'guideline', runId: null });
   });
 
-  it('filters by run and by project', () => {
-    const { run, charges } = setup();
+  it('filters by run and by project', async () => {
+    const { run, charges } = await setup();
     charges.record(charge({ runId: run.id }));
     charges.record(charge({ project: '/work/b', purpose: 'guideline' }));
     expect(charges.list({ runIds: [run.id] }).map((entry) => entry.project)).toEqual(['/work/a']);
@@ -54,8 +54,8 @@ describe('context charges', () => {
     expect(charges.list({ runIds: [] })).toEqual([]);
   });
 
-  it('records one response id once: the same charge again returns the stored one, a different charge for the id fails naming it, and charges without an id repeat freely', () => {
-    const { run, charges } = setup();
+  it('records one response id once: the same charge again returns the stored one, a different charge for the id fails naming it, and charges without an id repeat freely', async () => {
+    const { run, charges } = await setup();
     const withId = (responseId: string, runId: string | null = null, extra: Record<string, unknown> = {}) => ({ ...charge({ runId }), detail: { responseId, ...extra } });
     const first = charges.record(withId('resp_1') as never);
 
@@ -73,15 +73,15 @@ describe('context charges', () => {
     expect(charges.list()).toHaveLength(4);
   });
 
-  it('does not take another constraint failure of a charge with a response id for a duplicate', () => {
-    const { charges } = setup();
+  it('does not take another constraint failure of a charge with a response id for a duplicate', async () => {
+    const { charges } = await setup();
     expect(() => charges.record({ ...charge({ inputTokens: -1 }), detail: { responseId: 'resp_9' } } as never)).toThrowError(
       expect.not.objectContaining({ name: 'DuplicateChargeError' }),
     );
   });
 
-  it('refuses an unknown purpose and a negative count', () => {
-    const { charges } = setup();
+  it('refuses an unknown purpose and a negative count', async () => {
+    const { charges } = await setup();
     expect(() => charges.record(charge({ purpose: 'compaction' }))).toThrow();
     expect(() => charges.record(charge({ inputTokens: -1 }))).toThrow();
     expect(charges.list()).toEqual([]);

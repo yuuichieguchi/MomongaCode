@@ -14,7 +14,7 @@ import type { SettingsPort, ToolRuntimePort, UserInputPort } from '../ports.ts';
 import { holdSandbox } from '../worker/held-sandbox.ts';
 
 export type UserInputOptions = {
-  tools: Pick<ToolRuntimePort, 'envFor' | 'policyFor' | 'sandboxes' | 'sessionState'>;
+  tools: Pick<ToolRuntimePort, 'envFor' | 'policyFor' | 'sandboxes' | 'sessionState' | 'shellHost'>;
   policy: UserPolicy;
   store: Pick<RuntimeStore, 'governing'>;
   settings: Pick<SettingsPort, 'rules' | 'trusted'>;
@@ -57,7 +57,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
   const factsFor = async (session: Session, signal: AbortSignal): Promise<UserPolicyFacts> => {
     const held = await holdSandbox(tools.sandboxes, signal);
     try {
-      const env = tools.envFor(session);
+      const env = await tools.envFor(session, signal);
       const rules = await permissionRulesFor({ store, settings, clock, home }, session);
       const policy = await tools.policyFor(session, { env, rules, ruleEnforcement: held.ruleEnforcement, signal });
       return { home, roots: policy.roots, tmpDir: policy.tmpDir, env, session: tools.sessionState(session), signal, rules, sandboxPolicy: policy.sandboxPolicy };
@@ -69,7 +69,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
   return {
     attach: async (session, text, { ceiling, imageInput, signal }) => {
       const facts = await factsFor(session, signal);
-      const trusted = settings.trusted(session);
+      const trusted = await settings.trusted(session);
       const host: AttachHost = {
         ceiling,
         imageInput,
@@ -88,6 +88,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
         command,
         cwd: facts.session.cwd,
         env: facts.env,
+        shellHost: tools.shellHost,
         signal: io.signal,
         refusal: (asked) => policy.userRefusal({ tool: 'Bash', command: asked }, facts),
         spawn: (spawned, signal) => unsandboxed.spawn(spawned, facts.sandboxPolicy, signal),

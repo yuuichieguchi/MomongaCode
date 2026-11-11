@@ -8,6 +8,7 @@ export const OPEN_FLAGS = {
   create: fs.constants.O_CREAT,
   exclusive: fs.constants.O_EXCL,
   nonBlocking: fs.constants.O_NONBLOCK,
+  noFollow: noFollowFlag(),
 } as const;
 
 export type DirectoryIdentity = { dev: bigint; ino: bigint };
@@ -17,6 +18,8 @@ export type AccessCheck = 'exists' | 'execute' | 'list';
 export type DirectoryReader = { read(): Promise<string | null>; close(): Promise<void> };
 
 export type RemoveOptions = { readonly recursive: boolean };
+
+export type ReadHandle = { stat(): Promise<fs.Stats>; read(page: Uint8Array): Promise<number>; close(): Promise<void> };
 
 export interface FileSystem extends AtomicWriteFileSystem {
   rm(file: string, options?: RemoveOptions): Promise<void>;
@@ -34,6 +37,10 @@ export interface FileSystem extends AtomicWriteFileSystem {
   readlink(file: string): Promise<string>;
   readlinkBytes(file: string): Promise<Uint8Array>;
   readStart(file: string, bytes: number): Promise<Uint8Array>;
+  readRange(file: string, position: number, length: number): Promise<Uint8Array>;
+  openRead(file: string, flags: number): Promise<ReadHandle>;
+  makeDirectory(directory: string): Promise<void>;
+  removeEmptyDirectory(directory: string): Promise<void>;
   realpath(file: string): Promise<string>;
   openDirectory(directory: string): Promise<DirectoryReader>;
   cp(from: string, to: string): Promise<void>;
@@ -158,6 +165,31 @@ export const nodeFileSystem: FileSystem = {
       await handle.close();
     }
   },
+  readRange: async (file, position, length) => {
+    const handle = await fs.promises.open(file, 'r');
+    try {
+      const buffer = Buffer.alloc(length);
+      let filled = 0;
+      while (filled < length) {
+        const { bytesRead } = await handle.read(buffer, filled, length - filled, position + filled);
+        if (bytesRead === 0) break;
+        filled += bytesRead;
+      }
+      return buffer.subarray(0, filled);
+    } finally {
+      await handle.close();
+    }
+  },
+  openRead: async (file, flags) => {
+    const handle = await fs.promises.open(file, flags);
+    return {
+      stat: () => handle.stat(),
+      read: async (page) => (await handle.read(page, 0, page.length, null)).bytesRead,
+      close: () => handle.close(),
+    };
+  },
+  makeDirectory: async (directory) => void (await fs.promises.mkdir(directory)),
+  removeEmptyDirectory: (directory) => fs.promises.rmdir(directory),
   realpath: (file) => fs.promises.realpath(file),
   openDirectory: async (directory) => {
     const handle = await fs.promises.opendir(directory);

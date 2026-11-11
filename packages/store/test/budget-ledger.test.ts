@@ -20,8 +20,8 @@ const PRICE = { inUnits: 3_000_000n, outUnits: 15_000_000n };
 
 const ask = (over: Partial<AdmissionAsk> = {}): AdmissionAsk => ({ inputUpper: 1000, outputWanted: 4000, outputFloor: 256, price: PRICE, limits: { tokens: 100_000, costNano: 100_000 }, ...over });
 
-const spawn = (store: RuntimeStore, parent: Run, callId: string) => {
-  const result = store.createChildRun({ parentRunId: parent.id, parentCallId: callId, input: 'child task', pins: { agent: { name: 'helper' } }, model: 'fm' });
+const spawn = async (store: RuntimeStore, parent: Run, callId: string) => {
+  const result = await store.createChildRun({ parentRunId: parent.id, parentCallId: callId, input: 'child task', pins: { agent: { name: 'helper' } }, model: 'fm' });
   if (result.kind !== 'created') throw new Error(`expected a child run, got ${result.kind}`);
   return result.run;
 };
@@ -39,9 +39,9 @@ describe('migration 37 holds the reservation of a run', () => {
 });
 
 describe('the spend of a run folds money beside tokens', () => {
-  it('adds the cost of a priced response in nano-USD rounded up, and counts an unpriced one', () => {
+  it('adds the cost of a priced response in nano-USD rounded up, and counts an unpriced one', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     store.append(claim, [started, ...responded(1, 10, { cost: { amount: 0.0000015004, currency: 'USD', priceVersion: '2026-01-01' } })]);
     expect(mustRun(store, run.id).usage).toEqual({ inputTokens: 9, outputTokens: 1, totalTokens: 10, costNano: 1501 });
@@ -50,9 +50,9 @@ describe('the spend of a run folds money beside tokens', () => {
     expect(mustRun(store, run.id).usage).toEqual({ inputTokens: 17, outputTokens: 3, totalTokens: 20, costNano: 2501, unpricedCalls: 1 });
   });
 
-  it('keeps the usage of a run with no priced call as it was before, with no money fields', () => {
+  it('keeps the usage of a run with no priced call as it was before, with no money fields', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     store.append(claim, [started, ...responded(1, 10)]);
     expect(mustRun(store, run.id).usage).toEqual({ inputTokens: 9, outputTokens: 1, totalTokens: 10 });
@@ -61,28 +61,28 @@ describe('the spend of a run folds money beside tokens', () => {
 });
 
 describe('admission of a model request is one transaction over the run tree', () => {
-  it('reserves the worst case of the admitted request on the run, and shows it to the rest of the tree', () => {
+  it('reserves the worst case of the admitted request on the run, and shows it to the rest of the tree', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     expect(store.admitModelRequest(claim, ask())).toEqual({ kind: 'admitted', maxOutputTokens: 4000, reservedTokens: 5000, reservedNano: 63_000 });
     expect(store.treeSpend(run.id)).toMatchObject({ reservedTokens: 5000, reservedNano: 63_000 });
   });
 
-  it('replaces the reservation of the same run instead of adding to it, so a request admitted again after a crash is counted once', () => {
+  it('replaces the reservation of the same run instead of adding to it, so a request admitted again after a crash is counted once', async () => {
     const { store } = harness();
-    const run = enqueue(store, newSession(store).id);
+    const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     store.admitModelRequest(claim, ask());
     expect(store.admitModelRequest(claim, ask())).toMatchObject({ kind: 'admitted', maxOutputTokens: 4000 });
     expect(store.treeSpend(run.id)).toMatchObject({ reservedTokens: 5000, reservedNano: 63_000 });
   });
 
-  it('lets two runs of one tree together reserve no more than the limit', () => {
+  it('lets two runs of one tree together reserve no more than the limit', async () => {
     const h = harness();
-    const parent = enqueue(h.store, newSession(h.store).id);
+    const parent = await enqueue(h.store, newSession(h.store).id);
     const parentClaim = mustClaim(h.store, 'w-parent');
-    const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
+    const child = await spawn(h.store, mustRun(h.store, parent.id), 'call-1');
     const childClaim = mustClaim(h.store, 'w-child');
     expect(childClaim.runId).toBe(child.id);
     const limits = { costNano: 100_000 };
@@ -97,7 +97,7 @@ describe('admission of a model request is one transaction over the run tree', ()
 
   it('releases the reservation when asked, and no longer counts the reservation of a run that ended', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     h.store.admitModelRequest(claim, ask());
     h.store.releaseBudget(run.id);
@@ -109,9 +109,9 @@ describe('admission of a model request is one transaction over the run tree', ()
     expect(h.store.treeSpend(run.id)).toMatchObject({ reservedTokens: 0, reservedNano: 0 });
   });
 
-  it('answers lease_lost to a worker that no longer holds the run, and reserves nothing', () => {
+  it('answers lease_lost to a worker that no longer holds the run, and reserves nothing', async () => {
     const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
+    const run = await enqueue(h.store, newSession(h.store).id);
     const stale = mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS);
     mustClaim(h.store, 'w2');
@@ -121,15 +121,15 @@ describe('admission of a model request is one transaction over the run tree', ()
 });
 
 describe('the retries of a run are bounded by its own limit under the store maximum', () => {
-  const enqueueWith = (store: RuntimeStore, limits: Record<string, unknown>): Run => {
-    const result = store.createRunAndEnqueue(newSession(store).id, { input: 'hello', timeoutMs: TIMEOUT_MS, limits, pins: { model: 'fm' } });
+  const enqueueWith = async (store: RuntimeStore, limits: Record<string, unknown>): Promise<Run> => {
+    const result = await store.createRunAndEnqueue(newSession(store).id, { input: 'hello', timeoutMs: TIMEOUT_MS, limits, pins: { model: 'fm' } });
     if (result.kind !== 'created') throw new Error(`expected a run, got ${result.kind}`);
     return result.run;
   };
 
   it('dead-letters a run after its own number of consecutive failed attempts, naming that number', async () => {
     const h = harness({ maxAttempts: 5 });
-    const run = enqueueWith(h.store, { maxFailedAttempts: 2 });
+    const run = await enqueueWith(h.store, { maxFailedAttempts: 2 });
     mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS);
     mustClaim(h.store, 'w2');
@@ -141,7 +141,7 @@ describe('the retries of a run are bounded by its own limit under the store maxi
 
   it('never lets the limit of a run raise the store maximum', async () => {
     const h = harness({ maxAttempts: 2 });
-    const run = enqueueWith(h.store, { maxFailedAttempts: 9 });
+    const run = await enqueueWith(h.store, { maxFailedAttempts: 9 });
     mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS);
     mustClaim(h.store, 'w2');

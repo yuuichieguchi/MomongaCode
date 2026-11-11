@@ -8,7 +8,7 @@ import type { MemoryRecord } from '@momonga/protocol';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeTimers, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeTimers, fakePolicyFilesystem, withTempDir, NEVER_CANCELLED } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { enqueue, harness, newSession } from '../../../store/test/helpers.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
@@ -52,7 +52,7 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
   const opened = harness();
   const { clock } = opened;
   const store = withInProcessFacts(opened.store, opened.dbPath);
-  store.trust.set(project, 'trusted');
+  await store.trust.setAsked(project, 'trusted', NEVER_CANCELLED);
   const session = newSession(store, project);
   const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
   const settings = {
@@ -60,7 +60,7 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
     verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled: true }, forgetAfterDays: 90 }),
   };
-  const run = enqueue(store, session.id, 'change a');
+  const run = await enqueue(store, session.id, 'change a');
   await finishClaimed(store, [
     ...fileTool('w1', 'Write', { path: path.join(project, 'a.ts'), sha256: 'a'.repeat(64), access: 'write' }),
     ...checked('npm test', 0, 'ok'),

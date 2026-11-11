@@ -34,7 +34,7 @@ const askTool = (released: Array<Record<string, unknown>>, beforeAsking: () => P
 
 const parkOnElicitation = async (env: Env, released: Array<Record<string, unknown>>, limits: Record<string, unknown> = {}) => {
   env.gateway.script.push(callsStep([{ callId: 'call_ask', name: 'Ask', args: {} }]));
-  const run = env.enqueue('Ask the user', { limits });
+  const run = await env.enqueue('Ask the user', { limits });
   await env.runOnce(env.worker('worker-1', { toolList: () => [askTool(released)] }));
   expect(env.run(run.id).status).toBe('WAITING_HUMAN');
   const key = env.fold(run.id).pendingCalls[env.gateway.callId('call_ask')]?.idemKey as string;
@@ -87,7 +87,7 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
   it('releases it when the run is cancelled after a crash left the request announced', async () => {
     const env = await makeEnv();
     const released: Array<Record<string, unknown>> = [];
-    const run = env.enqueue('Ask the user');
+    const run = await env.enqueue('Ask the user');
     const key = toolKey(run.id, 1, 'call_ask');
     const claim = await env.seed(
       run.id,
@@ -120,7 +120,7 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
     const env = await makeEnv();
     const released: Array<Record<string, unknown>> = [];
     env.gateway.script.push(callsStep([{ callId: 'call_ask', name: 'Ask', args: {} }]));
-    const run = env.enqueue('Ask the user');
+    const run = await env.enqueue('Ask the user');
     const cancelWhileAsking = async (): Promise<void> => {
       await env.cancel(run.id);
     };

@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, nodeFileSystem, systemRandom } from '@momonga/foundation';
 import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -498,7 +498,7 @@ export const openStore = (
   clock: FakeClock,
   extra: { notifier?: Notifier; maxAttempts?: number; preparer?: (dbPath: string, store: () => RuntimeStore) => ContributionPreparer; onDecode?: (rows: number, bytes: number) => void } = {},
 ): RuntimeStore => {
-  const store: RuntimeStore = openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,
@@ -762,7 +762,10 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const tracer = createFakeTracer();
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const executor = createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
+  const executor = createToolExecutor({
+    shellHost: nodeShellHost(),
+    random: systemRandom,
+    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
   const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });

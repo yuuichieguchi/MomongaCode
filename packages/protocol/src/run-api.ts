@@ -89,11 +89,11 @@ const inboxRowView = closed(
   {
     id: string,
     sessionId: string,
-    delivery: enumOf(INBOX_DELIVERIES),
+    delivery: storedEnumOf(INBOX_DELIVERIES),
     text: PROMPT_TEXT,
     images: { type: 'array', items: imageSummary },
     seq: { type: 'integer', minimum: 1 },
-    state: enumOf(INBOX_STATES),
+    state: storedEnumOf(INBOX_STATES),
     createdAt: integer,
     settledAt: nullable(integer),
   },
@@ -681,7 +681,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     },
     required: ['entries'],
   },
-  'mode.changed': { properties: { mode: permissionMode }, required: ['mode'] },
+  'mode.changed': { properties: { mode: storedPermissionMode }, required: ['mode'] },
   'model.changed': { properties: { model: { type: 'string', minLength: 1 }, previousModel: { type: 'string', minLength: 1 } }, required: ['model', 'previousModel'] },
   'inbox.changed': { properties: { pending: inboxPending }, required: ['pending'] },
   user_shell: { properties: { command: string, exitCode: nullable(integer), output: string, include: boolean }, required: ['command', 'exitCode', 'output', 'include'] },
@@ -817,7 +817,7 @@ const publicOpaqueVariant = (): JsonSchema =>
   );
 
 const trustView = closed(
-  { path: string, decision: { anyOf: [enumOf(['trusted', 'untrusted']), { type: 'null' }] }, inheritedFrom: string },
+  { path: string, decision: { anyOf: [storedEnumOf(['trusted', 'untrusted']), { type: 'null' }] }, inheritedFrom: string },
   ['path', 'decision'],
 );
 
@@ -1008,6 +1008,17 @@ const memoryEvidence: JsonSchema = {
         exitCode: integer,
       },
       ['kind', 'runId', 'conditionId', 'seq', 'command', 'exitCode'],
+    ),
+    closed(
+      {
+        kind: constant('check'),
+        runId: string,
+        modelCallId: string,
+        seq: nonNegativeInteger,
+        command: string,
+        exitCode: integer,
+      },
+      ['kind', 'runId', 'modelCallId', 'seq', 'command', 'exitCode'],
     ),
     unknownKind,
   ],
@@ -1325,6 +1336,10 @@ export type RunHealth = {
 export const DAEMON_CURRENT_EVENT = 'daemon.current';
 
 export type DaemonCurrentFrame = { generation: number; version: string };
+
+export const STREAM_FAILED_EVENT = 'stream.failed';
+
+export type StreamFailedFrame = { code: string; message: string };
 
 const planLabel: JsonSchema = { type: 'string', pattern: PLAN_LABEL_PATTERN };
 

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, nodeFileSystem } from '@momonga/foundation';
 import { walkFiles } from '../src/builtins/walk.ts';
 import { makeLayout } from './helpers.ts';
 
@@ -23,6 +23,7 @@ describe('walker canonicalisation of a symlinked file (OP-8 debt: node:fs spy un
     }) as typeof fs.promises.lstat);
     const walk = async (): Promise<void> => {
       for await (const _entry of walkFiles({
+        files: nodeFileSystem,
         root: layout.project,
         readDenied: [],
         readAllowed: undefined,

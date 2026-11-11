@@ -359,7 +359,7 @@ describe('mandatory lines wider than the cap', () => {
 describe('recovery', () => {
   const snapshotted = async (payloads: readonly RunEventPayload[]) => {
     const env = await makeEnv();
-    const run = env.enqueue('the original task');
+    const run = await env.enqueue('the original task');
     const claim = await env.seed(run.id, payloads, 'hold');
     const state = env.fold(run.id);
     expect(env.store.writeSnapshot(claim, state.lastSeq, state)).toEqual({ kind: 'ok' });

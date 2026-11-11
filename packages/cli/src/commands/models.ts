@@ -146,7 +146,7 @@ const printDocument = (shell: ModelsShell, document: ModelsDocument, json: boole
 
 export const listModels = async (shell: ModelsShell, options: { json: boolean }): Promise<number> => {
   const listing = await shell.listing();
-  const { resolved } = loadUserModels({ home: shell.home });
+  const { resolved } = await loadUserModels({ home: shell.home, signal: shell.interrupt });
   announcePlainHttp(shell, resolved.plainHttp);
   printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), new Set()), options.json);
   return 0;
@@ -171,7 +171,7 @@ export const notListedOf = async (shell: ModelsHost, resolved: ResolvedModels): 
 
 export const checkModels = async (shell: ModelsShell, options: { json: boolean }): Promise<number> => {
   const listing = await shell.listing();
-  const { resolved } = loadUserModels({ home: shell.home });
+  const { resolved } = await loadUserModels({ home: shell.home, signal: shell.interrupt });
   announcePlainHttp(shell, resolved.plainHttp);
   printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), await notListedOf(shell, resolved)), options.json);
   return 0;
@@ -282,8 +282,8 @@ export const modelsEditOf = async (shell: ModelsHost): Promise<ModelsEdit> => {
   const text = await shell.files.readTextIfPresent(shell.settingsFile);
   const document: unknown = text === undefined ? {} : parseOutsideJson(text);
   if (!isRecord(document)) throw new ShellRefusal(`${shell.settingsFile}: settings must be a JSON object`);
-  const { resolved } = loadUserModels({ home: shell.home });
-  return { document, resolved, displays: displayMapOf(resolved.views), ports: { kinds: SERVER_KINDS, home: shell.home } };
+  const { resolved } = await loadUserModels({ home: shell.home, signal: shell.interrupt });
+  return { document, resolved, displays: displayMapOf(resolved.views), ports: { kinds: SERVER_KINDS } };
 };
 
 export const displayIn = (edit: ModelsEdit, canon: string): string => edit.displays.get(canon) ?? canon;
@@ -826,7 +826,7 @@ export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input:
 
 export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, program: ServerProgram, signal: AbortSignal, onWarning: (message: string) => void): Promise<string> => {
   const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
-  const { settings } = await loadUserSettings({ home: ports.home });
+  const { settings } = await loadUserSettings({ home: ports.home, signal });
   const declared = 'builtIn' in program ? undefined : { [program.id]: { command: program.command, args: [...program.args], readyPath: program.readyPath } };
   const description = registeredServer(serverRegistryOf(declared, paths.settingsFile), program.id);
   if (description === undefined) throw new TypeError(`the server program ${program.id} is not in the registry of server programs`);
@@ -853,7 +853,7 @@ export const serversDetector =
   (ports: Pick<CliPorts, 'home' | 'exec' | 'files'>, fetch: OutboundFetch | typeof globalThis.fetch): ModelsShell['detect'] =>
   async (request) => {
     const { detectLocalServers } = await import('@momonga/gateway');
-    const { settings } = await loadUserSettings({ home: ports.home });
+    const { settings } = await loadUserSettings({ home: ports.home, signal: request.signal });
     return detectLocalServers({ ...request, fetch, ...localManagedPorts(settings.models.servers, ports) });
   };
 

@@ -5,7 +5,7 @@ import type { Harness } from './helpers.ts';
 const PLAN = { profile: 'chatgpt', account: 'work' };
 
 const failedRun = async (h: Harness, error: { code: string; message: string; plan?: { profile: string; account?: string } }): Promise<string> => {
-  const run = enqueue(h.store, newSession(h.store).id);
+  const run = await enqueue(h.store, newSession(h.store).id);
   const claim = mustClaim(h.store, 'w1');
   expect((await h.store.transition(claim, ['RUNNING'], 'FAILED', { error })).kind).toBe('ok');
   return run.id;

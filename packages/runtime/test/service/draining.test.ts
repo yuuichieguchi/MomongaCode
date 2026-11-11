@@ -47,7 +47,7 @@ describe('draining (fake timers)', () => {
     const env = await startService({ fakeTimers: true });
     env.service.beginDraining();
     expectDraining(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: { PATH: '/usr/bin:/bin' } } }));
-    expect(env.store.listSessions()).toEqual([]);
+    expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
     expect(env.ports.settingsCalls).toEqual([]);
   });
 

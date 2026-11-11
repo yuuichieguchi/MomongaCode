@@ -12,7 +12,7 @@ describe('telemetry.contentRetentionDays', () => {
   it('takes the user value', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: { captureMessageContent: true, contentRetentionDays: 7 } });
-    const result = await loadUserSettings({ home: tree.home });
+    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     expect(result.settings.telemetry).toEqual({ captureMessageContent: true, contentRetentionDays: 7 });
     expect(result.warnings).toEqual([]);
     expect(resolveTelemetrySettings(result.settings.telemetry)).toEqual({ captureMessageContent: true, contentRetentionDays: 7 });
@@ -21,8 +21,8 @@ describe('telemetry.contentRetentionDays', () => {
   it.each([0, -1, 1.5, '30'])('accepts a positive integer and rejects %j, naming the pointer', async (value) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: { contentRetentionDays: 1 } });
-    expect((await loadUserSettings({ home: tree.home })).settings.telemetry).toEqual({ contentRetentionDays: 1 });
+    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.telemetry).toEqual({ contentRetentionDays: 1 });
     writeJson(userSettingsPath(tree), { telemetry: { contentRetentionDays: value } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow('/telemetry/contentRetentionDays');
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/telemetry/contentRetentionDays');
   });
 });
