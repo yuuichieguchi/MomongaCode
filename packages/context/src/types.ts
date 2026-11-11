@@ -43,6 +43,7 @@ export type ContextSources = {
   systemPrompt: string;
   tools: readonly FunctionTool[];
   task: DeepReadonly<MessageInputItem>;
+  taskShell?: readonly string[];
   taskSeq: number;
   skillCatalog?: string;
   mandate?: string;

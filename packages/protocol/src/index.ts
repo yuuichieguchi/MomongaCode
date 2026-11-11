@@ -549,7 +549,7 @@ export type {
 } from './governance.ts';
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
-export { attachedFileText, attachmentText, imageDataUrl, userMessageContent, userShellText } from './user-content.ts';
+export { attachedFileText, attachmentText, imageDataUrl, includedShellTexts, userMessageContent, userShellText } from './user-content.ts';
 export type { UserMessageExtras } from './user-content.ts';
 export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
