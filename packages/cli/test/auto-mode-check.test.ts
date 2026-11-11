@@ -241,6 +241,15 @@ describe('auto-mode check over the embedded dataset', () => {
     expect(output.join('')).toContain('did not pass');
   });
 
+  it('with no classifier named or configured, refuses with the command and the setting that give one', async () => {
+    const state = fake();
+    const { ports } = portsFor(state.effects);
+    const { configuredClassifier: _configured, ...unconfigured } = ports;
+    await expect(autoModeCheck({ ...unconfigured, configuredClassifier: undefined }, { agent: WORKER, signal: NEVER_INTERRUPTED })).rejects.toThrow(
+      'no classifier model: name one with momonga auto-mode check <model>, or set autoMode.classifier in the user settings (/config in a session)',
+    );
+  });
+
   it('defaults the classifier to the configured autoMode.classifier', async () => {
     const state = fake();
     const { ports } = portsFor(state.effects);
