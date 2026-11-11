@@ -5,9 +5,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import type { SpanExporter } from '@opentelemetry/sdk-trace';
-import { GENAI_CONTENT_SEMCONV, createTelemetry, describeMoney, moneyTallyOf, openTraceStore } from '@momonga/observability';
-import type { BilledCall, BodyRecord, CallPrice, PriceTable, Telemetry, TraceStore } from '@momonga/observability';
+import { GENAI_CONTENT_SEMCONV, buildCostReport, createTelemetry, describeMoney, moneyTallyOf, openTraceStore, priceCall } from '@momonga/observability';
+import type { BilledCall, BodyRecord, CallPrice, CostReport, CostedRun, PriceTable, SpanRecord, Telemetry, TraceStore } from '@momonga/observability';
 import { billedCallOf, isBilledChat } from '../src/billed-calls.ts';
+import { MOMONGA_ATTRIBUTES } from '../src/semconv.ts';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 
@@ -94,12 +95,32 @@ export const CONTENT_KEYS = Object.values(GENAI_CONTENT_SEMCONV) as string[];
 
 const EVERY_BODY = Number.MAX_SAFE_INTEGER;
 
-export const billedCallsOfRun = (store: TraceStore, runId: string, table: PriceTable): BilledCall[] =>
-  store
-    .spansForRun(runId)
+export type BilledCallAtCallTime = BilledCall & { price: CallPrice };
+
+const priceAtCallTime = (span: SpanRecord, call: BilledCall, table: PriceTable): CallPrice => {
+  const usageSource = span.attributes[MOMONGA_ATTRIBUTES.usageSource];
+  if (usageSource === undefined) return { kind: 'not_recorded' };
+  if (usageSource !== 'reported' && usageSource !== 'estimated') throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.usageSource} must be reported or estimated, got ${String(usageSource)}`);
+  return priceCall({ provider: call.provider, model: call.model, billing: call.billing, usageSource, usage: call.usage, at: new Date(span.startMs), table });
+};
+
+const recordedAtCallTime = (runId: string, spans: readonly SpanRecord[], table: PriceTable): BilledCallAtCallTime[] =>
+  spans
     .filter(isBilledChat)
     .toSorted((left, right) => left.startMs - right.startMs || (left.spanId < right.spanId ? -1 : 1))
-    .map((span) => billedCallOf(runId, span, table));
+    .map((span) => {
+      const call = billedCallOf(runId, span);
+      return { ...call, price: priceAtCallTime(span, call, table) };
+    });
+
+export const billedCallsOfRun = (store: TraceStore, runId: string, table: PriceTable): BilledCallAtCallTime[] => recordedAtCallTime(runId, store.spansForRun(runId), table);
+
+export const costReportOfSpans = (store: TraceStore, runs: readonly CostedRun[], options: { table: PriceTable; includeRunless?: boolean }): CostReport =>
+  buildCostReport(
+    [...runs.flatMap((run) => billedCallsOfRun(store, run.runId, options.table)), ...(options.includeRunless === true ? recordedAtCallTime('', store.spansWithoutRun(), options.table) : [])],
+    runs,
+    options.includeRunless === undefined ? {} : { includeRunless: options.includeRunless },
+  );
 
 export const moneyLine = (outcomes: readonly CallPrice[]): string => describeMoney(moneyTallyOf(outcomes));
 

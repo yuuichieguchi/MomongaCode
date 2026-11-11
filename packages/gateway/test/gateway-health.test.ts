@@ -57,11 +57,11 @@ describe('GatewayOptions.onError', () => {
     const { client } = await startGateway({
       adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
       onError,
-      costReport: async () => {
+      billedCalls: async () => {
         throw failure;
       },
     });
-    const response = await readJson(await postJson(client, '/v1/momonga/cost', { runs: [], includeRunless: false }));
+    const response = await readJson(await postJson(client, '/v1/momonga/cost/calls', { runIds: [], cursor: { run: 0, after: 0 }, limit: 1, includeRunless: false }));
     expect(response.status).toBe(500);
     expectErrorBody(response.body, { type: 'server_error', code: 'internal_error' });
     expect(onError).toHaveBeenCalledTimes(1);

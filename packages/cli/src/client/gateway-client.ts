@@ -30,7 +30,6 @@ import type {
   PlanTargetRequest,
   PlanTargetResponse,
   TargetHealth,
-  UsageReport,
 } from '@momonga/protocol';
 
 export type GatewayAnswerBody = { code: string; message: string };
@@ -92,7 +91,6 @@ export type GatewayClient = {
   modelOf(model: string): Promise<MomongaModelEntry>;
   capabilitiesOf(model: string): Promise<MomongaModelEntry['capabilities']>;
   contextWindowOf(model: string): Promise<number>;
-  usageOf(runId: string): Promise<UsageReport>;
   contentOf(runId: string, request: { after: number; limit: number }): Promise<TraceContentPage>;
   health(): Promise<GatewayHealth>;
   readonly plan: PlanGatewayClient;
@@ -250,18 +248,6 @@ const modelsQuery = (request: PlanModelsRequest): string => new URLSearchParams(
 
 const accountRoute = (route: string, account: string): string => `${PLAN_API_PREFIX}${route.replace(':account', encodeURIComponent(account))}`;
 
-const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
-
-const isUsageReport = (value: unknown): value is UsageReport =>
-  isRecord(value) &&
-  typeof value['run_id'] === 'string' &&
-  Array.isArray(value['responses']) &&
-  Array.isArray(value['steps']) &&
-  isRecord(value['total']) &&
-  isCount(value['total']['input_tokens']) &&
-  isCount(value['total']['output_tokens']) &&
-  isCount(value['total']['total_tokens']);
-
 const retiredRefusalOf = (text: string): string | undefined => {
   const body = parsedBodyOf(text);
   const error = body.json && isRecord(body.value) ? body.value['error'] : undefined;
@@ -271,8 +257,6 @@ const retiredRefusalOf = (text: string): string | undefined => {
 const MODELS_PATH = '/v1/momonga/models';
 
 const MODEL_LIST_KIND = 'a model list';
-
-const USAGE_REPORT_KIND = 'a usage report';
 
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
   const http = createUdsClient(options.resolveSocket);
@@ -351,17 +335,10 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     return capabilities.contextWindow;
   };
 
-  const usageOf = async (runId: string): Promise<UsageReport> => {
-    const path = `/v1/momonga/usage?run_id=${encodeURIComponent(runId)}`;
-    const body = await getJson(path, USAGE_REPORT_KIND);
-    if (!isUsageReport(body)) throw new Error(malformedAnswerText('GET', path, USAGE_REPORT_KIND));
-    return body;
-  };
-
   const contentOf = async (runId: string, request: { after: number; limit: number }): Promise<TraceContentPage> => {
     const path = `/v1/momonga/content?${new URLSearchParams({ run_id: runId, after: String(request.after), limit: String(request.limit) }).toString()}`;
     return checkTraceContent(await getJson(path, 'a trace content page'), `GET ${path}`);
   };
 
-  return { modelList, models, modelOf, capabilitiesOf, contextWindowOf, usageOf, contentOf, health, plan, close: () => http.close() };
+  return { modelList, models, modelOf, capabilitiesOf, contextWindowOf, contentOf, health, plan, close: () => http.close() };
 };

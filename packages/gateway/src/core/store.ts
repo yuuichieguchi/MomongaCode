@@ -1,10 +1,10 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import { immediateTx, migrate, openDatabase } from '@momonga/foundation';
 import type { Migration } from '@momonga/foundation';
-import type { CompactResource, InputItem, ItemField, StreamEvent, UsageReport, UsageSource } from '@momonga/protocol';
+import type { CompactResource, InputItem, ItemField, StreamEvent } from '@momonga/protocol';
 import type { StoredDataChecks } from './validation.ts';
 
-const MIGRATIONS: readonly Migration[] = [
+export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
     name: 'gateway-core',
@@ -65,22 +65,19 @@ const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE usage ADD COLUMN retry_of_seq INTEGER;
     `,
   },
+  {
+    version: 4,
+    name: 'gateway-usage-removed',
+    sql: `
+      DROP INDEX usage_by_run;
+      DROP TABLE usage;
+    `,
+  },
 ];
 
 export type StoredResponse = { input: InputItem[]; output: ItemField[] };
 
 export type StoredIdempotency = { digest: string; storedAtMs: number; frames: StreamEvent[] };
-
-export type UsageRecord = {
-  responseId: string;
-  runId: string;
-  step: number | null;
-  target: string;
-  inputTokens: number;
-  outputTokens: number;
-  usageSource: UsageSource;
-  retryOfSeq: number | null;
-};
 
 export type SendRecord = { callKey: string; target: string; runId: string | null; step: number | null; sentAtMs: number };
 
@@ -95,7 +92,6 @@ export type CommitRequest = {
   idempotencyExpiredBeforeMs: number;
   response?: { id: string; input: InputItem[]; output: ItemField[] };
   idempotency?: { key: string; digest: string; frames: StreamEvent[] };
-  usage?: UsageRecord;
 };
 
 export type GatewayStore = {
@@ -107,7 +103,6 @@ export type GatewayStore = {
   getCompaction(key: string): StoredCompaction | undefined;
   deleteCompaction(key: string): void;
   commitCompaction(commit: CompactionCommit): void;
-  usageReport(runId: string): UsageReport;
   close(): void;
 };
 
@@ -144,11 +139,6 @@ const parseChecked = (json: string, location: RowLocation, check: (value: unknow
   return parsed;
 };
 
-const requireUsageSource = (value: unknown): UsageSource => {
-  if (value !== 'reported' && value !== 'estimated') throw new TypeError('gateway database column usage_source is invalid');
-  return value;
-};
-
 type Statements = {
   getResponse: StatementSync;
   putResponse: StatementSync;
@@ -160,11 +150,9 @@ type Statements = {
   putCompaction: StatementSync;
   deleteCompaction: StatementSync;
   pruneCompactions: StatementSync;
-  putUsage: StatementSync;
   firstSend: StatementSync;
   putSend: StatementSync;
   pruneSends: StatementSync;
-  usageForRun: StatementSync;
 };
 
 const prepare = (db: DatabaseSync): Statements => ({
@@ -180,15 +168,9 @@ const prepare = (db: DatabaseSync): Statements => ({
   ),
   deleteCompaction: db.prepare('DELETE FROM compactions WHERE key = ?'),
   pruneCompactions: db.prepare('DELETE FROM compactions WHERE expires_at <= ?'),
-  putUsage: db.prepare(
-    'INSERT INTO usage (response_id, run_id, step, target, input_tokens, output_tokens, total_tokens, usage_source, recorded_at_ms, retry_of_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-  ),
   firstSend: db.prepare('SELECT MIN(seq) AS seq FROM sends WHERE call_key = ?'),
   putSend: db.prepare('INSERT INTO sends (call_key, target, run_id, step, sent_at_ms) VALUES (?, ?, ?, ?, ?)'),
   pruneSends: db.prepare('DELETE FROM sends WHERE sent_at_ms <= ?'),
-  usageForRun: db.prepare(
-    'SELECT response_id, step, target, input_tokens, output_tokens, total_tokens, usage_source, retry_of_seq FROM usage WHERE run_id = ? ORDER BY seq',
-  ),
 });
 
 export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): GatewayStore => {
@@ -263,21 +245,6 @@ export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): Gate
             const { key, digest, frames } = request.idempotency;
             statements.putIdempotency.run(key, digest, request.recordedAtMs, JSON.stringify(frames));
           }
-          if (request.usage !== undefined) {
-            const usage = request.usage;
-            statements.putUsage.run(
-              usage.responseId,
-              usage.runId,
-              usage.step,
-              usage.target,
-              usage.inputTokens,
-              usage.outputTokens,
-              usage.inputTokens + usage.outputTokens,
-              usage.usageSource,
-              request.recordedAtMs,
-              usage.retryOfSeq,
-            );
-          }
         });
       },
       recordSend: (send) =>
@@ -286,39 +253,6 @@ export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): Gate
           const inserted = statements.putSend.run(send.callKey, send.target, send.runId, send.step, send.sentAtMs);
           return { seq: Number(inserted.lastInsertRowid), retryOfSeq: first === null || first === undefined ? undefined : requireNumber(first, 'seq') };
         }),
-      usageReport: (runId) => {
-        const responses = statements.usageForRun.all(runId).map((row) => {
-          const step = row['step'];
-          const retryOfSeq = row['retry_of_seq'];
-          return {
-            response_id: requireString(row['response_id'], 'response_id'),
-            step: step === null ? null : requireNumber(step, 'step'),
-            target: requireString(row['target'], 'target'),
-            input_tokens: requireNumber(row['input_tokens'], 'input_tokens'),
-            output_tokens: requireNumber(row['output_tokens'], 'output_tokens'),
-            total_tokens: requireNumber(row['total_tokens'], 'total_tokens'),
-            usage_source: requireUsageSource(row['usage_source']),
-            ...(retryOfSeq === null ? {} : { retry_of_seq: requireNumber(retryOfSeq, 'retry_of_seq') }),
-          };
-        });
-        const byStep = new Map<number, { input_tokens: number; output_tokens: number; total_tokens: number }>();
-        const total = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
-        for (const entry of responses) {
-          total.input_tokens += entry.input_tokens;
-          total.output_tokens += entry.output_tokens;
-          total.total_tokens += entry.total_tokens;
-          if (entry.step === null) continue;
-          const bucket = byStep.get(entry.step) ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
-          bucket.input_tokens += entry.input_tokens;
-          bucket.output_tokens += entry.output_tokens;
-          bucket.total_tokens += entry.total_tokens;
-          byStep.set(entry.step, bucket);
-        }
-        const steps = [...byStep.entries()]
-          .sort(([left], [right]) => left - right)
-          .map(([step, sums]) => ({ step, ...sums }));
-        return { run_id: runId, responses, steps, total };
-      },
       close: () => {
         db.close();
       },

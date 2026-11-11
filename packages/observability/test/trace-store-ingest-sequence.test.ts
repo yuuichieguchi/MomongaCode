@@ -65,7 +65,7 @@ describe('the ingest sequence of the trace store', () => {
     let cursor: { run: number; after: number } | undefined = { run: 0, after: 0 };
     let pages = 0;
     while (cursor !== undefined) {
-      const page: ReturnType<typeof pageBilledCalls> = pageBilledCalls(store, ['run-a', 'run-b'], TABLE, cursor, 2, true);
+      const page: ReturnType<typeof pageBilledCalls> = pageBilledCalls(store, ['run-a', 'run-b'], cursor, 2, true);
       seen.push(...page.calls.map((call) => call.usage.inputTokens));
       cursor = page.next;
       pages += 1;

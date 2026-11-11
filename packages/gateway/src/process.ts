@@ -84,9 +84,7 @@ import type {
 } from '@momonga/foundation';
 import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, nodeFileSystem, outboundFetch, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import {
-  buildCostReport,
   definePriceTable,
-  formatCostReport,
   createTelemetry,
   exportersFor,
   openTraceStore,
@@ -1461,15 +1459,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         traced.release();
       }
     };
-    const withPriceTable = async <T>(signal: AbortSignal, work: (priceTable: PriceTable) => Promise<T>): Promise<T> => {
-      const lease = await derivation.acquire(signal);
-      try {
-        return await work(lease.value.priceTable);
-      } finally {
-        lease.release();
-      }
-    };
-
     signal?.throwIfAborted();
     await role.refresh();
     const gateway = await createGateway({
@@ -1488,17 +1477,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       hmacKey,
       socketPath: own.sockets.gateway,
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),
-      costReport: (runs, includeRunless, requestSignal) =>
-        withPriceTable(requestSignal, async (table) => {
-          await flushTelemetry(requestSignal);
-          const report = buildCostReport(traceStore, runs, { table, includeRunless });
-          return { report, text: formatCostReport(report) };
-        }),
-      billedCalls: (runIds, cursor, limit, includeRunless, requestSignal) =>
-        withPriceTable(requestSignal, async (table) => {
-          await flushTelemetry(requestSignal);
-          return pageBilledCalls(traceStore, runIds, table, cursor, limit, includeRunless);
-        }),
+      billedCalls: async (runIds, cursor, limit, includeRunless, requestSignal) => {
+        await flushTelemetry(requestSignal);
+        return pageBilledCalls(traceStore, runIds, cursor, limit, includeRunless);
+      },
       traceContent: async (runId, after, limit, requestSignal) => {
         await flushTelemetry(requestSignal);
         return pageRunBodies(traceStore, runId, after, limit);

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import {
   buildCostBreakdown,
-  buildCostReport,
   definePriceTable,
   formatCostBreakdown,
   formatCostReport,
@@ -13,7 +12,8 @@ import {
   startChatSpan,
 } from '@momonga/observability';
 import type { BilledCall, BreakdownCall } from '@momonga/observability';
-import { harness, billedCallsOfRun } from './helpers.ts';
+import { harness, billedCallsOfRun, costReportOfSpans } from './helpers.ts';
+import type { BilledCallAtCallTime } from './helpers.ts';
 
 const AT = Date.parse('2026-07-10T00:00:00Z');
 
@@ -45,7 +45,7 @@ const record = async (runId: string, specs: readonly Spec[], h: ReturnType<typeo
   await h.telemetry.forceFlush();
 };
 
-const asBreakdownCall = (call: BilledCall): BreakdownCall => ({
+const asBreakdownCall = (call: BilledCallAtCallTime): BreakdownCall => ({
   runId: call.runId,
   provider: call.provider,
   model: call.model,
@@ -86,13 +86,14 @@ describe('billed calls of a plan target', () => {
     expect(call?.price).toEqual({ kind: 'unpriced', code: 'plan', reason: 'plan' });
   });
 
-  it('pages a plan call with the billing plan and the reason plan', async () => {
+  it('pages a plan call with the billing plan and no price: the price is the record of the call', async () => {
     const h = harness();
     await record('run-a', [{ billing: 'plan', input: 100, output: 10 }], h);
 
-    const page = pageBilledCalls(h.store, ['run-a'], TABLE, { run: 0, after: 0 }, 10, false);
+    const page = pageBilledCalls(h.store, ['run-a'], { run: 0, after: 0 }, 10, false);
 
-    expect(page.calls[0]).toMatchObject({ billing: 'plan', price: { kind: 'unpriced', code: 'plan', reason: 'plan' } });
+    expect(page.calls[0]).toMatchObject({ billing: 'plan' });
+    expect(page.calls[0]).not.toHaveProperty('price');
   });
 });
 
@@ -109,7 +110,7 @@ describe('the cost report on plan calls', () => {
       h,
     );
 
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
 
     expect(report.total).toMatchObject({
       calls: 3,
@@ -131,7 +132,7 @@ describe('the cost report on plan calls', () => {
     const h = harness();
     await record('run-a', [{ billing: 'plan', input: 300, output: 40 }], h);
 
-    const text = formatCostReport(buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE }));
+    const text = formatCostReport(costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE }));
 
     expect(text).toContain('plan usage, no per-token price: 1 call(s), 300 input + 40 output tokens');
     expect(text).not.toContain('no price entry');
@@ -142,7 +143,7 @@ describe('the cost report on plan calls', () => {
     const h = harness();
     await record('run-a', [{ billing: 'metered', input: 10, output: 1 }], h);
 
-    const text = formatCostReport(buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE }));
+    const text = formatCostReport(costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE }));
 
     expect(text).not.toContain('plan usage');
   });

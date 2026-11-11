@@ -36,7 +36,7 @@ const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | 
   return client;
 };
 
-const costOfRun = async (client: ReturnType<typeof createUdsClient>) => {
+const recordOfCall = async (client: ReturnType<typeof createUdsClient>): Promise<{ cost?: Record<string, unknown>; unpriced?: Record<string, unknown> }> => {
   const created = await client.request({
     method: 'POST',
     path: '/v1/responses',
@@ -44,39 +44,34 @@ const costOfRun = async (client: ReturnType<typeof createUdsClient>) => {
     body: JSON.stringify({ model: 'acme/local-fake', input: userInput('hi'), metadata: { run_id: 'run-1' } }),
   });
   expect(created.status).toBe(200);
-  await created.text();
-  const cost = await client.request({
-    method: 'POST',
-    path: '/v1/momonga/cost',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ runs: [{ runId: 'run-1', sessionId: 'session-1' }], includeRunless: false }),
-  });
-  expect(cost.status).toBe(200);
-  return (await cost.json()) as { report: { total: Record<string, unknown> } };
+  return ((await created.json()) as { momonga: { cost?: Record<string, unknown>; unpriced?: Record<string, unknown> } }).momonga;
 };
 
-describe('cost reporting with user-configured prices', () => {
+describe('the cost of a call is computed once, when it is answered, with the prices the user configured', () => {
   it('prices a call by the entry the user declared for its provider and model', async (context) => {
     const client = await startPricedGateway(context, [PRICE]);
-    const { report } = await costOfRun(client);
-    expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 0, amount: 17, currency: 'USD', priceVersions: ['2026-01-01'] });
+    const record = await recordOfCall(client);
+    expect(record.cost).toMatchObject({ amount: 17, currency: 'USD', priceVersion: '2026-01-01' });
+    expect(record.unpriced).toBeUndefined();
   });
 
-  it('keeps a call visible as unpriced when no price is declared', async (context) => {
+  it('answers a call as unpriced when no price is declared', async (context) => {
     const client = await startPricedGateway(context, undefined);
-    const { report } = await costOfRun(client);
-    expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 1, unpriced: { no_price_entry: 1 }, amount: null, priceVersions: [] });
+    const record = await recordOfCall(client);
+    expect(record.unpriced).toMatchObject({ code: 'no_price_entry' });
+    expect(record.cost).toBeUndefined();
   });
 
-  it('reports a call to a target the user declared local as local, at no cost and not as unpriced', async (context) => {
+  it('answers a call to a target the user declared local at no cost and not as unpriced', async (context) => {
     const client = await startPricedGateway(context, undefined, 'local');
-    const { report } = await costOfRun(client);
-    expect(report.total).toMatchObject({ calls: 1, localCalls: 1, unpricedCalls: 0, amount: 0, priceVersions: [] });
+    const record = await recordOfCall(client);
+    expect(record.cost).toMatchObject({ amount: 0, units: '0', priceVersion: 'local' });
+    expect(record.unpriced).toBeUndefined();
   });
 
-  it('keeps a call unpriced when the declared price is for another model', async (context) => {
+  it('answers a call as unpriced when the declared price is for another model', async (context) => {
     const client = await startPricedGateway(context, [{ ...PRICE, model: 'another-model' }]);
-    const { report } = await costOfRun(client);
-    expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 1, unpriced: { no_price_entry: 1 }, amount: null });
+    const record = await recordOfCall(client);
+    expect(record.unpriced).toMatchObject({ code: 'no_price_entry' });
   });
 });

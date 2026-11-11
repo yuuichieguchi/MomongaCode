@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { migrate, openDatabase } from '@momonga/foundation';
-import { buildCostReport, definePriceTable, formatCostReport, openTraceStore } from '@momonga/observability';
+import { definePriceTable, formatCostReport, openTraceStore } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
 import { TRACE_STORE_MIGRATIONS } from '../src/trace-store.ts';
-import { RUN_ID, START_MS, makeDir, registerCleanup } from './helpers.ts';
+import { RUN_ID, START_MS, makeDir, registerCleanup, costReportOfSpans } from './helpers.ts';
 
 const insertSpan = (db: ReturnType<typeof openDatabase>, spanId: string, name: string, attributes: Record<string, unknown>): void => {
   db.prepare(
@@ -41,7 +41,7 @@ describe('the chat-span billing migration of the trace store', () => {
       { provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, outputPerMTok: 8, currency: 'USD' },
       { provider: 'apple', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, outputPerMTok: 8, currency: 'USD' },
     ]);
-    const report = buildCostReport(store, [{ runId: RUN_ID, sessionId: 's' }], { table });
+    const report = costReportOfSpans(store, [{ runId: RUN_ID, sessionId: 's' }], { table });
     expect(report.total).toMatchObject({ calls: 2, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, unpriced: {}, priceNotRecordedCalls: 2, inputTokens: 2_000_000, amount: null, priceVersions: [] });
     const formatted = formatCostReport(report);
     expect(formatted).toMatch(/total: 2 call\(s\), .* output tokens, not complete: price not recorded in 2 call\(s\)$/m);

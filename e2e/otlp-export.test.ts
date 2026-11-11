@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { systemClock } from '@momonga/foundation';
-import { GENAI_SEMCONV, buildCostReport, definePriceTable, formatCostReport, openTraceStore } from '@momonga/observability';
+import { GENAI_SEMCONV } from '@momonga/observability';
+import type { CostReportView } from '@momonga/protocol';
 import { OTLP_SPAN_KIND, decodeOtlpSpans, modelSettings, startOtlpCollector } from '@momonga/testkit';
 import type { DecodedOtlpSpan, OtlpCollector } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
@@ -114,6 +114,7 @@ describe('OTLP export through real processes', () => {
     const runtime = createRuntimeClient(home);
     let runId: string;
     let sessionId: string;
+    let report: CostReportView;
     try {
       const { session } = await runtime.createSession();
       sessionId = session.id;
@@ -121,29 +122,29 @@ describe('OTLP export through real processes', () => {
       const stream = runtime.events(runId);
       await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
+      const answered = await runtime.json('GET', `/v1/cost?run=${runId}`);
+      expect(answered.status).toBe(200);
+      report = answered.body as CostReportView;
     } finally {
       await runtime.close();
     }
     await shutdownBarrier(stack);
 
-    const store = openTraceStore({ path: home.paths.traces.gateway, clock: systemClock });
-    try {
-      const report = buildCostReport(store, [{ runId, sessionId }], { table: definePriceTable(UPSTREAM_PRICES) });
-      console.log(formatCostReport(report));
-      expect(report.runs).toHaveLength(1);
-      expect(report.sessions).toMatchObject([{ sessionId, runIds: [runId], calls: 2 }]);
-      expect(report.total).toMatchObject({
-        calls: 2,
-        unpricedCalls: 0,
-        inputTokens: chatCompletions(stack.fake).reduce((sum, request) => sum + reportedTokensOfRequest(request.body), 0),
-        outputTokens: 10,
-        cachedInputTokens: 0,
-        amount: 0,
-        currency: 'USD',
-        priceVersions: ['1970-01-01'],
-      });
-    } finally {
-      store.close();
-    }
+    expect(report.runs).toHaveLength(1);
+    expect(report.sessions).toMatchObject([{ sessionId, runIds: [runId], calls: 2 }]);
+    expect(report.total).toMatchObject({
+      calls: 2,
+      unpricedCalls: 0,
+      priceNotRecordedCalls: 0,
+      inputTokens: chatCompletions(stack.fake).reduce((sum, request) => sum + reportedTokensOfRequest(request.body), 0),
+      outputTokens: 10,
+      cachedInputTokens: null,
+      cacheReadNotReportedCalls: 2,
+      cacheReadUnpricedCalls: 2,
+      unpriced: { cache_read_not_reported: 2 },
+      amount: null,
+      currency: 'USD',
+      priceVersions: [],
+    });
   });
 });

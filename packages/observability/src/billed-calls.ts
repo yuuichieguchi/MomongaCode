@@ -1,9 +1,9 @@
 import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
-import { priceCall } from './cost.ts';
-import type { CallBilling, PriceTable, PricedCall } from './cost.ts';
+import type { CallBilling } from './cost.ts';
+import type { CallPrice } from './money-line.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
-import { SPAN_ATTRIBUTE_RENAMES, withCurrentNames } from '@momonga/protocol';
-import type { PriceNotRecorded, UnpricedCode, UsageSource } from '@momonga/protocol';
+import { SPAN_ATTRIBUTE_RENAMES, isFallbackCauseList, unitsOfCost, withCurrentNames } from '@momonga/protocol';
+import type { FallbackCause, RecordedPrice } from '@momonga/protocol';
 
 const A = GENAI_SEMCONV.attributes;
 
@@ -19,12 +19,15 @@ export type BilledCall = {
   billing: CallBilling;
   startMs: number;
   usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
-  price: PricedCall | PriceNotRecorded;
+  fallbackCauses?: FallbackCause[];
 };
 
-export type BilledCallWire = Omit<BilledCall, 'price' | 'spanId'> & {
-  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; code: UnpricedCode; reason: string } | PriceNotRecorded;
-};
+export type BilledCallWire = Omit<BilledCall, 'spanId'>;
+
+export type PricedBilledCall = BilledCallWire & { price: CallPrice };
+
+export const callPriceOf = (recorded: RecordedPrice): CallPrice =>
+  recorded.kind === 'priced' ? { kind: 'priced', units: unitsOfCost(recorded.cost), currency: recorded.cost.currency, priceVersion: recorded.cost.priceVersion } : recorded;
 
 export type BilledCallsCursor = { run: number; after: number };
 
@@ -44,12 +47,6 @@ const reportedNumber = (span: SpanRecord, key: string): number | undefined => {
   return value;
 };
 
-const usageSourceOf = (span: SpanRecord): UsageSource | undefined => {
-  const value = optionalString(span, MOMONGA_ATTRIBUTES.usageSource);
-  if (value === undefined || value === 'reported' || value === 'estimated') return value;
-  throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.usageSource} must be reported or estimated, got ${value}`);
-};
-
 const optionalString = (span: SpanRecord, key: string): string | undefined => {
   const value = span.attributes[key];
   if (value === undefined) return undefined;
@@ -60,6 +57,14 @@ const optionalString = (span: SpanRecord, key: string): string | undefined => {
 const billingOf = (span: SpanRecord): CallBilling => {
   const value = span.attributes[MOMONGA_ATTRIBUTES.billing];
   return value === 'metered' || value === 'local' || value === 'plan' ? value : UNKNOWN_BILLING;
+};
+
+const fallbackCausesOf = (span: SpanRecord): FallbackCause[] | undefined => {
+  const value = optionalString(span, MOMONGA_ATTRIBUTES.fallbackCauses);
+  if (value === undefined) return undefined;
+  const parsed: unknown = JSON.parse(value);
+  if (!isFallbackCauseList(parsed)) throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must hold a list of fallback causes`);
+  return parsed;
 };
 
 export const billedUsageOf = (stored: SpanRecord): BilledCall['usage'] => {
@@ -74,16 +79,16 @@ export const billedUsageOf = (stored: SpanRecord): BilledCall['usage'] => {
   };
 };
 
-export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable): BilledCall => {
+export const billedCallOf = (runId: string, span: SpanRecord): BilledCall => {
   const provider = optionalString(span, A.ATTR_GEN_AI_PROVIDER_NAME) ?? '';
   const model = optionalString(span, A.ATTR_GEN_AI_REQUEST_MODEL) ?? '';
   const billing = billingOf(span);
   const usage = billedUsageOf(span);
-  const usageSource = usageSourceOf(span);
   const step = span.attributes[MOMONGA_ATTRIBUTES.step];
   const role = optionalString(span, MOMONGA_ATTRIBUTES.role);
   const responseId = optionalString(span, A.ATTR_GEN_AI_RESPONSE_ID);
   const target = optionalString(span, MOMONGA_ATTRIBUTES.target);
+  const fallbackCauses = fallbackCausesOf(span);
   return {
     runId,
     spanId: span.spanId,
@@ -96,19 +101,18 @@ export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable)
     billing,
     startMs: span.startMs,
     usage,
-    price: usageSource === undefined ? { kind: 'not_recorded' } : priceCall({ provider, model, billing, usageSource, usage, at: new Date(span.startMs), table }),
+    ...(fallbackCauses === undefined ? {} : { fallbackCauses }),
   };
 };
 
 const wireOf = (call: BilledCall): BilledCallWire => {
-  const { price, spanId: _spanId, ...rest } = call;
-  return { ...rest, price: price.kind === 'priced' ? { kind: 'priced', units: price.units.toString(), priceVersion: price.priceVersion } : price };
+  const { spanId: _spanId, ...rest } = call;
+  return rest;
 };
 
 export const pageBilledCalls = (
   store: TraceStore,
   runIds: readonly string[],
-  table: PriceTable,
   cursor: BilledCallsCursor,
   limit: number,
   includeRunless: boolean,
@@ -125,7 +129,7 @@ export const pageBilledCalls = (
     const want = limit - calls.length;
     const found = store.billedChatSpansAfter(runId ?? null, after, want + 1);
     const taken = found.slice(0, want);
-    calls.push(...taken.map(({ span }) => wireOf(billedCallOf(runId ?? RUNLESS, span, table))));
+    calls.push(...taken.map(({ span }) => wireOf(billedCallOf(runId ?? RUNLESS, span))));
     const last = taken.at(-1);
     if (found.length > want && last !== undefined) {
       after = last.seq;

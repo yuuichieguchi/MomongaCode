@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import {
   buildCostBreakdown,
-  buildCostReport,
   definePriceTable,
   formatCostBreakdown,
   formatCostReport,
@@ -12,7 +11,8 @@ import {
   startChatSpan,
 } from '@momonga/observability';
 import type { BilledCall, BreakdownCall } from '@momonga/observability';
-import { harness, billedCallsOfRun } from './helpers.ts';
+import { harness, billedCallsOfRun, costReportOfSpans } from './helpers.ts';
+import type { BilledCallAtCallTime } from './helpers.ts';
 
 const AT = Date.parse('2026-06-01T00:00:00Z');
 
@@ -73,7 +73,7 @@ const record = async (runId: string, specs: readonly Spec[], h: ReturnType<typeo
   await h.telemetry.forceFlush();
 };
 
-const asBreakdownCall = (call: BilledCall): BreakdownCall => ({
+const asBreakdownCall = (call: BilledCallAtCallTime): BreakdownCall => ({
   runId: call.runId,
   provider: call.provider,
   model: call.model,
@@ -116,9 +116,9 @@ describe('pageBilledCalls', () => {
     await record('run-c', [{ step: 1, input: 4 }, { step: 2, input: 5 }], h);
     const runIds = ['run-a', 'run-b', 'run-c'];
 
-    const first = pageBilledCalls(h.store, runIds, TABLE, START, 2, false);
-    const second = pageBilledCalls(h.store, runIds, TABLE, first.next ?? { run: 99, after: 0 }, 2, false);
-    const third = pageBilledCalls(h.store, runIds, TABLE, second.next ?? { run: 99, after: 0 }, 2, false);
+    const first = pageBilledCalls(h.store, runIds, START, 2, false);
+    const second = pageBilledCalls(h.store, runIds, first.next ?? { run: 99, after: 0 }, 2, false);
+    const third = pageBilledCalls(h.store, runIds, second.next ?? { run: 99, after: 0 }, 2, false);
 
     expect(first.calls.map((call) => call.usage.inputTokens)).toEqual([1, 2]);
     expect(first.next).toEqual({ run: 1, after: 0 });
@@ -133,10 +133,10 @@ describe('pageBilledCalls', () => {
     const h = harness();
     await record('run-a', [{ step: 1, input: 1, at: 100 }, { step: 2, input: 2, at: 200 }], h);
 
-    const first = pageBilledCalls(h.store, ['run-a'], TABLE, START, 1, false);
+    const first = pageBilledCalls(h.store, ['run-a'], START, 1, false);
     await record('run-a', [{ step: 3, input: 3, at: 10 }], h);
-    const second = pageBilledCalls(h.store, ['run-a'], TABLE, first.next ?? { run: 99, after: 0 }, 1, false);
-    const third = pageBilledCalls(h.store, ['run-a'], TABLE, second.next ?? { run: 99, after: 0 }, 1, false);
+    const second = pageBilledCalls(h.store, ['run-a'], first.next ?? { run: 99, after: 0 }, 1, false);
+    const third = pageBilledCalls(h.store, ['run-a'], second.next ?? { run: 99, after: 0 }, 1, false);
 
     expect([first, second, third].flatMap((page) => page.calls.map((call) => call.usage.inputTokens))).toEqual([1, 2, 3]);
     expect(third.next).toBeUndefined();
@@ -146,7 +146,7 @@ describe('pageBilledCalls', () => {
     const h = harness();
     await record('run-a', [{ step: 1, input: 1, responseId: 'resp_a' }, { step: 2, input: 2 }], h);
 
-    const page = pageBilledCalls(h.store, ['run-a'], TABLE, START, 10, false);
+    const page = pageBilledCalls(h.store, ['run-a'], START, 10, false);
 
     expect(page.calls.map((call) => call.responseId)).toEqual(['resp_a', undefined]);
   });
@@ -159,8 +159,8 @@ describe('pageBilledCalls', () => {
     chat.end(h.clock.now());
     await h.telemetry.forceFlush();
 
-    const without = pageBilledCalls(h.store, ['run-a'], TABLE, START, 10, false);
-    const withRunless = pageBilledCalls(h.store, ['run-a'], TABLE, START, 10, true);
+    const without = pageBilledCalls(h.store, ['run-a'], START, 10, false);
+    const withRunless = pageBilledCalls(h.store, ['run-a'], START, 10, true);
 
     expect(without.calls.map((call) => call.usage.inputTokens)).toEqual([1]);
     expect(withRunless.calls.map((call) => [call.runId, call.usage.inputTokens])).toEqual([['run-a', 1], ['', 9]]);
@@ -168,7 +168,7 @@ describe('pageBilledCalls', () => {
 
   it('refuses a page larger than the bound', () => {
     const h = harness();
-    expect(() => pageBilledCalls(h.store, [], TABLE, START, 100_000, false)).toThrow(RangeError);
+    expect(() => pageBilledCalls(h.store, [], START, 100_000, false)).toThrow(RangeError);
   });
 });
 
@@ -186,7 +186,7 @@ describe('one pricing rule', () => {
       h,
     );
 
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     const breakdown = buildCostBreakdown(billedCallsOfRun(h.store, 'run-a', TABLE).map(asBreakdownCall), {});
 
     expect(report.total.unpricedCalls).toBe(1);

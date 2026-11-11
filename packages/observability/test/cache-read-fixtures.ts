@@ -2,6 +2,7 @@ import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import { MOMONGA_ATTRIBUTES, definePriceTable, recordChatResponse, startAgentSpan, startChatSpan } from '@momonga/observability';
 import type { BilledCall, BreakdownCall } from '@momonga/observability';
 import type { harness } from './helpers.ts';
+import type { BilledCallAtCallTime } from './helpers.ts';
 
 export const AT = Date.parse('2026-06-01T00:00:00Z');
 
@@ -48,7 +49,7 @@ export const recordCalls = async (h: Harness, runId: string, specs: readonly Cal
   await h.telemetry.forceFlush();
 };
 
-export const asBreakdownCall = (call: BilledCall): BreakdownCall => ({
+export const asBreakdownCall = (call: BilledCallAtCallTime): BreakdownCall => ({
   runId: call.runId,
   ...(call.step === undefined ? {} : { step: call.step }),
   ...(call.target === undefined ? {} : { target: call.target }),

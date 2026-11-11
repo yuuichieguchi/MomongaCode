@@ -47,7 +47,6 @@ const SITES: readonly Site[] = [
   },
   { name: 'health', call: (client) => client.health(), text: 'GET /v1/momonga/health answered a body that is not a gateway health report' },
   { name: 'the model list', call: (client) => client.models(), text: 'GET /v1/momonga/models answered a body that is not a model list' },
-  { name: 'the usage of a run (its route has a query)', call: (client) => client.usageOf('leaked-body'), text: 'GET /v1/momonga/usage answered a body that is not a usage report' },
 ];
 
 const MALFORMED_BODIES: ReadonlyArray<{ name: string; body: string }> = [

@@ -1,0 +1,69 @@
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { describe, expect, it } from 'vitest';
+import { createScriptedAdapter, textResponseEvents, usageOf } from '@momonga/testkit';
+import { migrate, openDatabase } from '@momonga/foundation';
+import { MIGRATIONS, openGatewayStore } from '../src/core/store.ts';
+import { createStoredDataChecks } from '../src/core/validation.ts';
+import { PRIMARY, getJson, makeDir, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+
+const tablesOf = (dbPath: string): string[] => {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map((row) => row.name);
+  } finally {
+    db.close();
+  }
+};
+
+const USAGE_TABLE_REMOVED_IN = 4;
+
+const writeDatabaseOfAnEarlierBuild = (dbPath: string): void => {
+  const db = openDatabase(dbPath);
+  try {
+    migrate(db, MIGRATIONS.filter((migration) => migration.version < USAGE_TABLE_REMOVED_IN));
+    db.exec(`
+      INSERT INTO responses (id, input_json, output_json, created_at_ms) VALUES ('resp_old', '[]', '[]', 1);
+      INSERT INTO usage (response_id, run_id, step, target, input_tokens, output_tokens, total_tokens, usage_source, recorded_at_ms) VALUES ('resp_old', 'run-1', 1, 'scripted', 10, 2, 12, 'reported', 1);
+    `);
+  } finally {
+    db.close();
+  }
+};
+
+describe('the gateway keeps no usage table', () => {
+  it('opens a new database without a usage table', () => {
+    const dbPath = path.join(makeDir(), 'gateway.db');
+    openGatewayStore(dbPath, createStoredDataChecks()).close();
+
+    expect(tablesOf(dbPath)).not.toContain('usage');
+  });
+
+  it('opens the database of an earlier build, removes its usage table and keeps its stored responses', () => {
+    const earlierPath = path.join(makeDir(), 'gateway.db');
+    writeDatabaseOfAnEarlierBuild(earlierPath);
+    expect(tablesOf(earlierPath)).toContain('usage');
+
+    const store = openGatewayStore(earlierPath, createStoredDataChecks());
+    const kept = store.getResponse('resp_old');
+    store.close();
+
+    expect(kept).toEqual({ input: [], output: [] });
+    expect(tablesOf(earlierPath)).not.toContain('usage');
+    expect(tablesOf(earlierPath)).toContain('sends');
+  });
+
+  it('answers a model call of a run with its cost in the reply and serves no usage route and no cost report route', async () => {
+    const primary = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['one'], usage: usageOf(10, 2) }) }] });
+    const { client, dbPath } = await startGateway({ adapters: { [PRIMARY]: primary } });
+
+    const reply = await readJson(await postJson(client, '/v1/responses', { model: PRIMARY, input: userInput('hi'), metadata: { run_id: 'run-1', step: '1' } }));
+
+    expect(reply.status).toBe(200);
+    expect(reply.body.usage).toMatchObject({ input_tokens: 10, output_tokens: 2 });
+    expect(reply.body.momonga.cost !== undefined || reply.body.momonga.unpriced !== undefined).toBe(true);
+    expect((await getJson(client, '/v1/momonga/usage?run_id=run-1')).status).toBe(404);
+    expect((await postJson(client, '/v1/momonga/cost', { runs: [], includeRunless: false })).status).toBe(404);
+    expect(tablesOf(dbPath)).not.toContain('usage');
+  });
+});

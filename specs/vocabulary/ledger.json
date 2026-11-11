@@ -380,8 +380,8 @@
         "gateway": 1
       },
       "packages/gateway/src/core/store.ts": {
-        "gateway": 4,
-        "target": 5
+        "gateway": 3,
+        "target": 3
       },
       "packages/gateway/src/core/tool-choice.ts": {
         "target": 5
@@ -444,7 +444,7 @@
         "profile": 1
       },
       "packages/gateway/src/server/app.ts": {
-        "gateway": 4,
+        "gateway": 3,
         "limit": 2
       },
       "packages/gateway/src/server/body.ts": {

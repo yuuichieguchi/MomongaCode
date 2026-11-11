@@ -453,7 +453,7 @@ export type {
 } from './run-api.ts';
 export { assistantTextOf, jsonReplyOf } from './assistant-text.ts';
 export { jsonReplyPathFor } from './json-reply-path.ts';
-export { BUDGET_CAUSES, BUDGET_DIMENSIONS, BUDGET_EXCEEDED_CODE, QUOTE_ROUTE, fitsCostCeiling, tokenPriceOfQuote, worstCaseUnits, HELD_OUTCOMES, MAX_COST_USD, NANO_PER_USD, PRICE_UNITS_PER_NANO, admitRequest, composeBudget, nanoOfAmount, nanoOfCost, nanoOfDecimal, nanoOfUnits, usdOfNano } from './budget.ts';
+export { BUDGET_CAUSES, BUDGET_DIMENSIONS, BUDGET_EXCEEDED_CODE, QUOTE_ROUTE, fitsCostCeiling, tokenPriceOfQuote, worstCaseUnits, HELD_OUTCOMES, MAX_COST_USD, NANO_PER_USD, PRICE_UNITS_PER_NANO, admitRequest, composeBudget, nanoOfAmount, nanoOfCost, unitsOfCost, nanoOfDecimal, nanoOfUnits, usdOfNano } from './budget.ts';
 export type { Admission, AdmissionAsk, CallFootprint, BudgetCause, BudgetDimension, BudgetExhausted, ComposedBudget, HeldCallView, HeldOutcome, ModelQuote, RequestBudget, RunUsage, TokenPrice, TreeSpend } from './budget.ts';
 export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
@@ -468,6 +468,8 @@ export type {
   ModelCost,
   ModelPricing,
   PriceNotRecorded,
+  RecordedCost,
+  RecordedPrice,
   RoleBreakdownView,
   TimingSummaryView,
   TokenAnatomy,
@@ -741,11 +743,7 @@ export type {
   MomongaModelRoles,
   MomongaEventName,
   TargetHealth,
-  UsageReport,
-  UsageReportResponse,
-  UsageReportStep,
   UsageSource,
-  UsageTotals,
 } from './gateway-api.ts';
 export type { JsonReplyPath, MomongaResponseExtension, WireUsage } from './open-responses.ts';
 export type {

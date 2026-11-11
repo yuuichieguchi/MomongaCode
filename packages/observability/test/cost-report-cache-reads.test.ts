@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildCostReport, formatCostReport } from '@momonga/observability';
-import { harness } from './helpers.ts';
+import { formatCostReport } from '@momonga/observability';
+import { harness, costReportOfSpans } from './helpers.ts';
 import { TABLE, recordCalls } from './cache-read-fixtures.ts';
 import type { CallSpec } from './cache-read-fixtures.ts';
 
@@ -10,7 +10,7 @@ const DELETED_CLAUSE = 'did not report cache reads and are not counted in the ca
 const reportOf = async (specs: readonly CallSpec[]) => {
   const h = harness();
   await recordCalls(h, 'run-a', specs);
-  const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+  const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
   const text = formatCostReport(report);
   const totalLine = text.split('\n').find((line) => line.startsWith('  total: ')) ?? '';
   return { report, text, totalLine };
