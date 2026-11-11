@@ -116,14 +116,18 @@ describe('an interrupt during a trial of the bench', () => {
       cancelRun: hanging.cancelRun,
     };
 
+    const home = scratch();
     const running = runBenchmark(path.join(dir, 'benchmark.json'), {
-      api,
+      open: async (task, trial) => {
+        const cwd = path.join(home, `${task.id}-${trial}`);
+        fs.mkdirSync(cwd);
+        return { cwd, api, close: async () => undefined };
+      },
       probe: { ...nodeProbe, run: async (command, timeoutMs, cwd) => (probed.push(command), nodeProbe.run(command, timeoutMs, cwd)) },
       files: nodeWorkspaceFiles,
       model: 'fake/system',
       codeDigest: 'sha256:build',
       groupBy: 'model',
-      scratch: scratch(),
       signal: interrupt.signal,
     });
     await hanging.following;

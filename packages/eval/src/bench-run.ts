@@ -9,6 +9,7 @@ import type { WorkspaceFiles } from './files.ts';
 import type { WorkspaceProbe } from './oracle-grade.ts';
 import { buildBenchmarkReport } from './bench-report.ts';
 import type { BenchmarkTrial } from './bench-report.ts';
+import { failedWithCleanup } from './context-live.ts';
 import { EvalError, driveRun } from './runner.ts';
 
 export type BenchRunView = {
@@ -38,14 +39,15 @@ export type BenchRunApi = {
   cancelRun(runId: string): Promise<void>;
 };
 
+export type BenchTrialHome = { cwd: string; api: BenchRunApi; close(): Promise<void> };
+
 export type BenchRunPorts = {
-  api: BenchRunApi;
+  open(task: BenchTask, trial: number): Promise<BenchTrialHome>;
   probe: WorkspaceProbe;
   files: WorkspaceFiles;
   model: string;
   codeDigest: string;
   groupBy: GroupKey;
-  scratch: string;
   onTrial?(trial: { taskId: string; trial: number; met: boolean | 'invalid_setup' }): void;
   signal?: AbortSignal;
 };
@@ -97,8 +99,7 @@ const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, ev
   return { ...folded, declared: view.declared };
 };
 
-const runTrial = async (task: BenchTask, repository: string, workspace: string, ports: BenchRunPorts): Promise<Trial> => {
-  const { api } = ports;
+const runTrial = async (task: BenchTask, repository: string, workspace: string, api: BenchRunApi, ports: BenchRunPorts): Promise<Trial> => {
   const session = await api.createSession({ cwd: workspace, permissionMode: task.permissionMode, model: ports.model });
   const mandate = mandateOfTask(task);
   const run = await api.createRun(session.id, {
@@ -114,6 +115,22 @@ const runTrial = async (task: BenchTask, repository: string, workspace: string, 
   for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events));
   const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe, files: ports.files });
   return { facts: { ...folded, met: grade.met }, children, answeredBy: await api.answeredBy(run.id) };
+};
+
+const inHome = async <T>(home: BenchTrialHome, work: () => Promise<T>): Promise<T> => {
+  let result: T;
+  try {
+    result = await work();
+  } catch (error) {
+    try {
+      await home.close();
+    } catch (cleanup) {
+      throw failedWithCleanup(error, cleanup, 'a trial failed and its temporary home was not released');
+    }
+    throw error;
+  }
+  await home.close();
+  return result;
 };
 
 const verifiedRepositories = async (files: WorkspaceFiles, benchmark: Benchmark, root: string): Promise<Map<string, string>> => {
@@ -144,15 +161,18 @@ export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts):
     if (repository === undefined) throw new EvalError(`task ${task.id} names the repository ${task.repository}, which was not verified`);
     for (let trial = 0; trial < (task.runs ?? BENCH_DEFAULT_RUNS); trial += 1) {
       ports.signal?.throwIfAborted();
-      const workspace = path.join(ports.scratch, `${task.id}-${trial}`);
-      await ports.files.cp(repository, workspace);
-      if (!(await setUp(task, workspace, ports.probe, ports.signal))) {
+      const home = await ports.open(task, trial);
+      const outcome = await inHome(home, async () => {
+        await ports.files.cp(repository, home.cwd);
+        if (!(await setUp(task, home.cwd, ports.probe, ports.signal))) return undefined;
+        ports.signal?.throwIfAborted();
+        return runTrial(task, repository, home.cwd, home.api, ports);
+      });
+      if (outcome === undefined) {
         invalidSetup.push({ taskId: task.id, trial });
         ports.onTrial?.({ taskId: task.id, trial, met: 'invalid_setup' });
         continue;
       }
-      ports.signal?.throwIfAborted();
-      const outcome = await runTrial(task, repository, workspace, ports);
       trials.push({ taskId: task.id, trial, facts: outcome.facts, children: outcome.children });
       answeredBy.push(...outcome.answeredBy);
       if (outcome.answeredBy.length === 0) unrecordedAnswers += 1;

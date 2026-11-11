@@ -39,7 +39,8 @@ type Result = {
   report: { kind: string; total: { completion: { k: number; n: number; undeclared: number }; intervention: { k: number; n: number } }; harness: { suite: { name: string }; codeDigest: string; answeredBy: unknown[]; unrecordedAnswers: number }; tasks?: { task: string; trials: number; met: number }[] };
   invalidSetup: { taskId: string; trial: number }[];
 };
-type RunBenchmark = (file: string, ports: { api: Api; probe: WorkspaceProbe; files: WorkspaceFiles; model: string; codeDigest: string; groupBy: 'model'; scratch: string }) => Promise<Result>;
+type TrialHome = { cwd: string; api: Api; close(): Promise<void> };
+type RunBenchmark = (file: string, ports: { open(task: { id: string }, trial: number): Promise<TrialHome>; probe: WorkspaceProbe; files: WorkspaceFiles; model: string; codeDigest: string; groupBy: 'model' }) => Promise<Result>;
 
 const scratches: string[] = [];
 afterEach(() => {
@@ -164,8 +165,16 @@ const fakeApi = (behaviour: Behaviour = {}) => {
   return { api, sessions, runs, resolved, asked, cancelled };
 };
 
+const openIn =
+  (api: Api, at: string) =>
+  async (task: { id: string }, trial: number): Promise<TrialHome> => {
+    const cwd = path.join(at, `${task.id}-${trial}`);
+    fs.mkdirSync(cwd);
+    return { cwd, api, close: async () => undefined };
+  };
+
 const runBenchmark = (dir: string, api: Api, at: string): Promise<Result> =>
-  exported<RunBenchmark>('runBenchmark')(path.join(dir, 'benchmark.json'), { api, probe: nodeProbe, files: nodeWorkspaceFiles, model: 'fake/system', codeDigest: 'sha256:build', groupBy: 'model', scratch: at });
+  exported<RunBenchmark>('runBenchmark')(path.join(dir, 'benchmark.json'), { open: openIn(api, at), probe: nodeProbe, files: nodeWorkspaceFiles, model: 'fake/system', codeDigest: 'sha256:build', groupBy: 'model' });
 
 const fixTheBug = (cwd: string): void => fs.writeFileSync(path.join(cwd, 'src/add.js'), ADD_FIXED);
 
