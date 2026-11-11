@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe('the real sandbox port of the oracle commands (darwin, and linux with bubblewrap; the linux leg runs in the container)', () => {
-  it.skipIf(!PLATFORM_WITH_A_SANDBOX)("an oracle command that writes into the product's home is refused, and one that writes into its workspace is not", async () => {
+  it.skipIf(!PLATFORM_WITH_A_SANDBOX)("an oracle command that writes into the product's home never reaches it (refused on darwin, an empty tmpfs on linux), and one that writes into its workspace does", async () => {
     const env = { PATH: '/usr/bin:/bin', HOME: home };
     const [denied] = protectedAreasOf(momongaLayout(home, process.platform, env));
     if (denied === undefined) throw new Error('the layout of the home names no protected area');
@@ -43,7 +43,7 @@ describe('the real sandbox port of the oracle commands (darwin, and linux with b
     const leak = path.join(denied, 'leak.txt');
     const outcome = await probe.run(`echo x > ${leak}`, 30_000, workspace);
     expect(outcome.timedOut).toBe(false);
-    expect(outcome.exitCode).not.toBe(0);
+    if (process.platform === 'darwin') expect(outcome.exitCode).not.toBe(0);
     expect(fs.existsSync(leak)).toBe(false);
     expect(await probe.run('echo x > made.txt', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
     expect(fs.readFileSync(path.join(workspace, 'made.txt'), 'utf8')).toBe('x\n');
