@@ -5,6 +5,7 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import type { Run } from '@momonga/store';
 import { contributionAtTerminal } from '@momonga/runtime';
 import { functionCallItem } from '../worker/scripts.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const journal = (payloads: readonly RunEventPayload[]): RunEvent[] =>
   payloads.map((payload, index) => ({ ...payload, id: index + 1, runId: 'run-w', sessionId: 's', seq: index + 1, step: 1, leaseToken: 1, createdAt: 1 }) as RunEvent);
@@ -59,7 +60,7 @@ const measure = (payloads: readonly RunEventPayload[], lookups: { memoryText?: s
     run: { id: 'run-w' } as Run,
     events: events.filter((event) => contributionAtTerminal.eventTypes.includes(event.type)),
     replay: (visit) => {
-      let state = initialRunState({ runId: 'run-w', sessionId: 's' });
+      let state = initialRunState({ runId: 'run-w', sessionId: 's', fence: TEST_FENCE });
       for (const event of events) {
         state = foldRunState(state, event);
         visit(state, event);

@@ -10,7 +10,7 @@ export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
-export { TOO_DEEP_PLACEHOLDER, isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
+export { isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
 export type { JsonReplyInput } from './json-reply.ts';
@@ -21,7 +21,7 @@ export { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, cutToChars, keepi
 export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from './output-marker.ts';
 export { BUSY_WAIT_LIMIT_MS, busyTimeoutMs, highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, openDatabaseWithIdentity, readTx } from './sqlite.ts';
 export type { DatabaseFileIdentity, Migration } from './sqlite.ts';
-export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
+export { SSE_EVENT_MAX_BYTES, SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, SseEventTooLargeError, decodeSse, encodeSse } from './sse.ts';
 export { URL_OPENER_PROGRAMS, createBrowserOpener, openCommandFor, urlOpenerFileFor } from './open-browser.ts';
 export type { LaunchProgram, OpenUrl, ProgramEnd } from './open-browser.ts';
 export { findProgramOnPath, findProgramOnPathSync } from './program-search.ts';
@@ -132,6 +132,9 @@ export {
   ensureSessionTmpDir,
   releaseSessionScratch,
   generationLayout,
+  endpointScopeOf,
+  generationSockets,
+  ENDPOINT_TOKEN_FILE,
   generationMarkerDirectories,
   generationMemberOf,
   generationOfDirectoryName,
@@ -317,6 +320,7 @@ export type { ProcessPort } from './process-port.ts';
 export { HELPER_COMMAND, helperCommandLine } from './executable-helper.ts';
 export type { ExecutableHelper, ExecutableHelpers, HelperHost, HelperSelf } from './executable-helper.ts';
 export { SocketPathUnmeasuredError, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, endpointHostOf, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
+export type { EndpointScope } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, comparableFromParts, containsByComponents, createPathResolver, createSyncPathResolver, hostPaths, setCaseSensitivityProbe, walkPath } from './path-compare.ts';
 export { syncPaths } from './sync-paths.ts';
 export { answeredLater, answeredNow, askedPaths } from './path-asking.ts';
@@ -430,3 +434,5 @@ export type {
 export { createNodeKeeperHost, provideCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
 export { CONTROL_PLANE_LAUNCH } from './child-protection.ts';
 export type { ChildProtection, LaunchProtection } from './child-protection.ts';
+export { unixSocketPolicyOf } from './unix-socket-policy.ts';
+export type { UnixSocketPolicy } from './unix-socket-policy.ts';

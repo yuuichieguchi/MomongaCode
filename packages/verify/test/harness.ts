@@ -67,7 +67,7 @@ export type VerifyOptions = {
 export const verifyScenario = async (api: Z3Engine['api'], layout: Layout, rules: readonly PermissionRule[], options: VerifyOptions = {}): Promise<VerificationReport> => {
   const fileSystem = options.fileSystem ?? caseSensitiveFs();
   const roots = options.roots ?? [layout.project];
-  return verifyPermissions(api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
+  return verifyPermissions(api, { unixSockets: { kind: 'limited', allowed: [] }, deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
     rules,
     roots,
     mode: options.mode ?? 'manual',

@@ -1,3 +1,4 @@
+import { testEndpointScope } from '@momonga/testkit';
 import fs from 'node:fs';
 import { fixedSocket, generationLayout } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
@@ -58,8 +59,8 @@ describe('a session client older than the daemon, before the handover exists (20
 
     await expect(ensureSessionDaemon(ports, paths, { bounds: BOUNDS })).resolves.toBeUndefined();
     await expect(restoreDaemon(ports, paths)(undefined)).resolves.toBeUndefined();
-    expect(await sessionSocketResolver(paths, '1.2.3', 'runtime')()).toBe(generationLayout(home, 1).sockets.runtime);
-    expect(await sessionSocketResolver(paths, '1.2.4', 'runtime')()).toBe(generationLayout(home, 2).sockets.runtime);
+    expect(await sessionSocketResolver({ version: '1.2.3', endpointScope: testEndpointScope }, paths, 'runtime')()).toBe(generationLayout(home, 1).sockets.runtime);
+    expect(await sessionSocketResolver({ version: '1.2.4', endpointScope: testEndpointScope }, paths, 'runtime')()).toBe(generationLayout(home, 2).sockets.runtime);
     expect(own.shutdowns).toBe(0);
   });
 
@@ -67,7 +68,7 @@ describe('a session client older than the daemon, before the handover exists (20
     const { paths, start } = await setupGenerations(context, '1.2.3');
     await start({ version: '1.2.4' });
 
-    expect(await failureOf(sessionSocketResolver(paths, '1.2.3', 'runtime')())).toMatchObject({ code: 'ENOENT' });
+    expect(await failureOf(sessionSocketResolver({ version: '1.2.3', endpointScope: testEndpointScope }, paths, 'runtime')())).toMatchObject({ code: 'ENOENT' });
   });
 
   it('ends on a moved answer when the serving generation runs another version, and resends when it runs its own', async (context) => {

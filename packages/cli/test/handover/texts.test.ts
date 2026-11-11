@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import type { EntryIo } from '@momonga/foundation';
 import type { KeptWork } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
@@ -31,7 +32,7 @@ const programOf = () => {
   const entries: DaemonEntries = { supervise: refuse, gateway: refuse, runtime: refuse };
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }),
+    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

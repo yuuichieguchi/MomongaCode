@@ -237,7 +237,7 @@ describe('a background job that was granted named hosts', () => {
       kind: 'seatbelt',
       spawn: (command, policy) => {
         spawns.push({ command, policy });
-        return { pid: 1, pgid: 1, rebind: () => undefined, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: new Promise((resolve) => (end = () => resolve({ code: 0, signal: null }))) };
+        return { pid: 1, pgid: 1, rebind: () => undefined, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: new Promise((resolve) => (end = () => resolve({ code: 0, signal: null, stop: 'confirmed' }))) };
       },
     };
     const tools = await makeBuiltins({ jobs, sandbox });
@@ -270,7 +270,7 @@ describe('a background job that was granted named hosts', () => {
             yield Buffer.from('from the job\n');
             await streamHeld;
           })(),
-          exited: new Promise((resolve) => (end = () => resolve({ code: 0, signal: null }))),
+          exited: new Promise((resolve) => (end = () => resolve({ code: 0, signal: null, stop: 'confirmed' }))),
         };
       },
     };
@@ -289,7 +289,7 @@ describe('a background job that was granted named hosts', () => {
     const errors = child.stderr[Symbol.asyncIterator]();
     expect(Buffer.from((await errors.next()).value as Uint8Array).toString()).toBe('from the job\n');
     end();
-    expect(await child.exited).toEqual({ code: 0, signal: null });
+    expect(await child.exited).toEqual({ code: 0, signal: null, stop: 'confirmed' });
     expect(Buffer.from((await errors.next()).value as Uint8Array).toString()).toBe(
       '[network] the sandbox proxy refused evil.example.net:80: it is not among the hosts this command was granted (registry.example.org)\n',
     );

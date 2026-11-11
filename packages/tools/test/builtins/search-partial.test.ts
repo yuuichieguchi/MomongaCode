@@ -92,7 +92,7 @@ const slowSearch = (records: string): { sandbox: Sandbox; searching: () => boole
       const exited = new Promise<SandboxExit>((resolve) => {
         const stop = (): void => {
           pending?.();
-          resolve({ code: null, signal: 'SIGTERM', killedBy: 'abort' });
+          resolve({ code: null, signal: 'SIGTERM', killedBy: 'abort', stop: 'confirmed' });
         };
         if (signal.aborted) stop();
         else signal.addEventListener('abort', stop, { once: true });

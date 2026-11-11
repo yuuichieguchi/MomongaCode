@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createUdsClient, decodeSse, fixedSocket } from '@momonga/foundation';
+import { createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, fixedSocket } from '@momonga/foundation';
 import { anthropicErrorReply, anthropicTextReply, startFakeAnthropic, startFakeOpenResponses, openResponsesTextReply, openResponsesToolCallReply, usageOf } from '../src/index.ts';
 import { canonicalJson } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
@@ -18,7 +18,7 @@ const post = async (server: FakeUpstreamServer, path: string, headers: Record<st
   try {
     const response = await client.request({ method: 'POST', path, headers: { 'content-type': 'application/json', ...headers }, body: VALID_BODY });
     const frames: Array<{ event: string | undefined; data: string }> = [];
-    if (response.status === 200) for await (const frame of decodeSse(response.body)) frames.push({ event: frame.event, data: frame.data });
+    if (response.status === 200) for await (const frame of decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES })) frames.push({ event: frame.event, data: frame.data });
     return { status: response.status, frames, text: response.status === 200 ? '' : await response.text() };
   } finally {
     await client.close();
@@ -104,7 +104,7 @@ const postBody = async (server: FakeUpstreamServer, body: string): Promise<Array
   try {
     const response = await client.request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body });
     const frames: Array<{ event: string | undefined; data: string }> = [];
-    for await (const frame of decodeSse(response.body)) frames.push({ event: frame.event, data: frame.data });
+    for await (const frame of decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES })) frames.push({ event: frame.event, data: frame.data });
     return frames;
   } finally {
     await client.close();

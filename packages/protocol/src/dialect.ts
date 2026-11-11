@@ -134,7 +134,11 @@ export type DialectRule =
 
 export type DialectOp = DialectRule['op'];
 
-export type DialectDefinition = { extends?: DialectId; rules: DialectRule[] };
+export type DialectDefinition = { extends?: DialectId; rules: DialectRule[]; strictPerTool?: boolean };
+
+export type BuiltinDialectDefinition = DialectDefinition & { strictPerTool: boolean };
+
+export const strictPerToolOf = (definition: DialectDefinition): boolean => definition.strictPerTool === true;
 
 export type Segment = { property: string } | { items: true };
 
@@ -156,6 +160,7 @@ export const DIALECT_DEFINITION_SCHEMA: Record<string, unknown> = {
   properties: {
     extends: { $ref: ID },
     rules: { type: 'array', items: { $ref: '#/$defs/rule' } },
+    strictPerTool: { type: 'boolean' },
   },
   required: ['rules'],
   additionalProperties: false,

@@ -14,6 +14,9 @@ import type { LeftoverDirectory, Retention } from './leftover-sweep.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
 import { SocketPathUnmeasuredError, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, isPipePath, pipePathFor } from './socket-path.ts';
+import type { EndpointScope } from './socket-path.ts';
+import { ownerOnlySecret } from './platform/owner-only-secret.ts';
+import type { OwnerOnlySecretPorts } from './platform/owner-only-secret.ts';
 
 export interface MomongaPaths {
   home: string;
@@ -126,14 +129,21 @@ const byRole = (value: (role: GenerationProcessRole) => string): Record<Generati
   supervisor: value('supervisor'),
 });
 
-export const generationLayout = (home: string, generation: number, platform: NodeJS.Platform = process.platform): GenerationLayout => {
+export const ENDPOINT_TOKEN_FILE = 'endpoint-token';
+
+export const endpointScopeOf = async (paths: Pick<MomongaPaths, 'run'>, platform: NodeJS.Platform, ports: OwnerOnlySecretPorts): Promise<EndpointScope> =>
+  platform === 'win32' ? { form: 'pipe', token: await ownerOnlySecret(ports, paths.run, ENDPOINT_TOKEN_FILE) } : { form: 'unix' };
+
+export const generationLayout = (home: string, generation: number, platform: NodeJS.Platform = process.platform, scope?: EndpointScope): GenerationLayout => {
   if (!Number.isSafeInteger(generation) || generation < 1) throw new RangeError(`a generation number must be a positive integer, got ${generation}`);
   const join = pathFor(platform).join;
   const dir = join(home, '.momonga', 'run', `g${generation}`);
   return {
     generation,
     dir,
-    sockets: byRole((role) => (platform === 'win32' ? pipePathFor(home, `g${generation}-${role}`) : join(dir, `${role}.sock`))),
+    get sockets(): GenerationSockets {
+      return byRole((role) => (platform === 'win32' ? pipePathFor(scope, `g${generation}-${role}`) : join(dir, `${role}.sock`)));
+    },
     locks: byRole((role) => join(dir, `${role}.lock`)),
     settingsApplied: join(dir, SETTINGS_APPLIED_FILE),
     startRecord: join(dir, START_RECORD_FILE),
@@ -142,6 +152,9 @@ export const generationLayout = (home: string, generation: number, platform: Nod
     stopRecord: join(dir, STOP_RECORD_FILE),
   };
 };
+
+export const generationSockets = (home: string, generation: number, scope: EndpointScope): GenerationSockets =>
+  generationLayout(home, generation, scope.form === 'pipe' ? 'win32' : 'linux', scope).sockets;
 
 export type LayoutEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -375,8 +388,8 @@ const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
 
 const longestOf = (sockets: readonly string[]): string => sockets.reduce((longest, socket) => (Buffer.byteLength(socket) > Buffer.byteLength(longest) ? socket : longest));
 
-export const refuseUnfitGenerationSocketsBeforeCreation = async (paths: MomongaPaths, generation: number): Promise<void> => {
-  const sockets = Object.values(generationLayout(homeOf(paths), generation).sockets);
+export const refuseUnfitGenerationSocketsBeforeCreation = async (paths: MomongaPaths, generation: number, scope: EndpointScope): Promise<void> => {
+  const sockets = Object.values(generationSockets(homeOf(paths), generation, scope));
   for (const socket of sockets) assertSocketPathLength(socket);
   const unixSockets = sockets.filter((socket) => !isPipePath(socket));
   if (unixSockets.length === 0) return;

@@ -165,7 +165,7 @@ describe('reading memories when the evidence process cannot start', () => {
           throw new TypeError('reading the output failed');
         })(),
         stderr: (async function* (): AsyncGenerator<Uint8Array> {})(),
-        exited: Promise.resolve({ code: 0, signal: null }),
+        exited: Promise.resolve({ code: 0, signal: null, stop: 'confirmed' }),
       }),
     };
     const env = await startService({

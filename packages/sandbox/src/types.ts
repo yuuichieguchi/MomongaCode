@@ -28,11 +28,15 @@ export interface SandboxDescriptors {
   markerFd?: number;
 }
 
+export type StopOutcome = 'confirmed' | 'not_confirmed';
+
+export const STOP_NOT_CONFIRMED_NOTE = 'A process of the command could not be confirmed stopped; its marker is kept';
+
 export interface SandboxExit {
   code: number | null;
   signal: string | null;
   killedBy?: 'abort' | 'grace-kill';
-  groupNotStopped?: true;
+  stop: StopOutcome;
 }
 
 export interface SandboxedProcess {

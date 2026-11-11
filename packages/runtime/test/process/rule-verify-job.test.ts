@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { hostPhasesOf, runRuleVerifyJob } from '../../src/process/rule-verifier-thread.ts';
 import type { RuleVerifyJob } from '../../src/process/rule-verifier-thread.ts';
 
-const job: RuleVerifyJob = {
+const job: RuleVerifyJob = { unixSockets: { kind: 'limited', allowed: [] },
   input: { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', deniedLocations: [], cwd: '/work', exemptDirectory: null, enforcement: 'exact-paths', protectedSet: {} as never, secretLocations: [] },
   solver: { kind: 'installed', entry: '/nowhere/z3.js' },
   solverVersion: 'z3 1',

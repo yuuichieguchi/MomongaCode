@@ -65,7 +65,7 @@ const recordingSandbox = (spawns: SpawnRecord[]): Sandbox => ({
   kind: 'seatbelt',
   spawn: (command) => {
     spawns.push({ argv: command.argv, markerFile: command.markerFile, cwd: command.cwd });
-    return { pid: 1, pgid: 1, rebind: () => undefined, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: Promise.resolve({ code: 0, signal: null }) };
+    return { pid: 1, pgid: 1, rebind: () => undefined, stdout: (async function* () {})(), stderr: (async function* () {})(), exited: Promise.resolve({ code: 0, signal: null, stop: 'confirmed' }) };
   },
 });
 

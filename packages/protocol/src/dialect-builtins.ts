@@ -1,4 +1,4 @@
-import type { DialectDefinition, DialectSelect } from './dialect.ts';
+import type { BuiltinDialectDefinition, DialectSelect } from './dialect.ts';
 
 export const BUILTIN_DIALECT_IDS = ['json-schema-2020-12', 'inlined-subset', 'strict-closed', 'explicit-keys'] as const;
 
@@ -12,9 +12,10 @@ const withinUnion = (kind: 'object-with-properties'): DialectSelect => [
   { kinds: [kind], within: { below: [...WITHIN_UNION.below], through: [...WITHIN_UNION.through] } },
 ];
 
-export const BUILTIN_DIALECTS: Record<BuiltinDialectId, DialectDefinition> = {
-  'json-schema-2020-12': { rules: [] },
+export const BUILTIN_DIALECTS: Record<BuiltinDialectId, BuiltinDialectDefinition> = {
+  'json-schema-2020-12': { rules: [], strictPerTool: false },
   'explicit-keys': {
+    strictPerTool: false,
     rules: [
       { select: [{ kinds: ['root'] }, { kinds: ['tool-parameters'] }], op: 'inline-refs' },
       { select: [{ kinds: ['any'] }], op: 'split-type-array' },
@@ -32,6 +33,7 @@ export const BUILTIN_DIALECTS: Record<BuiltinDialectId, DialectDefinition> = {
     ],
   },
   'strict-closed': {
+    strictPerTool: true,
     rules: [
       {
         select: [{ kinds: ['any'] }],
@@ -67,6 +69,7 @@ export const BUILTIN_DIALECTS: Record<BuiltinDialectId, DialectDefinition> = {
     ],
   },
   'inlined-subset': {
+    strictPerTool: false,
     rules: [
       { select: [{ kinds: ['root'] }, { kinds: ['tool-parameters'] }], op: 'inline-refs' },
       { select: [{ kinds: ['root'] }, { kinds: ['tool-parameters'] }], op: 'drop', keys: ['$schema'] },

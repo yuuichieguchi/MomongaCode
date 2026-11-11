@@ -42,6 +42,7 @@ export type { WatchedKernelLock } from './test-locks.ts';
 export type { FakeKernelLock, FakeKernelLockOptions } from './fake-kernel-lock.ts';
 export { createFakeClock } from './fake-clock.ts';
 export { createFakeRandom } from './fake-random.ts';
+export { TEST_FENCE, fenceBoundaryIn } from './test-fence.ts';
 export { createFakeFileSystem } from './fake-file-system.ts';
 export type { FakeFileSystem } from './fake-file-system.ts';
 export type { FakeClock } from './fake-clock.ts';
@@ -296,4 +297,5 @@ export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } f
 export type { ModelSettings, ModelSettingsConnection, ModelSettingsSpec, ModelSpec } from './model-settings.ts';
 export { testSecretLocations } from './secret-locations.ts';
 export { TEST_CHILD_UNPROTECTED, TEST_STDIO_LAUNCH } from './child-protection.ts';
+export { testEndpointScope } from './endpoint-scope.ts';
 export { TEST_TOOL_LIMITS } from './tool-limits.ts';

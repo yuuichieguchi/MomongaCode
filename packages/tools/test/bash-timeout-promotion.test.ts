@@ -100,7 +100,7 @@ const fakeCommand = () => {
   const rebound: AbortSignal[] = [];
   const bindTo = (signal: AbortSignal): void => {
     if (bound !== undefined) bound.signal.removeEventListener('abort', bound.listener);
-    const listener = (): void => finish({ code: null, signal: 'SIGTERM', killedBy: 'abort' });
+    const listener = (): void => finish({ code: null, signal: 'SIGTERM', killedBy: 'abort', stop: 'confirmed' });
     bound = { signal, listener };
     signal.addEventListener('abort', listener, { once: true });
     if (signal.aborted) listener();
@@ -264,7 +264,7 @@ describe('the Bash timeout comes from the settings', () => {
     await pollUntil(() => armedMs(timers).includes(LIMITS.bash.maxTimeoutMs), { description: 'the call timer is armed at the maximum', boundMs: WAIT_BOUND_MS });
     expect(armedMs(timers)).not.toContain(20_000);
     command.write('done\n');
-    command.finish({ code: 0, signal: null });
+    command.finish({ code: 0, signal: null, stop: 'confirmed' });
     const result = resultOf(await running);
     expect(result.status).toBe('completed');
     expect(result.output).toContain('timeout reduced to the configured maximum of 10000 ms');

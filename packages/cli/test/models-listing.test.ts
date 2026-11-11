@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
+import { TARGET_PROBING_MESSAGE, messageOf } from '@momonga/protocol';
 import type { MomongaModelList } from '@momonga/protocol';
 import { detectModels, listModels } from '../src/commands/models.ts';
 import { S2, bytesOf, homeWith, listingOf, ollamaFound, shellOf } from './models-shell-harness.ts';
@@ -46,14 +46,14 @@ describe('momonga models', () => {
     );
   });
 
-  it('says that the gateway lists no models, and prints the empty document with --json', async (context) => {
+  it('says that no model is connected, and prints the empty document with --json', async (context) => {
     const text = shellOf(homeWith(context, undefined), { listing: () => EMPTY });
     const json = shellOf(homeWith(context, undefined), { listing: () => EMPTY });
 
     await listModels(text.shell, { json: false });
     await listModels(json.shell, { json: true });
 
-    expect(text.out()).toBe('The gateway lists no models. Run momonga models add to add one.\n');
+    expect(text.out()).toBe(`${messageOf('noModelConnected', 'cli')}\n`);
     expect(json.out()).toBe('{"start":null,"roles":{},"models":[]}\n');
   });
 });

@@ -3,6 +3,7 @@ import type { PermissionOption } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import type { Claim, RuntimeStore } from '@momonga/store';
 import { enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const OPTIONS: PermissionOption[] = [
   { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
@@ -43,7 +44,7 @@ describe('store.requestApproval for a held call', () => {
     const events = store.readRunEvents(runId, 0, 100);
     expect(events.find((event) => event.type === 'tool.held')).toMatchObject({ callId: 'call_1', approvalId: result.approval.id, reason: REASON, footprint: FOOTPRINT });
     expect(events.find((event) => event.type === 'tool.completed')).toMatchObject({ callId: 'call_1', status: 'failed', output: `waiting for ${result.approval.id}`, denial: { source: 'held', reason: REASON } });
-    const state = events.reduce(foldRunState, initialRunState({ runId, sessionId: claim.sessionId }));
+    const state = events.reduce(foldRunState, initialRunState({ runId, sessionId: claim.sessionId, fence: TEST_FENCE }));
     expect(state.heldCalls?.['call_1']).toMatchObject({ approvalId: result.approval.id, name: 'Write', options: OPTIONS, subjectDigest: DIGEST });
     expect(state.pendingCalls['call_1']).toMatchObject({ status: 'completed' });
     expect(store.approvals.listPending(runId)).toHaveLength(1);

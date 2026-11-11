@@ -62,7 +62,7 @@ describe('the verdict of the permission rules before a run, with a fake verifier
 
     expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: POLICY_REFUTED_CODE, message: policyRefutedMessage(refuted) } });
     expect(policyRefutedMessage(refuted)).toBe(
-      'The permission rules were refuted, so the run was refused: secret-reach (Read): an allow rule opens a secret location; counterexample: Read /work/.env. Change the rules; "momonga policy verify" prints the full report.',
+      'The run was not started because a permission rule breaks a protection. The property that no allow rule you wrote opens a secret location is refuted for Read: an allow rule opens a secret location (for example Read /work/.env). Change that rule in the settings or the mandate, then run "momonga policy verify" to see the full report.',
     );
     expect(env.ofType(run.id, 'model.requested')).toEqual([]);
     expect(env.gateway.script).toHaveLength(1);
@@ -292,7 +292,7 @@ describe('the verdict of the permission rules before a run, with a fake verifier
     const started = env.ofType(run.id, 'run.started')[0]?.pins['policyVerdict'] as { fingerprint: string };
     const [notice] = verdictEvents(env, run.id);
     expect(notice?.level).toBe('error');
-    expect(notice?.message).toContain('secret-reach');
+    expect(notice?.message).toContain('no allow rule you wrote opens a secret location');
     expect(notice?.message).not.toContain(started.fingerprint);
   });
 

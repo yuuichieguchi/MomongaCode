@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { constants } from 'node:buffer';
 import { performance } from 'node:perf_hooks';
 import os from 'node:os';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const { decodeRunEvents } = await import('../../packages/store/src/codec.ts');
 const { foldRunState, initialRunState } = await import('../../packages/store/src/fold.ts');
@@ -68,7 +69,7 @@ for (const [label, make] of [['ascii', ascii], ['japanese', japanese]] as const)
       decode.push(time(() => decodeRunEvents([row])).ms);
       const [event] = decodeRunEvents([row]);
       if (event === undefined) throw new Error('the row did not decode');
-      fold.push(time(() => foldRunState(initialRunState({ runId: 'r1', sessionId: 's1' }), event)).ms);
+      fold.push(time(() => foldRunState(initialRunState({ runId: 'r1', sessionId: 's1', fence: TEST_FENCE }), event)).ms);
     }
     console.log(`${label} ${size} MiB row: decode max ${max(decode).toFixed(1)} ms (${(max(decode) / size).toFixed(3)} ms/MiB), fold max ${max(fold).toFixed(1)} ms`);
   }

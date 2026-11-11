@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import http from 'node:http';
 import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
@@ -31,8 +32,8 @@ vi.mock('../src/run/headless.ts', async (importOriginal) => ({
 
 vi.mock('../src/daemon/generations.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/daemon/generations.ts')>()),
-  sessionSocketResolver: (_paths: unknown, version: string, role: string) => {
-    seen.resolvers.push({ version, role });
+  sessionSocketResolver: (ports: { version: string }, _paths: unknown, role: string) => {
+    seen.resolvers.push({ version: ports.version, role });
     return async () => seen.socket;
   },
 }));
@@ -147,7 +148,7 @@ describe('a headless run reads the capabilities of its model from the gateway of
     const program = buildProgram(
       {
         ports,
-        policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }),
+        policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
         entries,
         update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
         interrupt,

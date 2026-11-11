@@ -1206,6 +1206,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       },
       rejected: async () => 'unchanged',
       pause: async () => undefined,
+      expire: async () => undefined,
       resume: async () => undefined,
       status: () => statusOf({ kind: 'absent' }, clock.now()),
       health: () => healthOf(profile, undefined, unpinnedView(), clock.now()),
@@ -1253,6 +1254,10 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
           const changed = await applyChange(account, (record) => ({ ...record, paused: until === undefined ? {} : { until } }), signal);
           if (changed === undefined) return;
           events('plan.pause', { ...identityOf(account), code, saved: changed.saved, ...(until === undefined ? {} : { until: new Date(until).toISOString() }) });
+        }),
+      expire: async (code, signal) =>
+        held(served(), async (account) => {
+          await applyChange(account, (record) => withoutTokens(record, code, false), signal);
         }),
       resume: async (signal) =>
         held(served(), async (account) => {

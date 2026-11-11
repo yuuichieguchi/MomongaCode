@@ -1222,6 +1222,21 @@ const SESSION_SANDBOX_NETWORK = `
 ALTER TABLE sessions ADD COLUMN sandbox_network TEXT CHECK (sandbox_network IS NULL OR sandbox_network IN ('deny', 'ask', 'allow'));
 `;
 
+const ISSUE_WATCH = `
+CREATE TABLE issue_watch_starts (
+  folder_key TEXT NOT NULL,
+  reference TEXT NOT NULL,
+  started_run_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (folder_key, reference)
+) WITHOUT ROWID;
+`;
+
+const SESSION_FENCE_NONCE = `
+ALTER TABLE sessions ADD COLUMN fence_nonce TEXT;
+UPDATE sessions SET fence_nonce = lower(replace(id, '-', '')) WHERE fence_nonce IS NULL;
+`;
+
 const SESSION_PAGES_AND_QUEUED_TERMS = `
 CREATE INDEX sessions_by_created ON sessions (created_at, id);
 CREATE INDEX sessions_by_cwd_created ON sessions (cwd, created_at, id);
@@ -1487,5 +1502,15 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 46,
     name: 'record in the facts of a run the answer kinds of its asks, its denials by source, and for a run under a mandate the time a person took to resolve its holds and the model steps and tool calls completed while a call was held',
     sql: RUN_FACTS_PERMISSIONS_AND_HOLDS,
+  },
+  {
+    version: 47,
+    name: 'keep with every session the boundary that fences the untrusted text of its prompts, drawn once when the session is created; a session created before keeps the hex digits of its id as its boundary',
+    sql: SESSION_FENCE_NONCE,
+  },
+  {
+    version: 48,
+    name: 'record for every folder the issues the issue watch has started, one row per issue reference written before its run starts, so a restart never starts an issue twice; and mark the build that writes the run event of a request for a compaction, which a compaction run writes first, so that a build without this migration reads it with tolerance',
+    sql: ISSUE_WATCH,
   },
 ];

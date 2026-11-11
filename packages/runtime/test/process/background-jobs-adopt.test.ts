@@ -63,7 +63,7 @@ const fakeProcess = (pgid: number, signal: AbortSignal): FakeProcess => {
     finish(result);
   };
   let bound = signal;
-  const onAbort = (): void => exit({ code: null, signal: 'SIGTERM', killedBy: 'abort' });
+  const onAbort = (): void => exit({ code: null, signal: 'SIGTERM', killedBy: 'abort', stop: 'confirmed' });
   signal.addEventListener('abort', onAbort, { once: true });
   const rebind = (next: AbortSignal): void => {
     bound.removeEventListener('abort', onAbort);
@@ -209,7 +209,7 @@ describe('a running foreground command adopted as a background job', () => {
     expect(t.jobs.byCall('call-full')).toBeUndefined();
     callSignal.abort();
     expect(await process.exited).toMatchObject({ killedBy: 'abort' });
-    for (const spawned of t.spawned) spawned.exit({ code: 0, signal: null });
+    for (const spawned of t.spawned) spawned.exit({ code: 0, signal: null, stop: 'confirmed' });
     await Promise.all(busy.map((jobId) => t.settled(jobId)));
   });
 });

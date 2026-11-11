@@ -195,7 +195,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
           if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
         }
       }
-      const inspected = ended !== undefined && ended.uninspectable.length === 0;
+      const inspected = ended !== undefined && ended.uninspectable.length === 0 && exit.stop === 'confirmed';
       await drain(pumps);
       const window = entry.output.window();
       const stored = window.bytes.length === 0 ? undefined : await store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
