@@ -403,9 +403,9 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   const reflectionInput: JournalThreadClient['reflectionInput'] = async ({ runId, project, capabilities }) =>
     reflectionInputOf(await request({ kind: 'reflection_input', runId, project, capabilities }));
 
-  const inheritPlan: JournalThreadClient['inheritPlan'] = async ({ runId, mode }) => {
+  const inheritPlan: JournalThreadClient['inheritPlan'] = async ({ runId, mode, unasked }) => {
     try {
-      return inheritPlanOf(await request({ kind: 'inherit_plan', runId, mode }));
+      return inheritPlanOf(await request({ kind: 'inherit_plan', runId, mode, unasked }));
     } catch (error) {
       throw asInheritanceError(error);
     }

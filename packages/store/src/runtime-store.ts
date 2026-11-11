@@ -1667,7 +1667,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     inheritContext: async (claim, { mode, facts = store.journalFacts }) => {
       const run = requireRun(claim.runId);
-      const plan = await facts.inheritPlan({ runId: run.id, mode });
+      const plan = await facts.inheritPlan({ runId: run.id, mode, unasked: options.unaskedCommands });
       return plan.kind === 'ready' ? writeInheritance(claim, plan) : plan.kind === 'conflict' ? conflict(plan.reason) : plan;
     },
 

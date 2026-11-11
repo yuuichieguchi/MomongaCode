@@ -11,6 +11,7 @@ import * as clientModule from '../../src/memory/journal-thread-client.ts';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient, JournalThreadOptions } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_CODE } from '../../src/memory/journal-thread-code.generated.ts';
+import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 const runningWorkerCount = (): number => (process.report.getReport() as unknown as { workers: unknown[] }).workers.length;
 
@@ -26,7 +27,7 @@ type Fixture = { readonly databasePath: string; readonly identity: { dev: number
 const fixture = (context: TestContext): Fixture => {
   const dir = withTempDir(context);
   const databasePath = path.join(dir, 'runtime.db');
-  openRuntimeStore({ path: databasePath, home: dir, clock: createFakeClock(0), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 50 }).close();
+  openRuntimeStore({ unaskedCommands: UNASKED_COMMANDS, path: databasePath, home: dir, clock: createFakeClock(0), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 50 }).close();
   const stat = fs.statSync(databasePath);
   return { databasePath, identity: { dev: stat.dev, ino: stat.ino }, dir, marker: path.join(dir, 'spawns') };
 };

@@ -13,7 +13,7 @@ export const isReferenceInherited = isInheritedReference;
 
 export type InheritanceOutcome = { status: TerminalStatus; stopReason?: StopReason; errorCode?: string; carriedSkills?: readonly string[] };
 
-export type InheritanceKind = { kind: 'final'; currentMode: PermissionMode } | { kind: 'intermediate' };
+export type InheritanceKind = { kind: 'final'; currentMode: PermissionMode; unasked: UnaskedCommands } | { kind: 'intermediate' };
 
 export const INHERITANCE_ERROR_CODES = ['previous_run_unreadable', 'previous_run_inconsistent'] as const;
 
@@ -49,18 +49,22 @@ const MARKER_TEXT = {
   dropped: '[A previous message was too large to process and was dropped.]',
 } as const;
 
-const MODE_RULE: Record<PermissionMode, string> = {
-  manual:
-    "File changes and commands need the user's approval unless an allow rule covers them; read-only commands (ls, cat, echo, pwd, head, tail, grep, find, wc, which, diff, stat, du, cd, file, sort, ps on Linux and read-only git) run without asking.",
-  acceptEdits:
-    'File edits and the filesystem commands mkdir, touch, rm, rmdir, mv, cp and sed inside the workspace are accepted without asking, and read-only commands run without asking; other actions still need approval unless an allow rule covers them.',
-  plan: "Do not edit files; research and propose a plan for the user to approve. Read-only commands (ls, cat, echo, pwd, head, tail, grep, find, wc, which, diff, stat, du, cd, file, sort, ps on Linux and read-only git) run without asking; any other command needs the user's approval unless an allow rule covers it.",
-  auto: "Tool calls that would need approval are first reviewed by an automatic safety classifier; calls it does not clearly approve still need the user's approval. Stay within what the user asked.",
-  bypassPermissions: 'Tool calls run without asking the user; be careful with destructive actions.',
+export type UnaskedCommands = { readOnly: readonly string[]; edit: readonly string[] };
+
+const readOnlySentence = (unasked: UnaskedCommands): string => `Read-only uses of these commands run without asking: ${unasked.readOnly.join(', ')}.`;
+
+const MODE_RULE: Record<PermissionMode, (unasked: UnaskedCommands) => string> = {
+  manual: (unasked) => `File changes and commands need the user's approval unless an allow rule covers them. ${readOnlySentence(unasked)}`,
+  acceptEdits: (unasked) =>
+    `File edits and these filesystem commands inside the workspace are accepted without asking: ${unasked.edit.join(', ')}. ${readOnlySentence(unasked)} Other actions still need approval unless an allow rule covers them.`,
+  plan: (unasked) =>
+    `Do not edit files; research and propose a plan for the user to approve. ${readOnlySentence(unasked)} Any other command needs the user's approval unless an allow rule covers it.`,
+  auto: () => "Tool calls that would need approval are first reviewed by an automatic safety classifier; calls it does not clearly approve still need the user's approval. Stay within what the user asked.",
+  bypassPermissions: () => 'Tool calls run without asking the user; be careful with destructive actions.',
 };
 
-const modeChangedText = (from: PermissionMode, to: PermissionMode): string =>
-  `[The permission mode changed from ${from} to ${to}. ${MODE_RULE[to]} The set of available tools may differ from earlier in this conversation.]`;
+const modeChangedText = (from: PermissionMode, to: PermissionMode, unasked: UnaskedCommands): string =>
+  `[The permission mode changed from ${from} to ${to}. ${MODE_RULE[to](unasked)} The set of available tools may differ from earlier in this conversation.]`;
 
 const notExecutedText = (outcome: InheritanceOutcome): string => {
   if (outcome.status === 'CANCELLED') return CLOSURE_TEXT.cancelled;
@@ -203,7 +207,7 @@ const projectionOf = (previous: RunState, outcome: InheritanceOutcome, kind: Inh
 
   const mode = kind.kind === 'final' ? kind.currentMode : previous.mode;
   if (kind.kind === 'final' && previous.mode !== undefined && previous.mode !== kind.currentMode) {
-    addMarker('mode_changed', modeChangedText(previous.mode, kind.currentMode));
+    addMarker('mode_changed', modeChangedText(previous.mode, kind.currentMode, kind.unasked));
   }
 
   const omitSeqs = retracted || dropped ? [previous.taskSeq] : [];

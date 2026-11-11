@@ -4,6 +4,7 @@ import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
+import type { UnaskedCommands } from './inherit.ts';
 import type {
   CallFootprint,
   BilledDetail,
@@ -734,6 +735,7 @@ export type RuntimeStoreOptions = {
   generation?: number;
   onCommit?: (touched: { runId?: string; sessionId: string }[]) => void;
   preparer?: ContributionPreparer;
+  unaskedCommands: UnaskedCommands;
   onDecode?: (rows: number, bytes: number) => void;
   onEncode?: (kind: string, bytes: number) => void;
 };
