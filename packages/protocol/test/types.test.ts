@@ -125,9 +125,9 @@ describe('run api types', () => {
       pid: number;
       startedAt: string;
       state: 'running' | 'retiring' | 'draining';
-      role?: 'starting' | 'serving' | 'retiring';
-      steps?: number;
-      jobs?: number;
+      role: 'starting' | 'serving' | 'retiring';
+      steps: number;
+      jobs: number;
       sandbox: 'seatbelt' | 'bubblewrap' | 'none';
     }>();
   });

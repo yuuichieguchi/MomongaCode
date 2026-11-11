@@ -1314,9 +1314,9 @@ export type RunHealth = {
   pid: number;
   startedAt: string;
   state: 'running' | 'retiring' | 'draining';
-  role?: 'starting' | 'serving' | 'retiring';
-  steps?: number;
-  jobs?: number;
+  role: 'starting' | 'serving' | 'retiring';
+  steps: number;
+  jobs: number;
   sandbox: 'seatbelt' | 'bubblewrap' | 'none';
 };
 
@@ -1498,7 +1498,7 @@ export const RUN_API_SCHEMAS = {
         jobs: integer,
         sandbox: enumOf(['seatbelt', 'bubblewrap', 'none']),
       },
-      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'sandbox'],
+      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'role', 'steps', 'jobs', 'sandbox'],
     ),
   ),
   SessionView: root(
