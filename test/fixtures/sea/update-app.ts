@@ -1,8 +1,7 @@
 import { nodeBoundedCommandRunner, nodeEntryIo } from '@momonga/foundation';
 import { daemonEntries } from '../../../packages/cli/src/daemon/entries.ts';
-import { describeFailure } from '../../../packages/cli/src/failure.ts';
 import { nodeHelperHost, nodePorts } from '../../../packages/cli/src/node-ports.ts';
-import { buildProgram, pathsOf } from '../../../packages/cli/src/program.ts';
+import { buildProgram, exitOfFailure, pathsOf } from '../../../packages/cli/src/program.ts';
 import { nodeUpdateWiring } from '../../../packages/cli/src/update/wiring.ts';
 import { nodePolicyVerifyHost } from '../../../packages/cli/src/verify/host.ts';
 
@@ -42,7 +41,6 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
   try {
     await program.parseAsync();
   } catch (error) {
-    process.stderr.write(`momonga: ${describeFailure(error)}\n`);
-    process.exitCode = 1;
+    process.exitCode = exitOfFailure(error, process.stderr, interrupt.signal);
   }
 };
