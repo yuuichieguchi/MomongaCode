@@ -1,6 +1,6 @@
 import { cachedDetailOf } from '@momonga/protocol';
 import type { ErrorType, StreamEvent, Usage } from '@momonga/protocol';
-import { CONTEXT_WINDOW_EXCEEDED, UpstreamProtocolError } from '../shared/failures.ts';
+import { CONTEXT_WINDOW_EXCEEDED, MalformedOutputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { MAX_TOOL_CALLS } from '../shared/limits.ts';
 import type { ResponseEmitter } from '../shared/response-emitter.ts';
 import { AssistantRecorder } from './assistant-recorder.ts';
@@ -87,7 +87,7 @@ export class AnthropicStreamDriver {
     try {
       this.apply(event);
     } catch (error) {
-      if (!this.hasStarted || !(error instanceof UpstreamProtocolError)) throw error;
+      if (!this.hasStarted || !(error instanceof UpstreamProtocolError || error instanceof MalformedOutputError)) throw error;
       this.emitter.fail(error.code, error.errorType, error.message);
     }
     return this.emitter.take();
