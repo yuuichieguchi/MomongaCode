@@ -320,6 +320,7 @@ describe('run event payloads', () => {
       guidelineVersion?: number;
       tokensBefore?: number;
       tokensAfter?: number;
+      tokensAfterEstimated?: true;
     }>();
     expectTypeOf<Payload<'context.governing_loaded'>>().toEqualTypeOf<{
       type: 'context.governing_loaded';

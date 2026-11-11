@@ -236,6 +236,7 @@ export type CompactionPlan = {
   pinnedText: string;
   notices: ContextNotice[];
   tokens: CompactionTokens;
+  rebuilt: { before: InputItem[]; after: InputItem[]; tools: FunctionTool[] };
 };
 
 export type CompactionBlockReason =

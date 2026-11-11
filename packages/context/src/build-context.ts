@@ -833,12 +833,13 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     });
   }
 
-  const assemble = (): InputItem[] => {
-    const items = slots.map(shown);
-    const taskIndex = slots.findIndex((slot) => slot.seq > sources.taskSeq);
-    const ordered = taskIndex < 0 ? [...items, task] : [...items.slice(0, taskIndex), task, ...items.slice(taskIndex)];
-    return [...layers, ...summaryItems, ...ordered, ...workingStateItems, ...trailing];
+  const withTask = (kept: readonly Slot[]): InputItem[] => {
+    const items = kept.map(shown);
+    const taskIndex = kept.findIndex((slot) => slot.seq > sources.taskSeq);
+    return taskIndex < 0 ? [...items, task] : [...items.slice(0, taskIndex), task, ...items.slice(taskIndex)];
   };
+
+  const assemble = (): InputItem[] => [...layers, ...summaryItems, ...withTask(slots), ...workingStateItems, ...trailing];
 
   let firstEvicted: number | undefined;
 
@@ -1005,6 +1006,15 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
           pinnedText: [...layers, task].map((item) => textOfItem(item)).join('\n'),
           notices: protectionNotices,
           tokens: { input: total.inputTokens, replaced: region, workingStateGrowth: growth, request: regionWithTask + promptTokens },
+          rebuilt: {
+            before: [...layers],
+            after: [
+              ...withTask(slots.slice(cutIndex + 1)),
+              ...(sources.projectedWorkingState === undefined ? workingStateItems : [workingStateMessage(sources.projectedWorkingState)]),
+              ...trailing,
+            ],
+            tools: [...tools],
+          },
         },
       };
     }

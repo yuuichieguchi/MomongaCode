@@ -36,8 +36,8 @@ const enqueueCompact = async (env: Env, instructions?: string) =>
     }),
   );
 
-const conversed = async (): Promise<Env> => {
-  const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
+const conversed = async (capabilities = capabilitiesFor(WINDOW)): Promise<Env> => {
+  const env = await makeEnv({ capabilities });
   const first = await env.enqueue('question one');
   await env.seed(first.id, conversation, 'release');
   env.gateway.script.push(textStep('Done.'));
@@ -176,5 +176,32 @@ describe('a compact command over a short session', () => {
     const [notice] = env.ofType(run.id, 'notice').filter((event) => event.code === NOTHING_TO_COMPACT_CODE);
     expect(notice?.message).toMatch(/^No compaction: the latest compactable region of \d+ tokens would free -?\d+ after a summary of \d+, but 1 are needed\. /);
     expect(notice?.message).toContain(COMPACTION_WAY_FORWARD.deficit_not_closed);
+  });
+});
+
+const holdsCompaction = (input: unknown): boolean => Array.isArray(input) && input.some((item: { type?: unknown }) => item.type === 'compaction');
+
+describe('the size after a compaction', () => {
+  it('is the token count of the rebuilt input when the model counts tokens', async () => {
+    const env = await conversed();
+    const run = await enqueueCompact(env);
+
+    await env.runOnce(env.worker());
+
+    const [compacted] = env.ofType(run.id, 'context.compacted');
+    expect(compacted).not.toHaveProperty('tokensAfterEstimated');
+    const rebuiltCounts = env.gateway.counts.flatMap((request, index) => (holdsCompaction(request.input) ? [env.gateway.countResults[index]?.input_tokens] : []));
+    expect(rebuiltCounts).toContain(compacted?.tokensAfter);
+  });
+
+  it('is the labelled estimate when the model does not count tokens', async () => {
+    const env = await conversed(capabilitiesFor(WINDOW, { tokenCounting: 'estimated' }));
+    const run = await enqueueCompact(env);
+
+    await env.runOnce(env.worker());
+
+    const [compacted] = env.ofType(run.id, 'context.compacted');
+    expect(compacted?.tokensAfter).toBeGreaterThan(0);
+    expect(compacted?.tokensAfterEstimated).toBe(true);
   });
 });

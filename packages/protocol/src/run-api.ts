@@ -732,6 +732,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       guidelineVersion: nonNegativeInteger,
       tokensBefore: nonNegativeInteger,
       tokensAfter: nonNegativeInteger,
+      tokensAfterEstimated: { type: 'boolean', const: true },
     },
     required: ['summary', 'replacedThroughSeq'],
   },
@@ -1806,7 +1807,7 @@ type PublicPayload =
   | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[]; source?: InboxDelivery; attachments?: AttachmentSummary[]; shell?: UserShellRecord[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
   | { type: 'run.started'; attempt: number }
-  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number; tokensBefore?: number; tokensAfter?: number }
+  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number; tokensBefore?: number; tokensAfter?: number; tokensAfterEstimated?: true }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
   | {
       type: 'context.inherited';
@@ -1910,6 +1911,7 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
         ...(event.guidelineVersion === undefined ? {} : { guidelineVersion: event.guidelineVersion }),
         ...(event.tokensBefore === undefined ? {} : { tokensBefore: event.tokensBefore }),
         ...(event.tokensAfter === undefined ? {} : { tokensAfter: event.tokensAfter }),
+        ...(event.tokensAfterEstimated === undefined ? {} : { tokensAfterEstimated: event.tokensAfterEstimated }),
       };
     case 'context.compaction_rejected':
       return { ...envelope, type: event.type, ...(event.attempt === undefined ? {} : { attempt: event.attempt }) };

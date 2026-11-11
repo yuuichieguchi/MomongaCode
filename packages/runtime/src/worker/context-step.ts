@@ -345,8 +345,8 @@ const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, le
 
 type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
 type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
-type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'focus' | 'pinnedText' | 'notices' | 'tokens'>;
-type CompactionCounts = Required<Pick<CompactedPayload, 'tokensBefore' | 'tokensAfter'>>;
+type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'focus' | 'pinnedText' | 'notices' | 'tokens' | 'rebuilt'>;
+type CompactionCounts = Required<Pick<CompactedPayload, 'tokensBefore' | 'tokensAfter'>> & Pick<CompactedPayload, 'tokensAfterEstimated'>;
 
 const noticeOf = (code: string, message: string): RunEventPayload => ({ type: 'notice', level: 'warning', message, code });
 
@@ -371,8 +371,12 @@ const projectCompaction = (ctx: ClaimContext, throughSeq: number, item: Compacti
 const renderedFacts = (ctx: ClaimContext, projected: RunState, capTokens: number): string => renderedWorkingState(ctx, projected, capTokens, ctx.readers());
 
 const countsWith = async (ctx: ClaimContext, plan: CompactionSource, item: CompactionInputItem | MessageInputItem): Promise<CompactionCounts> => {
+  if (ctx.capabilities.tokenCounting === 'exact') {
+    const rebuilt = await ctx.meter.count({ input: [...plan.rebuilt.before, item, ...plan.rebuilt.after], tools: plan.rebuilt.tools });
+    return { tokensBefore: plan.tokens.input, tokensAfter: rebuilt.inputTokens };
+  }
   const summaryTokens = await ctx.meter.countItem(item, { callNames: {}, withTools: true });
-  return { tokensBefore: plan.tokens.input, tokensAfter: plan.tokens.input - plan.tokens.replaced + plan.tokens.workingStateGrowth + summaryTokens };
+  return { tokensBefore: plan.tokens.input, tokensAfter: plan.tokens.input - plan.tokens.replaced + plan.tokens.workingStateGrowth + summaryTokens, tokensAfterEstimated: true };
 };
 
 const deterministicCompaction = async (ctx: ClaimContext, plan: CompactionSource, guidelineVersion: number, fidelity?: SummaryFidelity): Promise<CompactedPayload> => {

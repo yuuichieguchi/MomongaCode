@@ -380,6 +380,7 @@ export type RunEventPayload =
       guidelineVersion?: number;
       tokensBefore?: number;
       tokensAfter?: number;
+      tokensAfterEstimated?: true;
     }
   | { type: 'context.governing_loaded'; active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] }
   | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }
