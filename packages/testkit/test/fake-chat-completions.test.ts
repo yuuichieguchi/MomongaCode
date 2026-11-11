@@ -11,8 +11,6 @@ import {
   fakeUsageOfRequest,
   generateInstance,
   isValidAtIndex,
-  pollUntil,
-  REAL_PROCESS_TEST_TIMEOUT_MS,
   startFakeChatCompletions,
   waitFor,
   type FakeChatCompletionsOptions,
@@ -595,7 +593,7 @@ describe('probe support options', () => {
     const request = http.request({ socketPath: fake.socketPath, method: 'POST', path: '/v1/chat/completions', headers: { 'content-type': 'application/json' } }, () => ended.resolve());
     request.on('error', () => ended.resolve());
     request.end(JSON.stringify({ model: 'system', ...toolBody }));
-    await pollUntil(() => fake.requests.length > 0, { description: 'the stalled sample to reach the fake', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS });
+    await waitFor(() => fake.requests.length > 0, { description: 'the stalled sample to reach the fake' });
     request.destroy();
     await ended.promise;
     await vi.waitFor(async () => expect((await chat(fake.socketPath, plainBody)).status).toBe(200));
