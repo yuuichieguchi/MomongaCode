@@ -72,6 +72,7 @@ const ASYNCHRONOUS_FILES: readonly string[] = [
 const SYNCHRONOUS_USERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/sync-paths.ts': 'the synchronous driver of the one resolution algorithm',
   'packages/foundation/src/index.ts': 'exports the synchronous driver',
+  'packages/foundation/src/secret-store.ts': 'the real path of the secret program, checked for its owners when the store is chosen, which is synchronous like the PATH search',
 };
 
 describe('path resolution is asynchronous and goes through the file-system port', () => {

@@ -52,7 +52,7 @@ export const findProgramOnPath = async (program: string, env: SearchEnv, files: 
 export const findProgramOnPathSync = (program: string, env: SearchEnv, files: ProgramSearchFilesSync): string | undefined =>
   programCandidatesOf(program, env).find((candidate) => isExecutableFileSync(files, candidate));
 
-export type ProgramOwnerFiles = Pick<FileSystemSync, 'lstatSync' | 'realpathSync'>;
+export type ProgramOwnerFiles = Pick<FileSystemSync, 'lstatSync'> & { realPathOf(file: string): string };
 
 const OTHERS_WRITE = 0o022;
 const STICKY = 0o1000;
@@ -80,6 +80,6 @@ const ownerProblemOfChain = (file: string, files: ProgramOwnerFiles, person: num
 };
 
 export const programOwnerProblemSync = (file: string, files: ProgramOwnerFiles, person: number): string | undefined => {
-  const problem = ownerProblemOfChain(file, files, person) ?? ownerProblemOfChain(files.realpathSync(file), files, person);
+  const problem = ownerProblemOfChain(file, files, person) ?? ownerProblemOfChain(files.realPathOf(file), files, person);
   return problem === undefined ? undefined : `${file} is not used: ${problem}; a program run for secrets must be owned by you or root, in folders that only you or root can change`;
 };

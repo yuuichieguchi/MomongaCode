@@ -33,7 +33,7 @@ const filesOf = (entries: Readonly<Record<string, Entry>>): ProgramOwnerFiles =>
     if (entry === undefined) throw Object.assign(new Error(`ENOENT: ${file}`), { code: 'ENOENT' });
     return { uid: entry.uid, mode: entry.mode, isSymbolicLink: () => false, isDirectory: () => (entry.mode & DIRECTORY) !== 0 } as fs.Stats;
   },
-  realpathSync: (file) => file,
+  realPathOf: (file) => file,
 });
 
 const chain = (overrides: Readonly<Record<string, Entry>>): ProgramOwnerFiles =>
