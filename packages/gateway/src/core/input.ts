@@ -4,10 +4,10 @@ import { invalidRequest } from './errors.ts';
 
 export const refuseStoredResponses = (body: Readonly<Record<string, unknown>>): void => {
   if (body['store'] === true) {
-    throw invalidRequest('stored_responses_unsupported', 'the gateway keeps no response for a later call; send store: false and the whole input', 'store');
+    throw invalidRequest('stored_responses_unsupported', 'no response is kept for a later call; send store: false and the whole input', 'store');
   }
   if (body['previous_response_id'] !== undefined && body['previous_response_id'] !== null) {
-    throw invalidRequest('stored_responses_unsupported', 'the gateway keeps no response for a later call to continue; send the whole input instead of previous_response_id', 'previous_response_id');
+    throw invalidRequest('stored_responses_unsupported', 'no response is kept for a later call to continue; send the whole input instead of previous_response_id', 'previous_response_id');
   }
 };
 
