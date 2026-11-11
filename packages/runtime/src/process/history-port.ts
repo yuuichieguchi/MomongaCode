@@ -17,12 +17,12 @@ export type HistoryPortOptions = {
 };
 
 export const createHistoryPort = ({ store, settings, clock, home, redactor, enforcement }: HistoryPortOptions): HistoryPort => ({
-  load: async (session) => {
-    const trusted = await settings.trusted(session);
+  load: async (session, loadSignal) => {
+    const trusted = await settings.trusted(session, loadSignal);
     const visibility: HistoryVisibility = { trusted, project: session.cwd };
     const denialFor = async (project: string, signal: AbortSignal): Promise<ReadDenial> => {
       const own = project === session.cwd;
-      const rules = await permissionRulesFor({ store, settings, clock, home }, own ? session : { ...session, cwd: project, additionalDirectories: [] });
+      const rules = await permissionRulesFor({ store, settings, clock, home }, own ? session : { ...session, cwd: project, additionalDirectories: [] }, signal);
       const roots = own ? [session.cwd, ...session.additionalDirectories] : [project];
       return createReadDenial({ rules, roots: await mapAsync(roots, hostPaths(signal).canonicalPath), cwd: project, enforcement: enforcement(), signal });
     };

@@ -39,12 +39,12 @@ export const governanceRulesOf = (facts: readonly EnforcedFact[], context: RuleP
 const governanceRulesFor = (sources: PermissionRuleSources, session: Session): PermissionRule[] =>
   governanceRulesOf(enforcedFactsFor(sources.store, sources.clock, session.cwd), { home: sources.home, project: session.cwd });
 
-export const permissionRulesFor = async (sources: PermissionRuleSources, session: Session): Promise<PermissionRule[]> => [
-  ...(await sources.settings.rules(session)),
+export const permissionRulesFor = async (sources: PermissionRuleSources, session: Session, signal: AbortSignal): Promise<PermissionRule[]> => [
+  ...(await sources.settings.rules(session, signal)),
   ...governanceRulesFor(sources, session),
 ];
 
-export const permissionRulesComposerFor = async (sources: PermissionRuleSources, session: Session): Promise<() => PermissionRule[]> => {
-  const settingsRules = await sources.settings.rules(session);
+export const permissionRulesComposerFor = async (sources: PermissionRuleSources, session: Session, signal: AbortSignal): Promise<() => PermissionRule[]> => {
+  const settingsRules = await sources.settings.rules(session, signal);
   return () => [...settingsRules, ...governanceRulesFor(sources, session)];
 };

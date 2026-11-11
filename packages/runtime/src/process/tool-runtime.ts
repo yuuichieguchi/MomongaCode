@@ -132,6 +132,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     ownerAlive: async (ownerGeneration) =>
       (await inspectProcessLock(generationLayout(home, ownerGeneration).locks.runtime, { mechanism: kernelLock })).state !== 'free',
     markerFiles: createNodeJobMarkerFiles(lockCapability),
+    files: nodeFileSystem,
     inspector,
     killGraceMs: SANDBOX_KILL_GRACE_MS,
     reapTiming,
@@ -217,7 +218,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
     let acquiredHere = false;
     try {
-      const loaded = await settings.loadSessionSettings(session.cwd, snapshot);
+      const loaded = await settings.loadSessionSettings(session.cwd, snapshot, signal);
       const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user, 'read', signal);
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {

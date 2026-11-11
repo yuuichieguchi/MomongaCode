@@ -204,7 +204,7 @@ const offeredInputOf = async (
     recordedReferences: recordedReferencesOf(ctx),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
     touchedPaths: ctx.touched.probes.witnesses(),
-    trusted: await options.settings.trusted(session),
+    trusted: await options.settings.trusted(session, ctx.control.signal),
     projectRoot: session.cwd,
     home: options.home,
     level,
@@ -259,7 +259,7 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => {
       handleFor: (content) => ctx.options.blobs.handleFor(content),
       put: (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
     },
-    instructions: ctx.options.instructionReader,
+    instructions: ctx.options.instructionReaderFor(ctx.control.signal),
     ...(roleModel === undefined ? {} : { compactionTarget: () => compactionRoleCapabilitiesOf(ctx, roleModel) }),
   };
 };

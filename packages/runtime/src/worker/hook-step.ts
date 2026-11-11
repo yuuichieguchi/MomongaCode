@@ -58,7 +58,7 @@ export const withSessionCommands = async <T>(ctx: ClaimContext, work: (commands:
   const held = await holdSandbox(ctx.options.tools.sandboxes, ctx.control.signal);
   try {
     const session = sessionOf(ctx);
-    const rules: PermissionRule[] = await permissionRulesFor(ctx.options, session);
+    const rules: PermissionRule[] = await permissionRulesFor(ctx.options, session, ctx.control.signal);
     const policy = await ctx.options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement, signal: ctx.control.signal, discoverGitConfig: true });
     return await work({ session, policy, sandbox: held.sandbox });
   } finally {
@@ -85,7 +85,7 @@ const isSubagentRun = (ctx: ClaimContext): boolean => ctx.run.parentRunId !== nu
 export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
   if (isSubagentRun(ctx)) return 'continue';
   const session = sessionOf(ctx);
-  const hooks = await ctx.options.settings.hooks(session);
+  const hooks = await ctx.options.settings.hooks(session, ctx.control.signal);
   const wantsSessionStart = ctx.run.ordinal === 1 && selectHookCommands(hooks, 'SessionStart', 'startup').length > 0 && !alreadyRan(ctx, 'SessionStart');
   const wantsPrompt = selectHookCommands(hooks, 'UserPromptSubmit', undefined).length > 0 && !alreadyRan(ctx, 'UserPromptSubmit');
   if (!wantsSessionStart && !wantsPrompt) return 'continue';
@@ -109,7 +109,7 @@ export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
 export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'allow'> => {
   if (isSubagentRun(ctx)) return 'allow';
   const session = sessionOf(ctx);
-  const hooks = await ctx.options.settings.hooks(session);
+  const hooks = await ctx.options.settings.hooks(session, ctx.control.signal);
   if (selectHookCommands(hooks, 'Stop', undefined).length === 0 || ctx.journal.state.stopHookRanSinceResponse) return 'allow';
   const continuations = ctx.journal.state.stopHookContinuations;
   if (continuations >= STOP_HOOK_MAX_CONTINUATIONS) {

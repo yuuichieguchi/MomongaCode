@@ -95,7 +95,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     if (run === undefined) throw new Error(`run ${runId} of a reflection job does not exist`);
     const session = store.getSession(run.sessionId);
     if (session === undefined) throw new Error(`session ${run.sessionId} of run ${runId} does not exist`);
-    const memorySettings = await settings.memory(session);
+    const memorySettings = await settings.memory(session, signal);
     const { cwd: project } = session;
     const factsOn = memorySettings.repositoryFacts;
     const needsVerdict = memorySettings.reflection.enabled || factsOn;
@@ -105,10 +105,10 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       store.reflection.finish(runId, declinedEarly);
       return;
     }
-    const verification = await settings.verification(session);
+    const verification = await settings.verification(session, signal);
     const verdict = await store.journalFacts.verdict({ runId, commands: verification.commands, manifests: verification.manifests }, signal);
     const { verified } = verdict;
-    const trusted = await settings.trusted(session);
+    const trusted = await settings.trusted(session, signal);
     const knownTexts = (): Set<string> =>
       new Set(
         store.memories

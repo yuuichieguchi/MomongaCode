@@ -32,18 +32,18 @@ const BASE_PINS = { model: 'fm', systemPromptDigest: 'd'.repeat(64), toolSetDige
 
 describe('the token pin of a root run', () => {
   it('pins nothing when every token setting is off', async () => {
-    expect(await tokenPinFor({ store: storeWith([]), settings: settingsOf(OFF_CONTEXT, OFF_TOOLS), session: SESSION, run: rootRun })).toEqual({});
+    expect(await tokenPinFor({ signal: new AbortController().signal, store: storeWith([]), settings: settingsOf(OFF_CONTEXT, OFF_TOOLS), session: SESSION, run: rootRun })).toEqual({});
   });
 
   it('pins each setting that is on', async () => {
     const context: ResolvedContextSettings = { ...OFF_CONTEXT, cachePrefix: true, outputFormatters: ['log', 'grep'], loopGuidance: true, observedCapacity: true };
-    const pin = await tokenPinFor({ store: storeWith([]), settings: settingsOf(context, { deferral: false, conciseDescriptions: true, ripgrep: 'bundled' }), session: SESSION, run: rootRun });
+    const pin = await tokenPinFor({ signal: new AbortController().signal, store: storeWith([]), settings: settingsOf(context, { deferral: false, conciseDescriptions: true, ripgrep: 'bundled' }), session: SESSION, run: rootRun });
     expect(pin).toEqual({ cachePrefix: true, conciseDescriptions: true, outputFormatters: ['log', 'grep'], loopGuidance: true, observedCapacity: true });
   });
 
   it('ignores the settings that are not part of the token pin', async () => {
     const context: ResolvedContextSettings = { ...OFF_CONTEXT, adaptiveBudget: true, autoCompact: false };
-    expect(await tokenPinFor({ store: storeWith([]), settings: settingsOf(context, OFF_TOOLS), session: SESSION, run: rootRun })).toEqual({});
+    expect(await tokenPinFor({ signal: new AbortController().signal, store: storeWith([]), settings: settingsOf(context, OFF_TOOLS), session: SESSION, run: rootRun })).toEqual({});
   });
 });
 
@@ -52,13 +52,13 @@ describe('the token pin of a child run', () => {
     const parentPin: TokenPin = { cachePrefix: true, deferred: ['WebFetch'], outputFormatters: ['json'], observedCapacity: true };
     const store = storeWith([started({ ...BASE_PINS, token: parentPin })]);
     const context: ResolvedContextSettings = { ...OFF_CONTEXT, loopGuidance: true };
-    expect(await tokenPinFor({ store, settings: settingsOf(context, { deferral: true, conciseDescriptions: true, ripgrep: 'bundled' }), session: SESSION, run: childRun })).toEqual(parentPin);
+    expect(await tokenPinFor({ signal: new AbortController().signal, store, settings: settingsOf(context, { deferral: true, conciseDescriptions: true, ripgrep: 'bundled' }), session: SESSION, run: childRun })).toEqual(parentPin);
   });
 
   it('inherits an all-off pin from a parent that recorded none', async () => {
     const store = storeWith([started(BASE_PINS)]);
     const context: ResolvedContextSettings = { ...OFF_CONTEXT, cachePrefix: true };
-    expect(await tokenPinFor({ store, settings: settingsOf(context, OFF_TOOLS), session: SESSION, run: childRun })).toEqual({});
+    expect(await tokenPinFor({ signal: new AbortController().signal, store, settings: settingsOf(context, OFF_TOOLS), session: SESSION, run: childRun })).toEqual({});
   });
 });
 
