@@ -31,6 +31,9 @@ const setup = (faults: Faults = {}) => {
     remove: () => {
       log.push('remove');
     },
+    handOver: () => {
+      log.push('hand over');
+    },
     target: (recordFile, terminal) => ({ file: '/opt/momonga', args: ['--handover', recordFile], env: terminal === undefined ? {} : { MOMONGA_HANDOVER_TERMINAL: JSON.stringify(terminal) } }),
     replace: (target, hooks) => {
       log.push('replace');
@@ -69,7 +72,7 @@ const setup = (faults: Faults = {}) => {
   return { mover, log, written, targets, said, state };
 };
 
-const MOVE = ['snapshot', 'suspend', 'say', 'snapshot', 'write', 'replace', 'release'];
+const MOVE = ['snapshot', 'suspend', 'say', 'snapshot', 'write', 'replace', 'release', 'hand over'];
 
 const settled = async (): Promise<void> => {
   for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
@@ -148,16 +151,31 @@ describe('a session client moves at a quiet point (16.5, 16.8)', () => {
 });
 
 describe('a move that fails (16.4, M4)', () => {
-  it('stays, says why and makes one attempt per newer generation when the record cannot be written (red test 15)', async () => {
+  it('stays and says why when the record cannot be written, and the next check tries the same version again (red test 15)', async () => {
     const { mover, log, said } = setup({ write: new Error('ENOSPC: no space left on device') });
     await mover.learned('1.2.4');
     expect(log).toEqual(['snapshot', 'suspend', 'say', 'snapshot', 'write', 'resume', 'say']);
     expect(said.at(-1)).toBe(handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'ENOSPC: no space left on device', kept: KEPT }));
     await mover.check();
-    await mover.learned('1.2.4');
-    expect(log.filter((step) => step === 'write')).toHaveLength(1);
-    await mover.learned('1.2.5');
     expect(log.filter((step) => step === 'write')).toHaveLength(2);
+  });
+
+  it('a write failure is not a refusal: a later check after the fault cleared moves to that version', async () => {
+    const faults: Faults = { write: new Error('the lock of the record is held by another process') };
+    const { mover, log, targets } = setup(faults);
+    await mover.learned('1.2.4');
+    delete faults.write;
+    void mover.check();
+    await settled();
+    expect(log.filter((step) => step === 'replace')).toHaveLength(1);
+    expect(targets).toHaveLength(1);
+  });
+
+  it('hands the hold of the record over when the process is released for the relay', async () => {
+    const { mover, log } = setup();
+    void mover.learned('1.2.4');
+    await settled();
+    expect(log.slice(-3)).toEqual(['replace', 'release', 'hand over']);
   });
 
   it('stays, removes the record, says why and makes one attempt when the exec fails (red test 16)', async () => {

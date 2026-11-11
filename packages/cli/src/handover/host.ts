@@ -9,7 +9,7 @@ import { installedNotNewerReason } from './texts.ts';
 
 export type HandoverHost = { args: readonly string[]; started: HandoverStart | undefined; mover: Mover; removeRecord(file: string): void };
 
-export type RecordFiles = { read(file: string): string; write(file: string, text: string): void; remove(file: string): void };
+export type RecordFiles = { read(file: string): string; write(file: string, text: string): void; remove(file: string): void; handOver(file: string): void };
 
 export type HandoverInvocation = { version: string; pid: number; self: SelfExecutable; argv: readonly string[]; env: Record<string, string | undefined>; execArgv: readonly string[]; files: RecordFiles };
 
@@ -20,6 +20,7 @@ export const createHandoverHost = ({ version, pid, self, argv, env, execArgv, fi
     pid,
     write: files.write,
     remove: files.remove,
+    handOver: files.handOver,
     target: (recordFile, terminal) => handoverTarget({ self, execArgv, args, env }, recordFile, terminal),
     replace: (target, hooks) => replaceProcess(target, hostReplace, hooks),
   });

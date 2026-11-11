@@ -290,6 +290,12 @@ export const nodeRecordFiles = (lock: LockSource): RecordFiles => ({
   remove: (file) => {
     dropRecord(file, claimRecord(lock(), file));
   },
+  handOver: (file) => {
+    const held = heldRecords.get(file);
+    if (held === undefined) throw new Error(`this process holds no record ${file} to hand over`);
+    heldRecords.delete(file);
+    held.release();
+  },
 });
 
 type Arrival = { resolve(kind: 'bytes' | 'end'): void; reject(error: unknown): void };
