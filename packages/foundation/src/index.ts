@@ -141,6 +141,7 @@ export {
   homeLayout,
   momongaLayout,
   momongaPaths,
+  canonicalHomeOf,
   protectedAreasOf,
   refuseUnfitGenerationSocketsBeforeCreation,
   requireGenerationDirs,

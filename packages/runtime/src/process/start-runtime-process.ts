@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
-import { installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -206,7 +206,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
   const startedAtMs = clock.now();
   const startedAt = new Date(startedAtMs).toISOString();
-  const canonicalHome = await hostPaths(startDeadlineSignal(signal)).canonicalPath(home);
+  const canonicalHome = await canonicalHomeOf(home, hostPaths(startDeadlineSignal(signal)));
   const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
   const onWarning = (message: string): void => logger.warn(message);

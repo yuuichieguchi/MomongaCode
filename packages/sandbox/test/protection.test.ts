@@ -1,5 +1,9 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { launchGroupLeader, momongaLayout, protectedAreasOf } from '@momonga/foundation';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { canonicalHomeOf, launchGroupLeader, momongaLayout, protectedAreasOf } from '@momonga/foundation';
+import { testPaths } from '@momonga/testkit';
 import type { ChildProtection, LaunchProtection } from '@momonga/foundation';
 
 type GroupLaunchRequest = Parameters<typeof launchGroupLeader>[0];
@@ -91,5 +95,19 @@ describe('the spawn port', () => {
   it('requires a protection on every launch', () => {
     expectTypeOf<GroupLaunchRequest['protection']>().toEqualTypeOf<LaunchProtection>();
     expectTypeOf<Pick<GroupLaunchRequest, 'protection'>>().toEqualTypeOf<{ protection: LaunchProtection }>();
+  });
+});
+
+describe('the canonical home', () => {
+  it('is the real location of a home reached through a link, the one form the protection and the verdict key use', async () => {
+    const real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'home-')));
+    const link = `${real}-link`;
+    fs.symlinkSync(real, link);
+    try {
+      expect(await canonicalHomeOf(link, testPaths())).toBe(real);
+    } finally {
+      fs.rmSync(link);
+      fs.rmSync(real, { recursive: true });
+    }
   });
 });
