@@ -362,7 +362,8 @@ const runEffect = async (runtime: Runtime, effect: ArgvCall | ForgeCall, ctx: To
     signal: ctx.signal,
     boundMs: Math.max(0, ctx.deadlineAt - ctx.clock.now()),
   });
-  return answer.status === 'success' ? undefined : `the forge answered ${answer.status.replace('_', ' ')}`;
+  if (answer.status === 'success') return undefined;
+  return `the forge answered ${answer.status.replace('_', ' ')}${answer.message === '' ? '' : `: ${answer.message}`}`;
 };
 
 const PRE_PUSH = 'pre-push';

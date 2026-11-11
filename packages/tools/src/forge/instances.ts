@@ -87,7 +87,7 @@ export const createForgeAccess = (options: ForgeAccessOptions): ForgeAccess => {
       try {
         const answer = await callForge({ descriptor, apiBaseUrl: instance.apiBaseUrl, credential, variables: { owner, name, ...args }, operation, signal, boundMs, fetch: options.fetch });
         const clean = (fields: ForgeFields): ForgeFields => Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, redact(value)]));
-        return { status: answer.status, items: answer.items.map(clean), fields: clean(answer.fields) };
+        return { status: answer.status, message: redact(answer.message), items: answer.items.map(clean), fields: clean(answer.fields) };
       } catch (error) {
         throw new ToolExecutionError(redact(error instanceof Error ? error.message : String(error)));
       }

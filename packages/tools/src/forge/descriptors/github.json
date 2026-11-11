@@ -1,13 +1,15 @@
 {
   "id": "github",
   "auth": { "header": "Authorization", "prefix": "Bearer ", "gitUsername": "x-access-token" },
+  "errorText": { "message": "message", "details": "errors", "detail": "message" },
   "operations": {
     "listPullRequests": {
       "method": "GET",
       "path": "/repos/{owner}/{name}/pulls",
-      "query": { "head": "{owner}:{head}", "base": "{base}", "state": "open" },
+      "query": { "head": "{owner}:{head}", "base": "{base}", "state": "open", "per_page": "100" },
       "success": [200],
       "items": "",
+      "paging": "link",
       "result": { "number": "number", "url": "html_url", "headSha": "head.sha", "state": "state", "merged": "merged" }
     },
     "getPullRequest": {
@@ -21,7 +23,7 @@
       "path": "/repos/{owner}/{name}/pulls",
       "body": { "head": "{head}", "base": "{base}", "title": "{title}", "body": "{body}" },
       "success": [201],
-      "alreadyExists": [422],
+      "answers": [{ "status": 422, "messageIncludes": "A pull request already exists", "outcome": "already_exists" }, { "status": 422, "outcome": "failed" }],
       "result": { "number": "number", "url": "html_url", "headSha": "head.sha" }
     },
     "mergePullRequest": {
@@ -29,7 +31,7 @@
       "path": "/repos/{owner}/{name}/pulls/{number}/merge",
       "body": { "sha": "{headSha}" },
       "success": [200],
-      "conflict": [409],
+      "answers": [{ "status": 409, "outcome": "conflict" }, { "status": 405, "outcome": "failed" }, { "status": 422, "outcome": "failed" }],
       "result": { "sha": "sha" }
     },
     "getBranch": {
@@ -41,22 +43,28 @@
     "listChecks": {
       "method": "GET",
       "path": "/repos/{owner}/{name}/commits/{headSha}/check-runs",
+      "query": { "per_page": "100" },
       "success": [200],
       "items": "check_runs",
+      "paging": "link",
       "result": { "name": "name", "status": "status", "conclusion": "conclusion" }
     },
     "listComments": {
       "method": "GET",
       "path": "/repos/{owner}/{name}/issues/{number}/comments",
+      "query": { "per_page": "100" },
       "success": [200],
       "items": "",
+      "paging": "link",
       "result": { "id": "id", "body": "body" }
     },
     "listReviewComments": {
       "method": "GET",
       "path": "/repos/{owner}/{name}/pulls/{number}/comments",
+      "query": { "per_page": "100" },
       "success": [200],
       "items": "",
+      "paging": "link",
       "result": { "id": "id", "path": "path", "line": "line", "body": "body" }
     },
     "createComment": {
