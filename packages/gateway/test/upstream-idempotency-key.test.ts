@@ -244,4 +244,14 @@ describe('a second send of one model request is recorded as retry_of (Q20 B3, K4
     expect(spans[0]?.attributes).not.toHaveProperty('momonga.retry_of');
     expect(spans[1]?.attributes['momonga.retry_of']).toBe(sendsOf(started.dbPath)[0]?.seq);
   });
+
+  it('reply: the answer of a second send names the recorded call it retries in its momonga extension, a first send names none (DECISION-12)', async () => {
+    const started = await startDeclared([REFUSED, OK], HEADER, { maxAttempts: 1 });
+    await readJson(await call(started, 'key-1'));
+    const second = await readJson(await call(started, 'key-1'));
+    expect(second.status).toBe(200);
+    expect((second.body as { momonga: { retryOf?: number } }).momonga.retryOf).toBe(sendsOf(started.dbPath)[0]?.seq);
+    const first = await readJson(await call(started, 'key-2', 'another', { run_id: 'run-1', step: '2' }));
+    expect((first.body as { momonga: Record<string, unknown> }).momonga).not.toHaveProperty('retryOf');
+  });
 });

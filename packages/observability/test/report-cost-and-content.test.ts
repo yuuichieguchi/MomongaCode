@@ -56,7 +56,7 @@ describe('runCostsOf (X6: the priced units of the billed calls of each run)', ()
       ],
     );
     expect(costs).toEqual([
-      { runId: 'run-b', calls: 1, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD', priceVersion: 'local', units: '0' }] },
+      { runId: 'run-b', calls: 1, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD', priceVersion: 'local', units: '0' }] },
       {
         runId: 'run-a',
         calls: 5,
@@ -67,7 +67,7 @@ describe('runCostsOf (X6: the priced units of the billed calls of each run)', ()
           { currency: 'USD', priceVersion: '2026-06-01', units: '5' },
         ],
       },
-      { runId: 'run-empty', calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] },
+      { runId: 'run-empty', calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] },
     ]);
   });
 

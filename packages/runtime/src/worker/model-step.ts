@@ -134,13 +134,14 @@ const truncationFailure = (reported: number, observation: Pick<InputEstimate, 'e
 
 const billedExtensionOf = (extension: MomongaResponseExtension | undefined): ModelResponse['momonga'] => {
   if (extension === undefined) return undefined;
-  const { cacheWriteInputTokens, cacheReadNotReported } = extension;
+  const { cacheWriteInputTokens, cacheReadNotReported, retryOf } = extension;
   const outcome = priceOutcomeOf(extension);
-  if (cacheWriteInputTokens === undefined && cacheReadNotReported === undefined && Object.keys(outcome).length === 0) return undefined;
+  if (cacheWriteInputTokens === undefined && cacheReadNotReported === undefined && retryOf === undefined && Object.keys(outcome).length === 0) return undefined;
   return {
     ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
     ...(cacheReadNotReported === undefined ? {} : { cacheReadNotReported }),
     ...outcome,
+    ...(retryOf === undefined ? {} : { retryOf }),
   };
 };
 

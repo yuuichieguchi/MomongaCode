@@ -95,7 +95,7 @@ const harness = (behaviour: Behaviour = {}) => {
       getRun: async (id: string) => ({ id, sessionId: `s-${root}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 1 } }),
       runReflection: async () => ({ job: { runId, state: 'done', attempts: 1, reason: null, dropped: [], updatedAt: 0 }, charges: [], queuedAhead: 0 }),
       runAnsweredBy: async () => ({ answeredBy: [{ target: 'scripted', adapter: 'chat-completions', upstreamModel: 'fake-model', answers: 'script' }] }),
-      reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+      reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
       resolveApproval: async () => ({}),
       cancel: async () => ({ status: 200, run: {} }),
       addRule: async () => ({ fact: { id: 'fact' }, size: [], warnings: [] }),

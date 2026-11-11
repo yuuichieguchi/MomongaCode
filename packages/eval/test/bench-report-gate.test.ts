@@ -58,7 +58,7 @@ describe('the benchmark report prints the completion gate against the oracle (re
   it('counts each trial in the 2x2 table of gate verdict and oracle verdict and prints it', async () => {
     const dir = await benchmarkDir([{ id: 'fix-add', reference: { 'src/add.js': ADD_FIXED } }]);
     const benchmark = parseBenchmark(fs.readFileSync(path.join(dir, 'benchmark.json'), 'utf8'), 'benchmark.json');
-    const trial = (index: number, overrides: Partial<RunFactsView>) => ({ taskId: 'fix-add', trial: index, facts: factsOf(`t${index}`, overrides), children: [], costs: [{ runId: `t${index}`, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] }] });
+    const trial = (index: number, overrides: Partial<RunFactsView>) => ({ taskId: 'fix-add', trial: index, facts: factsOf(`t${index}`, overrides), children: [], costs: [{ runId: `t${index}`, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] }] });
     const report = buildBenchmarkReport({
       benchmark,
       trials: [

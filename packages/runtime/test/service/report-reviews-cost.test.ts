@@ -52,7 +52,7 @@ describe('/v1/report/reviews', () => {
 describe('POST /v1/report/cost', () => {
   it('answers the cost rows of the asked run ids, at most REPORT_PAGE_ROWS of them', async () => {
     const asked: string[][] = [];
-    const row = { runId: 'run-a', calls: 2, notPriced: 1, priced: [{ currency: 'USD', priceVersion: '2026-01-01', units: '12' }] };
+    const row = { runId: 'run-a', calls: 2, retries: 0, notPriced: 1, priced: [{ currency: 'USD', priceVersion: '2026-01-01', units: '12' }] };
     const { env } = await withCalls({
       reportCost: async (runIds) => {
         asked.push([...runIds]);

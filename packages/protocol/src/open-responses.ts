@@ -245,6 +245,7 @@ export type MomongaResponseExtension = {
   cost?: ModelCost;
   unpriced?: UnpricedOutcome;
   retryable?: boolean;
+  retryOf?: number;
 };
 
 export type ResponseResource = {

@@ -45,6 +45,7 @@ const row = (runId: string): RunFactsView => ({
 
 const cost = (runId: string, calls: number, units: bigint): RunCostView => ({
   runId,
+  retries: 0,
   calls,
   notPriced: 0,
   legacyPrecisionCalls: 0,

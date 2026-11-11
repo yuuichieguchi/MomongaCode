@@ -24,6 +24,7 @@ const recordCall = async (h: ReturnType<typeof harness>, responseId: string): Pr
 const pricedBy = (h: ReturnType<typeof harness>, recorded: ReadonlyMap<string, RecordedPrice>): PricedBilledCall[] =>
   pageBilledCalls(h.store, [RUN.runId], { run: 0, after: 0 }, 10, false).calls.map((call) => ({
     ...call,
+    retried: false,
     price: callPriceOf((call.responseId === undefined ? undefined : recorded.get(call.responseId)) ?? { kind: 'not_recorded' }),
   }));
 

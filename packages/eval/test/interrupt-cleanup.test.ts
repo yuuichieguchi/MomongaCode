@@ -103,7 +103,7 @@ describe('an interrupt during a trial of the bench', () => {
     const started: string[] = [];
     const probed: string[] = [];
     const api: BenchRunApi = {
-      costs: async (runIds) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+      costs: async (runIds) => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
       createSession: async () => ({ id: 'session-1' }),
       createRun: async () => {
         started.push(`run-${started.length + 1}`);

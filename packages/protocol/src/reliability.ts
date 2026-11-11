@@ -118,7 +118,7 @@ export type StoreReviewResponse = { review: PermissionReviewView };
 export const COST_CURRENCY = 'USD';
 export const COST_UNIT_DIGITS = 15;
 
-export type RunCostView = { runId: string; calls: number; notPriced: number; legacyPrecisionCalls: number; priced: { currency: typeof COST_CURRENCY; priceVersion: string; units: string }[] };
+export type RunCostView = { runId: string; calls: number; retries: number; notPriced: number; legacyPrecisionCalls: number; priced: { currency: typeof COST_CURRENCY; priceVersion: string; units: string }[] };
 
 export type ReportCostRequest = { runIds: string[] };
 

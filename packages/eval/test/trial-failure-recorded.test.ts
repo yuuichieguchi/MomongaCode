@@ -34,7 +34,7 @@ const apiFailingOn = (failing: number): BenchRunApi => {
       const run = runs.get(runId) as { timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } };
       return { sessionId: 'session-1', status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + run.timeoutMs, limits: run.limits, step: 1, tokensTotal: 1, origin: 'trusted', agent: 'main', mode: 'acceptEdits', model: 'fake/system', declared: false };
     },
-    costs: async (runIds) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+    costs: async (runIds) => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
     answeredBy: async () => [{ target: 'fake/system', adapter: 'chat-completions', upstreamModel: 'fake', answers: 'script' }],
     resolveApproval: async () => undefined,
     cancelRun: async () => undefined,

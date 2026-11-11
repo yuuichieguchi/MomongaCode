@@ -17,7 +17,7 @@ afterEach(() => {
   for (const dir of scratches.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-const recordedCost = (runId: string, units: string): RunCostView => ({ runId, calls: 1, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD', priceVersion: 'v1', units }] });
+const recordedCost = (runId: string, units: string): RunCostView => ({ runId, calls: 1, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD', priceVersion: 'v1', units }] });
 
 const pricedApi = (asked: string[][]): BenchRunApi => {
   const runs = new Map<string, { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } }>();
@@ -78,7 +78,7 @@ describe('one cost record: a report prints the cost of its population', () => {
       groupBy: 'model',
     });
     expect(asked).toEqual([['run-1'], ['run-2']]);
-    expect(report.cost?.total.successful).toMatchObject({ tasks: 2, fullyPriced: 2, calls: 2, notPriced: 0, priced: [{ currency: 'USD', priceVersion: 'v1', units: '1500000000000000' }] });
+    expect(report.cost?.total.successful).toMatchObject({ tasks: 2, fullyPriced: 2, calls: 2, retries: 0, notPriced: 0, priced: [{ currency: 'USD', priceVersion: 'v1', units: '1500000000000000' }] });
     expect(formatReliabilityReport(report)).toMatch(/Cost per Successful Task/);
   });
 
@@ -95,7 +95,7 @@ describe('one cost record: a report prints the cost of its population', () => {
       run: { id: 'r', status: 'COMPLETED', step: 1, usage: { inputTokens: 3, outputTokens: 4, totalTokens: 7 } },
       events: [charged],
       children: [{ runId: 'child', agent: 'explore', events: [] }],
-      costs: [recordedCost('r', HALF_DOLLAR_UNITS), { ...recordedCost('child', HALF_DOLLAR_UNITS), calls: 2, notPriced: 1 }],
+      costs: [recordedCost('r', HALF_DOLLAR_UNITS), { ...recordedCost('child', HALF_DOLLAR_UNITS), calls: 2, retries: 0, notPriced: 1 }],
     };
     const { budget } = runFiguresOf(golden, transcript);
     expect(budget.spent).toEqual({ tokens: 7, costNano: 1_000_000_000, unpricedCalls: 1 });

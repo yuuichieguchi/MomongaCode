@@ -15,6 +15,7 @@ export type RoleCost = {
   fallbackCalls?: number;
   fallbacks?: CostFallback[];
   calls: number;
+  retries: number;
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
@@ -44,6 +45,7 @@ export type CostReportOptions = { includeRunless?: boolean };
 
 type Accumulator = {
   calls: number;
+  retries: number;
   localCalls: number;
   unpriced: Partial<Record<UnpricedCode, number>>;
   priceNotRecordedCalls: number;
@@ -64,6 +66,7 @@ const emptyAccumulator = (): Accumulator => ({
   fallbacks: new Map(),
   roles: new Map(),
   calls: 0,
+  retries: 0,
   localCalls: 0,
   unpriced: {},
   priceNotRecordedCalls: 0,
@@ -86,6 +89,7 @@ const countOf = (accumulator: Accumulator, code: UnpricedCode): number => accumu
 
 const merge = (target: Accumulator, source: Accumulator): void => {
   target.calls += source.calls;
+  target.retries += source.retries;
   target.localCalls += source.localCalls;
   for (const [code, count] of Object.entries(source.unpriced) as [UnpricedCode, number][]) addUnpriced(target, code, count);
   target.priceNotRecordedCalls += source.priceNotRecordedCalls;
@@ -131,6 +135,7 @@ const moneyTallyOfAccumulator = (accumulator: Accumulator): MoneyTally => ({
 const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
   ...fallbackTotalsOf(accumulator),
   calls: accumulator.calls,
+  retries: accumulator.retries,
   localCalls: accumulator.localCalls,
   unpricedCalls: unpricedCallsOf(accumulator.unpriced),
   unknownBillingCalls: countOf(accumulator, 'unknown_billing'),
@@ -162,6 +167,7 @@ const answeringTargetOf = (call: PricedBilledCall): string => {
 
 const addCall = (accumulator: Accumulator, call: PricedBilledCall): void => {
   accumulator.calls += 1;
+  if (call.retried) accumulator.retries += 1;
   if (call.fallbackCauses !== undefined) addFallback(accumulator, answeringTargetOf(call), call.fallbackCauses, 1);
   accumulator.inputTokens += call.usage.inputTokens;
   accumulator.outputTokens += call.usage.outputTokens;
@@ -232,7 +238,8 @@ const describeTotals = (totals: RoleCost): string => {
       `, ${entry.calls} of ${totals.calls} call(s) were answered by the fallback model ${entry.answeredBy} after ${entry.failed.map(describeFallbackCause).join('; ')}`,
   );
   const money = describeMoney({ calls: totals.calls, unpriced: totals.unpriced, priceNotRecorded: totals.priceNotRecordedCalls, amount: totals.amount, meteredPriceVersions: totals.priceVersions, legacyPrecisionCalls: totals.legacyPrecisionCalls });
-  return `${totals.calls} call(s), ${CACHE_READ_TEXT.inputClause({ calls: totals.calls, notReported: totals.cacheReadNotReportedCalls, inputTokens: totals.inputTokens, cachedInputTokens: totals.cachedInputTokens })} + ${totals.outputTokens} output tokens, ${money}${fallback.join('')}`;
+  const retries = totals.retries === 0 ? '' : `, ${totals.retries} of them ${totals.retries === 1 ? 'a retry' : 'retries'}`;
+  return `${totals.calls} call(s), ${CACHE_READ_TEXT.inputClause({ calls: totals.calls, notReported: totals.cacheReadNotReportedCalls, inputTokens: totals.inputTokens, cachedInputTokens: totals.cachedInputTokens })} + ${totals.outputTokens} output tokens, ${money}${retries}${fallback.join('')}`;
 };
 
 const planLines = (totals: RoleCost, indent: string): string[] =>
