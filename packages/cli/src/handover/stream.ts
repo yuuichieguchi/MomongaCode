@@ -15,7 +15,7 @@ export const newerListenerOf = (ports: Pick<CliPorts, 'handover'>): NewerListene
 
 export const streamMoveOf = (ports: Pick<CliPorts, 'handover'>, paths: Pick<MomongaPaths, 'run'>, kind: StreamMove['kind']): StreamMove | undefined => {
   const mover = ports.handover?.mover;
-  return mover === undefined ? undefined : { mover, kind, recordFile: (session) => recordFileOf(paths, session) };
+  return mover === undefined ? undefined : { mover, kind, recordFile: (session) => recordFileOf(paths, kind, session) };
 };
 
 export type StreamFacts = {

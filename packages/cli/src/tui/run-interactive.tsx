@@ -71,7 +71,7 @@ const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, laye
     },
     recordFile: () => {
       const session = surface?.session();
-      return session === undefined ? undefined : recordFileOf(paths, session);
+      return session === undefined ? undefined : recordFileOf(paths, 'tui', session);
     },
     quiet: () => surface?.quiet() === true,
     snapshot: (toVersion) => {

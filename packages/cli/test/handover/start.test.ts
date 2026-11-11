@@ -7,7 +7,7 @@ import { HANDOVER_TERMINAL_ENV } from '../../src/tui/terminal/constants.ts';
 import { handoverTerminalValue, startWithHandoverTerminal } from '../../src/tui/terminal/handover.ts';
 import { LEAVE_EVERY_MODE, leaveSequenceOf } from '../../src/tui/terminal/modes.ts';
 
-const FILE = '/home/u/.momonga/run/handover/session-1.json';
+const FILE = '/home/u/.momonga/run/handover/session-1.attach.json';
 const RECORD: StreamRecord = { format: HANDOVER_FORMAT, fromVersion: '1.2.3', toVersion: '1.2.4', session: 'session-1', lastSeq: { 'run-1': 4 }, kind: 'attach', runId: 'run-1', output: 'text', verbose: false };
 const TERMINAL = { screen: 'fullscreen', modes: ['alt-screen', 'mouse', 'bracketed-paste', 'kitty-keys'] } as const;
 const VALUE = handoverTerminalValue({ screen: TERMINAL.screen, modes: [...TERMINAL.modes] });
