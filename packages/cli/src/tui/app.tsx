@@ -439,7 +439,7 @@ export function App(props: AppProps) {
     if (session.permissionMode !== 'auto' || view === undefined) return;
     if (!autoNoticeDue(lastAutoNotice.current, view)) return;
     lastAutoNotice.current = { key: view.key, measurement: view.measurement };
-    note(autoModeNotice({ view, surface: 'tui' }));
+    note(autoModeNotice({ view, surface: 'tui', shownModel: displays.get(view.model) ?? view.model }));
   };
 
   const endMeasuring = (): void => {
