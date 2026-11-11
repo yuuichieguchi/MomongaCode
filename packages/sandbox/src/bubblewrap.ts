@@ -7,7 +7,7 @@ import { SANDBOX_STOP_BOUND_MS, SOCKET_FILTER_SLOT, launch } from './process.ts'
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
 import { validateSandboxPolicy } from './profile.ts';
-import { EMPTY_FILE_FORM, identityOf, isStillThePlaceholder, removePlaceholderEntry } from './placeholder-journal.ts';
+import { EMPTY_FILE_FORM, identityOf, isStillThePlaceholder, recoverPlaceholders, removePlaceholderEntry } from './placeholder-journal.ts';
 import type { PlaceholderIdentity, PlaceholderJournal } from './placeholder-journal.ts';
 import { assertExistingDirectory } from './scratch.ts';
 import { socketFilter, socketFilterArchitectureOf } from './seccomp.ts';
@@ -496,13 +496,15 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   };
   const sweepKept = async (stillHeld: ReadonlySet<string>): Promise<void> => {
     const releasable = [...kept].filter(([placeholder]) => !stillHeld.has(placeholder));
+    for (const [placeholder] of releasable) kept.delete(placeholder);
     const newFailures: unknown[] = [];
     for (const [placeholder, ownership] of releasable) {
+      if (held.has(placeholder) || owned.has(placeholder)) continue;
       try {
         await remove(placeholder, ownership);
-        kept.delete(placeholder);
         sweepFailures.delete(placeholder);
       } catch (error) {
+        kept.set(placeholder, ownership);
         const message = error instanceof Error ? error.message : String(error);
         if (sweepFailures.get(placeholder) !== message) {
           sweepFailures.set(placeholder, message);
@@ -512,10 +514,26 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     }
     throwAll(newFailures);
   };
-  const sweep = async (): Promise<void> => {
-    if (kept.size === 0) return;
-    await sweepKept(await holders());
+  let turn: Promise<void> = Promise.resolve();
+  const serially = async <T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    const earlier = turn;
+    let leave: () => void = () => undefined;
+    const own = new Promise<void>((resolve) => {
+      leave = resolve;
+    });
+    turn = earlier.then(() => own);
+    try {
+      await (signal === undefined ? earlier : settledOrAborted(earlier, signal));
+      return await work();
+    } finally {
+      leave();
+    }
   };
+  const sweep = (): Promise<void> =>
+    serially(async () => {
+      if (kept.size === 0) return;
+      await sweepKept(await holders());
+    });
   const hold = async (plan: BubblewrapPlan): Promise<void> => {
     const begun: string[] = [];
     const adopted: Array<[string, Ownership]> = [];
@@ -548,7 +566,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     }
     for (const placeholder of plan.placeholders) held.set(placeholder, (held.get(placeholder) ?? 0) + 1);
   };
-  const release = async (plan: BubblewrapPlan): Promise<void> => {
+  const releaseNow = async (plan: BubblewrapPlan): Promise<void> => {
     const ended: string[] = [];
     for (const placeholder of plan.placeholders) {
       const remaining = (held.get(placeholder) ?? 1) - 1;
@@ -581,35 +599,21 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         killGraceMs: options.killGraceMs,
         signalTerm: signalSandboxTerm,
         ...(options.spawnProcess === undefined ? {} : { spawnProcess: options.spawnProcess }),
-        afterExit: async () => throwAll(await attemptAll([() => release(plan), afterExit])),
+        afterExit: async () => throwAll(await attemptAll([() => serially(() => releaseNow(plan)), afterExit])),
       });
     } catch (error) {
-      throwAll([error, ...(await attemptAll([() => release(plan)]))]);
+      throwAll([error, ...(await attemptAll([() => releaseNow(plan)]))]);
       throw error;
-    }
-  };
-
-  let turn: Promise<void> = Promise.resolve();
-  const oneAtATime = async <T>(signal: AbortSignal, plan: () => Promise<T>): Promise<T> => {
-    const earlier = turn;
-    let leave: () => void = () => undefined;
-    const own = new Promise<void>((resolve) => {
-      leave = resolve;
-    });
-    turn = earlier.then(() => own);
-    try {
-      await settledOrAborted(earlier, signal);
-      return await plan();
-    } finally {
-      leave();
     }
   };
 
   return {
     kind: 'bubblewrap',
     sweep,
+    recover: () =>
+      serially(() => recoverPlaceholders(journal, { holders: async () => new Set([...(await holders()), ...held.keys(), ...owned.keys(), ...kept.keys()]) })),
     spawn: (command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> =>
-      oneAtATime(signal, async () => {
+      serially(async () => {
         await requireBubblewrap(signal);
         for (const root of policy.writableRoots) await assertExistingDirectory(root, directories);
         const planned = { heldPlaceholders: new Set([...held.keys(), ...kept.keys()]), cwd: command.cwd };
@@ -627,6 +631,6 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
           throwAll([error, ...(await attemptAll([() => scratch.dispose()]))]);
           throw error;
         }
-      }),
+      }, signal),
   };
 }

@@ -1037,7 +1037,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             run: async (): Promise<ServingTaskOutcome> => {
               if (platform !== 'linux') return 'done';
               if (await otherRuntimeLive()) return 'again';
-              const recovered = await recoverPlaceholders(createPlaceholderJournal(journalDirectory));
+              const { sandbox } = sandboxes.current();
+              const recovered = await (sandbox.recover === undefined ? recoverPlaceholders(createPlaceholderJournal(journalDirectory)) : sandbox.recover());
               for (const leftover of recovered.removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
               for (const leftover of recovered.unrecovered) logger.warn(`left ${leftover} in place: a killed runtime may have created it as a placeholder before recording which file it was, so it is not removed; delete it yourself if you did not create it`);
               return 'done';

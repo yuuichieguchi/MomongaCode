@@ -1,3 +1,4 @@
+import type { RecoveryResult } from './placeholder-journal.ts';
 import type { FileRuleSet, NetworkScopeKind, ProtectedSet } from '@momonga/foundation';
 
 export type SandboxNetwork = 'deny' | 'allow' | { readonly loopbackPort: number };
@@ -45,6 +46,7 @@ export interface SandboxedProcess {
 export interface Sandbox {
   kind: 'seatbelt' | 'bubblewrap' | 'none';
   sweep?(): Promise<void>;
+  recover?(): Promise<RecoveryResult>;
   spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess | Promise<SandboxedProcess>;
 }
 

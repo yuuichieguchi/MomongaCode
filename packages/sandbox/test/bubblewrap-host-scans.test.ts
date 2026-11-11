@@ -159,3 +159,66 @@ describe('the sandbox releases its placeholders (stand-in bwrap)', () => {
     expect(intents).toEqual([4_242, 4_242, 4_242]);
   });
 });
+
+describe('the placeholder lifecycle runs through one serialization (stand-in bwrap)', () => {
+  const target = (): string => path.join(work, '.mcp.json');
+
+  const keptSandbox = (removals: string[], pause: () => Promise<void>) => {
+    let holding: ReadonlySet<string> = new Set([target()]);
+    fs.writeFileSync(path.join(base, 'bwrap'), STAND_IN_BWRAP, { mode: 0o755 });
+    fs.mkdirSync(path.join(base, 'tmp'));
+    const inner = nodeFilesystemPort(testKernelLock());
+    const sandbox = createBubblewrapSandbox({
+      lock: testKernelLock(),
+      bwrapPath: path.join(base, 'bwrap'),
+      tmpRoot: path.join(base, 'tmp'),
+      killGraceMs: 300,
+      journal: createPlaceholderJournal(path.join(base, 'journal')),
+      holders: () => holding,
+      filesystem: {
+        ...inner,
+        removePlaceholder: async (placeholder, identity, form) => {
+          removals.push(placeholder);
+          await pause();
+          await inner.removePlaceholder(placeholder, identity, form);
+        },
+      },
+    });
+    const spawn = async (script: string) => run(await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy({ writeDenied: [target()] }), new AbortController().signal));
+    return { sandbox, spawn, free: () => { holding = new Set(); } };
+  };
+
+  it('a hold that starts while a sweep is removing the placeholder gets a placeholder that stays while its command runs', async () => {
+    const removals: string[] = [];
+    let entered: () => void = () => undefined;
+    const removing = new Promise<void>((resolve) => { entered = resolve; });
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { open = resolve; });
+    let first = true;
+    const { sandbox, spawn, free } = keptSandbox(removals, async () => {
+      if (!first) return;
+      first = false;
+      entered();
+      await gate;
+    });
+    expect((await spawn('true')).code).toBe(0);
+    expect(fs.existsSync(target())).toBe(true);
+    free();
+    const sweeping = sandbox.sweep?.();
+    await removing;
+    const second = spawn(`sleep 0.3; test -e ${target()}`);
+    open();
+    await sweeping;
+    expect((await second).code).toBe(0);
+  });
+
+  it('two sweeps at once remove each kept placeholder once', async () => {
+    const removals: string[] = [];
+    const { sandbox, spawn, free } = keptSandbox(removals, async () => undefined);
+    expect((await spawn('true')).code).toBe(0);
+    free();
+    await Promise.all([sandbox.sweep?.(), sandbox.sweep?.()]);
+    expect(removals).toEqual([target()]);
+    expect(fs.existsSync(target())).toBe(false);
+  });
+});
