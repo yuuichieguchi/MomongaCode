@@ -187,6 +187,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     env: options.env ?? { PATH: testHostPath('/usr/bin:/bin'), HOME: home, FOO: 'foo' },
     spawn: options.port ?? port,
     settings,
+    signal: new AbortController().signal,
     logger,
     clock,
     timers,

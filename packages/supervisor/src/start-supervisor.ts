@@ -331,6 +331,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         env,
         spawn: options.spawn,
         settings,
+        signal: lifetime.signal,
         logger,
         clock,
         timers,
@@ -568,7 +569,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         promotionBoundTimer = undefined;
       },
       awaitBackground: async () => {
-        await Promise.all([launchPromise, publishPromise, pollPromise, reaperPromise]);
+        await Promise.all([launchPromise, publishPromise, pollPromise, reaperPromise, settingsWatcher?.idle()]);
       },
       closeControl: async () => {
         await server?.close();
@@ -603,9 +604,13 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       socketPath: own.sockets.supervisor,
       timers,
       health,
-      credential: (name, capability) => {
+      credential: async (name, capability, signal) => {
         if (capability === undefined || !gateway.holdsCapability(capability)) return { kind: 'refused' };
-        if (!handedCredentialNames(settings.read().settings).includes(name)) return { kind: 'refused' };
+        const loaded = await settings.loadOrKeep(signal).catch((error: unknown) => {
+          if (!signal.aborted) reportReadFailure(error);
+          throw error;
+        });
+        if (!handedCredentialNames(loaded.settings).includes(name)) return { kind: 'refused' };
         const value = env[name];
         return value === undefined || value === '' ? { kind: 'unset' } : { kind: 'value', value };
       },

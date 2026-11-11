@@ -40,7 +40,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'GenerationLayout',
   'GenerationReaperFiles',
   'GenerationReaperOptions',
-  'GenerationReaperResult',
   'GenerationStartFiles',
   'GroupContainmentError',
   'HOST_RULE_ENFORCEMENT',

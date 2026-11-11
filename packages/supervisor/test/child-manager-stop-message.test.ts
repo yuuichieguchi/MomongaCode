@@ -227,7 +227,7 @@ describe('a reap of the managed servers that fails does not end the exit handlin
     await waitFor(() => harness.manager.state() === 'backoff', { description: 'the crashed gateway to wait for its restart' });
     expect(harness.manager.health().lastExit).toMatchObject({ code: 1, reason: 'failure' });
     expect(harness.backgroundErrors).toEqual([]);
-    expect(harness.events('orphans.warning')).toMatchObject([{ detail: 'the managed servers of the gone gateway were not reaped: the marker listing failed', err: { message: 'the marker listing failed' } }]);
+    expect(harness.events('orphans.warning')).toMatchObject([{ detail: 'the managed servers of the child that ended were not reaped: the marker listing failed', err: { message: 'the marker listing failed' } }]);
     harness.timers.advance(DEFAULT_RESTART_POLICY.maxMs);
     await waitFor(() => harness.spawnCount() === 2, { description: 'the gateway to be spawned again' });
   });

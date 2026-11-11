@@ -11,7 +11,7 @@ import type { SupervisorHealth } from '@momonga/protocol';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration, realProcessTestSignal } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createControlRequestHandler, respondShutdown, startControlServer } from '../src/control-server.ts';
-import type { ControlServer } from '../src/control-server.ts';
+import type { ControlHandlerOptions, ControlServer } from '../src/control-server.ts';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { createRealWorkScope, httpOver, phaseChanges, pumpUntil, quiesce, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
@@ -80,6 +80,7 @@ const runDir = (context: CleanupContext): string => {
 const startServer = async (
   context: CleanupContext,
   health: () => SupervisorHealth = () => SAMPLE_HEALTH,
+  credential: ControlHandlerOptions['credential'] = async () => ({ kind: 'refused' }),
 ) => {
   const socketPath = path.join(runDir(context), 'supervisor.sock');
   const clock = createFakeClock(0);
@@ -91,7 +92,7 @@ const startServer = async (
     socketPath,
     timers,
     health,
-    credential: () => ({ kind: 'refused' }),
+    credential,
     onShutdownRequested: () => {
       shutdowns += 1;
     },
@@ -165,6 +166,21 @@ describe('startControlServer', () => {
     expect(errors).toEqual([]);
   });
 
+  it('a credential request whose settings cannot be loaded is answered 500 with the cause, the asker\'s signal reaches the load, and the server keeps answering', async (context) => {
+    const signals: AbortSignal[] = [];
+    const { socketPath, errors } = await startServer(context, undefined, async (_name, _capability, signal) => {
+      signals.push(signal);
+      throw new Error('settings.json: permission denied');
+    });
+    const answered = await httpOver(context, socketPath, 'GET', '/v1/credentials/SOME_KEY');
+    expect(answered.status).toBe(500);
+    expect(envelopeOf(answered.text)).toEqual({ error: { message: 'the credential request could not be answered: settings.json: permission denied', type: 'server_error', param: null, code: 'credential_unanswered' } });
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(false);
+    expect((await httpOver(context, socketPath, 'GET', '/v1/health')).status).toBe(200);
+    expect(errors).toEqual([]);
+  });
+
   it('shutdown request body', async (context) => {
     const server = await startServer(context);
     const small = await httpOver(context, server.socketPath, 'POST', '/v1/shutdown', 'x'.repeat(100));
@@ -220,7 +236,7 @@ describe('startControlServer', () => {
       socketPath,
       timers: createFakeTimers(clock),
       health: () => SAMPLE_HEALTH,
-      credential: () => ({ kind: 'refused' }),
+      credential: async () => ({ kind: 'refused' }),
       onShutdownRequested: () => undefined,
       onError: () => undefined,
     });

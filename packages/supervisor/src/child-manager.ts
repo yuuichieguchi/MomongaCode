@@ -99,6 +99,7 @@ export type ChildManagerOptions = {
   gateway?: GatewayTuning;
   spawn: SpawnPort;
   settings: UserSettingsCache;
+  signal: AbortSignal;
   logger: JsonLogger;
   clock: Clock;
   timers: SupervisorTimers;
@@ -201,6 +202,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const leaveWaiters = new Set<{ from: ChildState; settle: () => void }>();
   let lastSkippedNames = '';
   let heldForVersion = false;
+  let freshSpawns = 0;
 
   const startsNothing = (): boolean => options.isDraining() || options.isRetiring() || heldForVersion;
 
@@ -542,7 +544,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       });
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
-      log(orphansWarning({ detail: `the managed servers of the gone gateway were not reaped: ${failure.message}` }, failure));
+      log(orphansWarning({ detail: `the managed servers of the child that ended were not reaped: ${failure.message}` }, failure));
     } finally {
       options.timers.clearTimeout(bound);
     }
@@ -677,15 +679,23 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
 
   function spawnFresh(reason: SpawnReason): void {
     if (startsNothing()) return;
-    let snapshot: UserSettingsSnapshot;
-    try {
-      snapshot = options.settings.snapshot();
-    } catch (error) {
-      beginAttempt();
-      failWithoutProcess('settings-read-failed', error);
-      return;
-    }
-    launch(snapshot, reason);
+    freshSpawns += 1;
+    const asked = freshSpawns;
+    const askedGeneration = generation;
+    const overtaken = (): boolean => startsNothing() || asked !== freshSpawns || generation !== askedGeneration;
+    options.settings
+      .load(options.signal)
+      .then(
+        (snapshot) => {
+          if (!overtaken()) launch(snapshot, reason);
+        },
+        (error: unknown) => {
+          if (overtaken()) return;
+          beginAttempt();
+          failWithoutProcess('settings-read-failed', error);
+        },
+      )
+      .catch((error: unknown) => options.onBackgroundError(error, 'spawn-fresh'));
   }
 
   const declareUnkillable = (life: Life): void => {
