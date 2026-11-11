@@ -22,7 +22,6 @@ import {
   managedServerReapBoundMs,
   markerReapClockBoundMs,
   mcpPoolCloseBoundMs,
-  orphanReapGraceMs,
   runtimeMaxCloseMs,
   runtimeStopBudgetMs,
   runtimeTeardownBudgetMs,
@@ -130,7 +129,6 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3; the clos
       expect(runtimeTeardownBudgetMs(g)).toBe(RUNTIME_TEARDOWN_BUDGET_MS + MCP_CLOSE_GRACE_WINDOWS * g + MCP_CLOSE_FIXED_MS);
       expect(runtimeMaxCloseMs(values)).toBe(d + MCP_CLOSE_GRACE_WINDOWS * g + RUNTIME_CLOSE_FIXED_MS);
       expect(runtimeStopBudgetMs(values)).toBe(runtimeMaxCloseMs(values) + SHUTDOWN_MARGIN_MS);
-      expect(orphanReapGraceMs(values)).toBe(MCP_CLOSE_GRACE_WINDOWS * g + RUNTIME_CLOSE_FIXED_MS);
       expect(gatewayMaxCloseMs(values)).toBe(c + managedServerStopBoundMs(m));
       expect(gatewayStopBudgetMs(values)).toBe(c + MANAGED_STOP_GRACE_WINDOWS * m + MANAGED_STOP_FIXED_MS + SHUTDOWN_MARGIN_MS);
       expect(gatewayAbortBudgetMs(values)).toBe(MANAGED_STOP_GRACE_WINDOWS * m + MANAGED_STOP_FIXED_MS + SHUTDOWN_MARGIN_MS);
@@ -157,7 +155,7 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3; the clos
   it('S3 proves the ready bound of a start is STARTUP_TIMEOUT_MS for every stop value of a previous daemon: a start waits for no previous daemon', async () => {
     const { arith, startup, readyBound } = clientBoundArith('S3');
     expect(await prove(arith, readyBound.eq(startup))).toEqual({ status: 'proved' });
-    expect(supervisorStartBoundMs(resolveStartTiming({ predecessorStopValues: MAXIMUM_STOP_VALUES }))).toBe(STARTUP_TIMEOUT_MS);
+    expect(supervisorStartBoundMs(resolveStartTiming({}))).toBe(STARTUP_TIMEOUT_MS);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('S3w refutes that bound for a start that waited for a previous daemon to close, with a counter-example for every allowed stop value', async () => {

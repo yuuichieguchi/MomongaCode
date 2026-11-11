@@ -248,7 +248,6 @@ export {
   mcpPoolCloseBoundMs,
   runtimeTeardownBudgetMs,
   runtimeAbortStopBudgetMs,
-  orphanReapGraceMs,
   STARTUP_TIMEOUT_MS,
   startDeadlineSignal,
   SHUTDOWN_SETTING_LIMITS,

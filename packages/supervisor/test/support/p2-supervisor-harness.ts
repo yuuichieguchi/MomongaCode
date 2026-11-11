@@ -46,7 +46,6 @@ export const startSupervisorHarness = async (
     watchSettings: false,
     random: () => 0,
     restart: { baseMs: 1, maxMs: 1, minMs: 1 },
-    orphanReapGraceMs: 200,
     markerPorts: {
       findHolders: async () => [],
       reapMarkerDirectory: async () => ({ reaped: 0, kept: 0 }),

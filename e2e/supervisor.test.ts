@@ -54,9 +54,9 @@ const S1_TIMEOUT_MS = e2eTestTimeoutMs(
   e2eStartBoundMs(DEFAULT_E2E_DEPS),
   E2E_READY_DEADLINE_MS,
 );
-const S1B_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({ ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS }), E2E_MARGIN_MS, E2E_REAP_TO_RUNNING_BOUND_MS);
-const S1C_PHASE1_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({ ...DEFAULT_E2E_DEPS, orphanGraceMs: S1C_PHASE1_ORPHAN_GRACE_MS }), E2E_MARGIN_MS, E2E_REAP_CLOSE_BOUND_MS);
-const S1C_PHASE2_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({ ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS }), E2E_PHASE2_REACHED_BOUND_MS, E2E_REAP_CLOSE_BOUND_MS);
+const S1B_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs(DEFAULT_E2E_DEPS), E2E_MARGIN_MS, E2E_REAP_TO_RUNNING_BOUND_MS);
+const S1C_PHASE1_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs(DEFAULT_E2E_DEPS), E2E_MARGIN_MS, E2E_REAP_CLOSE_BOUND_MS);
+const S1C_PHASE2_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs(DEFAULT_E2E_DEPS), E2E_PHASE2_REACHED_BOUND_MS, E2E_REAP_CLOSE_BOUND_MS);
 const S5_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_SETTINGS_RESTART_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 const S5B_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_HELD_RETRY_MS + E2E_RESTART_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 const S7_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_MARGIN_MS, E2E_LOCK_FREE_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
@@ -253,7 +253,7 @@ describe('supervisor cases', () => {
     const home = await createE2eHome();
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
 
-    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS }, 2);
+    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, reaper: { orphanGraceMs: E2E_ORPHAN_GRACE_MS } }, 2);
     const secondReady = await second.ready();
     expect(secondReady).toMatchObject({ service: 'supervisor', pid: second.pid });
     const client = openClient(home, 2);
@@ -292,7 +292,7 @@ describe('supervisor cases', () => {
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
     const orphanMarkers = markerEntries(home.paths, 1);
 
-    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, orphanGraceMs: S1C_PHASE1_ORPHAN_GRACE_MS }, 2);
+    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, reaper: { orphanGraceMs: S1C_PHASE1_ORPHAN_GRACE_MS } }, 2);
     await second.ready();
     const secondExit = trackExit(second);
     const client = openClient(home, 2);
@@ -329,7 +329,7 @@ describe('supervisor cases', () => {
     const home = await createE2eHome();
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
 
-    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS }, 2);
+    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, reaper: { orphanGraceMs: E2E_ORPHAN_GRACE_MS } }, 2);
     await second.ready();
     const secondExit = trackExit(second);
     const client = openClient(home, 2);

@@ -1,14 +1,13 @@
 import path from 'node:path';
 import type { StopValuesReader } from '@momonga/config';
-import { ABANDON_KILL_GRACE_MS, GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, generationLayout, hostKernelLock, momongaPaths, readStopRecord, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, MAXIMUM_STOP_VALUES, generationLayout, hostKernelLock, momongaPaths, readStopRecord, reapDeadGenerations, reapMarkerDirectory, runtimeMaxCloseMs } from '@momonga/foundation';
 import type { Clock, GenerationMarkerReap, JsonLogger, KernelLockMechanism, MarkerKind, MomongaPaths, Timing } from '@momonga/foundation';
-import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
+import { DAEMON_MARKER_KILL_GRACE_MS, resolveIntervals } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import { orphansWarning, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import { reapOrphans } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
-import { resolveStartTiming } from './start-supervisor.ts';
 import type { SupervisorOptions } from './start-supervisor.ts';
 
 export type ReaperPass = NonNullable<SupervisorOptions['reaperPass']>;
@@ -91,20 +90,20 @@ export type EntryReaperValues = {
   stopValues: StopValuesReader;
 };
 
-type EntryReaperDeps = Pick<SupervisorOptions, 'startupTimeoutMs' | 'orphanGraceMs' | 'intervals' | 'reapTiming' | 'lockMechanism' | 'markerPorts'>;
+export type EntryReaperOptions = Partial<Pick<ReaperPassOptions, 'orphanGraceMs'>>;
 
-export const entryReaperPass = (deps: EntryReaperDeps, values: EntryReaperValues): ReaperPass => {
-  const timing = resolveStartTiming(deps);
-  return createReaperPass({
+type EntryReaperDeps = Pick<SupervisorOptions, 'intervals' | 'reapTiming' | 'lockMechanism' | 'markerPorts'> & { reaper?: EntryReaperOptions };
+
+export const entryReaperPass = (deps: EntryReaperDeps, values: EntryReaperValues): ReaperPass =>
+  createReaperPass({
     paths: momongaPaths(values.home, process.platform, {}),
     lock: deps.lockMechanism ?? hostKernelLock(),
     logger: values.logger,
     timers: values.timers,
     reapTiming: deps.reapTiming ?? { now: () => values.clock.now(), monotonicMs: () => values.clock.now(), setTimeout: (callback, ms) => values.timers.setTimeout(callback, ms), clearTimeout: (handle) => values.timers.clearTimeout(handle) },
-    orphanGraceMs: timing.orphanGraceMs,
+    orphanGraceMs: deps.reaper?.orphanGraceMs ?? runtimeMaxCloseMs(MAXIMUM_STOP_VALUES),
     orphanReapGraceMs: DAEMON_MARKER_KILL_GRACE_MS,
-    orphanPollMs: timing.orphanPollMs,
+    orphanPollMs: resolveIntervals(deps.intervals).orphanPollMs,
     managedServerStopGraceMs: () => values.stopValues.read().managedServerStopGraceMs,
     ...omitUndefined({ markerPorts: deps.markerPorts }),
   });
-};

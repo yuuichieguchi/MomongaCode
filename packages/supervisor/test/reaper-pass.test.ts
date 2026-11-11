@@ -176,6 +176,41 @@ describe('the wait of the reaper pass for a dead generation takes the values of 
     expect(reapedAt).toBeGreaterThanOrEqual(508_125);
   });
 
+  it('the entry builds the wait from the reaper\'s own options: the bound of the allowed maxima by default, and the reaper option where one is given', async (context) => {
+    const reapedAt = async (deps: Parameters<typeof entryReaperPass>[0]): Promise<number> => {
+      const s = setup(context);
+      const daemonReapAt: number[] = [];
+      prepareGenerationForTest(s.home, 1, '1.2.3');
+      fs.writeFileSync(path.join(generationMarkerDirectories(s.paths, 1).daemons, 'runtime-old'), '', { mode: 0o600 });
+      const pass = entryReaperPass(
+        {
+          ...deps,
+          lockMechanism: s.options.lock,
+          reapTiming: s.options.reapTiming,
+          markerPorts: {
+            findHolders: async () => [HELD_FOREVER],
+            reapMarkerDirectory: async (request) => {
+              if (request.label === 'daemon') daemonReapAt.push(s.clock.now());
+              return { reaped: 0, kept: 0 };
+            },
+          },
+        },
+        { home: s.home, clock: s.clock, timers: s.timers, logger: s.log.logger, stopValues: { read: () => DEFAULT_STOP_VALUES, remember: () => undefined } },
+      );
+      const realWork = createRealWorkScope();
+      const running = settledFlag(realWork.run(() => pass({ signal: new AbortController().signal })));
+      await pumpUntil(s.timers, () => running.settled(), { realWork, maxMs: 2 * runtimeMaxCloseMs(MAXIMUM_STOP_VALUES), description: 'the reaper pass to settle' });
+      expect(daemonReapAt).toHaveLength(1);
+      return daemonReapAt[0] as number;
+    };
+    const byDefault = await reapedAt({});
+    expect(byDefault).toBeGreaterThanOrEqual(runtimeMaxCloseMs(MAXIMUM_STOP_VALUES));
+    expect(byDefault).toBeLessThanOrEqual(runtimeMaxCloseMs(MAXIMUM_STOP_VALUES) + ORPHAN_POLL_MS);
+    const shortened = await reapedAt({ reaper: { orphanGraceMs: 3000 } });
+    expect(shortened).toBeGreaterThanOrEqual(3000);
+    expect(shortened).toBeLessThanOrEqual(3000 + ORPHAN_POLL_MS);
+  });
+
   it('removes the stop record with the directory of the dead generation, as one known entry of it', async (context) => {
     const s = setup(context);
     const layout = prepareGenerationForTest(s.home, 1, '1.2.3');

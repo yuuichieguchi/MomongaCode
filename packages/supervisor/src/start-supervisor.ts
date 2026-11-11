@@ -4,7 +4,6 @@ import { createStopValuesReader, createUserSettingsCache, noKeptRecords, stopVal
 import type { StopValuesReader } from '@momonga/config';
 import {
   GenerationDirectoryMissingError,
-  MAXIMUM_STOP_VALUES,
   acquireProcessLock,
   announceReady,
   claimGeneration,
@@ -15,13 +14,11 @@ import {
   hostPaths,
   listGenerations,
   momongaPaths,
-  orphanReapGraceMs,
   publishCurrentGeneration,
   readCurrentGeneration,
   reapMarkerDirectory,
   requireGenerationDirs,
   roleEndpoint,
-  runtimeMaxCloseMs,
   scopeToGeneration,
   startDeadlineSignal,
   systemClock,
@@ -84,8 +81,6 @@ export type SupervisorOptions = {
   gateway?: GatewayTuning;
   startupTimeoutMs?: number;
   lockWaitMs?: number;
-  orphanGraceMs?: number;
-  orphanReapGraceMs?: number;
   heldRetryMs?: number;
   restart?: Partial<RestartPolicy>;
   intervals?: Partial<SupervisorIntervals>;
@@ -106,22 +101,13 @@ export type SupervisorOptions = {
   signal?: AbortSignal;
   stopValues?: StopValuesReader;
   onShutdownRequested?: (values?: StopValues) => void;
-  predecessorStopValues?: StopValues | undefined;
 };
 
-export type SupervisorStartTiming = { startupTimeoutMs: number; orphanGraceMs: number; orphanReapGraceMs: number; orphanPollMs: number };
+export type SupervisorStartTiming = { startupTimeoutMs: number };
 
-export const resolveStartTiming = (
-  options: Pick<SupervisorOptions, 'startupTimeoutMs' | 'orphanGraceMs' | 'orphanReapGraceMs' | 'intervals' | 'predecessorStopValues'>,
-): SupervisorStartTiming => {
-  const predecessor = options.predecessorStopValues ?? MAXIMUM_STOP_VALUES;
-  return {
-    startupTimeoutMs: options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS,
-    orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(predecessor),
-    orphanReapGraceMs: options.orphanReapGraceMs ?? orphanReapGraceMs(predecessor),
-    orphanPollMs: resolveIntervals(options.intervals).orphanPollMs,
-  };
-};
+export const resolveStartTiming = (options: Pick<SupervisorOptions, 'startupTimeoutMs'>): SupervisorStartTiming => ({
+  startupTimeoutMs: options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS,
+});
 
 export const supervisorStartBoundMs = (timing: SupervisorStartTiming): number => timing.startupTimeoutMs;
 
@@ -182,8 +168,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const intervals = resolveIntervals(options.intervals);
   const restart = resolveRestartPolicy(options.restart);
   const canonicalHome = await hostPaths(startDeadlineSignal(options.signal)).canonicalPath(options.home);
-  const startTiming = resolveStartTiming(options);
-  const { startupTimeoutMs } = startTiming;
+  const { startupTimeoutMs } = resolveStartTiming(options);
   const homePaths = momongaPaths(canonicalHome, process.platform, {});
   const paths = scopeToGeneration(homePaths, options.generation);
   const env = { ...(options.env ?? process.env) };

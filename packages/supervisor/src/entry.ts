@@ -12,13 +12,14 @@ import {
 import type { EntryIo, JsonLogger } from '@momonga/foundation';
 import { SUPERVISOR_SERVICE } from './constants.ts';
 import { entryReaperPass } from './reaper-pass.ts';
+import type { EntryReaperOptions } from './reaper-pass.ts';
 import { startSupervisor } from './start-supervisor.ts';
 import type { SupervisorOptions } from './start-supervisor.ts';
 
 export type SupervisorEntryDeps = Omit<
   SupervisorOptions,
   'home' | 'env' | 'logger' | 'droppedLogLines' | 'stdout' | 'signal' | 'onShutdownRequested' | 'stopValues' | 'generation'
->;
+> & { reaper?: EntryReaperOptions };
 
 export const SUPERVISE_ENTRY_FLAGS = { ...COMMON_ENTRY_FLAGS, generation: { kind: 'string' } } as const;
 

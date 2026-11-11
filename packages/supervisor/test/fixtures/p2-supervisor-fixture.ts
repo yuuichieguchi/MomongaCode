@@ -34,7 +34,6 @@ const supervisor = await startSupervisor({
   spawn,
   stdout: process.stdout,
   watchSettings: false,
-  orphanReapGraceMs: 200,
 });
 
 process.on('SIGTERM', () => {
