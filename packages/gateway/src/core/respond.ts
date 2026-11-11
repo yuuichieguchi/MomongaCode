@@ -61,6 +61,14 @@ export type ResponseJob = {
   connection?: ConnectionResponses;
 };
 
+const closeOnError = async (iterator: AsyncIterator<StreamEvent>, span: Opened['span']): Promise<void> => {
+  try {
+    await iterator.return?.();
+  } catch (error) {
+    span.note(MOMONGA_SPAN_NOTES.adapterCleanupError, describeError(error));
+  }
+};
+
 type Opened = {
   iterator: AsyncIterator<StreamEvent>;
   held: StreamEvent[];
@@ -217,9 +225,10 @@ const openAttempt = async (
     failBeforeSend(error);
   }
   const span = startSpan(retryOfSeq);
+  let iterator: AsyncIterator<StreamEvent> | undefined;
   try {
     const stream = target.adapter.create(adapterRequestFor(job, resolved, target, visibleBound), adapterContextOf(services, target, capabilities, signal, attemptNumber, callKey, span.route));
-    const iterator = stream[Symbol.asyncIterator]();
+    iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
     for (;;) {
       const step = await iterator.next();
@@ -232,6 +241,7 @@ const openAttempt = async (
     span.committed();
     return { iterator, held, release, span, capabilities };
   } catch (error) {
+    if (iterator !== undefined) await closeOnError(iterator, span);
     release();
     const failure = failureFrom(target.adapter, error, signal);
     span.fail(errorTypeOf(failure), failure, describeError(failure));
@@ -324,11 +334,7 @@ async function* relay(
     if (!progress.concluded) {
       const { thrown } = progress;
       outcome.settle(thrown === undefined ? 'neutral' : verdictOfThrown(thrown.error));
-      try {
-        await opened.iterator.return?.();
-      } catch (error) {
-        opened.span.note(MOMONGA_SPAN_NOTES.adapterCleanupError, describeError(error));
-      }
+      await closeOnError(opened.iterator, opened.span);
       if (thrown === undefined) {
         opened.span.fail('cancelled', control.signal.reason ?? new ClientDisconnectedError(), 'the response stream was closed before it completed');
       } else {
@@ -436,13 +442,7 @@ async function* relaySteps(
     opened.release();
   }
 
-  if (iteratorOpen) {
-    try {
-      await opened.iterator.return?.();
-    } catch (error) {
-      opened.span.note(MOMONGA_SPAN_NOTES.adapterCleanupError, describeError(error));
-    }
-  }
+  if (iteratorOpen) await closeOnError(opened.iterator, opened.span);
 
   const momongaFor = (
     usageSource: UsageSource,
