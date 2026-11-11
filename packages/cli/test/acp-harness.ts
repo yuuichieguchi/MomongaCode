@@ -16,7 +16,7 @@ export type EventPayload = PublicRunEvent extends infer Event
     : never
   : never;
 
-export const frameOf = (runId: string, seq: number, payload: EventPayload): RunEventFrame => ({
+export const frameOf = (runId: string, seq: number, payload: EventPayload): RunEventFrame & { readonly data: PublicRunEvent } => ({
   id: seq,
   event: payload.type,
   data: { id: seq, runId, sessionId: SESSION.id, seq, step: 1, createdAt: 1, ...payload } as PublicRunEvent,

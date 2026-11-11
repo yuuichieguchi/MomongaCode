@@ -1,6 +1,6 @@
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
-import { TARGET_NOT_READY, WORDS, agentReadiness, attachRunCommand, heldEndOf, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
+import { TARGET_NOT_READY, WORDS, agentReadiness, attachRunCommand, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -343,6 +343,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
 
   const absorb = (frame: RunEventFrame): void => {
     const event = frame.data;
+    if (isOpaqueEvent(event)) return;
     track(event);
     if (event.type === 'tool.call') titles.set(event.callId, event.title);
     if (event.type === 'tool.reconciled') found.set(event.callId, event.output);
@@ -351,15 +352,17 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
 
   const handle = (frame: RunEventFrame): void => {
     const event = frame.data;
-    track(event);
     if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(event)}\n`);
+    if (isOpaqueEvent(event)) return;
+    track(event);
     if (event.type === 'agent.message.delta') keep(event);
     else present(event, undefined);
   };
 
   const handleChild = (frame: RunEventFrame, agent: string): void => {
-    track(frame.data);
     if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(frame.data)}\n`);
+    if (isOpaqueEvent(frame.data)) return;
+    track(frame.data);
     const event = asChildEvent(frame.data, agent);
     if (event !== undefined) present(event, agent);
   };

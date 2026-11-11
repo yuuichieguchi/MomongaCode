@@ -1871,6 +1871,10 @@ export type PublicOpaqueEvent = {
   payload: Record<string, unknown>;
 };
 
+export type PublicStreamEvent = PublicRunEvent | PublicOpaqueEvent;
+
+export const isOpaqueEvent = (event: PublicStreamEvent): event is PublicOpaqueEvent => 'opaque' in event;
+
 const toPublicOpaqueEvent = (event: OpaqueEvent): PublicOpaqueEvent => {
   const { opaque, type, id, runId, sessionId, seq, step, createdAt, payload } = event;
   return { opaque, type, id, ...(runId === null ? {} : { runId }), sessionId, ...(seq === null ? {} : { seq }), ...(step === null ? {} : { step }), createdAt, payload };
