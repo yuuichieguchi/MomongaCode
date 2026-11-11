@@ -228,12 +228,16 @@ export const readJsonFile = async (file: string, options: ReadJsonFileOptions = 
   return { found: true, value: parseJsonText(text, file) };
 };
 
-export const readJsonFileSync = (file: string): JsonFile => {
+export type JsonText = { found: false } | { found: true; text: string };
+
+export const isMissingFileError = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+export const readJsonTextSync = (file: string, isAbsent: (error: unknown) => boolean): JsonText => {
   let link: fs.Stats;
   try {
     link = fs.lstatSync(file);
   } catch (error) {
-    if (isAbsentPathError(error)) return { found: false };
+    if (isAbsent(error)) return { found: false };
     throw error;
   }
   if (link.isSymbolicLink()) {
@@ -248,5 +252,9 @@ export const readJsonFileSync = (file: string): JsonFile => {
   } else if (!link.isFile()) {
     throw new ConfigError(`${file}: not a regular file`);
   }
-  return { found: true, value: parseJsonText(fs.readFileSync(file, 'utf8'), file) };
+  return { found: true, text: fs.readFileSync(file, 'utf8') };
 };
+
+export const parsedJsonOf = (read: JsonText, source: string): JsonFile => (read.found ? { found: true, value: parseJsonText(read.text, source) } : read);
+
+export const readJsonFileSync = (file: string): JsonFile => parsedJsonOf(readJsonTextSync(file, isAbsentPathError), file);

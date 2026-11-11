@@ -40,7 +40,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/config/src/json-file.ts': { 'node:fs': 6 },
   'packages/config/src/layers.ts': { 'node:fs': 2 },
   'packages/config/src/local-settings.ts': { 'node:fs': 2 },
-  'packages/config/src/user-settings.ts': { 'node:fs': 1 },
   'packages/context/src/fs-instruction-reader.ts': { 'node:fs/promises': 3 },
   'packages/eval/src/files.ts': { 'node:fs/promises': 4 },
   'packages/foundation/src/code-digest.ts': { 'node:fs/promises': 7 },
