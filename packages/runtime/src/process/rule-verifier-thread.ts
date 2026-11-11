@@ -1,6 +1,7 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { systemRandom } from '@momonga/foundation';
-import type { RuleVerdict } from '@momonga/protocol';
+import { systemClock, systemRandom } from '@momonga/foundation';
+import type { Clock } from '@momonga/foundation';
+import type { RuleVerdict, RuleVerdictPhase } from '@momonga/protocol';
 import { ShellNotFoundError, createHostFilesystem, nodeGlobPorts } from '@momonga/policy';
 
 type VerifyModule = typeof import('@momonga/verify');
@@ -16,6 +17,7 @@ export type RuleVerifyJob = {
   readonly solver: RuleSolverRecipe;
   readonly solverVersion: string;
   readonly budgetMs: number;
+  readonly askedAtMs: number;
   readonly platform: NodeJS.Platform;
   readonly bashPath: string | undefined;
 };
@@ -45,12 +47,31 @@ const bashPathOf = (job: RuleVerifyJob): string => {
 
 export type RuleVerifyAbort = { readonly abort: string };
 
-export const runRuleVerifyJob = async (job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerification> => {
+export type HostMarks = { askedAtMs: number; enteredAtMs: number; loadedAtMs: number; instantiatedAtMs: number };
+
+export const hostPhasesOf = ({ askedAtMs, enteredAtMs, loadedAtMs, instantiatedAtMs }: HostMarks): RuleVerdictPhase[] => [
+  { phase: 'thread-start', ms: enteredAtMs - askedAtMs },
+  { phase: 'load', ms: loadedAtMs - enteredAtMs },
+  { phase: 'instantiate', ms: instantiatedAtMs - loadedAtMs },
+];
+
+export const runRuleVerifyJob = async (job: RuleVerifyJob, { signal, clock }: { signal: AbortSignal; clock: Clock }): Promise<RuleVerification> => {
+  const enteredAtMs = clock.now();
   signal.throwIfAborted();
   const verifier = await import('@momonga/verify');
-  const engine = await verifier.openZ3(await sourceOf(verifier, job.solver));
+  const source = await sourceOf(verifier, job.solver);
+  const loadedAtMs = clock.now();
+  const engine = await verifier.openZ3(source);
+  const hostPhases = hostPhasesOf({ askedAtMs: job.askedAtMs, enteredAtMs, loadedAtMs, instantiatedAtMs: clock.now() });
   try {
-    const report = await verifier.verifyPermissions(engine.api, { ...job.input, fs: createHostFilesystem(job.platform, () => bashPathOf(job), nodeGlobPorts()), budgetMs: job.budgetMs, signal });
+    const report = await verifier.verifyPermissions(engine.api, {
+      ...job.input,
+      fs: createHostFilesystem(job.platform, () => bashPathOf(job), nodeGlobPorts()),
+      budgetMs: job.budgetMs,
+      signal,
+      clock,
+      hostPhases,
+    });
     return { verdict: verifier.verdictOfReport(report, job.solverVersion), report: verifier.formatReport(report) };
   } finally {
     await engine.close();
@@ -58,7 +79,7 @@ export const runRuleVerifyJob = async (job: RuleVerifyJob, signal: AbortSignal):
 };
 
 const isRuleVerifyJob = (value: unknown): value is RuleVerifyJob =>
-  typeof value === 'object' && value !== null && 'input' in value && 'solver' in value && 'solverVersion' in value && typeof value.solverVersion === 'string' && 'budgetMs' in value && typeof value.budgetMs === 'number' && 'platform' in value && typeof value.platform === 'string';
+  typeof value === 'object' && value !== null && 'input' in value && 'solver' in value && 'solverVersion' in value && typeof value.solverVersion === 'string' && 'budgetMs' in value && typeof value.budgetMs === 'number' && 'askedAtMs' in value && typeof value.askedAtMs === 'number' && 'platform' in value && typeof value.platform === 'string';
 
 const isRuleVerifyAbort = (value: unknown): value is RuleVerifyAbort => typeof value === 'object' && value !== null && 'abort' in value && typeof value.abort === 'string';
 
@@ -69,7 +90,7 @@ if (!isMainThread && parentPort !== null && isRuleVerifyJob(workerData)) {
     if (isRuleVerifyAbort(message)) asker.abort(new Error(message.abort));
   });
   const post = (reply: RuleVerifyReply): void => port.postMessage(reply);
-  void runRuleVerifyJob(workerData, asker.signal).then(
+  void runRuleVerifyJob(workerData, { signal: asker.signal, clock: systemClock }).then(
     (verification) => post({ ok: true, ...verification }),
     (error: unknown) => post({ ok: false, reason: error instanceof Error ? error.message : String(error) }),
   );

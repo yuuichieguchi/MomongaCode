@@ -774,6 +774,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       paths,
       timers,
       bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env }),
+      clock,
     });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {

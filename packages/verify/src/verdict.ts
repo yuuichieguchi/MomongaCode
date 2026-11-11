@@ -44,6 +44,7 @@ export const verdictOfReport = (report: VerificationReport, solver: string): Rul
     ...(byModeDefault.length === 0 ? {} : { byModeDefault }),
     unknown: [...undecided, ...mismatched],
     notProved: [...report.outsideProof],
+    ...(report.timings.length === 0 ? {} : { phases: [...report.timings] }),
   };
 };
 

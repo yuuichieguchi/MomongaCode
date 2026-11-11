@@ -7,6 +7,7 @@ export const FAKE_SOLVER_VERSION = 'fake-solver 1';
 export const provedVerifier = {
   secretLocationsOf: () => [],
   ruleVerifyInputOf: (input: unknown) => input,
+  needsVerdict: () => true,
 } as unknown as Verifier;
 
 export const PROVED_THREAD_CODE = `

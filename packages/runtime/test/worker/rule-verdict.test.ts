@@ -2,8 +2,8 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { POLICY_REFUTED_CODE, policyRefutedMessage } from '@momonga/protocol';
 import type { RuleVerdict } from '@momonga/protocol';
-import { makeEnv } from './harness.ts';
-import type { Env } from './harness.ts';
+import { makeEnv as makeBareEnv } from './harness.ts';
+import type { Env, EnvOptions } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
 const SOLVER = 'fake-solver 1';
@@ -36,6 +36,12 @@ const failed: RuleVerdict = { verdict: 'failed', solver: SOLVER, refuted: [], un
 const storedVerdicts = (env: Env, runId: string) => {
   const pinned = env.ofType(runId, 'run.started')[0]?.pins['policyVerdict'] as { fingerprint: string };
   return env.store.ruleVerdicts.get(pinned.fingerprint);
+};
+
+const makeEnv = async (options?: EnvOptions): Promise<Env> => {
+  const env = await makeBareEnv(options);
+  env.settings.extraRules.push({ effect: 'allow', rule: 'Read(src/**)' });
+  return env;
 };
 
 const verdictEvents = (env: Env, runId: string) => env.ofType(runId, 'notice').filter((notice) => notice.code === 'policy_verdict');
@@ -90,6 +96,57 @@ describe('the verdict of the permission rules before a run', () => {
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'run.started')[0]?.pins['policyVerdict']).toEqual({ fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/), ...proved });
+    expect(env.ruleVerifier.verified).toHaveLength(1);
+  });
+
+  it('a rule set with no allow rule starts no verification: the run reaches the model at once and its pinned verdict says none was needed', async () => {
+    const env = await makeBareEnv();
+    env.settings.extraRules.push({ effect: 'deny', rule: 'Read(.env)' }, { effect: 'ask', rule: 'Write' });
+    env.ruleVerifier.answer = () => new Promise<RuleVerdict>(() => undefined);
+    env.gateway.script.push(textStep('Hello.'));
+    const run = env.enqueue('Say hello');
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.ruleVerifier.verified).toEqual([]);
+    expect(env.ofType(run.id, 'run.started')[0]?.pins['policyVerdict']).toEqual({ fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/), verdict: 'not-needed', solver: SOLVER, refuted: [], unknown: [], notProved: [] });
+    expect(storedVerdicts(env, run.id)).toBeUndefined();
+  });
+
+  it('a rule set with an allow rule waits for its verdict before the first model request', async () => {
+    const env = await makeEnv();
+    const answered = Promise.withResolvers<RuleVerdict>();
+    const asked = Promise.withResolvers<void>();
+    env.ruleVerifier.answer = () => {
+      asked.resolve();
+      return answered.promise;
+    };
+    env.gateway.script.push(textStep('Hello.'));
+    const run = env.enqueue('Say hello');
+    const running = env.runOnce(env.worker());
+    await asked.promise;
+    expect(env.ofType(run.id, 'model.requested')).toEqual([]);
+
+    answered.resolve(proved);
+    await running;
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.ofType(run.id, 'model.requested')).toHaveLength(1);
+  });
+
+  it('a rule set that loses its last allow rule during the run is noticed once as needing no verdict, at level info', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), textStep('Echoed.'));
+    const run = env.enqueue('Echo');
+    env.settings.rulesHook = async (read) => {
+      if (read === 2) env.settings.extraRules.splice(0);
+    };
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(verdictEvents(env, run.id).map((notice) => notice.level)).toEqual(['info']);
     expect(env.ruleVerifier.verified).toHaveLength(1);
   });
 

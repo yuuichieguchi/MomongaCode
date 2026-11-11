@@ -20,7 +20,7 @@ describe('store.ruleVerdicts', () => {
     expect(store.ruleVerdicts.get('b'.repeat(64))).toEqual({ fingerprint: 'b'.repeat(64), verdict: refuted, createdAt: START_MS });
   });
 
-  it.each(['unknown', 'failed'] as const)('refuses to store a verdict of kind %s, which is not a final answer about the rules, and keeps what is stored', (kind) => {
+  it.each(['unknown', 'failed', 'not-needed'] as const)('refuses to store a verdict of kind %s, which is not a final answer about the rules, and keeps what is stored', (kind) => {
     const { store } = harness();
     const undecided: RuleVerdict = { ...proved, verdict: kind, unknown: [{ property: 'verification', reason: 'the verification budget of 60000 ms was spent' }] };
     expect(() => store.ruleVerdicts.put('a'.repeat(64), undecided)).toThrow(`a rule verdict of kind ${kind} is not stored`);

@@ -134,6 +134,7 @@ export type RuleVerification = { verdict: RuleVerdict; report: string };
 export type RuleVerifierPort = {
   solverVersion(): Promise<string>;
   inputOf(request: RuleVerifyRequest, signal: AbortSignal): Promise<VerdictSubject>;
+  needsVerdict(input: VerdictSubject): Promise<boolean>;
   verify(input: VerdictSubject, signal: AbortSignal): Promise<RuleVerdict>;
   report(input: VerdictSubject, signal: AbortSignal): Promise<RuleVerification>;
 };

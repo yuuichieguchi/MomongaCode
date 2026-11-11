@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { mapAsync, nodeFileSystem, protectedSetFor, sha256Hex } from '@momonga/foundation';
-import type { MomongaPaths, VerdictSubject } from '@momonga/foundation';
+import type { Clock, MomongaPaths, VerdictSubject } from '@momonga/foundation';
 import { ShellNotFoundError, askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
@@ -48,9 +48,10 @@ export type RuleVerifierDeps = {
   paths: Pick<MomongaPaths, 'root' | 'keychains'>;
   timers: ServiceTimers;
   bashPath: () => string;
+  clock: Clock;
 };
 
-export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, bashPath }: RuleVerifierDeps): RuleVerifierPort => {
+export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, bashPath, clock }: RuleVerifierDeps): RuleVerifierPort => {
   const foundBashPath = (): string | undefined => {
     try {
       return bashPath();
@@ -70,7 +71,7 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
     const verifier = await host.loadVerifier();
     return verifyInThread(
       { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers, loadAllowanceMs: RULE_VERIFY_LOAD_ALLOWANCE_MS },
-      { input: request, solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS, platform: policyFilesystem.platform, bashPath: foundBashPath() },
+      { input: request, solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS, askedAtMs: clock.now(), platform: policyFilesystem.platform, bashPath: foundBashPath() },
       signal,
     );
   };
@@ -86,6 +87,7 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
       prepared.add(input);
       return input;
     },
+    needsVerdict: async (input) => (await host.loadVerifier()).needsVerdict(preparedInput(input)),
     report,
     verify: async (input, signal) => (await report(input, signal)).verdict,
   };

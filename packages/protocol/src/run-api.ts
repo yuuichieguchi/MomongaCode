@@ -1713,6 +1713,7 @@ export const RUN_API_SCHEMAS = {
             },
             unknown: { type: 'array', items: closed({ property: string, reason: string }, ['property', 'reason']) },
             notProved: { type: 'array', items: string },
+            phases: { type: 'array', items: closed({ phase: string, ms: { type: 'number' } }, ['phase', 'ms']) },
           },
           ['verdict', 'solver', 'refuted', 'unknown', 'notProved'],
         ),

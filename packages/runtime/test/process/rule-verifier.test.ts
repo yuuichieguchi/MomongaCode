@@ -22,7 +22,7 @@ describe('the rule verifier of the runtime process', () => {
       loadVerifier: async () => ({ ...provedVerifier, secretLocationsOf: (home: string) => [{ label: 'ssh', directory: `${home}/.ssh`, accesses: ['read', 'write'] }] }) as never,
       threadCode: `throw new Error('no thread is expected')`,
     };
-    const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash' });
+    const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
     expect(await verifier.inputOf(request, NEVER_CANCELLED)).toMatchObject({ ...request, secretLocations: [{ directory: '/home/u/.ssh' }], protectedSet: expect.any(Object) });
   });
 
@@ -35,6 +35,7 @@ describe('the rule verifier of the runtime process', () => {
       paths,
       timers: { setTimeout: (callback, ms) => (waits.push(ms), timers.setTimeout(callback, ms)), clearTimeout: timers.clearTimeout },
       bashPath: () => '/bin/bash',
+      clock: createFakeClock(0),
     });
     expect(await verifier.verify(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).toEqual({ verdict: 'proved', solver: FAKE_SOLVER_VERSION, refuted: [], unknown: [], notProved: [] });
     expect(RULE_VERIFY_LOAD_ALLOWANCE_MS).toBeGreaterThan(0);
@@ -43,15 +44,22 @@ describe('the rule verifier of the runtime process', () => {
 
   it('gives verdict unknown with the reason when its thread fails', async () => {
     const host: RuleSolverHost = { ...provedRuleSolver({ executables: '/x' }), threadCode: `throw new Error('the solver is broken')` };
-    const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash' });
+    const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
     expect(await verifier.verify(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).toMatchObject({
       verdict: 'unknown',
       unknown: [{ property: 'verification', reason: 'the verification thread failed: the solver is broken' }],
     });
   });
 
+  it('says whether a prepared input needs a verdict at all, by the one predicate of the verifier', async () => {
+    const verifier = createRuleVerifier({ host: installedRuleSolver(import.meta.url), fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
+    const rule = (text: string, effect: 'allow' | 'deny') => parseRule(text, { effect, origin: 'user', source: '/home/u/.momonga/settings.json', settingsRoot: '/home/u', home: '/home/u', cwd: '/work' } as never);
+    expect(await verifier.needsVerdict(await verifier.inputOf({ ...request, rules: [rule('Read(.env)', 'deny')] }, NEVER_CANCELLED))).toBe(false);
+    expect(await verifier.needsVerdict(await verifier.inputOf({ ...request, rules: [rule('Read(src/**)', 'allow')] }, NEVER_CANCELLED))).toBe(true);
+  });
+
   it('refuses an input it did not prepare', async () => {
-    const verifier = createRuleVerifier({ host: provedRuleSolver({ executables: '/x' }), fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash' });
+    const verifier = createRuleVerifier({ host: provedRuleSolver({ executables: '/x' }), fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
     await expect(verifier.verify({ ...request, protectedSet: {}, secretLocations: [] }, new AbortController().signal)).rejects.toThrow('the rule verifier was given an input it did not prepare');
   });
 
@@ -65,7 +73,7 @@ describe('the rule verifier of the runtime process', () => {
 
   it('gives the report of the thread with its verdict, for the command that prints it', async () => {
     const host: RuleSolverHost = { ...provedRuleSolver({ executables: '/x' }), threadCode: REPORTING_THREAD_CODE };
-    const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash' });
+    const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
     expect(await verifier.report(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).toEqual({
       verdict: { verdict: 'proved', solver: FAKE_SOLVER_VERSION, refuted: [], unknown: [], notProved: [] },
       report: 'policy verification of 0 rule(s)',
@@ -74,7 +82,7 @@ describe('the rule verifier of the runtime process', () => {
 
   it('gives a report that states the reason when its thread gives no verdict', async () => {
     const host: RuleSolverHost = { ...provedRuleSolver({ executables: '/x' }), threadCode: `throw new Error('the solver is broken')` };
-    const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash' });
+    const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
     expect((await verifier.report(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).report).toBe('The rules were not verified: the verification thread failed: the solver is broken');
   });
 });
@@ -82,7 +90,7 @@ describe('the rule verifier of the runtime process', () => {
 describe('the rule verifier with the installed solver, in the thread of the product', () => {
   vi.setConfig({ testTimeout: SOLVER_GUARD_MS });
 
-  const verifierIn = (root: string) => createRuleVerifier({ host: installedRuleSolver(import.meta.url), fs: createPolicyFilesystem(), paths: { root: `${root}/home/.momonga`, keychains: `${root}/home/keys` } as never, timers: systemTimers, bashPath: () => '/bin/bash' });
+  const verifierIn = (root: string) => createRuleVerifier({ host: installedRuleSolver(import.meta.url), fs: createPolicyFilesystem(), paths: { root: `${root}/home/.momonga`, keychains: `${root}/home/keys` } as never, timers: systemTimers, bashPath: () => '/bin/bash', clock: createFakeClock(0) });
   const ruleIn = (root: string, text: string, effect: 'allow' | 'deny') => parseRule(text, { effect, origin: 'user', source: `${root}/home/.momonga/settings.json`, settingsRoot: `${root}/home`, home: `${root}/home`, cwd: `${root}/work` } as never);
 
   it('proves a rule set without a hole, an allow narrowed by a deny included, and refutes an allow that opens a secret location', async (context) => {
@@ -94,6 +102,7 @@ describe('the rule verifier with the installed solver, in the thread of the prod
     const proved = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Read(//etc/**)', 'deny')] }, NEVER_CANCELLED), new AbortController().signal);
     expect(proved).toMatchObject({ verdict: 'proved', solver: expect.stringMatching(/^z3 [0-9a-f]{64}$/), refuted: [], unknown: [] });
     expect(proved.notProved.length).toBeGreaterThan(0);
+    expect(proved.phases?.map((entry) => entry.phase)).toEqual(['thread-start', 'load', 'instantiate', 'deny-precedence', 'secret-reach', 'rule-consistency', 'bash-admission']);
     const narrowed = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Bash', 'allow'), ruleIn(root, 'Bash(git push:*)', 'deny')] }, NEVER_CANCELLED), new AbortController().signal);
     expect(narrowed).toMatchObject({ verdict: 'proved', refuted: [], unknown: [] });
     const refuted = await verifier.verify(await verifier.inputOf({ ...facts, rules: [ruleIn(root, 'Read(~/**)', 'allow')] }, NEVER_CANCELLED), new AbortController().signal);

@@ -1,4 +1,4 @@
-import { FAKE_PROVED } from './fake-rule-verifier.ts';
+import { FAKE_SOLVER_VERSION } from './fake-rule-verifier.ts';
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
 import { usageOf } from '@momonga/testkit';
@@ -117,7 +117,7 @@ describe('worker final answer', () => {
         secondary: { adapter: FAKE_ADAPTER, model: 'secondary', answers: 'model' },
       },
       token: {},
-      policyVerdict: { fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/), ...FAKE_PROVED },
+      policyVerdict: { fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/), verdict: 'not-needed', solver: FAKE_SOLVER_VERSION, refuted: [], unknown: [], notProved: [] },
     });
     expect(env.fold(run.id).pins).toEqual(started?.pins);
   });

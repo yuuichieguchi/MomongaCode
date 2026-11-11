@@ -75,6 +75,7 @@ describe('reporting', () => {
       solver: 'Z3 4.15.0',
       results: [result('proved'), result('refuted'), result('unknown')],
       mismatches: [],
+      timings: [],
       outsideProof: ['shell commands'],
       exitCode: 1,
     };
@@ -132,6 +133,7 @@ describe('formatReport escapes each line', () => {
         },
       ],
       mismatches: [],
+      timings: [],
       outsideProof: [FORGED],
       exitCode: 1,
     };

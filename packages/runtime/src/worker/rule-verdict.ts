@@ -27,13 +27,17 @@ const undecidedOf = (verifier: RuleVerifierPort): Map<string, Undecided> => {
   return fresh;
 };
 
+const NOT_NEEDED = { verdict: 'not-needed', refuted: [], unknown: [], notProved: [] } as const satisfies Omit<RuleVerdict, 'solver'>;
+
 export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, session: HeldSession, facts: RuleSetFacts): Promise<PinnedRuleVerdict> => {
   const verifier: RuleVerifierPort = options.ruleVerifier;
   const input = await verifier.inputOf(
     { rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, exemptDirectory: facts.exemptDirectory, enforcement: facts.enforcement },
     control.signal,
   );
-  const fingerprint = verdictKey(input, await verifier.solverVersion());
+  const solver = await verifier.solverVersion();
+  const fingerprint = verdictKey(input, solver);
+  if (!(await verifier.needsVerdict(input))) return { fingerprint, solver, ...NOT_NEEDED };
   const stored = options.store.ruleVerdicts.get(fingerprint);
   if (stored !== undefined) return { fingerprint, ...stored.verdict };
   const undecided = undecidedOf(verifier);
@@ -79,9 +83,11 @@ export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: 
 export const policyRefusal = (verdict: PinnedRuleVerdict): RunError | undefined =>
   refusingRefutations(verdict).length > 0 ? { code: POLICY_REFUTED_CODE, message: policyRefutedMessage(verdict) } : undefined;
 
+const SETTLED_WITHOUT_FINDING: readonly RuleVerdict['verdict'][] = ['proved', 'not-needed'];
+
 const noticeLevelOf = (verdict: PinnedRuleVerdict): 'info' | 'warning' | 'error' => {
   if (refusingRefutations(verdict).length > 0) return 'error';
-  return verdict.verdict === 'proved' && verdict.refuted.length === 0 ? 'info' : 'warning';
+  return SETTLED_WITHOUT_FINDING.some((kind) => kind === verdict.verdict) && verdict.refuted.length === 0 ? 'info' : 'warning';
 };
 
 export const laterVerdictNotice = (state: Pick<RunState, 'notes'>, pinnedFingerprint: string | undefined, verdict: PinnedRuleVerdict): RunEventPayload[] => {

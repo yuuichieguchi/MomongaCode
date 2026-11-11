@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { BuildOptions, Metafile } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseRule } from '@momonga/config';
+import { systemClock } from '@momonga/foundation';
 import { createPolicyFilesystem } from '@momonga/tools';
 import { NEVER_CANCELLED } from '@momonga/testkit';
 import { Z3_MANIFEST_ASSET, parseZ3Manifest } from '@momonga/verify';
@@ -74,7 +75,7 @@ describe('the bundle of the verification thread', () => {
         recipe: async () => ({ kind: 'bundled', executablesRoot: executables, assets }),
         threadCode: code,
       };
-      const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths: { root: path.join(home, '.momonga'), keychains: path.join(home, 'keys') } as never, timers: systemTimers, bashPath: () => '/bin/bash' });
+      const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths: { root: path.join(home, '.momonga'), keychains: path.join(home, 'keys') } as never, timers: systemTimers, bashPath: () => '/bin/bash', clock: systemClock });
       const rule = (text: string, effect: 'allow' | 'deny') => parseRule(text, { effect, origin: 'user', source: path.join(home, '.momonga', 'settings.json'), settingsRoot: home, home, cwd: work });
 
       const input = await verifier.inputOf(
@@ -85,6 +86,7 @@ describe('the bundle of the verification thread', () => {
 
       expect(verification.verdict).toMatchObject({ verdict: 'proved', solver: `z3 ${manifest.contentHash}`, refuted: [], unknown: [] });
       expect(verification.report).toContain('policy verification of 2 rule(s) in manual mode');
+      expect(verification.verdict.phases?.map((entry) => entry.phase).slice(0, 3)).toEqual(['thread-start', 'load', 'instantiate']);
       expect(fs.readdirSync(executables)).toEqual([`z3-${manifest.contentHash.slice(0, 16)}`]);
     },
     UNBOUNDED_BUILD_WAIT_MS,

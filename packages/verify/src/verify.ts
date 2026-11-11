@@ -2,7 +2,7 @@ import { systemClock } from '@momonga/foundation';
 import type { Clock, ProtectedSet, RuleEnforcement } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PermissionRule, PolicyHostFilesystem, SupersededForm } from '@momonga/policy';
-import type { PermissionMode } from '@momonga/protocol';
+import type { PermissionMode, RuleVerdictPhase } from '@momonga/protocol';
 import { startBudget } from './budget.ts';
 import { alphabetFor } from './char-set.ts';
 import { createCommandModel } from './command-model.ts';
@@ -30,6 +30,7 @@ export type VerifyRequest = {
   budgetMs: number;
   signal: AbortSignal;
   clock?: Clock;
+  hostPhases?: readonly RuleVerdictPhase[];
   supersededForms?: readonly SupersededForm[];
   alwaysOperations?: readonly string[];
 };
@@ -59,6 +60,9 @@ const unmodelledNotes = (context: QueryContext, rules: readonly PermissionRule[]
   }
   return notes;
 };
+
+export const needsVerdict = ({ rules, supersededForms, alwaysOperations }: Pick<VerifyRequest, 'rules' | 'supersededForms' | 'alwaysOperations'>): boolean =>
+  supersededForms !== undefined || alwaysOperations !== undefined || rules.some((rule) => rule.effect === 'allow');
 
 export const buildQueryContext = async (api: Z3Api, request: VerifyRequest): Promise<QueryContext> => {
   const { rules, roots, mode, home, cwd, protectedSet, fs, secretLocations, exemptDirectory, enforcement, budgetMs, signal } = request;
@@ -105,9 +109,14 @@ export const verifyPermissions = async (api: Z3Api, request: VerifyRequest): Pro
     (scoped: QueryContext) => checkRuleConsistency(scoped),
     (scoped: QueryContext) => checkBashAdmission(scoped),
   ];
+  const clock = request.clock ?? systemClock;
   const results: PropertyResult[] = [];
+  const timings: RuleVerdictPhase[] = [...(request.hostPhases ?? [])];
   for (const [index, check] of checks.entries()) {
-    results.push(await check({ ...context, budget: context.budget.share(checks.length - index) }));
+    const startedAt = clock.now();
+    const result = await check({ ...context, budget: context.budget.share(checks.length - index) });
+    results.push(result);
+    timings.push({ phase: result.id, ms: clock.now() - startedAt });
   }
   if (request.supersededForms !== undefined) results.push(checkSupersededForms(context, request.supersededForms));
   if (request.alwaysOperations !== undefined) results.push(checkMandateHolds(context, request.alwaysOperations));
@@ -117,6 +126,7 @@ export const verifyPermissions = async (api: Z3Api, request: VerifyRequest): Pro
     solver: `Z3 ${api.getVersionString()}`,
     results,
     mismatches,
+    timings,
     outsideProof: [...STATIC_OUTSIDE_PROOF, ...unmodelledNotes(context, rules)],
     exitCode: exitCodeOf(results, mismatches),
   };

@@ -4,7 +4,7 @@ import type { VerificationReport } from '../src/report.ts';
 
 const result = (id: string, verdict: unknown, byModeDefault: unknown[] = []) => ({ id, title: id, subject: 'Read', proves: '', doesNotProve: [], verdict, byModeDefault });
 const reportOf = (results: unknown[], mismatches: unknown[] = []): VerificationReport =>
-  ({ mode: 'manual', ruleCount: 1, solver: 'Z3 4', results, mismatches, outsideProof: ['shell commands'], exitCode: 1 }) as unknown as VerificationReport;
+  ({ mode: 'manual', ruleCount: 1, solver: 'Z3 4', results, mismatches, timings: [], outsideProof: ['shell commands'], exitCode: 1 }) as unknown as VerificationReport;
 const witness = { kind: 'path', tool: 'Read', requested: '/work/a', resolved: '/work/a' };
 const agreed = { witness, replay: { agrees: true, actual: 'allow', final: 'allow' } };
 const disagreed = { witness, replay: { agrees: false, predicted: 'allow', actual: 'ask', final: 'ask' } };
