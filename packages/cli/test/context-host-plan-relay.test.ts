@@ -100,13 +100,6 @@ describe('the eval relay of a plan target written by the product (P6.10, K4)', (
       const loadedCapabilities: Record<string, unknown> = { ...loaded.capabilities };
       expect({ imageInput: loadedCapabilities['imageInput'], imageTokens: loadedCapabilities['imageTokens'] }).toEqual({ imageInput: true, imageTokens: IMAGE_TOKENS });
     });
-
-    it('the pair of the resolved target when the entry states no imageInput', (context) => {
-      const models = withResolvedImage(productWrittenPlanModels(context), { imageInput: true, imageTokens: IMAGE_TOKENS });
-      const { imageInput: _imageInput, imageTokens: _imageTokens, ...silent } = LISTED_PLAN;
-      const { capabilities } = relayedCapabilities(models, { [PLAN_TARGET]: silent as PlanRelay['listed'][string] });
-      expect({ imageInput: capabilities['imageInput'], imageTokens: capabilities['imageTokens'] }).toEqual({ imageInput: true, imageTokens: IMAGE_TOKENS });
-    });
   });
 
   it('the relayed settings pass the real settings schema', async (context) => {

@@ -62,7 +62,7 @@ const CAPABILITIES = {
   source: 'declared',
 };
 
-const MODEL_LIST = { object: 'list', data: [{ id: 'local/m', provider: 'local', ownName: 'm', billing: 'local', capabilities: CAPABILITIES, chain: [] }], start: null, roles: {} };
+const MODEL_LIST = { object: 'list', data: [{ id: 'local/m', object: 'model', provider: 'local', ownName: 'm', billing: 'local', capabilities: CAPABILITIES, chain: [] }], start: null, roles: {} };
 
 const gatewayAnswering = async (context: TestContext, name: string, answers: Answer[]): Promise<{ socketPath: string; requests: string[] }> => {
   const socketPath = path.join(withTempDir(context), name);

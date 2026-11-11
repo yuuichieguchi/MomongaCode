@@ -8,6 +8,7 @@ import type {
   GatewayHealth,
   MomongaModelEntry,
   MomongaModelList,
+  MomongaModelRoles,
   ModelViews,
   PlanAccountView,
   PlanAccountsResponse,
@@ -142,6 +143,7 @@ const isChainMember = (value: unknown): boolean =>
   isString(value['model']) &&
   isString(value['counter']) &&
   isBilling(value['billing']) &&
+  isOptional(value['provider'], isString) &&
   isString(value['adapter']) &&
   oneOf(value['answers'], TARGET_ANSWERS) &&
   isString(value['upstream']) &&
@@ -152,6 +154,7 @@ const isChainMember = (value: unknown): boolean =>
 const isModelEntry = (entry: unknown): boolean =>
   isRecord(entry) &&
   isString(entry['id']) &&
+  entry['object'] === 'model' &&
   isString(entry['provider']) &&
   isString(entry['ownName']) &&
   isOptional(entry['defaultTag'], isString) &&
@@ -160,12 +163,17 @@ const isModelEntry = (entry: unknown): boolean =>
   Array.isArray(entry['chain']) &&
   entry['chain'].every(isChainMember);
 
+const MODEL_LIST_ROLES: Readonly<Record<keyof MomongaModelRoles, true>> = { compaction: true, reflection: true, analysis: true };
+
+const isModelRoles = (value: unknown): boolean => isRecordOf(value, isString) && isRecord(value) && Object.keys(value).every((role) => Object.hasOwn(MODEL_LIST_ROLES, role));
+
 const isModelList = (value: unknown): value is MomongaModelList =>
   isRecord(value) &&
+  value['object'] === 'list' &&
   Array.isArray(value['data']) &&
   value['data'].every(isModelEntry) &&
   (value['start'] === null || isString(value['start'])) &&
-  isRecordOf(value['roles'], isString);
+  isModelRoles(value['roles']);
 
 export const listingViewsOf = (entries: readonly MomongaModelEntry[]): ModelViews =>
   entries.map((entry) => ({ canon: entry.id, provider: entry.provider, ownName: entry.ownName, ...(entry.defaultTag === undefined ? {} : { defaultTag: entry.defaultTag }) }));

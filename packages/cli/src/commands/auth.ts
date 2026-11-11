@@ -3,6 +3,7 @@ import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfi
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE } from '@momonga/foundation';
 import type { OpenUrl } from '@momonga/foundation';
 import { listingViewsOf } from '../client/gateway-client.ts';
+import { describeFailure } from '../failure.ts';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
 import { listedModelOf } from './models.ts';
 import { createInterface } from 'node:readline';
@@ -45,12 +46,18 @@ export const modelLineOf = (listing: MomongaModelList, named: string | undefined
 
 export const modelLineText = (line: ModelLine): string => (line === null ? `model: none (${messageOf('noModelConnected', 'cli')})` : `model: ${line.name} (${line.billing})`);
 
+type ModelRead = { kind: 'read'; model: ModelLine } | { kind: 'unknown'; cause: string };
+
 export const authStatus = async (ports: AuthStatusPorts, options: { json: boolean; model?: string }): Promise<number> => {
   const listed = await ports.plan.accounts();
-  const model = modelLineOf(await ports.listing(), options.model);
+  const read: ModelRead = await ports.listing().then(
+    (listing) => ({ kind: 'read', model: modelLineOf(listing, options.model) }),
+    (error: unknown) => ({ kind: 'unknown', cause: describeFailure(error) }),
+  );
+  const code = read.kind === 'read' ? EXIT_OK : EXIT_FAILURE;
   if (options.json) {
-    ports.stdout.write(`${JSON.stringify({ ...listed, model })}\n`);
-    return EXIT_OK;
+    ports.stdout.write(`${JSON.stringify(read.kind === 'read' ? { ...listed, model: read.model } : { ...listed, model: null, modelUnknown: read.cause })}\n`);
+    return code;
   }
   const lines = listed.profiles.flatMap((profile) => {
     const accounts = [...accountsOf(profile.id, listed.accounts)].sort((left, right) => left.label.localeCompare(right.label));
@@ -63,9 +70,9 @@ export const authStatus = async (ports: AuthStatusPorts, options: { json: boolea
   print(ports.stdout, [
     ...(lines.length === 0 ? [NO_PROVIDER_TEXT] : lines),
     ...(listed.listProblems ?? []).map((problem) => `  ${listProblemLine(problem)}`),
-    modelLineText(model),
+    read.kind === 'read' ? modelLineText(read.model) : `model: unknown (${read.cause})`,
   ]);
-  return EXIT_OK;
+  return code;
 };
 
 type Choose = (question: string, choices: readonly string[], until?: AbortSignal) => Promise<number | undefined>;
