@@ -138,10 +138,18 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(outcome.code).toBe(1);
     expect(outcome.stdout).toBe('');
     expect(outcome.stderr).toBe(
-      `install.sh: sha256 mismatch for ${ASSET}: expected ${sha256(GOOD_BINARY)}, got ${sha256(TAMPERED_BINARY)}; nothing was installed\n`,
+      `install.sh: the downloaded ${ASSET} does not match the SHA-256 that SHA256SUMS records (expected ${sha256(GOOD_BINARY)}, got ${sha256(TAMPERED_BINARY)}); nothing was installed\n`,
     );
     expect(fs.existsSync(target())).toBe(false);
     expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual([]);
+  });
+
+  it('refuses a release key that is not one ssh-ed25519 public key line before it downloads anything', async () => {
+    serveRelease(GOOD_BINARY, GOOD_BINARY);
+    const outcome = await runInstall({ ...baseEnv(), MOMONGA_RELEASE_PUBLIC_KEY: 'not a key' });
+    expect(outcome.code).toBe(1);
+    expect(outcome.stderr).toBe('install.sh: the release signing key is not one ssh-ed25519 public key line (ssh-ed25519 AAAA...), so it cannot verify the release; nothing was installed\n');
+    expect(fs.existsSync(target())).toBe(false);
   });
 
   it('keeps the existing install when the artifact is tampered', async () => {
