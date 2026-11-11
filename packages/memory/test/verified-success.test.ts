@@ -137,6 +137,33 @@ describe('isVerifiedSuccess', () => {
     expect(verdict([disguised, ...pass()])).toBe(false);
   });
 
+  describe('a call of the exec kind that changed the run and whose record names neither its command nor a written path', () => {
+    const withoutCommand = (step: Step): Step => {
+      if (step.step !== 'call') return step;
+      const { command: _unrecorded, ...end } = step.end;
+      return { ...step, end };
+    };
+
+    it('is an unknown write when its completion carries no command, so the run is not a verified success', () => {
+      expect(verdict([write('src/a.ts'), withoutCommand(bash('npm test', { basis: 'person' })), ...pass()])).toBe(false);
+      expect(verdict([withoutCommand(commandThrough('mcp__remote__shell', 'npm test', { basis: 'person' })), ...pass()])).toBe(false);
+    });
+
+    it('is an unknown write when its reconciliation carries no command', () => {
+      expect(verdict([write('src/a.ts'), withoutCommand(reconciled(bash('npm test', { basis: 'person' }), 'unknown')), ...pass()])).toBe(false);
+      expect(verdict([write('src/a.ts'), withoutCommand(reconciled(bash('npm test', { basis: 'person' }), 'already_applied')), ...pass()])).toBe(false);
+    });
+
+    it('stays verified when the recorded command is a verification command', () => {
+      expect(verdict([write('src/a.ts'), bash('npm test', { basis: 'person' }), ...pass()])).toBe(true);
+      expect(verdict([write('src/a.ts'), reconciled(bash('npm test', { basis: 'person' }), 'already_applied'), ...pass()])).toBe(true);
+    });
+
+    it('does not count a read only call without a recorded command, because it changed nothing', () => {
+      expect(verdict([write('src/a.ts'), withoutCommand(bash('git status')), ...pass()])).toBe(true);
+    });
+  });
+
   it('verifies nothing with no declared condition', () => {
     expect(isVerifiedSuccess({ status: 'COMPLETED', events: journal([], [write('src/a.ts')]), commands: [], manifests: [] })).toBe(false);
   });
