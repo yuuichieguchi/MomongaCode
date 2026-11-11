@@ -327,6 +327,7 @@ export const fakeRuntime = (): FakeRuntime => {
     startMcpAuthorization: unexpected('startMcpAuthorization'),
     mcpAuthorization: unexpected('mcpAuthorization'),
     cancelMcpAuthorization: unexpected('cancelMcpAuthorization'),
+    updateSession: unexpected('updateSession'),
     folderMcpServers: unexpected('folderMcpServers'),
     startFolderMcpAuthorization: unexpected('startFolderMcpAuthorization'),
     folderMcpAuthorization: unexpected('folderMcpAuthorization'),

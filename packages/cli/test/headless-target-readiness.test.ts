@@ -74,7 +74,7 @@ const headlessReading = async (context: Parameters<typeof withTempDir>[0], capab
     log.push(`capabilitiesOf:${model}`);
     return capabilities as ChainCapabilities;
   };
-  const options = { prompt: 'explain the module', format, verbose: false, interrupt: new AbortController().signal, capabilitiesOf: capabilitiesOfModel } as HeadlessOptions;
+  const options = { prompt: 'explain the module', format, verbose: false, interrupt: new AbortController().signal, capabilitiesOf: capabilitiesOfModel, modelList: async () => ({ data: [], start: null }) } as HeadlessOptions;
   const code = await runHeadless(ports, paths, options);
   return { code, stderr: stderr.join(''), stdout: stdout.join('') };
 };

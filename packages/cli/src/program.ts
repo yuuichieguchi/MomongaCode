@@ -16,6 +16,7 @@ import { showReport } from './commands/report.ts';
 import { sessionSocketResolver } from './daemon/generations.ts';
 import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
 import { createGatewayClient } from './client/gateway-client.ts';
+import type { GatewayClient } from './client/gateway-client.ts';
 import { pathsOf } from './paths.ts';
 import { terminalPorts } from './terminal-writer.ts';
 import { runHelper } from './helper-mode.ts';
@@ -175,15 +176,17 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
       if (options.print !== undefined) {
         const resumed = headlessReopenOf(reopen);
         const paths = await pathsOf(ports);
-        const capabilitiesOf = async (model: string) => {
+        const asked = async <T>(ask: (gateway: GatewayClient) => Promise<T>): Promise<T> => {
           const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'gateway') });
           try {
-            return await gateway.capabilitiesOf(model);
+            return await ask(gateway);
           } finally {
             await gateway.close();
           }
         };
-        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }), ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
+        const capabilitiesOf = (model: string) => asked((gateway) => gateway.capabilitiesOf(model));
+        const modelList = () => asked((gateway) => gateway.modelList(deps.interrupt));
+        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, modelList, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }), ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
         return;
       }
       if (ports.terminal === undefined) {

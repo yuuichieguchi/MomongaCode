@@ -143,6 +143,7 @@ export {
   REMEDY_SURFACES,
   TARGET_HEALTH_REASONS,
   NO_MODEL_TARGET,
+  startModelOf,
   TARGET_NOT_READY,
   JSON_MODES,
   agentReadiness,
@@ -194,6 +195,9 @@ export {
   bannedVariantsIn,
   messageOf,
   reopenSessionCommand,
+  shellQuote,
+  BYPASS_OPT_IN_OPTION,
+  PERMISSION_MODE_OPTION,
   serverCountText,
 } from './vocabulary.ts';
 export type { BannedUse, BannedVariant, Concept, KeptWork, MessageInput, MessageInputs, MessageKey, Surface, VocabularyRow } from './vocabulary.ts';

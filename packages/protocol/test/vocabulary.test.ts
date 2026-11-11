@@ -80,6 +80,8 @@ describe('messageOf: one builder per message, which names the command of the sur
       sessionInOtherFolder: (surface) => messageOf('sessionInOtherFolder', surface, { id: 'i', folder: '/f' }),
       noSessionToContinue: (surface) => messageOf('noSessionToContinue', surface, { folder: '/f' }),
       notAnId: (surface) => messageOf('notAnId', surface, { value: '..' }),
+      storedBypassNeedsOptIn: (surface) => messageOf('storedBypassNeedsOptIn', surface, { id: 'i' }),
+      bypassNotStarted: (surface) => messageOf('bypassNotStarted', surface, { id: 'i' }),
       handoverFailed: (surface) => messageOf('handoverFailed', surface, { toVersion: '2', fromVersion: '1', reason: 'r', kept: { kind: 'run', runId: 'r1' } }),
       restoreRefused: (surface) => messageOf('restoreRefused', surface, { reason: 'r', kept: { kind: 'unnamed' } }),
       aboutModel: (surface) => messageOf('aboutModel', surface, { model: 'fm/system', text: 'the server was stopped' }),

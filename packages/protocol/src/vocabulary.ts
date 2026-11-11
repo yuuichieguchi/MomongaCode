@@ -181,6 +181,14 @@ const BANNED_MATCHERS: readonly BannedMatcher[] = CONCEPTS.flatMap((concept) => 
 export const bannedVariantsIn = (text: string): BannedUse[] =>
   BANNED_MATCHERS.filter((matcher) => matcher.expression.test(text)).map(({ concept, word, variant, keptFor }) => ({ concept, word, variant, keptFor }));
 
+const SHELL_PLAIN_ARGUMENT = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+export const shellQuote = (argument: string): string => (SHELL_PLAIN_ARGUMENT.test(argument) ? argument : `'${argument.replaceAll("'", "'\\''")}'`);
+
+export const BYPASS_OPT_IN_OPTION = '--dangerously-skip-permissions';
+
+export const PERMISSION_MODE_OPTION = '--permission-mode';
+
 export const reopenSessionCommand = (sessionId: string): string => `${WORDS.command} --resume ${sessionId}`;
 
 export const CHOOSE_SESSION_COMMAND = `${WORDS.command} --resume`;
@@ -252,6 +260,8 @@ export type MessageInputs = {
   sessionInOtherFolder: [given: { readonly id: string; readonly folder: string }];
   noSessionToContinue: [given: { readonly folder: string }];
   notAnId: [given: { readonly value: string }];
+  storedBypassNeedsOptIn: [given: { readonly id: string }];
+  bypassNotStarted: [given: { readonly id: string }];
   handoverFailed: [given: { readonly toVersion: string; readonly fromVersion: string; readonly reason: string; readonly kept: KeptWork }];
   restoreRefused: [given: { readonly reason: string; readonly kept: KeptWork }];
   aboutModel: [given: { readonly model: string; readonly text: string }];
@@ -273,7 +283,11 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   sessionNotFound: (_surface, given) => `No ${WORDS.session} has the id ${given.id}.`,
   sessionIdTooShort: (_surface, given) => `No ${WORDS.session} has the id ${given.id}. A shortened id needs at least ${given.minimum} characters.`,
   sessionAmbiguous: (_surface, given) => `${given.id} matches more than one ${WORDS.session}: ${given.matches.join(', ')}`,
-  sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${given.folder} && ${reopenSessionCommand(given.id)}`,
+  sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${shellQuote(given.folder)} && ${reopenSessionCommand(given.id)}`,
+  storedBypassNeedsOptIn: (_surface, given) =>
+    `The ${WORDS.session} ${given.id} is stored in the bypassPermissions mode, and this command does not give ${BYPASS_OPT_IN_OPTION}. Reopen it with ${BYPASS_OPT_IN_OPTION} to stay in that mode, or with ${PERMISSION_MODE_OPTION} <mode> to leave it.`,
+  bypassNotStarted: (_surface, given) =>
+    `The ${WORDS.session} ${given.id} was not started with ${BYPASS_OPT_IN_OPTION}, so a resume cannot move it into the bypassPermissions mode. Start a new ${WORDS.session} with ${BYPASS_OPT_IN_OPTION}.`,
   notAnId: (_surface, given) => `${JSON.stringify(given.value)} is not an id.`,
   noSessionToContinue: (_surface, given) => `No ${WORDS.session} to continue in the ${WORDS.folder} ${given.folder}.`,
   handoverFailed: (surface, given) =>

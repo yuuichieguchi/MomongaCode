@@ -156,6 +156,7 @@ export type RuntimeClient = {
   setMcpServers(sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView>;
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
   setModel(sessionId: string, model: string): Promise<SessionView>;
+  updateSession(sessionId: string, update: SessionUpdate): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   compact(sessionId: string, instructions?: string): Promise<RunView>;
   getRun(id: string): Promise<RunView>;
@@ -289,6 +290,8 @@ const frameOf = (event: { id?: string; event?: string; data: string }, descripti
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
+export type SessionUpdate = { permissionMode: PermissionMode; model?: string } | { permissionMode?: PermissionMode; model: string };
+
 export type McpFolder = { cwd: string; env: Readonly<Record<string, string>> };
 
 const NO_SEGMENT = new Set(['', '.', '..']);
@@ -413,17 +416,15 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return listOf(body, 'sessions', description).map((entry) => checkSession(entry, description));
   };
 
-  const setPermissionMode = async (sessionId: string, mode: PermissionMode): Promise<SessionView> => {
+  const updateSession = async (sessionId: string, update: SessionUpdate): Promise<SessionView> => {
     const path = `/v1/sessions/${pathSegment(sessionId)}`;
-    const { body } = await send('PATCH', path, [200], { body: { permissionMode: mode } });
+    const { body } = await send('PATCH', path, [200], { body: update });
     return sessionOf(body, `PATCH ${path}`);
   };
 
-  const setModel = async (sessionId: string, model: string): Promise<SessionView> => {
-    const path = `/v1/sessions/${pathSegment(sessionId)}`;
-    const { body } = await send('PATCH', path, [200], { body: { model } });
-    return sessionOf(body, `PATCH ${path}`);
-  };
+  const setPermissionMode = (sessionId: string, mode: PermissionMode): Promise<SessionView> => updateSession(sessionId, { permissionMode: mode });
+
+  const setModel = (sessionId: string, model: string): Promise<SessionView> => updateSession(sessionId, { model });
 
   const createRun = async (sessionId: string, input: string, runOptions: CreateRunOptions = {}): Promise<{ run: RunView; location: string }> => {
     const path = `/v1/sessions/${pathSegment(sessionId)}/runs`;
@@ -808,6 +809,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     childRuns,
     setMcpServers,
     setPermissionMode,
+    updateSession,
     setModel,
     createRun,
     compact,

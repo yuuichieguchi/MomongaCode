@@ -24,8 +24,8 @@ import { newerListenerOf, streamMoveOf, streamSurface } from '../handover/stream
 import type { StreamMove } from '../handover/stream.ts';
 import type { StreamRecord } from '../handover/record.ts';
 import { ensureSessionDaemon } from '../daemon/ensure-daemon.ts';
-import { connectSessionRuntime, openSession } from './open-session.ts';
-import type { CliSession } from './open-session.ts';
+import { NoModelConnected, connectSessionRuntime, openSession } from './open-session.ts';
+import type { CliSession, ListedModels } from './open-session.ts';
 import type { HeadlessReopen } from './resolve-session.ts';
 import { resolveSkillInvocation } from './skill-invocation.ts';
 
@@ -43,6 +43,7 @@ export type HeadlessOptions = {
   model?: string;
   reopen?: HeadlessReopen;
   capabilitiesOf(model: string): Promise<MomongaModelEntry['capabilities']>;
+  modelList(): Promise<ListedModels>;
   skill?: string;
   images?: readonly string[];
   mandate?: Mandate;
@@ -519,14 +520,14 @@ const modelsAnnounced = async (ports: CliPorts, interrupt: AbortSignal): Promise
 
 const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<CliSession | undefined> => {
   try {
-    return await openSession(ports, paths, {
+    const typed = {
       signal: options.interrupt,
       ...onNewerOf(ports),
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
       ...(options.model === undefined ? {} : { model: options.model }),
-      ...(options.reopen === undefined ? {} : { reopen: options.reopen }),
-    });
+    };
+    return await openSession(ports, paths, options.reopen === undefined ? typed : { ...typed, reopen: options.reopen, modelList: options.modelList });
   } catch (error) {
     if (options.interrupt.aborted && error === options.interrupt.reason) return undefined;
     throw error;
@@ -554,7 +555,7 @@ export const resumeStream = async (ports: CliPorts, paths: MomongaPaths, adopted
 
 export type RefusedResult = { type: 'result'; subtype: 'error'; is_error: true; result: ''; error: { code: string; message: string } };
 
-const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, error: RunApiError): number => {
+const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, error: { reason: string }): number => {
   ports.stderr.write(`${escapedLines(leadWith('momonga: ', noTargetLines(error.reason, paths)))}\n`);
   if (format !== 'text') {
     const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message: error.reason } };
@@ -577,7 +578,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   try {
     session = await openInterruptibleSession(ports, paths, options);
   } catch (error) {
-    if (error instanceof RunApiError && error.code === TARGET_NOT_READY) return refuse(ports, paths, options.format, error);
+    if ((error instanceof RunApiError || error instanceof NoModelConnected) && error.code === TARGET_NOT_READY) return refuse(ports, paths, options.format, error);
     if (error instanceof RunApiError && isModelRefusal(error)) {
       ports.stderr.write(`${escapedLines([`momonga: ${error.reason}`])}\n`);
       return EXIT_FAILURE;
