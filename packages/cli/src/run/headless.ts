@@ -18,7 +18,7 @@ import { describeRetryWait } from '../retry-wait.ts';
 import type { AttemptFailed } from '../retry-wait.ts';
 import { describeClassification, describeDenial, describeHook, describeRunError, describeVerification, unmetConditionLines } from '../policy-messages.ts';
 import type { MessageSurface } from '../policy-messages.ts';
-import { asChildEvent } from './child-events.ts';
+import { asChildEvent, noEventTypeLeft } from './child-events.ts';
 import { followRun } from './follow.ts';
 import { adoptionOf, refuseStart } from '../handover/start.ts';
 import { newerListenerOf, streamMoveOf, streamSurface } from '../handover/stream.ts';
@@ -267,8 +267,52 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
       case 'run.status':
         if (event.to === 'QUEUED' && lastFailure !== undefined) note([`momonga: ${describeRetryWait(lastFailure)}`]);
         break;
-      default:
+      case 'user.message':
+      case 'run.started':
+      case 'attempt.lost':
+      case 'model.requested':
+      case 'model.responded':
+      case 'agent.message.delta':
+      case 'agent.thought.delta':
+      case 'model.stream.restarted':
+      case 'tool.permission.classifying':
+      case 'hook.started':
+      case 'tool.permission.resolved':
+      case 'tool.permission.cancelled':
+      case 'tool.unknown.resolved':
+      case 'tool.unknown.cancelled':
+      case 'tool.elicitation.resolved':
+      case 'tool.elicitation.cancelled':
+      case 'tool.started':
+      case 'tool.updated':
+      case 'verification.started':
+      case 'tool.loaded':
+      case 'tool.offered':
+      case 'loop.warned':
+      case 'model.rejected':
+      case 'meter.observed':
+      case 'job.finished':
+      case 'plan.updated':
+      case 'mode.changed':
+      case 'model.changed':
+      case 'inbox.changed':
+      case 'user_shell':
+      case 'usage.updated':
+      case 'usage.charged':
+      case 'context.compacted':
+      case 'context.governing_loaded':
+      case 'context.memories_loaded':
+      case 'context.contribution':
+      case 'context.compacting':
+      case 'context.compaction_rejected':
+      case 'context.inherited':
+      case 'context.truncated':
+      case 'instructions.loaded':
+      case 'skill.activated':
+      case 'approval.rule.persisted':
         break;
+      default:
+        noEventTypeLeft(event);
     }
   };
 
