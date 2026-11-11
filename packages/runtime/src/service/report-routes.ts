@@ -12,7 +12,7 @@ export type ReportRouteDeps = {
   now: () => number;
   maxBodyBytes: number;
   reportCost: (runIds: readonly string[], signal: AbortSignal) => Promise<RunCostView[]>;
-  runTraceContent: (runId: string, after: number, limit: number) => Promise<TraceContentPage>;
+  runTraceContent: (runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>;
 };
 
 const limitOf = (raw: string | undefined): number => pageLimitOf(raw, REPORT_PAGE_ROWS);
@@ -63,7 +63,7 @@ export const registerReportRoutes = (route: RouteRegistrar, deps: ReportRouteDep
     if (deps.store.getRun(id) === undefined) throw notFound(`run ${id} does not exist`);
     const after = integerQueryOf(context.req.query('after'), 'after', { from: 0, to: Number.MAX_SAFE_INTEGER }) ?? 0;
     const limit = pageLimitOf(context.req.query('limit'), MAX_TRACE_CONTENT_PAGE);
-    return json(await deps.runTraceContent(id, after, limit));
+    return json(await deps.runTraceContent(id, after, limit, context.req.raw.signal));
   };
 
   route('/v1/report/facts', { GET: facts });

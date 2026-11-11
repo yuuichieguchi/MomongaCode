@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError, loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
-import { installTrust, trustFailureText } from '@momonga/foundation';
+import { installTrust, settledOrAborted, trustFailureText } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -744,7 +744,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
-        permissionRules: (session) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session),
+        permissionRules: (session, requestSignal) => settledOrAborted(permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session), requestSignal),
         userInput: createUserInputPort({
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
@@ -759,8 +759,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         timers,
         cancelUpstream: tracker.cancel,
         releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
-        runTrace: async (runId) => {
-          await telemetries.current().telemetry.forceFlush();
+        runTrace: async (runId, requestSignal) => {
+          await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined
             ? undefined
@@ -776,8 +776,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
         reportCost: (runIds, signal) => reportCostOf({ runIds, fetchPage: (ids, cursor, limit) => gatewayClient.billedCalls(ids, cursor, limit, false, signal) }),
-        runTraceContent: async (runId, after, limit) => {
-          await telemetries.current().telemetry.forceFlush();
+        runTraceContent: async (runId, after, limit, requestSignal) => {
+          await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
           return pageRunBodies(traceStore, runId, after, limit);
         },
         mcp: toolRuntime.mcpAdmin,

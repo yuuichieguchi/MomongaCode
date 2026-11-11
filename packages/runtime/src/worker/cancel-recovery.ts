@@ -90,7 +90,7 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
   try {
     const { tools } = options;
     const env = await tools.envFor(session, control.recoverySignal);
-    const recoveryTool = (await options.skills.load(session)).recoveryTool();
+    const recoveryTool = (await options.skills.load(session, control.recoverySignal)).recoveryTool();
     const toolSet = await tools.recoveryToolSet({
       signal: control.recoverySignal,
       ...(recoveryTool === undefined ? {} : { additionalTools: [recoveryTool] }),

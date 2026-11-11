@@ -443,7 +443,7 @@ export type ServiceOverrides = {
   wrapStore?: (store: RuntimeStore) => RuntimeStore;
   cancelUpstream?: (runId: string) => Promise<void>;
   releaseStopped?: (runId: string, signal: AbortSignal) => Promise<void>;
-  runTrace?: (runId: string) => Promise<unknown>;
+  runTrace?: (runId: string, signal: AbortSignal) => Promise<unknown>;
   imageInput?: boolean;
   beforeCapabilities?: () => Promise<void>;
   capabilitiesOf?: (model: string) => Promise<unknown>;
@@ -460,6 +460,7 @@ export type ServiceOverrides = {
   userInput?: runtime.UserInputPort;
   evidenceRun?: (project: string) => EvidenceRun;
   delegation?: DelegationPort;
+  modelListing?: (signal: AbortSignal) => Promise<{ views: ModelViews; start: string | null }>;
 };
 
 export type DelegationPort = NonNullable<Parameters<typeof runtime.createRunService>[0]['delegation']>;
@@ -534,7 +535,7 @@ export const serviceOptions = (
   startedAt: STARTED_AT,
   sandboxKind: async () => overrides.sandboxKind ?? 'seatbelt',
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
-  modelListing: base.ports.modelListing,
+  modelListing: overrides.modelListing ?? base.ports.modelListing,
   modelCapabilities: async (model: string) => {
     await overrides.beforeCapabilities?.();
     if (overrides.capabilitiesOf !== undefined) return overrides.capabilitiesOf(model);

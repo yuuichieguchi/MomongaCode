@@ -40,6 +40,7 @@ const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defa
     try {
       tmpDir = (await ensureSessionTmpDir(paths, session.id)).dir;
     } catch (error) {
+      signal.throwIfAborted();
       if (isTransientErrno(error)) throw error;
       throw wrap(error);
     }
