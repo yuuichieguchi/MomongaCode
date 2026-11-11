@@ -13,6 +13,7 @@ export type McpPoolOptions = {
   projectDir: string;
   baseEnv: Record<string, string>;
   clock: Clock;
+  clientVersion: string;
   credentials?: CredentialRules;
   credentialNames?: readonly string[];
   timers?: McpTimers;
@@ -39,7 +40,7 @@ export type McpAuthorizingPool = McpPool & {
 };
 
 export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
-  const { servers, projectDir, baseEnv, clock } = options;
+  const { servers, projectDir, baseEnv, clock, clientVersion } = options;
   const noticesOf = new Map<string, string[]>(servers.map((entry) => [entry.name, []]));
   const connections = servers.map((entry) =>
     createManagedConnection({
@@ -50,6 +51,7 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
       projectDir,
       baseEnv,
       clock,
+      clientVersion,
       ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
       ...(options.credentialNames === undefined ? {} : { credentialNames: options.credentialNames }),
       ...(options.timers === undefined ? {} : { timers: options.timers }),

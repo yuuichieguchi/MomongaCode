@@ -1,6 +1,6 @@
 import { checkJsonDepth, isRecord } from '@momonga/foundation';
 import { SchemaValidatorFailure, checkWithPatterns, patternRefusal, validateUntrusted } from '@momonga/foundation';
-import { sanitizeSchema } from './schema-sanitizer.ts';
+import { boundedSchemaCopy } from './schema-copy.ts';
 import { capText, sanitizeServerText } from './text.ts';
 
 const MAX_ELICITATION_MESSAGE_CHARS = 2000;
@@ -61,7 +61,7 @@ const parseEntry = (key: string, entry: unknown): ElicitationRequest => {
   if (mode !== 'form') throw new McpInputProtocolError(`input request "${key}" uses the unsupported elicitation mode ${JSON.stringify(mode)}`);
   const schema = params['requestedSchema'];
   if (!isRecord(schema)) throw new McpInputProtocolError(`input request "${key}" is a form elicitation without a requestedSchema`);
-  return { key, mode, message, requestedSchema: sanitizeSchema(schema) };
+  return { key, mode, message, requestedSchema: boundedSchemaCopy(schema) };
 };
 
 export const parseInputRequests = (inputRequests: unknown): ElicitationRequest[] => {

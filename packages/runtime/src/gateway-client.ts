@@ -1,4 +1,4 @@
-import { GENERATION_RETIRED_CODE, createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
+import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, decodeSse, parseOutsideJson, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsClient, UdsResponse } from '@momonga/foundation';
 import {
   COMPACTION_RESULT_EVENT,
@@ -169,6 +169,14 @@ const invalidResponse = (detail: string): GatewayRequestError => transportError(
 
 export const gatewayProtocolError = invalidResponse;
 
+const parsedReply = (text: string, subject: string): unknown => {
+  try {
+    return parseOutsideJson(text);
+  } catch (error) {
+    throw invalidResponse(error instanceof JsonDepthError ? `${subject} is nested too deep: ${error.message}` : `${subject} is not JSON`);
+  }
+};
+
 const isUnitsText = (value: unknown): value is string => typeof value === 'string' && /^\d+$/.test(value);
 
 const quoteOfReply = (parsed: unknown): ModelQuote => {
@@ -202,7 +210,7 @@ const errorFromBody = (response: UdsResponse, text: string, nowMs: number): Gate
     });
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseOutsideJson(text);
   } catch {
     return fallback();
   }
@@ -462,12 +470,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       guard.arm(bound.ms, bound.code);
       const response = await send(guard, spec);
       if (response.status >= 400) throw errorFromBody(response, await response.text(), clock.now());
-      const text = await response.text();
-      try {
-        return JSON.parse(text);
-      } catch {
-        throw invalidResponse('the body is not JSON');
-      }
+      return parsedReply(await response.text(), 'the body');
     } catch (error) {
       throw guard.translate(error);
     } finally {
@@ -503,12 +506,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
   const compactFromStream = async (guard: Guard, response: UdsResponse): Promise<CompactResource> => {
     let resource: CompactResource | undefined;
     for await (const frame of decodeSse(timedChunksOf(guard, response))) {
-      let data: unknown;
-      try {
-        data = JSON.parse(frame.data);
-      } catch {
-        throw invalidResponse('a compact stream frame is not JSON');
-      }
+      const data = parsedReply(frame.data, 'a compact stream frame');
       if (frame.event === COMPACTION_RESULT_EVENT) {
         if (!isRecord(data)) throw invalidResponse('the compact reply is not an object');
         resource = data as CompactResource;
@@ -543,12 +541,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
         throw transportError('unexpected_content_type', `expected text/event-stream but received "${response.headers['content-type'] ?? ''}"`);
       }
       for await (const frame of decodeSse(timedChunksOf(guard, response))) {
-        let event: unknown;
-        try {
-          event = JSON.parse(frame.data);
-        } catch {
-          throw invalidResponse('a stream frame is not JSON');
-        }
+        const event = parsedReply(frame.data, 'a stream frame');
         if (!isStreamEvent(event)) throw invalidResponse('a stream event has no string type');
         if (event.type === 'error' && event.status !== undefined) throw errorFromEvent(event);
         yield event;
@@ -586,13 +579,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
         }
         if (isEventStream(response)) return await compactFromStream(guard, response);
         guard.arm(streamIdleTimeoutMs, 'stream_interrupted');
-        const text = await response.text();
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          throw invalidResponse('the body is not JSON');
-        }
+        const parsed = parsedReply(await response.text(), 'the body');
         if (!isRecord(parsed)) throw invalidResponse('the compact reply is not an object');
         return parsed as CompactResource;
       } catch (error) {

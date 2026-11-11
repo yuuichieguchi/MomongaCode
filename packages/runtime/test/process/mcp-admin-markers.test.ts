@@ -15,6 +15,7 @@ describe('the MCP admin probe pool launches its servers with the MCP process mar
       return { sources: [], diagnostics: () => [], authState: async () => ({ state: 'authorized' }), authorize: async () => undefined, close: async () => undefined } as unknown as McpAuthorizingPool;
     };
     const toolRuntime = runtime.createToolRuntime({
+      version: '0.0.0-test',
       network: UNCONFIGURED_NETWORK,
       paths: f.temp.paths,
       sharedPaths: f.temp.paths,

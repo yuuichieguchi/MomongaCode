@@ -91,12 +91,11 @@ describe('a task through the executor', () => {
 });
 
 describe('transient failures', () => {
-  it('retries a read-only remote tool once its stream was cut, and runs it a second time', async () => {
+  it('never re-runs a remote tool whose stream was cut on the word of its read-only hint', async () => {
     const { toolSet, harness, fixture } = await setup('modern');
     const result = await harness.resultOf(toolSet, 'mcp__remote__flaky_read', {});
-    expect(result.status).toBe('completed');
-    expect(result.output).toBe('flaky ok after 2 calls');
-    expect(callsOf(fixture, 'flaky_read')).toHaveLength(2);
+    expect(result.status).toBe('failed');
+    expect(callsOf(fixture, 'flaky_read')).toHaveLength(1);
   });
 
   it('never re-runs a write tool whose stream was cut', async () => {

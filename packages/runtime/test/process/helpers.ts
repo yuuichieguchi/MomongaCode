@@ -257,6 +257,8 @@ export type RuntimeFixtureOptions = {
   generation?: number;
 };
 
+export const FIXTURE_RUNTIME_VERSION = '0.0.0-fixture';
+
 export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): Promise<RuntimeFixture> => {
   const temp = options.temp ?? (await makeTempHome());
   const fixture = openStore(temp);
@@ -268,6 +270,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const composition = runtime.createSettingsComposition({ signal: new AbortController().signal, home: temp.home, platform: process.platform, cache, store: fixture.store });
   fs.mkdirSync(temp.paths.jobs, { recursive: true, mode: 0o700 });
   const toolRuntime = runtime.createToolRuntime({
+    version: FIXTURE_RUNTIME_VERSION,
     network: UNCONFIGURED_NETWORK,
     paths: temp.paths,
     sharedPaths: temp.paths,
