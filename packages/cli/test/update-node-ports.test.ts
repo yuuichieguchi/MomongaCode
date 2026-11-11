@@ -47,7 +47,7 @@ const cliPortsFor = (home: string): CliPorts =>
 describe('autoUpdates', () => {
   it('is on by default and follows the user settings file', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const ports = nodeUpdatePorts(cliPortsFor(home), momongaPaths(home), testKernelLock());
+    const ports = nodeUpdatePorts(cliPortsFor(home), momongaPaths(home, process.platform, process.env), testKernelLock());
     expect(await ports.autoUpdates()).toBe(true);
 
     fs.mkdirSync(path.join(home, '.momonga'), { recursive: true });
@@ -60,21 +60,21 @@ describe('autoUpdates', () => {
     const project = path.join(home, 'project');
     fs.mkdirSync(path.join(project, '.momonga'), { recursive: true });
     fs.writeFileSync(path.join(project, '.momonga', 'settings.json'), JSON.stringify({ autoUpdates: false }));
-    const ports = nodeUpdatePorts({ ...cliPortsFor(home), cwd: project }, momongaPaths(home), testKernelLock());
+    const ports = nodeUpdatePorts({ ...cliPortsFor(home), cwd: project }, momongaPaths(home, process.platform, process.env), testKernelLock());
 
     expect(await ports.autoUpdates()).toBe(true);
   });
 
   it('passes only defined environment variables to child commands', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    expect(nodeUpdatePorts(cliPortsFor(home), momongaPaths(home), testKernelLock()).env).toEqual({ PATH: '/usr/bin' });
+    expect(nodeUpdatePorts(cliPortsFor(home), momongaPaths(home, process.platform, process.env), testKernelLock()).env).toEqual({ PATH: '/usr/bin' });
   });
 });
 
 describe('update state store', () => {
   it('reads undefined before the first write and returns what was written afterwards', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const store = nodeUpdateState(paths, testKernelLock());
     expect(await store.read()).toBeUndefined();
@@ -87,7 +87,7 @@ describe('update state store', () => {
 
   it('fails on a file that is not JSON', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const store = nodeUpdateState(paths, testKernelLock());
     await store.write({});
@@ -100,7 +100,7 @@ describe('update state store', () => {
 describe('update lock', () => {
   it('hands the lock to one holder at a time', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const lock = nodeUpdateLock(paths, testKernelLock());
 
@@ -116,7 +116,7 @@ describe('update lock', () => {
 
   it('reports a held lock without taking it', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const lock = nodeUpdateLock(paths, testKernelLock());
     expect(await lock.isHeld()).toBe(false);
@@ -132,7 +132,7 @@ describe('update lock', () => {
 describe('daemon probe', () => {
   it('sees a running supervisor and an absent one', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     fs.mkdirSync(paths.run, { recursive: true, mode: 0o700 });
     const probe = nodeDaemonProbe(paths, virtualClock(), testKernelLock());
     expect(await probe.running()).toBe(false);
@@ -144,7 +144,7 @@ describe('daemon probe', () => {
 
   it('sees a live retiring generation when the generation run/current names is gone (20.72)', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const retiring = await startFakeSupervisor({ paths, version: '1.0.0', generation: 1, children: readyChildren() });
     registerCleanup(context, () => retiring.stop());
@@ -156,7 +156,7 @@ describe('daemon probe', () => {
 
   it('sums the work of the live generations below the serving one, with their versions (20.72)', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     for (const [generation, version, steps, jobs] of [[1, '0.9.0', 1, 1], [2, '1.0.0', 1, 0], [3, '2.0.0', 5, 5]] as const) {
       const supervisor = await startFakeSupervisor({ paths, version, generation, children: readyChildren(), reports: { steps, jobs, calls: 0 } });
@@ -168,7 +168,7 @@ describe('daemon probe', () => {
 
   it('bounds the start after an install by the ready bound alone (20.72)', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    expect(await nodeDaemonProbe(momongaPaths(home), virtualClock(), testKernelLock()).restartBoundMs()).toBe(STARTUP_TIMEOUT_MS);
+    expect(await nodeDaemonProbe(momongaPaths(home, process.platform, process.env), virtualClock(), testKernelLock()).restartBoundMs()).toBe(STARTUP_TIMEOUT_MS);
     expect(STARTUP_TIMEOUT_MS).toBe(60_000);
   });
 });

@@ -56,7 +56,7 @@ const run = () => {
     },
   } as unknown as CliPorts;
   let code: number | undefined;
-  const exit = elicit(ports, momongaLayout('/home/u'), 'in-1', { accept: true, decline: false, cancel: false, set: [] }, interrupt).then((value) => (code = value));
+  const exit = elicit(ports, momongaLayout('/home/u', process.platform, process.env), 'in-1', { accept: true, decline: false, cancel: false, set: [] }, interrupt).then((value) => (code = value));
   const failLaunch = (message: string): void => {
     const onFailure = launches.at(-1)?.onFailure;
     if (onFailure === undefined) throw new Error('no launch recorded with an onFailure callback');

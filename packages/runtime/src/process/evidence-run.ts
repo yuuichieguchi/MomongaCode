@@ -66,6 +66,7 @@ export const createEvidenceRunner =
             {
               roots: [],
               home,
+              layout: paths,
               sessionsTmpRoot: paths.tmp.sessions,
               fileRules: await computeFileRules([], roots, null, held.ruleEnforcement, ports),
               protectedSet: await protectedSetFor(roots, ports),

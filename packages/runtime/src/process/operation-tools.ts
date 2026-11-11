@@ -48,6 +48,7 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
     const sandboxPolicy = await buildSandboxPolicy(
       {
         roots,
+        layout: options.paths,
         home: options.home,
         ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }),
         sessionsTmpRoot: options.paths.tmp.sessions,

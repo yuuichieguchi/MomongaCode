@@ -1,6 +1,6 @@
 import { ConfigError, createStopValuesReader, readUserStopValues } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
-import { CHILD_ENTRY_FLAGS, EntryUsageError, gatewayMaxCloseMs, generationLayout, momongaPaths, runDaemonEntry } from '@momonga/foundation';
+import { CHILD_ENTRY_FLAGS, EntryUsageError, gatewayMaxCloseMs, generationLayout, momongaPaths, runDaemonEntry, homeLayout } from '@momonga/foundation';
 import type { EntryIo, FlagSpec, JsonLogger, SecretStore } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startGatewayProcess } from './process.ts';
@@ -26,7 +26,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
     maxCloseMs: (_flags, values) => gatewayMaxCloseMs(values),
     readStopValues: ({ home, logger }) => stopValuesOf(home, logger).read(),
     ownLockPath: (home, flags) => generationLayout(home, flags.generation).locks.gateway,
-    logPath: (home) => momongaPaths(home, process.platform, {}).logFiles.gateway,
+    logPath: (home) => homeLayout(home, process.platform).logFiles.gateway,
     isConfigError: (error) => error instanceof ConfigError,
     start: async ({ version, flags, home, env, signal, logger, stdout, locks, acquireLock, requestShutdown }) => {
       installOtelErrorHandler((error) => logger.warn('otel.error', { err: error }));

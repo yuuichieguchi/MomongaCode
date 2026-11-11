@@ -129,7 +129,7 @@ describe('reading memories when the evidence process cannot start', () => {
       const sandbox = failingSandbox(make());
       const env = await startService({
         fakeTimers: true,
-        evidenceRun: createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} }),
+        evidenceRun: createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths: momongaPaths(home, process.platform, process.env), home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} }),
       });
       const { session, run } = await seedCalls(env);
       expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);
@@ -170,7 +170,7 @@ describe('reading memories when the evidence process cannot start', () => {
     };
     const env = await startService({
       fakeTimers: true,
-      evidenceRun: createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} }),
+      evidenceRun: createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths: momongaPaths(home, process.platform, process.env), home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} }),
     });
     const { session, run } = await seedCalls(env);
     expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);

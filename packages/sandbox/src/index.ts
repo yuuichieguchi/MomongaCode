@@ -1,4 +1,5 @@
 export { alwaysWriteDenied, canonicalParentForm } from './always-write-denied.ts';
+export type { OwnedLayout } from './always-write-denied.ts';
 export type { AlwaysWriteDenied, LauncherLinksStatus } from './always-write-denied.ts';
 export { assertAbsoluteEntries, buildSeatbeltProfile, validateSandboxPolicy } from './profile.ts';
 export { SandboxPolicyError } from './policy-error.ts';

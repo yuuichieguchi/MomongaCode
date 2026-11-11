@@ -436,12 +436,12 @@ export type HarnessOptions = {
 
 export const prepareHome = (context: CleanupContext): { home: string; paths: MomongaPaths } => {
   const home = withTempDir(context, { asHome: true });
-  return { home, paths: momongaPaths(home) };
+  return { home, paths: momongaPaths(home, process.platform, process.env) };
 };
 
 export const startHarness = async (context: CleanupContext, options: HarnessOptions = {}): Promise<Harness> => {
   const home = options.home ?? withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   if (options.settingsText !== undefined) writeSettingsText(home, options.settingsText);
   else writeSettings(home, options.settings ?? validSettings());
   const generation = options.generation ?? HARNESS_GENERATION;

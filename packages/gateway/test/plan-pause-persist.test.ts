@@ -122,7 +122,7 @@ type UsageLimitedGateway = { ask(): Promise<Awaited<ReturnType<typeof readJson>>
 
 const usageLimitedGateway = async (planStore: (store: ListableCredentialStore) => ListableCredentialStore): Promise<UsageLimitedGateway> => {
   const home = makeHome();
-  const layout = momongaLayout(home);
+  const layout = momongaLayout(home, process.platform, process.env);
   const secretStore = createFakeSecretStore({});
   const upstream = await startFakePlanResponses({ verifyBearer: () => 'valid', script: [planErrorHttpReply('subscription_sharing_usage_limit_exceeded', {})] });
   registerCleanup(() => upstream.close());

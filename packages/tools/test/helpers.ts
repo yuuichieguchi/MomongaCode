@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex, ruleEnforcementOf } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
 import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testPaths, testKernelLock } from '@momonga/testkit';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
@@ -266,6 +266,7 @@ export const minimalPolicyFor = async ({ layout, rules = [], roots = [layout.pro
 
 export const policyFor = async ({ layout, rules = [], roots = [layout.project], tmpDir = sessionTmpDirOf(layout) }: PolicyInputs): Promise<SandboxPolicy> =>
   await buildSandboxPolicy({
+    layout: momongaLayout(layout.home, process.platform, process.env),
     roots: [...roots],
     home: layout.home,
     tmpDir,

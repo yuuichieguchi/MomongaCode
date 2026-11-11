@@ -61,7 +61,7 @@ export type ShellHome = { home: string; settingsFile: string };
 
 export const homeWith = (context: TestContext, settings: unknown | undefined): ShellHome => {
   const home = withTempDir(context, { asHome: true });
-  const { settingsFile } = momongaLayout(home);
+  const { settingsFile } = momongaLayout(home, process.platform, process.env);
   if (settings !== undefined) {
     fs.mkdirSync(path.dirname(settingsFile), { recursive: true, mode: 0o700 });
     fs.writeFileSync(settingsFile, JSON.stringify(settings), { mode: 0o600 });
@@ -144,7 +144,7 @@ export const shellOf = ({ home, settingsFile }: ShellHome, fakes: ShellFakes = {
     stdout: { write: (text) => void stdout.push(text) },
     stderr: { write: (text) => void stderr.push(text) },
     home,
-    lock: testKernelLock(),
+    lock: testKernelLock,
     settingsFile,
     platform: 'linux',
     interrupt: fakes.interrupt ?? new AbortController().signal,

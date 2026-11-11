@@ -130,7 +130,7 @@ const runContextLiveCommand = async (
     policy: options.policy,
     codeDigest: await codeDigestOfRunningProcess(),
     models,
-    planRelaySocket: currentSocketResolver(momongaPaths(ports.home), 'gateway'),
+    planRelaySocket: currentSocketResolver(momongaPaths(ports.home, ports.platform, ports.env), 'gateway'),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { systemTiming } from '@momonga/foundation';
+import { systemTiming, ensureMomongaDirs } from '@momonga/foundation';
 import { loadUserModels } from '@momonga/config';
 import { momongaPaths } from '@momonga/foundation';
 import { NotAProbeableModel, probeModel } from '../src/commands/gateway.ts';
@@ -49,7 +49,9 @@ describe('the CLI readers resolve a declared server through the registry of the 
     const missing = path.join(temporary(), 'absent-server');
     const home = declaredHome(missing);
     const ports = { home, env: {}, stdout: sink(), stderr: sink(), files: nodeFiles } as unknown as CliPorts;
-    const error = await probeModel(ports, momongaPaths(home, process.platform, {}), 'fake-1', { interrupt: AbortSignal.timeout(30_000) }).then(
+    const paths = momongaPaths(home, process.platform, {});
+    await ensureMomongaDirs(paths);
+    const error = await probeModel(ports, paths, 'fake-1', { interrupt: AbortSignal.timeout(30_000) }).then(
       () => undefined,
       (caught: unknown) => caught,
     );

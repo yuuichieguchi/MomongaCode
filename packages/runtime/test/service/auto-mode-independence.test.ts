@@ -7,7 +7,7 @@ import type { AutoFitRecord } from '../auto-fit-fixtures.ts';
 import { OTHER_MODEL_ID, startService } from './helpers.ts';
 
 const seedRecords = (home: string, records: readonly AutoFitRecord[]): void => {
-  const directory = path.join(momongaLayout(home).state, 'auto-fit');
+  const directory = path.join(momongaLayout(home, process.platform, process.env).state, 'auto-fit');
   fs.mkdirSync(directory, { recursive: true });
   records.forEach((record, index) => fs.writeFileSync(path.join(directory, `record-${index}.json`), JSON.stringify(record)));
 };

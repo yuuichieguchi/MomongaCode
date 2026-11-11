@@ -50,7 +50,7 @@ export type ModelsShell = {
   stderr: Writer;
   home: string;
   settingsFile: string;
-  lock: KernelLockMechanism;
+  lock(): KernelLockMechanism;
   platform: NodeJS.Platform;
   interrupt: AbortSignal;
   files: Pick<CliFiles, 'readText' | 'readTextIfPresent'>;
@@ -788,7 +788,7 @@ const proposeAndWrite = async (shell: ModelsShell, edit: ModelsEdit, proposal: M
     print(shell.stderr, [RUN_AGAIN_WITH_YES_TEXT]);
     return EXIT_USAGE;
   }
-  const result = await editModelsSettings(shell.home, shell.settingsFile, proposal.operations, { lock: shell.lock, signal: shell.interrupt });
+  const result = await editModelsSettings(shell.home, shell.settingsFile, proposal.operations, { lock: shell.lock(), signal: shell.interrupt });
   print(shell.stdout, result.summaries);
   return 0;
 };
@@ -865,7 +865,7 @@ export const modelsShellOf = (ports: CliPorts, paths: MomongaPaths, interrupt: A
   stderr: ports.stderr,
   home: ports.home,
   settingsFile: paths.settingsFile,
-  lock: resolveLayoutLocks(paths).mechanism,
+  lock: () => resolveLayoutLocks(paths).mechanism,
   platform: ports.platform,
   interrupt,
   files: ports.files,

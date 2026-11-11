@@ -21,13 +21,13 @@ describe('protectedRootAreasOf and the executables area that holds every extract
   it('lists <cacheBase>/executables, so that no session root lies inside it', () => {
     const home = tempHome();
     const paths = momongaPaths(home, process.platform, {});
-    expect(protectedRootAreasOf(paths, home)).toContain(path.join(paths.cacheBase, 'executables'));
+    expect(protectedRootAreasOf(paths)).toContain(path.join(paths.cacheBase, 'executables'));
   });
 
   it('keeps the momonga root, the keychains and the tmp root listed', () => {
     const home = tempHome();
     const paths = momongaPaths(home, process.platform, {});
-    const areas = protectedRootAreasOf(paths, home);
+    const areas = protectedRootAreasOf(paths);
     expect(areas).toContain(path.join(home, '.momonga'));
     expect(areas).toContain(paths.keychains);
     expect(areas).toContain(paths.tmp.root);
@@ -36,6 +36,6 @@ describe('protectedRootAreasOf and the executables area that holds every extract
   it('does not list the whole cache base, which holds the writable tmp area', () => {
     const home = tempHome();
     const paths = momongaPaths(home, process.platform, {});
-    expect(protectedRootAreasOf(paths, home)).not.toContain(paths.cacheBase);
+    expect(protectedRootAreasOf(paths)).not.toContain(paths.cacheBase);
   });
 });

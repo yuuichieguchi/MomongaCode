@@ -7,7 +7,7 @@ import type { CliPorts } from '../src/ports.ts';
 describe('serveAcp', () => {
   it('closes the connection and returns when the interrupt came before the connection opened', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const input = new ReadableStream<Uint8Array>();
     const output = new WritableStream<Uint8Array>();

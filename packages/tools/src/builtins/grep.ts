@@ -1,4 +1,4 @@
-import { EMPTY_PROTECTED_SET, groupRecordOutcome, mapAsync, momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, groupRecordOutcome, mapAsync, homeLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import path from 'node:path';
 import type { SandboxExit, SandboxPolicy } from '@momonga/sandbox';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
@@ -162,7 +162,7 @@ const writeArgumentFile = async (file: string, text: string): Promise<void> => {
 
 const ARGUMENT_FILE_MODE = 0o600;
 
-const argumentFileOf = (ctx: ToolContext): string => path.join(momongaLayout(ctx.home).grepArguments, `${sha256Hex(ctx.idemKey)}.rgrc`);
+const argumentFileOf = (ctx: ToolContext): string => path.join(homeLayout(ctx.home).grepArguments, `${sha256Hex(ctx.idemKey)}.rgrc`);
 
 const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
   const chunks: Buffer[] = [];

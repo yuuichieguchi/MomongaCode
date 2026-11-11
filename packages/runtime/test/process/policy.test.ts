@@ -102,6 +102,7 @@ describe('policyFor (system timers, none used)', () => {
     expect(policy.sandboxPolicy.writableRoots).toContain(tmpDir);
     expect(policy.sandboxPolicy).toEqual(
       await buildSandboxPolicy({
+        layout: momongaLayout(temp.home, process.platform, process.env),
         fileRules: await computeFileRules([], [temp.project, extra], tmpDir, HOST_RULE_ENFORCEMENT, testProbes()),
         protectedSet,
         roots: [temp.project, extra],
@@ -113,7 +114,7 @@ describe('policyFor (system timers, none used)', () => {
     );
     expect(policy.sandboxPolicy.network).toBe('deny');
     expect(policy.sandboxPolicy.readDenied).toEqual(
-      expect.arrayContaining([path.join(temp.home, '.momonga'), momongaLayout(temp.home).keychains, temp.paths.tmp.sessions]),
+      expect.arrayContaining([path.join(temp.home, '.momonga'), momongaLayout(temp.home, process.platform, process.env).keychains, temp.paths.tmp.sessions]),
     );
   });
 

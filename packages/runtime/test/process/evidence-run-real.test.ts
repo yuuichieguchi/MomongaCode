@@ -42,7 +42,7 @@ const teeingStderr = (inner: Sandbox, captured: string[]): Sandbox => ({
 
 const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const root = fs.realpathSync(withTempDir(context));
   const project = path.join(root, 'project');

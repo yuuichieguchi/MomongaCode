@@ -143,7 +143,7 @@ const startRemoteStack = async (
 ): Promise<Stack> => {
   const home = withTempDir(context, { asHome: true });
   prepareHome(home);
-  const layout = momongaLayout(home);
+  const layout = momongaLayout(home, process.platform, process.env);
   fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
   const { hostId } = await ensureHostIdentity(nodeFileSystem, layout.planHost, { lock: testKernelLock(), accountsExist: false });
   const store = createFileCredentialStore(layout.planSessions, { lock: testKernelLock() });
@@ -537,7 +537,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const gateway = await startPlanGateway({ plaintextTokenFiles: true });
     await signInAs(gateway, ACCOUNT);
     await gateway.close();
-    const pointer = momongaLayout(gateway.home).planActive;
+    const pointer = momongaLayout(gateway.home, process.platform, process.env).planActive;
     fs.writeFileSync(pointer, '"x"');
     await expect(gateway.restart()).resolves.toBeUndefined();
     replaceSettings(gateway.home, unpinnedSettings(true));
@@ -557,7 +557,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const gateway = await startPlanGateway({ plaintextTokenFiles: true });
     await signInAs(gateway, ACCOUNT);
     await gateway.close();
-    const pointer = momongaLayout(gateway.home).planActive;
+    const pointer = momongaLayout(gateway.home, process.platform, process.env).planActive;
     fs.writeFileSync(pointer, '"x"');
     await gateway.restart();
     replaceSettings(gateway.home, unpinnedSettings(true));
@@ -572,7 +572,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const gateway = await startPlanGateway({ plaintextTokenFiles: true, respond: () => openResponsesTextReply(['hi']) });
     await signInAs(gateway, ACCOUNT);
     await gateway.close();
-    const pointer = momongaLayout(gateway.home).planActive;
+    const pointer = momongaLayout(gateway.home, process.platform, process.env).planActive;
     fs.writeFileSync(pointer, '"x"');
     await gateway.restart();
     replaceSettings(gateway.home, unpinnedSettings(true));

@@ -39,7 +39,7 @@ describe('the update ports of the CLI', { timeout: TEST_TIMEOUT_MS }, () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-update-wiring-'));
     cleanups.push(() => fs.rmSync(home, { recursive: true, force: true }));
     const proxy = await startForwardingProxy();
-    const paths = momongaLayout(home);
+    const paths = momongaLayout(home, process.platform, process.env);
     fs.mkdirSync(path.dirname(paths.settingsFile), { recursive: true });
     fs.writeFileSync(paths.settingsFile, JSON.stringify({ network: { httpProxy: `http://127.0.0.1:${proxy.port}` } }));
     const written: string[] = [];

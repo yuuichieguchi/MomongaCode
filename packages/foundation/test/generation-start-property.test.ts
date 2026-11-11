@@ -18,7 +18,7 @@ const seeded = (seed: number): ((bound: number) => number) => {
 
 const setup = async (context: TestContext): Promise<{ home: string; paths: MomongaPaths }> => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   return { home, paths };
 };

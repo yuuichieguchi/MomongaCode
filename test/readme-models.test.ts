@@ -23,7 +23,7 @@ describe('the README states the model settings in the shape the product loads (d
     expect(blocks.length).toBeGreaterThan(0);
     for (const block of blocks) {
       const home = withTempDir(context, { asHome: true });
-      const file = momongaLayout(home).settingsFile;
+      const file = momongaLayout(home, process.platform, process.env).settingsFile;
       fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
       fs.writeFileSync(file, block, { mode: 0o600 });
       const loaded = await loadUserSettings({ home });

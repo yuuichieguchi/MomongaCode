@@ -23,7 +23,7 @@ const NO_WINDOW = 'the server reports no context window for this model';
 const ACCESS_LIFETIME_MS = 3_600_000;
 const RECORD_KEY = `chatgpt/${ACCOUNT}`;
 
-const catalogDirectory = (gateway: PlanGateway): string => (momongaLayout(gateway.home) as unknown as { planCatalog: string }).planCatalog;
+const catalogDirectory = (gateway: PlanGateway): string => (momongaLayout(gateway.home, process.platform, process.env) as unknown as { planCatalog: string }).planCatalog;
 
 const readRecord = async (gateway: PlanGateway): Promise<any> => {
   const raw = await createFileCredentialStore(catalogDirectory(gateway), { lock: testKernelLock() }).read(RECORD_KEY, new AbortController().signal);

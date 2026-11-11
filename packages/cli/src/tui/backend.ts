@@ -194,7 +194,7 @@ export const createTuiBackend = (
       return {
         home: paths.home,
         settingsFile: paths.settingsFile,
-        lock: resolveLayoutLocks(paths).mechanism,
+        lock: () => resolveLayoutLocks(paths).mechanism,
         platform: ports.platform,
         interrupt,
         files: ports.files,

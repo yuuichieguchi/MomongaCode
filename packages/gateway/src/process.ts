@@ -894,10 +894,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const pid = options.pid ?? systemProcessPorts.pid;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const { signal } = options;
-  const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, platform, {}), generation: options.generation, logger });
+  const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, platform, options.env), generation: options.generation, logger });
   const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
-  const paths = momongaPaths(options.home, platform, {});
+  const paths = momongaPaths(options.home, platform, options.env);
   signal?.throwIfAborted();
   const own = generationLayout(options.home, options.generation);
   await requireGenerationDirs(paths, options.generation);

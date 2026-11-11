@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs, askedBy } from '@momonga/policy';
-import { discoverGitConfigFiles, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
+import { discoverGitConfigFiles, protectedSetFor, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
 import { TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
@@ -26,6 +26,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote of a repository (defau
     for (const directory of [tmpDir, path.join(workspace.base, 'sandbox-tmp')]) fs.mkdirSync(directory, { recursive: true });
     const sandbox = createHostSandbox({ tmpRoot: path.join(workspace.base, 'sandbox-tmp'), killGraceMs: 300 });
     const policy = await buildSandboxPolicy({
+      layout: momongaLayout(workspace.home, process.platform, process.env),
       roots,
       home: workspace.home,
       tmpDir,
@@ -97,7 +98,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('repointing the remote when the workspace roo
     const gitConfigFiles = await discoverGitConfigFiles({ workingDirectory: project, env, signal: new AbortController().signal });
     const protectedSet = await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED), gitConfigFiles);
     const fileRules = await computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes());
-    const policy = await buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(workspace.base, 'sessions'), fileRules, protectedSet, network: 'deny' }, NEVER_CANCELLED);
+    const policy = await buildSandboxPolicy({ layout: momongaLayout(home, process.platform, process.env), roots, home, tmpDir, sessionsTmpRoot: path.join(workspace.base, 'sessions'), fileRules, protectedSet, network: 'deny' }, NEVER_CANCELLED);
     const sandbox = createHostSandbox({ tmpRoot: path.join(workspace.base, 'sandbox-tmp'), killGraceMs: 300 });
     const inSandbox = async (script: string): Promise<number | null> => {
       const proc = await sandbox.spawn({ argv: ['/bin/bash', '-c', script], cwd: project, env }, policy, new AbortController().signal);

@@ -36,7 +36,7 @@ type Reflector = { runOne(signal: AbortSignal): Promise<string> };
 
 const reflectInRepository = async (context: TestContext, options: { trusted: boolean }) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const root = fs.realpathSync(withTempDir(context));
   const project = path.join(root, 'project');

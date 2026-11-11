@@ -11,7 +11,7 @@ import type { FakeSupervisor } from './fake-supervisor.ts';
 describe('momonga daemon start', () => {
   it('starts a generation of this version beside an older daemon and stops none (rule 1)', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const work = createFakeWork();
     const started: FakeSupervisor[] = [];

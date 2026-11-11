@@ -133,11 +133,11 @@ export const generationLayout = (home: string, generation: number, platform: Nod
   };
 };
 
-export const momongaLayout = (
-  home: string,
-  platform: NodeJS.Platform = process.platform,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): MomongaPaths => {
+export type LayoutEnvironment = Readonly<Record<string, string | undefined>>;
+
+export type HomePaths = Omit<MomongaPaths, 'keychains' | 'cacheBase' | 'executables' | 'tmp'>;
+
+export const homeLayout = (home: string, platform: NodeJS.Platform = process.platform): HomePaths => {
   const flavor = pathFor(platform);
   const join = flavor.join;
   const root = join(home, '.momonga');
@@ -145,8 +145,6 @@ export const momongaLayout = (
   const state = join(root, 'state');
   const markers = join(run, 'markers');
   const traces = join(state, 'traces');
-  const cacheBase = cacheBaseOf(home, platform, env);
-  const tmp = join(cacheBase, 'tmp');
   return {
     home,
     root,
@@ -186,6 +184,15 @@ export const momongaLayout = (
     skills: join(root, 'skills'),
     agents: join(root, 'agents'),
     launcher: platform === 'win32' ? join(home, 'AppData', 'Local', 'Programs', 'momonga', 'momonga.exe') : join(home, '.local', 'bin', 'momonga'),
+  };
+};
+
+export const momongaLayout = (home: string, platform: NodeJS.Platform, env: LayoutEnvironment): MomongaPaths => {
+  const join = pathFor(platform).join;
+  const cacheBase = cacheBaseOf(home, platform, env);
+  const tmp = join(cacheBase, 'tmp');
+  return {
+    ...homeLayout(home, platform),
     keychains: keychainsOf(home, platform, env),
     cacheBase,
     executables: join(cacheBase, 'executables'),
@@ -242,11 +249,7 @@ export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInsta
 
 export const rotatedLogPath = (file: string, generation: number): string => `${file}.${generation}`;
 
-export const momongaPaths = (
-  home: string,
-  platform: NodeJS.Platform = process.platform,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): MomongaPaths => momongaLayout(home, platform, env);
+export const momongaPaths = (home: string, platform: NodeJS.Platform, env: LayoutEnvironment): MomongaPaths => momongaLayout(home, platform, env);
 
 export type PlatformDirectoryPorts = {
   platform?: NodeJS.Platform;

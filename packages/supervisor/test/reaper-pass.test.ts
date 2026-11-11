@@ -109,6 +109,7 @@ describe('the reaper pass of the serving supervisor (20.61, 20.62)', () => {
     const pass = entryReaperPass(
       { inspector: testProcessInspector(), lockMechanism: s.options.lock, reapTiming: s.options.reapTiming, ...(s.options.markerPorts === undefined ? {} : { markerPorts: s.options.markerPorts }) },
       {
+        env: {},
         home: s.home,
         clock: createFakeClock(0),
         timers: s.options.timers,

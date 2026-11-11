@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, resolveCanonicalPath, sha256Hex, truncationMarker, validateUntrusted } from '@momonga/foundation';
+import { canonicalJson, resolveCanonicalPath, sha256Hex, truncationMarker, validateUntrusted, momongaLayout } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
 import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, testPaths, testProcessInspector } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
@@ -109,6 +109,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     clock,
     processMarkerDir: markerDir,
     callLockDir,
+    layout: momongaLayout(layout.home, process.platform, process.env),
     kernelLock,
     onWarning: (message: string) => {
       warnings.push(message);

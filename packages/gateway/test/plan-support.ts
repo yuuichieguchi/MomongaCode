@@ -204,7 +204,7 @@ export const startHarness = async (
   options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore } = {},
 ): Promise<Harness> => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-'));
-  const layout = momongaLayout(home);
+  const layout = momongaLayout(home, process.platform, process.env);
   const paths = { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive };
   const clock = createFakeClock(START_MS);
   const auth = await startFakeSiwcAuth({ now: clock.now });

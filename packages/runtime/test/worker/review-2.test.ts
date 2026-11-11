@@ -9,6 +9,7 @@ import { DEADLINE_MS, LEASE_MS, START_MS, makeEnv, toolKey, createdRun } from '.
 import { pinnedStart } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ID, functionCallItem, requestedOffering, textStep } from './scripts.ts';
+import { momongaLayout } from '@momonga/foundation';
 
 const untilAborted = (signal: AbortSignal): Promise<void> =>
   new Promise<void>((resolve) => {
@@ -54,7 +55,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
     await env.seed(run.id, payloads, 'crash');
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Stall' } });
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
-    const executor = createToolExecutor({ reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+    const executor = createToolExecutor({ layout: momongaLayout(env.home, process.platform, process.env), reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
       idempotency: env.store.idempotency,
       blobs: env.store.blobs,
       clock: env.clock,

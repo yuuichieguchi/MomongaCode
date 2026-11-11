@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -18,7 +18,7 @@ const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 type Scenario = { fixture: LauncherFixture; sh: (script: string) => Promise<{ code: number | null; stdout: string; stderr: string }> };
 
 const policyFor = async (fixture: LauncherFixture): Promise<SandboxPolicy> => {
-  const denied = await alwaysWriteDenied(fixture.home, NEVER_CANCELLED);
+  const denied = await alwaysWriteDenied(momongaLayout(fixture.home, process.platform, process.env), NEVER_CANCELLED);
   return {
     writableRoots: [fixture.home],
     writeDenied: [...denied.subtrees],

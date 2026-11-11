@@ -51,7 +51,7 @@ describe('sign-in begin builds the authorization URL from the profile (P5b, 5.1,
     expect(params).not.toHaveProperty('prompt');
     expect(params).not.toHaveProperty('id_token_hint');
     expect(params).not.toHaveProperty('force_reconsent');
-    expect(fs.existsSync(momongaLayout(gateway.home).planHost)).toBe(true);
+    expect(fs.existsSync(momongaLayout(gateway.home, process.platform, process.env).planHost)).toBe(true);
     await gateway.close();
   });
 
@@ -77,7 +77,7 @@ describe('sign-in complete installs a validated identity (P5b, 5.3)', () => {
     const raw = fs.readFileSync(path.join(sessionsDirectory(gateway.home), records[0] as string), 'utf8');
     expect(JSON.parse(raw)).toMatchObject({ format: 'momonga-credential/1' });
     for (const secret of gateway.auth.issuedSecrets()) expect(raw).not.toContain(secret);
-    const active = JSON.parse(fs.readFileSync(momongaLayout(gateway.home).planActive, 'utf8'));
+    const active = JSON.parse(fs.readFileSync(momongaLayout(gateway.home, process.platform, process.env).planActive, 'utf8'));
     expect(active).toEqual({ chatgpt: ACCOUNT });
 
     const again = await signIn(gateway);

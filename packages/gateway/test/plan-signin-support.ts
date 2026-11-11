@@ -161,4 +161,4 @@ export const signIn = async (gateway: PlanGateway) => {
   return { begun, callback, completed };
 };
 
-export const sessionsDirectory = (home: string): string => momongaLayout(home).planSessions;
+export const sessionsDirectory = (home: string): string => momongaLayout(home, process.platform, process.env).planSessions;

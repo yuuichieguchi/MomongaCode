@@ -58,7 +58,7 @@ type Setup = { paths: MomongaPaths; g1: FakeGeneration; g2: FakeGeneration; prom
 
 const twoGenerations = async (context: Parameters<typeof withTempDir>[0], role: Role): Promise<Setup> => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   await ensureGenerationDirs(paths, 1);
   await ensureGenerationDirs(paths, 2);

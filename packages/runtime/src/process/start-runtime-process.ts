@@ -364,7 +364,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const inspector = layoutProcessInspector(lockCapability);
 
   try {
-    const sharedPaths = momongaPaths(canonicalHome, platform, {});
+    const sharedPaths = momongaPaths(canonicalHome, platform, process.env);
     const paths = await step('dirs', async () => {
       await requireGenerationDirs(sharedPaths, options.generation);
       const scoped = scopeToGeneration(sharedPaths, options.generation);
@@ -702,7 +702,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           lease.release();
           return kind;
         },
-        protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
+        protectedRootAreas: protectedRootAreasOf(paths),
         notifier,
         modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
         delegation: {

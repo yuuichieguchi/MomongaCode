@@ -20,7 +20,7 @@ const homes: string[] = [];
 const pathsOf = (): MomongaPaths => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-record-files-'));
   homes.push(home);
-  return momongaPaths(home);
+  return momongaPaths(home, process.platform, process.env);
 };
 
 const textOf = (pid: number): string => {

@@ -170,7 +170,7 @@ describe('S9: session scratch made by ensureSessionTmpDir is kept while its owne
       async (context) => {
         const lock = expectedKernelLockOn(platform);
         const home = temporaryDirectory();
-        const paths = momongaPaths(home);
+        const paths = momongaPaths(home, process.platform, process.env);
         fs.mkdirSync(paths.tmp.sessions, { recursive: true, mode: 0o700 });
         const sessionId = 'session-owned';
         const scratch = path.join(paths.tmp.sessions, sessionId);

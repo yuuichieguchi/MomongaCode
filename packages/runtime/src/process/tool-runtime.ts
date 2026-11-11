@@ -152,6 +152,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
         .map((generation) => generationMarkerDirectories(options.sharedPaths, generation).tools),
     owners,
     callLockDir: paths.callLocks,
+    layout: paths,
     kernelLock,
     onWarning: (message) => logger.warn(message),
     reap: { timing: reapTiming, inspector },

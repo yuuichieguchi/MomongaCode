@@ -29,7 +29,7 @@ const sandboxAnswering = (stdout: string, code: number | null) => {
 describe('the evidence runner', () => {
   it('runs the command in the sandbox with the project as the only writable root and no network, and returns the exit code and the output', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const { sandbox, spawned } = sandboxAnswering('abc\n', 0);
@@ -62,7 +62,7 @@ describe('the evidence runner', () => {
 
   it('clears the git variables that name a program or a repository, whatever the daemon environment holds', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const { sandbox, spawned } = sandboxAnswering('', 0);
@@ -76,7 +76,7 @@ describe('the evidence runner', () => {
 
   it('passes an exit code of null through, because a signal is not an answer', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const { sandbox } = sandboxAnswering('', null);
@@ -86,7 +86,7 @@ describe('the evidence runner', () => {
 
   it('kills a child that hangs when the caller aborts, and answers with no exit code', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const real = createUnsandboxed({ killGraceMs: 200 });
@@ -120,7 +120,7 @@ describe('the evidence runner', () => {
 
   it('starts nothing for a project that is not a folder', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const { sandbox, spawned } = sandboxAnswering('', 0);
     const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })('/no/such/project');
@@ -142,7 +142,7 @@ describe('the evidence runner', () => {
     for (const [label, make] of failures) {
       it(`is answered as a command that cannot be checked at the boundary of the runner, for ${label}`, async (context) => {
         const home = withTempDir(context, { asHome: true });
-        const paths = momongaPaths(home);
+        const paths = momongaPaths(home, process.platform, process.env);
         await ensureMomongaDirs(paths);
         const project = fs.realpathSync(withTempDir(context));
         const failure = make();
@@ -159,7 +159,7 @@ describe('the evidence runner', () => {
 
     it('answers a project that is not a folder the same way', async (context) => {
       const home = withTempDir(context, { asHome: true });
-      const paths = momongaPaths(home);
+      const paths = momongaPaths(home, process.platform, process.env);
       await ensureMomongaDirs(paths);
       const { sandbox } = sandboxAnswering('', 0);
       const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })('/no/such/project');
@@ -170,7 +170,7 @@ describe('the evidence runner', () => {
 
   it('lets an error of our own after the process ran stay an error', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const sandbox: Sandbox = {
@@ -192,7 +192,7 @@ describe('the evidence runner', () => {
 
   it('reads the output of the command through the bounded window: ten megabytes come back as the last bytes the window holds, with the count of the bytes left out', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const windowBytes = 1024;

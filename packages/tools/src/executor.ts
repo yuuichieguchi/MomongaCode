@@ -6,7 +6,7 @@ import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
 import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
-import type { Awaitable, Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import type { Awaitable, Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry, MomongaPaths } from '@momonga/foundation';
 import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
@@ -167,6 +167,7 @@ export type ToolExecutorOptions = {
   earlierMarkerDirs?: () => Promise<readonly string[]>;
   owners?: MarkerOwners;
   callLockDir: string;
+  layout: GuardedLayout;
   kernelLock: KernelLockMechanism;
   fs: PolicyHostFilesystem;
   leaseMs: number;
@@ -336,11 +337,12 @@ const requireResolvable = async (entry: string, paths: PathResolver, signal: Abo
 
 type AccessFacts = Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir' | 'signal'>;
 
+export type GuardedLayout = Pick<MomongaPaths, 'root' | 'keychains'>;
+
 type WriteGuard = (subject: PermissionSubject, cwd: string) => Promise<string | undefined>;
 
-const createWriteGuard = async (batch: AccessFacts, paths: PathResolver): Promise<WriteGuard> => {
+const createWriteGuard = async (batch: AccessFacts, paths: PathResolver, layout: GuardedLayout): Promise<WriteGuard> => {
   for (const root of batch.sandboxPolicy.writableRoots) await paths.canonicalPath(root);
-  const layout = momongaLayout(batch.home);
   const homeGuards = new Set([layout.root, layout.keychains]);
   const approvalGated = new Set(batch.sandboxPolicy.protectedSet.paths);
   const entries = batch.sandboxPolicy.writeDenied.filter((entry) => homeGuards.has(entry) || !approvalGated.has(entry));
@@ -375,11 +377,11 @@ type BatchAccess = ReadAccessMatcher & {
   isWritable: (absolute: string) => Promise<boolean>;
 };
 
-const accessOf = async (facts: AccessFacts): Promise<BatchAccess> => {
+const accessOf = async (facts: AccessFacts, layout: GuardedLayout): Promise<BatchAccess> => {
   const paths = hostPaths(facts.signal);
   const { writableRoots } = facts.sandboxPolicy;
   const isWritable = writableCheckOf(writableAreaOf({ writableRoots, entries: facts.sandboxPolicy.fileRules.entries }), paths);
-  return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(facts, paths), isWritable };
+  return { ...(await createReadAccessMatcher(facts.sandboxPolicy, paths)), writeDeniedPath: await createWriteGuard(facts, paths, layout), isWritable };
 };
 
 const unlessCancelled = async <T, C>(signal: AbortSignal, action: () => Promise<T>, cancelled: C): Promise<T | C> => {
@@ -1603,7 +1605,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (given.sandboxPolicy.fileRules.fingerprint !== expected) {
       throw new SandboxPolicyError('file_rules_stale', 'the sandbox policy was built from different permission rules, roots or session tmp dir than this batch');
     }
-    return { batch: given, access: await unlessCancelled(given.signal, () => accessOf(given), undefined) };
+    return { batch: given, access: await unlessCancelled(given.signal, () => accessOf(given, options.layout), undefined) };
   };
 
   const userRefusal: UserPolicy['userRefusal'] = async (subject, facts) => {
@@ -1611,7 +1613,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       { callId: USER_CALL_ID },
       USER_TOOLS[subject.tool],
       subject.tool === 'Read' ? { kind: 'path', tool: subject.tool, paths: [subject.path], access: 'read' } : { kind: 'command', tool: subject.tool, command: subject.command },
-      await accessOf(facts),
+      await accessOf(facts, options.layout),
       { ...facts, mode: USER_MODE },
     );
     if ('outcome' in verdict) return verdict.outcome.result.denial?.reason ?? verdict.outcome.result.output;

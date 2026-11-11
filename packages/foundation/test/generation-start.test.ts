@@ -38,7 +38,7 @@ const layoutOf = (home: string, generation: number): Layout => generationLayout(
 
 const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const lock: FakeKernelLock = createFakeKernelLock({ inheritable: false });
   return { home, paths, lock };
@@ -66,13 +66,13 @@ const start = (paths: Paths, lock: KernelLockMechanism, version = '1.2.3', extra
 describe('the generation layout of the start flow (15.1, 15.2, 15.8)', () => {
   it('keeps the counter at run/generation.counter beside run/generation.lock', (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     expect(paths.generationCounter).toBe(path.join(home, '.momonga', 'run', 'generation.counter'));
   });
 
   it('keeps start.json and starting.lock inside run/g<N>/, and the markers in markers/g<N>/', (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     const layout = layoutOf(home, 7);
     expect(layout.startRecord).toBe(path.join(home, '.momonga', 'run', 'g7', 'start.json'));
     expect(layout.startingLock).toBe(path.join(home, '.momonga', 'run', 'g7', 'starting.lock'));
@@ -647,7 +647,7 @@ describe('the generation directories and the role source (20.2, 20.4, 20.7)', ()
 
   it('scopes the marker, job and spawn-scratch paths to the generation and keeps the call locks shared', (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     const scoped = scopeToGeneration(paths, 7);
     expect(scoped.markers).toEqual({
       root: path.join(paths.markers.root, 'g7'),

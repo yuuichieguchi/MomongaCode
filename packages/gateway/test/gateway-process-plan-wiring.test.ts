@@ -49,7 +49,7 @@ const TOKEN_PREFIX_CHARS = 64;
 describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
   it('keeps the loaded and the refreshed token, each echoed by the upstream in an error body after the refresh, out of the response, the log and every file under the home', async () => {
     const home = makeHome();
-    const layout = momongaLayout(home);
+    const layout = momongaLayout(home, process.platform, process.env);
     const secretStore = createFakeSecretStore({});
     const installed = new Set<string>();
     const echoes: Array<(request: RecordedUpstreamRequest) => string> = [() => [...installed].join(' '), (request) => bearerOf(request)];

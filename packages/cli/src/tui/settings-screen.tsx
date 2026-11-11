@@ -577,7 +577,7 @@ export const DIALECTS_KEY = 'models.dialects';
 const writeDialects = async (context: SlashContext, dialects: object): Promise<Refusal | undefined> => {
   const host = context.backend.modelsHost(new AbortController().signal, context.info);
   try {
-    await context.background(SAVING_SETTING, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setDialects', dialects }], { lock: host.lock, signal }));
+    await context.background(SAVING_SETTING, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setDialects', dialects }], { lock: host.lock(), signal }));
     return undefined;
   } catch (error) {
     if (!(error instanceof ModelsEditRefused)) throw error;

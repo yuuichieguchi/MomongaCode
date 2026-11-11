@@ -158,7 +158,7 @@ describe('Write', () => {
 
   it('is denied inside a readDenied path even with approval in bypass mode', async () => {
     const tools = await makeBuiltins();
-    const file = path.join(momongaLayout(tools.layout.home).keychains, 'login.keychain');
+    const file = path.join(momongaLayout(tools.layout.home, process.platform, process.env).keychains, 'login.keychain');
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const result = resultOf(await tools.run('Write', { file_path: file, content: 'x' }, { mode: 'bypassPermissions' }, 'allow_once'));
     expect(result).toEqual({ status: 'failed', output: `Permission denied: ${file} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${file} is blocked by the sandbox policy` } });

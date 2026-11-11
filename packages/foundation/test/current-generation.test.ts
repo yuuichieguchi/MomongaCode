@@ -25,7 +25,7 @@ const recordOf = (home: string, generation: number, version: string): CurrentGen
 const withHome = async (body: (home: string, paths: MomongaPaths) => Promise<void>): Promise<void> => {
   const home = temporaryHome();
   try {
-    const paths = momongaPaths(home);
+    const paths = momongaPaths(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     await body(home, paths);
   } finally {

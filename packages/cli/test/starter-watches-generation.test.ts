@@ -27,7 +27,7 @@ const heldChildren = (): SupervisorChildHealth[] => [
 
 const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const running: FakeSupervisor[] = [];
   registerCleanup(context, async () => {

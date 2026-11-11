@@ -8,7 +8,7 @@ import { withTempDir, testKernelLock } from '@momonga/testkit';
 describe('file credential store under the real path layout', () => {
   it('keeps owner-only files in the per-user state directory of a temporary home and survives a new instance', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const paths = momongaLayout(home);
+    const paths = momongaLayout(home, process.platform, process.env);
     await ensureMomongaDirs(paths);
     const directory = mcpCredentialDirectory(paths);
     const signal = new AbortController().signal;

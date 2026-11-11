@@ -17,7 +17,7 @@ afterEach(() => {
 const loaded = async (settings: unknown): Promise<LoadedModels> => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-model-settings-')));
   homes.push(home);
-  const file = momongaLayout(home).settingsFile;
+  const file = momongaLayout(home, process.platform, process.env).settingsFile;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, JSON.stringify(settings), { mode: 0o600 });
   return (await loadUserSettings({ home })).settings.models as unknown as LoadedModels;

@@ -64,7 +64,7 @@ export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor =>
       const protectedSet = await protectedSetFor(roots, ports, gitConfigFiles);
       const skillsRoot = await resolver.canonicalPath(paths.skills);
       const readAllowed = await filterAsync(readableDirectories ?? [], (directory) => resolver.comparableContains(skillsRoot, directory));
-      const sandboxPolicy = await buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed, ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }) }, signal);
+      const sandboxPolicy = await buildSandboxPolicy({ roots, home, layout: paths, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed, ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }) }, signal);
       return { roots, sandboxPolicy, tmpDir, env };
     } catch (error) {
       signal.throwIfAborted();

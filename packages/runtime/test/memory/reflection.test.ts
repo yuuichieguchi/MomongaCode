@@ -963,8 +963,8 @@ describe('the model has no way to decide on a candidate', () => {
   });
 
   it('keeps the review routes behind the runtime socket, which the sandbox protects from the model', async () => {
-    const paths = momongaPaths('/home/user');
-    const areas = protectedRootAreasOf(paths, '/home/user');
+    const paths = momongaPaths('/home/user', process.platform, process.env);
+    const areas = protectedRootAreasOf(paths);
     expect(areas.some((area) => firstGeneration(paths).sockets.runtime.startsWith(`${area}/`) || firstGeneration(paths).sockets.runtime === area)).toBe(true);
   });
 });

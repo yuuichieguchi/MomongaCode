@@ -377,7 +377,7 @@ export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<Swee
     const claim = await effects.lock.claim(claimPathOf(effects.lock, root, 'sidecar'));
     if (claim.kind === 'held') continue;
     try {
-      await effects.terminate(momongaLayout(root, effects.platform, {}));
+      await effects.terminate(momongaLayout(root, effects.platform, caseEnvironment(effects.env, root, effects.platform)));
       await effects.remove(root);
     } catch (error) {
       claim.lock.release();
@@ -448,10 +448,10 @@ export const createHomes = <Runtime extends ContextRuntime = ContextRuntime>(eff
   const prepared = async (spec: HomeSpec, record: CaseRecord): Promise<OpenedHome<Runtime>> => {
     const { root } = record;
     await effects.writeFile(path.join(root, OWNER_FILE), ownerRecord({ pid: effects.ownerPid, home: effects.ownerHome }));
-    const paths = momongaLayout(root, effects.platform, {});
+    const paths = momongaLayout(root, effects.platform, caseEnvironment(effects.env, root, effects.platform));
     record.paths = paths;
     await effects.prepare(paths);
-    await assertSocketsFit(momongaLayout(await effects.canonical(root), effects.platform, {}), effects.refuseUnfitSockets);
+    await assertSocketsFit(momongaLayout(await effects.canonical(root), effects.platform, caseEnvironment(effects.env, root, effects.platform)), effects.refuseUnfitSockets);
     await effects.writeFile(paths.settingsFile, `${JSON.stringify(spec.settings, null, 2)}\n`);
     for (const source of options.managedTargets) await effects.copyProbeRecord(source, paths, options.interrupt);
     for (const probe of options.endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);

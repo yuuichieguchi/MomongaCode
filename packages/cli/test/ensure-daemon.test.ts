@@ -17,7 +17,7 @@ const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/
 
 const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   const work = createFakeWork();
   const running: FakeSupervisor[] = [];

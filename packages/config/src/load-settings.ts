@@ -20,7 +20,7 @@ import {
   mergeVerificationSettings,
 } from './context-settings.ts';
 import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
-import { layoutOf } from './layout.ts';
+import { keyStoreOf, layoutOf } from './layout.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
 import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_NOT_ENFORCED, NETWORK_RULE_SUBJECT, checkRuleText, isPathTool, parseRule, RuleParseError } from './rule.ts';
@@ -197,8 +197,7 @@ const enforceableUnixSockets = ({ source, allow }: { source: string; allow: stri
     warnings.push(`${source}: ${UNIX_SOCKET_ALLOW_UNSUPPORTED}`);
     return [];
   }
-  const layout = layoutOf(home);
-  const owned = [layout.root, layout.keychains];
+  const owned = [layoutOf(home).root, keyStoreOf(home)];
   return allow.filter((entry) => {
     if (!owned.some((directory) => lexicallyWithin(entry, directory))) return true;
     warnings.push(`${source}: sandboxUnixSockets.allow entry ${JSON.stringify(entry)} is inside a directory momonga owns; its sockets are always denied; discarded`);

@@ -38,7 +38,7 @@ describe('executor: writeDenied path subjects', () => {
 
   it('denies a write that reaches a writeDenied entry through a symlink', async () => {
     const harness = makeHarness();
-    const keychains = momongaLayout(harness.layout.home).keychains;
+    const keychains = momongaLayout(harness.layout.home, process.platform, process.env).keychains;
     fs.mkdirSync(keychains, { recursive: true });
     const link = path.join(harness.layout.project, 'innocent');
     fs.symlinkSync(keychains, link);
@@ -56,7 +56,7 @@ describe('executor: writeDenied path subjects', () => {
 
   it('names the resolved form a write through a symlink was denied on, as read access and file rules do', async () => {
     const harness = makeHarness();
-    const keychains = momongaLayout(harness.layout.home).keychains;
+    const keychains = momongaLayout(harness.layout.home, process.platform, process.env).keychains;
     fs.mkdirSync(keychains, { recursive: true });
     const link = path.join(harness.layout.project, 'innocent');
     fs.symlinkSync(keychains, link);
@@ -206,7 +206,7 @@ describe('executor write guard while a placeholder changes during the batch (HIG
 describe('executor write guard and the protected set (V15)', () => {
   it('hard-denies an entry that is both a home guard and protected', async () => {
     const harness = makeHarness();
-    const keychains = momongaLayout(harness.layout.home).keychains;
+    const keychains = momongaLayout(harness.layout.home, process.platform, process.env).keychains;
     fs.mkdirSync(keychains, { recursive: true });
     const target = path.join(keychains, 'x');
     const runs: string[] = [];

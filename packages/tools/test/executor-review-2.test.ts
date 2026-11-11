@@ -7,13 +7,14 @@ import type { CallOutcome } from '@momonga/tools';
 import { call, expectedSubjectDigest, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor, ruleFor } from './helpers.ts';
+import { momongaLayout } from '@momonga/foundation';
 
 const KEY = keyFor('run-1', 1, 'c1');
 const CAP_MS = 20;
 const GRACE_MS = 20;
 
 const boundedExecutor = (harness: Harness) =>
-  createToolExecutor({ reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+  createToolExecutor({ layout: momongaLayout(harness.layout.home, process.platform, process.env), reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: harness.idempotency.port,
     blobs: harness.blobs.port,
     clock: harness.clock,

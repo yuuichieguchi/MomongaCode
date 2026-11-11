@@ -30,7 +30,7 @@ describe('the gateway serves a plan target through the session engine (P5a-w)', 
   it('reads account records through the encrypted store of N81, so a plaintext record is store_unreadable, never needs_sign_in', async () => {
     const home = makeHome();
     writeSettings(home, planSettings('work'));
-    const sessions = momongaLayout(home).planSessions;
+    const sessions = momongaLayout(home, process.platform, process.env).planSessions;
     fs.mkdirSync(sessions, { recursive: true, mode: 0o700 });
     await createFileCredentialStore(sessions, { lock: testKernelLock() }).write('plan/chatgpt/work', JSON.stringify({ version: 1, profile: 'chatgpt', account: 'work', state: 'registered' }), new AbortController().signal);
     const health = await targetHealth(home);

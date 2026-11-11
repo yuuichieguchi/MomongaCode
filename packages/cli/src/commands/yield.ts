@@ -27,7 +27,7 @@ export const evaluateYield = async (
     model: pinnedModelOf(models, options.model),
     models,
     codeDigest: await codeDigestOfRunningProcess(),
-    planRelaySocket: currentSocketResolver(momongaPaths(ports.home), 'gateway'),
+    planRelaySocket: currentSocketResolver(momongaPaths(ports.home, ports.platform, ports.env), 'gateway'),
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
     onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),

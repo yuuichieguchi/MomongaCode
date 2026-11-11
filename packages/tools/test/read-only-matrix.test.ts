@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { Sandbox } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED } from '@momonga/testkit';
@@ -97,7 +97,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     const recorded = recordingSandbox(inner);
     const built = await makeBuiltins({ sandbox: recorded.sandbox });
     const roots = [project];
-    const sandboxPolicy = await buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(base, 'sessions'), fileRules: await computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()), protectedSet: await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED)), network: 'deny' }, NEVER_CANCELLED);
+    const sandboxPolicy = await buildSandboxPolicy({ layout: momongaLayout(home, process.platform, process.env), roots, home, tmpDir, sessionsTmpRoot: path.join(base, 'sessions'), fileRules: await computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()), protectedSet: await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED)), network: 'deny' }, NEVER_CANCELLED);
     resultOf(await built.run('Bash', { command: 'pwd' }, { env: plainEnv as Record<string, string>, roots, home, tmpDir, sandboxPolicy, session: { cwd: project, workingDirectory: project, readLedger: new Map() } }));
     spawned = recorded.spawns[0] as RecordedSpawn;
   });

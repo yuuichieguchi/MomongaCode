@@ -135,6 +135,7 @@ export {
   generationSpawnScratch,
   leftoverDirectories,
   managedInstancePaths,
+  homeLayout,
   momongaLayout,
   momongaPaths,
   refuseUnfitGenerationSocketsBeforeCreation,
@@ -182,7 +183,7 @@ export { createBinaryHashCache, createHeldHostReadings, createHostExec, probeKey
 export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading } from './host-identity.ts';
 export { NoCurrentGenerationError, currentSocketResolver, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor, versionSocketResolver } from './current-generation.ts';
 export type { CurrentGeneration } from './current-generation.ts';
-export type { MomongaPaths, SessionScratch } from './momonga-paths.ts';
+export type { HomePaths, LayoutEnvironment, MomongaPaths, SessionScratch } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
 export { OperationLimitError, operationLimit, settledOrAborted } from './operation-limit.ts';
 export type { LimitTiming, OperationLimit } from './operation-limit.ts';

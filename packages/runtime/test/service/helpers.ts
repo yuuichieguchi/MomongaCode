@@ -167,7 +167,7 @@ export const createFakePorts = (): FakePorts => {
 
 export const protectedAreasOf = (home: string): string[] => {
   const paths = momongaPaths(home, process.platform, {});
-  return [paths.root, momongaLayout(home).keychains, paths.tmp.root];
+  return [paths.root, momongaLayout(home, process.platform, process.env).keychains, paths.tmp.root];
 };
 
 const ajv = new Ajv2020.default({ strict: false, allErrors: true });
@@ -582,7 +582,7 @@ export const serviceOptions = (
     })),
   role: overrides.role ?? fixedRolePort('serving'),
   work: overrides.work ?? { steps: () => 0, jobs: () => 0 },
-  ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home).markers.root]),
+  ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home, process.platform, process.env).markers.root]),
   ...(overrides.onRequestEnd === undefined ? {} : { onRequestEnd: overrides.onRequestEnd }),
   onError: (error: unknown) => base.errors.push(error),
   ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),
@@ -763,7 +763,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const tracer = createFakeTracer();
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const executor = createToolExecutor({ reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
+  const executor = createToolExecutor({ layout: momongaLayout(env.layout.home, process.platform, process.env), reap: { inspector: testProcessInspector() }, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
   const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });

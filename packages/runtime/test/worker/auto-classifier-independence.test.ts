@@ -11,7 +11,7 @@ const SAFE = JSON.stringify({ verdict: 'safe', confidence: 'high', rationale: 'w
 
 const runWithRecords = async (records: readonly AutoFitRecord[]) => {
   const env = await makeEnv({ mode: 'auto' });
-  const directory = path.join(momongaLayout(env.home).state, 'auto-fit');
+  const directory = path.join(momongaLayout(env.home, process.platform, process.env).state, 'auto-fit');
   fs.mkdirSync(directory, { recursive: true });
   records.forEach((record, index) => fs.writeFileSync(path.join(directory, `record-${index}.json`), JSON.stringify(record)));
   env.settings.classifierModel = 'guard';

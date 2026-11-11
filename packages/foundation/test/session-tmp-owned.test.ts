@@ -45,7 +45,7 @@ describe('S9: the session scratch owner takes its claim in L1, through the fixed
 
     it(`${platform} mechanism: ensureSessionTmpDir claims the sidecar before mkdir, holds it, and a second call in the same process reuses the claim`, async () => {
       const mechanism = expectedKernelLockOn(platform);
-      const paths = momongaPaths(makeShortHomeDirectory());
+      const paths = momongaPaths(makeShortHomeDirectory(), process.platform, process.env);
       await ensureMomongaDirs(paths);
       const watched = observing(mechanism);
       const { dir: first, claim } = await ensureSessionTmpDir(paths, 'session-1', { lock: watched.lock });

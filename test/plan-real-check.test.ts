@@ -39,7 +39,7 @@ const readReport = (file: string): Report => JSON.parse(fs.readFileSync(file, 'u
 const verdictOf = (report: Report, step: string): string | undefined => report.steps.find((entry) => entry.step === step)?.verdict;
 
 const fileLogger = (home: string, clock: FakeClock) => {
-  const file = momongaLayout(home).logFiles.gateway;
+  const file = momongaLayout(home, process.platform, process.env).logFiles.gateway;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   return createJsonLogger({ service: 'gateway', clock, stream: {
       write: (text: string) => {
@@ -249,7 +249,7 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     const forbidden = [...gateway.auth.issuedSecrets(), ...exposed, gateway.auth.identity.email, gateway.auth.identity.sub, ...gateway.auth.registrations().flatMap((registration) => [registration.clientId, registration.hostId])].filter((value) => value !== '');
     const outputs = [collected, carriage, sized].map((file) => fs.readFileSync(file, 'utf8')).join('\n') + collect.stdout + carried.stdout + sizing.stdout;
     for (const value of forbidden) expect(outputs.includes(value), 'a report carries a value the design forbids (O-R5-6 L10)').toBe(false);
-    const log = fs.readFileSync(momongaLayout(gateway.home).logFiles.gateway, 'utf8');
+    const log = fs.readFileSync(momongaLayout(gateway.home, process.platform, process.env).logFiles.gateway, 'utf8');
     const events = log.split('\n').filter((line) => /"msg":"plan\./.test(line));
     expect(events.length).toBeGreaterThan(0);
     for (const value of forbidden) expect(events.join('\n').includes(value), 'a plan event carries a value the design forbids (O-R5-6 L10)').toBe(false);
@@ -273,7 +273,7 @@ const planEntryOf = (settingsText: string): Record<string, unknown> => {
 const startStubGateway = async (options: { dropRequest?: number } = {}): Promise<StubGateway> => {
   const home = makeHome();
   writeSettings(home, { models: modelsOf({ gpt: { adapter: 'open-responses', model: 'plan-model', capabilities: DECLARED, plan: { profile: PROFILE_ID, account: ACCOUNT } } }) });
-  const settingsFile = momongaLayout(home).settingsFile;
+  const settingsFile = momongaLayout(home, process.platform, process.env).settingsFile;
   const seen: Seen[] = [];
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = [];

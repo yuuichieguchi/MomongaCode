@@ -551,7 +551,7 @@ const run = async (argv: readonly string[]): Promise<number> => {
     process.stderr.write(`${OWN_HOME_REFUSAL}\n`);
     return EXIT_USAGE;
   }
-  const paths = momongaLayout(path.resolve(args.home));
+  const paths = momongaLayout(path.resolve(args.home), process.platform, process.env);
   const steps = args.command === 'collect' ? collect(readEvents(paths), args) : await throughGateway(args.command, paths, args.model ?? '');
   const report: Report = { format: REPORT_FORMAT, generatedAt: new Date().toISOString(), account: accountOf(readEvents(paths)), steps };
   const leak = leakOf(report, args.allowLong);

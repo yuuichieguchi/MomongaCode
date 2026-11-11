@@ -23,7 +23,7 @@ const recordText = (pid: unknown): string => JSON.stringify({ format: 'handover/
 type Site = { paths: MomongaPaths; directory: string; record: string };
 
 const siteOf = (): Site => {
-  const paths = momongaPaths(makeTemporaryDirectory());
+  const paths = momongaPaths(makeTemporaryDirectory(), process.platform, process.env);
   const directory = handoverDirectoryOf(paths);
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   return { paths, directory, record: path.join(directory, 'session-1.json') };

@@ -13,10 +13,10 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const APPEND_RULE_SOURCE = path.resolve(import.meta.dirname, '../src/append-rule.ts');
 const ORIGINAL = { models: { connections: [] } };
 
-const userSettingsOf = (tree: Tree): string => writeJson(momongaLayout(tree.home).settingsFile, ORIGINAL);
+const userSettingsOf = (tree: Tree): string => writeJson(momongaLayout(tree.home, process.platform, process.env).settingsFile, ORIGINAL);
 
 const lockRunDirectoryOf = (tree: Tree): void => {
-  fs.mkdirSync(momongaLayout(tree.home).run, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(momongaLayout(tree.home, process.platform, process.env).run, { recursive: true, mode: 0o700 });
 };
 
 const recordingEdit = () => {

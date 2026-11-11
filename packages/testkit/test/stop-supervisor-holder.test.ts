@@ -7,7 +7,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const preparedHome = async (context: CleanupContext): Promise<{ home: string; lockPath: string }> => {
   const home = withTempDir(context, { asHome: true });
-  const paths = momongaPaths(home);
+  const paths = momongaPaths(home, process.platform, process.env);
   await ensureMomongaDirs(paths);
   await ensureGenerationDirs(paths, FIRST_GENERATION);
   return { home, lockPath: firstGeneration(paths).locks.supervisor };
@@ -27,7 +27,7 @@ describe('stopSupervisorHolders', () => {
   it('kills the holder of the supervisor lock of every generation of a home (20.78)', async (context) => {
     const { home, lockPath } = await preparedHome(context);
     const second = generationLayout(home, 2);
-    await ensureGenerationDirs(momongaPaths(home), 2);
+    await ensureGenerationDirs(momongaPaths(home, process.platform, process.env), 2);
     const holders = [await startLockHolder(context, lockPath), await startLockHolder(context, second.locks.supervisor)];
 
     expect(await stopSupervisorHolders(home)).toEqual(holders.map((holder) => holder.pid));

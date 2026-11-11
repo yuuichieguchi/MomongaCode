@@ -317,7 +317,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     modelsHost: (signal) => ({
       home: homeOfModels(),
       settingsFile: modelsFile(),
-      lock: testKernelLock(),
+      lock: testKernelLock,
       platform: 'linux',
       interrupt: signal,
       files: {
