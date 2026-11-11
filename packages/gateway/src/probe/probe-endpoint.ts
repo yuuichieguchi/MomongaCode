@@ -16,6 +16,7 @@ import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type ProbeEndpointTargetOptions = {
   ports: ProbePorts;
+  stepTimeoutMs?: number;
   probeRecordDir: string;
   lock: KernelLockMechanism;
   upstream: UpstreamEndpoint;
@@ -52,6 +53,7 @@ export const measureEndpoint =
       ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
       ports: options.ports,
+      ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
       signal,
       ...(options.samples === undefined ? {} : { samples: options.samples }),
     });

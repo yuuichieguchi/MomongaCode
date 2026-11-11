@@ -8,9 +8,8 @@ import { GatewayError } from '../core/errors.ts';
 import type { GatewayTimers } from '../types.ts';
 import type { ProbeTimers } from './client.ts';
 import { ensurePrivateProbeDirectory } from './record.ts';
-import { DEFAULT_STEP_TIMEOUT_MS } from './run-probe.ts';
+import { DEFAULT_STEP_TIMEOUT_MS, MS_PER_SECOND } from './run-probe.ts';
 
-const MS_PER_SECOND = 1000;
 const KEY_LOCK_POLL_INTERVAL_MS = POLL_INTERVAL_MS;
 const LOCK_DIGEST_CHARS = 16;
 

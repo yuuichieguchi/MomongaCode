@@ -71,6 +71,7 @@ export type MeasureManagedServerOptions = {
   servers?: Set<ManagedServer>;
   spawn?: SpawnFn;
   timers: ManagedServerTimers;
+  stepTimeoutMs?: number;
   readStopGraceMs: () => number;
   onWarning(message: string): void;
 };
@@ -110,6 +111,7 @@ export const measureManagedServer =
         ...(tokenCount === 'estimated' ? {} : { countTokens: async (text: string) => parseCount(options.target, await options.execWithStdin(options.binary, tokenCount.argv, text, signal)) }),
         ...(options.samples === undefined ? {} : { samples: options.samples }),
         ports: { clock: options.timers, timers: options.timers },
+        ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
         signal,
       });
     } finally {
@@ -174,6 +176,7 @@ export type ProbeManagedOptions = {
   isUsableBinary: (binary: string) => Promise<boolean>;
   readStopGraceMs: () => number;
   timers: ManagedServerTimers;
+  stepTimeoutMs?: number;
   onWarning(message: string): void;
 };
 
@@ -186,7 +189,7 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
   const readKey = managedKeyReader({ description: options.description, binary: options.binary, model: options.model, exec, platform: options.platform, hashes: options.hashes });
   const subject = managedProbeSubject({
     target: options.target,
-    precondition: managedPrecondition(options.description, options.target, options.binary, exec, options.isUsableBinary, DEFAULT_STEP_TIMEOUT_MS),
+    precondition: managedPrecondition(options.description, options.target, options.binary, exec, options.isUsableBinary, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS),
     probeRecordDir: options.paths.probe,
     lock: options.lock,
     readKey,
@@ -204,6 +207,7 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
       execWithStdin: createExecWithStdin(childEnv),
       readStopGraceMs: options.readStopGraceMs,
       timers: options.timers,
+      ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
       onWarning: options.onWarning,
       ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.samples === undefined ? {} : { samples: options.samples }),

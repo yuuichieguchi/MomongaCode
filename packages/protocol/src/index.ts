@@ -338,7 +338,7 @@ export { RECORDED_DATA_MARKER, recordedDataMessage } from './recorded-data.ts';
 export type { RecordedData } from './recorded-data.ts';
 export { decodePayloadSegment, encodePayloadSegment, joinEnvelope, splitEnvelope } from './envelope-grammar.ts';
 export type { EnvelopeSegments } from './envelope-grammar.ts';
-export { JSON_MODE_PROBE_STATES, PROBE_KEYWORDS } from './probe.ts';
+export { DEFAULT_PROBE_STEP_SECONDS, JSON_MODE_PROBE_STATES, PROBE_KEYWORDS, probeStepBoundMs } from './probe.ts';
 export type { EndpointProbeReport, JsonModeProbeState, OllamaProbeReport, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReport, ProbeReportDialect } from './probe.ts';
 export {
   DIALECT_DEFINITION_SCHEMA,

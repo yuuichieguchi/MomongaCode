@@ -1,6 +1,8 @@
 import { decodeSse, defineProductSchema, parseRetryAfter, sleep } from '@momonga/foundation';
 import type { OutboundNetwork, ProductValidator } from '@momonga/foundation';
 import {
+  DEFAULT_PROBE_STEP_SECONDS,
+  probeStepBoundMs,
   ESTIMATED_ERROR_BOUND_RATIO,
   DEFAULT_DIALECT_ID,
   DEFAULT_OUTPUT_BOUND_FIELD,
@@ -67,7 +69,8 @@ export const DEFAULT_SAMPLES = 10;
 const CONCURRENCY_ATTEMPTS = 8;
 const SEARCH_INITIAL_WORDS = 64;
 const SEARCH_MAX_WORDS = 262144;
-export const DEFAULT_STEP_TIMEOUT_MS = 120000;
+export const MS_PER_SECOND = 1000;
+export const DEFAULT_STEP_TIMEOUT_MS = probeStepBoundMs(DEFAULT_PROBE_STEP_SECONDS);
 export const CACHE_PROBE_WORDS = 1536;
 const OUTPUT_BOUND_PROBE_TOKENS = 16;
 const OUTPUT_BOUND_HONOURED_FACTOR = 2;

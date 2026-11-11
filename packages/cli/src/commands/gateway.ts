@@ -27,7 +27,7 @@ export class NotAProbeableModel extends Error {
   }
 }
 
-export type ProbeOptions = { samples?: number; interrupt: AbortSignal };
+export type ProbeOptions = { samples?: number; stepTimeoutMs: number; interrupt: AbortSignal };
 
 export type ProbeSubject = { canon: string; display: string; model: ProbeableModel };
 
@@ -167,6 +167,7 @@ const probeChatCompletions = async (
     userDialects,
     apiKey: await apiKeyOf(ports, target, options.interrupt),
     signal: options.interrupt,
+    stepTimeoutMs: options.stepTimeoutMs,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
   ports.stdout.write(probeEndpointText(subject.display, key.endpoint, paths.probe, report, toolCalling, target.capabilities.outputBoundField));
@@ -195,6 +196,7 @@ const probeOllama = async (
     ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
     userDialects,
     signal: options.interrupt,
+    stepTimeoutMs: options.stepTimeoutMs,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
   ports.stdout.write(probeOllamaText(subject.display, key.endpoint, paths.probe, report, target.capabilities.contextWindow));
@@ -224,6 +226,7 @@ const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: Probe
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
     timers: managedProbeTimersOf(ports),
+    stepTimeoutMs: options.stepTimeoutMs,
     model: configured.model,
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),
     ...(options.samples === undefined ? {} : { samples: options.samples }),

@@ -1,6 +1,12 @@
 import type { HealthResult, ImageTokenModel, OutputBoundField, ReasoningCapability } from './capabilities.ts';
 import type { ConstructSupport } from './dialect.ts';
 
+export const DEFAULT_PROBE_STEP_SECONDS = 120;
+
+const MS_PER_SECOND = 1000;
+
+export const probeStepBoundMs = (seconds: number): number => seconds * MS_PER_SECOND;
+
 export const PROBE_KEYWORDS = [
   'enum',
   'anyOf',

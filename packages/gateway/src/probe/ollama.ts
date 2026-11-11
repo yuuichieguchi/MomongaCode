@@ -33,6 +33,7 @@ import type { KernelLockMechanism } from '@momonga/foundation';
 
 export type ProbeOllamaTargetOptions = {
   ports: ProbePorts;
+  stepTimeoutMs?: number;
   probeRecordDir: string;
   lock: KernelLockMechanism;
   upstream: UpstreamEndpoint;
@@ -49,7 +50,6 @@ export type ProbeOllamaTargetResult = { report: OllamaProbeReport; key: Endpoint
 
 const CHAT_PATH = '/api/chat';
 const CACHE_PROBE_OUTPUT_TOKENS = 1;
-const CACHE_PROBE_TIMEOUT_MS = DEFAULT_STEP_TIMEOUT_MS;
 const VERSION_PATH = '/api/version';
 const SHOW_PATH = '/api/show';
 const TAGS_PATH = '/api/tags';
@@ -240,10 +240,10 @@ export const measureOllama =
     const capabilities = capabilitiesOf(show, model);
     const imageInputAccepted = capabilities.includes('vision');
     const imageTokens = imageInputAccepted
-      ? await withClient(upstream, options.ports, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), CACHE_PROBE_TIMEOUT_MS)
+      ? await withClient(upstream, options.ports, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS)
       : undefined;
-    const promptCache = await withClient(upstream, options.ports, signal, (client) => measurePromptCache(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS);
-    const jsonMode = await measureJsonMode(() => withClient(upstream, options.ports, signal, (client) => askJsonOnly(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS));
+    const promptCache = await withClient(upstream, options.ports, signal, (client) => measurePromptCache(client, model, options.contextWindow), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
+    const jsonMode = await measureJsonMode(() => withClient(upstream, options.ports, signal, (client) => askJsonOnly(client, model, options.contextWindow), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS));
     const userDialects = options.userDialects ?? NO_USER_DIALECTS;
     const selection = await withClient(
       upstream,
@@ -256,7 +256,7 @@ export const measureOllama =
           userDialects,
           declaredDialect: options.declaredDialect,
         }),
-      CACHE_PROBE_TIMEOUT_MS,
+      options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS,
     );
     const report: OllamaProbeReport = {
       kind: 'ollama',
