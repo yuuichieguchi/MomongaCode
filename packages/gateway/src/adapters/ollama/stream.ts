@@ -1,4 +1,4 @@
-import { isRecord } from '@momonga/foundation';
+import { isRecord, newCallId } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { cachedDetailOf } from '@momonga/protocol';
 import type { AdapterRequest, JsonReplyPath, SchemaNarrowing, StreamEvent, Usage, WrapRecord } from '@momonga/protocol';
@@ -52,12 +52,14 @@ const usageOf = (done: Record<string, unknown>): Usage => {
 class OllamaStreamDriver {
   private readonly emitter: ResponseEmitter;
   private readonly toolsAllowed: boolean;
+  private readonly clock: Clock;
   private started = false;
   private finished = false;
 
   constructor(options: OllamaStreamOptions) {
     this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.wraps === undefined ? {} : { wraps: options.wraps }), ...(options.narrowings === undefined ? {} : { narrowings: options.narrowings }), jsonReply: options.jsonReply, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }), ...(options.onOutput === undefined ? {} : { onOutput: options.onOutput }), outputCeiling: options.outputCeiling });
     this.toolsAllowed = !forbidsTools(options.request.tool_choice);
+    this.clock = options.clock;
   }
 
   get hasStarted(): boolean {
@@ -125,8 +127,7 @@ class OllamaStreamDriver {
     if (!this.toolsAllowed) throw new UpstreamProtocolError('the upstream sent a tool call although the request set tool_choice none');
     if (!isRecord(call)) throw invalid('a tool_calls entry must be an object');
     if (this.emitter.callCount >= MAX_TOOL_CALLS) throw new UpstreamProtocolError(`the upstream sent more than ${MAX_TOOL_CALLS} tool calls`);
-    const id = call['id'];
-    if (typeof id !== 'string' || id === '') throw new UpstreamProtocolError('the upstream sent a tool call without an id');
+    const upstreamId = call['id'];
     const fn = call['function'];
     if (!isRecord(fn)) throw invalid('tool_calls[].function must be an object');
     const name = fn['name'];
@@ -135,7 +136,7 @@ class OllamaStreamDriver {
     if (!isRecord(args)) throw invalid('tool_calls[].function.arguments must be an object');
     const key = this.emitter.callCount;
     this.emitter.endMessage();
-    this.emitter.beginCall(key, id, name);
+    this.emitter.beginCall(key, typeof upstreamId === 'string' && upstreamId !== '' ? upstreamId : newCallId(this.clock), name);
     this.emitter.appendCallArguments(key, JSON.stringify(args));
     this.emitter.completeCall(key);
   }
