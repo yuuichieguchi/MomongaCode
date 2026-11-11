@@ -1,4 +1,4 @@
-import { decodeSse, defineProductSchema, sleep } from '@momonga/foundation';
+import { decodeSse, defineProductSchema, parseRetryAfter, sleep } from '@momonga/foundation';
 import type { OutboundNetwork, ProductValidator } from '@momonga/foundation';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
@@ -68,7 +68,7 @@ const CONCURRENCY_ATTEMPTS = 8;
 const SEARCH_INITIAL_WORDS = 64;
 const SEARCH_MAX_WORDS = 262144;
 export const DEFAULT_STEP_TIMEOUT_MS = 120000;
-const CACHE_PROBE_WORDS = 1536;
+export const CACHE_PROBE_WORDS = 1536;
 const OUTPUT_BOUND_PROBE_TOKENS = 16;
 const OUTPUT_BOUND_HONOURED_FACTOR = 2;
 const ONE_OUTPUT_TOKEN = 1;
@@ -87,13 +87,6 @@ const PROBE_TOOL: ProbeTool = { name: 'probe_weather', parameters: PROBE_PARAMET
 const TOOL_PROMPT = `Please call ${PROBE_TOOL.name} for Tokyo for 3 days`;
 const PLAIN_PROMPT = 'Say hello in one short sentence.';
 const validateToolArguments: ProductValidator<unknown> = defineProductSchema('gateway/probe-tool-arguments', PROBE_PARAMETERS);
-
-const retryAfterMs = (value: string | undefined, now: Date): number | undefined => {
-  if (value === undefined) return undefined;
-  if (/^\d+$/.test(value)) return Number(value) * 1000;
-  const at = Date.parse(value);
-  return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
-};
 
 const estimatedCount = async (text: string): Promise<number> => tokensForText(text);
 
@@ -171,7 +164,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     async (body) => {
       let result = await once(body);
       for (let retry = 0; result.status === 429 && retry < MAX_RATE_LIMIT_RETRIES; retry += 1) {
-        const waitMs = retryAfterMs(result.headers['retry-after'], now());
+        const waitMs = parseRetryAfter(result.headers['retry-after'], options.ports.clock.now());
         if (waitMs === undefined || waitMs > stepTimeoutMs) return result;
         if ((await sleep(options.ports.timers, waitMs, options.signal)) === 'aborted') options.signal?.throwIfAborted();
         result = await once(body);
@@ -236,7 +229,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
 
   const promptCache = await measurePromptCache(chat);
 
-  const jsonMode = await measureJsonMode(() => askJsonOnly(chat), options.signal);
+  const jsonMode = await measureJsonMode(() => askJsonOnly(chat));
 
   const maxConcurrency = await measureConcurrency(post);
 

@@ -296,6 +296,17 @@ describe('runProbe server features', () => {
     expect(report.imageTokens?.maxTokens).toBe(1600 + IMAGE_WRAPPER_TOKENS);
   });
 
+  it('reads Retry-After only in the forms HTTP gives it, so a date in another form is not waited for', async () => {
+    const waits: number[] = [];
+    await expect(
+      probe(
+        { scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 }, rateLimitSizedImages: { count: 1, retryAfter: '2026-10-23T12:00:02.000Z' } },
+        { ports: waitRecordingProbePorts(fixedNow, DEFAULT_STEP_TIMEOUT_MS, waits) },
+      ),
+    ).rejects.toThrow(/HTTP 429/);
+    expect(waits).toEqual([]);
+  });
+
   it('does not wait for a Retry-After longer than a step may take, and fails the step', async () => {
     const waits: number[] = [];
     await expect(

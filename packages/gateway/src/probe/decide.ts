@@ -16,13 +16,15 @@ export interface ToolCallingDecision {
 
 export const DEFAULT_MIN_VALID_RATE = 0.9;
 
+export const DEFAULT_NATIVE_MARGIN = 0.05;
+
 const EPSILON = 1e-9;
 
 export const atLeast = (value: number, threshold: number): boolean => value >= threshold - EPSILON;
 
 export const decideToolCalling = (report: ProbeReport, thresholds: DecideThresholds = {}): ToolCallingDecision => {
   const minValidRate = thresholds.minValidRate ?? DEFAULT_MIN_VALID_RATE;
-  const nativeMargin = thresholds.nativeMargin ?? 0.05;
+  const nativeMargin = thresholds.nativeMargin ?? DEFAULT_NATIVE_MARGIN;
   const native = report.nativeTools;
   const constrained = report.constrained;
   const constrainedRate = constrained.accepted ? constrained.validRate : 0;

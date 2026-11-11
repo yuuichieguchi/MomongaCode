@@ -14,7 +14,7 @@ import type { EndpointKey } from './endpoint-record.ts';
 import { IDENTITY_READ_TIMEOUT_MS, probeEndpointOf } from './endpoint-target.ts';
 import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
-import { DEFAULT_SAMPLES, PROBE_METHOD_VERSION } from './run-probe.ts';
+import { CACHE_PROBE_WORDS, DEFAULT_SAMPLES, DEFAULT_STEP_TIMEOUT_MS, PROBE_METHOD_VERSION } from './run-probe.ts';
 import { messagesOf, selectDialect } from './select-dialect.ts';
 import type { SelectionTransport } from './select-dialect.ts';
 import { IMAGE_PROMPT, measureImageTokens } from './image-tokens.ts';
@@ -48,9 +48,8 @@ export type ProbeOllamaTargetOptions = {
 export type ProbeOllamaTargetResult = { report: OllamaProbeReport; key: EndpointKey; identity: string };
 
 const CHAT_PATH = '/api/chat';
-const CACHE_PROBE_WORDS = 1536;
 const CACHE_PROBE_OUTPUT_TOKENS = 1;
-const CACHE_PROBE_TIMEOUT_MS = 120_000;
+const CACHE_PROBE_TIMEOUT_MS = DEFAULT_STEP_TIMEOUT_MS;
 const VERSION_PATH = '/api/version';
 const SHOW_PATH = '/api/show';
 const TAGS_PATH = '/api/tags';
@@ -244,7 +243,7 @@ export const measureOllama =
       ? await withClient(upstream, options.ports, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), CACHE_PROBE_TIMEOUT_MS)
       : undefined;
     const promptCache = await withClient(upstream, options.ports, signal, (client) => measurePromptCache(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS);
-    const jsonMode = await measureJsonMode(() => withClient(upstream, options.ports, signal, (client) => askJsonOnly(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS), signal);
+    const jsonMode = await measureJsonMode(() => withClient(upstream, options.ports, signal, (client) => askJsonOnly(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS));
     const userDialects = options.userDialects ?? NO_USER_DIALECTS;
     const selection = await withClient(
       upstream,
