@@ -89,8 +89,6 @@ const harness = (failingOn: number = 0, answers: Answers = 'script') => {
   const ports = {
     version: '9.9.9',
     home: freshHome(),
-    platform: process.platform,
-    env: {},
     cwd: '/w',
     env: {},
     platform: process.platform,
