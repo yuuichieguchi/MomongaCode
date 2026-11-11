@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AdapterRequest, Capabilities } from '@momonga/protocol';
 import { anthropicCountTokensReply, anthropicTextReply, openResponsesTextReply } from '@momonga/testkit';
 import path from 'node:path';
-import { createReplayAdapter } from '@momonga/gateway';
+import { createReplayAdapter } from './support/replay-adapter.ts';
 import { makeDir, postJson, readJson, readSse, startGateway, userInput } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, collect, lastCompletionBody, makeAdapter, startFake, userText } from './cc-support.ts';
 import { OLLAMA_CAPABILITIES, chunkLine, collectOllama, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';

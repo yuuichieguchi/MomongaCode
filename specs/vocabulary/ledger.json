@@ -354,9 +354,6 @@
       "packages/gateway/src/adapters/open-responses/request.ts": {
         "target": 1
       },
-      "packages/gateway/src/adapters/replay-adapter.ts": {
-        "directory": 3
-      },
       "packages/gateway/src/adapters/shared/compact.ts": {
         "conversation": 2,
         "limit": 2
