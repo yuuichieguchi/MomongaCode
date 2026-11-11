@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -15,7 +16,7 @@ describe('the keeper asset of the single executable (T-JO-8)', () => {
 
   const read = (name: string): Uint8Array => fs.readFileSync(assets[name] as string);
   const extractInto = (cache: string, asset: (name: string) => Uint8Array = read): Promise<string> =>
-    ensureBundledWindowsKeeper({ asset, executablesRoot: path.join(root, cache), random: { hex: () => 'abcdef0123456789' }, files: nodeFileSystem });
+    ensureBundledWindowsKeeper({ asset, executablesRoot: path.join(root, cache), random: { hex: () => 'abcdef0123456789' }, files: nodeFileSystem, lock: testKernelLock() });
 
   beforeAll(async () => {
     root = fs.realpathSync(createTempRoot());

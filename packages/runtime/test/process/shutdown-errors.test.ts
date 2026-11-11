@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, registerOwned } from '@momonga/testkit';
-import { FIRST_GENERATION, ensureGenerationDirs, ensureMomongaDirs } from '@momonga/foundation';
+import { FIRST_GENERATION, ensureMomongaDirs } from '@momonga/foundation';
 import type { RunServiceOptions } from '@momonga/runtime';
 import { writeUserSettings, onCleanup } from './helpers.ts';
 import {
@@ -154,7 +154,7 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'none' });
     await ensureMomongaDirs(temp.paths);
-    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    fs.mkdirSync(firstGeneration(temp.paths).dir, { mode: 0o700 });
     fs.writeFileSync(firstGeneration(temp.paths).sockets.runtime, 'not a socket');
     const flushError = new Error('flush failed during unwind');
     control.flushError = flushError;

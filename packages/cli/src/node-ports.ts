@@ -195,8 +195,8 @@ export const runSocketGuardBuild = (script: string, workDir: string): number | n
   return run.status;
 };
 
-export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string): Promise<string> =>
-  ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem });
+export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string, lock: KernelLockMechanism): Promise<string> =>
+  ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem, lock });
 
 export const hostSourceBuiltLinuxSocketGuard = (executablesRoot: string): (() => string) =>
   sourceBuiltLinuxSocketGuard({ script: LINUX_SOCKET_GUARD_BUILD_SCRIPT, executablesRoot, build: runSocketGuardBuild, files: nodeSourceKeeperFiles, random: systemRandom });
