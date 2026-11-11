@@ -51,13 +51,15 @@ export const nanoOfUnits = (units: string): number => {
   return countedNano(ceilDiv(BigInt(units), 10n ** BigInt(UNIT_DIGITS_BELOW_NANO)), `${units} price units`);
 };
 
-export const nanoOfCost = (cost: { amount: number; units?: string }): number => (cost.units === undefined ? nanoOfAmount(cost.amount) : nanoOfUnits(cost.units));
-
-export const unitsOfCost = (cost: { amount: number; units?: string }): bigint => {
-  if (cost.units !== undefined) return BigInt(cost.units);
+export const unitsOfCost = (cost: { amount: number; units: string | null }): bigint => {
+  if (cost.units !== null) return BigInt(cost.units);
   if (!Number.isFinite(cost.amount) || cost.amount < 0) throw new RangeError(`an amount of money must be a non-negative finite number, got ${cost.amount}`);
   return scaledDecimal(String(cost.amount), NANO_DIGITS + UNIT_DIGITS_BELOW_NANO);
 };
+
+export const nanoOfCost = (cost: { amount: number; units: string | null }): number => nanoOfUnits(unitsOfCost(cost).toString());
+
+export const isLegacyPrecisionCost = (cost: { units: string | null }): boolean => cost.units === null;
 
 export const usdOfNano = (nano: number): string => {
   const whole = Math.trunc(nano / NANO_PER_USD);
@@ -65,7 +67,7 @@ export const usdOfNano = (nano: number): string => {
   return fraction === '' ? String(whole) : `${whole}.${fraction}`;
 };
 
-export type RunUsage = { inputTokens: number; outputTokens: number; totalTokens: number; costNano?: number; unpricedCalls?: number };
+export type RunUsage = { inputTokens: number; outputTokens: number; totalTokens: number; costNano?: number; unpricedCalls?: number; legacyPrecisionCalls?: number };
 
 export type CallFootprint = { reads: string[]; writes: string[] };
 

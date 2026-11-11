@@ -28,7 +28,7 @@ describe('the breakdown shows a metered unreported call as unpriced, never as 0 
     const breakdown = buildCostBreakdown(calls, {});
     const lines = formatCostBreakdown(breakdown).split('\n');
 
-    expect(breakdown.cost).toEqual({ amount: null, currency: 'USD', unpricedCalls: 0, unpriced: { cache_read_not_reported: 1 }, priceNotRecordedCalls: 0, priceVersions: [] });
+    expect(breakdown.cost).toEqual({ amount: null, currency: 'USD', unpricedCalls: 0, unpriced: { cache_read_not_reported: 1 }, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, priceVersions: [] });
     expect(lines).toContain('cost: not complete: cache reads not reported in 1 call(s)');
     expect(lines).toContain('unpriced: acme/m1 (run run-a, step 1): the upstream did not report the cache reads of the call');
     expect(lines).not.toContain('cost: 0 USD');
@@ -37,7 +37,7 @@ describe('the breakdown shows a metered unreported call as unpriced, never as 0 
   it('keeps a local unreported call priced 0 and out of the unpriced list', () => {
     const breakdown = buildCostBreakdown([callOf(1, usage(1000, undefined), 'local')], {});
 
-    expect(breakdown.cost).toEqual({ amount: 0, currency: 'USD', unpricedCalls: 0, unpriced: {}, priceNotRecordedCalls: 0, priceVersions: [] });
+    expect(breakdown.cost).toEqual({ amount: 0, currency: 'USD', unpricedCalls: 0, unpriced: {}, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, priceVersions: [] });
     expect(formatCostBreakdown(breakdown).split('\n')).toContain('cost: 0 USD, all 1 call(s) ran locally and cost nothing');
     expect(breakdown.unpriced).toEqual([]);
     expect(breakdown.cacheReadNotReported).toBe(1);

@@ -65,7 +65,7 @@ describe('the closed wire schemas', () => {
     unknownBillingCalls: 0,
     cacheReadNotReportedCalls: 1,
     cacheReadUnpricedCalls: 1,
-    priceNotRecordedCalls: 0,
+    priceNotRecordedCalls: 0, legacyPrecisionCalls: 0,
     planCalls: 0,
     planInputTokens: 0,
     planOutputTokens: 0,

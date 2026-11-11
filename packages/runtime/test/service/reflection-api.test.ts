@@ -50,7 +50,7 @@ describe('the last reflection job of a folder', () => {
     expect(queued.json).toMatchObject({ job: { state: 'pending' }, queuedAhead: 1 });
     expectSchema('RunReflection', queued.json);
     jobs.begin(run.id);
-    const detail = { cachedInputTokens: 40, cost: { amount: 0.5, currency: 'USD', priceVersion: '2026-01-01' }, timing: { firstEventMs: 3, durationMs: 9 } };
+    const detail = { cachedInputTokens: 40, cost: { amount: 0.5, units: '500000000000000', currency: 'USD', priceVersion: '2026-01-01' }, timing: { firstEventMs: 3, durationMs: 9 } };
     jobs.complete({
       runId: run.id,
       charge: { purpose: 'reflection', runId: run.id, project: session.cwd, model: 'fm', inputTokens: 100, outputTokens: 20, totalTokens: 120, detail },

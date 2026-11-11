@@ -80,6 +80,7 @@ describe('reportCostOf', () => {
         runId,
         calls: 5,
         notPriced: 2,
+        legacyPrecisionCalls: 0,
         priced: [
           { currency: 'USD', priceVersion: '2026-01-01', units: '2000000000000000' },
           { currency: 'USD', priceVersion: '2026-06-01', units: '1000000000000000' },

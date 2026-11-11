@@ -43,10 +43,10 @@ describe('the spend of a run folds money beside tokens', () => {
     const { store } = harness();
     const run = await enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
-    store.append(claim, [started, ...responded(1, 10, { cost: { amount: 0.0000015004, currency: 'USD', priceVersion: '2026-01-01' } })]);
+    store.append(claim, [started, ...responded(1, 10, { cost: { amount: 0.0000015004, units: '1500400000', currency: 'USD', priceVersion: '2026-01-01' } })]);
     expect(mustRun(store, run.id).usage).toEqual({ inputTokens: 9, outputTokens: 1, totalTokens: 10, costNano: 1501 });
     store.append(claim, responded(2, 4, { unpriced: { code: 'no_price_entry', reason: 'no price entry' } }));
-    store.append(claim, [{ type: 'usage.charged', purpose: 'compaction', inputTokens: 5, outputTokens: 1, totalTokens: 6, cost: { amount: 0.000001, currency: 'USD', priceVersion: '2026-01-01' } }]);
+    store.append(claim, [{ type: 'usage.charged', purpose: 'compaction', inputTokens: 5, outputTokens: 1, totalTokens: 6, cost: { amount: 0.000001, units: '1000000000', currency: 'USD', priceVersion: '2026-01-01' } }]);
     expect(mustRun(store, run.id).usage).toEqual({ inputTokens: 17, outputTokens: 3, totalTokens: 20, costNano: 2501, unpricedCalls: 1 });
   });
 
