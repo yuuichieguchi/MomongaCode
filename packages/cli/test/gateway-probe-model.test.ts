@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadUserModels } from '@momonga/config';
-import { momongaLayout } from '@momonga/foundation';
+import { momongaLayout, pipePathFor } from '@momonga/foundation';
+import { FM_SERVER } from '@momonga/protocol';
 import { cliProbeInstance, probeModel, probeSubjectOf } from '../src/commands/gateway.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { S3, homeWith, threeModels } from './models-shell-harness.ts';
@@ -24,9 +25,20 @@ describe('momonga gateway probe <model>', () => {
     );
   });
 
-  it('starts a managed server of the command line under the stem _cli-probe-<provider>', (context) => {
+  it('starts a managed server of the command line under the stem _cli-probe-<provider>', async (context) => {
     const paths = momongaLayout(homeWith(context, undefined).home, process.platform, process.env);
+    const ports = { platform: 'darwin', endpointScope: async () => ({ form: 'unix' }) as const } as const;
 
-    expect(path.basename(cliProbeInstance(paths, 'apple').socketPath)).toBe('_cli-probe-apple.sock');
+    expect(path.basename((await cliProbeInstance(ports, paths, FM_SERVER, 'apple')).socketPath)).toBe('_cli-probe-apple.sock');
+  });
+
+  it('gives the probe of a server that offers the pipe form a named pipe with the random part of the home on win32, and refuses one that offers only Unix sockets there', async () => {
+    const paths = momongaLayout('C:\\Users\\Alice', 'win32', {});
+    const scope = { form: 'pipe', token: '0123456789abcdef0123456789abcdef' } as const;
+    const ports = { platform: 'win32', endpointScope: async () => scope } as const;
+    const loom = { ...FM_SERVER, id: 'loom', endpoint: { forms: ['pipe'] } } as const;
+
+    expect((await cliProbeInstance(ports, paths, loom, 'loom')).socketPath).toBe(pipePathFor(scope, 'managed-_cli-probe-loom'));
+    await expect(cliProbeInstance(ports, paths, FM_SERVER, 'apple')).rejects.toThrow(/cannot be used on win32/);
   });
 });

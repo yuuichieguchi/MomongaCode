@@ -141,6 +141,7 @@ export {
   generationSpawnScratch,
   leftoverDirectories,
   managedInstancePaths,
+  managedInstanceIn,
   layoutEnvOf,
   homeLayout,
   momongaLayout,

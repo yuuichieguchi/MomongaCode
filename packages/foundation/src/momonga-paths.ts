@@ -14,7 +14,7 @@ import type { LeftoverDirectory, Retention } from './leftover-sweep.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
 import { SocketPathUnmeasuredError, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, isPipePath, pipePathFor } from './socket-path.ts';
-import type { EndpointScope } from './socket-path.ts';
+import type { EndpointForm, EndpointScope } from './socket-path.ts';
 import { ownerOnlySecret } from './platform/owner-only-secret.ts';
 import type { OwnerOnlySecretPorts } from './platform/owner-only-secret.ts';
 
@@ -268,6 +268,19 @@ export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInsta
     lockPath: path.join(paths.run, `${stem}.lock`),
     markerDirectory: path.join(paths.markers.root, CLI_MARKER_DIRECTORY, `${instance.purpose}-${instance.provider}`),
   };
+};
+
+const INSTANCE_SOCKET_SUFFIX = '.sock';
+
+export type ManagedSocket = { readonly form: EndpointForm; readonly scope: EndpointScope };
+
+const instancePipeName = (instance: ManagedInstance, stem: string): string =>
+  instance.owner === 'gateway' ? `g${instance.generation}-managed-${stem}` : `managed-${stem}`;
+
+export const managedInstanceIn = (paths: MomongaPaths, instance: ManagedInstance, socket: ManagedSocket): ManagedInstancePaths => {
+  const files = managedInstancePaths(paths, instance);
+  if (socket.form === 'unix') return files;
+  return { ...files, socketPath: pipePathFor(socket.scope, instancePipeName(instance, path.basename(files.socketPath, INSTANCE_SOCKET_SUFFIX))) };
 };
 
 export const rotatedLogPath = (file: string, generation: number): string => `${file}.${generation}`;
