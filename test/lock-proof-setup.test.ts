@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { LOCK_PROOF_ENV, testKernelLock } from '@momonga/testkit';
+import { LOCK_PROOF_ENV, productTestEnv, testKernelLock } from '@momonga/testkit';
 import setup from './support/lock-proof.ts';
 
 describe('the lock proof folder of a test run', () => {
@@ -25,5 +25,9 @@ describe('the lock proof folder of a test run', () => {
     if (folder === undefined) throw new Error('the run has no lock proof folder');
     expect(fs.readdirSync(folder)).toContain(String(process.pid));
     expect(fs.statSync(path.join(folder, String(process.pid))).isDirectory()).toBe(true);
+  });
+
+  it('is carried to every product process a test starts, by the one environment of those processes', () => {
+    expect(productTestEnv({ HOME: '/nowhere' })[LOCK_PROOF_ENV]).toBe(process.env[LOCK_PROOF_ENV]);
   });
 });
