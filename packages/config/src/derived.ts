@@ -52,7 +52,7 @@ export type PinnedDerivation<T> = {
 };
 
 export type PinnedDerivationOptions<T> = {
-  cache: Pick<UserSettingsCache, 'read'>;
+  cache: Pick<UserSettingsCache, 'loadOrKeep'>;
   signal: AbortSignal;
   inputsOf(settings: ResolvedSettings): unknown;
   prepare?(settings: ResolvedSettings, signal: AbortSignal): Promise<void> | undefined;
@@ -204,7 +204,7 @@ export const createPinnedDerivation = <T>({ cache, signal: owner, inputsOf, prep
   const take = async (admitting: boolean, signal: AbortSignal): Promise<Lease<T>> => {
     for (;;) {
       signal.throwIfAborted();
-      const { settings } = cache.read();
+      const { settings } = await cache.loadOrKeep(signal);
       const pending = prepare?.(settings, signal);
       if (pending === undefined) return takeFor(settings, admitting, signal);
       const prepared = await awaitPrepared(pending, signal);

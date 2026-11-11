@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
 import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, answeredLater, askedPaths } from '@momonga/foundation';
-import type { PathAsking } from '@momonga/foundation';
+import type { FileSystem, PathAsking } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
 import type { Asker } from './asker.ts';
 import type { SandboxNetworkSetting, StopValues } from '@momonga/foundation';
@@ -81,6 +81,7 @@ export type LoadSettingsOptions = {
   signal: AbortSignal;
   user?: UserLayer;
   kept?: KeptLayers;
+  files?: FileSystem;
 };
 
 export type LoadSettingsResult = {
@@ -333,8 +334,8 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
 export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[], { signal, paths }: Asker): Promise<ResolvedSettings> =>
   answeredLater(mergingLayers(layers, models, home, projectDir, warnings), paths, signal);
 
-export const loadSettings = async ({ home, projectDir, cli, trust, signal, user, kept }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
-  const asker = askerOf(signal);
+export const loadSettings = async ({ home, projectDir, cli, trust, signal, user, kept, files }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
+  const asker = askerOf(signal, files);
   const loaded = await loadLayers({ home, projectDir, trust, asker, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
   let cliSettings: Settings;
   const cliWarnings: string[] = [];

@@ -10,29 +10,22 @@ export type LaunchTaskOptions = {
   logger: JsonLogger;
   reapOwnMarkers(): Promise<{ reaped: number; kept: number }>;
   settings: UserSettingsCache;
-  changeKey(): string;
+  changeKey(): Promise<string>;
   gateway: ChildManager;
   runtime: ChildManager;
   startWatch(initialKey: string): SettingsWatch | undefined;
-  evaluate(): void;
+  evaluate(): Promise<void>;
 };
 
 type SettingsRead = { initialKey: string; snapshot: UserSettingsSnapshot } | { initialKey: string; failure: unknown };
 
-const readSettings = (options: LaunchTaskOptions): SettingsRead => {
+const readSettings = async (options: LaunchTaskOptions): Promise<SettingsRead> => {
   let initialKey: string | undefined;
   try {
-    initialKey = options.changeKey();
-    return { initialKey, snapshot: options.settings.snapshot() };
+    initialKey = await options.changeKey();
+    return { initialKey, snapshot: await options.settings.load(options.signal) };
   } catch (failure) {
-    return {
-      initialKey:
-        initialKey ??
-        safeChangeKey(() => {
-          throw failure;
-        }),
-      failure,
-    };
+    return { initialKey: initialKey ?? (await safeChangeKey(() => Promise.reject(failure))), failure };
   }
 };
 
@@ -43,7 +36,8 @@ export const runLaunchTask = async (options: LaunchTaskOptions): Promise<void> =
   writeEvent(logger, orphansReaped({ reaped: reaped.reaped, kept: reaped.kept }));
   if (signal.aborted) return;
 
-  const read = readSettings(options);
+  const read = await readSettings(options);
+  if (signal.aborted) return;
   if ('failure' in read) {
     const failure = read.failure instanceof Error ? read.failure : new Error(String(read.failure));
     writeEvent(logger, settingsReadFailed({ detail: failure.message }, failure));
@@ -57,5 +51,5 @@ export const runLaunchTask = async (options: LaunchTaskOptions): Promise<void> =
 
   const watch = options.startWatch(read.initialKey);
   if (watch === undefined) return;
-  options.evaluate();
+  await options.evaluate();
 };

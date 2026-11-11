@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { nodeFileSystemSync } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, bwrapProbeArguments } from '@momonga/sandbox';
-import { nodeShellHost, resolveBashPath } from '@momonga/tools';
+import { executableCheckNowOn, resolveBashPathNow } from '@momonga/tools';
 import { E2E_CASES, caseOf, skipCase, titleOf } from './cases.ts';
 import type { E2eCase } from './cases.ts';
 import {
@@ -54,7 +55,7 @@ describe('sandbox probe', () => {
   it('on linux it probes bubblewrap once with the product probe arguments and the product shell', () => {
     const { runner, calls } = recordingRunner('ok');
     expect(runSandboxProbe('linux', runner)).toEqual({ usable: true, kind: 'bubblewrap' });
-    expect(calls).toEqual([{ file: DEFAULT_BWRAP_PATH, args: bwrapProbeArguments(resolveBashPath('linux', { isExecutable: nodeShellHost().isExecutable, env: process.env })) }]);
+    expect(calls).toEqual([{ file: DEFAULT_BWRAP_PATH, args: bwrapProbeArguments(resolveBashPathNow('linux', { isExecutable: executableCheckNowOn(nodeFileSystemSync), env: process.env })) }]);
   });
 
   it('on linux it reports bubblewrap unusable with the stderr of bwrap', () => {

@@ -46,7 +46,7 @@ const settingsOf = (random: Random): Record<string, unknown> => {
   };
 };
 
-const viewsOf = async (home: Home): Promise<View[]> => [...((await loadUserSettings({ home: home.tree.home })).settings.models as unknown as { views: readonly View[] }).views];
+const viewsOf = async (home: Home): Promise<View[]> => [...((await loadUserSettings({ home: home.tree.home, signal: new AbortController().signal })).settings.models as unknown as { views: readonly View[] }).views];
 
 const operationOf = (random: Random, views: readonly View[]): Operation => {
   const canons = [...views.map((view) => view.canon), NO_MODEL];

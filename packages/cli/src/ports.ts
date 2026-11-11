@@ -27,7 +27,9 @@ export type SelfExecutable =
 
 export type Sink = { write(text: string): void };
 
-export type AcpStdio = { input: ReadableStream<Uint8Array>; output: WritableStream<Uint8Array> };
+export type AcpInput = { take(): Uint8Array | undefined; arrival(): Promise<'bytes' | 'end'> };
+
+export type AcpStdio = { input: AcpInput; output: WritableStream<Uint8Array> };
 
 export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream };
 

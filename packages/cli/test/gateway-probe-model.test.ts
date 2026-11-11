@@ -7,8 +7,8 @@ import type { CliPorts } from '../src/ports.ts';
 import { S3, homeWith, threeModels } from './models-shell-harness.ts';
 
 describe('momonga gateway probe <model>', () => {
-  it('resolves what a person types by the typed rule, the display name included', (context) => {
-    const { resolved } = loadUserModels({ home: homeWith(context, threeModels()).home });
+  it('resolves what a person types by the typed rule, the display name included', async (context) => {
+    const { resolved } = await loadUserModels({ home: homeWith(context, threeModels()).home, signal: new AbortController().signal });
 
     expect(probeSubjectOf(resolved, 'ollama/gemma-3-4b')).toMatchObject({ canon: 'ollama/gemma-3-4b:latest', display: 'ollama/gemma-3-4b' });
     expect(probeSubjectOf(resolved, 'qwen3.8:27b')).toMatchObject({ canon: 'ollama/qwen3.8:27b', display: 'qwen3.8:27b' });

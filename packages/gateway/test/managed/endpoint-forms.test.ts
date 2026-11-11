@@ -54,7 +54,7 @@ describe.skipIf(process.platform === 'win32')('a server declared in the user set
     const home = makeHome();
     writeSettings(home, declaring(undefined));
 
-    const { settings } = await loadUserSettings({ home });
+    const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
 
     expect(registeredServer(settings.models.servers, 'loom')?.endpoint).toEqual({ forms: ['unix'] });
   });
@@ -63,7 +63,7 @@ describe.skipIf(process.platform === 'win32')('a server declared in the user set
     const home = makeHome();
     writeSettings(home, declaring({ forms: ['pipe', 'unix'] }));
 
-    const { settings } = await loadUserSettings({ home });
+    const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
 
     expect(registeredServer(settings.models.servers, 'loom')?.endpoint).toEqual({ forms: ['pipe', 'unix'] });
   });
@@ -73,7 +73,7 @@ describe.skipIf(process.platform === 'win32')('a server declared in the user set
     writeSettings(home, declaring({ forms: ['pipe'] }));
     const file = fs.realpathSync(path.join(home, '.momonga', 'settings.json'));
 
-    const refusal = await loadUserSettings({ home }).catch((error: unknown) => error);
+    const refusal = await loadUserSettings({ home, signal: new AbortController().signal }).catch((error: unknown) => error);
 
     expect(refusal).toBeInstanceOf(ConfigError);
     expect((refusal as Error).message).toContain(`${file}: models.connections[0]: server "loom" accepts only the endpoint forms [pipe], and this host offers [unix]; the target cannot be used on this platform`);
@@ -83,6 +83,6 @@ describe.skipIf(process.platform === 'win32')('a server declared in the user set
     const home = makeHome();
     writeSettings(home, declaring({ forms: ['tcp'] }));
 
-    expect(await loadUserSettings({ home }).catch((error: unknown) => error)).toBeInstanceOf(ConfigError);
+    expect(await loadUserSettings({ home, signal: new AbortController().signal }).catch((error: unknown) => error)).toBeInstanceOf(ConfigError);
   });
 });

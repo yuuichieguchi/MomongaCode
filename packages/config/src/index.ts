@@ -1,7 +1,7 @@
 export { editUserSettings } from './edit-user-settings.ts';
 export { editProjectMandate } from './edit-project-file.ts';
 export type { EditProjectMandateOptions, ProjectMandateEdit } from './edit-project-file.ts';
-export type { EditUserSettingsOptions } from './edit-user-settings.ts';
+export type { EditUserSettingsOptions, SettingsEdit } from './edit-user-settings.ts';
 export { settingsFileLock, settingsWriterPorts } from './file-lock.ts';
 export type { SettingsFileLockOptions, SettingsLockPort, SettingsWriterOptions, SettingsWriterPorts } from './file-lock.ts';
 export { MODELS_SETTING_WRITERS, ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, planModelsEdit, serverNameFromCommand, settableFieldPath } from './models-writers.ts';
@@ -49,7 +49,7 @@ export type { CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_THEMES } from './settings-schema.ts';
 export { editSettings, readSettingsSnapshot } from './edit-settings.ts';
-export type { EditSettingsOptions, SettingsLayer, SettingsLayerView, SettingsOperation, SettingsPath, SettingsPlace, SettingsSnapshot } from './edit-settings.ts';
+export type { EditSettingsOptions, SettingsLayer, SettingsLayerView, SettingsOperation, SettingsPath, SettingsPlace, SettingsSnapshot, SettingsSnapshotRequest } from './edit-settings.ts';
 export { writeTuiSetting } from './tui-settings.ts';
 export { defaultTuiSettings } from './settings.ts';
 export { connectionAddressProblem, endpointKeyOf, probeRecordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
@@ -64,8 +64,8 @@ export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProf
 export type { PlanProfiles, ResolveModelsOptions, ResolvedConnection, ResolvedModel, ResolvedModels } from './models.ts';
 export { firstOfferedEndpointForm, registeredIds, registeredServer, registeredServers, requireOfferedEndpointForm, serverRegistryOf } from './server-registry.ts';
 export type { ServerRegistry } from './server-registry.ts';
-export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, stopValuesOfSettings, userSettingsChangeKey } from './user-settings.ts';
-export type { LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot } from './user-settings.ts';
+export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, readUserStopValuesOrDefault, stopValuesOfSettings, userSettingsChangeKey, userSettingsOfText } from './user-settings.ts';
+export type { AppliedRecordPorts, LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot, UserStopValuesOptions } from './user-settings.ts';
 export type { GatewayStopValues, LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
 export { mcpServerNameProblem, mcpServerUrlProblem, mcpServerUrlProblemOf } from './mcp-server-rules.ts';

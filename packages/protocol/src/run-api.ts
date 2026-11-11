@@ -1326,6 +1326,10 @@ export const DAEMON_CURRENT_EVENT = 'daemon.current';
 
 export type DaemonCurrentFrame = { generation: number; version: string };
 
+export const STREAM_FAILED_EVENT = 'stream.failed';
+
+export type StreamFailedFrame = { code: string; message: string };
+
 const planLabel: JsonSchema = { type: 'string', pattern: PLAN_LABEL_PATTERN };
 
 const planAccountRef = closed({ profile: planLabel, account: planLabel }, ['profile']);

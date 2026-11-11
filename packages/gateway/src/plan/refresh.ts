@@ -4,6 +4,7 @@ import { readTextLimited } from '../adapters/shared/body-reading.ts';
 import { nextWait } from '../core/retry.ts';
 import type { WaitPolicy } from '../core/retry.ts';
 import { PLAN_SESSION_DEFAULTS } from '../defaults.ts';
+import { SUCCESS_STATUS } from './http-status.ts';
 import { OAUTH_INVALID_GRANT } from './oauth-wire.ts';
 
 export type PlanFetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -28,6 +29,8 @@ export type SendOutcome = { kind: 'answered'; status: number; headers: Headers; 
 
 const EMPTY_BODY: AsyncIterable<Uint8Array> = { [Symbol.asyncIterator]: async function* () {} };
 
+export const responseBytes = (response: Response): AsyncIterable<Uint8Array> => response.body ?? EMPTY_BODY;
+
 export const lazyRefreshMarginMs = (lifetimeMs: number): number => Math.min(PLAN_SESSION_DEFAULTS.marginMs, Math.max(PLAN_SESSION_DEFAULTS.skewMs, Math.floor(lifetimeMs / 2)));
 
 export type BoundedSendPorts = { fetch: PlanFetch; sleep: PlanSleep };
@@ -44,7 +47,7 @@ export const boundedSend = async (ports: BoundedSendPorts, url: string, init: Re
   );
   const sent = (async (): Promise<SendOutcome> => {
     const response = await ports.fetch(url, { ...init, redirect: 'manual', signal: fetchControl.signal });
-    const read = await readTextLimited((response.body as AsyncIterable<Uint8Array> | null) ?? EMPTY_BODY, maxBytes);
+    const read = await readTextLimited(responseBytes(response), maxBytes);
     return { kind: 'answered', status: response.status, headers: response.headers, body: read.text, truncated: read.truncated };
   })().catch((): SendOutcome => ({ kind: 'unanswered' }));
   const outcome = await Promise.race([sent, bound.then((): SendOutcome => ({ kind: 'unanswered' }))]);
@@ -58,23 +61,42 @@ const scopesOf = (scope: string): string[] => scope.split(' ').filter((entry) =>
 
 export const grantsScope = (scope: string, wanted: string): boolean => scopesOf(scope).includes(wanted);
 
-export const tokenResponseProblem = (body: unknown, { refreshRequired }: { refreshRequired: boolean }): string | undefined => {
-  if (!isRecord(body)) return 'the token response is not a JSON object';
-  if (typeof body['access_token'] !== 'string' || body['access_token'] === '') return 'the token response has no access token';
-  if (body['token_type'] !== 'Bearer') return 'the token response is not a Bearer token';
-  if (typeof body['scope'] !== 'string') return 'the token response has no granted scope';
-  const expiresIn = body['expires_in'];
-  if (typeof expiresIn !== 'number' || !Number.isInteger(expiresIn) || expiresIn <= 0) return 'the token response has no positive integer expires_in';
-  if (refreshRequired && (typeof body['refresh_token'] !== 'string' || body['refresh_token'] === '')) return 'the token response has no refresh token';
-  if (body['refresh_token'] !== undefined && (typeof body['refresh_token'] !== 'string' || body['refresh_token'] === '')) return 'the token response has a malformed refresh token';
-  if (body['id_token'] !== undefined && typeof body['id_token'] !== 'string') return 'the token response has a malformed ID token';
-  if (body['earliest_refresh_at'] !== undefined && typeof body['earliest_refresh_at'] !== 'string') return 'the token response has a malformed earliest_refresh_at';
-  return undefined;
+export type RefreshTokens = Omit<PlanTokenResponse, 'refresh_token'> & { refresh_token?: string };
+
+export type TokenResponseReading = { tokens: RefreshTokens } | { problem: string };
+
+const nonEmptyText = (value: unknown): value is string => typeof value === 'string' && value !== '';
+
+export const tokenResponseOf = (body: unknown, { refreshRequired }: { refreshRequired: boolean }): TokenResponseReading => {
+  if (!isRecord(body)) return { problem: 'the token response is not a JSON object' };
+  const { access_token: accessToken, token_type: tokenType, scope, expires_in: expiresIn, refresh_token: refreshToken, id_token: idToken, earliest_refresh_at: earliestRefreshAt } = body;
+  if (!nonEmptyText(accessToken)) return { problem: 'the token response has no access token' };
+  if (tokenType !== 'Bearer') return { problem: 'the token response is not a Bearer token' };
+  if (typeof scope !== 'string') return { problem: 'the token response has no granted scope' };
+  if (typeof expiresIn !== 'number' || !Number.isInteger(expiresIn) || expiresIn <= 0) return { problem: 'the token response has no positive integer expires_in' };
+  if (refreshRequired && !nonEmptyText(refreshToken)) return { problem: 'the token response has no refresh token' };
+  if (refreshToken !== undefined && !nonEmptyText(refreshToken)) return { problem: 'the token response has a malformed refresh token' };
+  if (idToken !== undefined && typeof idToken !== 'string') return { problem: 'the token response has a malformed ID token' };
+  if (earliestRefreshAt !== undefined && typeof earliestRefreshAt !== 'string') return { problem: 'the token response has a malformed earliest_refresh_at' };
+  return {
+    tokens: {
+      access_token: accessToken,
+      token_type: tokenType,
+      expires_in: expiresIn,
+      scope,
+      ...(refreshToken === undefined ? {} : { refresh_token: refreshToken }),
+      ...(idToken === undefined ? {} : { id_token: idToken }),
+      ...(earliestRefreshAt === undefined ? {} : { earliest_refresh_at: earliestRefreshAt }),
+    },
+  };
+};
+
+export const tokenResponseProblem = (body: unknown, requirement: { refreshRequired: boolean }): string | undefined => {
+  const reading = tokenResponseOf(body, requirement);
+  return 'problem' in reading ? reading.problem : undefined;
 };
 
 export const refreshRequiredFor = (scope: string): boolean => grantsScope(scope, 'offline_access');
-
-export type RefreshTokens = Omit<PlanTokenResponse, 'refresh_token'> & { refresh_token?: string };
 
 export type RefreshAnswer =
   | { kind: 'adopted'; tokens: RefreshTokens }
@@ -88,8 +110,6 @@ const REFRESH_ERROR_CLASSES: ReadonlyMap<string, ErrorClass> = new Map<string, E
   ...PLAN_TERMINAL_REFRESH_CODES.map((code): [string, ErrorClass] => [code, 'terminal']),
   ...PLAN_CONFIGURATION_REFRESH_CODES.map((code): [string, ErrorClass] => [code, 'configuration']),
 ]);
-
-const SUCCESS_STATUS = 200;
 
 export const answeredForResend = (outcome: SendOutcome): boolean => outcome.kind === 'answered' && outcome.status === SUCCESS_STATUS;
 
@@ -107,7 +127,8 @@ export const classifyRefreshAnswer = (outcome: SendOutcome, nowMs: number): Refr
   if (outcome.kind === 'unanswered') return { kind: 'transient', resend };
   const body = outcome.truncated ? undefined : parsedBody(outcome.body);
   if (outcome.status === SUCCESS_STATUS) {
-    return tokenResponseProblem(body, { refreshRequired: false }) === undefined ? { kind: 'adopted', tokens: body as RefreshTokens } : { kind: 'transient', resend };
+    const reading = tokenResponseOf(body, { refreshRequired: false });
+    return 'tokens' in reading ? { kind: 'adopted', tokens: reading.tokens } : { kind: 'transient', resend };
   }
   const code = isRecord(body) && typeof body['error'] === 'string' ? body['error'] : undefined;
   const errorClass = code === undefined ? undefined : REFRESH_ERROR_CLASSES.get(code);

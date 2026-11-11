@@ -1,8 +1,11 @@
-import { createHostFilesystem, createHostGlobExpander, nodeGlobPorts, resolveBashPath } from '@momonga/policy';
-import type { GlobExpander, GlobPorts, PolicyHostFilesystem, ShellPorts } from '@momonga/policy';
-import { nodeShellPorts } from './builtins/shell.ts';
+import { createHostFilesystem, createHostGlobExpander } from '@momonga/policy';
+import type { GlobExpander, PolicyHostFilesystem } from '@momonga/policy';
+import { resolveBashPath } from './builtins/shell.ts';
+import type { ShellPorts } from './builtins/shell.ts';
+import type { ChildPorts } from './ports.ts';
 
-export const createGlobExpander = (platform: NodeJS.Platform, shellPorts: ShellPorts, ports: GlobPorts): GlobExpander => createHostGlobExpander(() => resolveBashPath(platform, shellPorts), ports);
+export const createGlobExpander = (platform: NodeJS.Platform, shellPorts: ShellPorts, ports: ChildPorts): GlobExpander =>
+  createHostGlobExpander(() => resolveBashPath(platform, shellPorts), shellPorts.env, ports);
 
-export const createPolicyFilesystem = (platform: NodeJS.Platform = process.platform, shellPorts: ShellPorts = nodeShellPorts(), globPorts: GlobPorts = nodeGlobPorts()): PolicyHostFilesystem =>
-  createHostFilesystem(platform, () => resolveBashPath(platform, shellPorts), globPorts);
+export const policyFilesystemOn = (platform: NodeJS.Platform, shellPorts: ShellPorts, childPorts: ChildPorts): PolicyHostFilesystem =>
+  createHostFilesystem(platform, () => resolveBashPath(platform, shellPorts), shellPorts.env, childPorts);

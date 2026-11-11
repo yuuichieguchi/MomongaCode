@@ -22,7 +22,8 @@ import type { ResolvedInput } from './input.ts';
 import { modelCostOf, pricingFieldsOf } from './model-cost.ts';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan } from './attempt-span.ts';
-import { errorTypeOf, messageOf } from './respond.ts';
+import { describeError } from './describe-error.ts';
+import { errorTypeOf } from './respond.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
@@ -304,7 +305,7 @@ const compactOnce = async (
       startedAtMs: services.clock.now(),
       request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
-  const failSpan = (span: AttemptSpan, failure: unknown): void => span.fail(errorTypeOf(failure), failure, messageOf(failure));
+  const failSpan = (span: AttemptSpan, failure: unknown): void => span.fail(errorTypeOf(failure), failure, describeError(failure));
   const outcome = await callTargets(services, supporting, narrowed, signal, deadlineAt, async (target, attemptNumber, guarded) => {
     const compact = target.adapter.compact;
     if (compact === undefined) throw new TypeError(`model "${target.display}" lost its compact capability`);

@@ -120,11 +120,11 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
     },
     copyProbeRecord: async (source, paths, command) => {
       const from = (await pathsOf(ports)).probe;
-      await withinCommandLimit(command, (signal) => copyProbeRecord(ports.files, from, paths.probe, source, loadUserModels({ home: ports.home }).resolved.servers, ports.platform, signal));
+      await withinCommandLimit(command, async (signal) => copyProbeRecord(ports.files, from, paths.probe, source, (await loadUserModels({ home: ports.home, signal })).resolved.servers, ports.platform, signal));
     },
     listRoots: () => listEvalRoots(ports.files, shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : ports.process.uid()),
     readOwner: (root) => readEvalOwner(ports.files, root),
-    sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),
+    sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }, ports.interrupt),
     makeRoot: () => roots.make(),
     prepare: (paths) => ensureMomongaDirs(paths),
     writeFile: async (file, text) => {

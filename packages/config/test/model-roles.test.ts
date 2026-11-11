@@ -56,7 +56,7 @@ describe('models.roles in user settings', () => {
   it('guards the same roles reaching the CLI: loadUserModels carries them', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { models: { connections: CONNECTIONS, roles: { analysis: 'little' } } });
-    expect(loadUserModels({ home: tree.home }).resolved.roles).toEqual({ analysis: LITTLE });
+    expect((await loadUserModels({ home: tree.home, signal: new AbortController().signal })).resolved.roles).toEqual({ analysis: LITTLE });
   });
 
   it.each(['compaction', 'reflection', 'analysis'])('guards a call sent to nowhere: %s naming a model that is not configured is refused with the sentence of its key', async (role) => {

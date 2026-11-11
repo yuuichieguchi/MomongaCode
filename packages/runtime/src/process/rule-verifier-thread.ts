@@ -66,7 +66,7 @@ export const runRuleVerifyJob = async (job: RuleVerifyJob, { signal, clock }: { 
   try {
     const report = await verifier.verifyPermissions(engine.api, {
       ...job.input,
-      fs: createHostFilesystem(job.platform, () => bashPathOf(job), nodeGlobPorts()),
+      fs: createHostFilesystem(job.platform, () => bashPathOf(job), process.env, nodeGlobPorts()),
       budgetMs: job.budgetMs,
       signal,
       clock,

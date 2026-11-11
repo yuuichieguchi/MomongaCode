@@ -11,7 +11,7 @@ const configFor = async (spec: ModelSettingsSpec) => {
   const home = makeDir();
   fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify(modelSettings(spec)), { mode: 0o600 });
-  const { settings } = await loadUserSettings({ home });
+  const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
   return gatewayConfigOf(settings.models).models;
 };
 

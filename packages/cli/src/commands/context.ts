@@ -150,7 +150,7 @@ export const contextImprove = async (
     const limits = { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs };
     const reflection = { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS };
     const codeDigest = await codeDigestOfRunningProcess();
-    const models = shellModelsOf(ports);
+    const models = await shellModelsOf(ports, options.interrupt);
     const pinned = pinnedModelOf(models, options.model);
     const analysis = await analysisModelFor({ roles: models.resolved.roles, model: pinned, capabilitiesOf: async (model) => {
         const capabilities = await gatewayInfo.capabilitiesOf(model);

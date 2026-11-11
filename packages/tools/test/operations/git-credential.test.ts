@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { execFile } from '@momonga/testkit/child-process';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeGitHttp } from '@momonga/testkit';
 import type { FakeGitHttp } from '@momonga/testkit';
+import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import { createForgeAccess, loadForgeDescriptors, openGitCredentialChannel } from '@momonga/tools';
 import type { ForgeAccess } from '@momonga/tools';
 import { mintServerCertificate } from '../../../cli/test/minted-certificates.ts';
@@ -97,7 +98,7 @@ const ask = (env: Readonly<Record<string, string>>, prompt: string): Promise<{ c
 
 describe('the credential channel of a git child', () => {
   const open = async () => {
-    const channel = await openGitCredentialChannel([{ host: 'forge.example', username: 'x-access-token', password: CREDENTIAL }], { root: os.tmpdir() });
+    const channel = await openGitCredentialChannel([{ host: 'forge.example', username: 'x-access-token', password: CREDENTIAL }], { root: os.tmpdir(), random: systemRandom, files: nodeFileSystem });
     onCleanup(() => channel.close());
     const env = channel.environment({ PATH: process.env['PATH'] ?? '/usr/bin:/bin', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.pager', GIT_CONFIG_VALUE_0: 'cat' });
     return { channel, env };

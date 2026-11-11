@@ -1,4 +1,4 @@
-import { HELPER_COMMAND, nodeEntryIo } from '@momonga/foundation';
+import { HELPER_COMMAND, guardStandardStreams, nodeEntryIo } from '@momonga/foundation';
 import type { ExecutableHelpers } from '@momonga/foundation';
 import { daemonEntries } from './daemon/entries.ts';
 import { helperCallOf } from './helper-mode.ts';
@@ -12,16 +12,16 @@ import type { UpdateWiring } from './update/background.ts';
 import { nodeUpdateWiring } from './update/wiring.ts';
 import { nodePolicyVerifyHost } from './verify/host.ts';
 
-const entryIo = (args: readonly string[]): ReturnType<typeof nodeEntryIo> => ({ ...nodeEntryIo(), argv: [...args] });
-
 const registeredHelpers = async (): Promise<ExecutableHelpers> => (await import('@momonga/tools/executable-helpers')).executableHelpers;
 
 export const runMain = async (version: string, overrides: Partial<CliPorts> = {}, helpers: () => Promise<ExecutableHelpers> = registeredHelpers): Promise<void> => {
   const interrupt = new AbortController();
-  process.once('SIGINT', () => interrupt.abort());
+  process.on('SIGINT', () => interrupt.abort());
+  const streams = guardStandardStreams(process);
+  const entryIo = (args: readonly string[]): ReturnType<typeof nodeEntryIo> => ({ ...nodeEntryIo(process, streams), argv: [...args] });
 
   try {
-    const ports: CliPorts = { ...nodePorts(version, interrupt.signal), ...overrides };
+    const ports: CliPorts = { ...nodePorts(version, interrupt.signal, streams), ...overrides };
     const given = ports.handover === undefined ? process.argv.slice(2) : [...ports.handover.args];
     const helperCall = helperCallOf(given);
     let update: UpdateWiring | undefined;
@@ -40,6 +40,6 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     program.hook('preAction', () => provideEmbeddedWindowsKeeper(ports));
     await program.parseAsync(helperCall === undefined ? given : [HELPER_COMMAND], { from: 'user' });
   } catch (error) {
-    process.exitCode = exitOfFailure(error, terminalSink(() => process.stderr));
+    process.exitCode = exitOfFailure(error, terminalSink(() => streams.stderr), interrupt.signal);
   }
 };

@@ -1,17 +1,35 @@
-import fs from 'node:fs';
-import type { ShellHost, ShellPorts } from '@momonga/policy';
+import type { FileSystem, FileSystemSync } from '@momonga/foundation';
+import type { ExecutableCheck, ShellPortsNow } from '@momonga/policy';
+import type { ChildPorts } from '../ports.ts';
 
-export const nodeShellPorts = (): ShellPorts => ({
-  isExecutable: (file) => {
+export { ShellNotFoundError, resolveBashPath, resolveBashPathNow } from '@momonga/policy';
+export type { ExecutableCheck, ShellPorts, ShellPortsNow } from '@momonga/policy';
+
+export type ShellHost = { platform: NodeJS.Platform; isExecutable: ExecutableCheck; child: ChildPorts };
+
+const absentOrThrown = (error: unknown): false => {
+  if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+  throw error;
+};
+
+export const executableCheckOn =
+  (files: Pick<FileSystem, 'access' | 'stat'>): ExecutableCheck =>
+  async (file) => {
     try {
-      fs.accessSync(file, fs.constants.X_OK);
-      return fs.statSync(file).isFile();
+      await files.access(file, 'execute');
+      return (await files.stat(file)).isFile();
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-      throw error;
+      return absentOrThrown(error);
     }
-  },
-  env: process.env,
-});
+  };
 
-export const nodeShellHost = (): ShellHost => ({ platform: process.platform, isExecutable: nodeShellPorts().isExecutable });
+export const executableCheckNowOn =
+  (files: Pick<FileSystemSync, 'accessSync' | 'statSync'>): ShellPortsNow['isExecutable'] =>
+  (file) => {
+    try {
+      files.accessSync(file, 'execute');
+      return files.statSync(file).isFile();
+    } catch (error) {
+      return absentOrThrown(error);
+    }
+  };

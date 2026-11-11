@@ -82,6 +82,31 @@ describe('PlanCredential.tla against plan-constants.json', () => {
   });
 });
 
+describe('PlanCredential.tla against the sign-out resume of the plan session', () => {
+  const session = fs.readFileSync(path.join(root, 'packages', 'gateway', 'src', 'plan', 'session.ts'), 'utf8');
+
+  const RESUME_ROWS = [
+    { model: 'SoAbort', defined: /^SoAbort\(a\) ==$/m, code: 'unloadForResume', what: 'a sign-out that ends without the cleared record drops the memory copy' },
+    { model: 'SoReload', defined: /^SoReload\(a\) ==$/m, code: 'resumeSignOut', what: 'a record read as signing_out schedules the resumed sign-out' },
+    { model: 'SigningOutResolves', defined: /^SigningOutResolves ==/m, code: 'unfinishedSignOutOf', what: 'the resumed sign-out acts on the record it finds under the lock' },
+  ] as const;
+
+  it.each(RESUME_ROWS)('$model is defined in the model and $code in the session: $what', ({ defined, code }) => {
+    expect(credentialSpec).toMatch(defined);
+    expect(session).toMatch(new RegExp(`\\b(?:const|function) ${code}\\b`));
+  });
+
+  it('the resumed sign-out asks the in-lock check before it sends or writes anything', () => {
+    const body = /const signOutWith = [\s\S]*?\n {2}const runSignOut = /.exec(session)?.[0] ?? '';
+    expect(body).toMatch(/unfinishedSignOutOf\(account\)/);
+    expect(body.indexOf('unfinishedSignOutOf(account)')).toBeLessThan(body.indexOf('signOutUnderLock('));
+  });
+
+  it('every record that enters memory from the store schedules the resume in one place', () => {
+    expect([...session.matchAll(/resumeSignOut\(account\)/g)]).toHaveLength(1);
+  });
+});
+
 describe('PlanSignIn.tla against plan-constants.json', () => {
   const constants = readConstants();
 

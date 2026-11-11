@@ -48,7 +48,7 @@ describe('loadSettings with the core areas on by default (design core-on 1, test
   it('turns off exactly the keys a user layer turns off', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { context: { outputFormatters: [], cachePrefix: false }, memory: { reflection: { enabled: false } } });
-    const { settings } = await loadUserSettings({ home: tree.home });
+    const { settings } = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     expect(settings.context).toEqual({ ...ON_CONTEXT, outputFormatters: [], cachePrefix: false });
     expect(settings.tools).toEqual(ON_TOOLS);
     expect(settings.memory).toEqual({ ...ON_MEMORY, reflection: { enabled: false } });

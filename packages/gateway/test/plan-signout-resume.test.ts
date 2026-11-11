@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CONDITION_WAIT, PROFILE_ID, errno, failingWrites, readRecord, signedIn, startHarness, writeSigningOut } from './plan-support.ts';
-import type { Harness } from './plan-support.ts';
+import { CONDITION_WAIT, PROFILE_ID, errno, failingWrites, holdingOneWrite, readRecord, signInAtFake, signedIn, startHarness, writeSigningOut } from './plan-support.ts';
+import type { FakeSignIn, Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
 
@@ -110,5 +110,62 @@ describe('a sign-out that ends without the cleared record is resumed at the next
     h.failNextOutbound(new Error('d5 down'));
     await h.reopen({ accounts: [work] });
     await vi.waitFor(() => expect(signOutEnds(h)).toEqual(['failed', 'interrupted']), CONDITION_WAIT);
+  });
+});
+
+const REVOKE_PATH = '/api/accounts/oauth/revoke';
+
+const revokedTokens = (h: Harness): Array<string | undefined> => h.auth.records.filter((record) => record.path === REVOKE_PATH).map((record) => record.form['token']);
+
+type Overtaken = { again: FakeSignIn; release(): void; resumedHasAsked(): Promise<void> };
+
+const signInOverTheUnfinishedSignOut = async (h: Harness): Promise<Overtaken> => {
+  const first = await signedIn(h, 'work');
+  await writeSigningOut(h, 'work');
+  const resumed = h.delayNextOutbound();
+  const counted = holdingOneWrite(h.store, () => false);
+  await h.reopen({ accounts: [work], store: counted.store });
+  await resumed.reached;
+  const again = await signInAtFake(h, { clientId: first.clientId });
+  const installed = await h.sessions.install(
+    { profile: PROFILE_ID, account: 'work', clientId: again.clientId, hostId: again.hostId, subject: again.subject, email: again.email, idToken: again.idToken, tokens: again.tokens },
+    signal(),
+  );
+  expect(installed).toMatchObject({ outcome: 'signed_in' });
+  const before = counted.lockRequests();
+  return {
+    again,
+    release: resumed.release,
+    resumedHasAsked: async () => {
+      await vi.waitFor(() => expect(counted.lockRequests()).toBeGreaterThan(before), CONDITION_WAIT);
+    },
+  };
+};
+
+describe('a resumed sign-out acts only on the record it finds under the lock (F15)', () => {
+  it('a resumed sign-out that finds the sign-in completed meanwhile sends nothing, changes nothing and writes no event', async () => {
+    const h = await harness();
+    const { again, release, resumedHasAsked } = await signInOverTheUnfinishedSignOut(h);
+    release();
+    await resumedHasAsked();
+    await h.sessions.authSource(work).resume(signal());
+    expect(revokedTokens(h)).toEqual([]);
+    expect(await readRecord(h, 'work')).toMatchObject({ state: 'active', access_token: again.tokens.access_token, refresh_token: again.tokens.refresh_token });
+    expect(h.sessions.authSource(work).status().state).toBe('active');
+    expect(signOutEnds(h)).toEqual([]);
+    expect(h.warnings.filter((warning) => warning.includes('did not finish'))).toEqual([]);
+  });
+
+  it('a sign-out asked for while the resumed one waits signs the new sign-in out itself when the resumed one finds nothing to finish', async () => {
+    const h = await harness();
+    const { again, release } = await signInOverTheUnfinishedSignOut(h);
+    const asked = h.sessions.signOut(work, signal());
+    release();
+    expect(await asked).toEqual({ revocation: 'confirmed', usageUrl: h.profile.usageUrl });
+    expect(revokedTokens(h)).toEqual([again.tokens.refresh_token]);
+    expect(await stateOf(h)).toBe('registered');
+    expect(h.events.filter((event) => event.name === 'plan.sign_out').map((event) => event.data)).toEqual([
+      { profile: PROFILE_ID, account: 'work', resumed: false, end: 'cleared', revocation: 'confirmed' },
+    ]);
   });
 });

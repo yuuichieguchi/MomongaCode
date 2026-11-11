@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
 import { groupRecordOutcome, hostEntryProblem, normalizedHosts, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
@@ -13,8 +12,8 @@ import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { describeJobStatus } from './jobs.ts';
 import { openGrantedNetwork } from './network-egress.ts';
 import { canonicalDirectories, insideAny, shownPath } from './paths.ts';
-import { resolveBashPath } from '@momonga/policy';
-import { nodeShellPorts } from './shell.ts';
+import { resolveBashPath } from './shell.ts';
+import type { ShellHost } from './shell.ts';
 
 type BashInput = { command: string; timeout?: number; description?: string; run_in_background?: boolean; network?: NetworkRequest };
 
@@ -23,6 +22,7 @@ export const MAX_TIMEOUT_MS = 600_000;
 export const DEFAULT_BACKGROUND_TIMEOUT_MS = 1_800_000;
 export const MAX_BACKGROUND_TIMEOUT_MS = 7_200_000;
 const TITLE_CHARS = 80;
+const CWD_NONCE_BYTES = 16;
 const trapScript = (nonce: string): string =>
   `trap 'status=$?; printf "\\n__MOMONGA_CWD_${nonce}__=%s\\n" "$(pwd -P)"; exit $status' EXIT`;
 
@@ -37,7 +37,7 @@ const extractCwd = (output: string, nonce: string): { output: string; cwd: strin
   return { output: output.slice(0, removeFrom) + output.slice(removeTo), cwd };
 };
 
-const bashPathFor = (env: Readonly<Record<string, string>>): string => resolveBashPath(process.platform, { ...nodeShellPorts(), env });
+const bashPathFor = (shellHost: ShellHost, env: Readonly<Record<string, string>>): Promise<string> => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env });
 
 const bashEnvOf = (env: Readonly<Record<string, string>>): Record<string, string> => ({ ...env, CDPATH: '', GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' });
 
@@ -55,8 +55,30 @@ const requireJobs = (ctx: ReconcileContext): BackgroundJobs => {
   return ctx.jobs;
 };
 
+const withLateChunk = async function* (stream: AsyncIterable<Uint8Array>, late: Promise<Uint8Array | undefined>): AsyncGenerator<Uint8Array> {
+  const chunks = stream[Symbol.asyncIterator]();
+  let awaited: Promise<{ late: Uint8Array | undefined }> | undefined = late.then((chunk) => ({ late: chunk }));
+  let next = chunks.next();
+  for (;;) {
+    const first = await (awaited === undefined ? next : Promise.race([next, awaited]));
+    if ('late' in first) {
+      awaited = undefined;
+      if (first.late !== undefined) yield first.late;
+    } else if (first.done === true) {
+      break;
+    } else {
+      yield first.value;
+      next = chunks.next();
+    }
+  }
+  if (awaited === undefined) return;
+  const last = (await awaited).late;
+  if (last !== undefined) yield last;
+};
+
 const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<ToolResult> => {
   const jobs = requireJobs(ctx);
+  const bash = await bashPathFor(ctx.shellHost, ctx.env);
   const network = await openGrantedNetwork(ctx);
   let jobId: string;
   try {
@@ -69,7 +91,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
       spawn: async (markerFile, signal, markerFd) => {
         const child = await ctx.sandbox.spawn(
           {
-            argv: [bashPathFor(ctx.env), '-c', input.command],
+            argv: [bash, '-c', input.command],
             cwd: ctx.session.cwd,
             env: bashEnvOf(network.env),
             markerFile,
@@ -79,12 +101,18 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
           signal,
           markerFd === undefined ? {} : { markerFd },
         );
-        return {
-          ...child,
-          exited: child.exited.finally(async () => {
+        const settled = child.exited.then(
+          async (exit) => ({ exit, refusals: await network.settle() }),
+          async (error: unknown) => {
             await network.settle();
-          }),
-        };
+            throw error;
+          },
+        );
+        const refusalText = settled.then(
+          ({ refusals }) => (refusals.length === 0 ? undefined : Buffer.from(`${refusals.join('\n')}\n`)),
+          () => undefined,
+        );
+        return { ...child, stderr: withLateChunk(child.stderr, refusalText), exited: settled.then(({ exit }) => exit) };
       },
     }));
   } catch (error) {
@@ -150,14 +178,14 @@ export const bashTool = defineTool<BashInput>({
   execute: async (input, ctx) => {
     if (input.run_in_background === true) return startBackgroundJob(input, ctx);
     const { file: marker, fd: markerFd, settle } = await requireSpawnMarker(ctx, 'Bash');
-    const nonce = randomBytes(16).toString('hex');
+    const nonce = ctx.random.hex(CWD_NONCE_BYTES);
     const script = `${trapScript(nonce)}\n${input.command}`;
     const network = await openGrantedNetwork(ctx);
     let child: SandboxedProcess;
     try {
       child = await ctx.sandbox.spawn(
         {
-          argv: [bashPathFor(ctx.env), '-c', script],
+          argv: [await bashPathFor(ctx.shellHost, ctx.env), '-c', script],
           cwd: ctx.session.cwd,
           env: bashEnvOf(network.env),
           markerFile: marker,
@@ -174,7 +202,7 @@ export const bashTool = defineTool<BashInput>({
     const attached = groupRecordOutcome(ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() }), marker);
 
     const capture = createCapture();
-    const pump = pumpOutput([child.stdout, child.stderr], (_index, chunk) => capture.push(chunk));
+    const pump = pumpOutput([child.stdout, child.stderr], (_index, chunk) => capture.push(chunk), ctx.shellHost.child);
     let exit: SandboxExit;
     const notes: string[] = [];
     let refusals: string[];
@@ -233,6 +261,7 @@ export type UserCommandHost = {
   command: string;
   cwd: string;
   env: Readonly<Record<string, string>>;
+  shellHost: ShellHost;
   signal: AbortSignal;
   refusal(command: string): Promise<string | undefined>;
   spawn(command: SandboxCommand, signal: AbortSignal): SandboxedProcess | Promise<SandboxedProcess>;
@@ -244,7 +273,7 @@ export type UserCommandOutcome = { kind: 'refused'; reason: string } | { kind: '
 export const runUserCommand = async (host: UserCommandHost): Promise<UserCommandOutcome> => {
   const reason = await host.refusal(host.command);
   if (reason !== undefined) return { kind: 'refused', reason };
-  const child = await host.spawn({ argv: [bashPathFor(host.env), '-c', host.command], cwd: host.cwd, env: bashEnvOf(host.env) }, host.signal);
+  const child = await host.spawn({ argv: [await bashPathFor(host.shellHost, host.env), '-c', host.command], cwd: host.cwd, env: bashEnvOf(host.env) }, host.signal);
   const capture = createCapture(USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES);
   const stdout = new StringDecoder('utf8');
   const stderr = new StringDecoder('utf8');
@@ -252,7 +281,7 @@ export const runUserCommand = async (host: UserCommandHost): Promise<UserCommand
     capture.push(chunk);
     const text = (index === 0 ? stdout : stderr).write(chunk);
     if (text !== '') host.onOutput(text);
-  });
+  }, host.shellHost.child);
   let exit: SandboxExit;
   try {
     exit = await child.exited;

@@ -22,7 +22,7 @@
   ],
   "effect": { "network": "destinations", "argv": ["git", "fetch", "-q", "--no-tags", "{input.remote}", "+refs/heads/{input.branch}:refs/remotes/{input.remote}/{input.branch}"] },
   "applied": [["after.trackingRef", "after.remoteRef"]],
-  "unchanged": [["after.trackingRef", "before.trackingRef"]],
+  "unchanged": [{ "ifObserved": "before.trackingRef", "then": [["after.trackingRef", "before.trackingRef"]], "else": [["after.trackingRef", { "literal": "" }]] }],
   "guard": "compare_and_set",
   "supersedes": [["git", "fetch"]],
   "report": "The remote-tracking branch {input.remote}/{input.branch} is at {after.trackingRef}, the commit the remote has."

@@ -13,7 +13,7 @@ export type SseOptions = {
   keepAliveMs: number;
   readerStallMs: number;
   signal: AbortSignal;
-  onError: (error: unknown) => void;
+  answer: (error: unknown) => GatewayError;
 };
 
 export const errorHintsOf = (error: GatewayError): { retry_after_ms?: number; deferred?: true } => {
@@ -32,22 +32,11 @@ export const errorEventOf = (error: GatewayError): StreamEvent => ({
   ...errorHintsOf(error),
 });
 
-export const gatewayErrorOf = (error: unknown, onError: (error: unknown) => void): GatewayError => {
-  if (error instanceof GatewayError) return error;
-  onError(error);
-  return new GatewayError({
-    status: 500,
-    type: 'server_error',
-    code: 'internal_error',
-    message: error instanceof Error ? error.message : String(error),
-  });
-};
-
 export type CompactSseOptions = {
   timers: GatewayTimers;
   keepAliveMs: number;
   signal: AbortSignal;
-  onError: (error: unknown) => void;
+  answer: (error: unknown) => GatewayError;
 };
 
 const SSE_HEADERS = { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' };
@@ -95,7 +84,7 @@ export const compactSseResponse = (work: Promise<CompactResource>, options: Comp
             end();
             return;
           }
-          conclude(frameOf(errorEventOf(gatewayErrorOf(error, options.onError))));
+          conclude(frameOf(errorEventOf(options.answer(error))));
         },
       );
     },
@@ -193,7 +182,7 @@ export const sseResponse = (first: StreamEvent | undefined, rest: AsyncIterator<
         if (!streamDone) {
           streamDone = true;
           if (!emitted && !signal.aborted && !(error instanceof ClientDisconnectedError)) {
-            controller.enqueue(frameOf(errorEventOf(gatewayErrorOf(error, options.onError))));
+            controller.enqueue(frameOf(errorEventOf(options.answer(error))));
             controller.close();
           } else {
             controller.error(error);

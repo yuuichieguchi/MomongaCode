@@ -1,8 +1,9 @@
+import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createToolExecutor } from '@momonga/tools';
+import { createToolExecutor, nodeShellHost } from '@momonga/tools';
 import type { ReconcileContext } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
@@ -11,7 +12,10 @@ import { keyFor, minimalPolicyFor } from './helpers.ts';
 const KEY = keyFor('run-1', 1, 'c1');
 
 const boundedExecutor = (harness: Harness, capMs: number, graceMs: number) =>
-  createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
+  createToolExecutor({
+    shellHost: nodeShellHost(),
+    random: systemRandom,
+    files: nodeFileSystem, outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: harness.idempotency.port,
     blobs: harness.blobs.port,
     clock: harness.clock,

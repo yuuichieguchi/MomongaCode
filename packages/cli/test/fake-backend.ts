@@ -518,7 +518,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     signInTimers: createFakeTimers(createFakeClock(0)),
     dismissedNotices: async () => ({}),
     dismissNotice: async () => undefined,
-    settings: async () => readSettingsSnapshot({ ...settingsPlace(), trusted: (options.trust?.decision ?? 'trusted') === 'trusted' }),
+    settings: async () => readSettingsSnapshot({ ...settingsPlace(), trusted: (options.trust?.decision ?? 'trusted') === 'trusted', signal: new AbortController().signal }),
     editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { signal }),
     mcpServers: async () => options.mcpServers ?? [],
     initInstruction: async () => FAKE_INIT_INSTRUCTION,

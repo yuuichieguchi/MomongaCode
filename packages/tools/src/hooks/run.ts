@@ -4,7 +4,7 @@ import type { HookCommand, HookEvent, HookExecution, HookStart, HooksSettings, P
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
-import type { ShellHost } from '@momonga/policy';
+import type { ShellHost } from '../builtins/shell.ts';
 import type { MarkerOwners } from '../marker-owners.ts';
 import { runSandboxedCommand } from '../sandboxed-command.ts';
 import { parseHookOutput } from './output.ts';
@@ -97,7 +97,7 @@ const executeHook = async (
     ...(ctx.groupPort === undefined ? {} : { groupPort: ctx.groupPort }),
     ...(ctx.owners === undefined ? {} : { owners: ctx.owners }),
   });
-  if (result.kind === 'spawn_error') throw result.error;
+  if (result.kind === 'spawn_error') return finish({ outcome: 'error', message: `the hook could not start: ${result.message}` });
   groupNotice = result.groupNotice;
   if (result.kind === 'timed_out') return finish({ outcome: 'timed_out', message: `the hook exceeded its ${timeoutMs} ms timeout` }, undefined, result.stderr);
   if (result.kind === 'cancelled') return finish({ outcome: 'cancelled' }, undefined, result.stderr);
@@ -108,12 +108,13 @@ const executeHook = async (
     if (BLOCKING_EVENTS.has(event)) return finish({ outcome: 'blocked', exitCode, decision: event === 'PreToolUse' ? 'deny' : 'block', message }, undefined, stderr);
     return finish({ outcome: 'error', exitCode, message }, undefined, stderr);
   }
+  if (exitCode !== 0) {
+    const reported = firstLine(stderr);
+    return finish({ outcome: 'error', exitCode, message: reported === '' ? `the hook exited with code ${exitCode}` : reported }, undefined, stderr);
+  }
   const parsed = parseHookOutput(event, stdout);
   if (!parsed.ok) return finish({ outcome: 'error', exitCode, message: parsed.message }, undefined, stderr);
   const output = parsed.value;
-  if (exitCode !== 0 && stdout.trim().startsWith('{') === false) {
-    return finish({ outcome: 'error', exitCode, message: firstLine(stderr) }, undefined, stderr);
-  }
   return finish(
     {
       outcome: 'success',

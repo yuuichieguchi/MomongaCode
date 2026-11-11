@@ -95,9 +95,9 @@ const adminSetup = async () => {
     logger: makeLogger(),
     report: makeReporter().report,
     settings: {
-      envFor: () => ({}),
-      admitUserSnapshot: () => {
-        const snapshot = cache.snapshot();
+      envFor: async () => ({}),
+      admitUserSnapshot: async (signal) => {
+        const snapshot = await cache.load(signal);
         if ('error' in snapshot) throw snapshot.error;
         return { settings: snapshot.settings, user: snapshot.user };
       },

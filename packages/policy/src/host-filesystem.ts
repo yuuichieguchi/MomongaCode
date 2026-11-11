@@ -3,7 +3,7 @@ import type { EventEmitter } from 'node:events';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, hostPaths, nodeFileSystem, programKeysOfConfig, someAsync, unresolvableReasonOf } from '@momonga/foundation';
-import type { ConfigPrograms, EntryRead, GitlinkRead, StepRead, Unresolved } from '@momonga/foundation';
+import type { Awaitable, ConfigPrograms, EntryRead, GitlinkRead, StepRead, Unresolved } from '@momonga/foundation';
 import { ShellNotFoundError } from './bash-path.ts';
 import type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyHostFilesystem, ProgramResolution, WritableCheck } from './filesystem.ts';
 import { systemProgramDirectories } from './platform-specs.ts';
@@ -49,10 +49,12 @@ const holderAt = async (system: readonly string[], entry: string, cwd: string, n
   };
 };
 
+const searchPathDelimiterOf = (platform: NodeJS.Platform): string => (platform === 'win32' ? path.win32.delimiter : path.posix.delimiter);
+
 const resolveProgram = (platform: NodeJS.Platform) => async (name: string, cwd: string, searchPath: string | undefined, isWritable: WritableCheck): Promise<ProgramResolution> => {
   if (searchPath === undefined) return { none: true };
   const system = systemProgramDirectories(platform);
-  const entries = searchPath.split(':');
+  const entries = searchPath.split(searchPathDelimiterOf(platform));
   let unsafeBefore = false;
   for (const [index, entry] of entries.entries()) {
     const landing = await holderAt(system, entry, cwd, name, isWritable, unsafeBefore);
@@ -164,8 +166,15 @@ const PATH_MAX_BYTES = 4096;
 const KILL_SIGNAL = 'SIGKILL';
 const DYNAMIC: GlobExpansion = { unresolvable: { kind: 'dynamic' } };
 
-const globEnvironment = (): Record<string, string> =>
-  Object.fromEntries(LOCALE_VARIABLES.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name] as string]])));
+export type GlobEnvironment = Readonly<Record<string, string | undefined>>;
+
+const globEnvironment = (env: GlobEnvironment): Record<string, string> =>
+  Object.fromEntries(
+    LOCALE_VARIABLES.flatMap((name) => {
+      const value = env[name];
+      return value === undefined ? [] : [[name, value] as const];
+    }),
+  );
 
 export type GlobChild = EventEmitter & {
   stdout: Readable | null | undefined;
@@ -175,15 +184,15 @@ export type GlobChild = EventEmitter & {
 };
 
 export type GlobPorts = {
-  spawn(file: string, args: readonly string[], options: { cwd: string; env: Record<string, string> }): GlobChild;
-  setTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout>;
-  clearTimeout(handle: ReturnType<typeof setTimeout>): void;
+  spawn(file: string, args: readonly string[], options: { cwd?: string; env: Readonly<Record<string, string>> }): GlobChild;
+  setTimeout(callback: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
 };
 
 export const nodeGlobPorts = (): GlobPorts => ({
-  spawn: (file, args, options) => spawn(file, [...args], { ...options, stdio: ['ignore', 'pipe', 'pipe'] }),
+  spawn: (file, args, { cwd, env }) => spawn(file, [...args], { env: { ...env }, stdio: ['ignore', 'pipe', 'pipe'], ...(cwd === undefined ? {} : { cwd }) }),
   setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (handle) => clearTimeout(handle),
+  clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
 });
 
 const entriesOf = (output: Buffer): string[] | undefined => {
@@ -206,7 +215,7 @@ const countSeparators = (chunk: Buffer): number => {
   return count;
 };
 
-const runGlob = (ports: GlobPorts, shell: string, pattern: string, cwd: string, limit: number, deadline: GlobDeadline, signal: AbortSignal): Promise<GlobExpansion> =>
+const runGlob = (ports: GlobPorts, env: Record<string, string>, shell: string, pattern: string, cwd: string, limit: number, deadline: GlobDeadline, signal: AbortSignal): Promise<GlobExpansion> =>
   new Promise((resolve, reject) => {
     const remaining = deadline.remainingMs();
     if (remaining <= 0 || signal.aborted) {
@@ -215,7 +224,7 @@ const runGlob = (ports: GlobPorts, shell: string, pattern: string, cwd: string, 
     }
     let child: GlobChild;
     try {
-      child = ports.spawn(shell, ['--noprofile', '--norc', '-c', GLOB_PROGRAM, 'glob', pattern], { cwd, env: globEnvironment() });
+      child = ports.spawn(shell, ['--noprofile', '--norc', '-c', GLOB_PROGRAM, 'glob', pattern], { cwd, env });
     } catch (error) {
       if (codeOf(error) === 'E2BIG') resolve(DYNAMIC);
       else reject(error);
@@ -226,7 +235,7 @@ const runGlob = (ports: GlobPorts, shell: string, pattern: string, cwd: string, 
     let separators = 0;
     let errorBytes = 0;
     let done = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: unknown;
     const abandon = (): void => {
       child.kill(KILL_SIGNAL);
       child.stdout?.destroy();
@@ -293,25 +302,25 @@ const runGlob = (ports: GlobPorts, shell: string, pattern: string, cwd: string, 
   });
 
 export const createHostGlobExpander =
-  (bashPath: () => string, ports: GlobPorts): GlobExpander =>
+  (bashPath: () => Awaitable<string>, env: GlobEnvironment, ports: GlobPorts): GlobExpander =>
   async (pattern, cwd, limit, deadline, signal) => {
     let shell: string;
     try {
-      shell = bashPath();
+      shell = await bashPath();
     } catch (error) {
       if (error instanceof ShellNotFoundError) return DYNAMIC;
       throw error;
     }
-    return runGlob(ports, shell, pattern, cwd, limit, deadline, signal);
+    return runGlob(ports, globEnvironment(env), shell, pattern, cwd, limit, deadline, signal);
   };
 
-export const createHostFilesystem = (platform: NodeJS.Platform, bashPath: () => string, globPorts: GlobPorts): PolicyHostFilesystem => ({
+export const createHostFilesystem = (platform: NodeJS.Platform, bashPath: () => Awaitable<string>, env: GlobEnvironment, globPorts: GlobPorts): PolicyHostFilesystem => ({
   platform,
   canonicalise: (absolute, signal) => hostPaths(signal).resolveCanonicalPath(absolute),
   volumeProbe: (directory, signal) => hostPaths(signal).volumeIsCaseInsensitive(directory),
   locate: (absolute, signal) => hostPaths(signal).locate(absolute),
   resolveProgram: resolveProgram(platform),
-  expandGlob: createHostGlobExpander(bashPath, globPorts),
+  expandGlob: createHostGlobExpander(bashPath, env, globPorts),
   readEntry,
   readNoFollow,
   readHead,

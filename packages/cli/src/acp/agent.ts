@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
 import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
 import { readMandate, readinessShownText } from '@momonga/protocol';
-import type { ElicitationAnswerRecord, Mandate, ModelViews, Readiness } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, Mandate, ModelViews, Readiness, SkillsResponse } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
@@ -56,7 +56,7 @@ type BridgeSession = {
   model: string;
   readonly bypassAllowed: boolean;
   readonly autoAvailable: boolean;
-  skillNames: readonly string[];
+  skills: Promise<SkillsResponse['skills']> | undefined;
   readonly queue: OrderedQueue;
   readonly tasks: TaskGroup;
   readonly background: TaskGroup;
@@ -64,7 +64,7 @@ type BridgeSession = {
   readonly pendingRequests: Map<string, AbortController>;
   readonly lifetime: AbortController;
   contextWindow: Promise<number> | undefined;
-  turn: Turn | undefined;
+  readonly turns: Set<Turn>;
 };
 
 const REQUEST_CANCELLED = -32800;
@@ -135,7 +135,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
 
   const liveSessions = (): BridgeSession[] => [...sessions.values()].filter((session) => !session.lifetime.signal.aborted);
 
-  const quiet = (): boolean => initialize !== undefined && liveSessions().every((session) => session.turn === undefined && session.pendingRequests.size === 0);
+  const quiet = (): boolean => initialize !== undefined && liveSessions().every((session) => session.turns.size === 0 && session.pendingRequests.size === 0);
 
   const peer = (): AgentConnection['client'] => {
     if (connection === undefined) throw new Error('the ACP connection is not open');
@@ -315,16 +315,32 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
       },
     });
 
+  const beginTurn = (session: BridgeSession, runId: string | undefined): Turn => {
+    const turn: Turn = { runId, cancelRequested: false };
+    session.turns.add(turn);
+    return turn;
+  };
+
+  const endTurn = (session: BridgeSession, turn: Turn): void => {
+    session.turns.delete(turn);
+    active();
+  };
+
   const replayRun = async (session: BridgeSession, run: RunView, through = run.lastSeq, mutedThrough = 0): Promise<void> => {
     const caughtUp = Promise.withResolvers<void>();
     if (through === 0) caughtUp.resolve();
-    const finished = followInto(session, run.id, through, () => caughtUp.resolve(), mutedThrough).then(
-      () => caughtUp.resolve(),
-      (error: unknown) => {
-        caughtUp.reject(error);
-        throw error;
-      },
-    );
+    const turn = isTerminalStatus(run.status) ? undefined : beginTurn(session, run.id);
+    const finished = followInto(session, run.id, through, () => caughtUp.resolve(), mutedThrough)
+      .finally(() => {
+        if (turn !== undefined) endTurn(session, turn);
+      })
+      .then(
+        () => caughtUp.resolve(),
+        (error: unknown) => {
+          caughtUp.reject(error);
+          throw error;
+        },
+      );
     session.tasks.run(async () => {
       await finished;
     });
@@ -342,7 +358,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
       model: view.model,
       bypassAllowed: view.bypassAllowed,
       autoAvailable,
-      skillNames: [],
+      skills: undefined,
       queue: createOrderedQueue(),
       tasks: createTaskGroup(failed),
       background: createTaskGroup(failed),
@@ -350,7 +366,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
       pendingRequests: new Map(),
       lifetime,
       contextWindow: undefined,
-      turn: undefined,
+      turns: new Set(),
     };
     sessions.set(view.id, session);
     session.background.run(async () => {
@@ -370,9 +386,12 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     return session;
   };
 
+  const skillsOf = (session: BridgeSession): Promise<SkillsResponse['skills']> => (session.skills ??= durably(session, () => deps.runtime.skills(session.id)).then((listed) => listed.skills));
+
+  const skillNamesOf = async (session: BridgeSession): Promise<string[]> => (await skillsOf(session)).map((skill) => skill.name);
+
   const announceCommands = async (session: BridgeSession, listing: ModelListing): Promise<void> => {
-    const { skills } = await durably(session, () => deps.runtime.skills(session.id));
-    session.skillNames = skills.map((skill) => skill.name);
+    const skills = await skillsOf(session);
     send(session, { sessionUpdate: 'available_commands_update', availableCommands: availableCommandsOf(skills) });
     for (const update of unreadableNoticeOf(session, listing)) send(session, update);
     await announceReadiness(session);
@@ -404,7 +423,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     await deps.daemonReady();
     const view = await deps.runtime.getSession(id);
     const session = register(view, await deps.autoModeAvailable());
-    session.skillNames = (await deps.runtime.skills(view.id)).skills.map((skill) => skill.name);
+    await skillsOf(session);
     for (const run of await deps.runtime.listRuns(view.id)) {
       const through = seen[run.id] ?? 0;
       if (!isTerminalStatus(run.status)) await replayRun(session, run, through, through);
@@ -489,17 +508,16 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
 
   app.onRequest('session/prompt', async ({ params, signal }) => {
     const session = sessionOf(params.sessionId);
-    if (session.turn !== undefined) throw RequestError.invalidRequest({ sessionId: session.id }, `session ${session.id} is already working on a prompt`);
-    const prompt = promptInputOf(params.prompt, session.skillNames);
-    const declared = mandateOfMeta(params._meta);
-    const turn: Turn = { runId: undefined, cancelRequested: false };
-    session.turn = turn;
+    if (session.turns.size > 0) throw RequestError.invalidRequest({ sessionId: session.id }, `session ${session.id} is already working on a prompt`);
+    const turn = beginTurn(session, undefined);
     const cancelTurn = (): void => {
       if (connection?.signal.aborted === true) return;
       session.tasks.run(() => cancelTurnOf(session, turn));
     };
     signal.addEventListener('abort', cancelTurn, { once: true });
     try {
+      const prompt = promptInputOf(params.prompt, await skillNamesOf(session));
+      const declared = mandateOfMeta(params._meta);
       const { run } = await viaRunApi(deps.runtime.createRun(session.id, prompt.input, { ...(prompt.skill === undefined ? {} : { skill: prompt.skill }), ...declared }));
       turn.runId = run.id;
       if (turn.cancelRequested) await durably(session, () => deps.runtime.cancel(run.id));
@@ -515,14 +533,13 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
       return { stopReason: turn.cancelRequested ? 'cancelled' : stopReasonOf(finished) };
     } finally {
       signal.removeEventListener('abort', cancelTurn);
-      session.turn = undefined;
-      active();
+      endTurn(session, turn);
     }
   });
 
   app.onNotification('session/cancel', async ({ params }) => {
     const session = sessions.get(params.sessionId);
-    if (session?.turn !== undefined) await cancelTurnOf(session, session.turn);
+    if (session !== undefined) await Promise.all([...session.turns].map((turn) => cancelTurnOf(session, turn)));
   });
 
   return {

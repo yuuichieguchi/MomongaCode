@@ -62,6 +62,38 @@ describe('GitPush to a bare remote over the file protocol', () => {
     expect(remoteSha(world, 'main')).toBe(second);
   });
 
+  it('fails, and sends nothing, for a branch that exists neither here nor on the remote', async () => {
+    const { world } = pushedWorld();
+    const runner = countingRunner();
+    const parts = partsOf(operationTool('GitPush', { runArgv: runner.run }), { remote: 'origin', branch: 'nowhere' }, contextFor(world.work, world.env));
+    const result = await parts.execute(await parts.prepare());
+    expect(result).toMatchObject({ status: 'failed', effect: { outcome: 'failed' } });
+    expect(result.output).toContain('the local branch nowhere does not exist');
+    expect(runner.calls.some((argv) => argv.includes('push'))).toBe(false);
+    expect(world.git(world.base, 'ls-remote', world.bare, 'refs/heads/nowhere')).toBe('');
+  });
+
+  it('finds the delete of a remote branch that is already absent applied, by the empty literal of the spec', async () => {
+    const { world } = pushedWorld();
+    const runner = countingRunner();
+    const parts = partsOf(operationTool('GitPush', { runArgv: runner.run }), { remote: 'origin', branch: 'nowhere', delete: true }, contextFor(world.work, world.env));
+    const result = await parts.execute(await parts.prepare());
+    expect(result).toMatchObject({ status: 'completed', effect: { outcome: 'already_applied' } });
+    expect(runner.calls.some((argv) => argv.includes('push'))).toBe(false);
+  });
+
+  it('pushes a branch the remote does not have yet, and answers not applied for an interrupted first push that did not land', async () => {
+    const { world } = pushedWorld();
+    world.git(world.work, 'branch', 'topic');
+    const topic = world.git(world.work, 'rev-parse', 'refs/heads/topic');
+    const parts = partsOf(operationTool('GitPush', { runArgv: countingRunner().run }), { remote: 'origin', branch: 'topic' }, contextFor(world.work, world.env));
+    const prepared = await parts.prepare();
+    expect((await parts.reconcile(prepared, Date.now())).outcome).toBe('not_applied');
+    const result = await parts.execute(prepared);
+    expect(result).toMatchObject({ status: 'completed', effect: { outcome: 'applied' } });
+    expect(remoteSha(world, 'topic')).toBe(topic);
+  });
+
   it('fails without overwriting when someone else moved the remote between prepare and the effect', async () => {
     const { world } = pushedWorld();
     const parts = partsOf(operationTool('GitPush', { runArgv: countingRunner().run }), PUSH, contextFor(world.work, world.env));

@@ -106,6 +106,11 @@ describe('root command', () => {
     await expect(run(program)).rejects.toThrow('the interactive session needs a terminal; pass --print <prompt> to run without one');
   });
 
+  it.each(['rule list', 'memory list', 'mcp list', 'daemon status'])('reads one argument that holds the two words "%s" as the first prompt of an interactive session, and says so when there is no terminal', async (argument) => {
+    const { program } = harness();
+    await expect(run(program, argument)).rejects.toThrow(`the interactive session needs a terminal; "${argument}" is not the name of a command and was read as its first prompt; pass --print <prompt> to run without one`);
+  });
+
   it('rejects a non-integer --after for attach', async () => {
     const { program } = harness();
     await expect(run(program, 'attach', '--after', 'soon')).rejects.toMatchObject({ code: 'commander.invalidArgument' });

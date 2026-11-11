@@ -5,7 +5,7 @@ import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSetting
 const userGateway = async (gateway: Record<string, unknown> | undefined) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), gateway === undefined ? {} : { gateway });
-  return (await loadUserSettings({ home: tree.home })).settings.gateway;
+  return (await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.gateway;
 };
 
 describe('gateway.closeGraceMs and gateway.managedServerStopGraceMs', () => {
@@ -43,7 +43,7 @@ describe('gateway.closeGraceMs and gateway.managedServerStopGraceMs', () => {
   ])('refuses gateway.%s up to %d given %o with the English message', async (key, max, value) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { gateway: { [key]: value } });
-    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(
       `${userSettingsPath(tree)}: gateway.${key} must be an integer from 0 to ${max} milliseconds; got ${JSON.stringify(value)}`,
     );
   });

@@ -22,7 +22,8 @@ export type {
   ToolExecutorOptions,
   WaitingOutcome,
 } from './executor.ts';
-export type { AutoClassifier, AutoClassifierRequest } from './ports.ts';
+export type { AutoClassifier, AutoClassifierRequest, ChildPorts, ChildSpawnOptions, LineFilter, PortChild, ToolTimers } from './ports.ts';
+export { createLineFilter } from './builtins/jobs.ts';
 export { createToolHooks, runSessionStart, runStop, runUserPromptSubmit, hasStopHooks, resolvePreToolUse } from './hooks/events.ts';
 export type { PostToolHookResult, PreToolHookVerdict, PromptHookResult, SessionStartHookResult, StopHookResult, ToolHookCall, ToolHooks } from './hooks/events.ts';
 export type { HookReply, HookRunContext } from './hooks/run.ts';
@@ -44,8 +45,8 @@ export type {
   ToolIdempotencyLookup,
   ToolIdempotencyRecord,
 } from './ports.ts';
-export { OBSERVED_FILE_HASH_PAGE_BYTES, createGitWorkTreeObserver, observedToolFiles } from './work-tree-observer.ts';
-export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
+export { OBSERVED_FILE_HASH_PAGE_BYTES, observedToolFiles, workTreeObserverOn } from './work-tree-observer.ts';
+export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, WorkTreeMark, WorkTreeObserver, WorkTreeObserverPorts } from './work-tree-observer.ts';
 export { createToolRegistry, extendToolSet } from './registry.ts';
 export { pageToFit } from './paging.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
@@ -79,14 +80,24 @@ export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
 export { MAX_TIMEOUT_MS as MAX_COMMAND_TIMEOUT_MS, runUserCommand, shellCommandSubject } from './builtins/bash.ts';
 export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
 export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
-export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
-export { listDirectoryEntries, listFileCandidates } from './file-listing.ts';
-export type { FileListingOptions } from './file-listing.ts';
+export { gitEnvironment, gitProxyEnvironment, readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
+export type { GitEnvironmentRequest } from './read-only-call.ts';
+export { directoryEntriesOn, fileCandidatesOn } from './file-listing.ts';
+export type { FileListingOptions, FileListingPorts } from './file-listing.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
-export { ShellNotFoundError, nodeGlobPorts, resolveBashPath } from '@momonga/policy';
-export type { GlobChild, GlobPorts, ShellHost } from '@momonga/policy';
-export { nodeShellHost } from './builtins/shell.ts';
-export { createGlobExpander, createPolicyFilesystem } from './policy-filesystem.ts';
+export { ShellNotFoundError, executableCheckNowOn, executableCheckOn, resolveBashPath, resolveBashPathNow } from './builtins/shell.ts';
+export type { ExecutableCheck, ShellHost, ShellPorts, ShellPortsNow } from './builtins/shell.ts';
+export { createGlobExpander, policyFilesystemOn } from './policy-filesystem.ts';
+export {
+  createGitWorkTreeObserver,
+  createHostRipgrepLocator,
+  createPolicyFilesystem,
+  listDirectoryEntries,
+  listFileCandidates,
+  nodeChildPorts,
+  nodeShellHost,
+  nodeShellPorts,
+} from './node-ports.ts';
 export {
   MEMORY_QUERY_MAX_CHARS,
   MEMORY_SAVE_TOOL_NAME,
@@ -130,8 +141,8 @@ export {
   stagedOwnerOf,
 } from './ripgrep-distribution.ts';
 export type { BundledRipgrep, BundledRipgrepResolver, RipgrepDistributionFiles, RipgrepDistributionPorts, RipgrepEntryKind, RipgrepManifest, RipgrepResolutionStep } from './ripgrep-distribution.ts';
-export { createHostRipgrepLocator, createRipgrepLocator, findRipgrepOnPath, isRegularFileOnHost, ripgrepUnavailableMessage } from './ripgrep-locator.ts';
-export type { HostRipgrepLocatorOptions, RipgrepLocation, RipgrepLocator, RipgrepLocatorPorts, RipgrepSource } from './ripgrep-locator.ts';
+export { createRipgrepLocator, findRipgrepOnPath, isRegularFileOn, ripgrepLocatorOn, ripgrepUnavailableMessage } from './ripgrep-locator.ts';
+export type { HostRipgrepLocatorOptions, RipgrepLocation, RipgrepLocator, RipgrepLocatorPorts, RipgrepSearchFiles, RipgrepSource } from './ripgrep-locator.ts';
 export { createMarkerOwners, unownedOf, unsettledKeys } from './marker-owners.ts';
 export type { MarkerOwner, MarkerOwners } from './marker-owners.ts';
 export { removeMarkerFile } from './marker-settle.ts';
@@ -139,16 +150,16 @@ export { createMarkerSettle, settleFinishedCommand, unnamedLivenessNotes } from 
 export type { MarkerSettle, MarkerSettleOptions } from './marker-settle.ts';
 export { COVERED_PROGRAMS, OPERATION_SPECS, operationCatalogueFacts } from './operations/catalogue.ts';
 export type { OperationCatalogueFacts } from './operations/catalogue.ts';
-export { OPERATION_CRASH_POINTS, OPERATION_GUARDS, OperationSpecError, evaluateClauses, parseOperationSpec, supersededForms } from './operations/spec.ts';
+export { OPERATION_CRASH_POINTS, OPERATION_GUARDS, OperationSpecError, describeClause, evaluateClauses, failedClauses, parseOperationSpec, supersededForms } from './operations/spec.ts';
 export type { Clause, ClauseItem, Guard, OperationSpec } from './operations/spec.ts';
-export type { GateCall, GateFacts, OperationEffect } from './types.ts';
+export type { GateCall, GateFacts, OperationEffect, ProbeContext } from './types.ts';
 export { openGitCredentialChannel } from './operations/git-credential.ts';
-export type { GitCredentialChannel, GitHostCredential } from './operations/git-credential.ts';
+export type { GitCredentialChannel, GitCredentialChannelOptions, GitHostCredential } from './operations/git-credential.ts';
 export { createOperationTools } from './operations/runner.ts';
 export type { OperationDeps, OperationSettings } from './operations/runner.ts';
 export { createSandboxedArgvRunner, networkScopeOfDestinations } from './operations/argv.ts';
 export type { ArgvOptions, ArgvResult, ArgvRunner, ReconcileSandbox, SandboxedRunnerPorts } from './operations/argv.ts';
-export { hostGitReader, resolveDestinations } from './operations/git-read.ts';
+export { createGitReader, resolveDestinations, resolveRepository } from './operations/git-read.ts';
 export type { Destinations, GitRead, GitReadOptions, GitReader } from './operations/git-read.ts';
 export { ForgeDescriptorError, loadForgeDescriptors, parseForgeDescriptor } from './forge/descriptor.ts';
 export type { ForgeDescriptor, ForgeOperationDescriptor } from './forge/descriptor.ts';

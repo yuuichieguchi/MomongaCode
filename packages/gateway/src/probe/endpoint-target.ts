@@ -1,4 +1,6 @@
 import { endpointKeyOf } from '@momonga/config';
+import { startSharedCall } from '@momonga/foundation';
+import type { SharedCall } from '@momonga/foundation';
 import type { Capabilities, ConstructSupport, DialectId, Probing } from '@momonga/protocol';
 import { targetProbingError } from './auto-probe.ts';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
@@ -55,57 +57,33 @@ export const readEndpointIdentity = async (
   timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
 ): Promise<string> => endpointIdentityOf(await readModelsListing(endpoint, signal, timeoutMs), model, fields);
 
-type Verification = { starter: AbortSignal; done: Promise<void> };
-
-const untilAborted = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => reject(signal.reason);
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-    signal.addEventListener('abort', onAbort, { once: true });
-    work.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener('abort', onAbort);
-        reject(error);
-      },
-    );
-  });
+const NEVER_ENDED = new AbortController().signal;
 
 export const memoizedVerification = (verifyOnce: (signal: AbortSignal) => Promise<void>): ((signal: AbortSignal) => Promise<void>) => {
-  let verification: Verification | undefined;
+  let verification: SharedCall<void> | undefined;
 
-  const beginVerification = (signal: AbortSignal): Verification => {
-    const started: Verification = {
-      starter: signal,
-      done: verifyOnce(signal).catch((error: unknown) => {
+  return (signal) => {
+    if (verification === undefined) {
+      const forget = (): void => {
         if (verification === started) verification = undefined;
-        throw error;
-      }),
-    };
-    return started;
-  };
-
-  return async (signal) => {
-    for (;;) {
-      signal.throwIfAborted();
-      verification ??= beginVerification(signal);
-      const current = verification;
-      try {
-        return await untilAborted(current.done, signal);
-      } catch (error) {
-        if (current.starter.aborted && !signal.aborted) continue;
-        throw error;
-      }
+      };
+      const started: SharedCall<void> = startSharedCall(
+        NEVER_ENDED,
+        async (shared) => {
+          try {
+            await verifyOnce(shared);
+          } catch (error) {
+            forget();
+            throw error;
+          }
+        },
+        forget,
+      );
+      verification = started;
     }
+    return verification.join(signal);
   };
 };
-
 
 export const ollamaServerRefusal = (targetName: string, adapter: string, endpoint: string): PreconditionFailedError =>
   new PreconditionFailedError(
