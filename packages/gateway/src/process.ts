@@ -8,10 +8,8 @@ import {
   derivedInputsOf,
   diskKeptRecords,
   keptSettingsDirectory,
-  loadUserSettings,
   probeRecordKeyOf,
   providerNameOf,
-  readUserStopValues,
   registeredIds,
   registeredServer,
   requireOfferedEndpointForm,
@@ -45,7 +43,7 @@ import {
   createUdsClient,
   fixedSocket,
   SETTINGS_APPLIED_ENV,
-  nodeFileSystemSync,
+  systemRandom,
   startDeadlineSignal,
   codeDigestOfRunningProcess,
   createBinaryHashCache,
@@ -919,7 +917,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   let closing: Shutdown | undefined;
   const closingValues = (): StopValues | undefined => closing?.values;
   let retired = false;
-  const stopValues = options.stopValues ?? createStopValuesReader({ load: () => readUserStopValues(options.home), onNotice: (message) => logger.warn(message) });
+  const stopValues = options.stopValues ?? createStopValuesReader({ onNotice: (message) => logger.warn(message) });
 
   const shutdown = async (values: StopValues): Promise<GatewayCloseResult> => {
     phase = 'closing';
@@ -969,14 +967,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const cache = createUserSettingsCache({
       home: options.home,
       onWarning: (message) => logger.warn(message),
-      keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(options.home)),
+      keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(options.home)),
       ...appliedRecordOf(options.env),
       planProfiles,
+      onLoaded: (loaded) => stopValues.remember(stopValuesOfSettings(loaded.settings)),
     });
-    const started = cache.snapshot();
+    const started = await cache.load(startSignal);
     if ('error' in started) throw started.error;
     const { settings } = started;
-    stopValues.remember(stopValuesOfSettings(settings));
     const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal | undefined): Promise<OutboundNetwork> => {
       const config = resolveNetwork(section, options.env);
       const outbound: OutboundNetwork = { config, trust: await installTrust(config, files, installSignal === undefined ? {} : { signal: installSignal }) };

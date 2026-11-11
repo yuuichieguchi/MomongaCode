@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { endpointFormsOfPlatform, redactedUrl, transportUrlMessage, transportUrlProblem, syncPaths } from '@momonga/foundation';
+import { askedPaths, endpointFormsOfPlatform, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
+import type { PathAsking } from '@momonga/foundation';
 import {
   DEFAULT_ANTHROPIC_API_VERSION,
   SERVER_KINDS,
@@ -90,7 +91,6 @@ export type PlanProfiles = Readonly<Record<string, PlanProfile>>;
 
 export type ResolveModelsOptions = {
   source: string;
-  home: string | undefined;
   warnings: string[];
   servers: ServerRegistry;
   planProfiles?: PlanProfiles;
@@ -147,13 +147,21 @@ const checkBaseUrl = (baseUrl: string, where: string, carriesCredential: boolean
   if (baseUrl.includes('?') || baseUrl.includes('#')) throw new ConfigError(`${where}: baseUrl must not contain a query or fragment`);
 };
 
-const checkSocketPath = (socketPath: string, home: string | undefined, where: string): void => {
+const checkSocketPath = (socketPath: string, where: string): void => {
   if (!path.isAbsolute(socketPath)) throw new ConfigError(`${where}: socketPath ${JSON.stringify(socketPath)} must be an absolute path`);
-  if (home === undefined) return;
-  if (syncPaths.comparableContains(syncPaths.canonicalPath(layoutOf(home).run), syncPaths.canonicalPath(socketPath))) {
-    throw new ConfigError(`${where}: socketPath ${socketPath} must not be inside ${layoutOf(home).run}`);
-  }
 };
+
+export type SocketAddresses = { readonly connections: readonly { readonly socketPath?: string | undefined }[] };
+
+export function* refusingOwnSockets({ connections }: SocketAddresses, home: string, source: string): PathAsking<void> {
+  const { run } = layoutOf(home);
+  for (const [index, { socketPath }] of connections.entries()) {
+    if (socketPath === undefined) continue;
+    if (yield* askedPaths.comparableContains(yield* askedPaths.canonicalPath(run), yield* askedPaths.canonicalPath(socketPath))) {
+      throw new ConfigError(`${source}: models.connections[${index}]: socketPath ${socketPath} must not be inside ${run}`);
+    }
+  }
+}
 
 type RemoteTargetInput = {
   baseUrl?: string;
@@ -211,7 +219,6 @@ const checkSamplingRange = (capabilities: Pick<TargetCapabilitiesCore, 'sampling
 const resolveRemote = (
   target: RemoteTargetInput,
   defaults: CapabilityDefaults,
-  home: string | undefined,
   { connection, entry: where }: Where,
   serving: { billing: TargetBilling; maxConcurrency: number } = REMOTE_SERVING,
 ) => {
@@ -219,7 +226,7 @@ const resolveRemote = (
   const problem = addressProblem(target);
   if (problem !== undefined) throw new ConfigError(`${connection}: ${problem}`);
   if (baseUrl !== undefined) checkBaseUrl(baseUrl, connection, target.apiKeyEnv !== undefined || target.apiKeySecret !== undefined);
-  if (socketPath !== undefined) checkSocketPath(socketPath, home, connection);
+  if (socketPath !== undefined) checkSocketPath(socketPath, connection);
   checkSamplingRange(target.capabilities, where);
   const maxConcurrency = target.maxConcurrency ?? serving.maxConcurrency;
   const { imageInput, imageTokens, ...core } = { ...defaults, ...target.capabilities, maxConcurrency };
@@ -239,20 +246,20 @@ const resolveRemote = (
   };
 };
 
-const resolveChatCompletions = (target: ChatCompletionsTarget, provider: string, home: string | undefined, where: Where): ResolvedChatCompletionsTarget => ({
+const resolveChatCompletions = (target: ChatCompletionsTarget, provider: string, where: Where): ResolvedChatCompletionsTarget => ({
   adapter: 'chat-completions',
   model: target.model,
   toolCalling: target.toolCalling ?? 'native',
   provider,
-  ...resolveRemote(target, CHAT_COMPLETIONS_CAPABILITY_DEFAULTS, home, where),
+  ...resolveRemote(target, CHAT_COMPLETIONS_CAPABILITY_DEFAULTS, where),
 });
 
-const resolveOpenResponses = (target: OpenResponsesTarget, provider: string, home: string | undefined, where: Where): ResolvedOpenResponsesTarget => ({
+const resolveOpenResponses = (target: OpenResponsesTarget, provider: string, where: Where): ResolvedOpenResponsesTarget => ({
   adapter: 'open-responses',
   model: target.model,
   toolCalling: target.toolCalling ?? 'native',
   provider,
-  ...resolveRemote(target, OPEN_RESPONSES_CAPABILITY_DEFAULTS, home, where),
+  ...resolveRemote(target, OPEN_RESPONSES_CAPABILITY_DEFAULTS, where),
 });
 
 const resolvePlan = (target: PlanOpenResponsesTarget, provider: string, { connection: where, entry }: Where, profiles: PlanProfiles): ResolvedPlanTarget => {
@@ -315,7 +322,7 @@ const checkSamplingVersion = (target: AnthropicTarget, apiVersion: AnthropicApiV
   }
 };
 
-const resolveAnthropic = (target: AnthropicTarget, home: string | undefined, place: Where, warnings: string[]): ResolvedAnthropicTarget => {
+const resolveAnthropic = (target: AnthropicTarget, place: Where, warnings: string[]): ResolvedAnthropicTarget => {
   const where = place.entry;
   checkThinkingBudgets(target, where);
   const apiVersion = target.apiVersion ?? DEFAULT_ANTHROPIC_API_VERSION;
@@ -328,14 +335,14 @@ const resolveAnthropic = (target: AnthropicTarget, home: string | undefined, pla
     model: target.model,
     toolCalling: 'native',
     apiVersion,
-    ...resolveRemote(target, ANTHROPIC_CAPABILITY_DEFAULTS, home, place),
+    ...resolveRemote(target, ANTHROPIC_CAPABILITY_DEFAULTS, place),
   };
 };
 
-const resolveOllama = (target: OllamaTarget, home: string | undefined, where: Where): ResolvedOllamaTarget => ({
+const resolveOllama = (target: OllamaTarget, where: Where): ResolvedOllamaTarget => ({
   adapter: 'ollama',
   model: target.model,
-  ...resolveRemote(target, OLLAMA_CAPABILITY_DEFAULTS, home, where, LOCAL_SERVER_DEFAULTS),
+  ...resolveRemote(target, OLLAMA_CAPABILITY_DEFAULTS, where, LOCAL_SERVER_DEFAULTS),
 });
 
 const NATIVE_JSON_ONLY_FORM: Record<Exclude<ModelTarget['adapter'], 'managed'>, boolean> = {
@@ -350,20 +357,20 @@ const checkJsonMode = (target: ModelTarget, where: string): void => {
   throw new ConfigError(`${where}: capabilities.jsonMode is json_object, but the adapter ${target.adapter} has no JSON-only request form; declare jsonMode none or remove it`);
 };
 
-type ResolveContext = { home: string | undefined; warnings: string[]; servers: ServerRegistry; profiles: PlanProfiles };
+type ResolveContext = { warnings: string[]; servers: ServerRegistry; profiles: PlanProfiles };
 
-const resolveAdapter = (target: ModelTarget, provider: string, where: Where, { home, warnings, servers, profiles }: ResolveContext): ResolvedModelTarget => {
+const resolveAdapter = (target: ModelTarget, provider: string, where: Where, { warnings, servers, profiles }: ResolveContext): ResolvedModelTarget => {
   switch (target.adapter) {
     case 'managed':
       return resolveManaged(target, where, servers);
     case 'chat-completions':
-      return resolveChatCompletions(target, provider, home, where);
+      return resolveChatCompletions(target, provider, where);
     case 'open-responses':
-      return 'plan' in target ? resolvePlan(target, provider, where, profiles) : resolveOpenResponses(target, provider, home, where);
+      return 'plan' in target ? resolvePlan(target, provider, where, profiles) : resolveOpenResponses(target, provider, where);
     case 'anthropic':
-      return resolveAnthropic(target, home, where, warnings);
+      return resolveAnthropic(target, where, warnings);
     case 'ollama':
-      return resolveOllama(target, home, where);
+      return resolveOllama(target, where);
   }
 };
 
@@ -573,9 +580,9 @@ const warnUnallowedBillingChanges = (changes: readonly BillingChange[], { models
   }
 };
 
-export const resolveModels = (models: ModelsSettings | undefined, { source, home, warnings, servers, planProfiles = PLAN_PROFILES, classifier, kinds = SERVER_KINDS }: ResolveModelsOptions): ResolvedModels => {
+export const resolveModels = (models: ModelsSettings | undefined, { source, warnings, servers, planProfiles = PLAN_PROFILES, classifier, kinds = SERVER_KINDS }: ResolveModelsOptions): ResolvedModels => {
   const dialects = resolveDialects(models?.dialects, source);
-  const configured = resolveConnections(models?.connections ?? [], source, kinds, { home, warnings, servers, profiles: planProfiles });
+  const configured = resolveConnections(models?.connections ?? [], source, kinds, { warnings, servers, profiles: planProfiles });
   const displays = displayMapOf(configured.views);
   const references = resolveReferences(models, classifier, configured.views, displays, source);
   checkModelDialects(models?.connections ?? [], dialects, source);

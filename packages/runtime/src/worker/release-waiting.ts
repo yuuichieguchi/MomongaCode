@@ -17,7 +17,7 @@ export const releaseCalls = async (input: {
 }): Promise<void> => {
   const { tools, run, session, targets, signal } = input;
   if (targets.length === 0) return;
-  await tools.executor.release([...targets], { toolSet: () => tools.toolSet(run.id, { signal, env: tools.envFor(session) }), signal });
+  await tools.executor.release([...targets], { toolSet: async () => tools.toolSet(run.id, { signal, env: await tools.envFor(session, signal) }), signal });
 };
 
 export const releaseWaitingCalls = async (input: {

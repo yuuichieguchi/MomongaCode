@@ -10,8 +10,8 @@ export type NoticeContext = { runtime: RuntimeClient; session: SessionView };
 export type NoticeSource = (context: NoticeContext) => Promise<readonly string[]>;
 
 export const settingsWarningSource =
-  (ports: Pick<CliPorts, 'home'>): NoticeSource =>
-  async () => (await loadUserSettings({ home: ports.home })).warnings;
+  (ports: Pick<CliPorts, 'home' | 'interrupt'>): NoticeSource =>
+  async () => (await loadUserSettings({ home: ports.home, signal: ports.interrupt })).warnings;
 
 export const skillWarningSource: NoticeSource = async ({ runtime, session }) => (await runtime.skills(session.id)).warnings;
 
@@ -29,7 +29,7 @@ export const updateNoticeSource =
     return notice === undefined ? [] : [`momonga: ${notice}`];
   };
 
-export const defaultNoticeSources = (ports: Pick<CliPorts, 'home'>, update: UpdateWiring): readonly NoticeSource[] => [
+export const defaultNoticeSources = (ports: Pick<CliPorts, 'home' | 'interrupt'>, update: UpdateWiring): readonly NoticeSource[] => [
   settingsWarningSource(ports),
   updateNoticeSource(update),
   skillWarningSource,

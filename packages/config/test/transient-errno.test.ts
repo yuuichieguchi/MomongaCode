@@ -16,14 +16,6 @@ const failAsyncRead = (target: string, error: Error): void => {
     String(file) === target ? Promise.reject(error) : real(file, options as never)) as typeof fs.promises.readFile);
 };
 
-const failSyncRead = (target: string, error: Error): void => {
-  const real = fs.readFileSync;
-  vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, options?: unknown) => {
-    if (String(file) === target) throw error;
-    return real(file, options as never);
-  }) as typeof fs.readFileSync);
-};
-
 const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   try {
     await promise;
@@ -65,20 +57,14 @@ describe('config transient errno propagation', () => {
       expect(error).toBe(injected);
     });
 
-    it(`${code} reading the user settings file rejects loadUserSettings and throws from snapshot() with the same error`, async () => {
+    it(`${code} reading the user settings file rejects loadUserSettings and the load of the cache with the same error`, async () => {
       const tree = makeTree();
       const file = writeJson(userSettingsPath(tree), { permissions: { allow: ['Read'] } });
       const injected = errnoError(code);
-      failSyncRead(file, injected);
-      expect(await rejectionOf(loadUserSettings({ home: tree.home }))).toBe(injected);
+      failAsyncRead(file, injected);
+      expect(await rejectionOf(loadUserSettings({ home: tree.home, signal: new AbortController().signal }))).toBe(injected);
       const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
-      let thrown: unknown;
-      try {
-        cache.snapshot();
-      } catch (error) {
-        thrown = error;
-      }
-      expect(thrown).toBe(injected);
+      expect(await rejectionOf(cache.load(new AbortController().signal))).toBe(injected);
     });
   }
 
@@ -95,9 +81,9 @@ describe('config transient errno propagation', () => {
   it('EACCES on the user settings file is a ConfigError', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), {});
-    failSyncRead(file, errnoError('EACCES'));
-    expect(await rejectionOf(loadUserSettings({ home: tree.home }))).toBeInstanceOf(ConfigError);
-    const snapshot = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords }).snapshot();
+    failAsyncRead(file, errnoError('EACCES'));
+    expect(await rejectionOf(loadUserSettings({ home: tree.home, signal: new AbortController().signal }))).toBeInstanceOf(ConfigError);
+    const snapshot = await createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords }).load(new AbortController().signal);
     expect('error' in snapshot && snapshot.error).toBeInstanceOf(ConfigError);
   });
 });

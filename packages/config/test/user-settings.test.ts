@@ -5,6 +5,8 @@ import { ConfigError, createUserSettingsCache, loadSettings, loadUserSettings, n
 import { canonsOf, localSettingsDir, localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
+const NOT_ABORTED = new AbortController().signal;
+
 const T0 = new Date('2026-01-01T00:00:00Z');
 const T1 = new Date('2026-01-01T00:00:10Z');
 const T2 = new Date('2026-01-01T00:00:20Z');
@@ -22,7 +24,7 @@ const writeTextAt = (file: string, text: string, at: Date): void => {
 describe('loadUserSettings', () => {
   it('returns the defaults when there is no user settings file', async () => {
     const tree = makeTree();
-    const result = await loadUserSettings({ home: tree.home });
+    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     expect(result.settings.autoUpdates).toBe(true);
     expect(canonsOf(result.settings)).toEqual([]);
     expect((result.settings.models as unknown as { start: string | undefined; fallback: readonly string[] }).start).toBeUndefined();
@@ -36,7 +38,7 @@ describe('loadUserSettings', () => {
     const user = writeJson(userSettingsPath(tree), { autoUpdates: false, env: { TZ: 'user' } });
     writeJson(projectSettingsPath(tree), { env: { TZ: 'project' } });
     writeJson(localSettingsPath(tree), { env: { TZ: 'local' } });
-    const result = await loadUserSettings({ home: tree.home });
+    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     expect(result.settings.autoUpdates).toBe(false);
     expect(result.settings.env).toEqual({ TZ: 'user' });
     expect(result.files).toEqual([user]);
@@ -45,7 +47,7 @@ describe('loadUserSettings', () => {
   it('fails with a ConfigError naming the file for an invalid user file', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { permissions: { allow: 'Bash(ls)' } });
-    const failure = loadUserSettings({ home: tree.home });
+    const failure = loadUserSettings({ home: tree.home, signal: new AbortController().signal });
     await expect(failure).rejects.toBeInstanceOf(ConfigError);
     await expect(failure).rejects.toThrow(file);
   });
@@ -53,7 +55,7 @@ describe('loadUserSettings', () => {
   it('fails with a ConfigError for malformed JSON', async () => {
     const tree = makeTree();
     writeText(userSettingsPath(tree), '{ "autoUpdates": ');
-    await expect(loadUserSettings({ home: tree.home })).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toBeInstanceOf(ConfigError);
   });
 });
 
@@ -64,55 +66,55 @@ describe('createUserSettingsCache', () => {
     return { cache, warnings };
   };
 
-  it('serves the current user settings synchronously', () => {
+  it('serves the current user settings synchronously', async () => {
     const tree = makeTree();
     writeAt(userSettingsPath(tree), { autoUpdates: false }, T0);
     const { cache } = cacheFor(tree);
-    expect(cache.get().autoUpdates).toBe(false);
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.autoUpdates).toBe(false);
   });
 
-  it('serves the defaults when no file exists', () => {
+  it('serves the defaults when no file exists', async () => {
     const tree = makeTree();
     const { cache } = cacheFor(tree);
-    expect(cache.get().autoUpdates).toBe(true);
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.autoUpdates).toBe(true);
   });
 
-  it('re-reads the file when its mtime changes', () => {
+  it('re-reads the file when its mtime changes', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { MODE: 'one' } }, T0);
     const { cache } = cacheFor(tree);
-    expect(cache.get().env).toEqual({ MODE: 'one' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'one' });
     writeAt(file, { env: { MODE: 'two' } }, T1);
-    expect(cache.get().env).toEqual({ MODE: 'two' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'two' });
   });
 
-  it('sees a rewrite of the same size with the same mtime', () => {
+  it('sees a rewrite of the same size with the same mtime', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { MODE: 'one' } }, T0);
     const { cache } = cacheFor(tree);
-    expect(cache.get().env).toEqual({ MODE: 'one' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'one' });
     writeAt(file, { env: { MODE: 'two' } }, T0);
-    expect(cache.get().env).toEqual({ MODE: 'two' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'two' });
   });
 
-  it('detects a same-mtime rewrite of a different size', () => {
+  it('detects a same-mtime rewrite of a different size', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { MODE: 'one' } }, T0);
     const { cache } = cacheFor(tree);
-    expect(cache.get().env).toEqual({ MODE: 'one' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'one' });
     writeAt(file, { env: { MODE: 'longer-value' } }, T0);
-    expect(cache.get().env).toEqual({ MODE: 'longer-value' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'longer-value' });
   });
 
-  it('detects an atomic rename replacement with the same mtime and size', () => {
+  it('detects an atomic rename replacement with the same mtime and size', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { MODE: 'one' } }, T0);
     const { cache } = cacheFor(tree);
-    expect(cache.get().env).toEqual({ MODE: 'one' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'one' });
     const replacement = `${file}.next`;
     writeAt(replacement, { env: { MODE: 'two' } }, T0);
     const before = fs.statSync(file);
@@ -120,40 +122,40 @@ describe('createUserSettingsCache', () => {
     fs.renameSync(replacement, file);
     expect(fs.statSync(file).mtimeMs).toBe(before.mtimeMs);
     expect(fs.statSync(file).ino).not.toBe(before.ino);
-    expect(cache.get().env).toEqual({ MODE: 'two' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'two' });
   });
 
-  it('keeps the last good value and warns naming the file when a later parse fails', () => {
+  it('keeps the last good value and warns naming the file when a later parse fails', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { MODE: 'good' } }, T0);
     const { cache, warnings } = cacheFor(tree);
-    expect(cache.get().env).toEqual({ MODE: 'good' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'good' });
     writeTextAt(file, '{ "env": ', T1);
-    expect(cache.get().env).toEqual({ MODE: 'good' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'good' });
     expect(warnings.some((warning) => warning.includes(file))).toBe(true);
     writeAt(file, { env: { MODE: 'fixed' } }, T2);
-    expect(cache.get().env).toEqual({ MODE: 'fixed' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'fixed' });
   });
 
-  it('keeps the last good value when a later file violates the schema', () => {
+  it('keeps the last good value when a later file violates the schema', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeAt(file, { env: { MODE: 'good' } }, T0);
     const { cache, warnings } = cacheFor(tree);
-    expect(cache.get().env).toEqual({ MODE: 'good' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'good' });
     writeAt(file, { models: { connections: [{ adapter: 'chat-completions', provider: 'remote', models: [{ id: 'x' }] }] } }, T1);
-    expect(cache.get().env).toEqual({ MODE: 'good' });
+    expect((await cache.loadOrKeep(NOT_ABORTED)).settings.env).toEqual({ MODE: 'good' });
     expect(warnings).toHaveLength(1);
   });
 
-  it('fails closed on first use when the initial load fails', () => {
+  it('fails closed on first use when the initial load fails', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeTextAt(file, '{ "env": ', T0);
     const { cache } = cacheFor(tree);
-    expect(() => cache.get()).toThrow(file);
-    expect(() => cache.get()).toThrow(ConfigError);
+    await expect(cache.loadOrKeep(NOT_ABORTED)).rejects.toThrow(file);
+    await expect(cache.loadOrKeep(NOT_ABORTED)).rejects.toThrow(ConfigError);
   });
 });
 

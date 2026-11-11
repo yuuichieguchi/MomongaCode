@@ -5,7 +5,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFak
 import type { ManagedServerOptions } from '../src/managed/server.ts';
 import { START_MS, makeDir } from './gateway-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
-import { PROCESS_VERSION, baseEnv, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -35,13 +35,13 @@ const settingsWith = (managedServerStopGraceMs: number) => ({
 });
 
 describe('the gateway process wires the settings file into its managed server stops begun outside a close (design 3.2)', () => {
-  it('the managed server reads its stop grace from the user settings at each stop begin', async () => {
+  it('the managed server reads its stop grace at each stop begin from the user settings last loaded: a change is read after the next request loaded it', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const home = makeHome();
     writeSettings(home, settingsWith(700));
     await placeFakeFm(home, fm.binaryPath);
     const clock = createFakeClock(START_MS);
-    await launchGateway({
+    const handle = await launchGateway({
       generation: FIRST_GENERATION,
       home,
       env: baseEnv(home),
@@ -56,6 +56,9 @@ describe('the gateway process wires the settings file into its managed server st
     expect(managed).toBeDefined();
     expect(managed?.readStopGraceMs()).toBe(700);
     writeSettings(home, settingsWith(1500));
+    expect(managed?.readStopGraceMs()).toBe(700);
+    const listed = await clientFor(handle.socketPath).request({ method: 'GET', path: '/v1/models' });
+    expect(listed.status).toBe(200);
     expect(managed?.readStopGraceMs()).toBe(1500);
   });
 });

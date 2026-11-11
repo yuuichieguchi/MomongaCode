@@ -42,18 +42,17 @@ const fakeCache = (initial: Record<string, unknown>): FakeCache => {
     set: (settings: Record<string, unknown>) => {
       current = settings;
     },
-    get: () => {
-      cache.reads += 1;
-      return loaded().settings;
-    },
-    read: () => {
+    load: async () => {
       cache.reads += 1;
       return loaded();
     },
-    snapshot: () => {
+    loadOrKeep: async () => {
       cache.reads += 1;
       return loaded();
     },
+    get: () => loaded().settings,
+    read: loaded,
+    snapshot: loaded,
     kept: {} as UserSettingsCache['kept'],
   };
   return cache;

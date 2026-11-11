@@ -147,7 +147,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'createLiveIdentities',
   'createMemoryCredentialStore',
   'createNodeKeeperHost',
-  'createPathResolver',
   'createPosixGroupPort',
   'createProcessGroupPort',
   'createProcessInspector',

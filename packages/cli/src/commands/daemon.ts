@@ -42,13 +42,13 @@ export const lastStopLines = (lastStop: StopValues, settingsNow: StopValues): st
   return [`  last stop: ${last}`, ...(now === last ? [] : [`  settings now: ${now}`])];
 };
 
-export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'clock' | 'home'>, paths: MomongaPaths): Promise<number> => {
+export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'clock' | 'home' | 'interrupt'>, paths: MomongaPaths): Promise<number> => {
   const live = await listLiveGenerations(ports, paths);
   const serving = live.find((entry) => entry.role === 'serving');
   const others = live.filter((entry) => entry !== serving);
   const home = path.dirname(paths.root);
   const lastStops = new Map(await Promise.all(live.map(async (entry) => [entry, await readStopRecord(generationLayout(home, entry.generation).stopRecord)] as const)));
-  const settingsNow = [...lastStops.values()].some((values) => values !== undefined) ? readUserStopValues(ports.home) : undefined;
+  const settingsNow = [...lastStops.values()].some((values) => values !== undefined) ? await readUserStopValues(ports.home, ports.interrupt) : undefined;
   const lastStopOf = (entry: LiveGeneration): string[] => {
     const lastStop = lastStops.get(entry);
     return lastStop === undefined || settingsNow === undefined ? [] : lastStopLines(lastStop, settingsNow);

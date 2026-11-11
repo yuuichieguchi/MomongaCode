@@ -332,7 +332,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const slash = {
       ...harness.context,
       commands: [],
-      backend: { ...harness.context.backend, settings: async () => readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true }) },
+      backend: { ...harness.context.backend, settings: async () => readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }) },
       background: (_label: string, work: (signal: AbortSignal) => Promise<unknown>) => work(new AbortController().signal),
     } as unknown as SlashContext;
     await runSettingsScreen(slash, []);
@@ -383,7 +383,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const harness = flowOf(context, threeModels(), []);
     const project = path.join(harness.place.home, 'project');
     fs.mkdirSync(project);
-    const snapshot = await readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true });
+    const snapshot = await readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal });
     expect(settingsFileLines(snapshot)[0]).toBe(`Settings file: ${harness.place.settingsFile}`);
   });
 

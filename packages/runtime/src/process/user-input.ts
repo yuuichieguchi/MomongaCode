@@ -57,7 +57,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
   const factsFor = async (session: Session, signal: AbortSignal): Promise<UserPolicyFacts> => {
     const held = await holdSandbox(tools.sandboxes, signal);
     try {
-      const env = tools.envFor(session);
+      const env = await tools.envFor(session, signal);
       const rules = await permissionRulesFor({ store, settings, clock, home }, session);
       const policy = await tools.policyFor(session, { env, rules, ruleEnforcement: held.ruleEnforcement, signal });
       return { home, roots: policy.roots, tmpDir: policy.tmpDir, env, session: tools.sessionState(session), signal, rules, sandboxPolicy: policy.sandboxPolicy };

@@ -69,7 +69,7 @@ export type ToolRuntimeOptions = {
   forgeEnvironment?: Readonly<Record<string, string | undefined>>;
   forgeFetch?: ForgeFetch;
   shellHost: ShellHost;
-  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: Timing;
   leaseMs: number;
   heartbeatMs: number;
@@ -205,7 +205,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     if (run === undefined) throw new Error(`run ${runId} does not exist`);
     const session = store.getSession(run.sessionId);
     if (session === undefined) throw new Error(`session ${run.sessionId} does not exist`);
-    const snapshot = settings.takeUserSnapshot();
+    const snapshot = await settings.userSnapshot(signal);
     const trust = (await store.trust.decisionAsked(session.cwd, signal)).decision;
 
     let acquiredHere = false;

@@ -32,8 +32,8 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     contextWindowOf: (model) => gateway.contextWindowOf(model),
     readinessOf: async (model) => agentReadiness(await gateway.capabilitiesOf(model)),
     models: async () => listingViewsOf(await gateway.models()),
-    environment: () => environmentSnapshot(ports),
-    autoModeAvailable: () => autoModeConfigured(ports),
+    environment: () => environmentSnapshot(ports, interrupt),
+    autoModeAvailable: () => autoModeConfigured(ports, interrupt),
     canonicalCwd: (cwd) => hostPaths(interrupt).canonicalPath(cwd),
     daemonReady: async () => {
       await ensureSessionDaemon(ports, paths, { signal: interrupt, ...(onNewer === undefined ? {} : { onNewer }) });

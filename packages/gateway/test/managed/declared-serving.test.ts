@@ -93,7 +93,7 @@ const KINDS: Kind[] = [
 
 const descriptionIn = async (home: string, id: string): Promise<ManagedServerDescription> => {
   if (id === FM_SERVER.id) return FM_SERVER;
-  const { settings } = await loadUserSettings({ home });
+  const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
   const found = registryOf(settings.models).find((server) => server.id === id);
   if (found === undefined) throw new Error(`the loaded registry has no server ${JSON.stringify(id)}`);
   return found;

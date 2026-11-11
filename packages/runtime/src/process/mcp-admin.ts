@@ -88,17 +88,18 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
   };
 
   const serverOf = async (session: Session, name: string, signal: AbortSignal): Promise<McpServerEntry> => {
-    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session), options.settings.admitUserSnapshot().user, 'admit', signal);
+    const { user } = await options.settings.admitUserSnapshot(signal);
+    const loaded = await loadSessionMcpServers(options, session, await options.settings.envFor(session, signal), user, 'admit', signal);
     const entry = loaded.enabled.find((candidate) => candidate.name === name);
     if (entry === undefined) throw notFound(`session ${session.id} has no enabled MCP server named ${name}`);
     return entry;
   };
 
-  const poolFor = (servers: McpServerEntry[], session: Session, remote: McpRemotePorts): McpAuthorizingPool =>
+  const poolFor = (servers: McpServerEntry[], session: Session, env: ToolEnv, remote: McpRemotePorts): McpAuthorizingPool =>
     options.createPool({
       servers,
       projectDir: session.cwd,
-      baseEnv: { ...options.settings.envFor(session) },
+      baseEnv: { ...env },
       clock,
       clientVersion: options.clientVersion,
       timers: options.timers,
@@ -139,9 +140,11 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
 
   const servers: McpAdmin['servers'] = async (sessionId, signal) => {
     const session = sessionOf(sessionId);
-    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session), options.settings.admitUserSnapshot().user, 'admit', signal);
+    const { user } = await options.settings.admitUserSnapshot(signal);
+    const env = await options.settings.envFor(session, signal);
+    const loaded = await loadSessionMcpServers(options, session, env, user, 'admit', signal);
     const key = sha256Hex(canonicalJson({ session: session.id, cwd: session.cwd, servers: loaded.enabled }));
-    const held = acquireProbePool(key, () => poolFor(loaded.enabled, session, options.remote));
+    const held = acquireProbePool(key, () => poolFor(loaded.enabled, session, env, options.remote));
     const { pool } = held;
     try {
       const views: McpServerView[] = [];
@@ -180,7 +183,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     const surfaced = new Promise<void>((resolve) => {
       surface = resolve;
     });
-    const pool = poolFor([entry], session, {
+    const pool = poolFor([entry], session, await options.settings.envFor(session, signal), {
       ...options.remote,
       openAuthorizationUrl: (url) => {
         view.url = url.href;
