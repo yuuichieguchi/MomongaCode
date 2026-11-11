@@ -28,6 +28,7 @@ import { reviewPermissions } from './review.ts';
 import type { ReviewOptions } from './review.ts';
 import { showStatus } from './runs.ts';
 import { secretSet } from './secret.ts';
+import { exitOfMeasurement } from '../measurement-exit.ts';
 
 export type CommandGroup = (program: Command, deps: ProgramDeps) => void;
 
@@ -476,7 +477,7 @@ const registerAutoMode: CommandGroup = (program, deps) => {
         ...(options.agent === undefined ? {} : { agent: options.agent }),
         ...(model === undefined ? {} : { classifier: model }),
       });
-      deps.complete(outcome.measurement === 'unmeasurable' ? 1 : 0);
+      deps.complete(exitOfMeasurement(outcome.measurement === 'passed'));
     });
   group
     .command('status [model]')
