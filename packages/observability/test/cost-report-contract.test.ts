@@ -2,8 +2,8 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import { buildCostReport, definePriceTable, recordChatResponse, recordFallbackCauses, startAgentSpan, startChatSpan } from '@momonga/observability';
-import { harness } from './helpers.ts';
+import { definePriceTable, recordChatResponse, recordFallbackCauses, startAgentSpan, startChatSpan } from '@momonga/observability';
+import { harness, costReportOfSpans } from './helpers.ts';
 
 type SchemaNode = { properties: Record<string, SchemaNode>; items: SchemaNode };
 
@@ -35,7 +35,7 @@ describe('a cost report holding a billing change keeps the Run API contract', ()
     agent.end(h.clock.now());
     await h.telemetry.forceFlush();
 
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
 
     const failed = report.total.fallbacks?.[0]?.failed;
     expect(failed).toEqual([ALLOWED_CAUSE]);

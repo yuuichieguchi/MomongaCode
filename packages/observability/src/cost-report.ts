@@ -1,14 +1,11 @@
-import { RUN_ROLE, UNPRICED_CODE_TEXT, describeFallbackCause, escapeTerminalLine, isFallbackCauseList } from '@momonga/protocol';
+import { RUN_ROLE, UNPRICED_CODE_TEXT, describeFallbackCause, escapeTerminalLine } from '@momonga/protocol';
 import type { FallbackCause, UnpricedCode } from '@momonga/protocol';
-import { MOMONGA_ATTRIBUTES } from './semconv.ts';
-import { billedCallOf, isBilledChat } from './billed-calls.ts';
-import type { BilledCall } from './billed-calls.ts';
+import { RUNLESS } from './billed-calls.ts';
+import type { PricedBilledCall } from './billed-calls.ts';
 import { CACHE_READ_TEXT, isCacheReadReported, noCallReported } from './cache-reads.ts';
 import { LOCAL_PRICE_VERSION, amountOfUnits } from './cost.ts';
 import { describeMoney, moneyAmountOf, unpricedCallsOf } from './money-line.ts';
 import type { MoneyTally } from './money-line.ts';
-import type { PriceTable } from './cost.ts';
-import type { SpanRecord, TraceStore } from './trace-store.ts';
 
 export type CostedRun = { runId: string; sessionId: string };
 
@@ -42,7 +39,7 @@ export type RunCost = CostTotals & { runId: string; sessionId: string };
 export type SessionCost = CostTotals & { sessionId: string; runIds: string[] };
 export type CostReport = { runs: RunCost[]; sessions: SessionCost[]; total: CostTotals };
 
-export type CostReportOptions = { table: PriceTable; includeRunless?: boolean };
+export type CostReportOptions = { includeRunless?: boolean };
 
 type Accumulator = {
   calls: number;
@@ -112,15 +109,6 @@ const addFallback = (accumulator: Accumulator, answeredBy: string, failed: Fallb
   else known.calls += calls;
 };
 
-const fallbackCausesOf = (span: SpanRecord): FallbackCause[] | undefined => {
-  const value = span.attributes[MOMONGA_ATTRIBUTES.fallbackCauses];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must be a string`);
-  const parsed: unknown = JSON.parse(value);
-  if (!isFallbackCauseList(parsed)) throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must hold a list of fallback causes`);
-  return parsed;
-};
-
 const fallbackTotalsOf = (accumulator: Accumulator): Pick<CostTotals, 'fallbackCalls' | 'fallbacks'> => {
   const fallbacks = [...accumulator.fallbacks.values()];
   if (fallbacks.length === 0) return {};
@@ -161,23 +149,14 @@ const totalsOf = (accumulator: Accumulator): CostTotals => ({
   roles: Object.fromEntries([...accumulator.roles].map(([role, forRole]) => [role, roleTotalsOf(forRole)])),
 });
 
-const stringAttribute = (span: SpanRecord, key: string): string => {
-  const value = span.attributes[key];
-  if (typeof value !== 'string') throw new TypeError(`chat span ${span.spanId} attribute ${key} must be a string`);
-  return value;
+const answeringTargetOf = (call: PricedBilledCall): string => {
+  if (call.target === undefined) throw new TypeError(`a billed call of run ${call.runId} answered after a fallback and names no answering model`);
+  return call.target;
 };
 
-const roleOf = (span: SpanRecord): string => {
-  const value = span.attributes[MOMONGA_ATTRIBUTES.role];
-  if (value === undefined) return RUN_ROLE;
-  if (typeof value !== 'string') throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.role} must be a string`);
-  return value;
-};
-
-const addSpan = (accumulator: Accumulator, span: SpanRecord, call: BilledCall): void => {
+const addCall = (accumulator: Accumulator, call: PricedBilledCall): void => {
   accumulator.calls += 1;
-  const causes = fallbackCausesOf(span);
-  if (causes !== undefined) addFallback(accumulator, stringAttribute(span, MOMONGA_ATTRIBUTES.target), causes, 1);
+  if (call.fallbackCauses !== undefined) addFallback(accumulator, answeringTargetOf(call), call.fallbackCauses, 1);
   accumulator.inputTokens += call.usage.inputTokens;
   accumulator.outputTokens += call.usage.outputTokens;
   if (isCacheReadReported(call.usage)) accumulator.cachedInputTokens += call.usage.cachedInputTokens;
@@ -198,30 +177,34 @@ const addSpan = (accumulator: Accumulator, span: SpanRecord, call: BilledCall): 
   }
 };
 
-const accumulateSpans = (spans: readonly SpanRecord[], table: PriceTable): Accumulator => {
+const accumulate = (calls: readonly PricedBilledCall[]): Accumulator => {
   const accumulator = emptyAccumulator();
-  for (const span of spans.filter(isBilledChat)) {
-    const call = billedCallOf('', span, table);
-    addSpan(accumulator, span, call);
-    const role = roleOf(span);
+  for (const call of calls) {
+    addCall(accumulator, call);
+    const role = call.role ?? RUN_ROLE;
     const forRole = accumulator.roles.get(role) ?? emptyAccumulator();
-    addSpan(forRole, span, call);
+    addCall(forRole, call);
     accumulator.roles.set(role, forRole);
   }
   return accumulator;
 };
 
-export const buildCostReport = (store: TraceStore, runs: readonly CostedRun[], options: CostReportOptions): CostReport => {
-  const { table } = options;
-  const seenRuns = new Set<string>();
-  const perRun: { run: CostedRun; accumulator: Accumulator }[] = runs.map((run) => {
-    if (seenRuns.has(run.runId)) throw new Error(`buildCostReport: run ${run.runId} is listed twice`);
-    seenRuns.add(run.runId);
-    return { run, accumulator: accumulateSpans(store.spansForRun(run.runId), table) };
-  });
+export const buildCostReport = (calls: readonly PricedBilledCall[], runs: readonly CostedRun[], options: CostReportOptions = {}): CostReport => {
+  const callsOfRun = new Map<string, PricedBilledCall[]>(runs.map((run) => [run.runId, []]));
+  if (callsOfRun.size !== runs.length) {
+    const twice = runs.find((run, index) => runs.findIndex((other) => other.runId === run.runId) !== index);
+    throw new Error(`buildCostReport: run ${twice?.runId} is listed twice`);
+  }
+  const runless: PricedBilledCall[] = [];
+  for (const call of calls) {
+    const ofRun = call.runId === RUNLESS ? runless : callsOfRun.get(call.runId);
+    if (ofRun === undefined) throw new RangeError(`a billed call belongs to run ${call.runId}, which was not asked for`);
+    ofRun.push(call);
+  }
+  const perRun = runs.map((run) => ({ run, accumulator: accumulate(callsOfRun.get(run.runId) ?? []) }));
   const sessions = new Map<string, { runIds: string[]; accumulator: Accumulator }>();
   const total = emptyAccumulator();
-  if (options.includeRunless === true) merge(total, accumulateSpans(store.spansWithoutRun(), table));
+  if (options.includeRunless === true) merge(total, accumulate(runless));
   for (const { run, accumulator } of perRun) {
     const session = sessions.get(run.sessionId) ?? { runIds: [], accumulator: emptyAccumulator() };
     session.runIds.push(run.runId);

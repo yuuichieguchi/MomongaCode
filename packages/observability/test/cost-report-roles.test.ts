@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
-import { buildCostReport, definePriceTable, formatCostReport, recordChatResponse, startAgentSpan, startChatSpan } from '@momonga/observability';
-import { harness } from './helpers.ts';
+import { definePriceTable, formatCostReport, recordChatResponse, startAgentSpan, startChatSpan } from '@momonga/observability';
+import { harness, costReportOfSpans } from './helpers.ts';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
@@ -44,7 +44,7 @@ const seeded = async () => {
     { role: 'classifier', input: 2_000_000, output: 0, at: AT_JULY },
     { input: 1_000_000, output: 0, at: AT_JULY },
   ], h);
-  return buildCostReport(h.store, [
+  return costReportOfSpans(h.store, [
     { runId: 'run-a', sessionId: 'session-1' },
     { runId: 'run-b', sessionId: 'session-1' },
   ], { table: TABLE });

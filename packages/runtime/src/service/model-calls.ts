@@ -1,7 +1,22 @@
-import { MAX_BILLED_CALLS_PAGE, RUNLESS, buildCostBreakdown, formatCostBreakdown, runCostsOf } from '@momonga/observability';
-import type { BreakdownCall, BreakdownPrefix, CostBreakdown, UnjoinedRecord } from '@momonga/observability';
-import { RUN_ROLE } from '@momonga/protocol';
-import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, CallTiming, RunCostView, RunEvent, RunEventPayload, RunTraceCall, RunTraceEvent, RunTracePrefix } from '@momonga/protocol';
+import { MAX_BILLED_CALLS_PAGE, RUNLESS, buildCostBreakdown, buildCostReport, callPriceOf, formatCostBreakdown, formatCostReport, runCostsOf } from '@momonga/observability';
+import type { BreakdownCall, BreakdownPrefix, CallPrice, CostBreakdown, CostReport, CostedRun, RunCostCall, UnjoinedRecord } from '@momonga/observability';
+import { RUN_ROLE, unitsOfCost } from '@momonga/protocol';
+import type {
+  BilledCallsCursorView,
+  BilledCallsPageView,
+  BilledCallView,
+  CallTiming,
+  ModelCost,
+  RecordedCost,
+  RecordedPrice,
+  RunCostView,
+  RunEvent,
+  RunEventPayload,
+  RunTraceCall,
+  RunTraceEvent,
+  RunTracePrefix,
+  UnpricedOutcome,
+} from '@momonga/protocol';
 import type { ModelCallRecord, RuntimeStore } from '@momonga/store';
 import { gatewayProtocolError } from '../gateway-client.ts';
 
@@ -57,7 +72,55 @@ const responsesOf = (records: readonly ModelCallRecord[]): Response[] => {
   return responses;
 };
 
-const breakdownCallOf = (call: BilledCallView, joined: Partial<Response>): BreakdownCall => ({
+const recordedPriceOf = (billed: { cost?: ModelCost; unpriced?: UnpricedOutcome } | undefined): RecordedPrice => {
+  if (billed?.cost !== undefined) return { kind: 'priced', cost: billed.cost };
+  if (billed?.unpriced !== undefined) return { kind: 'unpriced', ...billed.unpriced };
+  return { kind: 'not_recorded' };
+};
+
+const COST_RECORD_EVENT_TYPES = ['model.responded', 'usage.charged'] as const satisfies readonly RunEventPayload['type'][];
+
+export type CostRecordStore = Pick<RuntimeStore, 'readRunEventsOfTypes' | 'contextCharges'>;
+
+const idField = (responseId: string | undefined): { responseId?: string } => (responseId === undefined ? {} : { responseId });
+
+const journalCostsOf = (store: CostRecordStore, runId: string): RecordedCost[] =>
+  store.readRunEventsOfTypes(runId, COST_RECORD_EVENT_TYPES).flatMap((event): RecordedCost[] => {
+    if (event.type === 'model.responded') return [{ runId, ...idField(event.response.id), step: event.step, price: recordedPriceOf(event.response.momonga) }];
+    if (event.type === 'usage.charged') return [{ runId, ...idField(event.responseId), step: event.step, price: recordedPriceOf(event) }];
+    return [];
+  });
+
+export const readRecordedCosts = (store: CostRecordStore, runIds: readonly string[], includeRunless: boolean): RecordedCost[] => {
+  const ofJournals = runIds.flatMap((runId) => journalCostsOf(store, runId));
+  const ofRunCharges = store.contextCharges.list({ runIds }).map((charge): RecordedCost => {
+    if (charge.runId === null) throw new RangeError(`context charge ${charge.id} was listed for runs and belongs to none`);
+    return { runId: charge.runId, ...idField(charge.detail?.responseId), price: recordedPriceOf(charge.detail) };
+  });
+  const ofNoRun = includeRunless
+    ? store.contextCharges.list({}).flatMap((charge): RecordedCost[] => (charge.runId === null ? [{ runId: RUNLESS, ...idField(charge.detail?.responseId), price: recordedPriceOf(charge.detail) }] : []))
+    : [];
+  return [...ofJournals, ...ofRunCharges, ...ofNoRun];
+};
+
+const runCostCallOf = (recorded: RecordedCost): RunCostCall => ({
+  runId: recorded.runId,
+  price: recorded.price.kind === 'priced' ? { kind: 'priced', units: unitsOfCost(recorded.price.cost).toString(), priceVersion: recorded.price.cost.priceVersion } : { kind: recorded.price.kind },
+});
+
+export const reportCostOf = (store: CostRecordStore, runIds: readonly string[]): RunCostView[] => runCostsOf(runIds, readRecordedCosts(store, runIds, false).map(runCostCallOf));
+
+type RecordedPrices = ReadonlyMap<string, RecordedPrice>;
+
+const NOT_RECORDED: RecordedPrice = { kind: 'not_recorded' };
+
+const pricesByResponse = (recorded: readonly RecordedCost[]): RecordedPrices =>
+  new Map(recorded.flatMap((entry): [string, RecordedPrice][] => (entry.responseId === undefined ? [] : [[entry.responseId, entry.price]])));
+
+const callPriceIn = (prices: RecordedPrices, call: BilledCallView): CallPrice =>
+  callPriceOf((call.responseId === undefined ? undefined : prices.get(call.responseId)) ?? NOT_RECORDED);
+
+const breakdownCallOf = (call: BilledCallView, price: CallPrice, joined: Partial<Response>): BreakdownCall => ({
   runId: call.runId,
   ...(call.step === undefined ? {} : { step: call.step }),
   ...(call.role === undefined ? {} : { role: call.role }),
@@ -66,10 +129,7 @@ const breakdownCallOf = (call: BilledCallView, joined: Partial<Response>): Break
   ...(call.target === undefined ? {} : { target: call.target }),
   billing: call.billing,
   at: new Date(call.startMs),
-  price:
-    call.price.kind === 'priced'
-      ? { kind: 'priced', units: BigInt(call.price.units), currency: 'USD', priceVersion: call.price.priceVersion }
-      : call.price,
+  price,
   usage: call.usage,
   ...(joined.anatomy === undefined ? {} : { anatomy: joined.anatomy }),
   ...(joined.prefix === undefined ? {} : { prefix: joined.prefix }),
@@ -100,6 +160,7 @@ export const joinRunCalls = (
   billed: readonly BilledCallView[],
   records: readonly ModelCallRecord[],
   sideTimingList: readonly SideTiming[],
+  prices: RecordedPrices,
 ): { calls: BreakdownCall[]; unjoined: UnjoinedRecord[]; withoutResponseId: number } => {
   const responses = responsesOf(records);
   const sideTimings = new Map(sideTimingList.map((entry) => [entry.responseId, entry.timing]));
@@ -115,13 +176,13 @@ export const joinRunCalls = (
     const stepField = call.step === undefined ? {} : { step: call.step };
     if (!isMain(call)) {
       const timing = call.responseId === undefined ? undefined : sideTimings.get(call.responseId);
-      calls.push(breakdownCallOf(call, timing === undefined ? {} : { timing }));
+      calls.push(breakdownCallOf(call, callPriceIn(prices, call), timing === undefined ? {} : { timing }));
     } else if (call.responseId === undefined) {
-      calls.push(breakdownCallOf(call, {}));
+      calls.push(breakdownCallOf(call, callPriceIn(prices, call), {}));
       withoutResponseId += 1;
     } else {
       const answer = firstById.get(call.responseId);
-      calls.push(breakdownCallOf(call, answer ?? {}));
+      calls.push(breakdownCallOf(call, callPriceIn(prices, call), answer ?? {}));
       if (answer === undefined) unjoined.push({ runId, ...stepField, reason: 'a billed model call has no recorded model response' });
       else matched.add(call.responseId);
     }
@@ -142,6 +203,7 @@ export type CostBreakdownSources = {
   runIds: readonly string[];
   recordsOf: (runId: string) => Promise<readonly ModelCallRecord[]>;
   fetchPage: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number) => Promise<BilledCallsPageView>;
+  recordedCosts: () => readonly RecordedCost[];
   sideTimingsOf?: (runId: string) => readonly SideTiming[];
   runlessTimingsOf?: () => readonly SideTiming[];
   pageSize?: number;
@@ -170,21 +232,29 @@ export const billedCallsOf = async (sources: BilledCallsSource): Promise<BilledC
   return billed;
 };
 
-export const reportCostOf = async (sources: BilledCallsSource): Promise<RunCostView[]> => runCostsOf(sources.runIds, await billedCallsOf(sources));
+export type CostReportSources = Pick<CostBreakdownSources, 'fetchPage' | 'recordedCosts' | 'pageSize'> & { runs: readonly CostedRun[]; includeRunless: boolean };
+
+export const costReportOf = async (sources: CostReportSources): Promise<{ report: CostReport; text: string }> => {
+  const billed = await billedCallsOf({ runIds: sources.runs.map((run) => run.runId), fetchPage: sources.fetchPage, ...(sources.pageSize === undefined ? {} : { pageSize: sources.pageSize }) });
+  const prices = pricesByResponse(sources.recordedCosts());
+  const report = buildCostReport(billed.map((call) => ({ ...call, price: callPriceIn(prices, call) })), sources.runs, { includeRunless: sources.includeRunless });
+  return { report, text: formatCostReport(report) };
+};
 
 export const costBreakdownOf = async (sources: CostBreakdownSources): Promise<{ breakdown: CostBreakdown; text: string }> => {
   const { runIds } = sources;
   const billed = await billedCallsOf(sources);
+  const prices = pricesByResponse(sources.recordedCosts());
   const joined: ReturnType<typeof joinRunCalls>[] = [];
   for (const runId of runIds) {
-    joined.push(joinRunCalls(runId, billed.filter((call) => call.runId === runId), await sources.recordsOf(runId), sources.sideTimingsOf === undefined ? [] : sources.sideTimingsOf(runId)));
+    joined.push(joinRunCalls(runId, billed.filter((call) => call.runId === runId), await sources.recordsOf(runId), sources.sideTimingsOf === undefined ? [] : sources.sideTimingsOf(runId), prices));
   }
   const runlessTimings = new Map((sources.runlessTimingsOf === undefined ? [] : sources.runlessTimingsOf()).map((entry) => [entry.responseId, entry.timing]));
   const runless = billed
     .filter((call) => call.runId === RUNLESS)
     .map((call) => {
       const timing = call.responseId === undefined ? undefined : runlessTimings.get(call.responseId);
-      return breakdownCallOf(call, timing === undefined ? {} : { timing });
+      return breakdownCallOf(call, callPriceIn(prices, call), timing === undefined ? {} : { timing });
     });
   const breakdown = buildCostBreakdown(
     [...joined.flatMap((entry) => entry.calls), ...runless],
