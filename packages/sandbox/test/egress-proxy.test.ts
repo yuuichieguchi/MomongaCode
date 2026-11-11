@@ -1,9 +1,10 @@
 import http from 'node:http';
 import net from 'node:net';
+import tls from 'node:tls';
 import { afterEach, describe, expect, it } from 'vitest';
 import { systemRandom } from '@momonga/foundation';
 import type { NetworkConfig, OutboundNetwork } from '@momonga/foundation';
-import { describeEgressRefusal, startEgressProxy } from '@momonga/sandbox';
+import { TUNNEL_OPENING_MAX_BYTES, describeEgressRefusal, startEgressProxy } from '@momonga/sandbox';
 import type { EgressPorts, EgressProxy } from '@momonga/sandbox';
 
 const closers: Array<() => Promise<unknown>> = [];
@@ -205,7 +206,7 @@ describe('the filtering proxy of a command with named hosts', () => {
     const proxy = await proxyFor([`127.0.0.1:${target.port}`]);
     const tunnel = await connectVia(proxy, `127.0.0.1:${target.port}`);
     expect(tunnel.status).toBe(200);
-    expect(await throughTunnel(tunnel.socket, 'tunnel.test')).toContain('origin says hi');
+    expect(await throughTunnel(tunnel.socket, `127.0.0.1:${target.port}`)).toContain('origin says hi');
     expect(target.seen.map((request) => request.url)).toEqual(['/through']);
   });
 
@@ -496,5 +497,131 @@ describe('the HTTP forms the listener carries', () => {
     });
     expect(answer.status).toBe(200);
     expect(target.bodies).toContain('hello');
+  });
+});
+
+describe('a granted tunnel carries only the name it was granted for', () => {
+  type Recorder = { port: number; received: () => Buffer };
+
+  const recorder = async (): Promise<Recorder> => {
+    const chunks: Buffer[] = [];
+    const sockets = new Set<net.Socket>();
+    const server = net.createServer((socket) => {
+      sockets.add(socket);
+      socket.on('error', () => undefined);
+      socket.on('data', (chunk: Buffer) => chunks.push(chunk));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    closers.push(async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+    return { port: (server.address() as net.AddressInfo).port, received: () => Buffer.concat(chunks) };
+  };
+
+  const closedAfter = (socket: net.Socket, bytes: string | Buffer): Promise<void> =>
+    new Promise((resolve) => {
+      socket.on('error', () => undefined);
+      socket.on('close', () => resolve());
+      socket.resume();
+      socket.write(bytes);
+    });
+
+  const helloFor = (socket: net.Socket, servername: string | undefined): void => {
+    const client = tls.connect({ socket, ...(servername === undefined ? {} : { servername }), rejectUnauthorized: false });
+    client.on('error', () => undefined);
+    closers.push(async () => client.destroy());
+  };
+
+  const firstBytes = async (fixture: Recorder): Promise<Buffer> => {
+    for (;;) {
+      const received = fixture.received();
+      if (received.length > 0) return received;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+
+  const named = (): Promise<EgressProxy> => proxyFor(['here.test', '127.0.0.1'], resolverOf({ 'here.test': ['127.0.0.1'] }));
+
+  it('carries a TLS ClientHello whose server name is the granted name', async () => {
+    const fixture = await recorder();
+    const proxy = await named();
+    const tunnel = await connectVia(proxy, `here.test:${fixture.port}`);
+    expect(tunnel.status).toBe(200);
+    helloFor(tunnel.socket, 'Here.test');
+    const received = await firstBytes(fixture);
+    expect(received[0]).toBe(0x16);
+    expect(received.toString('latin1')).toContain('Here.test');
+    expect(proxy.refusals()).toEqual([]);
+  });
+
+  it('closes a tunnel whose ClientHello names another server, and nothing reaches the granted host', async () => {
+    const fixture = await recorder();
+    const proxy = await named();
+    const tunnel = await connectVia(proxy, `here.test:${fixture.port}`);
+    expect(tunnel.status).toBe(200);
+    const closed = new Promise<void>((resolve) => tunnel.socket.on('close', () => resolve()));
+    helloFor(tunnel.socket, 'fronted.test');
+    await closed;
+    expect(fixture.received().length).toBe(0);
+    expect(proxy.refusals()).toEqual([{ kind: 'other_name', host: 'here.test', port: fixture.port, presented: 'fronted.test' }]);
+    expect(describeEgressRefusal(proxy.refusals()[0] as never, proxy.hosts)).toBe(
+      `the sandbox proxy closed the tunnel to here.test:${fixture.port}: it was granted for here.test, and the connection named fronted.test`,
+    );
+  });
+
+  it('closes a tunnel to a name whose ClientHello carries no server name', async () => {
+    const fixture = await recorder();
+    const proxy = await named();
+    const tunnel = await connectVia(proxy, `here.test:${fixture.port}`);
+    const closed = new Promise<void>((resolve) => tunnel.socket.on('close', () => resolve()));
+    helloFor(tunnel.socket, undefined);
+    await closed;
+    expect(fixture.received().length).toBe(0);
+    expect(proxy.refusals()).toEqual([{ kind: 'other_name', host: 'here.test', port: fixture.port, presented: undefined }]);
+  });
+
+  it('closes a tunnel whose first bytes are neither TLS nor an HTTP request', async () => {
+    const fixture = await recorder();
+    const proxy = await named();
+    const tunnel = await connectVia(proxy, `here.test:${fixture.port}`);
+    await closedAfter(tunnel.socket, 'SSH-2.0-OpenSSH_9.6\r\n');
+    expect(fixture.received().length).toBe(0);
+    expect(proxy.refusals()).toEqual([{ kind: 'other_name', host: 'here.test', port: fixture.port, presented: undefined }]);
+  });
+
+  it('carries a plain HTTP request whose Host is the granted name, and closes one that names another host', async () => {
+    const fixture = await recorder();
+    const proxy = await named();
+    const granted = await connectVia(proxy, `here.test:${fixture.port}`);
+    granted.socket.write(`GET /socket HTTP/1.1\r\nHost: HERE.test:${fixture.port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n`);
+    expect((await firstBytes(fixture)).toString('latin1')).toContain('GET /socket HTTP/1.1');
+    const other = await connectVia(proxy, `here.test:${fixture.port}`);
+    const before = fixture.received().length;
+    await closedAfter(other.socket, `GET / HTTP/1.1\r\nHost: elsewhere.test\r\n\r\n`);
+    expect(fixture.received().length).toBe(before);
+    expect(proxy.refusals()).toEqual([{ kind: 'other_name', host: 'here.test', port: fixture.port, presented: 'elsewhere.test' }]);
+  });
+
+  it('carries a ClientHello without a server name to a granted address, and closes one that names a server there', async () => {
+    const fixture = await recorder();
+    const proxy = await proxyFor([`127.0.0.1:${fixture.port}`]);
+    const plain = await connectVia(proxy, `127.0.0.1:${fixture.port}`);
+    helloFor(plain.socket, undefined);
+    expect((await firstBytes(fixture))[0]).toBe(0x16);
+    const before = fixture.received().length;
+    const naming = await connectVia(proxy, `127.0.0.1:${fixture.port}`);
+    const closed = new Promise<void>((resolve) => naming.socket.on('close', () => resolve()));
+    helloFor(naming.socket, 'fronted.test');
+    await closed;
+    expect(fixture.received().length).toBe(before);
+  });
+
+  it('closes a tunnel whose opening grows past the bound without a name', async () => {
+    const fixture = await recorder();
+    const proxy = await named();
+    const tunnel = await connectVia(proxy, `here.test:${fixture.port}`);
+    await closedAfter(tunnel.socket, `GET / HTTP/1.1\r\nX-Filler: ${'a'.repeat(TUNNEL_OPENING_MAX_BYTES)}`);
+    expect(fixture.received().length).toBe(0);
   });
 });
