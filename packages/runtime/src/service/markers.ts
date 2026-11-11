@@ -44,5 +44,5 @@ export const registerMarkerRoutes = (route: RouteRegistrar, deps: MarkerRoutesDe
       await Promise.all(markers.map((marker) => settledOrAborted(markIgnored(marker, { signal }), signal)));
       return new Response(null, { status: 204 });
     },
-  });
+  }, { person: ['POST'] });
 };

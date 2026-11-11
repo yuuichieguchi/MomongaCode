@@ -17,7 +17,7 @@ import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/
 
 
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { unconfiguredNetworkOf, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, pollUntil, testProcessInspector } from '@momonga/testkit';
+import { unconfiguredNetworkOf, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, pollUntil, testProcessInspector, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 
 
 
@@ -114,7 +114,7 @@ export const makePool = (
 ): PoolHarness => {
   const clock = options.clock ?? createFakeClock(1_000_000);
   const projectDir = makeDir();
-  const pool = createMcpPool({ files: nodeFileSystem,
+  const pool = createMcpPool({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     servers,
     projectDir,

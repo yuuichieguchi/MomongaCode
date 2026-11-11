@@ -10,6 +10,8 @@ import { nodeClock } from '../src/node-ports.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import { SESSION, runView } from './fake-backend.ts';
 
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
+
 type Reply = { status: number; headers?: Record<string, string>; body: string };
 
 type Seen = { method: string; url: string; headers: http.IncomingHttpHeaders; body: string };
@@ -28,7 +30,7 @@ const serve = async (context: TestContext, reply: (seen: Seen) => Reply): Promis
     });
   });
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-  const client = createRuntimeClient({ resolveSocket: fixedSocket(socketPath), clock: nodeClock });
+  const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket: fixedSocket(socketPath), clock: nodeClock });
   registerCleanup(context, async () => {
     await client.close();
     server.closeAllConnections();
@@ -58,6 +60,16 @@ describe('request building', () => {
   ])('builds query $query and headers for $options, keeping a zero cursor', ({ options, query, headers }) => {
     expect(eventsQueryOf(options)).toBe(query);
     expect(eventsHeadersOf(options)).toEqual(headers);
+  });
+});
+
+describe('the capability of the person', () => {
+  it('is sent on every request', async (context) => {
+    const { client, seen } = await serve(context, () => json(201, { session: SESSION, strippedEnvKeys: [] }, { location: '/v1/sessions/session-1' }));
+
+    await client.createSession({ cwd: '/work', env: {} });
+
+    expect(seen[0]?.headers['momonga-person-capability']).toBe(FAKE_PERSON_CAPABILITY);
   });
 });
 

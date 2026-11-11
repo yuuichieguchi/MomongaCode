@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createStdioTransport } from '@momonga/mcp';
 import { systemTiming, type TerminateOutcome, type Timing, nodeFileSystem } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { BASE_ENV, makeDir, onCleanup, rawConfig } from './raw-transport.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -25,7 +25,7 @@ describe('mcp close sweeps its marker under the close operation signal, not the 
     const warnings: string[] = [];
     const terminateSignals: AbortSignal[] = [];
     const terminateOptionKeys: string[] = [];
-    const transport = createStdioTransport({ files: nodeFileSystem,
+    const transport = createStdioTransport({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
       name: 'raw',
       config: rawConfig(),
       projectDir: makeDir(),

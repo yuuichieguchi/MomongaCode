@@ -8,6 +8,8 @@ import { DaemonMoved, MOVED_RESENDS, RunApiError, createRuntimeClient } from '..
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import { SESSION, runView } from './fake-backend.ts';
 
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
+
 type Reply = { status: number; headers?: Record<string, string>; body: string } | 'destroy';
 
 type Seen = { method: string; url: string; headers: http.IncomingHttpHeaders; socket: string };
@@ -43,7 +45,7 @@ const listen = async (context: TestContext, name: string, seen: Seen[], reply: (
 
 const clientOver = (context: TestContext, resolveSocket: () => Promise<string>): { client: RuntimeClient; sleeps: number[] } => {
   const sleeps: number[] = [];
-  const client = createRuntimeClient({ resolveSocket, clock: { now: () => Date.now(), sleep: async (ms) => void sleeps.push(ms) } });
+  const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY, resolveSocket, clock: { now: () => Date.now(), sleep: async (ms) => void sleeps.push(ms) } });
   registerCleanup(context, () => client.close());
   return { client, sleeps };
 };
@@ -53,12 +55,14 @@ describe('a request answered moved (20.33)', () => {
     const seen: Seen[] = [];
     const retiring = await listen(context, 'retiring', seen, () => moved);
     const serving = await listen(context, 'serving', seen, () => json(201, { session: SESSION, strippedEnvKeys: [] }));
-    let resolved = retiring;
-    const { client, sleeps } = clientOver(context, async () => resolved);
+    const resolutions = [retiring, serving];
+    const { client, sleeps } = clientOver(context, async () => {
+      const next = resolutions.shift();
+      if (next === undefined) throw new Error('the client resolved the socket more often than the test expects');
+      return next;
+    });
 
-    const first = client.createSession({ cwd: '/work', env: {} });
-    resolved = serving;
-    const created = await first;
+    const created = await client.createSession({ cwd: '/work', env: {} });
 
     expect(created.session.id).toBe(SESSION.id);
     expect(seen.map((entry) => entry.socket)).toEqual(['retiring', 'serving']);
@@ -103,7 +107,7 @@ describe('a request answered moved (20.33)', () => {
     const retiring = await listen(context, 'retiring', seen, () => moved);
     const sleeps: number[] = [];
     const ended = new Error('momonga was updated to v1.2.4; reopen this session.');
-    const client = createRuntimeClient({
+    const client = createRuntimeClient({ personCapability: async () => FAKE_PERSON_CAPABILITY,
       resolveSocket: async () => retiring,
       clock: { now: () => Date.now(), sleep: async (ms) => void sleeps.push(ms) },
       onMoved: async () => {

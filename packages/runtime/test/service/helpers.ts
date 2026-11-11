@@ -224,7 +224,11 @@ export const validateJsonBody = (status: number, body: unknown): void => {
 
 export type JsonResponse = { status: number; headers: Record<string, string>; text: string; json: any };
 
-export type RequestInit = { body?: unknown; raw?: string | Uint8Array; headers?: Record<string, string>; contentType?: string | null };
+export type RequestInit = { body?: unknown; raw?: string | Uint8Array; headers?: Record<string, string>; contentType?: string | null; person?: boolean };
+
+export const PERSON_CAPABILITY_TEST_HEADER = 'momonga-person-capability';
+
+export const personCapabilityFileOf = (home: string): string => path.join(home, '.momonga', 'person-capability');
 
 const parseJsonBody = (headers: Record<string, string>, text: string): any =>
   text !== '' && /^application\/(?:[\w.+-]+\+)?json\b/.test(headers['content-type'] ?? '') ? JSON.parse(text) : undefined;
@@ -647,7 +651,8 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
     return rawDb;
   };
 
-  const http = (method: string, target: string, init?: RequestInit): Promise<JsonResponse> => sendJson(client, method, target, init);
+  const http = (method: string, target: string, init: RequestInit = {}): Promise<JsonResponse> =>
+    sendJson(client, method, target, init.person === false ? init : { ...init, headers: { [PERSON_CAPABILITY_TEST_HEADER]: fs.readFileSync(personCapabilityFileOf(layout.home), 'utf8'), ...init.headers } });
 
   const createSession = async (body: Record<string, unknown> = {}): Promise<any> => {
     const response = await http('POST', '/v1/sessions', { body: { cwd: layout.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, ...body } });

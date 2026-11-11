@@ -1,7 +1,8 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../src/service/errors.ts';
 import { canonicalProject } from '../../src/service/project-query.ts';
-import { pollFor, startService } from './helpers.ts';
+import { PERSON_CAPABILITY_TEST_HEADER, personCapabilityFileOf, pollFor, startService } from './helpers.ts';
 import type { ServiceEnv, ServiceOverrides } from './helpers.ts';
 
 const SETTLE_BOUND_MS = 10_000;
@@ -27,7 +28,13 @@ const held = (): Held => {
 const leaveDuring = async (env: ServiceEnv, step: Held, method: string, target: string, body?: unknown): Promise<void> => {
   const client = new AbortController();
   const answered = env.client
-    .request({ method, path: target, signal: client.signal, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) })
+    .request({
+      method,
+      path: target,
+      signal: client.signal,
+      headers: { [PERSON_CAPABILITY_TEST_HEADER]: fs.readFileSync(personCapabilityFileOf(env.layout.home), 'utf8'), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
     .then(
       () => 'answered',
       () => 'left',

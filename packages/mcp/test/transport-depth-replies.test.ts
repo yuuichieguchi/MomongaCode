@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_JSON_DEPTH, createMemoryCredentialStore, nodeFileSystem } from '@momonga/foundation';
 import { createMcpPool, systemResolver } from '@momonga/mcp';
 import { createToolRegistry } from '@momonga/tools';
-import { UNCONFIGURED_NETWORK, createFakeClock } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, createFakeClock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { boundedMessages } from '../src/connection.ts';
 import type { ConnectionTransport } from '../src/remote-transport.ts';
 import { BASE_ENV, entry, makeDir, makeExecutor, onCleanup } from './mcp-harness.ts';
@@ -72,7 +72,7 @@ describe('a dropped notification reaches the notices of the tool source through 
   const noticesAfterNotification = async (notifyDepth: number) => {
     const fixture = await startHttpFixture({ era: 'modern', deepTools: {} });
     const clock = createFakeClock(1_000_000);
-    const pool = createMcpPool({
+    const pool = createMcpPool({ launch: TEST_STDIO_LAUNCH,
       files: nodeFileSystem,
       clientVersion: '0.0.0-test',
       servers: [entry('remote', { type: 'http', url: fixture.url })],

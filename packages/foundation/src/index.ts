@@ -327,6 +327,7 @@ export type { CapabilityResult } from './capability-probe.ts';
 export type { LocatedParts, PathFileSystem, PathResolver, StepRead, SyncPathResolver, WalkEntry } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
 export { modeIsPrivate } from './platform/privacy.ts';
+export { personCapabilityOf } from './platform/person-capability.ts';
 export { BASE_ENTRY_FLAGS, CHILD_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
 export type { FlagSpec } from './entry-flags.ts';
 export { watchLifeline } from './lifeline.ts';

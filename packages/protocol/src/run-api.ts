@@ -2014,3 +2014,5 @@ export const runApiSchemaName = (schema: JsonSchema): string => {
   if (entry === undefined) throw new Error('the schema is not one of RUN_API_SCHEMAS');
   return entry[0];
 };
+
+export const PERSON_CAPABILITY_HEADER = 'momonga-person-capability';

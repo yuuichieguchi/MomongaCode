@@ -1,8 +1,9 @@
 import { ensureMomongaDirs, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { testKernelLock } from '@momonga/testkit';
+import fs from 'node:fs';
 import path from 'node:path';
-import { startService } from '../../runtime/test/service/helpers.ts';
+import { personCapabilityFileOf, startService } from '../../runtime/test/service/helpers.ts';
 import { createRuntimeClient } from '../src/client/runtime-client.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
@@ -28,7 +29,7 @@ export const startRealRuntime = async (overrides: Parameters<typeof startService
   const sockets = { runtime: layout.socketPath, gateway: path.join(layout.runDir, 'g.sock'), supervisor: path.join(layout.runDir, 's.sock') };
   const published = await publishCurrentGeneration(paths, { generation: 1, version: REAL_RUNTIME_VERSION, sockets }, { lock: testKernelLock() });
   if (published !== 'published') throw new Error(`the generation of the test runtime was not published: ${published}`);
-  const client = createRuntimeClient({ resolveSocket: async () => layout.socketPath, clock: { now: () => service.clock.now(), sleep: async () => undefined } });
+  const client = createRuntimeClient({ personCapability: async () => fs.promises.readFile(personCapabilityFileOf(layout.home), 'utf8'), resolveSocket: async () => layout.socketPath, clock: { now: () => service.clock.now(), sleep: async () => undefined } });
   const stdout: string[] = [];
   const stderr: string[] = [];
   const portsIn = (cwd: string): CliPorts =>
@@ -41,6 +42,7 @@ export const startRealRuntime = async (overrides: Parameters<typeof startService
       interrupt: new AbortController().signal,
       clock: { now: () => service.clock.now(), sleep: async () => undefined },
       random: () => 0.5,
+      personCapability: async () => fs.promises.readFile(personCapabilityFileOf(layout.home), 'utf8'),
       stdout: { write: (text: string) => (stdout.push(text), true) },
       stderr: { write: (text: string) => (stderr.push(text), true) },
     } as unknown as CliPorts);

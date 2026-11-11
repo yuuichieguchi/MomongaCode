@@ -36,7 +36,7 @@ import {
 import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, bubblewrapPresent, childProtectionFor, createPlaceholderJournal, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, DEFAULT_SANDBOX_EXEC_PATH, bubblewrapPresent, childProtectionFor, protectionCommandOf, createPlaceholderJournal, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { unaskedCommandsFor } from '@momonga/policy';
 import { DERIVED_CATCH_UP_PAGES, FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
@@ -590,6 +590,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock });
       const runtime: ToolRuntime = createToolRuntime({
         version,
+        mcpLaunch: {
+          protection: noneProtection,
+          commandOf: (argv) => protectionCommandOf(noneProtection, { platform, argv, scratch: [], sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
+        },
         owners: markerOwners,
         lockCapability,
         kernelLock,

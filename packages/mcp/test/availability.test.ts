@@ -2,7 +2,7 @@ import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
 import { McpUnavailableError, createManagedConnection } from '@momonga/mcp';
 import type { McpServerConnection } from '@momonga/mcp';
-import { LEGACY_FIXTURE_PROTOCOL_VERSION, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
+import { LEGACY_FIXTURE_PROTOCOL_VERSION, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { outcomeOf, settledAfter } from './credential-store-fakes.ts';
 import type { McpTimers } from '../src/timers.ts';
@@ -69,7 +69,7 @@ type Fixture = { connection: McpServerConnection; held: HeldTimers; clock: FakeC
 const fixtureOf = (onList: 'silent' | 'exit', onInitialize: 'answer' | 'silent' = 'answer'): Fixture => {
   const held = timersHolding([REQUEST_LIMIT_MS, CONNECT_LIMIT_MS]);
   const clock = createFakeClock(1_000_000);
-  const connection = createManagedConnection({ files: nodeFileSystem,
+  const connection = createManagedConnection({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 's',
     config: { command: process.execPath, args: ['-e', serverScript(onList, onInitialize)] },
