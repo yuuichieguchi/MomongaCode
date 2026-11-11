@@ -391,6 +391,8 @@ export type {
   PermissionReviewView,
   ReportCostPage,
   ReportCostRequest,
+  ReportRecomputePage,
+  ReportRecomputeRequest,
   ReviewLabel,
   ReviewPage,
   RunCostView,
