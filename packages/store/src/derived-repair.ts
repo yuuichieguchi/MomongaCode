@@ -18,6 +18,8 @@ type Derivation = (typeof DERIVATIONS)[number];
 
 export const REPAIR_PAGE_EVENTS = 500;
 
+export const DERIVED_CATCH_UP_PAGES = 20;
+
 export const DERIVED_VALUES = [
   { derivation: PINNED_DIGEST_DERIVATION, holds: 'events.pinned_digest', scope: 'run' },
   { derivation: APPEND_TIME_RECORDS_DERIVATION, holds: 'events.call_id', scope: 'run' },
@@ -119,6 +121,7 @@ const LAGGING = `r.last_seq > 0 AND (SELECT COUNT(*) FROM derived_through d WHER
 export type DerivedReads = {
   read<T>(scope: DerivedScope, readCurrent: (view: AppendRecordReaders) => T): Promise<T>;
   write<T>(scope: DerivedScope, writeCurrent: (view: AppendRecordReaders) => T): Promise<T>;
+  catchUp(pages: number): Promise<boolean>;
   readonly view: AppendRecordReaders;
 };
 
@@ -127,10 +130,11 @@ export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, reco
     run: db.prepare(`SELECT r.id, r.last_seq FROM runs r WHERE r.id = :runId AND ${LAGGING}`),
     session: db.prepare(`SELECT r.id, r.last_seq FROM runs r WHERE r.session_id = :sessionId AND ${LAGGING} ORDER BY r.rowid LIMIT 1`),
     tree: db.prepare(`SELECT r.id, r.last_seq FROM runs r WHERE r.id IN (${TREE_OF}) AND ${LAGGING} ORDER BY r.rowid LIMIT 1`),
+    store: db.prepare(`SELECT r.id, r.last_seq FROM runs r WHERE ${LAGGING} ORDER BY r.rowid`),
   };
 
-  const laggingRunOf = (scope: DerivedScope): { runId: string; lastSeq: number } | undefined => {
-    const row = 'runId' in scope ? lagging.run.get({ runId: scope.runId }) : 'sessionId' in scope ? lagging.session.get({ sessionId: scope.sessionId }) : lagging.tree.get({ runTree: scope.runTree });
+  const laggingRunOf = (scope: DerivedScope | 'store'): { runId: string; lastSeq: number } | undefined => {
+    const row = scope === 'store' ? lagging.store.get() : 'runId' in scope ? lagging.run.get({ runId: scope.runId }) : 'sessionId' in scope ? lagging.session.get({ sessionId: scope.sessionId }) : lagging.tree.get({ runTree: scope.runTree });
     if (row === undefined) return undefined;
     const reader = readerFor('runs', String(row['id']), row);
     return { runId: reader.string('id'), lastSeq: reader.number('last_seq') };
@@ -179,19 +183,31 @@ export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, reco
     toolCallEventOf: guarded(records.toolCallEventOf),
   };
 
-  const paged = async <T>(scope: DerivedScope, fn: (view: AppendRecordReaders) => T): Promise<T> => {
+  const inPages = async <T>(page: () => { value: T } | undefined): Promise<T> => {
     for (;;) {
-      const outcome = transaction((): { value: T } | undefined => {
-        const behind = laggingRunOf(scope);
-        if (behind !== undefined) {
-          repair.repairPage(behind.runId, behind.lastSeq);
-          if (laggingRunOf(scope) !== undefined) return undefined;
-        }
-        return { value: within(fn) };
-      });
+      const outcome = transaction(page);
       if (outcome !== undefined) return outcome.value;
       await eventLoopTurn();
     }
+  };
+
+  const repairedPage = (scope: DerivedScope | 'store'): boolean => {
+    const behind = laggingRunOf(scope);
+    if (behind === undefined) return true;
+    repair.repairPage(behind.runId, behind.lastSeq);
+    return laggingRunOf(scope) === undefined;
+  };
+
+  const paged = <T>(scope: DerivedScope, fn: (view: AppendRecordReaders) => T): Promise<T> =>
+    inPages((): { value: T } | undefined => (repairedPage(scope) ? { value: within(fn) } : undefined));
+
+  const catchUp = (pages: number): Promise<boolean> => {
+    let left = pages;
+    return inPages((): { value: boolean } | undefined => {
+      const caughtUp = repairedPage('store');
+      left -= 1;
+      return caughtUp || left <= 0 ? { value: caughtUp } : undefined;
+    });
   };
 
   const read = async <T>(scope: DerivedScope, readCurrent: (view: AppendRecordReaders) => T): Promise<T> => {
@@ -199,7 +215,7 @@ export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, reco
     return quiet === undefined ? paged(scope, readCurrent) : quiet.value;
   };
 
-  return { read, write: paged, view };
+  return { read, write: paged, catchUp, view };
 };
 
 export type DerivedSnapshotView = {

@@ -94,7 +94,7 @@ export type AppendRecords = {
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
   answeringTargetsOf(runId: string): string[];
   indexedCharsOf(runId: string): number;
-  searchDraftRunOf(runId: string): SearchDraftRun;
+  searchDraftRunOf(runId: string, throughSeq: number): SearchDraftRun;
   searchDraftPageOf(runId: string, maxChars: number): SearchDraftPage;
   consumeSearchDraftSteps(runId: string, steps: readonly number[]): void;
   consumeSearchDraftRun(runId: string): void;
@@ -194,13 +194,16 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     insertDraftPart: db.prepare('INSERT INTO search_draft_parts (run_id, step, seq, kind, body, paths_json) VALUES (:runId, :step, :seq, :kind, :body, :pathsJson)'),
     insertDraftPath: db.prepare('INSERT OR IGNORE INTO search_draft_paths (run_id, path, seq, position) VALUES (:runId, :path, :seq, :position)'),
     draftRun: db.prepare('SELECT task, final_text FROM search_draft_runs WHERE run_id = :runId'),
-    draftPaths: db.prepare('SELECT path FROM search_draft_paths WHERE run_id = :runId ORDER BY seq, position'),
+    draftPaths: db.prepare('SELECT path FROM search_draft_paths WHERE run_id = :runId AND seq <= :throughSeq ORDER BY seq, position'),
+    runIndexed: db.prepare("SELECT 1 AS present FROM search_docs WHERE run_id = :runId AND level = 'run'"),
     draftSteps: db.prepare('SELECT step, seq_from, seq_to, chars FROM search_draft_steps WHERE run_id = :runId ORDER BY seq_from LIMIT :limit'),
     draftParts: db.prepare('SELECT kind, body, paths_json FROM search_draft_parts WHERE run_id = :runId AND step = :step ORDER BY seq'),
     dropDraftStep: db.prepare('DELETE FROM search_draft_steps WHERE run_id = :runId AND step = :step'),
     dropDraftParts: db.prepare('DELETE FROM search_draft_parts WHERE run_id = :runId AND step = :step'),
     dropDraftRun: db.prepare('DELETE FROM search_draft_runs WHERE run_id = :runId'),
     dropDraftPaths: db.prepare('DELETE FROM search_draft_paths WHERE run_id = :runId'),
+    dropRunDraftSteps: db.prepare('DELETE FROM search_draft_steps WHERE run_id = :runId'),
+    dropRunDraftParts: db.prepare('DELETE FROM search_draft_parts WHERE run_id = :runId'),
     modelCallRows: db.prepare(
       `SELECT seq, step, type, model_call_json
        FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded')`,
@@ -272,6 +275,7 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
 
   const recordSearchDraft = (event: RecordedEvent): void => {
     const { runId, seq, step } = event;
+    if (sql.runIndexed.get({ runId }) !== undefined) return;
     const draft = eventDraftOf({ step, type: event.payload.type, payload: event.payload });
     if (draft.task !== undefined) sql.setDraftTask.run({ runId, task: draft.task });
     if (draft.finalText !== undefined) sql.setDraftFinalText.run({ runId, finalText: draft.finalText });
@@ -400,9 +404,9 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
       if (row === undefined) throw new Error(`the indexed characters of run ${runId} could not be read`);
       return readerFor('run_indexed_chars', runId, row).number('chars');
     },
-    searchDraftRunOf: (runId) => {
+    searchDraftRunOf: (runId, throughSeq) => {
       const row: Row | undefined = sql.draftRun.get({ runId });
-      const paths = sql.draftPaths.all({ runId }).map((path) => readerFor('search_draft_paths', runId, path).string('path'));
+      const paths = sql.draftPaths.all({ runId, throughSeq }).map((path) => readerFor('search_draft_paths', runId, path).string('path'));
       if (row === undefined) return { task: '', finalText: '', paths };
       const reader = readerFor('search_draft_runs', runId, row);
       return { task: reader.string('task'), finalText: reader.string('final_text'), paths };
@@ -415,6 +419,8 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
       }
     },
     consumeSearchDraftRun: (runId) => {
+      sql.dropRunDraftParts.run({ runId });
+      sql.dropRunDraftSteps.run({ runId });
       sql.dropDraftRun.run({ runId });
       sql.dropDraftPaths.run({ runId });
     },

@@ -1831,6 +1831,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     pendingElicitationViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'elicitation').map(elicitationViewOf)),
 
+    catchUpDerived: (pages) => derivedReads.catchUp(pages),
     hasActiveRun: () => {
       const row = sql.anyActiveRunExists.get({});
       if (row === undefined) throw new Error('could not compute whether any run is active');

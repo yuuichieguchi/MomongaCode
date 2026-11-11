@@ -23,6 +23,7 @@ export { DuplicateChargeError } from './context-charges.ts';
 export { sameRunRequest } from './run-request.ts';
 export { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 export { FIDELITY_PRUNE_BATCH_ROWS, migrateRuntimeDatabase, openRuntimeStore } from './runtime-store.ts';
+export { DERIVED_CATCH_UP_PAGES } from './derived-repair.ts';
 export { FactsRefusedError, JournalThreadError, StalePreparation } from './journal-port.ts';
 export { JOURNAL_SCAN_RANGE_ROWS, createJournalReader } from './journal-reader.ts';
 export { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
