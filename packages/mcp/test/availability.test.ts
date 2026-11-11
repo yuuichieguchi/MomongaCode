@@ -1,3 +1,4 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
 import { McpUnavailableError, createManagedConnection } from '@momonga/mcp';
 import type { McpServerConnection } from '@momonga/mcp';
@@ -68,7 +69,7 @@ type Fixture = { connection: McpServerConnection; held: HeldTimers; clock: FakeC
 const fixtureOf = (onList: 'silent' | 'exit', onInitialize: 'answer' | 'silent' = 'answer'): Fixture => {
   const held = timersHolding([REQUEST_LIMIT_MS, CONNECT_LIMIT_MS]);
   const clock = createFakeClock(1_000_000);
-  const connection = createManagedConnection({
+  const connection = createManagedConnection({ files: nodeFileSystem,
     clientVersion: '0.0.0-test',
     name: 's',
     config: { command: process.execPath, args: ['-e', serverScript(onList, onInitialize)] },

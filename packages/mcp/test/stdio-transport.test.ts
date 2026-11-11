@@ -6,7 +6,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
 import { createStdioTransport, type StdioTransport } from '@momonga/mcp';
-import { groupAlive, holderGroups } from '@momonga/foundation';
+import { groupAlive, holderGroups, nodeFileSystem } from '@momonga/foundation';
 import type { TerminateOutcome } from '@momonga/foundation';
 import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, testProcessInspector, pollUntil } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -92,7 +92,7 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
     args: [MCP_RAW_STDIO_SERVER_PATH, ...(options.modes ?? [])],
     ...options.config,
   };
-  const transport = createStdioTransport({
+  const transport = createStdioTransport({ files: nodeFileSystem,
     name: 'raw',
     config,
     projectDir,
@@ -184,7 +184,7 @@ describe('createStdioTransport spawn', () => {
 
   it('rejects start with an error naming the command and the PATH searched when the command is not found', async () => {
     const searched = ['/nonexistent-a', '/nonexistent-b'].join(path.delimiter);
-    const transport = createStdioTransport({
+    const transport = createStdioTransport({ files: nodeFileSystem,
       name: 'missing',
       config: { command: 'mm-definitely-missing-command' },
       projectDir: makeDir(),
@@ -424,7 +424,7 @@ describe('createStdioTransport relative PATH entries', () => {
     const projectDir = makeDir();
     writeScript(path.join(projectDir, 'node_modules', '.bin', 'mm-only-relative'), 'exit 42');
     const searched = ['node_modules/.bin', '/nonexistent-abs'].join(path.delimiter);
-    const transport = createStdioTransport({
+    const transport = createStdioTransport({ files: nodeFileSystem,
       name: 'relative',
       config: { command: 'mm-only-relative' },
       projectDir,

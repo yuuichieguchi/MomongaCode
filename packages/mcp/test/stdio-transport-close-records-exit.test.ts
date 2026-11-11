@@ -1,3 +1,4 @@
+import { nodeFileSystem } from '@momonga/foundation';
 import os from 'node:os';
 import { createStdioTransport } from '@momonga/mcp';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
@@ -13,7 +14,7 @@ afterEach(async () => {
 
 const sleeper = async (terminate: NonNullable<Parameters<typeof createStdioTransport>[0]['terminate']>) => {
   const closes: Array<{ exitAtClose: unknown }> = [];
-  const transport = createStdioTransport({
+  const transport = createStdioTransport({ files: nodeFileSystem,
     name: 'sleeper',
     config: { command: '/bin/sleep', args: ['300'] },
     projectDir: os.tmpdir(),
