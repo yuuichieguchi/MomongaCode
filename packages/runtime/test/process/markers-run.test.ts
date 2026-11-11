@@ -167,7 +167,7 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, logger, stdout }));
     expect(error).toBe(injected);
     expect(stepsLogged(logger).at(-1)).toBe('tool-markers');
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['store', 'sandbox', 'lock']);
     expect(await groupExists(holder)).toBe(true);
     expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);

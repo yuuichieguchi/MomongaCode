@@ -457,6 +457,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       retire: (binding) => binding.sandbox.sweep?.(),
       onWarning,
     });
+    cleanups.push({ name: 'sandbox', run: () => sandboxes.retireAll() });
     await step('sandbox', async () => {
       (await sandboxes.admit(startDeadlineSignal(signal))).release();
     });

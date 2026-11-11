@@ -126,6 +126,21 @@ describe('tool marker sweep wiring (§8)', () => {
       await passServingTime(timers, TOOL_MARKER_SWEEP_MS, () => sandboxSweeps.calls === 2, 'the second sandbox sweep');
     });
 
+    it('are swept at shutdown for the sandbox a settings change derived, not only for the one the runtime started with', async (context) => {
+      const temp = trackedRunHome(context);
+      const bwrap = path.join(temp.root, 'bwrap');
+      fs.writeFileSync(bwrap, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const launched = await launchRuntime(temp, { leaseMs: NON_SWEEP_LEASE_MS, platform: 'linux', sandboxExecPath: bwrap });
+      expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'none' });
+      writeUserSettings(temp.home, { sandbox: 'bubblewrap', ...modelSettings(path.join(temp.root, 'up.sock')) });
+      expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'bubblewrap' });
+      expect(sandboxSweeps.calls).toBe(0);
+
+      expect(await launched.handle.close()).toEqual({ clean: true, abandoned: [], stragglers: [] });
+
+      expect(sandboxSweeps.calls).toBe(1);
+    });
+
     it('report a sweep that fails without stopping the runtime', async (context) => {
       const failure = new Error('the kept placeholder could not be removed');
       sandboxSweeps.failure = failure;
