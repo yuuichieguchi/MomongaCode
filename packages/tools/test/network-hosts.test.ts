@@ -117,7 +117,7 @@ describe('a Bash call that asks for named hosts, before it runs', () => {
     expect(result.status).toBe('failed');
     expect(result.denial).toEqual({
       source: 'sandbox',
-      reason: 'the command requests network access to registry.example.org only, and the sandbox in use (none) cannot limit a command to that; nothing wider is granted in its place',
+      reason: 'the command requests network access to registry.example.org only, and the sandbox in use (none) cannot limit a command to that; nothing wider is granted in its place. This sandbox accepts network "open"',
     });
   });
 });

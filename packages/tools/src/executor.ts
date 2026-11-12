@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ABANDON_KILL_GRACE_MS, ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, describeNetworkScope, displayToolPath, enforcedNetworkScope, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf, standardSecretLocations } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, ABORT_SETTLE_LIMIT_MS, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, displayToolPath, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf, standardSecretLocations } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
@@ -10,12 +10,13 @@ import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, glo
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
 import { diffFieldsOf, permissionDeniedOutput } from '@momonga/protocol';
 import type { ApprovalBasis, ApprovalShown, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
-import { SANDBOX_NETWORK_SCOPES, SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
+import { SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { RipgrepLocator } from './ripgrep-locator.ts';
 import { EarlierAttemptNotStoppedError, createCallLocks } from './call-lock.ts';
 import type { CallLock } from './call-lock.ts';
 import { contextWithNetwork, readOnlyContextOf } from './read-only-call.ts';
+import { callNetworkOf } from './network-scope.ts';
 import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
@@ -240,12 +241,6 @@ const allowBasisOf = (decision: Decision): ApprovalBasis => {
 };
 
 const requestedNetworkOf = (subject: PermissionSubject): NetworkScope => networkScopeOfRequest(subject.kind === 'command' ? subject.network : undefined);
-
-const unenforceableNetwork = (subject: PermissionSubject, sandbox: Sandbox): string | undefined => {
-  const scope = requestedNetworkOf(subject);
-  if (SANDBOX_NETWORK_SCOPES[sandbox.kind].includes(scope.kind) || scope.kind === 'none') return undefined;
-  return `the command requests ${describeNetworkScope(scope)}, and the sandbox in use (${sandbox.kind}) cannot limit a command to that; nothing wider is granted in its place`;
-};
 
 const requireBasis = (target: GateTarget): ApprovalBasis => {
   if (target.basis === undefined) throw new Error('a call reached execution without a recorded approval basis');
@@ -852,8 +847,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       }
     }
     const { subject, input } = target;
-    const unenforceable = unenforceableNetwork(subject, batch.sandbox);
-    if (unenforceable !== undefined) return deniedOutcome(call.callId, { source: 'sandbox', reason: unenforceable });
+    const requested = requestedNetworkOf(subject);
+    const admission = callNetworkOf({ requested, granted: requested, sandbox: batch.sandbox.kind });
+    if (admission.kind === 'refused') return deniedOutcome(call.callId, { source: 'sandbox', reason: admission.reason });
     const unsandboxedExec = tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
     if (unsandboxedExec) {
       decision =
@@ -1467,8 +1463,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const contextForBasis = (): ToolContext => {
       const readOnly = requireBasis(target) === 'read_only';
       const requested = requestedNetworkOf(target.subject);
-      const scope = enforcedNetworkScope({ requested, granted: readOnly ? NO_NETWORK : requested, backend: SANDBOX_NETWORK_SCOPES[batch.sandbox.kind] });
-      return contextWithNetwork(readOnly ? readOnlyContextOf(toolContext) : toolContext, scope);
+      const network = callNetworkOf({ requested, granted: readOnly ? NO_NETWORK : requested, sandbox: batch.sandbox.kind });
+      if (network.kind === 'refused') throw new Error(`a call reached execution with a network its sandbox refuses: ${network.reason}`);
+      return contextWithNetwork(readOnly ? readOnlyContextOf(toolContext) : toolContext, network);
     };
 
     try {
