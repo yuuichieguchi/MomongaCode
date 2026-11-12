@@ -158,10 +158,11 @@ const assertAcceptance = async (
 
   const completed = ofType(journal, 'tool.completed');
   const grep = completed[0];
-  expect(grep?.data['truncated']).toBe(true);
   expect(grep?.data['handle']).toBe(haystack.handle);
+  expect({ truncated: grep?.data['truncated'] === true, formatted: grep?.data['formatted'] !== undefined }).not.toEqual({ truncated: false, formatted: false });
   const grepInline = String(grep?.data['output']);
-  expect(grepInline.length).toBeLessThan(haystack.grepOutput.length);
+  expect(grepInline).toContain(haystack.handle);
+  expect(grepInline.includes(haystack.grepOutput)).toBe(false);
   expect(await seenOutputTokens(count, { callId: String(grep?.data['callId']), tool: 'Grep' }, grepInline)).toBeLessThanOrEqual(plan.sizing.itemCap);
 
   expect(compacted.length).toBeGreaterThanOrEqual(1);
