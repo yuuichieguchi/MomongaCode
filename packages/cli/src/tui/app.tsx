@@ -1,4 +1,5 @@
 import { askTrustItems } from './project-items.ts';
+import { askProjectCheck } from './project-check.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
 import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
@@ -66,8 +67,13 @@ import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
 import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
 import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
-import { createSlashRegistry, namesOf, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
-import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
+import { createSlashRegistry, modeToastText, namesOf, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
+import type { AutoModePort, SelectedText, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
+import { extractSelection } from './screen/selection.ts';
+import { COPY_MAX_BYTES } from './screen/constants.ts';
+import { clipboardReadMessage } from './screen/clipboard.ts';
+
+const READING_CLIPBOARD = 'reading the clipboard';
 import { KEY_SETTLE_MS } from './terminal/constants.ts';
 import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
@@ -188,6 +194,7 @@ export function App(props: AppProps) {
   const [theme, setTheme] = useState<ThemeId>(tuiSettings.initial.theme);
   const [previewedTheme, setPreviewedTheme] = useState<ThemeId | undefined>(undefined);
   const [notify, setNotify] = useState<NotifyMode>(tuiSettings.initial.notify);
+  const [copyOnSelect, setCopyOnSelect] = useState<boolean>(props.copyOnSelect ?? tuiSettings.initial.copyOnSelect);
   applyTheme(previewedTheme ?? theme);
   const [storedA11y, setStoredA11y] = useState<StoredA11y>({ screenReader: tuiSettings.initial.screenReader, reducedMotion: tuiSettings.initial.reducedMotion });
   const a11y = a11yOf(storedA11y, props.a11y ?? NOTHING_ASKED);
@@ -663,6 +670,9 @@ export function App(props: AppProps) {
     for (const sentence of pending.refused) append({ kind: 'notice', level: 'warning', text: sentence });
     const approved = await askTrustItems(pending.items, overlayPorts.choose);
     if (approved.length > 0) await backend.approveProjectItems(approved);
+    const proposal = await backend.checkProposal();
+    const check = proposal.ask ? await askProjectCheck(proposal.checks, overlayPorts) : undefined;
+    if (check !== undefined) await backend.answerCheck(check);
     const [entries, listed] = await Promise.all([backend.models(), backend.plan.accounts()]);
     rememberProfiles(listed);
     if (entries.length > 0) {
@@ -1086,6 +1096,10 @@ export function App(props: AppProps) {
         },
         a11y: () => a11y,
         storedA11y: (name) => storedA11y[name],
+        storeTui: async (name, value, signal) => {
+          await tuiSettings.save(name, value, signal);
+          if (name === 'copyOnSelect') setCopyOnSelect(value);
+        },
         storeA11y: async (name, value, signal) => {
           await tuiSettings.save(name, value, signal);
           setStoredA11y((before) => ({ ...before, [name]: value }));
@@ -1095,12 +1109,13 @@ export function App(props: AppProps) {
       keyBindings: { store: bindings, choose: overlayPorts.choose, captureKey: overlayPorts.captureKey },
       overlays: { choose: overlayPorts.choose, promptText: overlayPorts.promptText },
       externalEditor,
+      clipboard: { selected: selectedText, lastAnswer },
       refusedWhileRunning: refusedWhileWorking,
       status: () => statusLines(statusFacts()),
       setMode: async (chosen) => {
         const session = await backend.setMode(chosen);
         setModeState(session.permissionMode);
-        view.showToast(`permission mode: ${session.permissionMode}`);
+        view.showToast(modeToastText(session.permissionMode));
         showAutoNotice(session);
       },
       setModel: applyModel,
@@ -1158,11 +1173,27 @@ export function App(props: AppProps) {
     setAttachments([...attachmentsRef.current, ...added]);
   };
 
+  const selectedText = (): SelectedText | undefined => {
+    const { selection, source } = view;
+    if (selection === undefined) return undefined;
+    const extract = extractSelection(source, selection, COPY_MAX_BYTES);
+    return extract.complete ? { kind: 'text', text: extract.text } : { kind: 'too-large', bytes: extract.bytes };
+  };
+
+  const lastAnswer = (): string | undefined => {
+    for (let index = store.count() - 1; index >= 0; index -= 1) {
+      const { entry } = store.at(index);
+      if (entry.kind === 'assistant') return entry.text;
+    }
+    return undefined;
+  };
+
   const cycleMode = (): void => {
     backend
       .setMode(nextMode({ current: mode, bypassAllowed, autoAvailable }))
       .then((session) => {
         setModeState(session.permissionMode);
+        view.showToast(modeToastText(session.permissionMode));
         showAutoNotice(session);
       }, reportError);
   };
@@ -1218,8 +1249,9 @@ export function App(props: AppProps) {
   };
 
   const pasteFromClipboard = async (): Promise<void> => {
-    const content = await tasks.run((signal) => backend.userInput.readClipboard(signal));
+    const content = await waitFor(READING_CLIPBOARD, (signal) => backend.userInput.readClipboard(signal));
     if (content.kind === 'unsupported') setHint(NO_CLIPBOARD_PROGRAM_HINT);
+    else if (content.kind === 'failed') setHint(clipboardReadMessage(content));
     else if (content.kind === 'text') replaceEditor(insertPaste(editorRef.current, content.text));
     else if (content.kind === 'image' && !imageInput) setHint(NO_IMAGE_INPUT_HINT);
     else if (content.kind === 'image') {
@@ -1535,7 +1567,7 @@ export function App(props: AppProps) {
     fullscreen: fullscreen && !switching,
     width: transcriptWidth,
     allocation,
-    copyOnSelect: props.copyOnSelect ?? tuiSettings.initial.copyOnSelect,
+    copyOnSelect,
     now,
     copy: (text) => backend.copyToClipboard(text),
     openLink: (url) => backend.openUrl(url, untilNextKey(terminal.input), (message) => reportError(new Error(message))),
@@ -1556,6 +1588,7 @@ export function App(props: AppProps) {
     yielded: panel !== undefined || switching,
     window: fullscreen && !switching ? view.window : undefined,
     allocation,
+    readStoredResult: (stored, offset) => backend.toolResult(stored.runId, stored.callId, offset),
     reportError,
   });
   usePromptPointer({

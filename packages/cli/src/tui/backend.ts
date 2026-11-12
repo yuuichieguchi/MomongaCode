@@ -1,10 +1,15 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { findProgramOnPathSync, nodeFileSystemSync, resolveLayoutLocks } from '@momonga/foundation';
+import { createOutboundDispatcher, findOutboundError, findProgramOnPath, outboundFetch, resolveLayoutLocks, routeOf } from '@momonga/foundation';
+import { withOutboundNetwork } from '../network.ts';
+import type { NetworkCheck, NetworkView } from './commands/network.ts';
 import type { FileCandidates } from '@momonga/foundation';
 import type { TrustItemsView } from '@momonga/protocol';
-import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
-import { approveProjectItems, editProjectMandate, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
-import type { ApprovedItem, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
+import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
+import { createFromTemplate } from './file-templates.ts';
+import type { CreatedFile, TemplateKind } from './file-templates.ts';
+import { approveProjectItems, editProjectMandate, recordProjectCheck, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import type { AcceptedCheck, ApprovedItem, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
+import type { CheckProposal } from '@momonga/runtime';
 import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
 import type { ModelsHost } from '../commands/models.ts';
 import { storeSecretValue } from '../commands/secret.ts';
@@ -30,9 +35,10 @@ import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
 import type { ClipboardPrograms } from './screen/clipboard-host.ts';
-import { copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
+import { cachedProgramSearch, copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
 import type { ClipboardContent, CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
+import { pendingProjectServerOf } from './project-items.ts';
 import { autoModeConfigured, connectSessionRuntime, environmentSnapshot, reopenedAsTyped, runBoundsOf } from '../run/open-session.ts';
 import type { RunBounds, SessionOptions } from '../run/open-session.ts';
 
@@ -66,6 +72,8 @@ export type TuiBackend = {
   clearTrust(): Promise<void>;
   trustItems(): Promise<TrustItemsView>;
   approveProjectItems(approved: readonly ApprovedItem[]): Promise<void>;
+  checkProposal(): Promise<CheckProposal>;
+  answerCheck(answer: AcceptedCheck): Promise<void>;
   projectMandate(): Promise<ProjectMandateState>;
   writeProjectMandate(document: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
   openSession(model?: string, permissionMode?: PermissionMode): Promise<SessionView>;
@@ -73,6 +81,7 @@ export type TuiBackend = {
   continueSession(): Promise<SessionView>;
   sessions(): Promise<readonly SessionSummary[]>;
   runs(): Promise<readonly RunView[]>;
+  toolResult(runId: string, callId: string, offset: number): Promise<ToolResultPage>;
   setMode(mode: PermissionMode): Promise<SessionView>;
   models(): Promise<readonly MomongaModelEntry[]>;
   setModel(model: string): Promise<SessionView>;
@@ -88,6 +97,10 @@ export type TuiBackend = {
   openUrl(url: URL, watch: AbortSignal, onFailure: (message: string) => void): void;
   copyToClipboard(text: string): Promise<CopyOutcome>;
   skills(): Promise<SkillsResponse>;
+  agents(): Promise<AgentsResponse>;
+  network(signal: AbortSignal): Promise<NetworkView>;
+  checkNetwork(url: URL, signal: AbortSignal): Promise<NetworkCheck>;
+  createFromTemplate(kind: TemplateKind, name: string): Promise<CreatedFile>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
@@ -115,6 +128,8 @@ export type TuiBackend = {
   settings(): Promise<SettingsSnapshot>;
   editSettings(layer: SettingsLayer, operation: SettingsOperation, signal: AbortSignal): Promise<void>;
   mcpServers(): Promise<readonly McpServerView[]>;
+  folderMcpServers(): Promise<readonly McpServerView[]>;
+  pendingProjectServer(name: string): Promise<ApprovedItem | undefined>;
   initInstruction(): Promise<string>;
   close(): Promise<void>;
 };
@@ -158,6 +173,8 @@ export const createTuiBackend = (
       await gateway.close();
     }
   };
+
+  const clipboardPrograms = cachedProgramSearch((name) => findProgramOnPath(name, ports.env, ports.files));
 
   const conversationRuns = (sessionId: string): Promise<RunView[]> => ownRunsOf(runtime(), sessionId);
 
@@ -210,6 +227,8 @@ export const createTuiBackend = (
     settings: async () => readSettingsSnapshot({ home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal: closing.signal }),
     editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { lock: resolveLayoutLocks(paths).mechanism, signal }),
     mcpServers: () => runtime().mcpServers(current().id),
+    folderMcpServers: async () => runtime().folderMcpServers({ cwd: ports.cwd, env: await environmentSnapshot(ports, closing.signal) }),
+    pendingProjectServer: (name) => pendingProjectServerOf({ home: paths.home, projectDir: ports.cwd, trust: trustOracle, signal: closing.signal }, name),
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
     boot: async () => {
       await ensureSessionDaemon(ports, paths, { signal: closing.signal, ...(onNewer === undefined ? {} : { onNewer }) });
@@ -222,6 +241,13 @@ export const createTuiBackend = (
     trust: () => runtime().trust(ports.cwd),
     trustItems: () => runtime().trustItems(ports.cwd),
     approveProjectItems: (approval) => approveProjectItems(paths.home, ports.cwd, approval, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
+    checkProposal: async () => {
+      const trusted = await trustOracle.isTrusted(ports.cwd, closing.signal);
+      const loaded = await loadSettings({ home: paths.home, projectDir: ports.cwd, cli: {}, trust: trustOracle, signal: closing.signal });
+      const { checkProposalOf } = await import('@momonga/runtime');
+      return checkProposalOf({ projectDir: ports.cwd, trusted, settings: loaded.settings, signal: closing.signal });
+    },
+    answerCheck: (answer) => recordProjectCheck(paths.home, ports.cwd, answer, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
     projectMandate: async () => projectMandateState({ projectDir: ports.cwd, approvals: (await loadUserSettings({ home: paths.home, signal: closing.signal })).settings.projectApprovals, signal: closing.signal }),
     writeProjectMandate: (document, signal) =>
       editProjectMandate(ports.cwd, replacedBy(document), { home: paths.home, trust: trustOracle, ...settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: AbortSignal.any([closing.signal, signal]) }) }),
@@ -247,6 +273,7 @@ export const createTuiBackend = (
     continueSession: async () => adopt(await reopenedAsTyped(runtime(), ports.cwd, { kind: 'newest' }, options)),
     sessions: () => listedSessions(runtime(), ports.cwd, session?.id, closing.signal),
     runs: () => conversationRuns(current().id),
+    toolResult: (runId, callId, offset) => runtime().toolResult(runId, callId, offset),
     setMode: async (mode) => {
       session = await runtime().setPermissionMode(current().id, mode);
       return session;
@@ -292,7 +319,7 @@ export const createTuiBackend = (
       shell: (command, include, io) => runtime().userShell(current().id, command, include, io),
       stopShell: () => runtime().stopUserShell(current().id),
       pendingShell: () => runtime().pendingUserShell(current().id),
-      readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), capture: clipboard.capture }, signal),
+      readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: clipboardPrograms, capture: clipboard.capture }, ports.timers, signal),
     },
     resolveApproval: async (approvalId, optionId) => {
       await runtime().resolveApproval(approvalId, optionId);
@@ -304,9 +331,33 @@ export const createTuiBackend = (
     copyToClipboard: async (text) => {
       const terminal = ports.terminal;
       if (terminal === undefined) throw new Error('the clipboard request needs a terminal');
-      return copyThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
+      return copyThroughRoutes({ env: ports.env, findProgram: clipboardPrograms, pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
     },
     skills: () => runtime().skills(current().id),
+    agents: () => runtime().agents(current().id),
+    network: async (signal) => ({
+      settings: (await loadUserSettings({ home: paths.home, signal })).settings.network,
+      env: ports.env,
+      trust: await withOutboundNetwork(ports, signal, async (network) => network.trust),
+    }),
+    checkNetwork: (url, signal) =>
+      withOutboundNetwork(ports, signal, async (network) => {
+        const { DEFAULT_STEP_TIMEOUT_MS } = await import('@momonga/gateway');
+        const dispatcher = createOutboundDispatcher(network, { connectReplyTimeoutMs: DEFAULT_STEP_TIMEOUT_MS, headersTimeout: DEFAULT_STEP_TIMEOUT_MS, bodyTimeout: DEFAULT_STEP_TIMEOUT_MS });
+        const route = routeOf(url, network.config);
+        try {
+          const response = await outboundFetch(dispatcher)(url, { method: 'HEAD', signal });
+          await response.body?.cancel();
+          return { route, result: { kind: 'answered', status: response.status } };
+        } catch (error) {
+          const found = findOutboundError(error);
+          if (found === undefined) throw error;
+          return { route, result: { kind: 'failed', hop: found.hop, text: found.message } };
+        } finally {
+          await dispatcher.close();
+        }
+      }),
+    createFromTemplate: (kind, name) => createFromTemplate(ports.files, paths.home, kind, name),
     memories: (filter) => runtime().memories(filter),
     memory: (id) => runtime().memory(id),
     deleteMemory: (id) => runtime().deleteMemory(id),

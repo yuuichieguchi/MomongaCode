@@ -1,30 +1,26 @@
-import { isRecord } from '@momonga/foundation';
+import { hostPaths, isRecord } from '@momonga/foundation';
 import { acceptedCheckOf } from './declared-checks.ts';
 import type { AcceptedCheck } from './declared-checks.ts';
 import { editUserSettings } from './edit-user-settings.ts';
-import { settingsWriterPorts } from './file-lock.ts';
-import type { SettingsWriterOptions } from './file-lock.ts';
+import type { SettingsWriterPorts } from './file-lock.ts';
+import { layoutOf } from './layout.ts';
 import { loadUserSettings } from './user-settings.ts';
 
-export const readProjectCheck = async (home: string, projectReal: string, signal: AbortSignal): Promise<AcceptedCheck | undefined> =>
-  acceptedCheckOf((await loadUserSettings({ home, signal })).settings, projectReal);
+export const readProjectCheck = async (home: string, projectDir: string, signal: AbortSignal): Promise<AcceptedCheck | undefined> =>
+  acceptedCheckOf((await loadUserSettings({ home, signal })).settings, await hostPaths(signal).canonicalPath(projectDir));
 
-export const writeProjectCheck = async (home: string, settingsFile: string, projectReal: string, answer: AcceptedCheck | undefined, options: SettingsWriterOptions): Promise<void> => {
+export const forgetProjectCheck = async (home: string, projectDir: string, ports: SettingsWriterPorts): Promise<void> => {
+  const folder = await hostPaths(ports.signal).canonicalPath(projectDir);
   await editUserSettings(
-    settingsFile,
-    (document) => {
-      const existing = document['projectChecks'];
-      if (existing !== undefined && !isRecord(existing)) throw new Error(`${settingsFile}: projectChecks must be a JSON object`);
-      const checks: Record<string, unknown> = { ...existing };
-      if (answer === undefined) {
-        if (!Object.hasOwn(checks, projectReal)) return false;
-        delete checks[projectReal];
-      } else {
-        checks[projectReal] = 'declined' in answer ? { declined: true } : { commands: [...answer.commands] };
-      }
-      document['projectChecks'] = checks;
+    layoutOf(home).settingsFile,
+    (settings) => {
+      const checks = settings['projectChecks'];
+      if (!isRecord(checks) || !Object.hasOwn(checks, folder)) return false;
+      const kept: Record<string, unknown> = { ...checks };
+      delete kept[folder];
+      settings['projectChecks'] = kept;
       return true;
     },
-    settingsWriterPorts(home, options),
+    ports,
   );
 };

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildContext, workingStateCapFor, workingStateMessage } from '@momonga/context';
 import type { CompactionInputItem, MessageInputItem } from '@momonga/protocol';
 import { summaryTokenCapFor } from '@momonga/protocol';
-import { assistant, capabilitiesFor, harness, inputFor, sourcesWith, textOf, tokensOfItem, user } from './helpers.ts';
+import { assistant, capabilitiesFor, harness, inputFor, sourcesWith, textOf, tokensOfItem, user, withTurnsBeforeCurrent } from './helpers.ts';
 
 const SUMMARY = { item: { type: 'compaction', encrypted_content: 'enc' } as CompactionInputItem, replacedThroughSeq: 2 };
 const STATE = 'files written: src/a.ts';
@@ -75,9 +75,9 @@ describe('placement in the input', () => {
 
   it('never enters the compaction input', async () => {
     const small = capabilitiesFor(4000);
-    const history = [user(3, 'q2'), assistant(4, 'x'.repeat(4400)), user(5, 'q3'), assistant(6, 'y'.repeat(4400)), user(7, 'now')];
+    const history = withTurnsBeforeCurrent([user(3, 'q2'), assistant(4, 'x'.repeat(4400)), user(5, 'q3'), assistant(6, 'y'.repeat(4400)), user(7, 'now')]);
     const built = await buildContext(
-      inputFor(small, { sources: sourcesWith({ history, summary: SUMMARY, workingState: () => STATE }), keepRecentTurns: 1 }),
+      inputFor(small, { sources: sourcesWith({ history, summary: SUMMARY, workingState: () => STATE }) }),
       harness(small).ports,
     );
     expect(built.compaction?.input).toBeDefined();

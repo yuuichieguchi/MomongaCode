@@ -142,6 +142,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     },
     ...(options.idempotencyTtlMs === undefined ? {} : { idempotencyTtlMs: options.idempotencyTtlMs }),
     ...(options.maxParallel === undefined ? {} : { maxParallel: options.maxParallel }),
+    hostParallelism: 8,
     readOnlyRetry: { attempts: options.attempts ?? 3, baseMs: 0, maxMs: 0 },
     fs: hostFilesystemOf(fakePolicyFilesystem()),
     ...FAKE_LEASE,

@@ -3,6 +3,7 @@ export const WHEEL_ROWS = 3;
 export const DOUBLE_CLICK_MS = 400;
 export const OSC52_MAX_RAW_BYTES = 100_000;
 export const COPY_MAX_BYTES = 1024 * 1024;
+export const CLIPBOARD_READ_MS = 5000;
 export const MAX_FPS = 30;
 export const SUBAGENT_ROWS_MAX = 5;
 export const INPUT_BOX_FRAME_ROWS = 2;

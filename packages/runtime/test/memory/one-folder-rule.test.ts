@@ -40,7 +40,7 @@ const statusSeenFrom = async (store: RuntimeStore, folder: string, ancestor: boo
     store,
     settings: {
       trusted: () => true,
-      verification: async () => ({ commands: [] }),
+      verification: async () => ({ commands: [], conditions: [] }),
     } as never,
     evidenceRun: () => async () => ({ exitCode: 128 }),
     evidencePorts: () => portsWhere(ancestor),

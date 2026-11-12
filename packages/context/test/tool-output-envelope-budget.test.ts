@@ -3,7 +3,7 @@ import { buildContext } from '@momonga/context';
 import type { HistoryItem } from '@momonga/context';
 import { TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
 import type { InputItem } from '@momonga/protocol';
-import { assistant, capabilitiesFor, handleOf, harness, inputFor, itemCapFor, omittedMarker, outputTextOf, sourcesWith, tokensOfItem, tokensOfItems, truncatedMarker, user } from './helpers.ts';
+import { assistant, capabilitiesFor, handleOf, harness, inputFor, itemCapFor, omittedMarker, outputTextOf, sourcesWith, tokensOfItem, tokensOfItems, truncatedMarker, user, withTurnsBeforeCurrent } from './helpers.ts';
 import { TEST_FENCE } from '@momonga/testkit';
 
 const W = 4000;
@@ -56,15 +56,15 @@ describe('the envelope is part of the rendered size', () => {
 
   it('stores the raw output under its handle and renders the omitted marker without an enclosure', async () => {
     const old = (letter: string): string => letter.repeat(2400);
-    const history: HistoryItem[] = [
+    const history: HistoryItem[] = withTurnsBeforeCurrent([
       user(1, 'old question'),
       ...['a', 'b', 'c', 'd', 'e'].flatMap((letter, index): HistoryItem[] => [callTo(2 + 2 * index, `c${index}`, EXTERNAL), outputOf(3 + 2 * index, `c${index}`, old(letter))]),
       assistant(12, 'old answer'),
       user(13, 'current question'),
       callTo(14, 'now', EXTERNAL),
       outputOf(15, 'now', old('f')),
-    ];
-    const { result, blobs } = await build(history, { keepRecentTurns: 1 });
+    ]);
+    const { result, blobs } = await build(history);
     const marker = outputTextOf(result.input, 'c0') ?? '';
     const match = omittedMarker.exec(marker);
     expect(match).not.toBeNull();

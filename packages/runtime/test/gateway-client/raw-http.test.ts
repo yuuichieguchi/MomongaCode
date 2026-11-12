@@ -190,7 +190,7 @@ describe('gateway client request headers', () => {
   });
 
   it('leaves a fallback member that is being measured or is unavailable out of the chain of a model, and keeps its pins', async () => {
-    const probing = { toolCalling: { state: 'probing', message: 'measuring this model (once per model and OS build)', retryAfterSeconds: 120 }, source: 'unprobed' };
+    const probing = { toolCalling: { state: 'probing', message: 'measuring this model (once per model and OS build)', retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' };
     const fake = await startRawHttpFake();
     fake.respond((_request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });

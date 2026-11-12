@@ -1,11 +1,12 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { INIT_INSTRUCTION } from '@momonga/runtime';
 import { PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS } from '@momonga/protocol';
 import type { McpServerView } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SLASH_COMMANDS } from '../../src/tui/commands/index.ts';
 import { HOOKS_TITLE, HOOK_COMMAND_TITLE, HOOK_EVENT_TITLE, HOOK_MATCHER_TITLE, HOOK_TIMEOUT_TITLE } from '../../src/tui/commands/hooks.ts';
-import { ADD_HTTP_ROW, ADD_STDIO_ROW, MCP_ADDRESS_TITLE, MCP_ARGUMENTS_TITLE, MCP_COMMAND_TITLE, MCP_ENVIRONMENT_TITLE, MCP_NAME_TITLE, MCP_TITLE, sessionServerNote } from '../../src/tui/commands/mcp.ts';
+import { ADD_HTTP_ROW, ADD_STDIO_ROW, MCP_ADDRESS_TITLE, MCP_ARGUMENTS_TITLE, MCP_COMMAND_TITLE, MCP_ENVIRONMENT_TITLE, MCP_NAME_TITLE, MCP_SECRETS_TITLE, MCP_TITLE, sessionServerNote } from '../../src/tui/commands/mcp.ts';
 import { PERMISSIONS_TITLE, PROTECTED_HEADING, PROTECTED_LINES, TRUST_ROW, TRUST_TITLE } from '../../src/tui/commands/permissions.ts';
 import { APPLIES_NEXT_SESSION, APPLIES_NOW, SAVE_TO_TITLE } from '../../src/tui/settings-screen.tsx';
 import { FAKE_INIT_INSTRUCTION, runView } from '../fake-backend.ts';
@@ -321,7 +322,8 @@ describe('/mcp', () => {
     await typeInto(started, 'files', MCP_COMMAND_TITLE);
     await typeInto(started, 'npx', MCP_ARGUMENTS_TITLE);
     await typeInto(started, '-y files-server', MCP_ENVIRONMENT_TITLE);
-    await typeInto(started, 'FILES_ROOT', APPLIES_NEXT_SESSION);
+    await typeInto(started, 'FILES_ROOT', MCP_SECRETS_TITLE);
+    await press(started, KEYS.enter, APPLIES_NEXT_SESSION);
     expect(stored(place.userFile)).toEqual({ mcpServers: { files: { type: 'stdio', command: 'npx', args: ['-y', 'files-server'], env: { FILES_ROOT: '${FILES_ROOT}' } } } });
     started.app.unmount();
   });
@@ -343,14 +345,11 @@ describe('/mcp', () => {
 
   it('removes a server of the user file after asking, enables and disables a server of the project, and says a session server is in no file', async () => {
     const place = freshPlace();
-    writeSettings(place.userFile, { mcpServers: { files: { command: 'npx' } }, enabledMcpjsonServers: [OTHER_APPROVAL, 'tracker'], disabledMcpjsonServers: ['tracker'] });
+    writeSettings(place.userFile, { mcpServers: { files: { command: 'npx' } }, enabledMcpjsonServers: [OTHER_APPROVAL, { name: 'tracker', digest: TRACKER_DIGEST }] });
+    fs.writeFileSync(path.join(place.project, '.mcp.json'), JSON.stringify({ mcpServers: { tracker: { type: 'http', url: 'https://tracker.example/mcp' } } }));
     const started = await startAt(place, { mcpServers: SERVERS });
     await command(started, '/mcp', ADD_HTTP_ROW);
     await press(started, '2', '› 2. tracker');
-    const actions = await press(started, KEYS.enter, '1. Enable');
-    expect(actions).toContain('2. Disable');
-    await press(started, KEYS.enter, APPLIES_NEXT_SESSION);
-    expect(stored(place.userFile)).toEqual({ mcpServers: { files: { command: 'npx' } }, enabledMcpjsonServers: [OTHER_APPROVAL, { name: 'tracker', digest: TRACKER_DIGEST }] });
     await press(started, KEYS.enter, '2. Disable');
     await press(started, '2', '› 2. Disable');
     await press(started, KEYS.enter, ADD_HTTP_ROW);

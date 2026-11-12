@@ -1,17 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec } from '@momonga/testkit';
-import { getJson } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, modelOf, modelsOf, writeSettings } from './gateway-process-helpers.ts';
+import { PRECONDITION_FAILED_CODE } from '@momonga/protocol';
+import { getJson, postJson, readJson, userInput } from './gateway-helpers.ts';
+import { startFake } from './cc-support.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, until, launchGateway, makeHome, modelOf, modelsOf, writeSettings } from './gateway-process-helpers.ts';
 import { LMSTUDIO_ENTRY, OLLAMA_NAMES, genericRoutes, lmstudioRoutes, ollamaRoutes, serveRoutes } from './detect-kinds-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const LOADED = 8192;
 
-const launchWith = async (target: Record<string, unknown>) => {
-  const home = makeHome();
-  const servers = { local: target };
+const launchWith = async (target: Record<string, unknown>) => launchServers({ local: target });
+
+const launchServers = async (servers: Record<string, Record<string, unknown>>, home = makeHome()) => {
   writeSettings(home, { models: modelsOf(servers) });
   const handle = await launchGateway({
     generation: FIRST_GENERATION,
@@ -22,14 +24,8 @@ const launchWith = async (target: Record<string, unknown>) => {
     measureEndpoint: () => new Promise(() => undefined),
     measureOllama: () => new Promise(() => undefined),
   });
-  return { client: clientFor(handle.socketPath), model: modelOf(servers, 'local') };
+  return { home, client: clientFor(handle.socketPath) };
 };
-
-const launchFailure = (target: Record<string, unknown>): Promise<string> =>
-  launchWith(target).then(
-    () => 'launched',
-    (error: unknown) => (error instanceof Error ? error.message : String(error)),
-  );
 
 const lmStudioTarget = async (contextWindow: number) => {
   const server = await serveRoutes(lmstudioRoutes([{ ...LMSTUDIO_ENTRY, loaded_context_length: LOADED }]));
@@ -44,13 +40,38 @@ const lmStudioTarget = async (contextWindow: number) => {
 };
 
 describe('a declared context window is checked against the window the server reports when the model is loaded', () => {
-  it('refuses the load when the declaration is above the length LM Studio has loaded, naming both numbers, the setting and the way forward', async () => {
-    const message = await launchFailure(await lmStudioTarget(32768));
+  it('starts the gateway, serves the other model, lists the model above its loaded length as unusable with both numbers, and answers a run on it with that text', async () => {
+    const other = await startFake({ scenario: 'tools-ok' });
+    const servers = { local: await lmStudioTarget(32768), other: ccTarget(other.socketPath, { toolCalling: 'native' }) };
+    const { client } = await launchServers(servers);
 
-    expect(message).toContain('32768');
-    expect(message).toContain(String(LOADED));
-    expect(message).toContain('capabilities.contextWindow');
-    expect(message).toContain(`declare capabilities.contextWindow ${LOADED}`);
+    const served = await readJson(await postJson(client, '/v1/responses', { model: modelOf(servers, 'other'), input: userInput('hi') }));
+    expect(served.status).toBe(200);
+
+    const listing = await getJson(client, '/v1/momonga/models');
+    const entry = listing.body.data.find((listed: { id: string }) => listed.id === modelOf(servers, 'local'));
+    expect(entry.capabilities.toolCalling.state).toBe('unavailable');
+    expect(entry.capabilities.toolCalling.code).toBe(PRECONDITION_FAILED_CODE);
+    expect(entry.capabilities.toolCalling.message).toContain('32768');
+    expect(entry.capabilities.toolCalling.message).toContain(String(LOADED));
+    expect(entry.capabilities.toolCalling.message).toContain(`declare capabilities.contextWindow ${LOADED}`);
+
+    const refused = await readJson(await postJson(client, '/v1/responses', { model: modelOf(servers, 'local'), input: userInput('hi') }));
+    expect(refused.body.error.code).toBe(PRECONDITION_FAILED_CODE);
+    expect(refused.body.error.message).toContain('32768');
+    expect(refused.body.error.message).toContain(`declare capabilities.contextWindow ${LOADED}`);
+  });
+
+  it('applies a reload that brings a declaration above the loaded length: the other settings take effect', async () => {
+    const other = await startFake({ scenario: 'tools-ok' });
+    const extra = await startFake({ scenario: 'tools-ok' });
+    const { home, client } = await launchServers({ other: ccTarget(other.socketPath, { toolCalling: 'native' }) });
+    const reloaded = { other: ccTarget(other.socketPath, { toolCalling: 'native' }), local: await lmStudioTarget(32768), extra: ccTarget(extra.socketPath, { toolCalling: 'native' }) };
+    writeSettings(home, { models: modelsOf(reloaded) });
+
+    await until(async () => (await getJson(client, '/v1/momonga/models')).body.data.some((listed: { id: string }) => listed.id === modelOf(reloaded, 'extra')), 'the reloaded settings were applied');
+    const served = await readJson(await postJson(client, '/v1/responses', { model: modelOf(reloaded, 'extra'), input: userInput('hi') }));
+    expect(served.status).toBe(200);
   });
 
   it('loads a declaration below the loaded length as declared', async () => {
@@ -67,11 +88,14 @@ describe('a declared context window is checked against the window the server rep
     expect((await getJson(client, '/v1/momonga/models')).status).toBe(200);
   });
 
-  it('refuses an Ollama declaration above the context length its /api/show reports by the same rule', async () => {
+  it('answers a run on an Ollama model declared above the context length its /api/show reports by the same rule', async () => {
     const server = await serveRoutes(ollamaRoutes());
-    const message = await launchFailure({ adapter: 'ollama', model: OLLAMA_NAMES[0], baseUrl: server.origin, capabilities: { contextWindow: 262144, maxOutputTokens: 2048 } });
+    const servers = { local: { adapter: 'ollama', model: OLLAMA_NAMES[0], baseUrl: server.origin, capabilities: { contextWindow: 262144, maxOutputTokens: 2048 } } };
+    const { client } = await launchServers(servers);
 
-    expect(message).toContain('262144');
-    expect(message).toContain('131072');
+    const refused = await readJson(await postJson(client, '/v1/responses', { model: modelOf(servers, 'local'), input: userInput('hi') }));
+    expect(refused.body.error.code).toBe(PRECONDITION_FAILED_CODE);
+    expect(refused.body.error.message).toContain('262144');
+    expect(refused.body.error.message).toContain('131072');
   });
 });

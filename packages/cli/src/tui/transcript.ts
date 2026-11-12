@@ -15,7 +15,7 @@ import { appliedDiffOf, DIFF_PREVIEW_ROWS, diffRowCount } from './screen/diff.ts
 import type { AppliedDiff, DiffFields } from './screen/diff.ts';
 import { EMPTY_USAGE } from './screen/store.ts';
 import { formatTokens } from '../format-tokens.ts';
-import { tailOf } from './screen/output-tail.ts';
+import { OUTPUT_TAIL_MAX_BYTES, startWithinBytes, tailOf } from './screen/output-tail.ts';
 import type { OutputTail } from './screen/output-tail.ts';
 import { isPrompt } from '../run/prompt-event.ts';
 import type { PromptEvent } from '../run/prompt-event.ts';
@@ -42,6 +42,7 @@ export type Entry =
       calledAt: number;
       shownAt: number;
       output?: string;
+      stored?: StoredResult;
       tail?: OutputTail;
       diff?: AppliedDiff;
       denial?: PermissionDenial;
@@ -53,6 +54,8 @@ export type Entry =
   | { kind: 'retired' };
 
 export type ToolEntry = Extract<Entry, { kind: 'tool' }>;
+
+export type StoredResult = { runId: string; callId: string };
 
 export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; reason: string; suggestedRule?: string; held?: true; unknownCallIds?: readonly string[]; shown?: ApprovalShown };
 
@@ -133,10 +136,17 @@ const updateTool = (store: TranscriptStore, callId: string, change: (tool: ToolE
   if (held === undefined || held.id < changed.id) store.update({ newestExpandableTool: key });
 };
 
-const withOutput = (tool: ToolEntry, output: string, shownAt: number): ToolEntry => {
-  const { tail: _tail, diff: _diff, ...rest } = tool;
+const keptOf = (output: string): string => output.slice(startWithinBytes(output, output.length, OUTPUT_TAIL_MAX_BYTES));
+
+const withOutput = (tool: ToolEntry, output: string, shownAt: number, stored?: StoredResult): ToolEntry => {
+  const { tail: _tail, diff: _diff, stored: _stored, ...rest } = tool;
   const tail = tailOf(output);
-  return { ...rest, output, shownAt, ...(tail === undefined ? {} : { tail }) };
+  return { ...rest, output: keptOf(output), shownAt, ...(tail === undefined ? {} : { tail }), ...(stored === undefined ? {} : { stored }) };
+};
+
+const storedOf = (event: { runId: string; callId: string }): StoredResult => {
+  const qualified = `${event.runId}/`;
+  return { runId: event.runId, callId: event.callId.startsWith(qualified) ? event.callId.slice(qualified.length) : event.callId };
 };
 
 const shownPathOf = (tool: ToolEntry): string => tool.title.slice(tool.title.indexOf(`${tool.name} `) + tool.name.length + 1);
@@ -162,8 +172,8 @@ export const userToolStarted = (store: TranscriptStore, { id, name, title, start
   store.update({ runningTools: [...store.state().runningTools, { callId: id, title, startedAt }] });
 };
 
-export const userToolOutput = (store: TranscriptStore, id: string, text: string, keptCharacters: number): void => {
-  updateTool(store, id, (tool) => withOutput(tool, `${tool.output ?? ''}${text}`.slice(-keptCharacters), tool.shownAt));
+export const userToolOutput = (store: TranscriptStore, id: string, text: string): void => {
+  updateTool(store, id, (tool) => withOutput(tool, `${tool.output ?? ''}${text}`, tool.shownAt));
 };
 
 export type UserToolEnd = { status: Extract<ToolStatus, 'completed' | 'failed' | 'unknown'>; title: string; output: string | undefined; endedAt: number };
@@ -332,12 +342,12 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       return;
     }
     case 'tool.held.resolved':
-      updateTool(store, event.callId, (tool) => ({ ...withOutput(tool, event.output, event.createdAt), status: event.status }));
+      updateTool(store, event.callId, (tool) => ({ ...withOutput(tool, event.output, event.createdAt, storedOf(event)), status: event.status }));
       return;
     case 'tool.completed':
       if (event.denial?.source === 'held' && heldApprovalsOf(state).some((approval) => approval.callId === event.callId)) return;
       updateTool(store, event.callId, (tool) => {
-        const ended: ToolEntry = { ...withOutput(tool, event.output, event.createdAt), status: event.status, ...(event.denial === undefined ? {} : { denial: event.denial }) };
+        const ended: ToolEntry = { ...withOutput(tool, event.output, event.createdAt, storedOf(event)), status: event.status, ...(event.denial === undefined ? {} : { denial: event.denial }) };
         return event.status === 'completed' ? withDiff(ended, event) : ended;
       });
       return;
@@ -353,7 +363,7 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
     case 'tool.reconciled':
       updateTool(store, event.callId, (tool) => {
         const settled: ToolEntry = {
-          ...withOutput(tool, event.output, event.createdAt),
+          ...withOutput(tool, event.output, event.createdAt, storedOf(event)),
           status: event.outcome === 'unknown' ? 'unknown' : event.outcome === 'already_applied' ? 'completed' : 'failed',
         };
         return event.outcome === 'already_applied' ? withDiff(settled, event) : settled;

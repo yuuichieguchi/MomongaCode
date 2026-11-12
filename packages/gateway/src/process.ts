@@ -111,7 +111,8 @@ import { isMeteredTarget, meteredPrecondition } from './probe/consent.ts';
 import { IDENTITY_READ_TIMEOUT_MS, createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { answersAsOllama, readOllamaDigest, readOllamaReported } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
-import { DeclaredWindowAboveReportedError, reportedWindowAt } from './probe/declared-window.ts';
+import { DeclaredWindowAboveReportedError, refusingAdapter, reportedWindowAt } from './probe/declared-window.ts';
+import { preconditionText } from './precondition-text.ts';
 import { keyReadLimitOf } from './key-read-limit.ts';
 import type { KeyReadLimit } from './key-read-limit.ts';
 import { createSecretResolver } from './secrets.ts';
@@ -713,14 +714,14 @@ const createProbedOllamaAdapter = async (
   return { adapter, upstreamIdentity: loaded?.identity };
 };
 
-const refuseDeclaredWindowAboveReported = async (display: string, target: RemoteTarget, network: OutboundNetwork, timers: GatewayTimers, signal: AbortSignal): Promise<void> => {
+const declaredWindowRefusalOf = async (display: string, target: RemoteTarget, network: OutboundNetwork, timers: GatewayTimers, signal: AbortSignal): Promise<DeclaredWindowAboveReportedError | undefined> => {
   const endpoint = upstreamEndpointOf(target);
   const declared = target.capabilities?.contextWindow;
-  if (endpoint.kind !== 'tcp' || declared === undefined || isMeteredTarget(target)) return;
+  if (endpoint.kind !== 'tcp' || declared === undefined || isMeteredTarget(target)) return undefined;
   const dispatcher = createOutboundDispatcher(network, { connectReplyTimeoutMs: IDENTITY_READ_TIMEOUT_MS });
   try {
     const reported = await reportedWindowAt({ address: endpoint.baseUrl, model: target.model, fetch: outboundFetch(dispatcher), signal: AbortSignal.any([signal, timers.timeoutSignal(IDENTITY_READ_TIMEOUT_MS)]) });
-    if (reported !== undefined && declared > reported) throw new DeclaredWindowAboveReportedError(display, declared, reported, endpoint.baseUrl);
+    return reported !== undefined && declared > reported ? new DeclaredWindowAboveReportedError(display, declared, reported, endpoint.baseUrl) : undefined;
   } finally {
     await dispatcher.close();
   }
@@ -1355,7 +1356,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           closables: [adapterClosable(adapter), core.closable],
         };
       }
-      await refuseDeclaredWindowAboveReported(display, target, outbound, timers, keySignal);
       if (isMeasuredBy(target, 'ollama-wire')) {
         const probed = await createProbedOllamaAdapter(display, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
@@ -1451,7 +1451,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               ? buildPlanPart(target, current, outbound, keys.part, plan)
               : await buildPart(display, target as ServedTarget, current, outbound, keySignal, carriedCore ?? livePartsOf[0], keys, outputPolicy);
           built.push(...part.closables.filter((closable) => !holds.has(closable)));
-          parts.set(name, part);
+          const refusal = target.adapter === 'managed' || 'plan' in target ? undefined : await declaredWindowRefusalOf(display, target as RemoteTarget, outbound, timers, keySignal);
+          if (refusal !== undefined) logger.warn(preconditionText(refusal.message, refusal.detail, refusal.remediation));
+          parts.set(name, refusal === undefined ? part : { ...part, adapter: refusingAdapter(part.adapter, refusal) });
         }
         const counters = Object.fromEntries([...parts].map(([name, part]) => [name, part.counter]));
         const config = withCounters(gatewayConfigOf(current.models), counters);

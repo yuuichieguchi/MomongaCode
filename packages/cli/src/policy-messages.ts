@@ -62,8 +62,10 @@ export const CONDITION_STATE_WORDS: Readonly<Record<ReportedCondition['state'], 
   not_run: 'was not run',
 };
 
+export const HOW_TO_DECLARE_CHECK = 'to declare a check, accept the one the terminal UI proposes in this folder, or set verification.commands in the settings';
+
 export const RESIDUAL_RISK_WORDS: Readonly<Record<ResidualRiskCode, string>> = {
-  no_condition_declared_after_mutation: 'the run changed files and no completion condition was declared',
+  no_condition_declared_after_mutation: `the run changed files and no completion condition was declared (${HOW_TO_DECLARE_CHECK})`,
   mutation_without_known_paths: 'changes whose files are not known',
   unknown_effect_calls: 'calls whose effect is not known',
   permission_denials: 'calls that were denied',

@@ -4,7 +4,7 @@ import { ContextOverflowError, PinnedOverflowError, buildContext, budgetFor, inp
 import type { BuildContextInput, HistoryItem } from '@momonga/context';
 import { COMPACT_AT, ESTIMATED_ERROR, ceilRatio, floorRatio } from '@momonga/protocol';
 import type { Capabilities, InputItem } from '@momonga/protocol';
-import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user } from './helpers.ts';
+import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user, withTurnsBeforeCurrent } from './helpers.ts';
 import { weightMeter, weightOf, weightOfAll } from './weight-meter.ts';
 import type { UnderRule } from './weight-meter.ts';
 import { TEST_FENCE } from '@momonga/testkit';
@@ -35,7 +35,6 @@ const baseInput = (capabilities: Capabilities, history: HistoryItem[], extra: Pa
   trusted: true,
   projectRoot: PROJECT,
   home: HOME,
-  keepRecentTurns: 1,
   ...extra,
 });
 
@@ -62,10 +61,9 @@ describe('capacityFor, the observed capacity C (4.7, M5, B9)', () => {
 });
 
 const historyTotalling = (target: number): HistoryItem[] => {
-  const old = [user(1, 'old question'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(300)), assistant(4, 'old answer')];
-  const empty = user(5, '');
-  const pad = target - floorTokens - weightOfAll(old.map((entry) => entry.item)) - weightOf(empty.item);
-  return [...old, user(5, 'p'.repeat(pad))];
+  const withPad = (pad: number): HistoryItem[] =>
+    withTurnsBeforeCurrent([user(1, 'old question'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(300)), assistant(4, 'old answer'), user(5, 'p'.repeat(pad))]);
+  return withPad(target - floorTokens - weightOfAll(withPad(0).map((entry) => entry.item)));
 };
 
 const estimated = capabilitiesFor(8192, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
@@ -112,9 +110,9 @@ const outputItemOf = (input: readonly InputItem[]): InputItem | undefined =>
 
 describe('a rendered output keeps its form between named events (4.7, M6)', () => {
   it('reports the kept characters of a first truncation', async () => {
-    const capabilities = capabilitiesFor(200_000);
+    const capabilities = capabilitiesFor(8192, { maxOutputTokens: 1024 });
 
-    const built = await buildContext(observed(baseInput(capabilities, outputHistory(), { keepRecentTurns: 2, itemCap: 500 })), portsWith());
+    const built = await buildContext(observed(baseInput(capabilities, outputHistory())), portsWith());
 
     const [eviction] = built.evictions;
     expect(eviction).toMatchObject({ callId: 'c1', kind: 'truncated', keptChars: expect.any(Number) });
@@ -124,14 +122,14 @@ describe('a rendered output keeps its form between named events (4.7, M6)', () =
   });
 
   it('renders a recorded form byte for byte when the item cap fell without a named event', async () => {
-    const capabilities = capabilitiesFor(200_000);
-    const first = await buildContext(observed(baseInput(capabilities, outputHistory(), { keepRecentTurns: 2, itemCap: 500 })), portsWith());
+    const capabilities = capabilitiesFor(8192, { maxOutputTokens: 1024 });
+    const first = await buildContext(observed(baseInput(capabilities, outputHistory())), portsWith());
     const kept = (first.evictions[0] as { keptChars?: number }).keptChars;
     expect(kept).toEqual(expect.any(Number));
 
     const later = await buildContext(
-      observed(baseInput(capabilities, outputHistory(), { keepRecentTurns: 2, itemCap: 300 }), new Map([['c1', kept as number]])),
-      portsWith(),
+      observed(baseInput(capabilities, outputHistory()), new Map([['c1', kept as number]])),
+      portsWith((tokens) => 2 * tokens),
     );
 
     expect(outputItemOf(later.input)).toEqual(outputItemOf(first.input));

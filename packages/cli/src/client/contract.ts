@@ -3,7 +3,7 @@ import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { REPORT_SCHEMAS, RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
 import type { ReportCostPage, ReviewPage, StoreReviewResponse, TraceContentPage } from '@momonga/protocol';
-import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PolicyVerifyResponse, PromoteMemoryResponse, PublicRunEvent, PublicStreamEvent, ReflectionResponse, ReportPage, ReportRecomputePage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse, UserShellFrame, UserShellPendingResponse } from '@momonga/protocol';
+import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PolicyVerifyResponse, PromoteMemoryResponse, PublicRunEvent, PublicStreamEvent, ReflectionResponse, ReportPage, ReportRecomputePage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse, ToolResultPage, UserShellFrame, UserShellPendingResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -31,6 +31,7 @@ export const checkErrorBody = guard<ErrorBody>(RUN_API_SCHEMAS.ErrorBody);
 export const checkHealth = guard<RunHealth>(RUN_API_SCHEMAS.Health);
 export const checkRunEvent = guard<PublicStreamEvent>(RUN_API_SCHEMAS.PublicRunEvent);
 export const checkTrace = guard<RunTraceView>(RUN_API_SCHEMAS.RunTrace);
+export const checkToolResultPage = guard<ToolResultPage>(RUN_API_SCHEMAS.ToolResultPage);
 export const checkSkills = guard<SkillsResponse>(RUN_API_SCHEMAS.SkillsResponse);
 export const checkAgents = guard<AgentsResponse>(RUN_API_SCHEMAS.AgentsResponse);
 export const checkJobs = guard<JobsResponse>(RUN_API_SCHEMAS.JobsResponse);

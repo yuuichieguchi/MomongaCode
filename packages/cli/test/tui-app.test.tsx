@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSlashRegistry, BUILTIN_SLASH_COMMANDS } from '../src/tui/slash.ts';
+import { createSlashRegistry, BUILTIN_SLASH_COMMANDS, modeToastText } from '../src/tui/slash.ts';
 import { App } from '../src/tui/app.tsx';
 import { SESSION, fakeBackend, runView } from './fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from './ink-helpers.ts';
@@ -235,6 +235,16 @@ describe('App input', () => {
       await untilFrame(app, `mode: ${mode}`);
     }
     expect(backend.calls.filter((call) => call.startsWith('mode:'))).toEqual(['mode:acceptEdits', 'mode:plan', 'mode:auto', 'mode:manual']);
+    app.unmount();
+  });
+
+  it('shows the one-line toast of what each mode does when shift+tab changes it', async () => {
+    const { app } = await start({ autoModeAvailable: true, session: { bypassAllowed: true } });
+    await untilFrame(app, 'mode: manual');
+    for (const mode of ['acceptEdits', 'plan', 'auto', 'bypassPermissions', 'manual'] as const) {
+      app.stdin.write(KEYS.shiftTab);
+      await untilFrame(app, modeToastText(mode));
+    }
     app.unmount();
   });
 

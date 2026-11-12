@@ -11,12 +11,23 @@ import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } fr
 import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
 import type { UserShellRecord } from '@momonga/protocol';
 import { editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import type { CheckProposal } from '@momonga/runtime';
 import type { TrustItemsView } from '@momonga/protocol';
 import { momongaLayout } from '@momonga/foundation';
 import type { DetectRequest } from '../src/commands/models.ts';
 import { freshHome } from './fresh-home.ts';
 import { listingOf } from './models-shell-harness.ts';
-import type { McpServerView } from '@momonga/protocol';
+import type { AgentView, McpServerView } from '@momonga/protocol';
+import { createFromTemplate } from '../src/tui/file-templates.ts';
+import { pendingProjectServerOf } from '../src/tui/project-items.ts';
+import type { NetworkCheck, NetworkView } from '../src/tui/commands/network.ts';
+import type { TemplateFiles } from '../src/tui/file-templates.ts';
+
+const templateFiles: TemplateFiles = {
+  readTextIfPresent: async (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined),
+  mkdirPrivate: async (directory) => void fs.mkdirSync(directory, { recursive: true, mode: 0o700 }),
+  writeText: async (file, text) => fs.writeFileSync(file, text, { mode: 0o600 }),
+};
 
 export const SESSION: SessionView = {
   id: 'session-1',
@@ -80,8 +91,13 @@ export type FakeBackend = TuiBackend & {
 };
 
 export type FakeBackendOptions = {
+  storedResults?: Readonly<Record<string, string>>;
+  agents?: readonly AgentView[];
+  network?: NetworkView;
+  networkCheck?: NetworkCheck;
   trust?: TrustView;
   trustItems?: TrustItemsView;
+  checkProposal?: CheckProposal;
   session?: Partial<SessionView>;
   contextWindow?: number;
   imageInput?: boolean;
@@ -330,6 +346,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return options.trust ?? { path: session.cwd, decision: 'trusted' };
     },
     ...folderTrustFakes({ settingsPlace, trust: options.trust, trustItems: options.trustItems, cwd: () => session.cwd, record }),
+    checkProposal: async () => options.checkProposal ?? { ask: false },
+    answerCheck: async (answer) => {
+      record(`check:${JSON.stringify(answer)}`);
+    },
     openSession: async (model, permissionMode) => {
       record('openSession');
       opened.push({ model, permissionMode });
@@ -350,6 +370,11 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
         .map((conversation) => ({ id: conversation.session.id, createdAt: viewOf(conversation).createdAt, runs: conversation.runs.length, firstPrompt: conversation.firstPrompt }))
         .sort((left, right) => right.createdAt - left.createdAt),
     runs: async () => (conversations.find((conversation) => conversation.session.id === session.id)?.runs ?? []).flatMap((run) => conversationRun(run.id)?.view ?? []),
+    toolResult: async (runId, callId, offset) => {
+      const text = options.storedResults?.[`${runId}/${callId}`];
+      if (text === undefined) throw new Error(`the fake holds no stored result for ${runId}/${callId}`);
+      return { text, offset, next: null, totalBytes: new TextEncoder().encode(text).length };
+    },
     autoModeAvailable: async () => options.autoModeAvailable ?? false,
     models: listedModels,
     modelList: async () => {
@@ -484,6 +509,16 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return { kind: 'copied', characters: [...text].length };
     },
     skills: async () => ({ skills: [...(options.skills ?? [])], warnings: [...(options.skillWarnings ?? [])] }),
+    agents: async () => ({ agents: [...(options.agents ?? [])], warnings: [] }),
+    network: async () => {
+      if (options.network === undefined) throw new Error('the fake backend was given no network view');
+      return options.network;
+    },
+    checkNetwork: async () => {
+      if (options.networkCheck === undefined) throw new Error('the fake backend was given no network check');
+      return options.networkCheck;
+    },
+    createFromTemplate: (kind, name) => createFromTemplate(templateFiles, settingsPlace().home, kind, name),
     memories: async () => memories,
     memory: async (id) => {
       const found = memories.find((memory) => memory.id === id);
@@ -564,7 +599,15 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     dismissNotice: async () => undefined,
     settings: async () => readSettingsSnapshot({ ...settingsPlace(), trusted: (options.trust?.decision ?? 'trusted') === 'trusted', signal: new AbortController().signal }),
     editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { lock: testKernelLock(), signal }),
-    mcpServers: async () => options.mcpServers ?? [],
+    mcpServers: async () => {
+      record('mcpServers');
+      return options.mcpServers ?? [];
+    },
+    folderMcpServers: async () => {
+      record('folderMcpServers');
+      return options.mcpServers ?? [];
+    },
+    pendingProjectServer: (name) => pendingProjectServerOf({ ...settingsPlace(), trust: { isTrusted: async () => (options.trust?.decision ?? 'trusted') === 'trusted' }, signal: new AbortController().signal }, name),
     initInstruction: async () => FAKE_INIT_INSTRUCTION,
     close: async () => {
       record('close');

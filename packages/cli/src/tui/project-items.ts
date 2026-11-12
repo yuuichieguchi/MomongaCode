@@ -2,7 +2,8 @@ import { CHANGE_NOT_SHOWN_LEAD } from '@momonga/protocol';
 import type { TrustItem } from '@momonga/protocol';
 import { diffRows } from './screen/diff.ts';
 import type { SelectLine } from './select.tsx';
-import type { ApprovedItem } from '@momonga/config';
+import { loadMcpServers } from '@momonga/config';
+import type { ApprovedItem, TrustOracle } from '@momonga/config';
 import type { OverlayPorts } from './picker.tsx';
 
 export const APPROVE_ROW = 'Approve: it runs from now on';
@@ -53,4 +54,11 @@ export const askTrustItems = async (items: readonly TrustItem[], choose: Overlay
   const chosen: ApprovedItem[] = [];
   for (const item of items) if (await approved(choose, itemQuestionTitle(item), itemLines(item))) chosen.push(approvedOf(item));
   return chosen;
+};
+
+export type ProjectServerQuery = { home: string; projectDir: string; trust: TrustOracle; signal: AbortSignal };
+
+export const pendingProjectServerOf = async (query: ProjectServerQuery, name: string): Promise<ApprovedItem | undefined> => {
+  const pending = (await loadMcpServers({ ...query, env: {}, referenceEnv: {} })).pendingApproval.find((server) => server.name === name);
+  return pending === undefined ? undefined : { kind: 'mcp', name, config: pending.config, digest: pending.digest };
 };

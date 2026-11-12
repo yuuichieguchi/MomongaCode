@@ -27,24 +27,31 @@ describe('the render keeps each tool output at most itemCap(room) tokens on the 
     expect(truncatedMarker.exec(text)?.[2]).toBe(handleOf(raw));
   });
 
+  const measuredCap = async (): Promise<number> => {
+    const placeholder = sourcesWith({ history: [call(1, 'big'), output(2, 'big', 'x')] });
+    return (await measurePinned(inputFor(capabilities, { sources: placeholder }), harness(capabilities).ports)).itemCap;
+  };
+
   it('a text journaled at a larger cap is cut again at the render with one marker and the same handle', async () => {
+    const itemCap = await measuredCap();
     const handle = handleOf(ASCII);
-    const journaled = await fitToTokens({ text: ASCII, cap: 600, handle, reader: 'ReadOutput', count: envelopedCount });
+    const journaled = await fitToTokens({ text: ASCII, cap: 2 * itemCap, handle, reader: 'ReadOutput', count: envelopedCount });
     expect(markers(journaled)).toBe(1);
     const sources = sourcesWith({ history: [call(1, 'big'), output(2, 'big', journaled, handle)] });
-    const built = await buildContext(inputFor(capabilities, { sources, itemCap: 300 }), harness(capabilities).ports);
+    const built = await buildContext(inputFor(capabilities, { sources }), harness(capabilities).ports);
     const text = outputTextOf(built.input, 'big') ?? '';
     const rendered = built.input.find((item) => item.type === 'function_call_output');
-    expect(tokensOfItem(rendered as Parameters<typeof tokensOfItem>[0])).toBeLessThanOrEqual(300);
+    expect(tokensOfItem(rendered as Parameters<typeof tokensOfItem>[0])).toBeLessThanOrEqual(itemCap);
     expect(markers(text)).toBe(1);
     expect(truncatedMarker.exec(text)?.[2]).toBe(handle);
   });
 
   it('a text journaled at the same cap is rendered unchanged', async () => {
+    const itemCap = await measuredCap();
     const handle = handleOf(ASCII);
-    const journaled = await fitToTokens({ text: ASCII, cap: 300, handle, reader: 'ReadOutput', count: envelopedCount });
+    const journaled = await fitToTokens({ text: ASCII, cap: itemCap, handle, reader: 'ReadOutput', count: envelopedCount });
     const sources = sourcesWith({ history: [call(1, 'big'), output(2, 'big', journaled, handle)] });
-    const built = await buildContext(inputFor(capabilities, { sources, itemCap: 300 }), harness(capabilities).ports);
+    const built = await buildContext(inputFor(capabilities, { sources }), harness(capabilities).ports);
     expect(outputTextOf(built.input, 'big')).toBe(journaled);
   });
 });

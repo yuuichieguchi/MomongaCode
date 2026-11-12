@@ -17,6 +17,7 @@ const GRACE_MS = 20;
 
 const boundedExecutor = (harness: Harness, timers?: FakeTimers) =>
   createToolExecutor({
+    hostParallelism: 8,
     layout: momongaLayout(harness.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
     shellHost: timers === undefined ? nodeShellHost() : fakeTimedShellHost(timers),

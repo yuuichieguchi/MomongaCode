@@ -90,6 +90,7 @@
     {"name":"WORKING_FACT_TEXT_CHARS","file":"packages/protocol/src/budget-constants.ts","kind":"stated","owner":"protocol","row":"context.md"},
     {"name":"DEFAULT_PROBE_STEP_SECONDS","file":"packages/protocol/src/probe.ts","kind":"P","owner":"gateway","row":"gateway-config.md"},
     {"name":"MAX_TOOL_NAME_CHARS","file":"packages/protocol/src/reference-kinds.ts","kind":"stated","owner":"protocol","row":"context.md"},
+    {"name":"MAX_RUN_TIMEOUT_MS","file":"packages/protocol/src/run-api.ts","kind":"C","owner":"protocol","row":"runtime-store.md"},
     {"name":"MIN_NON_ASCII_TERM_CHARS","file":"packages/protocol/src/search-terms.ts","kind":"stated","owner":"protocol","row":"context.md"},
     {"name":"INTERRUPTED_COMMAND_SHOWN_CHARS","file":"packages/protocol/src/supervisor-api.ts","kind":"stated","owner":"protocol","row":"cli.md"},
     {"name":"FIDELITY_SCAN_PAGE_BYTES","file":"packages/runtime/src/memory/journal-thread-limits.ts","kind":"stated","owner":"runtime","row":"context.md"},
@@ -115,10 +116,12 @@
     {"name":"SETTINGS_POLL_MS","file":"packages/supervisor/src/constants.ts","kind":"C","owner":"supervisor","row":"foundation-supervisor-packaging.md"},
     {"name":"SHUTDOWN_BODY_LIMIT_BYTES","file":"packages/supervisor/src/constants.ts","kind":"stated","owner":"supervisor","row":"foundation-supervisor-packaging.md"},
     {"name":"HEALTH_BODY_MAX_BYTES","file":"packages/supervisor/src/lock-watch.ts","kind":"stated","owner":"supervisor","row":"foundation-supervisor-packaging.md"},
+    {"name":"IDEMPOTENCY_TTL_MS","file":"packages/tools/src/executor.ts","kind":"C","owner":"tools","row":"runtime-store.md"},
     {"name":"HISTORY_QUERY_MAX_CHARS","file":"packages/tools/src/history/constants.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"MIN_BODY_CHARS","file":"packages/tools/src/history/render.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"OMISSION_RESERVE_CHARS","file":"packages/tools/src/history/render.ts","kind":"stated","owner":"tools","row":"context.md"},
-    {"name":"OBSERVED_FILE_HASH_PAGE_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"}
+    {"name":"OBSERVED_FILE_HASH_PAGE_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"},
+    {"name":"OBSERVED_UNTRACKED_FILE_MAX_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"}
   ],
   "signalTimeouts": {
     "packages/foundation/src/process-contract.ts": ["STARTUP_TIMEOUT_MS"]
@@ -141,6 +144,7 @@
       {"name":"KEY_FILE_MAX_BYTES","file":"packages/cli/src/tui/keys/bindings.ts","lacks":["row"]},
       {"name":"KEY_FILE_STAT_MS","file":"packages/cli/src/tui/keys/store.ts","lacks":["kind","row"]},
       {"name":"MINUTE_MS","file":"packages/cli/src/tui/models/fields.ts","lacks":["kind","row"]},
+      {"name":"CLIPBOARD_READ_MS","file":"packages/cli/src/tui/screen/constants.ts","lacks":["kind","row"]},
       {"name":"COPY_MAX_BYTES","file":"packages/cli/src/tui/screen/constants.ts","lacks":["row"]},
       {"name":"DOUBLE_CLICK_MS","file":"packages/cli/src/tui/screen/constants.ts","lacks":["kind","row"]},
       {"name":"OSC52_MAX_RAW_BYTES","file":"packages/cli/src/tui/screen/constants.ts","lacks":["row"]},
@@ -262,6 +266,7 @@
       {"name":"PROMPT_ENVELOPE_BYTES","file":"packages/protocol/src/run-api.ts","lacks":["row"]},
       {"name":"PROMPT_IMAGE_MAX_BYTES","file":"packages/protocol/src/run-api.ts","lacks":["row"]},
       {"name":"PROMPT_TEXT_MAX_CHARS","file":"packages/protocol/src/run-types.ts","lacks":["row"]},
+      {"name":"TOOL_RESULT_PAGE_BYTES","file":"packages/protocol/src/run-types.ts","lacks":["row"]},
       {"name":"USER_SHELL_COMMAND_CHARS","file":"packages/protocol/src/run-types.ts","lacks":["row"]},
       {"name":"USER_SHELL_HEAD_BYTES","file":"packages/protocol/src/run-types.ts","lacks":["row"]},
       {"name":"USER_SHELL_OUTPUT_BYTES","file":"packages/protocol/src/run-types.ts","lacks":["row"]},
@@ -334,7 +339,6 @@
       {"name":"HEAD_BYTES","file":"packages/tools/src/capture.ts","lacks":["row"]},
       {"name":"STREAM_DRAIN_MS","file":"packages/tools/src/capture.ts","lacks":["kind","row"]},
       {"name":"TAIL_BYTES","file":"packages/tools/src/capture.ts","lacks":["row"]},
-      {"name":"DEFAULT_IDEMPOTENCY_TTL_MS","file":"packages/tools/src/executor.ts","lacks":["row"]},
       {"name":"DEFAULT_RECONCILE_CAP_MS","file":"packages/tools/src/executor.ts","lacks":["kind","row"]},
       {"name":"DEFAULT_RECONCILE_GRACE_MS","file":"packages/tools/src/executor.ts","lacks":["kind"]},
       {"name":"MAX_FORGE_RESPONSE_BYTES","file":"packages/tools/src/forge/http.ts","lacks":["row"]},

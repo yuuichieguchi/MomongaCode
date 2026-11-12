@@ -42,7 +42,7 @@ const setup = async () => {
   const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
   const settings = {
     trusted: async (target: { cwd: string }) => (await store.trust.decisionAsked(target.cwd, NEVER_CANCELLED)).decision === 'trusted',
-    verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
+    verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], conditions: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled: true }, forgetAfterDays: 90 }),
   };
   const reflector = (): Reflector =>

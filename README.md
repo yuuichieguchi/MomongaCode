@@ -81,7 +81,7 @@ The first command starts a background daemon if it is not running. `momonga daem
 
 - **Terminal UI and headless mode.** An interactive session, or `-p/--print` with `--output-format text|json|stream-json`.
 - **Models.** Connections to Ollama, chat-completions servers, Open Responses servers, Anthropic, and server programs that Momonga Code starts itself, such as Apple's `fm`. A model is called by the name its server gives it. `models.fallback` lists the models tried next when a model cannot answer. `momonga gateway probe <model>` measures a model's capabilities and records the result.
-- **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background jobs), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents), and `activate_skill`.
+- **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background work), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents), `LoadTools`, and `activate_skill`, and the operations tools for Git, pull requests and issues (`GitStage`, `GitCommit`, `GitPush` and the others): each states what it changes, and the approval names it. [docs/reference.md](docs/reference.md) lists every tool.
 - **Permission modes.** `manual`, `acceptEdits`, `plan`, `auto`, and `bypassPermissions`. Rules are written as `Tool(specifier)`, for example `Bash(npm test:*)`, and set in `permissions.allow`, `permissions.ask`, and `permissions.deny`. `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`. A `Bash(...)` allow rule matches the command text literally, so it also allows options that run other programs; see [docs/threat-model.md](docs/threat-model.md) for what still bounds such a command.
 - **Policy verification.** `momonga policy verify` checks the rules of the folder: that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect. It states what is proved and what is not.
 - **Verifiable completion.** A run can declare completion conditions: shell commands that Momonga Code runs itself, in the sandbox, when the model stops. A run ends `COMPLETED` only when every condition it owes passed on the final state of the workspace; otherwise the failures go back to the model, and a run that stops again without a change ends `STOPPED` with the reason `conditions_unmet` and names the conditions. `momonga report` shows the outcome (see section 5).
@@ -101,48 +101,7 @@ The first command starts a background daemon if it is not running. `momonga daem
 momonga [options] [prompt]
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `-p, --print <prompt>` | Run the prompt without a terminal UI and print the result |
-| `--output-format <format>` | `text`, `json`, or `stream-json` (for `--print` and `attach`) |
-| `--permission-mode <mode>` | `manual`, `acceptEdits`, `plan`, `auto`, or `bypassPermissions` |
-| `--model <model>` | The model of the session, for example `devstral-small-2` (`momonga models` lists them) |
-| `--dangerously-skip-permissions` | Run in `bypassPermissions` mode |
-| `--skill <name>` | Run the prompt with this skill activated |
-| `--until <command>` | With `--print`: a completion condition, a shell command that must exit 0 before the run ends `COMPLETED`; repeat for several |
-| `--require <text>` | With `--print`: a completion requirement that has no mechanical check; the report lists it as not run; repeat for several |
-| `--image <path>` | Attach an image; repeat for several. Needs a model that declares image input |
-| `--verbose` | Print tool activity to stderr |
-| `-V, --version`, `-h, --help` | Version and help |
-
-Commands:
-
-| Command | Purpose |
-| --- | --- |
-| `attach [run-id]` | Follow a run until it ends (`--after <seq>`, `--output-format`, `--verbose`) |
-| `approve [approval-id] [option]` | List pending approvals, show one, or resolve it |
-| `cancel [run-id]` | Cancel a run |
-| `status [run-id]` | Show a run, its subagent runs, and the approvals waiting in them (`--json`) |
-| `jobs [session-id]` | List background jobs of a session (`--json`) |
-| `trace [run-id]` | Show the model and tool spans of a run (`--json`) |
-| `report [run-id]` | Show the verification report of a run: the declared completion conditions, what passed, failed or was not run, the changes, and the residual risk (`--json`) |
-| `cost [run-id]` | Show model cost (`--session <id>`, `--all`, `--breakdown`, `--json`) |
-| `models` | List the configured models with the capabilities they declare (`--json`); `models detect [url...]` finds local model servers; `models add`, `remove`, `start`, `fallback`, `billing`, `role`, and `set` change the model settings (each write needs `--yes`) |
-| `gateway probe <model>` | Measure a model of a managed server, an OpenAI-compatible server, or an Ollama server and record the result (`--samples <count>`) |
-| `memory add\|list\|show\|history\|delete\|review\|restore\|promote` | Manage memories. `add` takes `--kind`, `--path`, `--user`; `review` has `accept <id>` and `reject <id>`; `promote <id>` writes an accepted procedure memory as a skill |
-| `rule add\|list\|retire\|history` | Standing rules. `add <target> <text...>` takes `--kind`, `--user`, `--path`, `--deny`, `--ask`, `--supersedes`, `--until` |
-| `policy verify` | Check the permission rules of the folder (`--json`, `--mode <mode>`, `--secret <path>`) |
-| `auto-mode` | Measure or show how well a model judges approvals for auto mode |
-| `mcp list`, `mcp login <server>` | Inspect and authorize MCP servers (`login --no-browser` prints the URL) |
-| `elicit [input-id]` | Answer pending MCP input requests (`--accept`, `--decline`, `--cancel`, `--set name=value`, `--responses <json>`) |
-| `secret set <name>` | Store a secret in the platform secret store; the value is read from the terminal |
-| `context improve`, `context guideline` | Improve and manage the compaction guideline |
-| `eval <dataset>`, `eval context <dataset>`, `eval compare <baseline> <candidate>`, `eval yield <dataset>` | Run and compare golden datasets and context reports (`--gate context\|token`), and judge the yield of reflection |
-| `daemon start\|status\|stop` | Start the daemon (or a new one beside it when this program is newer), list the running generations, stop all of them |
-| `acp` | Agent Client Protocol on standard input and output |
-| `update [--check]` | Update the executable |
-
-Run `momonga <command> --help` for the options of each command.
+[docs/reference.md](docs/reference.md) lists every option and command, with the options of each command, the settings keys, the environment variables, and the exit codes. It is generated from the product's own tables. Run `momonga <command> --help` for the options of each command.
 
 `momonga update` replaces the executable with the latest release after verifying its checksum and signature. `momonga update --check` only reports whether a newer release exists. An update never interrupts running work. If the daemon was running, both `momonga update` and the automatic update start a daemon of the new version beside it. The new one serves every new request at once. The old one accepts no new work, finishes the steps and background jobs it already runs, and then ends by itself; `momonga daemon status` lists it as retiring until then. A session opened before the update keeps working on the old daemon while that daemon lives, and is then told that momonga was updated and to reopen it. If the new daemon does not start, the new version stays installed, the old daemon keeps running, and the message says what to run. `momonga daemon stop` is the only command that interrupts running work: it stops every running daemon, and it first prints how many running steps and background jobs it interrupts.
 
@@ -175,7 +134,7 @@ Inside the interactive session, slash commands include `/help`, `/clear`, `/exit
 | `~/.momonga/projects/<hash>/settings.local.json` | Local settings for one project, kept outside the repository |
 | `<project>/.mcp.json` | Project MCP servers |
 
-Project and local settings cannot set `models`, `credentials`, `mcpServers`, `sandbox`, `sandboxNetwork`, `sandboxUnixSockets`, `telemetry`, `pricing`, `autoUpdates`, or `autoMode`; those keys are discarded with a warning. They can set `permissions.defaultMode` only to modes other than `bypassPermissions` and `auto`. In `env`, only a short allowlist of names is kept. Unknown keys are ignored with a warning.
+Project and local settings cannot set `models`, `credentials`, `mcp`, `mcpServers`, `sandboxNetwork`, `sandbox`, `sandboxUnixSockets`, `telemetry`, `projectApprovals`, `projectChecks`, `retention`, `network`, `limits`, `ceilings`, `mandates`, `issues`, `forges`, `operations`, `pricing`, `autoUpdates`, `gateway`, `runtime`, or `autoMode`; those keys are discarded with a warning. Nor can they set `tools.ripgrep`, `tui.screen`, `tui.mouse`, or `tui.copyOnSelect`. They can set `permissions.defaultMode` only to modes other than `bypassPermissions` and `auto`. In `env`, only a short allowlist of names is kept. Unknown keys are ignored with a warning.
 
 ### Models
 
@@ -250,31 +209,7 @@ With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer 
 
 ### Other settings
 
-| Key | Meaning |
-| --- | --- |
-| `permissions.defaultMode`, `allow`, `ask`, `deny`, `additionalDirectories` | Permission mode, rules, and extra directories |
-| `sandbox` | `seatbelt`, `bubblewrap`, or `none`. Default: `seatbelt` on macOS, `bubblewrap` on Linux, `none` elsewhere. With `none`, Bash asks before every command |
-| `sandboxNetwork` | `deny`, `ask`, or `allow`. Default: `ask`. What happens when a Bash call asks for the network: refused, asked of you for each call, or granted without asking. User settings and the command line only (`--sandbox-network` sets it for the session it starts) |
-| `sandboxUnixSockets.allow` | Absolute paths. A sandboxed command may connect to a Unix socket at one of these paths or below it; every other Unix socket is denied, and the sockets of Momonga Code are always denied. Default: none. User settings only. The Linux sandbox cannot enforce a list, so there no entry is applied and every Unix socket stays denied |
-| `env` | Environment variables for sessions |
-| `credentials` | `env`, `keep`, `valuePatterns`: which environment variables and values are treated as credentials |
-| `hooks` | Hook commands by event, with an optional `matcher` and `timeout` |
-| `mcpServers` | User MCP servers (`stdio` with `command`, `args`, `env`, `cwd`; or `http` with `url`, `headers`, `oauth`) |
-| `enabledMcpjsonServers`, `disabledMcpjsonServers`, `enableAllProjectMcpServers` | Which servers of a project `.mcp.json` are used |
-| `autoMode.classifier` | The model that judges approvals in auto mode |
-| `memory.reflection.enabled`, `memory.reflection.maxTokens` | Let the agent propose memories after a verified run. On by default; turn off with `memory.reflection.enabled: false` |
-| `memory.forgetAfterDays` | Default 90 |
-| `memory.repositoryFacts` | Propose a procedure memory from a verification command that passed in a verified run. On by default; turn off with `false` |
-| `verification.commands`, `verification.manifests` | Commands (default `npm test`, `pnpm test`, `yarn test`, `cargo test`, `pytest`, `go test ./...`, `swift test`, `make test`) and manifest files that count as verification. A command you set here is also a standing completion condition of every run that changes the workspace (see Verifiable completion in section 5) |
-| `verification.required` | End a run that changed the workspace without any declared completion condition as `conditions_unmet`. Off by default |
-| `context.adaptiveBudget` | Adjust the memory share of the context budget (see section 2). On by default; turn off with `false` |
-| `context.autoCompact` | Compact the conversation automatically when it nears the context window. On by default; turn off with `false` |
-| `context.unboundedOutputReserve` | Reserve room for the largest declared output when a target bounds no output. On by default; turn off with `false` |
-| `context.cachePrefix`, `context.outputFormatters`, `context.loopGuidance`, `context.observedCapacity` | Token settings (see section 2). On by default; turn off with `false` (`[]` for `context.outputFormatters`) |
-| `tools.deferral`, `tools.conciseDescriptions` | Token settings (see section 2). On by default; turn off with `false` |
-| `pricing` | Per-million-token prices by provider and model, for `momonga cost` |
-| `telemetry.otlp.endpoint`, `telemetry.otlp.headers`, `telemetry.captureMessageContent`, `telemetry.contentRetentionDays` | OTLP export. Retention default 30 days |
-| `autoUpdates` | Boolean |
+[docs/reference.md](docs/reference.md) lists every settings key with its values and the settings files that may set it.
 
 Momonga Code stores its data under `~/.momonga` (settings, `state/` databases, `logs/`, `skills/`, `agents/`, and per-project data).
 
@@ -286,16 +221,7 @@ You set nothing. The install command in section 1 works from the first release o
 
 The script downloads `SHA256SUMS` and `SHA256SUMS.sig` from the latest GitHub release of `yuuichieguchi/MomongaCode`, verifies the signature with `ssh-keygen` against the release public key, checks the SHA-256 of the executable, and only then installs it. Nothing is installed if a check fails. `ssh-keygen` must be available; on Windows that means the OpenSSH Client optional feature.
 
-All are optional environment variables read by both installers:
-
-| Variable | Meaning |
-| --- | --- |
-| `MOMONGA_REPO` | `<owner>/<repo>` of the GitHub repository to download from. Default: `yuuichieguchi/MomongaCode`. Ignored when `MOMONGA_RELEASE_BASE_URL` is set |
-| `MOMONGA_VERSION` | Install this version (`v<version>` release) instead of the latest. Ignored when `MOMONGA_RELEASE_BASE_URL` is set |
-| `MOMONGA_RELEASE_BASE_URL` | Download from this location instead of GitHub. It must be `https`; plain `http` is accepted only on the loopback interface |
-| `MOMONGA_RELEASE_PUBLIC_KEY` | The release signing key (an `ssh-ed25519` line), used instead of the key embedded in the installer |
-| `MOMONGA_INSTALL_PREFIX` | Install location. Default: `~/.local` on macOS and Linux (the executable goes to `<prefix>/bin/momonga`); `%LOCALAPPDATA%\Programs\momonga` on Windows (the executable is `momonga.exe` in that directory) |
-| `MOMONGA_MODIFY_PATH` | Set to `0` to leave your PATH alone |
+Both installers read a few optional environment variables, such as `MOMONGA_VERSION` to install one version and `MOMONGA_MODIFY_PATH=0` to leave your PATH alone; [docs/reference.md](docs/reference.md) lists them all.
 
 The installers change your PATH only when the install directory is missing from it (`install.sh` checks the PATH of the running shell, `install.ps1` the user PATH):
 
@@ -310,7 +236,7 @@ Momonga Code is an npm workspace of packages under `packages/`. The `momonga` co
 - **Client.** `packages/cli` (command line, terminal UI, ACP server). It starts and talks to the daemon.
 - **Supervisor.** `packages/supervisor` runs the daemon: it starts, restarts, and stops two child processes, the gateway and the runtime. Each start of the daemon is a generation with its own supervisor; a newer generation takes over new work while an older one finishes what it runs and ends by itself. A settings change applies in place: each child reads the settings per operation, and no child is restarted for it.
 - **Runtime.** `packages/runtime` runs sessions, runs, and the model and tool loop. It builds each request with `packages/context`, applies `packages/policy` to tool calls, executes tools from `packages/tools` inside `packages/sandbox`, and records everything in `packages/store`.
-- **Gateway.** `packages/gateway` is the one place that talks to models. It has adapters for `fm`, chat-completions, Open Responses, Anthropic, and Ollama, plus routing, retry, admission, and probing.
+- **Gateway.** `packages/gateway` is the one place that talks to models. It has adapters for chat-completions, Open Responses, Anthropic, and Ollama, plus routing, retry, admission, and probing. Apple's `fm` is a managed server: a server program that Momonga Code starts itself and reaches through the chat-completions adapter.
 - **Store.** `packages/store` holds runs, events, approvals, memories, rules, and jobs in databases under `~/.momonga/state`.
 - **Context.** `packages/context` builds the context under a token budget, compacts history, and formats tool output.
 - **Memory.** `packages/memory` holds the logic for memory validity, recall order, deduplication, forgetting, and the memory budget share.

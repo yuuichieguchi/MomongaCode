@@ -4,6 +4,10 @@
   "burnDown": "A use nobody has read against the table yet: it is either in the other meaning or it is to be replaced by the word of the table, by the package of the area that owns the file. A count only shrinks.",
   "uses": {
     "otherMeaning": {
+      "README.md": {
+        "ceiling": 1,
+        "limit": 2
+      },
       "packages/cli/src/commands/jobs.ts": {
         "job": 1
       },
@@ -27,18 +31,15 @@
     "burnDown": {
       "README.md": {
         "benchmark": 2,
-        "compact": 1,
-        "conversation": 1,
-        "directory": 6,
-        "endpoint": 2,
+        "directory": 4,
+        "endpoint": 1,
         "evaluation": 1,
         "gateway": 7,
-        "job": 6,
-        "limit": 1,
+        "job": 4,
         "Momonga Code": 17,
         "profile": 1,
-        "project": 14,
-        "target": 4,
+        "project": 13,
+        "target": 2,
         "task": 1
       },
       "packages/agents/src/pin.ts": {
@@ -211,7 +212,6 @@
         "target": 1
       },
       "packages/config/src/layers.ts": {
-        "gateway": 1,
         "project": 2
       },
       "packages/config/src/load-settings.ts": {

@@ -266,3 +266,19 @@ describe('a withdrawn stream (model.stream.restarted)', () => {
     expect(apply(events).entries.filter((entry) => entry.kind === 'assistant')).toHaveLength(1);
   });
 });
+
+describe('the output a tool entry keeps (cli-tui-22)', () => {
+  const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
+  const fiveMegabytes = Array.from({ length: 5 * 1024 * 1024 / 16 }, (_, index) => `row ${String(index).padStart(10, '0')}\n`).join('');
+
+  it('keeps at most 8 KiB of a 5 MB output and names the stored result the viewer reads', () => {
+    const store = storeOf([call, { type: 'tool.completed', callId: 'c1', status: 'completed', output: fiveMegabytes }]);
+    const entry = store.byKey('call:c1')?.entry;
+    if (entry?.kind !== 'tool') throw new Error('the call has no tool entry');
+    expect(bytesOf(JSON.stringify(entry))).toBeLessThanOrEqual(8 * 1024 + 1024);
+    expect(bytesOf(entry.output ?? '')).toBeLessThanOrEqual(8 * 1024);
+    expect(fiveMegabytes.endsWith(entry.output ?? '')).toBe(true);
+    expect(entry.stored).toEqual({ runId: 'r', callId: 'c1' });
+    expect(entry.tail?.hidden).toBe(5 * 1024 * 1024 / 16 - 5);
+  });
+});

@@ -5,6 +5,8 @@ import { THEME_IDS } from '../screen/theme.ts';
 import type { ThemeId } from '../screen/theme.ts';
 import type { SlashCommand } from '../slash.ts';
 
+export type TuiSwitch = 'mouse' | 'copyOnSelect';
+
 export type DisplayPort = {
   theme(): ThemeId;
   previewTheme(theme: ThemeId | undefined): void;
@@ -14,6 +16,7 @@ export type DisplayPort = {
   a11y(): A11y;
   storedA11y(name: A11ySetting): boolean;
   storeA11y(name: A11ySetting, value: boolean, signal: AbortSignal): Promise<void>;
+  storeTui(name: TuiSwitch, value: boolean, signal: AbortSignal): Promise<void>;
   pick(request: PickRequest): Promise<number | undefined>;
 };
 

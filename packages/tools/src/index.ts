@@ -1,7 +1,7 @@
 export { EarlierAttemptNotStoppedError, sweepCallLocks } from './call-lock.ts';
 export type { CallLock } from './call-lock.ts';
 export { RetiringYield } from './ports.ts';
-export { ReconcileUndecidedError, createToolExecutor, heldCallWaitMs, subjectDigestOf, approvalDescriptionOf } from './executor.ts';
+export { IDEMPOTENCY_TTL_MS, ReconcileUndecidedError, createToolExecutor, heldCallWaitMs, subjectDigestOf, approvalDescriptionOf } from './executor.ts';
 export type { ApprovalDescription } from './executor.ts';
 export { callStopOf } from './call-stop.ts';
 export type { CallStop, CallStopTerms } from './call-stop.ts';
@@ -49,7 +49,7 @@ export type {
   ToolIdempotencyLookup,
   ToolIdempotencyRecord,
 } from './ports.ts';
-export { OBSERVED_FILE_HASH_PAGE_BYTES, observedToolFiles, workTreeObserverOn } from './work-tree-observer.ts';
+export { OBSERVED_FILE_HASH_PAGE_BYTES, OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, observedToolFiles, observerStoreOf, workTreeObserverOn } from './work-tree-observer.ts';
 export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, WorkTreeMark, WorkTreeObserver, WorkTreeObserverPorts } from './work-tree-observer.ts';
 export { createToolRegistry, extendToolSet } from './registry.ts';
 export { pageToFit } from './paging.ts';

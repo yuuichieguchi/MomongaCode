@@ -84,7 +84,7 @@ const setup = async () => {
   const memory = { maxTokens: undefined as number | undefined };
   const settings = {
     trusted: () => true,
-    verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
+    verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], conditions: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled: true, ...(memory.maxTokens === undefined ? {} : { maxTokens: memory.maxTokens }) }, forgetAfterDays: 90 }),
   };
   const reflector = exported<(options: unknown) => Reflector>('createReflector')({

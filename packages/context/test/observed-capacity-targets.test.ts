@@ -3,7 +3,7 @@ import { buildContext, budgetFor, capacityFor } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, HistoryItem, TokenMeter } from '@momonga/context';
 import { COMPACT_AT, floorRatio } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user } from './helpers.ts';
+import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user, withTurnsBeforeCurrent } from './helpers.ts';
 import { weightMeter, weightOf, weightOfAll } from './weight-meter.ts';
 import type { UnderRule, WeightMeter } from './weight-meter.ts';
 import { TEST_FENCE } from '@momonga/testkit';
@@ -27,7 +27,6 @@ const observedInput = (capabilities: Capabilities, history: HistoryItem[]): Buil
     trusted: true,
     projectRoot: PROJECT,
     home: HOME,
-    keepRecentTurns: 1,
     observedCapacity: true,
   };
   return input;
@@ -36,10 +35,9 @@ const observedInput = (capabilities: Capabilities, history: HistoryItem[]): Buil
 const floorTokens = weightOf({ type: 'message', role: 'system', content: SYSTEM_PROMPT }) + weightOf(TASK);
 
 const historyTotalling = (target: number): HistoryItem[] => {
-  const old = [user(1, 'old question'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(300)), assistant(4, 'old answer')];
-  const empty = user(5, '');
-  const pad = target - floorTokens - weightOfAll(old.map((entry) => entry.item)) - weightOf(empty.item);
-  return [...old, user(5, 'p'.repeat(pad))];
+  const withPad = (pad: number): HistoryItem[] =>
+    withTurnsBeforeCurrent([user(1, 'old question'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(300)), assistant(4, 'old answer'), user(5, 'p'.repeat(pad))]);
+  return withPad(target - floorTokens - weightOfAll(withPad(0).map((entry) => entry.item)));
 };
 
 const estimated = capabilitiesFor(8192, { tokenCounting: 'estimated', maxOutputTokens: 1024 });

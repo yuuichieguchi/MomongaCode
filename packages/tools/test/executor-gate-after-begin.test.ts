@@ -21,6 +21,7 @@ const executorWhoseRecordVanishesAfterGet = (harness: Harness) => {
     },
   };
   return createToolExecutor({
+    hostParallelism: 8,
     layout: momongaLayout(harness.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),

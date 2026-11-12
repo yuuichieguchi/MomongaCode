@@ -1,5 +1,5 @@
 import type { ExternalEditorPort } from './external-editor.ts';
-import { ModelRefError, PERMISSION_MODES, displayMapOf } from '@momonga/protocol';
+import { ModelRefError, PERMISSION_MODE_DESCRIPTIONS, displayMapOf } from '@momonga/protocol';
 import type { Mandate, MomongaModelEntry, PermissionMode } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { listedModelOf } from '../commands/models.ts';
@@ -31,6 +31,10 @@ export type ScreenPort = { current(): ScreenMode; set(mode: ScreenMode): Promise
 
 export type SessionsPort = { startNew(): Promise<void>; resume(id: string): Promise<void>; now(): number; columns(): number };
 
+export type SelectedText = { kind: 'text'; text: string } | { kind: 'too-large'; bytes: number };
+
+export type ClipboardTextPort = { selected(): SelectedText | undefined; lastAnswer(): string | undefined };
+
 export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
   readonly model: string | undefined;
@@ -56,6 +60,7 @@ export type SlashContext = ModeAvailability & {
   readonly keyBindings: KeyBindingsScreen;
   readonly overlays: Pick<OverlayPorts, 'choose' | 'promptText'>;
   readonly externalEditor: Pick<ExternalEditorPort, 'open'>;
+  readonly clipboard: ClipboardTextPort;
   refusedWhileRunning(): boolean;
   status(): readonly string[];
   readonly sessions: SessionsPort;
@@ -159,25 +164,53 @@ const exit: SlashCommand = {
   },
 };
 
-const mode: SlashCommand = {
-  name: 'mode',
-  usage: '[mode]',
-  description: 'show or set the permission mode',
-  run: async (args, context) => {
-    if (args === '') {
-      context.info(`permission mode: ${context.mode} (available: ${selectableModes(context).join(', ')})`);
-      return;
-    }
-    const chosen = PERMISSION_MODES.find((candidate) => candidate === args);
-    if (chosen === undefined) {
-      context.info(`unknown permission mode ${args}; available: ${selectableModes(context).join(', ')}`);
-      return;
-    }
-    await context.setMode(chosen);
-  },
+export const START_FLAG = '--start';
+
+export const MODE_PICKER_TITLE = 'Permission mode';
+export const ALSO_START_LABEL = 'also start sessions in this mode';
+export const SAVING_START_MODE = 'saving the start mode';
+
+export const modeToastText = (mode: PermissionMode): string => `${mode}: ${PERMISSION_MODE_DESCRIPTIONS[mode]}`;
+
+const writeStartMode = (context: SlashContext, chosen: PermissionMode): Promise<void> =>
+  context.background(SAVING_START_MODE, (signal) => context.backend.editSettings('user', { kind: 'set', path: ['permissions', 'defaultMode'], value: chosen }, signal));
+
+const useMode = async (context: SlashContext, chosen: PermissionMode, start: boolean): Promise<void> => {
+  await context.setMode(chosen);
+  if (start) await writeStartMode(context, chosen);
 };
 
-export const START_FLAG = '--start';
+const mode: SlashCommand = {
+  name: 'mode',
+  usage: `[mode] [${START_FLAG}]`,
+  description: 'choose the permission mode from a list, or set it; with --start also start sessions in it',
+  run: async (args, context) => {
+    const available = selectableModes(context);
+    if (args === '') {
+      const choice = await context.overlays.choose({
+        title: MODE_PICKER_TITLE,
+        rows: available.map((candidate) => ({ label: `${candidate}  ${PERMISSION_MODE_DESCRIPTIONS[candidate]}` })),
+        initial: Math.max(0, available.indexOf(context.mode)),
+        decideOn: 'enter',
+        escape: 'back',
+        filter: false,
+        alt: { label: ALSO_START_LABEL },
+      });
+      const picked = choice === undefined ? undefined : available[choice.index];
+      if (choice === undefined || picked === undefined) return;
+      await useMode(context, picked, choice.alt);
+      return;
+    }
+    const words = args.split(/\s+/).filter((word) => word !== '');
+    const named = words.filter((word) => word !== START_FLAG);
+    const chosen = available.find((candidate) => named.length === 1 && candidate === named[0]);
+    if (chosen === undefined) {
+      context.info(`unknown permission mode ${named.join(' ')}; available: ${available.join(', ')}`);
+      return;
+    }
+    await useMode(context, chosen, words.includes(START_FLAG));
+  },
+};
 
 export const switchModel = async (args: string, entries: readonly MomongaModelEntry[], context: SlashContext): Promise<void> => {
   const words = args.split(/\s+/).filter((word) => word !== '');

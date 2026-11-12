@@ -23,6 +23,7 @@ import {
   textOf,
   touchedFile,
   user,
+  withTurnsBeforeCurrent,
 } from './helpers.ts';
 import { weightMeter, weightOf, weightOfAll } from './weight-meter.ts';
 import { TEST_FENCE } from '@momonga/testkit';
@@ -201,9 +202,9 @@ const candidateHistory = (capabilities: ReturnType<typeof capabilitiesFor>): His
   const oldTurn: HistoryItem[] = [user(1, 'old question')];
   for (let index = 1; index <= 4; index += 1) oldTurn.push(call(2 * index, `c${index}`), outputOfWeight(2 * index + 1, `c${index}`));
   oldTurn.push(assistant(10, 'old answer'));
-  const empty = user(11, '');
-  const pad = highMark + 1 - floor - weightOfAll(oldTurn.map((entry) => entry.item)) - weightOf(empty.item);
-  return [...oldTurn, user(11, 'p'.repeat(pad))];
+  const withPad = (pad: number): HistoryItem[] => withTurnsBeforeCurrent([...oldTurn, user(11, 'p'.repeat(pad))]);
+  const pad = highMark + 1 - floor - weightOfAll(withPad(0).map((entry) => entry.item));
+  return withPad(pad);
 };
 
 const candidateInput = (capabilities: ReturnType<typeof capabilitiesFor>): BuildContextInput => ({
@@ -216,7 +217,6 @@ const candidateInput = (capabilities: ReturnType<typeof capabilitiesFor>): Build
   trusted: true,
   projectRoot: PROJECT,
   home: HOME,
-  keepRecentTurns: 1,
   fence: TEST_FENCE,
 });
 
@@ -224,7 +224,7 @@ const portsOf = () => ({ meter: weightMeter(), blobs: fakeBlobs(), instructions:
 
 describe('eviction on crossing H with context.cachePrefix (4.4, candidate rule)', () => {
   it('evicts every unprotected output in one batch when the total crosses H by one token', async () => {
-    const capabilities = capabilitiesFor(8000, { maxOutputTokens: 1024 });
+    const capabilities = capabilitiesFor(8200, { maxOutputTokens: 1024 });
 
     const built = await buildContext(cachePrefix(candidateInput(capabilities)), portsOf());
 
@@ -232,7 +232,7 @@ describe('eviction on crossing H with context.cachePrefix (4.4, candidate rule)'
   });
 
   it('stops at the baseline low mark without the setting, leaving the newest unprotected output', async () => {
-    const capabilities = capabilitiesFor(8000, { maxOutputTokens: 1024 });
+    const capabilities = capabilitiesFor(8200, { maxOutputTokens: 1024 });
 
     const built = await buildContext(candidateInput(capabilities), portsOf());
 

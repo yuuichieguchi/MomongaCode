@@ -57,7 +57,7 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
   const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
   const settings = {
     trusted: () => options.trusted,
-    verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
+    verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], conditions: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled: true }, forgetAfterDays: 90 }),
   };
   const run = await enqueue(store, session.id, 'change a');

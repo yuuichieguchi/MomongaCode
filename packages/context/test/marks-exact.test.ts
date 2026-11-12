@@ -3,7 +3,7 @@ import { COMPACT_AT, EVICT_LOW_WATER, floorRatio, summaryItemTokensFor, summaryT
 import type { Capabilities, InputItem } from '@momonga/protocol';
 import { buildContext, inputCeilingFor } from '@momonga/context';
 import type { HistoryItem } from '@momonga/context';
-import { HOME, RAW_OUTPUT_TOOL, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user } from './helpers.ts';
+import { HOME, RAW_OUTPUT_TOOL, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user, withTurnsBeforeCurrent } from './helpers.ts';
 import { weightMeter, weightOf, weightOfAll } from './weight-meter.ts';
 import { TEST_FENCE } from '@momonga/testkit';
 
@@ -26,7 +26,6 @@ const buildWith = (capabilities: Capabilities, history: HistoryItem[], extra: Pa
       projectRoot: PROJECT,
       home: HOME,
       harnessOutputTools: [RAW_OUTPUT_TOOL],
-      keepRecentTurns: 1,
       ...extra,
     },
     portsWith(),
@@ -47,11 +46,11 @@ const floatDisagreeingWindow = (): Capabilities => {
 const OLD_OUTPUT = 'o'.repeat(300);
 
 const historyTotalling = (target: number): HistoryItem[] => {
-  const fixed = [user(1, 'old question'), call(2, 'c1'), output(3, 'c1', OLD_OUTPUT), assistant(4, 'old answer')];
-  const empty = user(5, '');
-  const pad = target - floorTokens - weightOfAll(fixed.map((entry) => entry.item)) - weightOf(empty.item);
+  const withPad = (pad: number): HistoryItem[] =>
+    withTurnsBeforeCurrent([user(1, 'old question'), call(2, 'c1'), output(3, 'c1', OLD_OUTPUT), assistant(4, 'old answer'), user(5, 'p'.repeat(pad))]);
+  const pad = target - floorTokens - weightOfAll(withPad(0).map((entry) => entry.item));
   if (pad < 0) throw new Error(`target ${target} is below the fixed history`);
-  return [...fixed, user(5, 'p'.repeat(pad))];
+  return withPad(pad);
 };
 
 describe('the high mark is exact integer arithmetic (0.2 #7)', () => {
@@ -94,7 +93,7 @@ const lowMarkDisagreeingWindow = (): Capabilities => {
 
 const FIRST_TEXT = 'a'.repeat(800);
 
-const threeOutputHistory = (secondText: string, pad: number): HistoryItem[] => [
+const threeOutputHistory = (secondText: string, pad: number): HistoryItem[] => withTurnsBeforeCurrent([
   user(1, 'old question'),
   call(2, 'c1'),
   output(3, 'c1', FIRST_TEXT),
@@ -104,7 +103,7 @@ const threeOutputHistory = (secondText: string, pad: number): HistoryItem[] => [
   output(7, 'c3', 'q'.repeat(400)),
   assistant(8, 'old answer'),
   user(9, 'p'.repeat(pad)),
-];
+]);
 
 const savingOf = async (capabilities: Capabilities, secondText: string): Promise<number> => {
   const history = threeOutputHistory(secondText, 0);
@@ -160,9 +159,11 @@ const proactiveCase = (newHistory: number) => {
   const oldUser = messageOfWeight(1, 'user', newHistory - weightOf(assistant(2, 'a').item));
   const oldTurn = [oldUser, assistant(2, 'a')];
   const highMark = floorTokens + floorRatio(COMPACT_AT, roomLeft);
-  const currentUser = user(3, 'now');
-  const currentTotal = highMark + 1 - floorTokens - previousSummary - newHistory - weightOf(currentUser.item);
-  const history = [...oldTurn, currentUser, messageOfWeight(4, 'assistant', currentTotal)];
+  const between = withTurnsBeforeCurrent([...oldTurn, user(3, '')]).slice(oldTurn.length, -1);
+  const currentSeq = 3 + between.length;
+  const currentUser = user(currentSeq, 'now');
+  const currentTotal = highMark + 1 - floorTokens - previousSummary - newHistory - weightOfAll(between.map((entry) => entry.item)) - weightOf(currentUser.item);
+  const history = [...oldTurn, ...between, currentUser, messageOfWeight(currentSeq + 1, 'assistant', currentTotal)];
   return { history, summary, highMark };
 };
 
@@ -184,7 +185,6 @@ describe('proactive acceptance needs one summary item of new history (0.2 #25, B
         projectRoot: PROJECT,
         home: HOME,
         harnessOutputTools: [RAW_OUTPUT_TOOL],
-        keepRecentTurns: 1,
         fence: TEST_FENCE,
 },
       portsWith(),
@@ -210,7 +210,6 @@ describe('proactive acceptance needs one summary item of new history (0.2 #25, B
         projectRoot: PROJECT,
         home: HOME,
         harnessOutputTools: [RAW_OUTPUT_TOOL],
-        keepRecentTurns: 1,
         fence: TEST_FENCE,
 },
       portsWith(),

@@ -1,4 +1,3 @@
-import { USER_SHELL_OUTPUT_BYTES } from '@momonga/protocol';
 import type { UserShellRecord } from '@momonga/protocol';
 import type { UserShellEnd } from '../client/runtime-client.ts';
 import { expandedText, insertText, placeText } from './editor.ts';
@@ -59,7 +58,7 @@ export const shellStarted = (store: TranscriptStore, command: ShellCommand, star
 };
 
 export const shellOutput = (store: TranscriptStore, running: RunningShell, text: string): void => {
-  userToolOutput(store, running.id, text, USER_SHELL_OUTPUT_BYTES);
+  userToolOutput(store, running.id, text);
 };
 
 export const shellEnded = (store: TranscriptStore, running: RunningShell, end: UserShellEnd, endedAt: number): void => {

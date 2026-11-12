@@ -47,7 +47,6 @@ const inputWith = (layout: 'cachePrefix' | 'default', history: HistoryItem[], ex
   trusted: true,
   projectRoot: PROJECT,
   home: HOME,
-  keepRecentTurns: 1,
   observedCapacity: true,
   renderedFull: new Set(['c1', 'c2']),
   ...(layout === 'cachePrefix' ? { layout } : {}),

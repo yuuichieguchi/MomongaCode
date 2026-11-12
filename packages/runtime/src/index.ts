@@ -1,6 +1,9 @@
 export { ConfigError } from '@momonga/config';
 export { buildSystemPrompt } from './system-prompt.ts';
 export { INIT_INSTRUCTION } from './prompts/init.ts';
+export { checkProposalOf } from './worker/check-proposal.ts';
+export type { CheckProposal } from './worker/check-proposal.ts';
+export { NO_CHECK_DECLARED_CODE } from './worker/verification-step.ts';
 export { AUTO_CLASSIFIER_CODE } from './worker/auto-classifier.ts';
 export type { SystemPromptContext } from './system-prompt.ts';
 export { createWorker } from './worker/worker.ts';
@@ -60,6 +63,7 @@ export { GATEWAY_UNAVAILABLE_CODE, GatewayRequestError, MODEL_NOT_FOUND_CODE, Mo
 export type { GatewayChainMember, GatewayClient, GatewayClientOptions, GatewayListing, GatewayModel, GatewayRequestErrorFields, ListedChainMember, ListedGatewayModel } from './gateway-client.ts';
 export { createTracerPort, fixedTracers } from './tracer.ts';
 export { LeaseLostError, ShutdownError } from './worker/errors.ts';
+export { MEASURING_SAME_STATE_WAITS } from './worker/gateway-policy.ts';
 export { asError } from './process/as-error.ts';
 export { POOL_IDLE_CLOSE_MS, POOL_REFERENCE_AUDIT_MS, SESSION_STATE_IDLE_MS } from './process/constants.ts';
 export { RUNTIME_DEFAULTS } from './process/defaults.ts';
@@ -107,6 +111,8 @@ export type { BackgroundJobRegistry, BackgroundJobsOptions } from './process/bac
 export { createNodeJobMarkerFiles } from './process/job-marker-files.ts';
 export type { JobMarkerFiles } from './process/job-marker-files.ts';
 export { createSkillsPort } from './process/skills-port.ts';
+export { SKILL_DIRECTORY_SEGMENTS, SKILL_FILE_NAME, isValidSkillName } from '@momonga/skills';
+export { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX } from '@momonga/agents';
 export type { SkillsPortOptions } from './process/skills-port.ts';
 export { fixedSandboxBindings } from './process/sandbox-bindings.ts';
 export { createNetworkDerivation } from './process/network-derivation.ts';

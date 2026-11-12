@@ -6,7 +6,7 @@ import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf } from '@momonga/protocol';
 import { ISSUE_PIN } from './issues.ts';
 import type { IssuePort, IssueRead } from './issues.ts';
 import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
@@ -19,6 +19,7 @@ import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { registerUserShellRoutes } from './user-shell-routes.ts';
+import { registerToolResultRoutes } from './tool-result-routes.ts';
 import type { UserCommandRegistry } from './user-shell-routes.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
@@ -35,6 +36,7 @@ import {
   invalidRequest,
   methodNotAllowed,
   modeNotAllowed,
+  measuringNotReady,
   modelNotConfigured,
   moved,
   notFound,
@@ -178,7 +180,9 @@ const isMeasuringAnswer = (error: unknown): boolean => error instanceof GatewayR
 const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && !isMeasuringAnswer(error) && (error.type === 'transport' || error.status >= 500);
 
-const isClientErrorStatus = (status: number): boolean => status >= 400 && status < 500;
+const isUntypedServerAnswer = (error: GatewayRequestError): boolean => error.status >= 500 && error.code === `http_${error.status}`;
+
+const isGatewayUnreachable = (error: unknown): boolean => error instanceof GatewayRequestError && (error.type === 'transport' || isUntypedServerAnswer(error));
 
 const gatewayGivenUp = (state: string): ApiError =>
   new ApiError({
@@ -191,19 +195,22 @@ const gatewayGivenUp = (state: string): ApiError =>
 const pricesWhileRestarting = (): ApiError =>
   serviceUnavailable('gateway_unavailable', 'The models cannot be reached while the daemon starts them again, and a run with a money budget or a mandate needs their prices. The request was not run; send it again.');
 
+const measuringAnswerOf = (error: GatewayRequestError): ApiError => {
+  if (error.measuring === undefined) throw new TypeError(`the answer ${error.code} carries no measuring state`, { cause: error });
+  return measuringNotReady(error.measuring);
+};
+
 const listingReadFailure = (error: unknown): unknown => {
-  if (error instanceof GatewayRequestError && isTargetProbing(error)) return targetNotReady(TARGET_PROBING_MESSAGE);
-  if (error instanceof GatewayRequestError && isTargetProbeFailed(error)) return targetProbeFailed(error.message, error.retryAfterMs);
+  if (error instanceof GatewayRequestError && isTargetProbing(error)) return measuringAnswerOf(error);
+  if (error instanceof GatewayRequestError && isTargetProbeFailed(error)) return targetProbeFailed(error.message);
   if (isGatewayUnavailable(error)) return serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
   return error;
 };
 
 const gatewayReadFailure = (error: unknown): unknown => {
   if (!isMeasuringAnswer(error) && error instanceof ModelUnlistedError) return targetNotReady(readinessText(agentReadiness({ unavailable: error.message })));
-  if (isMeasuringAnswer(error) || isGatewayUnavailable(error)) return listingReadFailure(error);
-  if (error instanceof GatewayRequestError && isClientErrorStatus(error.status)) {
-    return gatewayAnswer({ status: error.status, type: error.type, code: error.code, message: error.message });
-  }
+  if (isMeasuringAnswer(error) || isGatewayUnreachable(error)) return listingReadFailure(error);
+  if (error instanceof GatewayRequestError) return gatewayAnswer({ status: error.status, type: error.type, code: error.code, message: error.message });
   return error;
 };
 
@@ -877,6 +884,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/children', { GET: listChildRuns });
   route('/v1/runs/:id/cancel', { POST: cancelRun });
   route('/v1/runs/:id/trace', { GET: runTrace });
+  registerToolResultRoutes(route, { store });
   route('/v1/cost', { GET: cost });
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
