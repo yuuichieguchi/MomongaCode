@@ -138,11 +138,11 @@ const stablePrefixLength = (input: readonly AdapterInputItem[]): number => {
 
 type ConvertedMessages = { messages: AnthropicMessage[]; stablePrefixEnd: AnthropicBlock | undefined; placed: Placed[] };
 
-const convertMessages = (input: readonly AdapterInputItem[], origin: ReasoningOrigin): ConvertedMessages => {
+const convertMessages = (input: readonly AdapterInputItem[], origin: ReasoningOrigin, fence?: string): ConvertedMessages => {
   const grouped: PlacedMessage[] = [];
   const prefixLength = stablePrefixLength(input);
   let stablePrefixEnd: AnthropicBlock | undefined;
-  const readable = readableHistoryItemOf(input);
+  const readable = readableHistoryItemOf(input, fence);
   for (const [index, item] of input.entries()) {
     const kept = readable(item);
     const converted = kept === undefined ? undefined : blocksOf(kept, origin);
@@ -233,7 +233,7 @@ const requestParts = (request: AdapterRequest, options: BodyOptions, origin: Rea
   const tools = (request.tools ?? []).map((tool) => toolOf(tool, dialect, options.ledger));
   const placedSystem = systemPlacedOf(request.instructions, request.input);
   const system = placedSystem.map((entry) => entry.block);
-  const converted = convertMessages(request.input, origin);
+  const converted = convertMessages(request.input, origin, request.fence);
   const { cache } = options;
   if (cache?.marks !== undefined) withMarks(placedSystem, converted, { maxBreakpoints: cache.maxBreakpoints, marks: cache.marks });
   else if (cache !== undefined) withBreakpoints(tools, system, converted, cache.maxBreakpoints);

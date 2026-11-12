@@ -1,3 +1,5 @@
+import { TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
+import { TEST_FENCE } from '../src/test-fence.ts';
 import http from 'node:http';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -729,12 +731,12 @@ describe('constrained replies after a rendered tool result', () => {
   };
   const responseFormat = { type: 'json_schema', json_schema: { name: 'envelope', schema: envelope, strict: true } };
 
-  it('answers with a final envelope when the last user message is a <tool_result> block naming a tool', async () => {
+  it('answers with a final envelope when the last user message holds a fenced tool output naming a tool', async () => {
     const server = await start({ scenario: 'json-schema-only' });
     const response = await send(server.socketPath, 'POST', '/v1/chat/completions', {
       model: 'system',
       response_format: responseFormat,
-      messages: [{ role: 'user', content: '<tool_result call_id="c1" name="get_weather">sunny</tool_result>' }],
+      messages: [{ role: 'user', content: fenceUntrusted(TOOL_OUTPUT_TAG, { call: 'c1', tool: 'get_weather' }, 'sunny', TEST_FENCE) }],
     });
     expect(JSON.parse(json(response).choices[0].message.content).kind).toBe('final');
   });

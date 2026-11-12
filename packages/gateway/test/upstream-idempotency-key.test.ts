@@ -189,7 +189,7 @@ describe('a second send of one model request is recorded as retry_of (Q20 B3, K4
       return memory
         .getFinishedSpans()
         .filter((finished) => finished.attributes['gen_ai.operation.name'] === 'chat')
-        .map((finished) => finished.attributes['momonga.retry_of']);
+        .map((finished) => finished.attributes['momonga.retry_of_seq']);
     };
     return { clock, telemetry, retryOfEachChat };
   };
@@ -230,7 +230,7 @@ describe('a second send of one model request is recorded as retry_of (Q20 B3, K4
     expect(await retryOfEachChat()).toEqual([undefined, sendsOf(after.dbPath)[0]?.seq]);
   });
 
-  it('trace: the span of a second send carries momonga.retry_of, the span of a first send does not', async () => {
+  it('trace: the span of a second send carries momonga.retry_of_seq, the span of a first send does not', async () => {
     const clock = createFakeClock(START_MS);
     const memory = new InMemorySpanExporter();
     const telemetry = createTelemetry({ serviceName: 'momonga-gateway-test', serviceVersion: '0.0.0', clock, exporters: [memory], batch: { maxQueueSize: 2048, scheduledDelayMs: 60_000, maxExportBatchSize: 512 } });
@@ -241,8 +241,8 @@ describe('a second send of one model request is recorded as retry_of (Q20 B3, K4
     await telemetry.forceFlush();
     const spans = memory.getFinishedSpans().filter((finished) => finished.attributes['gen_ai.operation.name'] === 'chat');
     expect(spans).toHaveLength(2);
-    expect(spans[0]?.attributes).not.toHaveProperty('momonga.retry_of');
-    expect(spans[1]?.attributes['momonga.retry_of']).toBe(sendsOf(started.dbPath)[0]?.seq);
+    expect(spans[0]?.attributes).not.toHaveProperty('momonga.retry_of_seq');
+    expect(spans[1]?.attributes['momonga.retry_of_seq']).toBe(sendsOf(started.dbPath)[0]?.seq);
   });
 
   it('reply: the answer of a second send names the recorded call it retries in its momonga extension, a first send names none (DECISION-12)', async () => {

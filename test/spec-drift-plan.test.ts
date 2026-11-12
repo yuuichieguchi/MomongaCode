@@ -89,6 +89,7 @@ describe('PlanCredential.tla against the sign-out resume of the plan session', (
     { model: 'SoAbort', defined: /^SoAbort\(a\) ==$/m, code: 'unloadForResume', what: 'a sign-out that ends without the cleared record drops the memory copy' },
     { model: 'SoReload', defined: /^SoReload\(a\) ==$/m, code: 'resumeSignOut', what: 'a record read as signing_out schedules the resumed sign-out' },
     { model: 'SigningOutResolves', defined: /^SigningOutResolves ==/m, code: 'unfinishedSignOutOf', what: 'the resumed sign-out acts on the record it finds under the lock' },
+    { model: 'SoGrantFails', defined: /^SoGrantFails\(a\) ==$/m, code: 'signOutWith', what: 'a transient failure of the signing_out write ends the sign-out with the record unchanged' },
   ] as const;
 
   it.each(RESUME_ROWS)('$model is defined in the model and $code in the session: $what', ({ defined, code }) => {
@@ -122,3 +123,12 @@ describe('PlanSignIn.tla against plan-constants.json', () => {
     expect(without(constants.credentialStates, recordStates)).toEqual(['needs_sign_in', 'signing_out', 'store_unreadable', 'store_unwritable']);
   });
 });
+
+describe('PlanCredential.tla: a transient persist failure never signs an account out', () => {
+  it('defines TransientNeverSignsOut, and the evidence transientSignsOut violates it', () => {
+    expect(credentialSpec).toMatch(/^TransientNeverSignsOut ==/m);
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'specs', 'tla', 'manifest.json'), 'utf8')) as { entries: { config: string; expect: unknown }[] };
+    expect(manifest.entries.find((entry) => entry.config === 'PlanCredential.transientSignsOut')?.expect).toEqual({ violates: 'TransientNeverSignsOut', exitCode: 12 });
+  });
+});
+

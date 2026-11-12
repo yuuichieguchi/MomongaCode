@@ -3,6 +3,7 @@ import { providerNameOf, serverNameFromCommand } from '@momonga/config';
 import { LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS, PROVIDER_NAME_PATTERN, canonOf, displayMapOf, withDefaultTag } from '@momonga/protocol';
 import type { DetectedLocalServer, DetectedModel, LocalServerDetection, ModelView } from '@momonga/protocol';
 import { describeFailure } from '../../failure.ts';
+import { wholeNumberWithin } from '../../models-check.ts';
 import { addProposalOf, entryOf, foundProposalOf, foundRowOf, kindOf, nameInputOf, offeredServers, proposeForm } from '../../commands/models.ts';
 import type { ModelsEdit, ModelsProposal } from '../../commands/models.ts';
 import { NO_SERVER_ANSWERED_TEXT, noServerAnsweredAtText } from '../../models-texts.ts';
@@ -60,11 +61,7 @@ const addressProblem = (text: string): string | undefined => {
   return protocol === 'http:' || protocol === 'https:' ? undefined : NOT_AN_ADDRESS;
 };
 
-const wholeNumberIn = (text: string, ceiling: number | undefined): number | undefined => {
-  const value = Number(text.trim());
-  if (text.trim() === '' || !Number.isInteger(value) || value < 1) return undefined;
-  return ceiling !== undefined && value > ceiling ? undefined : value;
-};
+const wholeNumberIn = wholeNumberWithin;
 
 export const askWindow = async (context: ModelsFlowContext, display: string, ceiling: number | undefined): Promise<number | undefined> => {
   const entered = await context.overlays.promptText({ title: windowPrompt(display, ceiling), validate: (text) => (wholeNumberIn(text, ceiling) === undefined ? windowProblem(ceiling) : undefined) });

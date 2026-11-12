@@ -123,6 +123,7 @@ export const listedEntryOf = (id: string, capabilities: MomongaModelEntry['chain
     ...(parsed.provider === 'ollama' ? { defaultTag: OLLAMA_DEFAULT_TAG } : {}),
     billing: 'local',
     capabilities,
+    state: 'available',
     chain: members.map((member) => ({ model: member, counter: `counter of ${member}`, billing: 'local', adapter: 'chat-completions', answers: 'model', upstream: parseCanon(member)?.ownName ?? member, capabilities })),
   };
 };
@@ -370,6 +371,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
         detections.push(request);
         return options.detect === undefined ? [...(options.detected ?? [])] : options.detect(request);
       },
+      describe: async (_server, model) => model,
       programModel: async () => {
         if (options.programModel === undefined) throw new Error('the fake backend starts no server program');
         return options.programModel;

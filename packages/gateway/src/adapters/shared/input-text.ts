@@ -22,15 +22,10 @@ const textOfPart = (part: ContentPart): string => {
 export const textOfContent = (content: string | readonly ContentPart[]): string =>
   typeof content === 'string' ? content : content.map(textOfPart).join(PART_SEPARATOR);
 
-export const neutralizeMarkup = (text: string): string => text.replaceAll('<', '&lt;');
-
-export const escapeAttribute = (value: string): string =>
-  value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replace(/[\r\n]/g, ' ');
+export const fenceOf = (fence: string | undefined): string => {
+  if (fence === undefined) throw new Error('a request that fences untrusted text reached the adapter without its fence boundary');
+  return fence;
+};
 
 export type ReasoningInput = Extract<AdapterInputItem, { type: 'reasoning' }>;
 

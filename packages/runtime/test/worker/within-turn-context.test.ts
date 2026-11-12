@@ -81,7 +81,7 @@ describe('in-turn compaction', () => {
     expect(isTaskItem(beforeCompaction[1] as InputItem, 'Fill the context')).toBe(true);
     expect(request.model).toBe('fm');
     expect('instructions' in request).toBe(false);
-    expect(request.momonga).toEqual({ max_summary_tokens: 240, retains_user_request: true, exact_model: true });
+    expect(request.momonga).toEqual({ max_summary_tokens: 240, retains_user_request: true, exact_model: true, fence: env.session.fenceNonce });
     expect(compact?.idempotencyKey).toBe(compactKey(run.id, request));
 
     const [compacted] = env.ofType(run.id, 'context.compacted');

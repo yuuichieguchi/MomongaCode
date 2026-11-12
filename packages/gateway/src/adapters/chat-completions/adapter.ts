@@ -20,7 +20,7 @@ import { createEndpointPool, routeReportOf } from '../shared/http-client.ts';
 import { isJsonOnlyEnforced, jsonReplyFormatOf, jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { CHAT_COMPLETIONS_PATH, CHAT_COMPLETIONS_SUFFIX } from './limits.ts';
-import { buildNativeBody } from './native-request.ts';
+import { buildNativeBody, fenceOption } from './native-request.ts';
 import type { ChatRequestBody } from './native-request.ts';
 import { createNativeSink } from './native-sink.ts';
 import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
@@ -101,10 +101,10 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems, origin: ReasoningOrigin, capabilities: Capabilities): ChatWire => {
     const { callNames, withTools } = lenient;
     if (modeOf(capabilities) === 'constrained') {
-      return { messages: plainHistoryOf(request.input, { envelopeReplies: withTools, callNames, origin }) };
+      return { messages: plainHistoryOf(request.input, { envelopeReplies: withTools, callNames, origin, ...fenceOption(request) }) };
     }
     return {
-      messages: withTools ? nativeHistoryOf(request.input, origin) : plainHistoryOf(request.input, { envelopeReplies: false, callNames, origin }),
+      messages: withTools ? nativeHistoryOf(request.input, origin, request.fence) : plainHistoryOf(request.input, { envelopeReplies: false, callNames, origin, ...fenceOption(request) }),
     };
   };
 
@@ -165,7 +165,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       }
 
       watch = watchContent(options.liveness);
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: watch.touch, outputCeiling: gatewayOutputCeilingOf(capabilities), ...retryAfterHint(response, options.clock) });
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, nonStrict: ledger.nonStrict, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: watch.touch, outputCeiling: gatewayOutputCeilingOf(capabilities), ...retryAfterHint(response, options.clock) });
       const sink = envelope === undefined ? createNativeSink(emitter) : createConstrainedSink(emitter, envelope, options.clock);
       const driver = new StreamDriver(emitter, sink);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { waitFor } from '@momonga/testkit';
+import { fenceBoundaryIn, waitFor } from '@momonga/testkit';
 import type { CountTokensResult } from '@momonga/protocol';
 import { FAKE_GUARDRAIL_ERROR } from '@momonga/testkit';
 import type { FakeScriptedReply } from '@momonga/testkit';
@@ -74,7 +74,7 @@ describe('POST /v1/responses/compact for a chat-completions target', () => {
     expect((await compact(harness, { momonga: { max_summary_tokens: 100 } })).status).toBe(200);
     const body = completionBodies(fake)[0];
     expect(body.max_completion_tokens).toBe(100);
-    expect(body.messages[0]).toEqual({ role: 'system', content: instructionsFor(100, RESTATE_CLAUSE) });
+    expect(body.messages[0]).toEqual({ role: 'system', content: instructionsFor(100, RESTATE_CLAUSE, fenceBoundaryIn(body.messages[1].content)) });
   });
 
   it.for([
@@ -158,7 +158,7 @@ describe('the summary request must fit the target', () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply(SUMMARY)] });
     const harness = await startCcGateway({ fm: ccAdapterFor(fake) });
     const response = await compact(harness, {
-      input: [userText('look'), { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{}' }, { type: 'function_call_output', call_id: 'c1', output: '<'.repeat(2400) }],
+      input: [userText('look'), { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{}' }, { type: 'function_call_output', call_id: 'c1', output: '<'.repeat(9600) }],
       momonga: { max_summary_tokens: 64 },
     });
     expect(response.status).toBe(400);
@@ -166,14 +166,15 @@ describe('the summary request must fit the target', () => {
     expect(completionBodies(fake)).toHaveLength(0);
   });
 
-  it('measures the neutralised request: the same length without markup fits', async () => {
+  it('measures the text unchanged: markup of a length that fits is sent as it is', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply(SUMMARY)] });
     const harness = await startCcGateway({ fm: ccAdapterFor(fake) });
     const response = await compact(harness, {
-      input: [userText('look'), { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{}' }, { type: 'function_call_output', call_id: 'c1', output: 'a'.repeat(2400) }],
+      input: [userText('look'), { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{}' }, { type: 'function_call_output', call_id: 'c1', output: '<'.repeat(2400) }],
       momonga: { max_summary_tokens: 64 },
     });
     expect(response.status).toBe(200);
+    expect(JSON.stringify(completionBodies(fake)[0])).toContain('<'.repeat(2400));
   });
 
   it('measures with the target counter when the target has one', async () => {

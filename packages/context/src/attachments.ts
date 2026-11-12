@@ -60,7 +60,9 @@ const cannotAttach = (path: string, cause: string): AttachmentNotePart => ({
   shown: `${path}: not attached (${cause})`,
 });
 
-const DENIED_BY_RULE = 'denied by a rule';
+const OUTSIDE_FOLDER = 'it is outside this folder; /permissions adds another folder the session may read';
+const UNTRUSTED_FOLDER = 'this folder is not trusted; /permissions trusts it';
+const DENIED_BY_RULE = 'a deny rule or a protected path covers it; /permissions shows the rules';
 const COULD_NOT_BE_READ = 'it could not be read';
 
 const tooLarge = (path: string, tokens: number, room: number): AttachmentNotePart => ({
@@ -148,8 +150,16 @@ export const attachMentions = async (text: string, host: AttachHost): Promise<At
   for (const mention of mentionsOf(text)) {
     const target = await host.resolve(mention);
     if (target === undefined) continue;
-    if (target === 'outside' || !host.trusted || (await host.floor(target.absolute)) === 'denied') {
-      attachments.push(cannotAttach(target === 'outside' ? mention : target.shown, DENIED_BY_RULE));
+    if (target === 'outside') {
+      attachments.push(cannotAttach(mention, OUTSIDE_FOLDER));
+      continue;
+    }
+    if (!host.trusted) {
+      attachments.push(cannotAttach(target.shown, UNTRUSTED_FOLDER));
+      continue;
+    }
+    if ((await host.floor(target.absolute)) === 'denied') {
+      attachments.push(cannotAttach(target.shown, DENIED_BY_RULE));
       continue;
     }
     const shown = target.kind === 'directory' && !target.shown.endsWith('/') ? `${target.shown}/` : target.shown;

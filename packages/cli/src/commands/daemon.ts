@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { readUserStopValues } from '@momonga/config';
+import { readUserStopValuesOrDefault } from '@momonga/config';
 import { STOP_VALUE_NAMES, generationLayout, readStopRecord } from '@momonga/foundation';
 import type { MomongaPaths, StopValueName, StopValues } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
@@ -42,13 +41,21 @@ export const lastStopLines = (lastStop: StopValues, settingsNow: StopValues): st
   return [`  last stop: ${last}`, ...(now === last ? [] : [`  settings now: ${now}`])];
 };
 
-export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'clock' | 'home' | 'interrupt' | 'endpointScope'>, paths: MomongaPaths): Promise<number> => {
+const generationDocumentOf = (entry: LiveGeneration, lastStop: StopValues | undefined) => ({ role: entry.role, generation: entry.generation, ...entry.health, lastStop: lastStop ?? null });
+
+export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'stderr' | 'clock' | 'interrupt' | 'endpointScope'>, paths: MomongaPaths, options: { json: boolean }): Promise<number> => {
   const live = await listLiveGenerations(ports, paths);
   const serving = live.find((entry) => entry.role === 'serving');
   const others = live.filter((entry) => entry !== serving);
-  const home = path.dirname(paths.root);
-  const lastStops = new Map(await Promise.all(live.map(async (entry) => [entry, await readStopRecord(generationLayout(home, entry.generation).stopRecord)] as const)));
-  const settingsNow = [...lastStops.values()].some((values) => values !== undefined) ? await readUserStopValues(ports.home, ports.interrupt) : undefined;
+  const lastStops = new Map(await Promise.all(live.map(async (entry) => [entry, await readStopRecord(generationLayout(paths.home, entry.generation).stopRecord)] as const)));
+  const settingsNow = [...lastStops.values()].some((values) => values !== undefined)
+    ? await readUserStopValuesOrDefault({ home: paths.home, signal: ports.interrupt, onNotice: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`) })
+    : undefined;
+  if (options.json) {
+    const ordered = [...(serving === undefined ? [] : [serving]), ...others];
+    ports.stdout.write(`${JSON.stringify({ running: serving !== undefined, generations: ordered.map((entry) => generationDocumentOf(entry, lastStops.get(entry))), settingsNow: settingsNow ?? null })}\n`);
+    return serving === undefined ? 1 : 0;
+  }
   const lastStopOf = (entry: LiveGeneration): string[] => {
     const lastStop = lastStops.get(entry);
     return lastStop === undefined || settingsNow === undefined ? [] : lastStopLines(lastStop, settingsNow);

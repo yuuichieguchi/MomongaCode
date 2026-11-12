@@ -6,7 +6,7 @@ import { callsStep, textStep } from '../worker/scripts.ts';
 import { attachWorkerKit, startService, pollFor } from './helpers.ts';
 import type { ServiceEnv, WorkerKit } from './helpers.ts';
 
-const REJECTED = 'The user rejected this tool call.';
+const REJECTED = 'A person rejected this call, so it was not run.';
 
 const startedKit = (env: ServiceEnv): WorkerKit & { live: Worker } => {
   const kit = attachWorkerKit(env);

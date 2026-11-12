@@ -1,7 +1,7 @@
 import { GENERATION_RETIRED_CODE, HOST_READ_BOUND_MS, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver, UdsClient } from '@momonga/foundation';
 import { checkTraceContent } from './contract.ts';
-import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
+import { JSON_MODES, MODEL_ENTRY_STATES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type {
   TraceContentPage,
   Capabilities,
@@ -102,7 +102,9 @@ const OK_STATUS = 200;
 
 const oneOf = (value: unknown, allowed: readonly string[]): boolean => typeof value === 'string' && allowed.includes(value);
 
-const isCapabilities = (value: unknown): value is Capabilities =>
+const isCapabilities = (value: unknown): value is Capabilities => isChainCapabilities(value) && typeof value['schemaDialect'] === 'string';
+
+const isChainCapabilities = (value: unknown): value is Record<string, unknown> =>
   isRecord(value) &&
   typeof value['contextWindow'] === 'number' &&
   typeof value['maxOutputTokens'] === 'number' &&
@@ -113,8 +115,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   typeof value['stopSequences'] === 'boolean' &&
   typeof value['imageInput'] === 'boolean' &&
   (value['parallelToolCalls'] === undefined || typeof value['parallelToolCalls'] === 'boolean') &&
-  typeof value['schemaDialect'] === 'string' &&
-  value['schemaDialect'] !== '' &&
+  (value['schemaDialect'] === undefined || (typeof value['schemaDialect'] === 'string' && value['schemaDialect'] !== '')) &&
   oneOf(value['tokenCounting'], ['exact', 'calibrated', 'estimated']) &&
   typeof value['usageReported'] === 'boolean' &&
   typeof value['maxConcurrency'] === 'number' &&
@@ -149,29 +150,53 @@ const isChainMember = (value: unknown): boolean =>
   isOptional(value['key'], (key) => isRecord(key) && isString(key['group'])) &&
   isListedCapabilities(value['capabilities']);
 
-const isModelEntry = (entry: unknown): boolean =>
-  isRecord(entry) &&
-  isString(entry['id']) &&
-  entry['object'] === 'model' &&
-  isString(entry['provider']) &&
-  isString(entry['ownName']) &&
-  isOptional(entry['defaultTag'], isString) &&
-  isBilling(entry['billing']) &&
-  isListedCapabilities(entry['capabilities']) &&
-  Array.isArray(entry['chain']) &&
-  entry['chain'].every(isChainMember);
+const isEntryCapabilities = (value: unknown): boolean => isChainCapabilities(value) || isNotListedListing(value);
+
+const ENTRY_FIELDS: readonly (readonly [string, (value: unknown) => boolean])[] = [
+  ['id', isString],
+  ['object', (value) => value === 'model'],
+  ['provider', isString],
+  ['ownName', isString],
+  ['defaultTag', (value) => isOptional(value, isString)],
+  ['billing', isBilling],
+  ['capabilities', isEntryCapabilities],
+  ['state', (value) => oneOf(value, MODEL_ENTRY_STATES)],
+  ['chain', (value) => Array.isArray(value) && value.every(isChainMember)],
+];
+
+const unreadableFieldOf = (entry: Record<string, unknown>): string | undefined => ENTRY_FIELDS.find(([field, holds]) => !holds(entry[field]))?.[0];
+
+export const ENTRY_UNREADABLE_CODE = 'model_entry_unreadable';
+
+const unreadableEntryOf = (entry: Record<string, unknown>, index: number, field: string): MomongaModelEntry => {
+  const id = isString(entry['id']) ? entry['id'] : `entry ${index + 1}`;
+  const provider = isString(entry['provider']) ? entry['provider'] : id;
+  const message = `the model list holds ${id} with a ${field} this version cannot read`;
+  return {
+    id,
+    object: 'model',
+    provider,
+    ownName: isString(entry['ownName']) ? entry['ownName'] : id,
+    billing: isBilling(entry['billing']) ? (entry['billing'] as MomongaModelEntry['billing']) : 'local',
+    capabilities: { toolCalling: { state: 'unavailable', status: 502, type: 'server_error', code: ENTRY_UNREADABLE_CODE, message }, source: 'unprobed' },
+    state: 'degraded',
+    chain: [],
+  };
+};
+
+const entriesOf = (data: readonly unknown[]): MomongaModelEntry[] =>
+  data.map((entry, index) => {
+    const record = isRecord(entry) ? entry : {};
+    const field = isRecord(entry) ? unreadableFieldOf(record) : 'shape';
+    return field === undefined ? (record as MomongaModelEntry) : unreadableEntryOf(record, index, field);
+  });
 
 const MODEL_LIST_ROLES: Readonly<Record<keyof MomongaModelRoles, true>> = { compaction: true, reflection: true, analysis: true };
 
 const isModelRoles = (value: unknown): boolean => isRecordOf(value, isString) && isRecord(value) && Object.keys(value).every((role) => Object.hasOwn(MODEL_LIST_ROLES, role));
 
-const isModelList = (value: unknown): value is MomongaModelList =>
-  isRecord(value) &&
-  value['object'] === 'list' &&
-  Array.isArray(value['data']) &&
-  value['data'].every(isModelEntry) &&
-  (value['start'] === null || isString(value['start'])) &&
-  isModelRoles(value['roles']);
+const isModelListFrame = (value: unknown): value is Omit<MomongaModelList, 'data'> & { data: unknown[] } =>
+  isRecord(value) && value['object'] === 'list' && Array.isArray(value['data']) && (value['start'] === null || isString(value['start'])) && isModelRoles(value['roles']);
 
 export const listingViewsOf = (entries: readonly MomongaModelEntry[]): ModelViews =>
   entries.map((entry) => ({ canon: entry.id, provider: entry.provider, ownName: entry.ownName, ...(entry.defaultTag === undefined ? {} : { defaultTag: entry.defaultTag }) }));
@@ -338,8 +363,8 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
 
   const modelList = async (signal?: AbortSignal): Promise<MomongaModelList> => {
     const body = await getJson(MODELS_PATH, MODEL_LIST_KIND, signal);
-    if (!isModelList(body)) throw new Error(malformedAnswerText('GET', MODELS_PATH, MODEL_LIST_KIND));
-    return body;
+    if (!isModelListFrame(body)) throw new Error(malformedAnswerText('GET', MODELS_PATH, MODEL_LIST_KIND));
+    return { ...body, data: entriesOf(body.data) };
   };
 
   const models = async (signal?: AbortSignal): Promise<readonly MomongaModelEntry[]> => (await modelList(signal)).data;

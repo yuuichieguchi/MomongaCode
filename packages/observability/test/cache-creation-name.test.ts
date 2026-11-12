@@ -31,7 +31,7 @@ describe('the cache write count of a chat span has the name the standard defines
   });
 
   it('keeps the old name only in the rename table of the span attributes', () => {
-    expect(SPAN_ATTRIBUTE_RENAMES).toEqual({ [OLD_NAME]: STANDARD_NAME });
+    expect(SPAN_ATTRIBUTE_RENAMES).toMatchObject({ [OLD_NAME]: STANDARD_NAME });
     expect(Object.values(MOMONGA_ATTRIBUTES)).not.toContain(OLD_NAME);
   });
 

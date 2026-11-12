@@ -1,4 +1,4 @@
-import { BUILTIN_DIALECTS } from '@momonga/protocol';
+import { BUILTIN_DIALECTS, strictPerToolOf } from '@momonga/protocol';
 import type { BuiltinDialectId, DialectDefinition, DialectId } from '@momonga/protocol';
 import { DIALECT_DEFINITION_SCHEMA } from '@momonga/protocol';
 import { defineProductSchema, productErrorsText } from '@momonga/foundation';
@@ -24,7 +24,7 @@ export const definitionOf = (id: DialectId, userDialects: Readonly<Record<Dialec
   const verdict = validateDefinition(declared);
   if (!verdict.valid) throw new DialectDefinitionError(id, `the definition is invalid: ${productErrorsText(verdict.errors, 'definition')}`);
   const base = declared.extends;
-  if (base === undefined) return { rules: [...declared.rules] };
+  if (base === undefined) return { rules: [...declared.rules], strictPerTool: strictPerToolOf(declared) };
   if (!isBuiltinId(base)) throw new DialectDefinitionError(id, `extends "${base}", which is not a built-in dialect`);
-  return { rules: [...BUILTIN_DIALECTS[base].rules, ...declared.rules] };
+  return { rules: [...BUILTIN_DIALECTS[base].rules, ...declared.rules], strictPerTool: declared.strictPerTool ?? BUILTIN_DIALECTS[base].strictPerTool };
 };

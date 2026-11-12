@@ -13,11 +13,12 @@ describe('the model list of a model the gateway is measuring', () => {
       ownName: 'system',
       billing: 'local',
       capabilities: measuring,
+      state: 'available',
       chain: [{ model: 'apple/system', counter: '1'.repeat(64), billing: 'local', adapter: 'managed', answers: 'model', upstream: 'system', capabilities: measuring }],
     };
     const listing: MomongaModelList = { object: 'list', data: [entry], start: 'apple/system', roles: {} };
 
-    const document = modelsDocumentOf(listing, new Map(), new Set());
+    const document = modelsDocumentOf(listing, new Map(), new Set(), new Map());
 
     expect(formatModels(document)).toBe('apple\n  system  ·  window not known  ·  starts new sessions');
     expect(document.models[0]).toMatchObject({ state: 'probing', contextWindow: null });

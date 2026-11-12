@@ -24,7 +24,7 @@ const userMessageOf = (content: string | readonly ContentPart[]): OllamaMessage 
   return { role: 'user', content: text, ...(images.length === 0 ? {} : { images }) };
 };
 
-export const ollamaHistoryOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin): OllamaMessage[] => {
+export const ollamaHistoryOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin, fence?: string): OllamaMessage[] => {
   const messages: OllamaMessage[] = [];
   const namesByCallId = new Map<string, string>();
   let draft: AssistantDraft | undefined;
@@ -45,7 +45,7 @@ export const ollamaHistoryOf = (input: readonly AdapterInputItem[], origin: Reas
     return draft;
   };
 
-  for (const item of readableHistoryOf(input)) {
+  for (const item of readableHistoryOf(input, fence)) {
     if (item.type === 'reasoning') {
       const own = ownReasoning(item, origin);
       if (own === undefined) continue;

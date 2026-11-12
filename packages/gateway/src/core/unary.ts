@@ -110,9 +110,10 @@ const callTargets = <T>(
     }),
   );
 
-const adapterRequestOf = (model: string, request: CountTokensRequest, input: AdapterInputItem[]): AdapterRequest => ({
+const adapterRequestOf = (model: string, request: CountTokensRequest, input: AdapterInputItem[], fence: string): AdapterRequest => ({
   model,
   input,
+  fence,
   ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
   ...(request.tools === undefined || request.tools.length === 0 ? {} : { tools: request.tools }),
   ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
@@ -165,7 +166,7 @@ const countOnTarget = async (
   const capabilities = await narrowed.capabilitiesOf(target);
   const toolChoiceWire = target.adapter.toolChoiceWire(capabilities, adapterTargetOf(target));
   const counted = asGatewayError(target, () =>
-    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter), capabilities.allowedTools, target.display, toolChoiceWire),
+    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter, services.fenceBoundary(resolved.forAdapter)), capabilities.allowedTools, target.display, toolChoiceWire),
   );
   const renderWire = target.adapter.renderWire;
   if (renderWire !== undefined) {
@@ -280,7 +281,7 @@ const compactOnce = async (
     model: target.model,
     input: resolved.forAdapter,
     ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
-    momonga: { ...withoutCeiling(request.momonga), max_summary_tokens: cap },
+    momonga: { ...withoutCeiling(request.momonga), fence: request.momonga?.fence ?? services.fenceBoundary(resolved.forAdapter), max_summary_tokens: cap },
   });
   const sizeRefusal: Refusal = {
     stage: REFUSAL_STAGES.inputSize,

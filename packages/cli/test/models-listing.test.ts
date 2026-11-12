@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TARGET_PROBING_MESSAGE, messageOf } from '@momonga/protocol';
 import type { MomongaModelList } from '@momonga/protocol';
 import { detectModels, listModels } from '../src/commands/models.ts';
+import { formatTokens } from '../src/format-tokens.ts';
 import { S2, bytesOf, homeWith, listingOf, ollamaFound, shellOf } from './models-shell-harness.ts';
 
 const EMPTY: MomongaModelList = { object: 'list', data: [], start: null, roles: {} };
@@ -25,7 +26,7 @@ describe('momonga models', () => {
     );
   });
 
-  it('prints "window not known" for a model whose capabilities declare no window', async (context) => {
+  it('prints the window a measured model is configured with', async (context) => {
     const at = homeWith(context, S2);
     const listed = listingOf(at.home);
     const measuring = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' } as const;
@@ -33,7 +34,7 @@ describe('momonga models', () => {
 
     await listModels(harness.shell, { json: false });
 
-    expect(harness.out().split('\n')).toContain('  lmstudio/gemma-3-4b  ·  window not known');
+    expect(harness.out().split('\n')).toContain(`  lmstudio/gemma-3-4b  ·  ${formatTokens(4096)} tokens  ·  local`);
   });
 
   it('prints the one JSON document with the state named by the readiness state', async (context) => {

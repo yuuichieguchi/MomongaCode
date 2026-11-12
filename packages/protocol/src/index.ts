@@ -179,6 +179,7 @@ export {
   storedModelRef,
   typedModelText,
   withDefaultTag,
+  sessionModelNotConfiguredText,
 } from './model-ref.ts';
 export type { ModelRefErrorCode, ModelView, ModelViews, StoredModelRef, TypedModelText, TypedResolution } from './model-ref.ts';
 export {
@@ -560,7 +561,7 @@ export type {
 } from './governance.ts';
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
-export { ATTACHED_FILE_TAG, TOOL_OUTPUT_TAG, USER_SHELL_TAG, attachedFileText, attachmentText, fenceUntrusted, imageDataUrl, includedShellTexts, sessionFenceOf, userMessageContent, userShellText } from './user-content.ts';
+export { ATTACHED_FILE_TAG, FENCE_BOUNDARY_MARKER, TOOL_OUTPUT_TAG, USER_SHELL_TAG, attachedFileText, attachmentText, fenceUntrusted, imageDataUrl, includedShellTexts, sessionFenceOf, userMessageContent, userShellText } from './user-content.ts';
 export type { UserMessageExtras } from './user-content.ts';
 export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
@@ -765,7 +766,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbeFailed, isTargetProbing } from './gateway-api.ts';
+export { MODEL_ENTRY_STATES, MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbeFailed, isTargetProbing } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,
@@ -775,6 +776,7 @@ export type {
   ModelList,
   ModelListEntry,
   ChainMemberEntry,
+  ModelEntryState,
   MomongaModelEntry,
   MomongaModelList,
   MomongaModelRoles,

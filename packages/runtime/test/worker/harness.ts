@@ -378,6 +378,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       governance: inertGovernancePort,
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
       ruleVerifier,
+      mandateVerification: async () => ({ verdict: 'not-needed', solver: 'test-solver', refuted: [], unknown: [], notProved: [] }),
       tracers: fixedTracers(tracer),
       clock,
       workerId,
