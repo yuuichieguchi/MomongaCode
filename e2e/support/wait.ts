@@ -17,14 +17,11 @@ import {
 } from '@momonga/supervisor';
 import { CLEANUP_KILL_DEADLINE_MS } from '@momonga/testkit';
 import { daemonReadyBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
-import { REFLECTION_PICKUP_BOUND_MS, reflectionAttemptsBoundMs } from '../../packages/runtime/src/memory/reflection-bound.ts';
-import { RUNTIME_DEFAULTS } from '../../packages/runtime/src/process/defaults.ts';
+import { REFLECTION_PICKUP_BOUND_MS } from '../../packages/runtime/src/memory/reflection-bound.ts';
 import { DEFAULT_LEASE_MS } from '../../packages/runtime/src/process/start-runtime-process.ts';
 import { SWEEP_INTERVAL_MS } from '../../packages/runtime/src/service/service.ts';
 import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 
-export const E2E_REFLECTION_ATTEMPTS_BOUND_MS = reflectionAttemptsBoundMs(RUNTIME_DEFAULTS.runTimeoutMs);
-export const E2E_REFLECTION_SETTLED_BOUND_MS = REFLECTION_PICKUP_BOUND_MS + E2E_REFLECTION_ATTEMPTS_BOUND_MS;
 export const E2E_MARGIN_MS = 4000;
 export const E2E_LEASE_MS = DEFAULT_LEASE_MS;
 export const E2E_STOP_VALUES: StopValues = DEFAULT_STOP_VALUES;
@@ -52,7 +49,8 @@ export const E2E_ORPHAN_GRACE_MS = 3000;
 export const E2E_REAP_TO_RUNNING_BOUND_MS = e2eStartBoundMs({});
 export const E2E_PHASE2_REACHED_BOUND_MS = orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS;
 export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND_MS;
-export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + E2E_MARGIN_MS;
+export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + RULE_VERIFY_BUDGET_MS + E2E_MARGIN_MS;
+export const E2E_REFLECTION_SETTLED_BOUND_MS = REFLECTION_PICKUP_BOUND_MS + E2E_RUN_COMPLETED_BOUND_MS;
 export const E2E_TEST_WAIT_BOUNDS_MS = {
   E2E_RESTART_BOUND_MS,
   E2E_RECOVERY_BOUND_MS,
@@ -69,6 +67,7 @@ export const E2E_TEST_WAIT_BOUNDS_MS = {
   E2E_PHASE2_REACHED_BOUND_MS,
   E2E_LOCK_FREE_BOUND_MS,
   E2E_RUN_COMPLETED_BOUND_MS,
+  E2E_REFLECTION_SETTLED_BOUND_MS,
 } as const;
 export const e2eTestTimeoutMs = (...sequentialBoundsMs: readonly number[]): number => sequentialBoundsMs.reduce((sum, boundMs) => sum + boundMs, 0) + E2E_MARGIN_MS;
 export const E2E_LONGEST_WAIT_MS = Math.max(...Object.values(E2E_TEST_WAIT_BOUNDS_MS));

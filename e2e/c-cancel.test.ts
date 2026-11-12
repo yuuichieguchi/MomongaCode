@@ -21,6 +21,7 @@ import {
   E2E_RECOVERY_BOUND_MS,
   E2E_TEST_TIMEOUT_MS,
   until,
+  E2E_RUN_COMPLETED_BOUND_MS,
 } from './support/wait.ts';
 
 const PARTIAL_TEXT = 'partial';
@@ -136,7 +137,7 @@ describe('c: cancel', () => {
     try {
       const first = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const runA = (await runtime.createRun(first.session.id, 'Say hello')).run;
-      await hold.waitForRequest();
+      await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
 
       const second = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       expect(second.session.id).not.toBe(first.session.id);

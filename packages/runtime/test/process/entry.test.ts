@@ -6,7 +6,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { globalErrorHandler } from '@opentelemetry/core';
 import { runRuntimeEntry } from '@momonga/runtime';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, prepareGenerationForTest, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration, registerOwned, testLocks, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, prepareGenerationForTest, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration, registerOwned, testLocks, testKernelLock, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
@@ -180,7 +180,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     registerCleanup(context, () => hold.release());
     const session = await client.createSession();
     await client.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
 
     launched.io.signal('SIGTERM');
     await waitForCondition(() => stderrJson(launched.io).some((line) => line.msg === 'entry.signal'), 'the first signal to be logged');

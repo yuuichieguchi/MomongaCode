@@ -3,7 +3,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, registerOwned, createTempDir, removeTempDir, testLocks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, registerOwned, createTempDir, removeTempDir, testLocks, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody, userInput } from './fixtures.ts';
@@ -83,7 +83,7 @@ describe('a silent upstream behind a real gateway and the real gateway client', 
   it('completes a call whose upstream is silent for longer than the client idle bound', async () => {
     const hold = context.primary.hold();
     const pending = collect(context.client.stream(streamBody(PRIMARY), callOptions(fakeClock(), { idempotencyKey: 'silent-1' })));
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     await delay(SILENCE_MS);
     hold.release();
 
@@ -95,7 +95,7 @@ describe('a silent upstream behind a real gateway and the real gateway client', 
   it('falls back to the next model of the fallback order after the first one stayed silent past the idle bound and then failed', async () => {
     const hold = context.primary.hold();
     const pending = collect(context.client.stream(streamBody(PRIMARY), callOptions(fakeClock(), { idempotencyKey: 'silent-2' })));
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     await delay(SILENCE_MS);
     hold.release();
 
@@ -109,7 +109,7 @@ describe('a silent upstream behind a real gateway and the real gateway client', 
   it('completes a compaction whose upstream is silent for longer than the client idle bound', async () => {
     const hold = context.primary.hold();
     const pending = context.client.compact({ model: PRIMARY, input: userInput('a long conversation') }, callOptions(fakeClock(), { idempotencyKey: 'silent-4' }));
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     await delay(SILENCE_MS);
     hold.release();
 

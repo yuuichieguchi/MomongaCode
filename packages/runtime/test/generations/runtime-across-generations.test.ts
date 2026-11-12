@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { EXIT_RETIRED, FIRST_GENERATION, createRolePort, generationLayout, momongaLayout, publishCurrentGeneration, scopeToGeneration } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { mutableRole } from '../shared/mutable-role.ts';
 import { makeLogger } from '../process/helpers.ts';
 import { RUNTIME_VERSION, launchRuntime, prepareGeneration, readDb, scopedPaths, startStack, waitForCondition, waitForStatus } from '../process/run-helpers.ts';
@@ -97,7 +97,7 @@ describe('the exit of a retiring runtime (17.1 "Exit", 20.1, 20.31)', () => {
     const hold = stack.hold();
     const session = await launched.createSession();
     const run = await launched.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
 
     role.set('retiring');
     await waitForCondition(() => launched.logger.entries.some((entry) => entry.msg === 'generation.retiring'), 'the retiring runtime to learn its role');
@@ -124,7 +124,7 @@ describe('the exit of a retiring runtime (17.1 "Exit", 20.1, 20.31)', () => {
     const hold = stack.hold();
     const session = await launched.createSession();
     await launched.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     role.set('retiring');
 
     const closing = launched.handle.close();
