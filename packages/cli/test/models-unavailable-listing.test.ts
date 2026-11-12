@@ -9,8 +9,6 @@ import { createGatewayClient } from '../src/client/gateway-client.ts';
 import type { GatewayClient, PlanGatewayClient } from '../src/client/gateway-client.ts';
 import { authStatus } from '../src/commands/auth.ts';
 import { formatModels, modelsDocumentOf } from '../src/commands/models.ts';
-import { BUILTIN_SLASH_COMMANDS } from '../src/tui/slash.ts';
-import type { SlashContext } from '../src/tui/slash.ts';
 import { CHATGPT } from './fake-plan-gateway.tsx';
 import { serveModelsListing } from './fake-models-listing.ts';
 
@@ -107,24 +105,6 @@ describe('the CLI shows a model that is not listed with capabilities by its stat
       { model: LOCAL_MODEL, state: 'ready', code: undefined, message: undefined },
       { model: SLOW_MODEL, state: 'probing', code: undefined, message: undefined },
     ]);
-  });
-
-  it('/model prints the reason in the row', async () => {
-    const shown: string[] = [];
-    const context = { model: LOCAL_MODEL, backend: { models: async () => ENTRIES }, info: (text: string) => void shown.push(text) } as unknown as SlashContext;
-    const command = BUILTIN_SLASH_COMMANDS.find((candidate) => candidate.name === 'model');
-    await command?.run('', context);
-    expect(shown).toEqual(
-      [
-        [
-          'models (the current one is marked *):',
-          `    plan-model  ${M}`,
-          '  * local-model  32768-token window',
-          `    slow  ${PROBING_MESSAGE}`,
-          'switch with /model <model>; a change applies from the next task',
-        ].join('\n'),
-      ],
-    );
   });
 
   it('contextWindowOf rejects with the reason text', async (context) => {

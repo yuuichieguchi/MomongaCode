@@ -214,7 +214,8 @@ export function App(props: AppProps) {
     notEligible: (profile) => flows.notEligible(profile),
   };
   const slash = createSlashRegistry([
-    ...baseSlash.list().map((command) => (command.name === 'model' ? modelPickerCommand(delegatingFlows) : command)),
+    ...baseSlash.list(),
+    modelPickerCommand(delegatingFlows),
     ...planSlashCommands(delegatingFlows),
     ...skillSlash,
   ]);

@@ -10,6 +10,10 @@ import type { FakeBackendOptions } from './fake-backend.ts';
 import { fixedKeyBindings } from '../src/tui/keys/store.ts';
 import { NO_A11Y } from '../src/tui/screen/a11y.ts';
 import { createFoundServers } from '../src/tui/models/context.ts';
+import { modelPickerCommand } from '../src/tui/commands/auth.ts';
+import type { PlanFlows } from '../src/tui/plan-flows.ts';
+
+const pickerCommand = modelPickerCommand({ modelPicker: () => Promise.reject(new Error('the picker is not opened here')) } as unknown as PlanFlows);
 
 describe('parseSlash', () => {
   it.each([
@@ -63,8 +67,8 @@ describe('registry', () => {
     expect(registry.find('nope')).toBeUndefined();
   });
 
-  it('offers at least help, mode, model and exit, and clear and resume in the default set', () => {
-    expect(registry.list().map((command) => command.name)).toEqual(expect.arrayContaining(['help', 'mode', 'model', 'exit']));
+  it('offers at least help, mode and exit, and clear and resume in the default set', () => {
+    expect(registry.list().map((command) => command.name)).toEqual(expect.arrayContaining(['help', 'mode', 'exit']));
     expect(DEFAULT_SLASH_COMMANDS.map((command) => command.name)).toEqual(expect.arrayContaining(['clear', 'resume']));
     expect(createSlashRegistry(DEFAULT_SLASH_COMMANDS).find('new')?.name).toBe('clear');
   });
@@ -144,26 +148,18 @@ describe('built-in commands', () => {
     expect(infos).toEqual(['unknown permission mode default; available: manual, acceptEdits, plan']);
   });
 
-  it('/model without an argument lists the configured models by display name with the current one marked and says when a switch applies', async () => {
-    const { context, infos } = contextOf({ model: QWEN }, { models: [GEMMA, QWEN], windows: { [GEMMA]: 8192, [QWEN]: 32768 } });
-    await run('model', '', context);
-    expect(infos).toEqual([
-      ['models (the current one is marked *):', '    gemma-3-4b  8192-token window', '  * qwen3.8:27b  32768-token window', 'switch with /model <model>; a change applies from the next task'].join('\n'),
-    ]);
-  });
-
   it('/model switches to a listed model by its typed name and refuses one that is not configured with the sentence of the resolver', async () => {
     const { context, infos, models } = contextOf({}, { models: [GEMMA, QWEN] });
-    await run('model', 'qwen3.8:27b', context);
-    await run('model', 'turbo', context);
+    await pickerCommand.run('qwen3.8:27b', context);
+    await pickerCommand.run('turbo', context);
     expect(models).toEqual([QWEN]);
     expect(infos).toEqual(['The model "turbo" is not configured. Configured models: gemma-3-4b, qwen3.8:27b.']);
   });
 
   it('/model is described in the help with its usage', async () => {
-    const { context, infos } = contextOf();
+    const { context, infos } = contextOf({ commands: [...BUILTIN_SLASH_COMMANDS, pickerCommand] });
     await run('help', '', context);
-    expect(infos[0]).toContain('/model [model] [--start]  list the configured models with the current one marked, or switch the model from the next task');
+    expect(infos[0]).toContain('/model [model] [--start]  choose the model from a list, or switch to another from the next task');
   });
 
   it('/clear, /resume <id> and /exit call their hooks', async () => {
