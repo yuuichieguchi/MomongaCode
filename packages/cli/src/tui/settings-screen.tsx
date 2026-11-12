@@ -1,5 +1,5 @@
 import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, editModelsSettings } from '@momonga/config';
-import type { SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
+import type { ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import { openInEditor } from './external-editor.ts';
 import type { PickRow } from './picker.tsx';
@@ -9,6 +9,9 @@ import type { SlashContext } from './slash.ts';
 
 export const SETTINGS_TITLE = 'Settings';
 export const OPEN_SETTINGS_FILE_ROW = 'Open the settings file';
+export const MANDATE_ROW = "This folder's mandate";
+export const MANDATE_NOT_APPROVED = 'not approved: new runs are refused';
+export const MANDATE_OBJECT = 'The mandate is a JSON object.';
 export const OPEN_FILE_TITLE = 'Open which file in $EDITOR?';
 export const SAVE_TO_TITLE = 'Save to:';
 export const SAVING_SETTING = 'saving the setting';
@@ -247,9 +250,9 @@ export const shownValue = (value: unknown): string => {
 export const settingRowLabel = (label: string, value: unknown, source: SettingSource, applied?: boolean): string =>
   [label, shownValue(value), source, ...(applied === undefined ? [] : [applied ? APPLIES_NOW : APPLIES_NEXT_SESSION])].join('  ');
 
-type Listed = { readonly kind: 'heading' } | { readonly kind: 'open' } | { readonly kind: 'setting'; readonly leaf: SettingLeaf; readonly presentation: SettingPresentation } | { readonly kind: 'command'; readonly command: string };
+type Listed = { readonly kind: 'heading' } | { readonly kind: 'open' } | { readonly kind: 'mandate' } | { readonly kind: 'setting'; readonly leaf: SettingLeaf; readonly presentation: SettingPresentation } | { readonly kind: 'command'; readonly command: string };
 
-export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { readonly name: string }[], written: string | undefined): { rows: PickRow[]; listed: Listed[] } => {
+export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { readonly name: string }[], written: string | undefined, mandate?: ProjectMandateState): { rows: PickRow[]; listed: Listed[] } => {
   const leaves = settingLeaves();
   const rows: PickRow[] = [{ label: OPEN_SETTINGS_FILE_ROW }];
   const listed: Listed[] = [{ kind: 'open' }];
@@ -271,6 +274,10 @@ export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { re
       const { value, source } = currentOf(snapshot, leaf.path);
       rows.push({ label: settingRowLabel(presentation.label, value, source, written === leaf.key ? presentation.appliesNow : undefined) });
       listed.push({ kind: 'setting', leaf, presentation });
+    }
+    if (section === MANDATE_SECTION && mandate !== undefined) {
+      rows.push({ label: mandateRowLabel(mandate) });
+      listed.push({ kind: 'mandate' });
     }
   }
   return { rows, listed };
@@ -671,6 +678,38 @@ const editStructured = async (context: SlashContext, snapshot: SettingsSnapshot,
   }
 };
 
+const MANDATE_SECTION: SettingSection = 'Budget and delegation';
+
+const shownEntry = (value: unknown): string => (Array.isArray(value) ? value.map(String).join(', ') : String(value));
+
+export const mandateRowLabel = (mandate: ProjectMandateState): string => {
+  if (!mandate.found) return `${MANDATE_ROW}  ${NOT_SET}`;
+  const entries = isRecord(mandate.document) ? Object.entries(mandate.document).map(([key, value]) => `${key} ${shownEntry(value)}`) : [];
+  return [MANDATE_ROW, entries.length === 0 ? NONE : entries.join('; '), ...(mandate.approval === 'approved' ? [] : [MANDATE_NOT_APPROVED])].join('  ');
+};
+
+const editMandate = async (context: SlashContext, mandate: ProjectMandateState): Promise<Outcome> => {
+  let draft = JSON.stringify(mandate.found ? mandate.document : {}, null, 2);
+  let sentence: string | undefined;
+  for (;;) {
+    const text = await context.overlays.promptText({ title: MANDATE_ROW, lines: [mandate.file, ...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, structured: true, validate: jsonProblem });
+    if (text === undefined) return LEFT;
+    draft = text;
+    const value: unknown = JSON.parse(text);
+    if (!isRecord(value)) {
+      sentence = MANDATE_OBJECT;
+      continue;
+    }
+    try {
+      await context.background(SAVING_SETTING, (signal) => context.backend.writeProjectMandate(value, signal));
+      return { kind: 'written' };
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
+      sentence = error.message;
+    }
+  }
+};
+
 export const DIALECTS_KEY = 'models.dialects';
 
 const writeDialects = async (context: SlashContext, dialects: object): Promise<Refusal | undefined> => {
@@ -720,13 +759,20 @@ export const runSettingsScreen = async (context: SlashContext, live: readonly Li
   let sentence: string | undefined;
   for (;;) {
     const snapshot = await context.backend.settings();
-    const { rows, listed } = settingsRows(snapshot, context.commands, written);
+    const mandate = snapshot.targets.includes('project') ? await context.backend.projectMandate() : undefined;
+    const { rows, listed } = settingsRows(snapshot, context.commands, written, mandate);
     const choice = await context.overlays.choose({ title: SETTINGS_TITLE, lines: sentence === undefined ? [] : [sentence], rows, initial: at, decideOn: 'enter', escape: 'back', filter: true });
     const chosen = choice === undefined ? undefined : listed[choice.index];
     if (choice === undefined || chosen === undefined || chosen.kind === 'heading') return;
     at = choice.index;
     if (chosen.kind === 'open') {
       await openSettingsFile(context, snapshot);
+      continue;
+    }
+    if (chosen.kind === 'mandate') {
+      const outcome = mandate === undefined ? LEFT : await editMandate(context, mandate);
+      written = undefined;
+      sentence = outcome.kind === 'refused' ? outcome.sentence : undefined;
       continue;
     }
     if (chosen.kind === 'command') {

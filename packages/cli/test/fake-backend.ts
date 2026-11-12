@@ -10,7 +10,8 @@ import { continuedSession, resolveSession } from '../src/run/resolve-session.ts'
 import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } from '../src/tui/backend.ts';
 import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
 import type { UserShellRecord } from '@momonga/protocol';
-import { editSettings, readSettingsSnapshot } from '@momonga/config';
+import { editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import type { ProjectItems } from '../src/tui/project-items.ts';
 import { momongaLayout } from '@momonga/foundation';
 import type { DetectRequest } from '../src/commands/models.ts';
 import { freshHome } from './fresh-home.ts';
@@ -80,6 +81,7 @@ export type FakeBackend = TuiBackend & {
 
 export type FakeBackendOptions = {
   trust?: TrustView;
+  projectItems?: ProjectItems;
   session?: Partial<SessionView>;
   contextWindow?: number;
   imageInput?: boolean;
@@ -293,6 +295,17 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record(`trust:${decision}`);
       trustNow = { path: session.cwd, decision };
     },
+    projectItems: async () => options.projectItems ?? { hooks: [] },
+    approveProjectItems: async (approval) => {
+      record(`approve:${JSON.stringify(approval)}`);
+    },
+    projectMandate: async () => projectMandateState({ projectDir: settingsPlace().projectDir, approvals: (await loadUserSettings({ home: settingsPlace().home, signal: new AbortController().signal })).settings.projectApprovals, signal: new AbortController().signal }),
+    writeProjectMandate: (document, signal) =>
+      editProjectMandate(settingsPlace().projectDir, (current) => {
+        for (const key of Object.keys(current)) delete current[key];
+        Object.assign(current, document);
+        return true;
+      }, { home: settingsPlace().home, trust: { isTrusted: () => (options.trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) }),
     trust: async () => trustNow ?? options.trust ?? { path: session.cwd, decision: 'trusted' },
     clearTrust: async () => {
       record('trust:clear');
