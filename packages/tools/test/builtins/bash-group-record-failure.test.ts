@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup, systemRandom } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_TOOL_LIMITS, testPaths, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createMarkerSettle, nodeShellHost } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
 import { bashTool } from '../../src/builtins/bash.ts';
@@ -72,6 +72,9 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
       update: () => undefined,
       checkpoint: () => undefined,
       reportProgress: () => undefined,
+      limits: TEST_TOOL_LIMITS,
+      expired: new AbortController().signal,
+      stopForTimeout: () => undefined,
     } as unknown as ToolContext;
 
     const ready = path.join(layout.project, 'escaped');
