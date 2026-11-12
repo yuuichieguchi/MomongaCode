@@ -184,8 +184,8 @@ describe('compactThrough', () => {
     const { ctx, requests } = contextFor();
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, tokens: PLAN_TOKENS, rebuilt: PLAN_REBUILT, notices: [], focus: 'keep the parser decisions' });
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 241, pinnedText, tokens: PLAN_TOKENS, rebuilt: PLAN_REBUILT, notices: [] });
-    expect(requests[0]?.request.momonga).toEqual({ max_summary_tokens: 240, retains_user_request: true, exact_model: true, instructions: 'keep the parser decisions' });
-    expect(requests[1]?.request.momonga).toEqual({ max_summary_tokens: 241, retains_user_request: true, exact_model: true });
+    expect(requests[0]?.request.momonga).toEqual({ max_summary_tokens: 240, retains_user_request: true, exact_model: true, fence: TEST_FENCE, instructions: 'keep the parser decisions' });
+    expect(requests[1]?.request.momonga).toEqual({ max_summary_tokens: 241, retains_user_request: true, exact_model: true, fence: TEST_FENCE });
   });
 
   it('sends the rendered input verbatim with the cap and retains_user_request, no instructions, under the whole-body key', async () => {
@@ -195,7 +195,7 @@ describe('compactThrough', () => {
 
     expect(requests).toHaveLength(1);
     const [sent] = requests;
-    expect(sent?.request).toEqual({ model: 'fm', input, momonga: { max_summary_tokens: 240, retains_user_request: true, exact_model: true } });
+    expect(sent?.request).toEqual({ model: 'fm', input, momonga: { max_summary_tokens: 240, retains_user_request: true, exact_model: true, fence: TEST_FENCE } });
     expect('instructions' in (sent?.request ?? {})).toBe(false);
     expect(sent?.idempotencyKey).toBe(keyOf(sent?.request as CompactRequest));
     expect(appended).toEqual([
@@ -352,7 +352,7 @@ describe('a compaction request sized for the model that receives it', () => {
     expect(ceilings.every((ceiling) => typeof ceiling === 'number')).toBe(true);
     expect(ceilings[0]).not.toBe(ceilings[1]);
     expect(requests[1]?.idempotencyKey).toBe(requests[0]?.idempotencyKey);
-    expect(requests[0]?.idempotencyKey).toBe(keyOf({ model: 'fm', input, momonga: { max_summary_tokens: 240, retains_user_request: true, exact_model: true } }));
+    expect(requests[0]?.idempotencyKey).toBe(keyOf({ model: 'fm', input, momonga: { max_summary_tokens: 240, retains_user_request: true, exact_model: true, fence: TEST_FENCE } }));
     expect(produced.size).toBe(1);
   });
 });
