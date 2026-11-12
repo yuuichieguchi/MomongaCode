@@ -31,7 +31,7 @@ export type CreateRunBody = {
 
 export type ResolveApprovalBody = { optionId: string };
 
-export type AddInboxBody = { delivery: InboxDelivery; text: string; images?: ImageAttachment[] };
+export type AddInboxBody = { delivery: InboxDelivery; text: string; images?: ImageAttachment[]; attachMentions?: boolean };
 
 export type ResolveElicitationBody = { responses: Record<string, unknown> };
 

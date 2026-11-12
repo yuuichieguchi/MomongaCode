@@ -225,6 +225,21 @@ export const expandedText = (state: EditorState): string => {
 
 export const placeText = (state: EditorState, text: string): EditorState => ({ ...spliced(state, 0, state.text.length, text), pastes: [], shell: false });
 
+export type HeldMessage = { readonly text: string; readonly pastes: readonly PastedSpan[] };
+
+export const heldMessageOf = (state: EditorState): HeldMessage => ({ text: state.text, pastes: state.pastes });
+
+export const placeMessages = (state: EditorState, messages: readonly HeldMessage[]): EditorState => {
+  const kept = messages.filter((message) => message.text !== '');
+  const pastes: PastedSpan[] = [];
+  let offset = 0;
+  for (const message of kept) {
+    pastes.push(...message.pastes.map((paste) => ({ ...paste, start: paste.start + offset })));
+    offset += message.text.length + 1;
+  }
+  return { ...placeText(state, kept.map((message) => message.text).join('\n')), pastes };
+};
+
 export const placeCaret = (state: EditorState, cursor: number): EditorState => movedTo(state, Math.max(0, Math.min(cursor, state.text.length)));
 
 export const withHistory = (state: EditorState, history: readonly string[]): EditorState => ({ ...state, history, historyIndex: undefined });

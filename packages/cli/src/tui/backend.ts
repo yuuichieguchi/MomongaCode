@@ -307,7 +307,7 @@ export const createTuiBackend = (
       await runtime().cancel(runId);
     },
     inbox: {
-      add: (delivery, text, images) => runtime().inboxAdd(current().id, delivery, text, images),
+      add: (delivery, text, images, attachMentions) => runtime().inboxAdd(current().id, delivery, text, images, attachMentions),
       withdraw: (id) => runtime().inboxWithdraw(id),
       list: () => runtime().inboxList(current().id),
       successor: (runId) => runtime().runSuccessor(runId),

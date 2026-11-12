@@ -448,6 +448,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     compact: async (instructions) => {
       startedHere = true;
+      startedPrompt = instructions === undefined ? '/compact' : `/compact ${instructions}`;
       record(instructions === undefined ? 'compact' : `compact:${instructions}`);
       return runView({ status: 'QUEUED', sessionId: session.id });
     },
@@ -491,8 +492,9 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       },
     },
     inbox: {
-      add: async (delivery, text, images = []) => {
+      add: async (delivery, text, images = [], attachMentions = false) => {
         record(`inbox:${delivery}:${text}`);
+        if (attachMentions) record(`inbox-mentions:${text}`);
         if (pendingInbox().length >= INBOX_MAX_PENDING) throw Object.assign(new Error(inboxFullMessage()), { code: INBOX_FULL_CODE });
         const row = pendingRowOf(delivery, text, images);
         inboxRows.push(row);

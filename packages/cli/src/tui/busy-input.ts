@@ -7,7 +7,7 @@ import type { ActionId, KeyTable } from './keys/table.ts';
 import { displayWidth, segmentsOf } from './screen/wrap.ts';
 
 export type BusyInbox = {
-  add(delivery: InboxDelivery, text: string, images?: readonly ImageAttachment[]): Promise<InboxAddResponse>;
+  add(delivery: InboxDelivery, text: string, images?: readonly ImageAttachment[], attachMentions?: boolean): Promise<InboxAddResponse>;
   withdraw(id: string): Promise<InboxWithdrawResponse>;
   list(): Promise<readonly InboxRowView[]>;
   successor(runId: string): Promise<RunView | undefined>;
@@ -74,8 +74,6 @@ export const draftOf = (state: EditorState): { text: string; state: EditorState 
   if (text.trim() === '' || text.trim().startsWith('/')) return undefined;
   return { text, state: emptyEditor(pushHistory(state.history, text)) };
 };
-
-export const takenBack = (texts: readonly string[], draft: string): string => [...texts, ...(draft === '' ? [] : [draft])].join('\n');
 
 export const onFirstLine = (state: EditorState): boolean => !state.text.slice(0, state.cursor).includes('\n');
 

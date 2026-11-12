@@ -77,6 +77,14 @@ describe('typing while a run works (design 5.3)', () => {
     app.unmount();
   });
 
+  it('asks the runtime to attach the files a steered or queued message names with @, as a run does', async () => {
+    const { backend, app } = await working();
+    await send(backend, app, KEYS.enter, 'look at @notes.md now', 'steer   look at @notes.md now');
+    await send(backend, app, KEYS.tab, 'plain text', 'queued  plain text');
+    expect(backend.calls.filter((call) => call.startsWith('inbox-mentions:'))).toEqual(['inbox-mentions:look at @notes.md now']);
+    app.unmount();
+  });
+
   it('does nothing at Enter and at Tab on an empty draft', async () => {
     const { backend, app } = await working();
     app.stdin.write(KEYS.enter);

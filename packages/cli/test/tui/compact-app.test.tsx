@@ -35,6 +35,15 @@ describe('/compact', () => {
     app.unmount();
   });
 
+  it('shows the request once, from the event the compaction run writes, so a rebuild shows the same entry', async () => {
+    const { app, backend } = await compacting('/compact', 'compact');
+    backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
+    backend.finish(runView());
+    const shown = await untilFrame(app, (now) => !now.includes('esc to cancel'));
+    expect(shown.split('> /compact').length - 1).toBe(1);
+    app.unmount();
+  });
+
   it('gives the text after the command as the focus of the summary', async () => {
     const { app, backend } = await compacting('/compact keep the parser decisions', 'compact:keep the parser decisions');
     backend.finish(runView());

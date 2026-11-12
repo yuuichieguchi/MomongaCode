@@ -803,6 +803,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       {
         input: head.text,
         ...(head.images === undefined ? {} : { images: head.images }),
+        ...(head.attachments === undefined ? {} : { attachments: head.attachments }),
         timeoutMs: terms.timeoutMs,
         limits: terms.limits,
         pins: terms.pins,
@@ -1327,7 +1328,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return transaction<InboxAddResult>(() => {
         if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
         if (inboxTable.pendingCount(sessionId) >= INBOX_MAX_PENDING) return { kind: 'full' };
-        const added = inboxTable.insert({ id: uuidv7(clock), sessionId, delivery: input.delivery, text: input.text, images: input.images, terms: input.run, origin });
+        const added = inboxTable.insert({ id: uuidv7(clock), sessionId, delivery: input.delivery, text: input.text, images: input.images, attachments: input.attachments, terms: input.run, origin });
         const open = inboxTable.sessionHasOpenRun(sessionId);
         if (open) announceInbox(sessionId);
         else startNextQueued(sessionId);
@@ -1362,7 +1363,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         });
         const next = appendPayloads(
           run,
-          delivered.map((row): RunEventPayload => ({ type: 'user.message', text: row.text, ...(row.images === undefined ? {} : { images: row.images }), source: 'steer' })),
+          delivered.map((row): RunEventPayload => ({ type: 'user.message', text: row.text, ...(row.images === undefined ? {} : { images: row.images }), ...(row.attachments === undefined ? {} : { attachments: row.attachments }), source: 'steer' })),
         );
         writeRun(next);
         derived.repairPage(next.id, next.lastSeq);
