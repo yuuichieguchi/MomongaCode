@@ -33,6 +33,8 @@ import { createFakeTracer } from '../worker/fake-tracer.ts';
 import { capabilitiesFor, createFakeInstructions, diskAgentCatalog, diskSkillsPort, fakeSandbox, inertGovernancePort, inertHistoryPort, testSystemPrompt, unavailableEvidenceRun } from '../worker/harness.ts';
 import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
+import type { MandateRunVerification, PolicyVerification } from '../../src/process/folder-verification.ts';
+import type { GatewayStanding } from '../../src/process/supervised-gateway.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -438,6 +440,9 @@ const unusedUserInput: runtime.UserInputPort = {
 };
 
 export type ServiceOverrides = {
+  gatewayStanding?: (signal: AbortSignal) => Promise<GatewayStanding>;
+  policyVerification?: PolicyVerification;
+  mandateVerification?: MandateRunVerification;
   permissionRules?: (session: Session) => Promise<readonly PermissionRule[]>;
   role?: RolePort;
   work?: { steps(): number; jobs(): number };
@@ -534,6 +539,16 @@ export const defaultModelCapabilities = (imageInput = false) => ({
   source: 'declared',
 });
 
+const unaskedGatewayStanding = async (): Promise<GatewayStanding> => {
+  throw new Error('this test asks the supervisor nothing about the gateway');
+};
+
+const provedMandateVerification: MandateRunVerification = async () => ({ verdict: 'proved', solver: 'test-solver', refuted: [], unknown: [], notProved: [] });
+
+const unusedPolicyVerification: PolicyVerification = async () => {
+  throw new Error('this test verifies no policy');
+};
+
 export const serviceOptions = (
   base: { store: RuntimeStore; clock: FakeClock; home: string; socketPath: string; ports: FakePorts; notifier: Notifier; errors: unknown[]; fatals?: Error[] },
   overrides: ServiceOverrides = {},
@@ -560,6 +575,9 @@ export const serviceOptions = (
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
   permissionRules: overrides.permissionRules ?? (async () => []),
+  policyVerification: overrides.policyVerification ?? unusedPolicyVerification,
+  mandateVerification: overrides.mandateVerification ?? provedMandateVerification,
+  gatewayStanding: overrides.gatewayStanding ?? unaskedGatewayStanding,
   evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,
   skillFiles: nodeFileSystem,
   mcp: overrides.mcp ?? unusedMcpAdmin,
@@ -841,6 +859,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       governance: inertGovernancePort,
       tools,
       ruleVerifier: createFakeRuleVerifier(),
+      mandateVerification: provedMandateVerification,
       tracers: fixedTracers(tracer),
       clock: env.clock,
       workerId: id,

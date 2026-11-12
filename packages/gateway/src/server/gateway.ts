@@ -5,6 +5,7 @@ import { getRequestListener } from '@hono/node-server';
 import { HOST_READ_BOUND_MS, isLoopbackAddress, listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
+import { createFenceBoundary } from '../core/fence-boundary.ts';
 import { createReasoningOriginCodec } from '../core/reasoning-origin.ts';
 import { GatewayError, gatewayClosedError, generationRetiredError } from '../core/errors.ts';
 import { createResponsesService } from '../core/responses-service.ts';
@@ -142,6 +143,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       epochs: source.epochs,
       store,
       codec: createCompactionCodec(options.hmacKey),
+      fenceBoundary: createFenceBoundary(options.hmacKey),
       reasoningOrigin,
       closeSignal: closeController.signal,
       forceCloseSignal: forceCloseController.signal,

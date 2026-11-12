@@ -1,12 +1,10 @@
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './kernel-lock.ts';
 import { lstatIdentity, sameFile } from './file-identity.ts';
 import type { LockFileIdentity } from './file-identity.ts';
 import { readHolderFile, readHolderFileSync, writeHolderFile } from './holder-file.ts';
-import { noFollowFlag } from './privacy.ts';
+import { OPEN_FLAGS, nodeFileSystemSync } from '../node-file-system.ts';
 import { createCapabilityProbe, unmeasuredBecause } from '../capability-probe.ts';
 import type { CapabilityResult } from '../capability-probe.ts';
 import { systemRandom } from '../system-random.ts';
@@ -65,9 +63,9 @@ export const probeRemovesOpenFiles = (directory: string, ports: UnlinkOpenProbeP
 };
 
 const nodeUnlinkOpenPorts: UnlinkOpenProbePorts = {
-  createExclusive: (file) => fs.openSync(file, fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600),
-  unlink: (file) => fs.unlinkSync(file),
-  close: (descriptor) => fs.closeSync(descriptor),
+  createExclusive: (file) => nodeFileSystemSync.openDescriptorSync(file, OPEN_FLAGS.readWrite | OPEN_FLAGS.create | OPEN_FLAGS.exclusive, 0o600),
+  unlink: (file) => nodeFileSystemSync.unlinkSync(file),
+  close: (descriptor) => nodeFileSystemSync.closeSync(descriptor),
 };
 
 const removesOpenFilesIn = createCapabilityProbe<string, boolean>(
@@ -76,7 +74,7 @@ const removesOpenFilesIn = createCapabilityProbe<string, boolean>(
 );
 
 const removesOpenFilesOnThisHost = (): boolean => {
-  const result = removesOpenFilesIn(os.tmpdir());
+  const result = removesOpenFilesIn(nodeFileSystemSync.temporaryDirectorySync());
   if (result.kind === 'unmeasured') throw new Error(`whether this host unlinks open files could not be measured: ${result.evidence}`);
   return result.kind === 'supported';
 };
@@ -86,12 +84,12 @@ export const nodeSqliteLockOps: SqliteLockOps = {
   lstat: lstatIdentity,
   createIfAbsent: (databasePath) => {
     try {
-      fs.closeSync(fs.openSync(databasePath, fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL | noFollowFlag(), 0o600));
+      nodeFileSystemSync.closeSync(nodeFileSystemSync.openDescriptorSync(databasePath, OPEN_FLAGS.readWrite | OPEN_FLAGS.create | OPEN_FLAGS.exclusive | OPEN_FLAGS.noFollow, 0o600));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
   },
-  remove: (file) => fs.rmSync(file, { force: true }),
+  remove: (file) => nodeFileSystemSync.rmSync(file),
   get removesOpenFiles(): boolean {
     return removesOpenFilesOnThisHost();
   },

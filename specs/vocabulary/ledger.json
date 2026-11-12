@@ -19,6 +19,9 @@
       },
       "packages/runtime/src/process/background-jobs.ts": {
         "job": 10
+      },
+      "packages/runtime/src/service/delegation.ts": {
+        "limit": 1
       }
     },
     "burnDown": {
@@ -268,6 +271,9 @@
       "packages/eval/src/context-live.ts": {
         "cap": 1
       },
+      "packages/eval/src/figures.ts": {
+        "task": 3
+      },
       "packages/eval/src/guideline-prompts.ts": {
         "conversation": 2,
         "summaries": 1,
@@ -360,10 +366,7 @@
       },
       "packages/gateway/src/core/errors.ts": {
         "endpoint": 1,
-        "gateway": 3
-      },
-      "packages/gateway/src/core/image-tokens.ts": {
-        "target": 1
+        "gateway": 2
       },
       "packages/gateway/src/core/input.ts": {
         "gateway": 1
@@ -381,9 +384,6 @@
       "packages/gateway/src/core/store.ts": {
         "gateway": 3,
         "target": 3
-      },
-      "packages/gateway/src/core/tool-choice.ts": {
-        "target": 5
       },
       "packages/gateway/src/core/unary.ts": {
         "compact": 1,
@@ -583,7 +583,7 @@
         "limit": 4
       },
       "packages/runtime/src/worker/claim-runner.ts": {
-        "gateway": 3
+        "gateway": 2
       },
       "packages/runtime/src/worker/compact-pin.ts": {
         "compact": 2
@@ -602,7 +602,7 @@
       },
       "packages/runtime/src/worker/model-step.ts": {
         "gateway": 1,
-        "target": 3
+        "target": 1
       },
       "packages/runtime/src/worker/model-stream.ts": {
         "gateway": 1
@@ -755,9 +755,6 @@
       },
       "packages/tools/src/builtins/write.ts": {
         "directory": 5
-      },
-      "packages/tools/src/executor.ts": {
-        "limit": 1
       },
       "packages/tools/src/governance/tools.ts": {
         "project": 3,

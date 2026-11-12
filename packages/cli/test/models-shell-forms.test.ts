@@ -42,7 +42,7 @@ const WRITING: readonly WritingCase[] = [
     settings: undefined,
     fakes: SEARCH_FINDS_OLLAMA,
     missing: input([]),
-    missingPrints: 'ollama  ·  http://127.0.0.1:11434  ·  2 models\n',
+    missingPrints: 'ollama  ·  http://127.0.0.1:11434  ·  2 models\n  devstral-small-2:latest\n  qwen3.8:27b\n',
     input: input([], { model: 'devstral-small-2:latest', window: '131072' }),
     confirm: 'Add devstral-small-2 to your settings?',
     summaries: ['Added devstral-small-2. It is used from the next request.'],

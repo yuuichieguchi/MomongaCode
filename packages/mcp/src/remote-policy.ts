@@ -50,12 +50,12 @@ const codeOrMessageOf = (error: unknown): string => {
   return 'code' in error && typeof error.code === 'string' ? error.code : error.message;
 };
 
-const lookupVia = (resolver: HostResolver): LookupFunction => {
+const lookupVia = (resolver: HostResolver, setting: string): LookupFunction => {
   const lookup = (hostname: string, options: { all?: boolean }, callback: (...args: unknown[]) => void): void => {
     resolver(hostname).then(
       (addresses) => {
         if (addresses.length === 0) {
-          callback(new McpRemotePolicyError('unresolvable_host', `${hostname} did not resolve to any address, so its address could not be verified; ${USER_SCOPE_NOTE}`));
+          callback(new McpRemotePolicyError('unresolvable_host', `${hostname}, the host of the URL in ${setting}, did not resolve to any address, so its address could not be verified; ${USER_SCOPE_NOTE}`));
           return;
         }
         const refused = addresses.find((entry) => !isAcceptableAddress(entry.address, PUBLIC_ONLY));
@@ -68,7 +68,7 @@ const lookupVia = (resolver: HostResolver): LookupFunction => {
       },
       (error: unknown) =>
         callback(
-          new McpRemotePolicyError('unresolvable_host', `the address of ${hostname} could not be verified: the name did not resolve on this machine (${codeOrMessageOf(error)}); ${USER_SCOPE_NOTE}`, {
+          new McpRemotePolicyError('unresolvable_host', `the address of ${hostname}, the host of the URL in ${setting}, could not be verified: the name did not resolve on this machine (${codeOrMessageOf(error)}); ${USER_SCOPE_NOTE}`, {
             cause: error,
           }),
         ),
@@ -81,14 +81,17 @@ export type GuardedFetch = { fetch: FetchLike; close(): Promise<void> };
 
 type Send = (url: URL, init: RequestInit | undefined) => Promise<Response>;
 
-export type GuardedFetchOptions = { scope: McpServerScope; network: OutboundNetwork; connectTimeoutMs: number; resolver: HostResolver; send?: Send };
+export type GuardedScope = { scope: 'project'; setting: string } | { scope: Exclude<McpServerScope, 'project'> };
 
-export const createGuardedFetch = ({ scope, network, connectTimeoutMs, resolver, send }: GuardedFetchOptions): GuardedFetch => {
+export type GuardedFetchOptions = GuardedScope & { network: OutboundNetwork; connectTimeoutMs: number; resolver: HostResolver; send?: Send };
+
+export const createGuardedFetch = (options: GuardedFetchOptions): GuardedFetch => {
+  const { scope, network, connectTimeoutMs, resolver, send } = options;
   const dispatcher = createOutboundDispatcher(network, {
     connectReplyTimeoutMs: connectTimeoutMs,
     headersTimeout: 0,
     bodyTimeout: 0,
-    ...(scope === 'project' ? { lookup: lookupVia(resolver) } : {}),
+    ...(options.scope === 'project' ? { lookup: lookupVia(resolver, options.setting) } : {}),
   });
   const routed = outboundFetch(dispatcher);
   const dispatch: Send =

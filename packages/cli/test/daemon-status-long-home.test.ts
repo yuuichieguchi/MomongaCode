@@ -1,4 +1,3 @@
-import { testKernelLock } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
@@ -9,7 +8,6 @@ import { describeFailure } from '../src/failure.ts';
 import { nodePorts } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { createTempDir, firstRefusedSocketPathBytes, registerCleanup, testHostPath } from '@momonga/testkit';
 import { NO_HELPER } from './no-helper.ts';
 
@@ -48,7 +46,6 @@ describe.skipIf(process.platform === 'win32')('daemon start on a home too long f
     const program = buildProgram(
       {
         ports,
-        policyVerify: () => nodePolicyVerifyHost(ports, { executables: `${LONG_HOME}/cache/executables` }, testKernelLock()),
         entries,
         update: () => {
           throw new Error('the update wiring is not used by an embedded program');

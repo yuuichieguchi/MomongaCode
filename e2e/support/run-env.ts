@@ -1,3 +1,4 @@
+import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { shortTempBase } from '@momonga/foundation';
@@ -44,7 +45,7 @@ export const privateTempRoot = (base: string, identity: PrivateRootIdentity = cu
   return verifyPrivateRoot(root, identity);
 };
 
-export const sharedTempBase = (): string => fs.realpathSync(shortTempBase(process.platform));
+export const sharedTempBase = (): string => fs.realpathSync(shortTempBase(process.platform, os.tmpdir()));
 
 export const e2eTmpRoot = (): string => privateTempRoot(sharedTempBase());
 

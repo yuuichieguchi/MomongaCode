@@ -64,6 +64,8 @@ export const SERVICE_UNAVAILABLE_STATUS = 503;
 
 export const isTargetProbing = (answer: { status: number; code: string | null }): boolean => answer.status === SERVICE_UNAVAILABLE_STATUS && answer.code === TARGET_PROBING;
 
+export const isTargetProbeFailed = (answer: { status: number; code: string | null }): boolean => answer.status === SERVICE_UNAVAILABLE_STATUS && answer.code === TARGET_PROBE_FAILED;
+
 export const TARGET_PROBING_MESSAGE = 'measuring this model (once per model and OS build)';
 
 export type ChainMemberEntry = {
@@ -87,8 +89,13 @@ export type MomongaModelEntry = {
   defaultTag?: string;
   billing: TargetBilling;
   capabilities: ChainCapabilities | ProbingCapabilities | UnavailableCapabilities;
+  state: ModelEntryState;
   chain: ChainMemberEntry[];
 };
+
+export const MODEL_ENTRY_STATES = ['available', 'degraded'] as const;
+
+export type ModelEntryState = (typeof MODEL_ENTRY_STATES)[number];
 
 export type MomongaModelRoles = { compaction?: string; reflection?: string; analysis?: string };
 

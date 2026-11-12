@@ -36,7 +36,7 @@ const fakeConnection = (options: { transportKind: 'stdio' | 'network'; call?: Fa
       return known === undefined ? undefined : Promise.resolve(known);
     },
     redact: (text) => text,
-    diagnostics: () => ({ server: 'jobs', state: 'connected', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '' }),
+    diagnostics: () => ({ server: 'jobs', state: 'connected', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '', exit: null }),
     close: async () => undefined,
   };
 };

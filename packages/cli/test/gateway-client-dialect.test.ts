@@ -27,7 +27,7 @@ const serveModels = async (context: TestContext, schemaDialect: unknown): Promis
   const listed = capabilities(schemaDialect);
   const model = 'local/served';
   const member = { model, counter: '1'.repeat(64), billing: 'local', adapter: 'chat-completions', answers: 'model', upstream: 'served', capabilities: listed };
-  const body = JSON.stringify({ object: 'list', data: [{ id: model, object: 'model', provider: 'local', ownName: 'served', billing: 'local', capabilities: listed, chain: [member] }], start: model, roles: {} });
+  const body = JSON.stringify({ object: 'list', data: [{ id: model, object: 'model', provider: 'local', ownName: 'served', billing: 'local', capabilities: listed, state: 'available', chain: [member] }], start: model, roles: {} });
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' }).end(body);
   });
@@ -50,9 +50,9 @@ describe('the gateway client reads a dialect id as an open string', () => {
   it.for([
     ['an empty string', ''],
     ['a number', 7],
-    ['an absent value', undefined],
-  ] as const)('refuses a model list whose dialect is %s', async ([_label, value], context) => {
+    ['an absent value in its chain member', undefined],
+  ] as const)('lists a model whose dialect is %s as unreadable, with the field named', async ([_label, value], context) => {
     const client = await serveModels(context, value);
-    await expect(client.capabilitiesOf('local/served')).rejects.toThrow('not a model list');
+    expect(await client.capabilitiesOf('local/served')).toMatchObject({ toolCalling: { state: 'unavailable', code: 'model_entry_unreadable' } });
   });
 });

@@ -9,7 +9,7 @@ import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createHistory
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
-import { usageOf, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, usageOf, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createBuiltinTools, createOperationTools, harnessOutputToolsOf } from '@momonga/tools';
 import type { ArgvRunner, ForgeAccess } from '@momonga/tools';
 import { budgetFor, capacityFor, inputCeilingFor, itemCapFor } from '../../packages/context/src/budget.ts';
@@ -171,7 +171,7 @@ export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing =>
 };
 
 export const seenOutputTokens = async (count: GatewayCountClient, call: { callId: string; tool: string }, output: string): Promise<number> => {
-  const render = outputRenderOf({ type: 'function_call_output', call_id: call.callId, output }, call.tool, new Set(harnessOutputToolsOf(createBuiltinTools())), false, TEST_FENCE);
+  const render = outputRenderOf({ type: 'function_call_output', call_id: call.callId, output }, call.tool, new Set(harnessOutputToolsOf(createBuiltinTools(TEST_BUILTIN_TOOL_OFFER))), false, TEST_FENCE);
   const counted = await count.gateway.countTokens(
     { model: E2E_MODEL, input: [render.full], momonga: { lenient_items: { call_names: { [call.callId]: call.tool }, with_tools: true } } },
     { signal: AbortSignal.timeout(E2E_MARGIN_MS) },
@@ -471,7 +471,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       home: plan.home.home,
       instructionReaderFor: (signal) => createFsInstructionReader(signal, process.platform),
       defaults: RUNTIME_DEFAULTS.limits,
-      toolList: () => [...createBuiltinTools(), ...createOperationTools({ runArgv: noOperationRuns, forge: NO_FORGE, settings: {} })],
+      toolList: () => [...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER), ...createOperationTools({ runArgv: noOperationRuns, forge: NO_FORGE, settings: {} })],
       memories: createMemoryPort({ platform: process.platform, store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),
       history: createHistoryPort({
         store: env.store,

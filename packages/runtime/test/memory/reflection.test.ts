@@ -255,18 +255,27 @@ describe('the reflection call', () => {
     expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema' });
   });
 
-  it('makes no call, no charge and no candidate when the run model reports no structured output, and ends done naming the role setting and the model', async () => {
+  it('sends the same request on a target with no structured output and stores the candidates of its reply', async () => {
     const env = await setup({ structured: false });
     const run = await queued(env);
-    env.gateway.script.push(textStep(CANDIDATE_REPLY(['src/a.ts']), { usage: usageOf(100, 20) }));
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
-    expect(env.gateway.streams).toEqual([]);
-    expect(reflectionCharges(env)).toEqual([]);
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema', name: 'memory_candidates' });
+    expect(reflectionCharges(env)).toHaveLength(1);
+    expect(env.api.memories.candidates()).toMatchObject([{ text: 'the fixture needs a seed', kind: 'fact' }]);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: null });
+  });
+
+  it('ends the job with the parse reason when a target with no structured output replies with no JSON', async () => {
+    const env = await setup({ structured: false });
+    const run = await queued(env);
+    env.gateway.script.push(textStep('here are my notes', { usage: usageOf(100, 20) }));
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: expect.stringMatching(/^output failed the schema/) });
     expect(env.api.memories.candidates()).toEqual([]);
-    const job = env.api.reflection.get(run.id);
-    expect(job?.state).toBe('done');
-    expect(job?.lastError).toContain('models.roles.reflection');
-    expect(job?.lastError).toContain('fm');
+    expect(reflectionCharges(env)).toHaveLength(1);
   });
 
   it('sends the fixed instructions, ending with the contract of the schema', async () => {

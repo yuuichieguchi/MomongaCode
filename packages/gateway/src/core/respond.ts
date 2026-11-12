@@ -42,6 +42,7 @@ import type { Narrowed, TargetRuntime } from './router.ts';
 import { CandidateDropped, CandidateRefused, UnprobedTarget } from './candidate-refusal.ts';
 import type { RunControl } from './run.ts';
 import type { Services } from './services.ts';
+import type { FenceBoundary } from './fence-boundary.ts';
 import type { CommitRequest } from './store.ts';
 import type { UnknownFields } from './unknown-fields.ts';
 import { upstreamCallKey } from './upstream-call-key.ts';
@@ -108,7 +109,7 @@ const cacheMarksFor = (job: ResponseJob, resolved: ResolvedInput): PromptCacheCo
   };
 };
 
-const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: TargetRuntime, visibleBound: number | undefined): AdapterRequest => {
+const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: TargetRuntime, visibleBound: number | undefined, fenceBoundary: FenceBoundary): AdapterRequest => {
   const { body } = job;
   const cacheMarks = cacheMarksFor(job, resolved);
   return {
@@ -129,6 +130,7 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
     ...(body.text === undefined || body.text === null ? {} : { text: body.text }),
     ...(body.prompt_cache_key === undefined || body.prompt_cache_key === null ? {} : { promptCacheKey: body.prompt_cache_key }),
     ...(cacheMarks === undefined ? {} : { cacheMarks }),
+    fence: body.momonga?.fence ?? fenceBoundary(resolved.forAdapter),
     ...(Object.keys(job.unknownFields).length === 0 ? {} : { unknownFields: job.unknownFields }),
   };
 };
@@ -227,7 +229,7 @@ const openAttempt = async (
   const span = startSpan(retryOfSeq);
   let iterator: AsyncIterator<StreamEvent> | undefined;
   try {
-    const stream = target.adapter.create(adapterRequestFor(job, resolved, target, visibleBound), adapterContextOf(services, target, capabilities, signal, attemptNumber, callKey, span.route));
+    const stream = target.adapter.create(adapterRequestFor(job, resolved, target, visibleBound, services.fenceBoundary), adapterContextOf(services, target, capabilities, signal, attemptNumber, callKey, span.route));
     iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
     for (;;) {
@@ -620,7 +622,7 @@ export async function* executeResponse(services: Services, job: ResponseJob, con
     outputBound: job.body.max_output_tokens !== undefined && job.body.max_output_tokens !== null,
     toolChoice: { tools: job.body.tools, tool_choice: job.body.tool_choice },
     unknownFields: { keys: Object.keys(job.unknownFields), operation: 'create' },
-    carry: { requestFor: (target) => adapterRequestFor(job, resolved, target, undefined), originFor: (target) => originOf(services, target) },
+    carry: { requestFor: (target) => adapterRequestFor(job, resolved, target, undefined, services.fenceBoundary), originFor: (target) => originOf(services, target) },
   });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   const call: CallIdentity = job.idempotency === undefined ? { kind: 'unkeyed', nonce: uuidv7(services.clock) } : { kind: 'keyed', ...job.idempotency };

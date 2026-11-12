@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
@@ -18,7 +19,7 @@ const SECTIONS = ['GOAL:', 'STATE:', 'DONE:', 'TODO:', 'DECISIONS:', 'GUARDRAILS
 const compactRequest = (momonga: AdapterCompactRequest['momonga'] = {}): AdapterCompactRequest => ({
   model: 'system',
   input: [userText('Fix the parser')],
-  momonga,
+  momonga: { fence: TEST_FENCE, ...momonga },
 });
 
 const instructionsOf = (request: AdapterCompactRequest, cap = 512): string => summaryRequestOf(request, cap, EVERY_REASONING_IS_OWN).instructions ?? '';

@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { nodeFileSystem } from '../node-file-system.ts';
 
 export type FileIdentity = { dev: bigint; ino: bigint };
 
@@ -11,12 +11,9 @@ export interface ProcFs {
 }
 
 export const nodeProcFs: ProcFs = {
-  readText: (file) => fs.promises.readFile(file, 'utf8'),
-  readBytes: async (file) => new Uint8Array(await fs.promises.readFile(file)),
-  list: (directory) => fs.promises.readdir(directory),
-  identityOf: async (file) => {
-    const stat = await fs.promises.stat(file, { bigint: true });
-    return { dev: stat.dev, ino: stat.ino };
-  },
-  birthMsOf: async (file) => (await fs.promises.stat(file)).birthtimeMs,
+  readText: (file) => nodeFileSystem.readTextFile(file),
+  readBytes: (file) => nodeFileSystem.readFile(file),
+  list: (directory) => nodeFileSystem.readdir(directory),
+  identityOf: (file) => nodeFileSystem.identity(file),
+  birthMsOf: async (file) => (await nodeFileSystem.stat(file)).birthtimeMs,
 };

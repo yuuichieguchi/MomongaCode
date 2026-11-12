@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
-import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, SWEEP_INTERVAL_MS, claimGeneration, decideGenerationStart, ensureMomongaDirs, generationIsLive, generationLayout, momongaPaths, publishCurrentGeneration, starterOutcome } from '@momonga/foundation';
+import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, SWEEP_INTERVAL_MS, claimGeneration, createJsonLogger, decideGenerationStart, ensureMomongaDirs, generationIsLive, generationLayout, momongaPaths, publishCurrentGeneration, resolveGenerationFor, starterOutcome } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { createFakeKernelLock, withTempDir, testKernelLock, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createFakeKernelLock, prepareGenerationForTest, withTempDir, testKernelLock, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createSuccessor } from '../packages/supervisor/src/successor.ts';
+import { classifyExit, decideAfterExit, DEFAULT_RESTART_POLICY } from '../packages/supervisor/src/restart-policy.ts';
 import { readManifest } from './formal/manifest.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
@@ -187,12 +189,90 @@ describe('UpdateSwitch.tla and the start flow agree', () => {
     expect(supervisorSource('start-supervisor.ts')).toContain('}, startupTimeoutMs);');
   });
 
-  it('polls with one tick constant, and classifies the retire exit code apart from every other exit', async () => {
+  it('polls with one tick constant, and classifies the retire exit code apart from every other exit', () => {
     expect(GENERATION_POLL_INTERVAL_MS).toBe(1000);
     expect(SWEEP_INTERVAL_MS).toBe(GENERATION_POLL_INTERVAL_MS);
-    const { classifyExit, decideAfterExit, DEFAULT_RESTART_POLICY } = await import('../packages/supervisor/src/restart-policy.ts');
     const exit = classifyExit({ code: EXIT_RETIRED, signal: null, stop: undefined });
     expect(exit.class).toBe('retired');
     expect(decideAfterExit({ exit, consecutiveFailures: 0, policy: DEFAULT_RESTART_POLICY, random: () => 0 })).toEqual({ next: 'stopped' });
+  });
+  it('attempts the successor of one installed version once, and never one at or below its own version (ChildMismatch, tried)', async () => {
+    const mismatch = definitionOf('ChildMismatch');
+    expect(mismatch).toContain('/\\ iv > curv');
+    expect(mismatch).toContain('/\\ (tried[g] < iv \\/ Variant = "successorRepeat")');
+    expect(mismatch).toContain("/\\ tried' = [tried EXCEPT ![g] = iv]");
+    for (const own of range(1, MAX_V)) {
+      const successor = createSuccessor({
+        home: '/unused',
+        paths: momongaPaths('/unused', process.platform, {}),
+        generation: 1,
+        version: versionOf(own),
+        foldVersion: 1,
+        lock: testKernelLock(),
+        scope: { form: 'unix' },
+        launcher: undefined,
+        timers: { setTimeout: () => undefined, clearTimeout: () => undefined },
+        pollMs: GENERATION_POLL_INTERVAL_MS,
+        boundMs: STARTUP_TIMEOUT_MS,
+        logger: createJsonLogger({ service: 'supervisor', clock: { now: () => 0 }, stream: { write: () => true } }),
+        onError: (error) => {
+          throw error;
+        },
+      });
+      for (const iv of range(1, MAX_V)) {
+        const first = await successor.request(versionOf(iv));
+        const again = await successor.request(versionOf(iv));
+        expect(first, `own ${own}, installed ${iv}`).toBe(iv > own ? 'no-launcher' : 'below-floor');
+        expect(again, `own ${own}, installed ${iv}`).toBe(iv > own ? 'already-tried' : 'below-floor');
+      }
+      successor.stop();
+    }
+  });
+
+  it('the reaper is enabled only while a serving supervisor exists (Reap)', () => {
+    expect(definitionOf('Reap')).toContain('/\\ (Srv \\/ Variant = "reapUnserved")');
+    expect(definitionOf('ReapUnderServing')).toContain('=> Srv');
+  });
+
+  it('a session client reaches run/current when it names its version, otherwise the newest live generation of its version, otherwise none (PinTarget)', async (context) => {
+    const pin = definitionOf('PinTarget');
+    expect(pin).toContain('IF curv = cv[c] THEN cur');
+    expect(pin).toContain('SameVersionLive(c)');
+    for (const curv of range(1, MAX_V)) {
+      for (const cv of range(1, MAX_V)) {
+        for (const otherVersion of range(1, MAX_V)) {
+          for (const otherLive of [false, true]) {
+            const { home, paths } = await freshHome(context);
+            const lock = createFakeKernelLock({ inheritable: false });
+            prepareGenerationForTest(home, 1, versionOf(curv));
+            await publishCurrentGeneration(paths, { generation: 1, version: versionOf(curv), sockets: generationLayout(home, 1).sockets }, { lock });
+            const other = prepareGenerationForTest(home, 2, versionOf(otherVersion));
+            if (otherLive) lock.holdExternally(other.locks.supervisor, 6000);
+            const resolved = await resolveGenerationFor(paths, versionOf(cv), { lock, scope: { form: 'unix' } });
+            const expected = cv === curv ? 1 : otherLive && otherVersion === cv ? 2 : undefined;
+            expect(resolved?.generation, `curv ${curv}, cv ${cv}, other ${otherVersion}, live ${otherLive}`).toBe(expected);
+          }
+        }
+      }
+    }
+  });
+
+  it('a generation that has left is never supervised again: the retired exit is never restarted (RetiredNeverRestarted)', () => {
+    expect(definitionOf('SupClaim')).toContain('/\\ ~claimed[g]');
+    expect(definitionOf('RetiredNeverRestarted')).toContain('=> ~claimed[g]');
+    const exit = classifyExit({ code: EXIT_RETIRED, signal: null, stop: undefined });
+    for (const consecutiveFailures of range(0, 3)) {
+      expect(decideAfterExit({ exit, consecutiveFailures, policy: DEFAULT_RESTART_POLICY, random: () => 0 }), `failures ${consecutiveFailures}`).toEqual({ next: 'stopped' });
+    }
+  });
+
+  it('a run is accepted and its first request waits while the gateway is restarting under the promise; only a gateway given up refuses (RunAcceptedWhileRestarting, RequestWaitsForRestart)', () => {
+    expect(definitionOf('RefuseRun')).toContain('gwr[cur] = "givenUp" \\/ (Variant = "refuseDuringRestart" /\\ gwr[cur] = "restarting")');
+    expect(definitionOf('FailRequest')).toContain('gwr[at[r]] = "givenUp" \\/ (Variant = "refuseDuringRestart" /\\ gwr[at[r]] = "restarting")');
+    expect(definitionOf('GwCallStart')).toContain('gwr[g] = "up"');
+    const evidence = manifest.entries.find((entry) => entry.config === 'UpdateSwitch.refuseDuringRestart');
+    expect(evidence?.expect).toEqual({ violates: 'RunAcceptedWhileRestarting', exitCode: 12 });
+    const check = manifest.entries.find((entry) => entry.config === 'UpdateSwitch.restart');
+    expect(check?.expect).toBe('holds');
   });
 });

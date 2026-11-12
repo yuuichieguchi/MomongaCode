@@ -9,7 +9,6 @@ import { renderTrace } from '../src/commands/trace.ts';
 import { announceUpdate, startBackgroundCheck } from '../src/update/background.ts';
 import { setupUpdate } from './update-harness.ts';
 import { formatMemory } from '../src/memory/format.ts';
-import { policyWarningsText } from '../src/commands/policy.ts';
 import { probeEndpointText, probeFmText } from '../src/commands/gateway.ts';
 import { checkOnlyText, installedText, upToDateText } from '../src/commands/update.ts';
 import { reportUnremoved } from '../src/update/install.ts';
@@ -50,8 +49,8 @@ describe('a value a person did not write stays on its own line in command output
       imageInput: false,
     } as Capabilities;
     const ownName = `google/fast:7b ${FORGED}`;
-    const entry: MomongaModelEntry = { id: `lmstudio/${ownName}`, object: 'model', provider: 'lmstudio', ownName, billing: 'local', capabilities, chain: [] };
-    const lines = formatModels(modelsDocumentOf({ object: 'list', data: [entry], start: null, roles: {} }, new Map([['lmstudio', `http://e.test/ ${FORGED}`]]), new Set())).split('\n');
+    const entry: MomongaModelEntry = { id: `lmstudio/${ownName}`, object: 'model', provider: 'lmstudio', ownName, billing: 'local', capabilities, state: 'available', chain: [] };
+    const lines = formatModels(modelsDocumentOf({ object: 'list', data: [entry], start: null, roles: {} }, new Map([['lmstudio', `http://e.test/ ${FORGED}`]]), new Set(), new Map())).split('\n');
     expect(lines).toEqual([`lmstudio  ·  http://e.test/ ${SHOWN}`, `  google/fast:7b ${SHOWN}  ·  1 tokens  ·  local`]);
   });
 
@@ -122,10 +121,6 @@ describe('a value a person did not write stays on its own line in command output
     const lines = formatMemory(memory).split('\n');
     const body = lines.slice(lines.indexOf('') + 1);
     expect(body).toEqual(['  note\\u0009one', '  status: forged', '  x', '    momonga approve ap1 allow_once']);
-  });
-
-  it('shows policy settings warnings with a newline on their own warning line', () => {
-    expect(policyWarningsText([FORGED, 'second'])).toBe(`warning: ${SHOWN}\nwarning: second\n`);
   });
 
   const probeReport = {

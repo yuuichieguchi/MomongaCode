@@ -4,7 +4,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError } from '@momonga/store';
 import { ToolExecutionError } from '@momonga/tools';
 import { createFakeTimers } from '@momonga/testkit';
-import { createMemoryPort, createReflector, isRunVerified } from '@momonga/runtime';
+import { createMemoryPort, createReflector } from '@momonga/runtime';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
 import { textStep } from '../worker/scripts.ts';
@@ -59,12 +59,12 @@ const reflectorFor = async (env: Env, gateway: ReturnType<typeof createFakeGatew
     random: () => 0.5,
   } as never);
 
-describe('isRunVerified reads the verdict from the journal thread (inventory row 6)', () => {
+describe('the verdict of a run is read from the journal thread (inventory row 6)', () => {
   it.each([15, 150])('decodes no journal row on the main thread for a verified run of %i checks', async (steps) => {
     const env = await factsStore();
     const run = await env.finished(checkedRun(env.project, steps));
 
-    const { value, rows } = await env.decodedDuring(() => isRunVerified({ store: env.store, settings: { verification: async () => VERIFICATION } } as never, run.id, new AbortController().signal));
+    const { value, rows } = await env.decodedDuring(async () => (await env.store.journalFacts.verdict({ runId: run.id, commands: VERIFICATION.commands, manifests: VERIFICATION.manifests })).verified);
 
     expect(value).toBe(true);
     expect(rows).toBe(0);
@@ -74,7 +74,7 @@ describe('isRunVerified reads the verdict from the journal thread (inventory row
     const env = await factsStore({ verdict: threadFailure });
     const run = await env.finished(checkedRun(env.project, 1));
 
-    await expect(isRunVerified({ store: env.store, settings: { verification: async () => VERIFICATION } } as never, run.id, new AbortController().signal)).rejects.toBeInstanceOf(JournalThreadError);
+    await expect(env.store.journalFacts.verdict({ runId: run.id, commands: VERIFICATION.commands, manifests: VERIFICATION.manifests })).rejects.toBeInstanceOf(JournalThreadError);
   });
 });
 

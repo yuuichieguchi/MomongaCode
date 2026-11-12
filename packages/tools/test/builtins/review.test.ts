@@ -190,7 +190,7 @@ describe('review 3: a parent directory swapped to a symlink is not written throu
     tools.idempotency.seed(keyFor('run-1', 1, 'e1'), 'PENDING', { tool: 'Edit', prepared: { path: file, preHash: sha256(OLD), postHash: sha256(NEW) } });
     const result = resultOf(await tools.run('Edit', { file_path: file, old_string: '1', new_string: '2' }, ACCEPT, 'allow_once', 'e1'));
     expect(result.status).toBe('failed');
-    expect(result.output).toMatch(DIFFERENT_LOCATION);
+    expect(result.output).toContain('dir/cfg.txt has not been read in this');
     expect(fs.readFileSync(path.join(hooks, 'cfg.txt'), 'utf8')).toBe(OLD);
     expect(fs.readdirSync(hooks)).toEqual(['cfg.txt']);
   });

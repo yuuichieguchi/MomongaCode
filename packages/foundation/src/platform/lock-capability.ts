@@ -63,7 +63,7 @@ export class StagingLinkError extends Error {
   }
 }
 
-export type StagingFiles = { linkSync(from: string, to: string): void; rmSync(file: string): void };
+export type StagingFiles = Pick<FileSystemSync, 'linkSync' | 'rmSync'>;
 
 const linkStaged = (files: StagingFiles, staged: string, file: string): void => {
   try {

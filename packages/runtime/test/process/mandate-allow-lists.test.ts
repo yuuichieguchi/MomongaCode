@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { refusingRefutations } from '@momonga/protocol';
+import { RULE_VERIFY_BUDGET_MS, refusingRefutations } from '@momonga/protocol';
 import { NEVER_CANCELLED, withTempDir } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 import { momongaLayout, systemClock } from '@momonga/foundation';
-import { createRuleVerifier, installedRuleSolver } from '../../src/process/rule-verifier.ts';
+import { RULE_VERIFY_LOAD_ALLOWANCE_MS, createRuleVerifier, installedRuleSolver } from '../../src/process/rule-verifier.ts';
 import { systemTimers } from '../../src/service/timers.ts';
 import { delegationOf } from '../../src/worker/held-calls.ts';
 import { policyRefusal } from '../../src/worker/rule-verdict.ts';
@@ -32,10 +32,12 @@ describe('a mandate whose allow list names tools that cover one another', () => 
       timers: systemTimers,
       bashPath: () => '/bin/bash',
       clock: systemClock,
+      budgetMs: RULE_VERIFY_BUDGET_MS,
+      startBoundMs: RULE_VERIFY_LOAD_ALLOWANCE_MS,
     });
 
     const input = await verifier.inputOf(
-      { unixSockets: { kind: 'limited', allowed: [] }, rules: delegation?.rules ?? [], roots: [cwd], mode: 'manual', home, cwd, exemptDirectory: `${home}/.momonga/tmp/sessions/s1`, enforcement: 'exact-paths' },
+      { unixSockets: { kind: 'limited', allowed: [] }, rules: delegation?.rules ?? [], roots: [cwd], mode: 'manual', home, cwd, exemptDirectory: `${home}/.momonga/tmp/sessions/s1`, enforcement: 'exact-paths', secrets: [] },
       NEVER_CANCELLED,
     );
     expect(delegation?.rules.map((rule) => rule.text)).toEqual(allow);

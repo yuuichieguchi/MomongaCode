@@ -1,4 +1,5 @@
-import fs from 'node:fs';
+import type fs from 'node:fs';
+import { nodeFileSystemSync } from '../node-file-system.ts';
 
 export type LockFileIdentity = { dev: bigint; ino: bigint };
 
@@ -10,7 +11,7 @@ export const sameFile = (left: LockFileIdentity | undefined, right: LockFileIden
 export const lstatIdentity = (target: string): LockFileIdentity | undefined => {
   let stats: fs.BigIntStats;
   try {
-    stats = fs.lstatSync(target, { bigint: true });
+    stats = nodeFileSystemSync.lstatBigIntSync(target);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
@@ -19,4 +20,4 @@ export const lstatIdentity = (target: string): LockFileIdentity | undefined => {
   return identityOfStats(stats);
 };
 
-export const fstatIdentity = (descriptor: number): LockFileIdentity => identityOfStats(fs.fstatSync(descriptor, { bigint: true }));
+export const fstatIdentity = (descriptor: number): LockFileIdentity => identityOfStats(nodeFileSystemSync.fstatBigIntSync(descriptor));

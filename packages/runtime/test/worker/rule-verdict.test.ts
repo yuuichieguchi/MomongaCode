@@ -6,6 +6,10 @@ import { makeEnv as makeBareEnv } from './harness.ts';
 import type { Env, EnvOptions } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
+import { RuleVerificationFailure } from '../../src/process/rule-verifier-thread-client.ts';
+import { folderPolicyVerification } from '../../src/process/folder-verification.ts';
+import { ruleVerdictFor } from '../../src/worker/rule-verdict.ts';
+import { parseRule } from '@momonga/config';
 import type { FakeRuleVerifier } from './fake-rule-verifier.ts';
 
 const SOLVER = 'fake-solver 1';
@@ -163,7 +167,7 @@ describe('the verdict of the permission rules before a run, with a fake verifier
 
     await env.runOnce(env.worker());
 
-    expect(env.ruleVerifier.requests[0]?.exemptDirectory).toBe(env.sessionTmpDir);
+    expect(env.ruleVerifier.requests[0]?.exemptDirectory).toBe(path.join(path.dirname(env.sessionTmpDir), 'session-scratch'));
   });
 
   it('a second run with the same input reads the stored verdict and does not call the verifier', async () => {
@@ -244,6 +248,86 @@ describe('the verdict of the permission rules before a run, with a fake verifier
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'run.started')[0]?.pins['policyVerdict']).toMatchObject({ verdict: 'failed', unknown: [{ property: 'secret-reach' }] });
     expect(storedVerdicts(env, run.id)).toBeUndefined();
+  });
+
+  it('a verification thread that fails gives no verdict and refuses nothing: the run starts with unknown naming the failure, nothing is stored, and the next start tries again', async () => {
+    const env = await makeEnv();
+    const answers: Array<() => RuleVerdict> = [
+      () => {
+        throw new RuleVerificationFailure('the verification thread did not start within 10000 ms');
+      },
+      () => proved,
+    ];
+    env.ruleVerifier.answer = () => (answers.shift() ?? (() => proved))();
+    env.gateway.script.push(textStep('One.'), textStep('Two.'));
+    const first = await env.enqueue('Say one');
+    await env.runOnce(env.worker('worker-1'));
+
+    expect(env.run(first.id).status).toBe('COMPLETED');
+    expect(env.ofType(first.id, 'run.started')[0]?.pins['policyVerdict']).toMatchObject({
+      verdict: 'unknown',
+      solver: SOLVER,
+      unknown: [{ property: 'verification', reason: 'the verification thread did not start within 10000 ms' }],
+    });
+    expect(storedVerdicts(env, first.id)).toBeUndefined();
+
+    const second = await env.enqueue('Say two');
+    await env.runOnce(env.worker('worker-2'));
+    await env.ruleVerifier.settled();
+    expect(env.ruleVerifier.verified).toHaveLength(2);
+    await vi.waitFor(() => expect(storedVerdicts(env, second.id)?.verdict).toEqual(proved));
+  });
+
+  it('a retry behind a run whose thread fails leaves the run as it is and is tried again by the next start', async () => {
+    const env = await makeEnv();
+    const answers: Array<() => RuleVerdict> = [
+      () => unknown,
+      () => {
+        throw new RuleVerificationFailure('the verification thread exited with code 3 before it gave a verdict');
+      },
+      () => proved,
+    ];
+    env.ruleVerifier.answer = () => (answers.shift() ?? (() => proved))();
+    env.gateway.script.push(textStep('One.'), textStep('Two.'), textStep('Three.'));
+    await env.enqueue('Say one');
+    await env.runOnce(env.worker('worker-1'));
+    const second = await env.enqueue('Say two');
+    await env.runOnce(env.worker('worker-2'));
+    await env.ruleVerifier.settled();
+
+    expect(env.run(second.id).status).toBe('COMPLETED');
+    const third = await env.enqueue('Say three');
+    await env.runOnce(env.worker('worker-3'));
+    await env.ruleVerifier.settled();
+    expect(env.ruleVerifier.verified).toHaveLength(3);
+    await vi.waitFor(() => expect(storedVerdicts(env, third.id)?.verdict).toEqual(proved));
+  });
+
+  it('a verdict stored by the verification of the folder is the one a run of that folder reads: the scratch folder of a session enters the key by its role', async () => {
+    const env = await makeEnv();
+    env.ruleVerifier.answer = () => proved;
+    const rules = [parseRule('Read(src/**)', { effect: 'allow', origin: 'user', source: 'settings.json', settingsRoot: env.project, home: env.home, cwd: env.project })];
+    const unixSockets = { kind: 'limited', allowed: [] } as const;
+    const verify = folderPolicyVerification({
+      verifier: env.ruleVerifier,
+      ruleVerdicts: env.store.ruleVerdicts,
+      home: env.home,
+      sessionsRoot: path.dirname(env.sessionTmpDir),
+      folder: async () => ({ rules, additionalDirectories: [], enforcement: 'exact-paths', unixSockets, defaultMode: 'manual' }),
+      mandates: async () => undefined,
+      catalogue: () => ({ supersededForms: [], alwaysOperations: [] }),
+    });
+    const verified = await verify({ cwd: env.project, secrets: [] }, new AbortController().signal);
+    expect(verified.stored).toBe(true);
+    env.ruleVerifier.answer = () => refuted;
+
+    const pinned = await ruleVerdictFor(
+      { options: { store: env.store, home: env.home, ruleVerifier: env.ruleVerifier }, control: { signal: new AbortController().signal, recordingRaised: <T>(pending: Promise<T>) => pending, fail: (error: unknown) => { throw error; } } as never },
+      { permissionMode: 'manual', cwd: env.project } as never,
+      { rules, roots: [env.project], exemptDirectory: env.sessionTmpDir, enforcement: 'exact-paths', unixSockets },
+    );
+    expect(pinned).toMatchObject({ fingerprint: verified.fingerprint, verdict: 'proved' });
+    expect(env.ruleVerifier.verified).toHaveLength(1);
   });
 
   it('a worker that stops during the verification loses nothing: the next claim verifies once and starts', async () => {

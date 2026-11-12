@@ -4,7 +4,7 @@ import { MIN_SUMMARY_TOKENS } from '@momonga/protocol';
 import { protectedRootAreasOf } from '@momonga/runtime';
 import { createBuiltinTools, createGovernanceTools, createHistoryTools, createMemoryTools } from '@momonga/tools';
 import { expectSchema, startService } from './helpers.ts';
-import { firstGeneration } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, firstGeneration } from '@momonga/testkit';
 
 const REPORT = { gate: 'PASS' };
 const BIDIRECTIONAL_CONTROLS = ['061C', '200E', '200F', '202A', '202B', '202C', '202D', '202E', '2066', '2067', '2068', '2069'];
@@ -130,7 +130,7 @@ describe('the model has no way to adopt a guideline', () => {
   it('covers the builtin, memory, history and governance tools of this repository: none is named or described after a guideline or a charge', () => {
     const unused = () => Promise.reject(new Error('unused'));
     const tools = [
-      ...createBuiltinTools(),
+      ...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER),
       ...createMemoryTools({ port: { save: unused, search: async () => [] }, trusted: true }),
       ...createHistoryTools({
         port: { search: unused, read: async () => null, projectOf: () => undefined, readDenial: unused, redact: (text) => text },
@@ -147,7 +147,7 @@ describe('the model has no way to adopt a guideline', () => {
         trusted: true,
       }),
     ];
-    expect(tools.length).toBeGreaterThan(createBuiltinTools().length);
+    expect(tools.length).toBeGreaterThan(createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).length);
     for (const tool of tools) {
       expect(tool.name).not.toMatch(/guideline|charge/i);
       expect(JSON.stringify(tool.inputSchema)).not.toMatch(/guideline|charge/i);

@@ -1,3 +1,4 @@
+import { TOOL_OUTPUT_TAG } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import type { ProviderAdapter } from '@momonga/gateway';
 import { DEFAULT_SCRIPTED_CAPABILITIES, createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
@@ -83,7 +84,7 @@ describe('chat-completions adapter through the gateway', () => {
     expect(textOf(secondTerminal.response)).toBe('value');
     const followUp = completionBodies(fake).at(-1);
     expect(followUp.messages.at(-1).role).toBe('user');
-    expect(followUp.messages.at(-1).content).toContain(`<tool_result call_id="${calls[0].call_id}" name="read_file">`);
+    expect(followUp.messages.at(-1).content).toContain(`<${TOOL_OUTPUT_TAG} call="${calls[0].call_id}" tool="read_file" boundary=`);
     expect(completionBodies(fake).every((body: any) => !('tools' in body))).toBe(true);
   });
 

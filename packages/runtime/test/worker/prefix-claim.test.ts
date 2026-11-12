@@ -69,6 +69,8 @@ describe('a claim is classified by the sha256(tools, S) key of the previous requ
     expect(record?.prefix).toEqual({ preservedItems: 3, toolsChanged: false, causes: ['claim'] });
     expect(unexplained(record)).toEqual([expect.objectContaining({ type: 'notice', level: 'info', code: 'prefix_unexplained' })]);
     expect(unexplained(record)[0]?.message).toContain('fewer than the 5');
+    expect(unexplained(record)[0]?.message).toContain('prompt cache');
+    expect(unexplained(record)[0]?.message).not.toContain('(none)');
   });
 
   it('reads the previous history end from its recorded mark, in a fresh claim context', async () => {

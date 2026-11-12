@@ -6,7 +6,7 @@ import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HO
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
-import { applyCapabilityOverride } from '@momonga/protocol';
+import { RULE_VERIFY_BUDGET_MS, applyCapabilityOverride } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, Mandate, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createAgentLoader } from '@momonga/agents';
 import { contributionAtTerminal, createSkillsPort, createWorker } from '@momonga/runtime';
@@ -364,7 +364,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
   });
 
-  const ruleVerifier: RuleVerifierPort = options.ruleVerifier ?? productRuleVerifier({ solver: () => ruleSolverHost, paths: layout, locks: testLocks(), timers: systemTimers, shellHost: nodeShellHost(), env: process.env, clock });
+  const ruleVerifier: RuleVerifierPort = options.ruleVerifier ?? productRuleVerifier({ solver: () => ruleSolverHost, paths: layout, locks: testLocks(), timers: systemTimers, shellHost: nodeShellHost(), env: process.env, clock, budgetMs: RULE_VERIFY_BUDGET_MS });
 
   const worker = (workerId = 'worker-1', overrides: WorkerOverrides = {}): Worker => {
     const { tools: toolOverrides, toolList, ...rest } = overrides;
@@ -378,6 +378,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       governance: inertGovernancePort,
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
       ruleVerifier,
+      mandateVerification: async () => ({ verdict: 'not-needed', solver: 'test-solver', refuted: [], unknown: [], notProved: [] }),
       tracers: fixedTracers(tracer),
       clock,
       workerId,

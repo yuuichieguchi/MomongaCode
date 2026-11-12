@@ -1,6 +1,6 @@
 import { quoteChain } from '@momonga/observability';
 import type { PriceTable } from '@momonga/observability';
-import { BUDGET_EXCEEDED_CODE, MOMONGA_REQUEST_FIELDS, fitsCostCeiling, outputTokensFor, tokenPriceOfQuote } from '@momonga/protocol';
+import { BUDGET_EXCEEDED_CODE, MOMONGA_REQUEST_FIELDS, fitsCostCeiling, outputTokensFor, tokenPriceOfQuote, usdOfNano } from '@momonga/protocol';
 import type { Capabilities, ModelQuote, ReasoningEffort } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
 import type { Router, TargetRuntime } from './router.ts';
@@ -48,12 +48,12 @@ export function outputBoundWithinCostCeiling(bounds: CostBounds, target: Priced 
   if (ceilingNano === undefined) return visible;
   if (inputBound === undefined) throw new Error('a request with a cost ceiling reached a model without its input bound');
   const price = tokenPriceOfQuote(quoteOfMembers(target.display, [target], table, atMs));
-  if (price === undefined) throw refusal(`The request may cost at most ${ceilingNano} nano-USD, and ${target.display} has no price, so its cost cannot be bounded.`);
+  if (price === undefined) throw refusal(`The request may cost at most ${usdOfNano(ceilingNano)} USD, and ${target.display} has no price, so its cost cannot be bounded.`);
   const fits = (candidate: number | undefined): boolean => fitsCostCeiling(inputBound, pricedOutputBoundOf(capabilities, effort, candidate), price, ceilingNano);
   if (fits(visible)) return visible;
   const capped = capabilities.outputBoundField === 'none' ? undefined : largestFitting(bounds.smallestAnswer, visible ?? capabilities.maxOutputTokens, fits);
   if (capped !== undefined) return capped;
   throw refusal(
-    `The request may cost at most ${ceilingNano} nano-USD, and ${inputBound} input tokens with the smallest answer of ${pricedOutputBoundOf(capabilities, effort, bounds.smallestAnswer)} output tokens on ${target.display} can cost more at its current price.`,
+    `The request may cost at most ${usdOfNano(ceilingNano)} USD, and ${inputBound} input tokens with the smallest answer of ${pricedOutputBoundOf(capabilities, effort, bounds.smallestAnswer)} output tokens on ${target.display} can cost more at its current price.`,
   );
 }

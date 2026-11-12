@@ -257,7 +257,7 @@ const handleResult = async (
     recorded.push({
       type: 'notice',
       level: 'warning',
-      message: [`The model call was answered by the fallback target ${fallback.target}${failed.length === 0 ? '' : ` because ${failed.join(' and ')}`}.`, ...refused].join(' '),
+      message: [`The model call was answered by the fallback model ${fallback.target}${failed.length === 0 ? '' : ` because ${failed.join(' and ')}`}.`, ...refused].join(' '),
       code: 'fallback_target',
     });
   }
@@ -268,7 +268,7 @@ const handleResult = async (
     recorded.push({
       type: 'notice',
       level: 'warning',
-      message: `The tool ${narrowing.tool} was sent with its parameter at ${narrowing.path} narrowed, because the target's schema dialect cannot carry it as declared.`,
+      message: `The tool ${narrowing.tool} was sent with its parameter at ${narrowing.path} narrowed, because the schema form the model's connection accepts cannot carry it as declared.`,
       code: 'schema_narrowed',
     });
   }
@@ -432,7 +432,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step, attempt: 1 };
   const prefixRecord = recordPrefix(ctx, built, summarising);
   const cacheControls = cacheControlsOf(ctx, built, prefixRecord?.prefix);
-  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL, ...ceilingOf(admission) } };
+  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL, ...ceilingOf(admission), fence: journal.state.fence } };
   const proof = requestBudgetOf(admission, quote);
   const requestOffered = offeredRecordFor(journal.state.offeredTools, built.tools.map((tool) => tool.name));
   journal.append([

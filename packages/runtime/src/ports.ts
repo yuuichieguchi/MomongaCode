@@ -17,7 +17,7 @@ import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { AnyTool, MarkerOwners, RipgrepLocator, ShellHost, ToolExecutor, ToolSessionState, ToolSet, UserCommandOutcome, WorkTreeObserver } from '@momonga/tools';
+import type { AnyTool, MarkerOwners, OperationCatalogueFacts, RipgrepLocator, ShellHost, ToolExecutor, ToolSessionState, ToolSet, UserCommandOutcome, WorkTreeObserver } from '@momonga/tools';
 import type { AttachedMentions } from '@momonga/context';
 
 export type { Clock };
@@ -47,7 +47,7 @@ export type AppendedRule = { effect: 'allow' | 'deny'; rule: string };
 export type TargetFacts = { adapter: string; model: string; answers?: TargetAnswers };
 
 export type SettingsPort = {
-  rules(session: Session, signal: AbortSignal): Promise<PermissionRule[]>;
+  rules(session: Pick<Session, 'cwd'>, signal: AbortSignal): Promise<PermissionRule[]>;
   hooks(session: Session, signal: AbortSignal): Promise<HooksSettings>;
   verification(session: Session, signal: AbortSignal): Promise<ResolvedVerificationSettings>;
   memory(target: Pick<Session, 'cwd'>, signal: AbortSignal): Promise<ResolvedMemorySettings>;
@@ -127,10 +127,12 @@ export type RuleVerifyRequest = {
   cwd: string;
   exemptDirectory: string | null;
   enforcement: RuleEnforcement;
+  secrets: readonly string[];
+  mandateChecks?: OperationCatalogueFacts;
   unixSockets: UnixSocketPolicy;
 };
 
-export type RuleVerification = { verdict: RuleVerdict; report: string };
+export type RuleVerification = { verdict: RuleVerdict; report: string; findings: Record<string, unknown> };
 
 export type RuleVerifierPort = {
   solverVersion(): Promise<string>;
@@ -143,7 +145,7 @@ export type RuleVerifierPort = {
 export type ToolRuntimePort = {
   envFor(session: Session, signal: AbortSignal): ToolEnv | Promise<ToolEnv>;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet>;
-  recoveryToolSet(options: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
+  recoveryToolSet(options: { signal: AbortSignal; session: Session; env: ToolEnv; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
   policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement; signal: AbortSignal; discoverGitConfig?: true }): Promise<ToolPolicy>;
   recoveryContextFor(session: Session, options: { env: ToolEnv; signal: AbortSignal }): Promise<RecoveryContext>;
   executor: ToolExecutor;

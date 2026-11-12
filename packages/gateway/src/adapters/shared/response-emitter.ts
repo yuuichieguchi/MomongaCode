@@ -1,4 +1,4 @@
-import { uuidv7 } from '@momonga/foundation';
+import { isRecord, uuidv7, validateUntrusted } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type {
   AdapterRequest,
@@ -23,6 +23,7 @@ import { invertReply } from '../../dialect/unwrap.ts';
 import { TOOL_NAME_PATTERN, TokenTally, isToolName } from '@momonga/protocol';
 import { MAX_CALL_ARGUMENT_CHARS, MAX_RESPONSE_TEXT_CHARS } from './limits.ts';
 import { MalformedOutputError, UpstreamProtocolError } from './failures.ts';
+import { usableUpstreamJson } from './upstream-json.ts';
 
 type Unsequenced<Event> = Event extends unknown ? Omit<Event, 'sequence_number'> : never;
 
@@ -49,6 +50,7 @@ export type ResponseEmitterOptions = {
   request: AdapterRequest;
   retryAfterMs?: number;
   wraps?: ReadonlyMap<string, WrapRecord>;
+  nonStrict?: ReadonlyMap<string, unknown>;
   narrowings?: readonly SchemaNarrowing[];
   jsonReply?: JsonReplyPath | undefined;
   onOutput?: () => void;
@@ -388,6 +390,7 @@ export class ResponseEmitter {
         item.args = invertReply(record, item.args);
         if (item.args !== '') this.emit({ type: 'response.function_call_arguments.delta', item_id: item.id, output_index: item.outputIndex, delta: item.args });
       }
+      if (status === 'completed') this.checkNonStrictArguments(item);
       this.emit({ type: 'response.function_call_arguments.done', item_id: item.id, output_index: item.outputIndex, arguments: item.args });
       const done = this.callItem(item, status);
       this.doneItems.push(done);
@@ -412,6 +415,19 @@ export class ResponseEmitter {
     };
     this.doneItems.push(done);
     this.emit({ type: 'response.output_item.done', output_index: item.outputIndex, item: done });
+  }
+
+  private checkNonStrictArguments(call: OpenCall): void {
+    const nonStrict = this.options.nonStrict;
+    if (nonStrict === undefined || !nonStrict.has(call.name)) return;
+    const schema = nonStrict.get(call.name);
+    const parsed = usableUpstreamJson(call.args);
+    if (!isRecord(parsed)) throw new MalformedOutputError(`the arguments of tool call "${call.name}" are not a JSON object`);
+    if (!isRecord(schema)) return;
+    const verdict = validateUntrusted(`gateway/non-strict-tool/${call.name}`, schema, parsed);
+    if (verdict.valid) return;
+    const reasons = verdict.errors.map((error) => `${error.instancePath === '' ? 'the arguments' : error.instancePath} ${error.message}`).join('; ');
+    throw new MalformedOutputError(`the arguments of tool call "${call.name}" do not match its schema: ${reasons}`);
   }
 
   private closeReasoning(reasoning: OpenReasoning): void {

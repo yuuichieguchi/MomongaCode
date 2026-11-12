@@ -35,6 +35,7 @@ describe('the sandbox of a Git reconcile', () => {
       tmpDir: fs.realpathSync(tmpDir),
       random: systemRandom,
       files: nodeFileSystem,
+      sandboxNetwork: 'ask',
     });
     held.release();
 
@@ -79,7 +80,7 @@ describe.runIf(HAS_REAL_SANDBOX)('a Git probe of a reconcile in the real sandbox
         signal: signalNever(),
         network: 'none',
         effect: false,
-        context: { idemKey, clock, deadlineAt: clock.now() + PROBE_BOUND_MS, signal: signalNever(), roots: [project, realTmp], tmpDir: realTmp, random: systemRandom, files: nodeFileSystem },
+        context: { idemKey, clock, deadlineAt: clock.now() + PROBE_BOUND_MS, signal: signalNever(), roots: [project, realTmp], tmpDir: realTmp, random: systemRandom, files: nodeFileSystem, sandboxNetwork: 'ask' },
       });
 
     const first = await attempt('key-1');

@@ -6,16 +6,14 @@ import { definitionOf } from './resolve.ts';
 
 export type DialectCurrency = { userDialects: UserDialects; probeMethod: number; declaredDialect?: DialectId };
 
-const isNarrowing = (rule: DialectDefinition['rules'][number]): boolean => {
+export const isNarrowing = (rule: DialectDefinition['rules'][number]): boolean => {
   switch (rule.op) {
     case 'fill-type':
     case 'require-all':
     case 'empty-parameters':
-    case 'drop':
-    case 'nullable-optional':
       return true;
     case 'ensure-key':
-      return rule.key === 'additionalProperties' && rule.value === false;
+      return (rule.key === 'additionalProperties' && rule.value === false) || rule.key === 'properties';
     default:
       return false;
   }

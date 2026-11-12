@@ -1,5 +1,5 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
-import { permissionRulesComposerFor } from '../governance/rules.ts';
+import { permissionRulesComposerFor, permissionRulesFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
 import { reapTimingOf } from '../process/reap-timing.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
@@ -35,7 +35,7 @@ import { EXACT_MODEL } from './exact-model.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
 import { deferredPinFor, tokenPinFor, tokenPolicyOf } from './token-pin.ts';
-import { completionPinFor } from './completion-pin.ts';
+import { COMPLETION_CONDITION_DENIED_CODE, completionPinFor, deniedConditionText } from './completion-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals, releaseClaimLease } from './terminals.ts';
@@ -46,7 +46,7 @@ import { offerFor, offeredRecordFor } from './tool-offer.ts';
 import type { ToolOffer } from './tool-offer.ts';
 import { settleCalls, settleHeld } from './tool-step.ts';
 import { unknownGate } from './unknown-gate.ts';
-import { laterVerdictNotice, policyRefusal, ruleVerdictAtStart } from './rule-verdict.ts';
+import { laterVerdictNotice, mandateRefusal, policyRefusal, ruleVerdictAtStart } from './rule-verdict.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TracerPort, TraceSpan } from '../ports.ts';
 import { MODEL_ROLES } from '@momonga/config';
@@ -229,7 +229,7 @@ const stopRejectedWrapUp = async (options: WorkerOptions, claim: Claim, journal:
   if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
   const { maxSteps } = readRunLimits(run.limits, options.defaults);
   journal.append([
-    { type: 'notice', level: 'error', message: `The gateway rejected the final summary request (${cause.code}): ${cause.message}`, code: 'final_summary_rejected' },
+    { type: 'notice', level: 'error', message: `The model refused the final summary request (${cause.code}): ${cause.message}. The work of the run is kept; ask for a summary in a new prompt.`, code: 'final_summary_rejected' },
   ]);
   await terminals.finish('STOPPED', { stopReason: summaryStopReason(inFlight.step, maxSteps) });
   return true;
@@ -408,10 +408,18 @@ const drive = async (
     await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: roleModelNotConfiguredText(lostRole, newRoles[lostRole] ?? '') } });
     return;
   }
-  const completionPin = pinned === undefined ? await completionPinFor({ run, session, settings: options.settings, signal: control.signal }) : undefined;
+  const pinning =
+    pinned === undefined
+      ? await completionPinFor({ run, session, settings: options.settings, rules: () => permissionRulesFor(options, session, control.signal), mode: session.permissionMode, signal: control.signal })
+      : undefined;
+  if (pinning?.kind === 'denied') {
+    await terminals.finish('FAILED', { error: { code: COMPLETION_CONDITION_DENIED_CODE, message: deniedConditionText(pinning.denied) } });
+    return;
+  }
+  const completionPin = pinning?.pin;
   const { delegation } = delegationOf((pinned ?? completionPin ?? {}) as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts());
   const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories, delegation }, session);
-  const startRefusal = policyRefusal(startVerdict);
+  const startRefusal = policyRefusal(startVerdict) ?? (await mandateRefusal(options, session, delegation, control.signal));
   if (startRefusal !== undefined) {
     await terminals.finish('FAILED', { error: startRefusal });
     return;
@@ -590,7 +598,6 @@ const drive = async (
     memory,
     completion: {
       conditions: pins.mandate?.completion.conditions ?? [],
-      requirements: pins.mandate?.completion.requirements ?? [],
       required: pins.verificationRequired === true,
     },
     verificationCommands: (await options.settings.verification(session, control.signal)).commands,

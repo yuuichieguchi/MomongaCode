@@ -4,11 +4,9 @@ import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, serverKeyOfLabel, stripCredentialEnv } from '@momonga/config';
 import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
-import { denyingRuleFor } from '@momonga/policy';
-import { shellCommandSubject } from '@momonga/tools';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
@@ -19,6 +17,7 @@ import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { registerUserShellRoutes } from './user-shell-routes.ts';
+import type { UserCommandRegistry } from './user-shell-routes.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
   ApiError,
@@ -40,6 +39,8 @@ import {
   skillUnavailable,
   starting,
   targetNotReady,
+  targetProbeFailed,
+  imageTooLarge,
   unknownSkill,
 } from './errors.ts';
 import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
@@ -47,6 +48,7 @@ import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, pageLimitOf, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
 import { compactInputOf, compactPinOf } from '../worker/compact-pin.ts';
+import { deniedConditionOf, deniedConditionText } from '../worker/completion-pin.ts';
 import type { AddInboxBody, CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
@@ -56,6 +58,8 @@ import { registerGuidelineRoutes } from './guidelines.ts';
 import { registerMemoryRoutes } from './memories.ts';
 import { registerMarkerRoutes } from './markers.ts';
 import { registerRuleRoutes } from './rules.ts';
+import type { MandateRunVerification, PolicyVerification } from '../process/folder-verification.ts';
+import type { GatewayStanding } from '../process/supervised-gateway.ts';
 import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import { canonicalProject } from './project-query.ts';
@@ -109,6 +113,9 @@ export type RunAppDeps = {
   skills: SkillsPort;
   agents: AgentCatalogPort;
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
+  policyVerification: PolicyVerification;
+  mandateVerification: MandateRunVerification;
+  gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   skillFiles: SkillFileSystem;
@@ -125,6 +132,7 @@ export type RunAppDeps = {
   keepAliveMs: number;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
+  userCommands: UserCommandRegistry;
   retireSignal: AbortSignal;
   retireFrame: () => Uint8Array | undefined;
   runTrace: (runId: string, signal: AbortSignal) => Promise<RunTraceView | undefined>;
@@ -161,19 +169,43 @@ const CLIENT_CLOSED_REQUEST_STATUS = 499;
 
 const isAbortOf = (error: unknown, signal: AbortSignal): boolean => signal.aborted && (error === signal.reason || (error instanceof Error && error.cause === signal.reason));
 
+const isMeasuringAnswer = (error: unknown): boolean => error instanceof GatewayRequestError && (isTargetProbing(error) || isTargetProbeFailed(error));
+
 const isGatewayUnavailable = (error: unknown): boolean =>
-  error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
+  error instanceof GatewayRequestError && !isMeasuringAnswer(error) && (error.type === 'transport' || error.status >= 500);
 
 const isClientErrorStatus = (status: number): boolean => status >= 400 && status < 500;
 
-const capabilitiesReadFailure = (error: unknown): unknown => {
+const gatewayGivenUp = (state: string): ApiError =>
+  new ApiError({
+    status: 503,
+    type: 'server_error',
+    code: 'gateway_unavailable',
+    message: `The model gateway has stopped and the daemon will not start it again (${state}). Run momonga daemon stop; the next momonga command starts the daemon again.`,
+  });
+
+const pricesWhileRestarting = (): ApiError =>
+  serviceUnavailable('gateway_unavailable', 'The models cannot be reached while the daemon starts them again, and a run with a money budget or a mandate needs their prices. The request was not run; send it again.');
+
+const listingReadFailure = (error: unknown): unknown => {
   if (error instanceof GatewayRequestError && isTargetProbing(error)) return targetNotReady(TARGET_PROBING_MESSAGE);
-  if (error instanceof ModelUnlistedError) return targetNotReady(readinessText(agentReadiness({ unavailable: error.message })));
+  if (error instanceof GatewayRequestError && isTargetProbeFailed(error)) return targetProbeFailed(error.message, error.retryAfterMs);
   if (isGatewayUnavailable(error)) return serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
+  return error;
+};
+
+const gatewayReadFailure = (error: unknown): unknown => {
+  if (!isMeasuringAnswer(error) && error instanceof ModelUnlistedError) return targetNotReady(readinessText(agentReadiness({ unavailable: error.message })));
+  if (isMeasuringAnswer(error) || isGatewayUnavailable(error)) return listingReadFailure(error);
   if (error instanceof GatewayRequestError && isClientErrorStatus(error.status)) {
     return gatewayAnswer({ status: error.status, type: error.type, code: error.code, message: error.message });
   }
   return error;
+};
+
+const refuseOversizeImages = (images: readonly { data: string }[] | undefined): void => {
+  const oversize = (images ?? []).map((image) => base64ByteLength(image.data)).find((byteLength) => byteLength > PROMPT_IMAGE_MAX_BYTES);
+  if (oversize !== undefined) throw imageTooLarge(oversize, PROMPT_IMAGE_MAX_BYTES);
 };
 
 const requestedModelOf = (text: string, views: ModelViews): string => {
@@ -208,11 +240,13 @@ const keyedMcpServers = (servers: Record<string, Record<string, unknown>>): Reco
 
 const checkedMcpServers = (given: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> => {
   const servers = keyedMcpServers(given);
-  try {
-    assertSessionMcpServers(servers);
-  } catch (error) {
-    if (error instanceof Error) throw invalidRequest(error.message, 'mcpServers');
-    throw error;
+  for (const [name, server] of Object.entries(servers)) {
+    try {
+      assertSessionMcpServers({ [name]: server });
+    } catch (error) {
+      if (error instanceof Error) throw invalidRequest(`the MCP server ${JSON.stringify(name)} is refused: ${error.message}`, 'mcpServers');
+      throw error;
+    }
   }
   return servers;
 };
@@ -288,8 +322,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     try {
       return await deps.modelListing(signal);
     } catch (error) {
-      if (isGatewayUnavailable(error)) throw serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
-      throw error;
+      throw listingReadFailure(error);
     }
   };
 
@@ -449,7 +482,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     try {
       return await deps.modelCapabilities(session.model, signal);
     } catch (error) {
-      throw capabilitiesReadFailure(error);
+      throw gatewayReadFailure(error);
     }
   };
 
@@ -465,31 +498,57 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   const refuseDeniedConditions = async (session: Session, mandate: Mandate | undefined, signal: AbortSignal): Promise<void> => {
-    const conditions = mandate?.completion?.conditions ?? [];
+    const conditions = (mandate?.completion?.conditions ?? []).map(({ command }) => ({ command, source: 'request' as const }));
     if (conditions.length === 0) return;
-    const rules = await deps.permissionRules(session, signal);
-    for (const condition of conditions) {
-      const rule = denyingRuleFor(rules, knownValue(session.permissionMode, `the permission mode of session ${session.id}`), shellCommandSubject(condition.command));
-      if (rule !== undefined) {
-        throw invalidRequest(`the completion condition ${JSON.stringify(condition.command)} is denied by the permission rule ${rule.text} (${rule.origin}: ${rule.source})`, 'mandate');
-      }
+    const denied = deniedConditionOf(await deps.permissionRules(session, signal), knownValue(session.permissionMode, `the permission mode of session ${session.id}`), conditions);
+    if (denied !== undefined) throw invalidRequest(deniedConditionText(denied), 'mandate');
+  };
+
+  const refuseRefutedMandate = async (session: Session, mandate: Mandate | undefined, signal: AbortSignal): Promise<void> => {
+    if (mandate?.scope === undefined) return;
+    const verdict = await deps.mandateVerification({ cwd: session.cwd, mode: knownValue(session.permissionMode, `the permission mode of session ${session.id}`), mandate }, signal);
+    if (refusingRefutations(verdict).length > 0) throw conflict(POLICY_REFUTED_CODE, policyRefutedMessage(verdict));
+  };
+
+  const standingOfGateway = async (signal: AbortSignal): Promise<GatewayStanding> => {
+    try {
+      return await deps.gatewayStanding(signal);
+    } catch (error) {
+      signal.throwIfAborted();
+      throw serviceUnavailable('gateway_unavailable', `The models cannot be reached, and the supervisor of the daemon could not be asked why: ${error instanceof Error ? error.message : String(error)}. The request was not run; send it again.`);
+    }
+  };
+
+  const listingUnlessRestarting = async (signal: AbortSignal): Promise<ModelListing | undefined> => {
+    try {
+      return await deps.modelListing(signal);
+    } catch (error) {
+      if (!isGatewayUnavailable(error)) throw listingReadFailure(error);
+      const standing = await standingOfGateway(signal);
+      if (standing.kind === 'given-up') throw gatewayGivenUp(standing.state);
+      return undefined;
     }
   };
 
   const admittedTermsOf = async (session: Session, request: RunTermsRequest, signal: AbortSignal): Promise<RunTerms> => {
     await sessionSettingsOf(session.cwd, signal);
-    const { views } = await gatewayListing(signal);
-    const sessionModel = resolveStoredModelRef(storedModelRef(session.model), views);
-    if (sessionModel === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
+    const listing = await listingUnlessRestarting(signal);
+    const sessionModel = listing === undefined ? undefined : resolveStoredModelRef(storedModelRef(session.model), listing.views);
+    if (listing !== undefined && sessionModel === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
     const { delegation } = deps;
     const terms = await runTermsOf({
       request,
       defaults: deps.defaults,
       settings: delegation === undefined ? {} : await settingsThrough(() => delegation.settings(signal)),
       ...(delegation === undefined ? {} : { project: () => projectMandateOf(delegation, session.cwd, signal) }),
-      billing: async () => (delegation === undefined ? { metered: false, priced: false } : delegation.chainBilling(sessionModel.canon, signal)),
+      billing: async () => {
+        if (sessionModel === undefined) throw pricesWhileRestarting();
+        if (delegation === undefined) return { metered: false, priced: false };
+        return delegation.chainBilling(sessionModel.canon, signal);
+      },
     });
     await refuseDeniedConditions(session, terms.mandate, signal);
+    await refuseRefutedMandate(session, terms.mandate, signal);
     return terms;
   };
 
@@ -502,8 +561,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
     const idempotencyKey = parseIdempotencyKey(context.req.header('idempotency-key') ?? null);
-    const parsed = await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes);
+    const parsed = await readJson(context.req.raw, JSON_MEDIA_TYPES, PROMPT_BODY_MAX_BYTES);
     const body = validateBody<CreateRunBody>('CreateRunRequest', parsed);
+    refuseOversizeImages(body.images);
     const idempotency = idempotencyKey === undefined ? undefined : { idempotencyKey, requestDigest: sha256Hex(canonicalJson(parsed)) };
     const replay = async (): Promise<Response | undefined> => {
       const found = idempotency === undefined ? undefined : store.findRunByIdempotencyKey(session.id, idempotency.idempotencyKey);
@@ -584,7 +644,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
     refuseRunStartedByInbox(session);
-    const body = validateBody<AddInboxBody>('AddInboxRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    const body = validateBody<AddInboxBody>('AddInboxRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, PROMPT_BODY_MAX_BYTES));
+    refuseOversizeImages(body.images);
     await requireImageInput(session, body.images, context.req.raw.signal);
     const terms = await admittedTermsOf(session, {}, context.req.raw.signal);
     refuseRunStartedByInbox(session);
@@ -810,9 +871,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     modelCapabilities: deps.modelCapabilities,
     maxBodyBytes: deps.maxBodyBytes,
     refuseWhileRetiring,
+    policyVerification: deps.policyVerification,
   });
   registerMarkerRoutes(route, { markerDirectories: deps.ignorableMarkerDirectories, owners: deps.markerOwners, files: deps.files });
-  registerUserShellRoutes(route, { store, userInput: deps.userInput, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
+  registerUserShellRoutes(route, { store, userInput: deps.userInput, userCommands: deps.userCommands, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
   registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal, refuseWhileRetiring });
 
   app.notFound(() => errorResponse(notFound('no such route')));
@@ -820,6 +882,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (isAbortOf(error, context.req.raw.signal)) return new Response(null, { status: CLIENT_CLOSED_REQUEST_STATUS });
     if (error instanceof ApiError) return errorResponse(error);
     if (error instanceof JournalThreadError) return errorResponse(contributionUnavailable(error.message));
+    if (error instanceof GatewayRequestError && error.status >= 400 && error.status < 600) return errorResponse(gatewayAnswer({ status: error.status, type: error.type, code: error.code, message: error.message }));
     deps.onError(error);
     return internalErrorResponse();
   });

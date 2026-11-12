@@ -1,5 +1,6 @@
 import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
+import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import {
   LOCK_WATCH_INTERVAL_MS,
   ORPHAN_POLL_MS,
@@ -15,7 +16,6 @@ import {
   supervisorStartBoundMs,
 } from '@momonga/supervisor';
 import { CLEANUP_KILL_DEADLINE_MS } from '@momonga/testkit';
-import { VERIFY_BUDGET_MS } from '../../packages/cli/src/commands/policy.ts';
 import { daemonReadyBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
 import { REFLECTION_PICKUP_BOUND_MS, reflectionAttemptsBoundMs } from '../../packages/runtime/src/memory/reflection-bound.ts';
 import { RUNTIME_DEFAULTS } from '../../packages/runtime/src/process/defaults.ts';
@@ -74,7 +74,7 @@ export const e2eTestTimeoutMs = (...sequentialBoundsMs: readonly number[]): numb
 export const E2E_LONGEST_WAIT_MS = Math.max(...Object.values(E2E_TEST_WAIT_BOUNDS_MS));
 export const E2E_TEST_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_LONGEST_WAIT_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 export const E2E_SOLVER_LOAD_ALLOWANCE_MS = STARTUP_TIMEOUT_MS + E2E_MARGIN_MS;
-export const policyVerifyBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_SOLVER_LOAD_ALLOWANCE_MS + VERIFY_BUDGET_MS;
+export const policyVerifyBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_SOLVER_LOAD_ALLOWANCE_MS + RULE_VERIFY_BUDGET_MS;
 export const newerClientRunBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_RUN_COMPLETED_BOUND_MS;
 export const UNTIL_DEFAULT_INTERVAL_MS = 20;
 

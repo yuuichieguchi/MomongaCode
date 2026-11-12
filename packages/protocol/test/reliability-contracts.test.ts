@@ -130,7 +130,7 @@ describe('protocol/src/trace-attributes.ts', () => {
       runId: 'momonga.run_id',
       step: 'momonga.step',
       attempt: 'momonga.attempt',
-      retryOf: 'momonga.retry_of',
+      retryOf: 'momonga.retry_of_seq',
       billing: 'momonga.billing',
       usageSource: 'momonga.usage_source',
       target: 'momonga.target',

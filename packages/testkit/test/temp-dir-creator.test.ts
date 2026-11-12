@@ -22,7 +22,7 @@ describe('createTempDir and removeTempDir', () => {
   it('creates a home under the base of homes', async () => {
     const home = createTempDir({ asHome: true });
     try {
-      expect(path.dirname(home)).toBe(fs.realpathSync(shortTempBase(process.platform)));
+      expect(path.dirname(home)).toBe(fs.realpathSync(shortTempBase(process.platform, os.tmpdir())));
     } finally {
       await removeTempDir(home);
     }
@@ -66,7 +66,7 @@ describe('createTempDir and removeTempDir', () => {
   });
 
   it('names both bases once each for the sweep and keeps the base rule out of the index', () => {
-    expect(testTempBases()).toEqual([...new Set([fs.realpathSync(shortTempBase(process.platform)), systemTempRoot()])]);
+    expect(testTempBases()).toEqual([...new Set([fs.realpathSync(shortTempBase(process.platform, os.tmpdir())), systemTempRoot()])]);
     expect(testkit).not.toHaveProperty('tempDirBase');
   });
 });

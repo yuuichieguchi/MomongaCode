@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -223,7 +224,7 @@ describe('G1: the upstream idle bound restarts only when content arrives (audit-
       const compact = adapter.compact;
       if (compact === undefined) throw new Error('the chat completions adapter compacts');
       const startedAt = Date.now();
-      const failure = await compact.call(adapter, { model: 'upstream-model', input: REQUEST.input }, await contextOf(adapter, target)).then(
+      const failure = await compact.call(adapter, { model: 'upstream-model', input: REQUEST.input, momonga: { fence: TEST_FENCE } }, await contextOf(adapter, target)).then(
         () => undefined,
         (error: unknown) => error,
       );

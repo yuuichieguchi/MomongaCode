@@ -1,5 +1,5 @@
 import type { CallStop } from './call-stop.ts';
-import type { Awaitable, MarkerMode, Clock, FileSystem, KernelLockMechanism, NetworkScope, OutboundNetwork, PathResolver, ProcessInspector, Random } from '@momonga/foundation';
+import type { Awaitable, MarkerMode, Clock, FileSystem, KernelLockMechanism, NetworkScope, OutboundNetwork, PathResolver, ProcessInspector, Random, SandboxNetworkSetting } from '@momonga/foundation';
 import type { ShellHost } from './builtins/shell.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
@@ -111,6 +111,7 @@ export type CallOutputFit = {
 };
 
 export type ReconcileContext = SubjectContext & {
+  sandboxNetwork: SandboxNetworkSetting;
   runId: string;
   step: number;
   callId: string;
@@ -144,7 +145,7 @@ export type OperationEffectOutcome = (typeof OPERATION_EFFECT_OUTCOMES)[number];
 
 export type GateFacts = Record<string, unknown>;
 
-export type ProbeContext = Pick<ReconcileContext, 'idemKey' | 'clock' | 'deadlineAt' | 'tmpDir' | 'signal' | 'roots' | 'random' | 'files'> & Partial<Pick<ToolContext, 'sandbox' | 'sandboxPolicy'>>;
+export type ProbeContext = Pick<ReconcileContext, 'idemKey' | 'clock' | 'deadlineAt' | 'tmpDir' | 'signal' | 'roots' | 'random' | 'files' | 'sandboxNetwork'> & Partial<Pick<ToolContext, 'sandbox' | 'sandboxPolicy'>>;
 
 export type GateCall = { signal: AbortSignal; env: Readonly<Record<string, string>>; context: ProbeContext };
 

@@ -17,13 +17,15 @@ const rejectedWith = async (settings: Record<string, unknown>, fragment: string 
 
 const DEFAULT_CONTEXT = { adaptiveBudget: true, autoCompact: true, cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
 
+const ON_TOOLS = { deferral: true, conciseDescriptions: true, ripgrep: 'bundled', bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000 }, search: { timeoutMs: 60_000 }, operations: { timeoutMs: 120_000 } };
+
 describe('token settings defaults', () => {
   it('turns every context policy of the token design on', async () => {
     expect((await resolvedWith({})).context).toEqual(DEFAULT_CONTEXT);
   });
 
   it('turns tool deferral and concise descriptions on, and selects the bundled ripgrep', async () => {
-    expect((await resolvedWith({})).tools).toEqual({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
+    expect((await resolvedWith({})).tools).toEqual(ON_TOOLS);
   });
 
   it('turns reflection and repository facts on', async () => {
@@ -47,7 +49,7 @@ describe('token settings values', () => {
       observedCapacity: true,
       unboundedOutputReserve: true,
     });
-    expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
+    expect(settings.tools).toEqual(ON_TOOLS);
     expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
   });
 
@@ -57,7 +59,7 @@ describe('token settings values', () => {
     writeJson(projectSettingsPath(tree), { context: { outputFormatters: ['json'] }, tools: { conciseDescriptions: true } });
     const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toEqual({ ...DEFAULT_CONTEXT, outputFormatters: ['json'] });
-    expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
+    expect(settings.tools).toEqual(ON_TOOLS);
   });
 
   it.each([

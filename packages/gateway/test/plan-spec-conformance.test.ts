@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { AUTHORIZATION_WAIT_MS } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../src/defaults.ts';
 import { PLAN_CONFIGURATION_REFRESH_CODES, PLAN_TERMINAL_REFRESH_CODES } from '../src/plan/refresh.ts';
+import { PROFILE_ID, START_MS, errno, failingWrites, readRecord, signedIn, startHarness, toRefreshWindow } from './plan-support.ts';
+import type { Harness } from './plan-support.ts';
 
 const root = path.resolve(import.meta.dirname, '..', '..', '..');
 const constants = JSON.parse(fs.readFileSync(path.join(root, 'packages', 'protocol', 'src', 'plan-constants.json'), 'utf8')) as {
@@ -84,3 +86,38 @@ describe('M8: no synchronous call under gateway/src/plan', () => {
     for (const name of sources) expect(fs.readFileSync(path.join(planSource, name), 'utf8'), name).not.toMatch(/[A-Za-z]Sync\s*\(/);
   });
 });
+
+describe('a transient persist failure of a refresh leaves the record as it was and never asks for a sign-in, as PlanCredential.tla states (TransientNeverSignsOut)', () => {
+  const credentialSpec = fs.readFileSync(path.join(root, 'specs', 'tla', 'PlanCredential.tla'), 'utf8');
+  const harnesses: Harness[] = [];
+
+  afterEach(async () => {
+    await Promise.all(harnesses.splice(0).map((h) => h.close()));
+  });
+
+  it('the refreshed record fails once with a transient error; the stored record keeps its generation and the account is not needs_sign_in', async () => {
+    expect(credentialSpec).toMatch(/^TransientNeverSignsOut ==/m);
+    const h = await startHarness();
+    harnesses.push(h);
+    await signedIn(h, 'work');
+    const installed = (await readRecord(h, 'work'))?.['generation'] as number;
+    let failures = 0;
+    const store = failingWrites(h.store, (value) => {
+      const record = JSON.parse(value) as { generation?: number; pendingRefresh?: unknown };
+      if (failures > 0 || record.generation !== installed + 1 || record.pendingRefresh !== undefined) return undefined;
+      failures += 1;
+      return errno('EBUSY');
+    });
+    const work = { profile: PROFILE_ID, account: 'work' };
+    await h.reopen({ accounts: [work], store });
+    const source = h.sessions.authSource(work);
+    toRefreshWindow(h, START_MS);
+    await source.read(new AbortController().signal);
+    expect(failures).toBe(1);
+    const stored = await readRecord(h, 'work');
+    expect(stored?.['generation']).toBe(installed);
+    expect(stored?.['state']).not.toBe('needs_sign_in');
+    expect(source.status().state).not.toBe('needs_sign_in');
+  });
+});
+

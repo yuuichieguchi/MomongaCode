@@ -50,7 +50,6 @@ const shellPort = () => {
   const entry = async (): Promise<number> => 0;
   return createShellPort({
     ports,
-    policyVerify: () => ({}) as never,
     entries: { supervise: entry, gateway: entry, runtime: entry },
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

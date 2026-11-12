@@ -357,18 +357,28 @@ export const readDb = <T>(dbPath: string, sql: string, ...params: (string | numb
 export const runStatus = (temp: RunHome, runId: string): string | undefined =>
   readDb<{ status: string }>(temp.paths.databases.runtime, 'SELECT status FROM runs WHERE id = ?', runId)[0]?.status;
 
-export const waitForStatus = async (temp: RunHome, runId: string, statuses: readonly string[], description = `run ${runId} to reach ${statuses.join('/')}`): Promise<string> => {
+export const waitForStatus = async (
+  temp: RunHome,
+  runId: string,
+  statuses: readonly string[],
+  description = `run ${runId} to reach ${statuses.join('/')}`,
+  boundMs = CONDITION_BOUND_MS,
+): Promise<string> => {
   let seen: string | undefined;
-  await waitForCondition(() => {
-    seen = runStatus(temp, runId);
-    return seen !== undefined && statuses.includes(seen);
-  }, description);
+  await waitForCondition(
+    () => {
+      seen = runStatus(temp, runId);
+      return seen !== undefined && statuses.includes(seen);
+    },
+    description,
+    boundMs,
+  );
   return seen as string;
 };
 
 const CONDITION_BOUND_MS = 30_000;
 
-export const waitForCondition = (predicate: () => boolean, description: string): Promise<void> => pollUntil(predicate, { description, boundMs: CONDITION_BOUND_MS });
+export const waitForCondition = (predicate: () => boolean, description: string, boundMs = CONDITION_BOUND_MS): Promise<void> => pollUntil(predicate, { description, boundMs });
 
 export const settledState = async (promise: Promise<unknown>): Promise<'settled' | 'pending'> => {
   let settled = false;

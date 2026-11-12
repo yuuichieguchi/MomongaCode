@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { nodeFileSystemSync } from '../node-file-system.ts';
 import { isErrno } from './inspector-types.ts';
 import { isPidDirectoryName, parseProcStat } from './linux-parsers.ts';
 
@@ -16,7 +16,7 @@ const PROC_ROOT = '/proc';
 const procStatOf = (pid: number): MemberStat | undefined => {
   let content: string;
   try {
-    content = fs.readFileSync(`${PROC_ROOT}/${pid}/stat`, 'utf8');
+    content = nodeFileSystemSync.readTextFileSync(`${PROC_ROOT}/${pid}/stat`);
   } catch (error) {
     if (isErrno(error, 'ENOENT', 'ESRCH')) return undefined;
     throw error;
@@ -27,7 +27,7 @@ const procStatOf = (pid: number): MemberStat | undefined => {
 
 export const procGroupMembers: GroupMembersReader = {
   members: (pgid) =>
-    fs
+    nodeFileSystemSync
       .readdirSync(PROC_ROOT)
       .filter(isPidDirectoryName)
       .flatMap((name) => {

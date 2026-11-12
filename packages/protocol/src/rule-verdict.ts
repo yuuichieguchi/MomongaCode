@@ -1,3 +1,5 @@
+import type { PermissionMode } from './run-types.ts';
+
 export const POLICY_REFUTED_CODE = 'policy_refuted';
 
 export const POLICY_VERDICT_NOTICE_CODE = 'policy_verdict';
@@ -36,9 +38,9 @@ export type RuleVerdict = {
   phases?: RuleVerdictPhase[];
 };
 
-export type PutRuleVerdictRequest = { verdict: RuleVerdict };
+export type PolicyVerifyRequest = { project: string; mode?: PermissionMode; secrets: string[]; mandate?: string };
 
-export const RULE_FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
+export type PolicyVerifyResponse = { fingerprint: string; stored: boolean; exitCode: number; text: string; findings: Record<string, unknown> };
 
 export type PinnedRuleVerdict = RuleVerdict & { fingerprint: string };
 

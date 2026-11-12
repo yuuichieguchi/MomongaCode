@@ -97,7 +97,7 @@ export type TempDirOptions = { asHome?: boolean; parent?: string };
 
 export const systemTempRoot = (): string => fs.realpathSync(os.tmpdir());
 
-const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform) : systemTempRoot());
+const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform, os.tmpdir()) : systemTempRoot());
 
 export const testTempBases = (): string[] => [...new Set([tempDirBase(true), tempDirBase(false)].map((base) => fs.realpathSync(base)))];
 

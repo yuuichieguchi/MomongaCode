@@ -1,4 +1,4 @@
-import { DEFAULT_DIALECT_ID, DEFAULT_SYSTEM_ROLE, DEFAULT_TOOL_PLACEMENT, acceptedReasoningEfforts, clampReasoningEffort, compactionSummaryMessage, outputTokensFor } from '@momonga/protocol';
+import { DEFAULT_DIALECT_ID, DEFAULT_SYSTEM_ROLE, DEFAULT_TOOL_PLACEMENT, acceptedReasoningEfforts, clampReasoningEffort, compactionSummaryMessage, outputTokensFor, strictPerToolOf } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, Capabilities, ContentPart, DialectId, FunctionTool, InputItem, OutputTokenCapabilities, ReasoningEffort, ReasoningOrigin, SystemRole, ToolPlacement } from '@momonga/protocol';
 import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
 import type { UserDialects } from '../../dialect/choice.ts';
@@ -124,11 +124,12 @@ export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOri
   const dialect = resolveDialect(rendering.schemaDialect ?? DEFAULT_DIALECT_ID, rendering.userDialects ?? NO_USER_DIALECTS);
   const tools = (request.tools ?? []).map((tool): FunctionTool => {
     const { parameters: _parameters, ...rest } = tool;
-    const { schema } = renderToolParameters(tool, dialect, rendering.ledger);
-    return schema === undefined ? rest : { ...rest, parameters: schema as NonNullable<FunctionTool['parameters']> };
+    const { schema, strict } = renderToolParameters(tool, dialect, rendering.ledger);
+    const flagged = strictPerToolOf(dialect.definition) ? { ...rest, strict } : rest;
+    return schema === undefined ? flagged : { ...flagged, parameters: schema as NonNullable<FunctionTool['parameters']> };
   });
   const systemRole = rendering.systemRole ?? DEFAULT_SYSTEM_ROLE;
-  const input = readableHistoryOf(request.input).flatMap((item) => itemOf(item, origin, systemRole) ?? []);
+  const input = readableHistoryOf(request.input, request.fence).flatMap((item) => itemOf(item, origin, systemRole) ?? []);
   const additional = tools.length > 0 && (rendering.toolPlacement ?? DEFAULT_TOOL_PLACEMENT) === 'additional_tools';
   return {
     ...request.unknownFields,

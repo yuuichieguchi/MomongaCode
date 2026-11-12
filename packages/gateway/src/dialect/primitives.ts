@@ -1,11 +1,11 @@
-import type { DialectFillType, DialectRule } from '@momonga/protocol';
+import type { DialectRule } from '@momonga/protocol';
 import { dropKeys } from './drop.ts';
 import { inlineRefs } from './inline-refs.ts';
 import { nullableOptional } from './nullable-optional.ts';
 import { isRecord, jsonTypeOf, typeIncludes } from './schema.ts';
 import type { JsonObject } from './schema.ts';
 import { constAsEnum, splitEnum, splitTypeArray } from './split.ts';
-import { fail, guardWrittenKeys, hasActiveUneval, reportNarrowing, requirePositive } from './state.ts';
+import { FreeFormObject, fail, guardWrittenKeys, hasActiveUneval, reportNarrowing, requirePositive } from './state.ts';
 import type { NodeContext, RenderState } from './state.ts';
 
 const typeOfValues = (values: readonly unknown[]): string | undefined => {
@@ -22,7 +22,7 @@ const commonBranchType = (branches: unknown): string | undefined => {
   return first !== undefined && types.every((type) => type === first) ? first : undefined;
 };
 
-const fillType = (state: RenderState, node: JsonObject, context: NodeContext, fallback: DialectFillType): JsonObject => {
+const fillType = (state: RenderState, node: JsonObject, context: NodeContext, rule: Extract<DialectRule, { op: 'fill-type' }>): JsonObject => {
   if ('type' in node) return node;
   let type: string | undefined;
   if ('const' in node) type = typeOfValues([node['const']]);
@@ -33,13 +33,13 @@ const fillType = (state: RenderState, node: JsonObject, context: NodeContext, fa
   requirePositive(state, context, 'fill-type');
   guardWrittenKeys(state, ['type'], 'fill-type');
   if (type === undefined) {
-    reportNarrowing(state, context);
-    type = fallback;
+    reportNarrowing(state, context, rule);
+    type = rule.fallback;
   }
   return { ...node, type };
 };
 
-const requireAll = (state: RenderState, node: JsonObject, context: NodeContext): JsonObject => {
+const requireAll = (state: RenderState, node: JsonObject, context: NodeContext, rule: DialectRule): JsonObject => {
   const properties = node['properties'];
   if (!isRecord(properties)) return node;
   const existing = Array.isArray(node['required']) ? node['required'] : [];
@@ -47,29 +47,41 @@ const requireAll = (state: RenderState, node: JsonObject, context: NodeContext):
   if (added.length === 0) return node;
   requirePositive(state, context, 'require-all');
   guardWrittenKeys(state, ['required'], 'require-all');
+  if (added.some((name) => !state.wrappers.has(properties[name] as object))) reportNarrowing(state, context, rule);
   return { ...node, required: [...existing, ...added] };
 };
 
-const closeObject = (state: RenderState, node: JsonObject, context: NodeContext, overwrite: 'never' | 'non-boolean' | 'always'): JsonObject => {
+const namesNoProperty = (state: RenderState, node: JsonObject): boolean => {
+  const properties = node['properties'];
+  return !isRecord(properties) || state.writtenProperties.has(node);
+};
+
+const closeObject = (state: RenderState, node: JsonObject, context: NodeContext, rule: Extract<DialectRule, { op: 'ensure-key' }>): JsonObject => {
+  const overwrite = rule.overwrite ?? 'never';
   const current = node['additionalProperties'];
   const replaces = current === undefined || (overwrite === 'non-boolean' && isRecord(current)) || (overwrite === 'always' && current !== false);
   if (!replaces) return node;
   requirePositive(state, context, 'ensure-key additionalProperties false');
+  const freeForm = !context.absent && namesNoProperty(state, node);
+  if (freeForm && overwrite === 'always') throw new FreeFormObject(context.origin);
   guardWrittenKeys(state, ['additionalProperties'], 'ensure-key');
-  if (isRecord(current)) reportNarrowing(state, context);
+  if (freeForm || current !== undefined) reportNarrowing(state, context, rule);
   return { ...node, additionalProperties: false };
 };
 
 const ensureKey = (state: RenderState, node: JsonObject, rule: Extract<DialectRule, { op: 'ensure-key' }>, context: NodeContext): JsonObject => {
   const { key, value } = rule;
-  if (key === 'additionalProperties' && value === false) return closeObject(state, node, context, rule.overwrite ?? 'never');
+  if (key === 'additionalProperties' && value === false) return closeObject(state, node, context, rule);
   if (key in node) return node;
   if (key === 'additionalProperties' && hasActiveUneval(state, context, node)) {
     return fail(state, 'dependency', context.origin, 'additionalProperties would evaluate properties that unevaluatedProperties checks');
   }
   guardWrittenKeys(state, [key], 'ensure-key');
-  if (key === 'properties' && typeIncludes(node, 'object') && node['additionalProperties'] !== false) reportNarrowing(state, context);
-  return { ...node, [key]: structuredClone(value) };
+  if (key !== 'properties') return { ...node, [key]: structuredClone(value) };
+  if (typeIncludes(node, 'object') && node['additionalProperties'] !== false) reportNarrowing(state, context, rule);
+  const written = { ...node, [key]: structuredClone(value) };
+  state.writtenProperties.add(written);
+  return written;
 };
 
 const declareRequired = (state: RenderState, node: JsonObject, context: NodeContext): JsonObject => {
@@ -114,7 +126,7 @@ export const applyRule = (state: RenderState, rule: DialectRule, node: JsonObjec
     case 'drop':
       return dropKeys(state, node, rule.keys, context);
     case 'fill-type':
-      return fillType(state, node, context, rule.fallback);
+      return fillType(state, node, context, rule);
     case 'split-enum':
       return splitEnum(state, node, context);
     case 'split-type-array':
@@ -132,7 +144,7 @@ export const applyRule = (state: RenderState, rule: DialectRule, node: JsonObjec
       guardWrittenKeys(state, [rule.key], 'property-order');
       return { ...node, [rule.key]: Object.keys(node['properties']) };
     case 'require-all':
-      return requireAll(state, node, context);
+      return requireAll(state, node, context, rule);
     case 'declare-required':
       return declareRequired(state, node, context);
     case 'empty-parameters':

@@ -4,7 +4,6 @@ import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
 import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, REPORT_ANOMALY_CAUSES, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
-import { RULE_NOTE_KINDS, RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { PLAN_LABEL_PATTERN } from './plan-account.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
@@ -120,6 +119,16 @@ export const base64ByteLength = (data: string): number => {
   const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
   return Math.floor(((data.length - padding) * 3) / 4);
 };
+
+export const PROMPT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+const JSON_ESCAPE_WIDTH = 6;
+
+const PROMPT_ENVELOPE_BYTES = 64 * 1024;
+
+const base64LengthOf = (bytes: number): number => Math.ceil(bytes / 3) * 4;
+
+export const PROMPT_BODY_MAX_BYTES = PROMPT_TEXT_MAX_CHARS * JSON_ESCAPE_WIDTH + base64LengthOf(PROMPT_IMAGE_MAX_BYTES) + PROMPT_ENVELOPE_BYTES;
 
 const elicitationRequest = {
   oneOf: [
@@ -1281,6 +1290,8 @@ export type McpServerView = {
   detail?: string;
   authorization?: McpAuthorizationView;
   approval?: { digest: string; changed: boolean };
+  stderrTail?: string;
+  exit?: { code: number | null; signal: string | null };
 };
 
 export type JobView = {
@@ -1553,6 +1564,8 @@ export const RUN_API_SCHEMAS = {
               detail: string,
               authorization: { type: 'object' },
               approval: closed({ digest: string, changed: { type: 'boolean' } }, ['digest', 'changed']),
+              stderrTail: string,
+              exit: closed({ code: nullable(integer), signal: nullable(string) }, ['code', 'signal']),
             },
             ['name', 'scope', 'transport', 'auth'],
           ),
@@ -1782,35 +1795,9 @@ export const RUN_API_SCHEMAS = {
   RuleAddResponse: root(closed({ fact: governingFactView, size: { type: 'array', items: ruleSize }, warnings: { type: 'array', items: string } }, ['fact', 'size', 'warnings'])),
   RuleResponse: root(closed({ fact: governingFactView }, ['fact'])),
   RulesResponse: root(closed({ facts: { type: 'array', items: governingFactView } }, ['facts'])),
-  PutRuleVerdictRequest: root(
-    closed(
-      {
-        verdict: closed(
-          {
-            verdict: enumOf(RULE_VERDICTS),
-            solver: string,
-            refuted: { type: 'array', items: closed({ property: string, subject: string, message: string, counterexample: string }, ['property', 'subject', 'message']) },
-            notes: {
-              type: 'array',
-              items: closed(
-                {
-                  kind: enumOf(RULE_NOTE_KINDS),
-                  rules: { type: 'array', items: closed({ text: string, origin: string, source: string }, ['text', 'origin', 'source']) },
-                  modes: { type: 'array', items: string },
-                  message: string,
-                },
-                ['kind', 'rules', 'modes', 'message'],
-              ),
-            },
-            unknown: { type: 'array', items: closed({ property: string, reason: string }, ['property', 'reason']) },
-            notProved: { type: 'array', items: string },
-            phases: { type: 'array', items: closed({ phase: string, ms: { type: 'number' } }, ['phase', 'ms']) },
-          },
-          ['verdict', 'solver', 'refuted', 'unknown', 'notProved'],
-        ),
-      },
-      ['verdict'],
-    ),
+  PolicyVerifyRequest: root(closed({ project: string, mode: permissionMode, secrets: { type: 'array', items: string }, mandate: string }, ['project', 'secrets'])),
+  PolicyVerifyResponse: root(
+    closed({ fingerprint: string, stored: boolean, exitCode: integer, text: string, findings: { type: 'object', required: ['exitCode'] } }, ['fingerprint', 'stored', 'exitCode', 'text', 'findings']),
   ),
   PolicyGovernanceResponse: root(
     closed(

@@ -1,0 +1,93 @@
+import { describe, expect, it } from 'vitest';
+import { maxOutputTokensFor } from '@momonga/protocol';
+import type { MomongaModelList } from '@momonga/protocol';
+import { listModels, modelDescriber, runModelsForm } from '../src/commands/models.ts';
+import type { FormInput } from '../src/commands/models.ts';
+import { formatTokens } from '../src/format-tokens.ts';
+import { OLLAMA_ADDRESS, documentOf, homeWith, listingOf, ollamaFound, shellOf } from './models-shell-harness.ts';
+
+const input = (args: readonly string[], options: FormInput['options'] = {}): FormInput => ({ args: [...args], options });
+
+const SHOW_ANSWERS: Readonly<Record<string, unknown>> = {
+  'long:7b': { capabilities: ['completion', 'tools'], model_info: { 'general.architecture': 'llama', 'llama.context_length': 131072 } },
+  'bare:3b': { capabilities: ['completion'] },
+};
+
+const showFetch = async (url: string, init: { method: string; body?: string }) => {
+  if (init.method !== 'POST' || !url.endsWith('/api/show')) return { ok: false, body: null };
+  const { model } = JSON.parse(init.body ?? '{}') as { model: string };
+  const text = JSON.stringify(SHOW_ANSWERS[model]);
+  return {
+    ok: true,
+    body: (async function* () {
+      yield new TextEncoder().encode(text);
+    })(),
+  };
+};
+
+const FOUND = () => [ollamaFound(OLLAMA_ADDRESS, ['long:7b', 'bare:3b'])];
+
+const connectionModels = (file: string): unknown[] => {
+  const models = documentOf(file)['models'] as { connections: { models: unknown[] }[] };
+  return models.connections.flatMap((connection) => connection.models);
+};
+
+describe('momonga models add writes a complete entry from what the server reports (cli-commands-C07)', () => {
+  it('reads the window of the picked model from the server and writes its capabilities', async (context) => {
+    const home = homeWith(context, undefined);
+    const harness = shellOf(home, { found: FOUND, describe: modelDescriber(showFetch) });
+
+    expect(await runModelsForm(harness.shell, 'add', input([], { model: 'long:7b', yes: true }))).toBe(0);
+
+    expect(connectionModels(home.settingsFile)).toEqual([{ id: 'long:7b', capabilities: { contextWindow: 131072, maxOutputTokens: maxOutputTokensFor(131072) } }]);
+  });
+
+  it('refuses a model whose window no one reports, naming --window, and writes nothing', async (context) => {
+    const home = homeWith(context, undefined);
+    const harness = shellOf(home, { found: FOUND, describe: modelDescriber(showFetch) });
+
+    expect(await runModelsForm(harness.shell, 'add', input([], { model: 'bare:3b', yes: true }))).toBe(1);
+
+    expect(harness.err()).toContain('momonga models add --model bare:3b --window <tokens>');
+  });
+
+  it('lists the models of each found server with their names when no model is named', async (context) => {
+    const harness = shellOf(homeWith(context, undefined), { found: FOUND, describe: modelDescriber(showFetch) });
+
+    expect(await runModelsForm(harness.shell, 'add', input([]))).toBe(2);
+
+    expect(harness.out()).toContain('long:7b');
+    expect(harness.out()).toContain('bare:3b');
+  });
+
+  it('refuses by name a flag that a plan model cannot use', async (context) => {
+    const harness = shellOf(homeWith(context, undefined));
+
+    expect(await runModelsForm(harness.shell, 'add', input([], { plan: 'chatgpt', model: 'gpt-5.5', address: 'http://127.0.0.1:9', service: 'x' }))).toBe(2);
+
+    expect(harness.err()).toContain('--address');
+    expect(harness.err()).toContain('--service');
+  });
+
+  it('states the command that adds a model at an address where no server answered', async (context) => {
+    const harness = shellOf(homeWith(context, undefined));
+
+    expect(await runModelsForm(harness.shell, 'add', input([], { address: 'http://127.0.0.1:9' }))).toBe(1);
+
+    expect(harness.err()).toContain('momonga models add --address http://127.0.0.1:9 --api <api> --model <id>');
+    expect(harness.err()).not.toContain('?');
+  });
+
+  it('shows the window a model is configured with while the gateway measures it', async (context) => {
+    const home = homeWith(context, { models: { connections: [{ adapter: 'ollama', baseUrl: OLLAMA_ADDRESS, models: [{ id: 'qwen3.8:27b', capabilities: { contextWindow: 32768, maxOutputTokens: 8192 } }] }] } });
+    const measuring = { toolCalling: { state: 'probing', message: 'measuring', retryAfterSeconds: 120 }, source: 'unprobed' } as const;
+    const listed = listingOf(home.home);
+    const listing: MomongaModelList = { ...listed, data: listed.data.map((entry) => ({ ...entry, capabilities: measuring })) };
+    const harness = shellOf(home, { listing: () => listing });
+
+    await listModels(harness.shell, { json: false });
+
+    expect(harness.out()).toContain(`${formatTokens(32768)} tokens`);
+    expect(harness.out()).not.toContain('window not known');
+  });
+});
