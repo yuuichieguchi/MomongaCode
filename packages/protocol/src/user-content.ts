@@ -9,14 +9,9 @@ export const USER_SHELL_TAG = 'user_shell_command';
 
 export const sessionFenceOf = (session: { fenceNonce: string }): string => session.fenceNonce;
 
-const BOUNDARY_BREAK = '\u200b';
+export const FENCE_BOUNDARY_MARKER = '[fence-boundary]';
 
-const withoutBoundary = (text: string, boundary: string): string => {
-  const broken = `${boundary.slice(0, 1)}${BOUNDARY_BREAK}${boundary.slice(1)}`;
-  let escaped = text;
-  while (escaped.includes(boundary)) escaped = escaped.replaceAll(boundary, broken);
-  return escaped;
-};
+const withoutBoundary = (text: string, boundary: string): string => text.replaceAll(boundary, FENCE_BOUNDARY_MARKER);
 
 export const fenceUntrusted = (tag: string, attributes: Readonly<Record<string, string>>, text: string, boundary: string): string => {
   const named = Object.entries(attributes).map(([name, value]) => ` ${name}=${JSON.stringify(value)}`).join('');

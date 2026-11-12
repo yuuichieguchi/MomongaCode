@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TOOL_OUTPUT_TAG } from '@momonga/protocol';
+import { FENCE_BOUNDARY_MARKER, TOOL_OUTPUT_TAG } from '@momonga/protocol';
 import type { AdapterInputItem } from '@momonga/protocol';
 import { fenceBoundaryIn } from '@momonga/testkit';
 import { buildConstrainedBody } from '../../src/adapters/chat-completions/constrained-request.ts';
@@ -28,6 +28,7 @@ describe('a forged closing tag cannot end the fence', () => {
     expect(fenceBoundaryIn(block)).toBe(FENCE);
     expect(preamble).toContain(`boundary="${FENCE}"`);
     expect(closingsIn(block, TOOL_OUTPUT_TAG, FENCE)).toBe(1);
+    expect(block).toContain(FENCE_BOUNDARY_MARKER);
     expect(block.endsWith(`</${TOOL_OUTPUT_TAG} boundary="${FENCE}">`)).toBe(true);
   });
 
