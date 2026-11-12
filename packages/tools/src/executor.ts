@@ -232,9 +232,20 @@ type RecoveryPlan = {
 
 type RunPlan = ExecutionPlan | RecoveryPlan;
 
-type Gate = { subject: PermissionSubject; access: BatchAccess; facts?: GateFacts };
+type Gate = { subject: PermissionSubject; access: BatchAccess; facts?: GateFacts; decidedPaths?: readonly string[] };
 
-type GateTarget = { input: unknown; subject: PermissionSubject; facts?: GateFacts; hookInput?: unknown; basis?: ApprovalBasis };
+type GateTarget = { input: unknown; subject: PermissionSubject; facts?: GateFacts; hookInput?: unknown; basis?: ApprovalBasis; decidedPaths?: readonly string[] };
+
+const decidedReadPathsOf = async (subject: PermissionSubject, scope: SubjectContext): Promise<readonly string[] | undefined> => {
+  if (subject.kind !== 'path' || subject.access !== 'read') return undefined;
+  const resolved: string[] = [];
+  for (const candidate of subject.paths) {
+    const resolution = await scope.paths.resolveCanonicalPath(candidate);
+    if (!resolution.ok) return undefined;
+    resolved.push(resolution.path);
+  }
+  return resolved;
+};
 
 const allowBasisOf = (decision: Decision): ApprovalBasis => {
   if (decision.basis === undefined) throw new Error(`an allow decision from ${decision.source} carries no basis`);
@@ -865,6 +876,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       }
     }
     const { subject, input } = target;
+    const decidedPaths = await decidedReadPathsOf(subject, subjectContextOf(batch));
+    if (decidedPaths === undefined) delete target.decidedPaths;
+    else target.decidedPaths = decidedPaths;
     const requested = requestedNetworkOf(subject);
     const admission = callNetworkOf({ requested, granted: requested, sandbox: batch.sandbox.kind, unkeptHosts: 'refuse' });
     if (admission.kind === 'refused') return deniedOutcome(call.callId, { source: 'sandbox', reason: admission.reason });
@@ -1029,7 +1043,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         call,
         tool,
         input: target.input,
-        gate: { subject: target.subject, access, ...(target.facts === undefined ? {} : { facts: target.facts }) },
+        gate: { subject: target.subject, access, ...(target.facts === undefined ? {} : { facts: target.facts }), ...(target.decidedPaths === undefined ? {} : { decidedPaths: target.decidedPaths }) },
         key,
         batch,
         gateRan: recovered === undefined,
@@ -1505,6 +1519,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       input: plan.input,
       subject: gate.subject,
       ...(gate.facts === undefined ? {} : { facts: gate.facts }),
+      ...(gate.decidedPaths === undefined ? {} : { decidedPaths: gate.decidedPaths }),
       ...(plan.hookInput === undefined ? {} : { hookInput: plan.hookInput }),
       ...(plan.basis === undefined ? {} : { basis: plan.basis }),
     };
@@ -1604,6 +1619,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const executeWithMarker = async (marker: { handle: MarkerHandle; settle: MarkerSettle } | undefined, reconciled: ReconcileResult['outcome'] | undefined, resume: ToolResume | undefined): Promise<CallOutcome> => {
         const executionCtx: ToolContext = {
           ...contextForBasis(),
+          ...(target.decidedPaths === undefined ? {} : { decidedPaths: target.decidedPaths }),
           outputFit: fitOfCall(batch.outputFit, call),
           ...(resume === undefined ? {} : { resume }),
           ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle, spawnMarker: scope.spawnMarker }),

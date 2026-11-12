@@ -84,6 +84,7 @@ export type BashLimits = {
 export type ToolLimits = { bash: BashLimits; search: { timeoutMs: number }; operations: { timeoutMs: number } };
 
 export type ToolContext = ReconcileContext & {
+  decidedPaths?: readonly string[];
   limits: ToolLimits;
   expired: AbortSignal;
   stopForTimeout(reason?: string): void;

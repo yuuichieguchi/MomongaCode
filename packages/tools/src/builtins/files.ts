@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { OPEN_FLAGS, sha256Hex, writeFileAtomically as writeFileAtomicallyThroughLock } from '@momonga/foundation';
-import type { AtomicWriteFileSystem, FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
+import type { AtomicWriteFileSystem, FileSystem, KernelLockMechanism, Random, ReadHandle } from '@momonga/foundation';
 import type { ToolSessionState } from '../types.ts';
 import { ToolExecutionError } from '../types.ts';
 import { MAX_LINE_CHARS } from './format.ts';
@@ -27,6 +27,33 @@ export const statIfExists = async (files: Pick<FileSystem, 'stat'>, file: string
 export const looksBinary = async (files: Pick<FileSystem, 'readStart'>, file: string): Promise<boolean> => (await files.readStart(file, BINARY_SNIFF_BYTES)).includes(0);
 
 type PagedFiles = Pick<FileSystem, 'openRead'>;
+
+const LINK_CODES: readonly string[] = ['ELOOP', 'EMLINK', 'EFTYPE'];
+
+export const isLinkRefusal = (error: unknown): boolean => LINK_CODES.includes(String((error as NodeJS.ErrnoException).code));
+
+export const openWithoutFollowing = (files: PagedFiles, file: string): Promise<ReadHandle> => files.openRead(file, OPEN_FLAGS.readOnly | OPEN_FLAGS.noFollow | OPEN_FLAGS.nonBlocking);
+
+export const filesOfHandle = (handle: ReadHandle): PagedFiles => ({
+  openRead: async () => {
+    let position = 0;
+    return {
+      ...handle,
+      read: async (page) => {
+        const bytesRead = await handle.readAt(page, position);
+        position += bytesRead;
+        return bytesRead;
+      },
+      close: async () => undefined,
+    };
+  },
+});
+
+export const handleLooksBinary = async (handle: ReadHandle): Promise<boolean> => {
+  const start = Buffer.alloc(BINARY_SNIFF_BYTES);
+  const bytesRead = await handle.readAt(start, 0);
+  return start.subarray(0, bytesRead).includes(0);
+};
 
 async function* pagesOf(files: PagedFiles, file: string): AsyncGenerator<Buffer> {
   const handle = await files.openRead(file, OPEN_FLAGS.readOnly);
