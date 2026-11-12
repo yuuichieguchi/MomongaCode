@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { STARTUP_TIMEOUT_MS, acquireProcessLock, momongaPaths } from '@momonga/foundation';
+import { acquireProcessLock, momongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { registerCleanup, withTempDir, firstGeneration, testKernelLock, afterMicrotasks, waitFor } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
-import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon, stopDaemon, stopWaitBoundMs } from '../src/daemon/ensure-daemon.ts';
+import { STOP_WAIT_WHEN_UNKNOWN_MS, daemonReadyBoundMs, ensureDaemon, stopDaemon, stopWaitBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
@@ -93,7 +93,7 @@ describe('daemon stop carries the values it read', () => {
     const { paths, ports, start } = await setup(context);
     await start({ version: VERSION, phase: 'draining', stopBoundMs: 98_765 });
     const timeout = await timeoutOf(ensureDaemon(ports, paths));
-    expect(timeout.boundMs).toBe(STARTUP_TIMEOUT_MS);
+    expect(timeout.boundMs).toBe(await daemonReadyBoundMs());
     expect(timeout.description).toBe('the daemon to become ready');
   });
 
