@@ -18,7 +18,7 @@ const refusedBaseUrl = async (): Promise<string> => {
   return `http://127.0.0.1:${port}/v1`;
 };
 
-const SENDS_PER_BUDGET = 18;
+const SENDS_PER_BUDGET = GATEWAY_CONFIG_DEFAULTS.retry.maxAttempts;
 
 const deadConfig = {
   chains: { 'scripted/upstream-model': ['scripted/upstream-model'] },
@@ -28,7 +28,7 @@ const deadConfig = {
 };
 
 describe('a target that refuses connections', () => {
-  it('spends the whole budget on every request, before and after its breaker opens, and fails each with provider_unavailable', async () => {
+  it('sends every request maxAttempts times, before and after its breaker opens, and fails each with provider_unavailable', async () => {
     const baseUrl = await refusedBaseUrl();
     let connectAttempts = 0;
     const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',

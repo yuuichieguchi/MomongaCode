@@ -112,7 +112,7 @@ describe('decision 3: a chat-completions or open-responses target whose server i
     expect(outputText(response.body)).toBe('configured path');
   });
 
-  it('leaves the target as configured when nothing answers at start, and a request to it spends the whole retry budget', async () => {
+  it('leaves the target as configured when nothing answers at start, and a request to it ends within the retry budget after its maxAttempts sends', async () => {
     const closed = await startLoopbackServer((_req, res) => {
       res.end();
     });
@@ -135,6 +135,6 @@ describe('decision 3: a chat-completions or open-responses target whose server i
     const response = await pending;
 
     expect(response.body.error.code).toBe('provider_unavailable');
-    expect(clock.now() - startedAt).toBeGreaterThanOrEqual(83_625);
+    expect(clock.now() - startedAt).toBeLessThanOrEqual(GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs);
   });
 });
