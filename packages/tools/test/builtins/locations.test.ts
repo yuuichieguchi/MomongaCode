@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createBuiltinTools } from '@momonga/tools';
-import { testPaths } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, testPaths } from '@momonga/testkit';
 
 const CONTEXT = { cwd: '/work/shell-moved-here', workingDirectory: '/work', home: '/home/me', roots: ['/work'], paths: testPaths() };
 
 const locationsOf = (name: string, input: unknown): { path: string }[] | undefined => {
-  const tool = createBuiltinTools().find((candidate) => candidate.name === name);
+  const tool = createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).find((candidate) => candidate.name === name);
   if (tool === undefined) throw new Error(`no tool ${name}`);
   return tool.locations?.(input, CONTEXT);
 };

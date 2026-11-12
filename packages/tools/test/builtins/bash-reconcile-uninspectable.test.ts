@@ -1,10 +1,10 @@
-import { sleepDrivenTiming } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUninspectableRegistry } from '@momonga/foundation';
 import type { ProcessInspector, Timing } from '@momonga/foundation';
-import { bashTool } from '../../src/builtins/bash.ts';
+import { bashToolFor } from '../../src/builtins/bash.ts';
 import type { ReconcileContext } from '../../src/types.ts';
 import { call, makeHarness, makeTool, toolSetOf } from '../harness.ts';
 import type { HarnessOptions } from '../harness.ts';
@@ -66,7 +66,7 @@ describe('Bash recovery of an earlier attempt whose marker is held by a process 
   });
 
   it('keeps the stopped answer when the earlier attempt was verified as stopped', async () => {
-    const result = await bashTool.reconcile?.({ command: 'ssh-agent' }, { key: 'k', pgid: 4242 } as never, { earlierAttempt: { stopped: true }, processMarker: '/no/such/marker' } as ReconcileContext);
+    const result = await bashToolFor(TEST_BUILTIN_TOOL_OFFER).reconcile?.({ command: 'ssh-agent' }, { key: 'k', pgid: 4242 } as never, { earlierAttempt: { stopped: true }, processMarker: '/no/such/marker' } as ReconcileContext);
     expect(result?.output).toContain('The interrupted command was stopped.');
   });
 });

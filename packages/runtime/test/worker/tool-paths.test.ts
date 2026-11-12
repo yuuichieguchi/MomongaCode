@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { TEST_BUILTIN_TOOL_OFFER } from '@momonga/testkit';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinTools } from '@momonga/tools';
@@ -12,7 +13,7 @@ describe('file tool paths in the worker', () => {
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: 'notes.txt', content: 'hi' } }]), textStep('Written.'));
     const run = await env.enqueue('Write notes');
 
-    await env.runOnce(env.worker('worker-1', { toolList: () => createBuiltinTools() }));
+    await env.runOnce(env.worker('worker-1', { toolList: () => createBuiltinTools(TEST_BUILTIN_TOOL_OFFER) }));
 
     expect(env.ofType(run.id, 'tool.call')[0]).toMatchObject({ kind: 'edit', title: 'Write notes.txt', locations: [{ path: target }] });
     expect(env.ofType(run.id, 'tool.completed')[0]).toMatchObject({ status: 'completed', output: 'Created notes.txt (1 line)' });
@@ -25,7 +26,7 @@ describe('file tool paths in the worker', () => {
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'a' } }]), textStep('Written.'));
     const run = await env.enqueue('Write a');
 
-    await env.runOnce(env.worker('worker-1', { toolList: () => createBuiltinTools() }));
+    await env.runOnce(env.worker('worker-1', { toolList: () => createBuiltinTools(TEST_BUILTIN_TOOL_OFFER) }));
 
     expect(env.ofType(run.id, 'tool.call')[0]).toMatchObject({ title: 'Write src/a.txt', locations: [{ path: target }] });
     expect(env.ofType(run.id, 'tool.completed')[0]).toMatchObject({ status: 'completed', output: 'Created src/a.txt (1 line)' });

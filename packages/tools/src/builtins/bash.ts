@@ -1,13 +1,13 @@
 import { StringDecoder } from 'node:string_decoder';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
 import { groupRecordOutcome, hostEntryProblem, normalizedHosts, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
-import type { NetworkRequest, NetworkScopeKind } from '@momonga/foundation';
+import type { NetworkRequest, SandboxNetworkSetting } from '@momonga/foundation';
 import { SANDBOX_NETWORK_SCOPES } from '@momonga/sandbox';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
-import type { BashLimits } from '../types.ts';
+import type { AnyTool, BashLimits } from '../types.ts';
 import { USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES } from '@momonga/protocol';
 import { STOP_NOT_CONFIRMED_NOTE } from '@momonga/sandbox';
-import type { SandboxCommand, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
+import type { Sandbox, SandboxCommand, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
@@ -192,32 +192,72 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
 
 export const shellCommandSubject = (command: string): { kind: 'command'; tool: string; command: string } => ({ kind: 'command', tool: 'Bash', command });
 
-const PLATFORM_SANDBOX_SCOPES: readonly NetworkScopeKind[] = [...new Set([...SANDBOX_NETWORK_SCOPES.seatbelt, ...SANDBOX_NETWORK_SCOPES.bubblewrap])];
+export type OfferedBash = { kind: 'resolved'; path: string } | { kind: 'missing'; reason: string };
 
-const BASH_DESCRIPTION_HEAD = `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds; its default and its maximum are the person's settings tools.bash.defaultTimeoutMs and tools.bash.maxTimeoutMs (120000 and 600000 unless changed), and a larger value is reduced to the maximum. No process started by the command outlives it, except that a command that exceeds its timeout is moved to the background (unless the setting tools.bash.onTimeout is kill). With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (tools.bash.backgroundTimeoutMs and tools.bash.maxBackgroundTimeoutMs, 1800000 and 7200000 unless changed); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.`;
+export type BuiltinToolOffer = { sandbox: Sandbox['kind']; sandboxNetwork: SandboxNetworkSetting; bash: OfferedBash };
+
+const shellNameOf = (bash: OfferedBash): string => (bash.kind === 'resolved' ? bash.path : `bash, which this machine does not have (${bash.reason}), so every call fails until it is installed,`);
+
+const placeOf = (offer: BuiltinToolOffer): string =>
+  keepsCommandsOffTheNetwork(offer.sandbox) ? 'inside a sandbox' : 'with no sandbox (the command has the access to files and the network of the person who runs MomongaCode)';
+
+const BASH_DESCRIPTION_REST = `Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds; its default and its maximum are the person's settings tools.bash.defaultTimeoutMs and tools.bash.maxTimeoutMs (120000 and 600000 unless changed), and a larger value is reduced to the maximum. No process started by the command outlives it, except that a command that exceeds its timeout is moved to the background (unless the setting tools.bash.onTimeout is kill). With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (tools.bash.backgroundTimeoutMs and tools.bash.maxBackgroundTimeoutMs, 1800000 and 7200000 unless changed); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.`;
 
 const BASH_CONCISE_HEAD = `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds, default and maximum from the settings tools.bash (120000 and 600000 unless changed); a command past its timeout moves to the background. With run_in_background it returns a job id; use BashOutput and KillBash.`;
 
-export const bashDescriptionOf = (scopes: readonly NetworkScopeKind[]): { description: string; conciseDescription: string } =>
-  scopes.includes('hosts')
-    ? {
-        description: `${BASH_DESCRIPTION_HEAD} The sandbox has no network: a command that needs it sets network to {"hosts": ["name", ...]} to reach only those hosts through a filtering proxy (HTTP and HTTPS; a program that ignores the proxy variables stays without network), or to "open" for unrestricted access. Either asks the person before the command runs, so name the fewest hosts that do the work.`,
-        conciseDescription: `${BASH_CONCISE_HEAD} The sandbox has no network; set network to {"hosts": ["name", ...]} (those hosts only, through a proxy for HTTP and HTTPS) or "open" when the command needs it; either asks the person.`,
-      }
-    : {
-        description: `${BASH_DESCRIPTION_HEAD} The sandbox has no network: a command that needs it sets network to "open" for unrestricted access. This asks the person before the command runs.`,
-        conciseDescription: `${BASH_CONCISE_HEAD} The sandbox has no network; set network to "open" when the command needs it; this asks the person.`,
-      };
+const conciseHeadOf = (offer: BuiltinToolOffer): string => (keepsCommandsOffTheNetwork(offer.sandbox) ? BASH_CONCISE_HEAD : BASH_CONCISE_HEAD.replace('in a sandbox', `with ${shellNameOf(offer.bash)} and no sandbox`));
 
-export const bashTool = defineTool<BashInput>({
+const keepsCommandsOffTheNetwork = (sandbox: Sandbox['kind']): boolean => SANDBOX_NETWORK_SCOPES[sandbox].includes('none');
+
+const takesHosts = (sandbox: Sandbox['kind']): boolean => SANDBOX_NETWORK_SCOPES[sandbox].includes('hosts');
+
+const settingSentenceOf = (offer: BuiltinToolOffer): string => {
+  switch (offer.sandboxNetwork) {
+    case 'ask':
+      return takesHosts(offer.sandbox) ? 'Either asks the person before the command runs, so name the fewest hosts that do the work.' : 'This asks the person before the command runs.';
+    case 'allow':
+      return 'The setting sandboxNetwork is allow, so a command that sets network runs without approval for it.';
+    case 'deny':
+      return 'The setting sandboxNetwork is deny, so a command that sets network is refused.';
+  }
+};
+
+const networkSentenceOf = (offer: BuiltinToolOffer): string => {
+  if (!keepsCommandsOffTheNetwork(offer.sandbox)) {
+    return `Without a sandbox nothing keeps the command off the network, and a list of hosts cannot be kept: a command that needs the network sets network to "open". ${settingSentenceOf(offer)}`;
+  }
+  if (takesHosts(offer.sandbox)) {
+    return `The sandbox has no network: a command that needs it sets network to {"hosts": ["name", ...]} to reach only those hosts through a filtering proxy (HTTP and HTTPS; a program that ignores the proxy variables stays without network), or to "open" for unrestricted access. ${settingSentenceOf(offer)}`;
+  }
+  return `The sandbox has no network: a command that needs it sets network to "open" for unrestricted access. ${settingSentenceOf(offer)}`;
+};
+
+const conciseNetworkOf = (offer: BuiltinToolOffer): string => {
+  if (!keepsCommandsOffTheNetwork(offer.sandbox)) return `Set network to "open" when the command needs it. ${settingSentenceOf(offer)}`;
+  if (takesHosts(offer.sandbox)) return `The sandbox has no network; set network to {"hosts": ["name", ...]} (those hosts only, through a proxy for HTTP and HTTPS) or "open" when the command needs it. ${settingSentenceOf(offer)}`;
+  return `The sandbox has no network; set network to "open" when the command needs it. ${settingSentenceOf(offer)}`;
+};
+
+const networkParameterOf = (offer: BuiltinToolOffer): string => {
+  if (!keepsCommandsOffTheNetwork(offer.sandbox)) return `Network access the command needs. "open": unrestricted, which a command without a sandbox has in any case; a list of hosts cannot be kept without a sandbox. ${settingSentenceOf(offer)}`;
+  const hosts = takesHosts(offer.sandbox) ? ' {"hosts": ["registry.example.org", "example.org:443"]}: only those hosts (a name or an IP address, optionally with :port), through a proxy.' : '';
+  return `Network access the command needs. Absent: none.${hosts} "open": unrestricted. ${settingSentenceOf(offer)}`;
+};
+
+export const bashDescriptionOf = (offer: BuiltinToolOffer): { description: string; conciseDescription: string } => ({
+  description: `Runs a shell command with ${shellNameOf(offer.bash)} ${placeOf(offer)}, in the current working directory. ${BASH_DESCRIPTION_REST} ${networkSentenceOf(offer)}`,
+  conciseDescription: `${conciseHeadOf(offer)} ${conciseNetworkOf(offer)}`,
+});
+
+export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<BashInput>({
   name: 'Bash',
-  ...bashDescriptionOf(PLATFORM_SANDBOX_SCOPES),
+  ...bashDescriptionOf(offer),
   conciseParameterDescriptions: {
     command: 'Command to run',
     timeout: 'Timeout in milliseconds',
     description: 'What the command does',
     run_in_background: 'Run as a background job and return its job id',
-    network: 'Network the command needs; absent means none',
+    network: keepsCommandsOffTheNetwork(offer.sandbox) ? 'Network the command needs; absent means none' : 'Network the command needs; without a sandbox it has the network in any case',
   },
   kind: 'execute',
   sideEffect: 'exec',
@@ -238,7 +278,7 @@ export const bashTool = defineTool<BashInput>({
           { enum: ['open'] },
           { type: 'object', properties: { hosts: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 } }, required: ['hosts'], additionalProperties: false },
         ],
-        description: 'Network access the command needs. Absent: none. {"hosts": ["registry.example.org", "example.org:443"]}: only those hosts (a name or an IP address, optionally with :port), through a proxy. "open": unrestricted. The person is asked to approve either',
+        description: networkParameterOf(offer),
       },
     },
     required: ['command'],

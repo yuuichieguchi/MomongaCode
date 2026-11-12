@@ -759,9 +759,6 @@
       "packages/tools/src/builtins/write.ts": {
         "directory": 5
       },
-      "packages/tools/src/executor.ts": {
-        "limit": 1
-      },
       "packages/tools/src/governance/tools.ts": {
         "project": 3,
         "target": 1

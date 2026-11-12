@@ -145,7 +145,7 @@ export type RuleVerifierPort = {
 export type ToolRuntimePort = {
   envFor(session: Session, signal: AbortSignal): ToolEnv | Promise<ToolEnv>;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet>;
-  recoveryToolSet(options: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
+  recoveryToolSet(options: { signal: AbortSignal; session: Session; env: ToolEnv; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
   policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement; signal: AbortSignal; discoverGitConfig?: true }): Promise<ToolPolicy>;
   recoveryContextFor(session: Session, options: { env: ToolEnv; signal: AbortSignal }): Promise<RecoveryContext>;
   executor: ToolExecutor;

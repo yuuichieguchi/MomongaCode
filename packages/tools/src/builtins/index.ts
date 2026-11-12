@@ -1,5 +1,6 @@
 import type { AnyTool } from '../types.ts';
-import { bashTool } from './bash.ts';
+import { bashToolFor } from './bash.ts';
+import type { BuiltinToolOffer } from './bash.ts';
 import { editTool } from './edit.ts';
 import { globTool } from './glob.ts';
 import { bashOutputTool, killBashTool } from './jobs.ts';
@@ -12,4 +13,6 @@ import { writeTool } from './write.ts';
 export { buildSandboxPolicy } from './sandbox-policy.ts';
 export type { SandboxPolicyOptions } from './sandbox-policy.ts';
 
-export const createBuiltinTools = (): AnyTool[] => [readTool, writeTool, editTool, globTool, grepTool, bashTool, bashOutputTool, killBashTool, readOutputTool, updatePlanTool];
+export type { BuiltinToolOffer, OfferedBash } from './bash.ts';
+
+export const createBuiltinTools = (offer: BuiltinToolOffer): AnyTool[] => [readTool, writeTool, editTool, globTool, grepTool, bashToolFor(offer), bashOutputTool, killBashTool, readOutputTool, updatePlanTool];

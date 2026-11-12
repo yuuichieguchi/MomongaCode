@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TEST_BUILTIN_TOOL_OFFER } from '@momonga/testkit';
 import type { JobView } from '@momonga/protocol';
 import type { Sandbox } from '@momonga/sandbox';
 import { createBuiltinTools } from '@momonga/tools';
@@ -54,7 +55,7 @@ const fakeJobs = (): FakeJobs => {
 };
 
 const toolOf = (name: string) => {
-  const tool = createBuiltinTools().find((candidate) => candidate.name === name);
+  const tool = createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).find((candidate) => candidate.name === name);
   if (tool === undefined) throw new Error(`no ${name} tool`);
   return tool;
 };

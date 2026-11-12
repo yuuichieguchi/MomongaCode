@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildContext, createFsInstructionReader, createTokenMeter } from '@momonga/context';
 import { BUILTIN_DIALECTS, BUILTIN_DIALECT_IDS } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import { TEST_FENCE, inlinedSubsetRefusalOf, strictClosedRefusalOf, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, TEST_FENCE, inlinedSubsetRefusalOf, strictClosedRefusalOf, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createBuiltinTools, createGovernanceTools, createHistoryTools, createMemoryTools, createToolRegistry } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { createAgentTool } from '../packages/agents/src/tool.ts';
@@ -516,7 +516,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
       },
     };
     const registry = createToolRegistry();
-    const registered = [...createBuiltinTools(), ...createMemoryTools({ port: unusedPort, trusted: true })];
+    const registered = [...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER), ...createMemoryTools({ port: unusedPort, trusted: true })];
     for (const tool of registered) registry.register(tool);
     const visible = (await registry.snapshot()).forModel({ mode: 'manual', rules: [] });
     const meter = createTokenMeter({
@@ -572,7 +572,7 @@ const unusedPort = <Port extends object>(): Port =>
   });
 
 const registryTools = (): AnyTool[] => [
-  ...createBuiltinTools(),
+  ...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER),
   ...createMemoryTools({ port: unusedPort(), trusted: true }),
   ...createHistoryTools({ port: unusedPort(), trusted: true, project: '/project' }),
   ...createGovernanceTools({ port: unusedPort(), trusted: true }),
