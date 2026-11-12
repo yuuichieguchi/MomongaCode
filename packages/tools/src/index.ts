@@ -84,6 +84,8 @@ export type {
 export { TOOL_VALIDATOR_FAILED_CODE, schemaIdentity, toolRefusalKey, validateToolInput } from './validate.ts';
 export type { ValidationResult } from './validate.ts';
 export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
+export type { BuiltinToolOffer, OfferedBash } from './builtins/index.ts';
+export { offeredBashOf } from './builtins/shell.ts';
 export { bashEnvOf, runUserCommand, shellCommandSubject } from './builtins/bash.ts';
 export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
 export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
@@ -177,3 +179,4 @@ export type { ForgeAccess, ForgeAccessOptions, ForgeCredentialReference, ForgeIn
 export type { ForgeFetch } from './forge/http.ts';
 export { EMPTY_FOOTPRINT, blockedByHeldText, blockerOf, footprintOf, footprintsConflict } from './footprint.ts';
 export type { Footprint, HeldFootprint } from './footprint.ts';
+export { diffOfContents } from './builtins/applied-diff.ts';

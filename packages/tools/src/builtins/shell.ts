@@ -2,6 +2,9 @@ import type { FileSystem, FileSystemSync } from '@momonga/foundation';
 import type { ExecutableCheck, ShellPortsNow } from '@momonga/policy';
 import type { ChildPorts } from '../ports.ts';
 
+import { ShellNotFoundError, resolveBashPath } from '@momonga/policy';
+import type { OfferedBash } from './bash.ts';
+
 export { ShellNotFoundError, resolveBashPath, resolveBashPathNow } from '@momonga/policy';
 export type { ExecutableCheck, ShellPorts, ShellPortsNow } from '@momonga/policy';
 
@@ -33,3 +36,12 @@ export const executableCheckNowOn =
       return absentOrThrown(error);
     }
   };
+
+export const offeredBashOf = async (shellHost: Pick<ShellHost, 'platform' | 'isExecutable'>, env: Readonly<Record<string, string>>): Promise<OfferedBash> => {
+  try {
+    return { kind: 'resolved', path: await resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env }) };
+  } catch (error) {
+    if (error instanceof ShellNotFoundError) return { kind: 'missing', reason: error.message };
+    throw error;
+  }
+};

@@ -17,7 +17,7 @@ describe('the history feed', () => {
     const source = sourceOf(store, createRowCache(), 40);
     const feed = createHistoryFeed();
     const chunks: string[][] = [];
-    while (feed.pending(store.settledCount())) chunks.push(feed.next(source, store.settledCount()).map((row) => row.text));
+    while (feed.pending(source, store.settledAt)) chunks.push(feed.next(source, store.settledAt).map((row) => row.text));
     expect(chunks.map((chunk) => chunk.length)).toEqual([200, 200, 50]);
     expect(chunks.flat()).toEqual(Array.from({ length: 450 }, (_, index) => `line ${index}`));
     expect(feed.handed()).toBe(450);
@@ -30,21 +30,50 @@ describe('the history feed', () => {
     const source = sourceOf(store, createRowCache(), 40);
     const feed = createHistoryFeed();
     const chunks: string[][] = [];
-    while (feed.pending(store.settledCount())) chunks.push(feed.next(source, store.settledCount()).map((row) => row.text));
+    while (feed.pending(source, store.settledAt)) chunks.push(feed.next(source, store.settledAt).map((row) => row.text));
     expect(chunks.map((chunk) => chunk.length)).toEqual([200, 200, 51]);
     expect(chunks.flat().at(-1)).toBe('after');
   });
 
-  it('waits at the first entry that can still change and goes on when it has settled', () => {
+  it('hands an entry over when it has settled, and an entry that can still change holds back no later settled entry', () => {
     const store = createTranscriptStore();
     appendEntry(store, { kind: 'info', text: 'done' });
     foldEvent(store, eventOf({ type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'open' }));
     const source = sourceOf(store, createRowCache(), 40);
     const feed = createHistoryFeed();
-    expect(feed.next(source, store.settledCount()).map((row) => row.text)).toEqual(['done']);
-    expect(feed.pending(store.settledCount())).toBe(false);
+    expect(feed.next(source, store.settledAt).map((row) => row.text)).toEqual(['done']);
+    expect(feed.pending(source, store.settledAt)).toBe(false);
     appendEntry(store, { kind: 'info', text: 'later' });
-    expect(feed.pending(store.settledCount())).toBe(true);
-    expect(feed.next(source, store.settledCount()).map((row) => row.text)).toEqual(['open', 'later']);
+    expect(feed.pending(source, store.settledAt)).toBe(true);
+    expect(feed.next(source, store.settledAt).map((row) => row.text)).toEqual(['open', 'later']);
+  });
+
+  it('hands the settled answers after an open plan to the scrollback and keeps the plan in the live rows', () => {
+    const store = createTranscriptStore();
+    appendEntry(store, { kind: 'info', text: 'before' });
+    appendEntry(store, { kind: 'plan', entries: [{ content: 'step one', status: 'in_progress', priority: 'medium' }] }, 'plan');
+    appendEntry(store, { kind: 'info', text: 'first answer' });
+    appendEntry(store, { kind: 'info', text: 'second answer' });
+    const source = sourceOf(store, createRowCache(), 40);
+    const feed = createHistoryFeed();
+    const handed: string[] = [];
+    while (feed.pending(source, store.settledAt)) handed.push(...feed.next(source, store.settledAt).map((row) => row.text));
+    expect(handed).toEqual(['before', 'first answer', 'second answer']);
+    expect(feed.live(source, store.settledAt).map((row) => row.text).join('\n')).toContain('step one');
+    expect(feed.live(source, store.settledAt).map((row) => row.text)).not.toContain('first answer');
+  });
+
+  it('hands every entry over once, however often it is asked', () => {
+    const store = createTranscriptStore();
+    const source = sourceOf(store, createRowCache(), 40);
+    const feed = createHistoryFeed();
+    const handed: string[] = [];
+    for (let index = 0; index < 30; index += 1) {
+      appendEntry(store, { kind: 'info', text: `line ${index}` });
+      if (index % 3 === 0) appendEntry(store, { kind: 'plan', entries: [{ content: `step ${index}`, status: 'pending', priority: 'low' }] }, 'plan');
+      for (let ask = 0; ask < 3; ask += 1) handed.push(...feed.next(source, store.settledAt).map((row) => row.text));
+    }
+    const lines = handed.filter((text) => text.startsWith('line '));
+    expect(lines).toEqual(Array.from({ length: 30 }, (_, index) => `line ${index}`));
   });
 });

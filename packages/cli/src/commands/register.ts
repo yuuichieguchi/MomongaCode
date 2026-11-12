@@ -611,6 +611,7 @@ const registerModels: CommandGroup = (program, deps) => {
       .option('--service <name>', 'the name of the service, used for prices (for example openai)')
       .option('--plan <profile>', 'add a model of a signed-in subscription account of this provider')
       .option('--account <label>', 'the account of --plan')
+      .option('--builtin <server>', 'add the model of a server program built into momonga, for example fm (the Apple on-device model)')
       .option(YES_FLAG, YES_HELP),
     deps,
     'add',

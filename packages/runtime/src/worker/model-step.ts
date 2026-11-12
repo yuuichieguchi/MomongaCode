@@ -432,7 +432,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step, attempt: 1 };
   const prefixRecord = recordPrefix(ctx, built, summarising);
   const cacheControls = cacheControlsOf(ctx, built, prefixRecord?.prefix);
-  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL, ...ceilingOf(admission) } };
+  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL, ...ceilingOf(admission), fence: journal.state.fence } };
   const proof = requestBudgetOf(admission, quote);
   const requestOffered = offeredRecordFor(journal.state.offeredTools, built.tools.map((tool) => tool.name));
   journal.append([

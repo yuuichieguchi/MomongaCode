@@ -368,6 +368,7 @@ export const fakeRuntime = (): FakeRuntime => {
     trust: unexpected('trust'),
     setTrust: unexpected('setTrust'),
     clearTrust: unexpected('clearTrust'),
+    trustItems: unexpected('trustItems'),
     streamEvents: unexpected('streamEvents'),
     streamSessionEvents: unexpected('streamSessionEvents'),
     close: async () => undefined,

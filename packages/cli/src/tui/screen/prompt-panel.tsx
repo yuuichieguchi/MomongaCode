@@ -10,7 +10,7 @@ import type { SelectLine, SelectSpec } from '../select.tsx';
 import { HELD_PANEL_LINE } from '../transcript.ts';
 import type { PendingApproval, PendingElicitation, ToolEntry } from '../transcript.ts';
 import { currentA11y } from './a11y.ts';
-import { diffLines } from './diff.ts';
+import { diffRows } from './diff.ts';
 import { EditorView } from './input-box.tsx';
 import { styleOf } from './theme.ts';
 import { inertText } from './wrap.ts';
@@ -37,7 +37,7 @@ export const trustSpec = (path: string): SelectSpec => ({
 
 const shownLines = (shown: ApprovalShown): SelectLine[] =>
   approvalShownParts(shown).flatMap((part): SelectLine[] =>
-    part.kind === 'text' ? part.lines : [...diffLines(part.hunks)].map((line): SelectLine => ({ text: line.text, ...(line.token === undefined ? {} : { token: line.token }), first: line.prefix })),
+    part.kind === 'text' ? part.lines : diffRows(part.hunks),
   );
 
 export const approvalLines = (approval: PendingApproval): SelectLine[] => [

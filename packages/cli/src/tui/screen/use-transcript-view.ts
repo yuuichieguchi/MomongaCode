@@ -41,7 +41,7 @@ export type TranscriptViewState = { source: ViewSource; window: ViewWindow; posi
 
 type Drag = { anchor: Point; selecting: boolean };
 
-type Held = { position: Position; selection: Selection | undefined; toast: string | undefined; drag: Drag | undefined };
+type Held = { epoch: number; position: Position; selection: Selection | undefined; toast: string | undefined; drag: Drag | undefined };
 
 export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState => {
   const { store, terminal, width, allocation } = host;
@@ -55,7 +55,8 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
     [keys, screenReader, reducedMotion, timers],
   );
   useEffect(() => () => cache.close(), [cache]);
-  const [held] = useState<Held>(() => ({ position: FOLLOWING, selection: undefined, toast: undefined, drag: undefined }));
+  const [held] = useState<Held>(() => ({ epoch: store.epoch(), position: FOLLOWING, selection: undefined, toast: undefined, drag: undefined }));
+  if (held.epoch !== store.epoch()) Object.assign(held, { epoch: store.epoch(), position: FOLLOWING, selection: undefined, drag: undefined });
   const [clicks] = useState(() => createClickCounter(host.now));
   const source = sourceOf(store, cache, width);
   const position = clamped(source, held.position);

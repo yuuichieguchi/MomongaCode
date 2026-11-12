@@ -143,8 +143,8 @@ describe('attaching the mentioned files', () => {
         {
           type: 'attachment_note',
           path: '.env',
-          text: 'The user referenced .env, which cannot be attached (denied by a rule). Do not try to read it unless asked.',
-          shown: '.env: not attached (denied by a rule)',
+          text: 'The user referenced .env, which cannot be attached (a deny rule or a protected path covers it; /permissions shows the rules). Do not try to read it unless asked.',
+          shown: '.env: not attached (a deny rule or a protected path covers it; /permissions shows the rules)',
         },
       ],
       images: [],
@@ -159,8 +159,8 @@ describe('attaching the mentioned files', () => {
       {
         type: 'attachment_note',
         path: '../outside.txt',
-        text: 'The user referenced ../outside.txt, which cannot be attached (denied by a rule). Do not try to read it unless asked.',
-        shown: '../outside.txt: not attached (denied by a rule)',
+        text: 'The user referenced ../outside.txt, which cannot be attached (it is outside this folder; /permissions adds another folder the session may read). Do not try to read it unless asked.',
+        shown: '../outside.txt: not attached (it is outside this folder; /permissions adds another folder the session may read)',
       },
     ]);
     expect(host.reads).toEqual([]);
@@ -169,7 +169,14 @@ describe('attaching the mentioned files', () => {
   it('attaches nothing in an untrusted project', async () => {
     const host = fakeHost({ 'a.ts': 'x' }, { trusted: false });
     const { attachments } = await attachMentions('@a.ts', host);
-    expect(attachments.map((part) => part.type)).toEqual(['attachment_note']);
+    expect(attachments).toEqual([
+      {
+        type: 'attachment_note',
+        path: 'a.ts',
+        text: 'The user referenced a.ts, which cannot be attached (this folder is not trusted; /permissions trusts it). Do not try to read it unless asked.',
+        shown: 'a.ts: not attached (this folder is not trusted; /permissions trusts it)',
+      },
+    ]);
     expect(host.reads).toEqual([]);
   });
 

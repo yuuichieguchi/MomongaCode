@@ -4,7 +4,7 @@ import { createChatCompletionsAdapter, estimateInputTokens, wireTokensOf, unauth
 import type { AdapterRequest, Capabilities, FunctionTool, ToolCallingMode } from '@momonga/protocol';
 import { buildSystemPrompt } from '@momonga/runtime';
 import { createBuiltinTools, createToolRegistry } from '@momonga/tools';
-import { createFakeClock } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, createFakeClock } from '@momonga/testkit';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import { TEST_FENCE } from '@momonga/testkit';
 
@@ -26,7 +26,7 @@ const CAPABILITIES: Capabilities = {
 
 const fullToolSet = async (): Promise<FunctionTool[]> => {
   const registry = createToolRegistry();
-  for (const tool of createBuiltinTools()) registry.register(tool);
+  for (const tool of createBuiltinTools(TEST_BUILTIN_TOOL_OFFER)) registry.register(tool);
   const snapshot = await registry.snapshot();
   return snapshot.forModel({ mode: 'manual', rules: [] }).map((tool) => Object.fromEntries(Object.entries(tool).filter(([key]) => key !== 'fitRank' && key !== 'fitTier')) as FunctionTool);
 };

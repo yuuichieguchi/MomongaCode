@@ -89,8 +89,8 @@ export const flowOf = (context: TestContext, settings: unknown | undefined, step
           detections.push(request);
           return fakes.found === undefined ? [] : fakes.found(request);
         },
-        programModel: harness.shell.programModel,
         describe: harness.shell.describe,
+        programModel: harness.shell.programModel,
       }),
       storeSecret: async (name, value) => void secrets.set(name, value),
       health: async () => ({ ok: true, models: fakes.health ?? {}, version: '0.0.0', apiVersion: 1, pid: 1, startedAt: '2026-11-10T00:00:00.000Z', state: 'running', activeRequests: 0 }),

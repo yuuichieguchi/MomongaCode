@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TEST_BUILTIN_TOOL_OFFER } from '@momonga/testkit';
 import type { JobView } from '@momonga/protocol';
 import { clearUntrustedSchemaCaches } from '@momonga/foundation';
 import { createBuiltinTools } from '@momonga/tools';
@@ -37,7 +38,7 @@ const jobsHolding = (output: string): ReadingJobs => {
 };
 
 const bashOutput = (() => {
-  const tool = createBuiltinTools().find((candidate) => candidate.name === 'BashOutput');
+  const tool = createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).find((candidate) => candidate.name === 'BashOutput');
   if (tool === undefined) throw new Error('no BashOutput tool');
   return tool;
 })();

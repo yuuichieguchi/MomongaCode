@@ -82,7 +82,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'NETWORK_SCOPE_KINDS',
   'NetworkSource',
   'OAuthProviderOptions',
-  'OPEN_NETWORK',
   'OutboundFailure',
   'PATTERN_CHECK_LIMIT_MS',
   'ProbeResult',

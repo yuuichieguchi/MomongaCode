@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { sha256Hex } from '@momonga/foundation';
+import { analyseVerifiedSuccess } from '@momonga/memory';
+import { defineTool } from '@momonga/tools';
 import { createNodeSkillFileSystem } from '@momonga/skills';
 import { createAgentsPort, createChildRuns } from '@momonga/runtime';
 import type { AgentsPort } from '@momonga/runtime';
@@ -29,6 +32,24 @@ const writeAgent = (env: Env, name: string, frontmatter: string): void => {
   fs.mkdirSync(directory, { recursive: true });
   fs.writeFileSync(path.join(directory, `${name}.md`), `---\nname: ${name}\ndescription: ${name} agent\n${frontmatter}---\nYou fix things.\n`);
 };
+
+const reportingWrite = defineTool<Record<string, unknown>>({
+  name: 'Write',
+  description: 'Write a file and report it',
+  kind: 'edit',
+  sideEffect: 'write',
+  subjectKind: 'path',
+  inputSchema: { type: 'object', properties: { file_path: { type: 'string' }, content: { type: 'string' } }, required: ['file_path', 'content'], additionalProperties: false },
+  timeoutMs: 60_000,
+  title: (input) => `Write ${String(input['file_path'])}`,
+  subject: (input) => ({ kind: 'path', tool: 'Write', paths: [String(input['file_path'])], access: 'write' }),
+  execute: async (input) => {
+    const file = String(input['file_path']);
+    const content = String(input['content']);
+    fs.writeFileSync(file, content);
+    return { status: 'completed', output: 'written', files: [{ path: file, sha256: sha256Hex(content), access: 'write' }], mutated: true };
+  },
+});
 
 const delegate = (callId: string, agent: string) => callsStep([{ callId, name: 'Agent', args: { description: 'fix', prompt: 'Fix it', subagent_type: agent } }]);
 
@@ -96,5 +117,34 @@ describe('verifiable completion of sub-agent runs', () => {
     expect(parentChecks.length).toBeGreaterThanOrEqual(1);
     expect(parentChecks[0]?.mutationSeq).toBeGreaterThan(0);
     expect(env.run(parent.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
+  });
+
+  it('gives the parent the paths a child wrote, so a child that writes a manifest leaves the parent unverified', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    writeAgent(env, 'writer', '');
+    env.settings.verificationValue = { ...env.settings.verificationValue, conditions: ['true'], required: false } as never;
+    const parent = await env.enqueue('Delegate a manifest write');
+    const manifest = path.join(env.project, 'package.json');
+    env.gateway.script.push(
+      delegate('call-a', 'writer'),
+      callsStep([{ callId: 'call-w', name: 'Write', args: { file_path: manifest, content: '{}' } }]),
+      textStep('child: wrote it'),
+      textStep('child: wrote it'),
+      textStep('parent done'),
+      textStep('parent done'),
+    );
+
+    const worker = env.worker('w1', {
+      agents: agentsPortOf(env),
+      toolList: () => [...env.toolbox.tools().filter((tool) => tool.name !== 'Write'), reportingWrite],
+      tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 })) },
+    });
+    for (let round = 0; round < 4; round += 1) await env.runOnce(worker);
+
+    const delegated = env.ofType(parent.id, 'tool.completed').find((event) => event.callId !== undefined && env.ofType(parent.id, 'tool.call').some((call) => call.callId === event.callId && call.name === 'Agent'));
+    expect(delegated?.files).toEqual([expect.objectContaining({ path: manifest, access: 'write' })]);
+    expect(env.run(parent.id).status).toBe('COMPLETED');
+    const analysis = analyseVerifiedSuccess({ status: 'COMPLETED', events: env.events(parent.id), commands: ['true'], manifests: ['package.json'] });
+    expect(analysis.verified).toBe(false);
   });
 });

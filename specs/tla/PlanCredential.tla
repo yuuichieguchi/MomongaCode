@@ -102,6 +102,9 @@
 (*     something loads the account (a request, a listing, the start of a   *)
 (*     sign-in); no timer does it. SoReload is weakly fair in the model, so*)
 (*     SigningOutResolves holds in the code only if such a load happens    *)
+(*   - a transient failure of the signing_out write ends the sign-out with *)
+(*     the record as it was (SoGrantFails); a transient failure of the     *)
+(*     cleared write is SoAbort; neither marks needs_sign_in               *)
 (*   - after SoAbort the code drops its memory copy and reads the record   *)
 (*     again from the disk at the next load; the model keeps the memory    *)
 (*     copy. The two are equal because the signing_out write               *)
@@ -257,7 +260,7 @@ CONSTANTS
     UseMutex, CoalesceGen, CoalesceForced, EraseOnTransient, ForgetFirst, SignOutWaits, Intent,
     PinIdentity, GateConfirm, MaxResend,
     MaxDetFail, MaxUnreadable, RefreshWhenUnwritable, UnreadableAsSignIn,
-    MaxNoAdopt, WeakForms, NoAdoptRule, LegacyCause
+    MaxNoAdopt, WeakForms, NoAdoptRule, LegacyCause, TransientSignsOut
 
 ASSUME Reqs # {} /\ SecondReqs \subseteq Reqs /\ SecondAcct \in BOOLEAN /\ (SecondReqs # {} => SecondAcct)
 
@@ -272,6 +275,7 @@ ASSUME \A c \in {UseMutex, CoalesceGen, CoalesceForced, EraseOnTransient, Forget
 ASSUME \A c \in {MaxResend, MaxDetFail, MaxUnreadable} : c \in Nat
 ASSUME \A c \in {RefreshWhenUnwritable, UnreadableAsSignIn} : c \in BOOLEAN
 ASSUME LegacyCause \in BOOLEAN
+ASSUME TransientSignsOut \in BOOLEAN
 ASSUME MaxNoAdopt \in Nat
 ASSUME WeakForms \subseteq {"short", "noRtRotated", "noRtKept"}
 ASSUME NoAdoptRule \in {"transient", "reject", "unanswered", "adopt", "signIn"}
@@ -739,6 +743,22 @@ SoGrant(a) ==
              /\ UNCHANGED <<dGen, dRt, dCause, dPend, dIss, dSub, dClient, dFam, mGen, mRt, mDirty, mIss, mForced, mUnwr>>
     /\ UNCHANGED <<srvVars, netVars, reqVars, inPh, inCand, inSrc, prPh, clock, budgetVars, ghostVars>>
 
+SoGrantFails(a) ==
+    /\ outPh[a] = "want" /\ ~mUnwr[a] /\ pfails < MaxPersistFail
+    /\ IF SignOutWaits THEN CanTake(a, "out") /\ Pop(a) ELSE UNCHANGED lockVars
+    /\ pfails' = pfails + 1
+    /\ outPh' = Set(outPh, a, "none")
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, reqVars, inPh, inCand, inSrc, prPh, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, detFails, unreads, soAborts, ghostVars>>
+
+ReqPersistSignsOut(r) ==
+    LET a == ReqAcct[r] IN
+    /\ TransientSignsOut
+    /\ rph[r] = "persist" /\ ~mUnwr[a] /\ pfails < MaxPersistFail
+    /\ pfails' = pfails + 1
+    /\ ClearTokens(a, "transient", "other")
+    /\ Finish(r, "signIn") /\ Release(a)
+    /\ UNCHANGED <<srvVars, netVars, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, actVars, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, detFails, unreads, soAborts, unreadMark, slack, acked, badSend, forcedCnt, soDone, outConfirmed, startedAfterOut>>
+
 SoRevoke(a) ==
     LET t == mRt[a] IN
     /\ outPh[a] = "revoke"
@@ -870,10 +890,10 @@ Terminated == AllDone /\ UNCHANGED vars
 Next ==
     \/ Quiet(Tick)
     \/ \E r \in Reqs : Quiet(Start(r) \/ ReqGrant(r) \/ ReqSend(r)
-                       \/ ReqForget(r) \/ ReqPersist(r) \/ ReqResult(r) \/ ForceGrant(r))
+                       \/ ReqForget(r) \/ ReqPersist(r) \/ ReqPersistSignsOut(r) \/ ReqResult(r) \/ ForceGrant(r))
                        \/ ReqPend(r) \/ ReqRecv(r) \/ ReqGiveUp(r) \/ ReqRetry(r) \/ ReqWeak(r)
     \/ \E p \in net : Deliver(p)
-    \/ \E a \in Accts : Quiet(SiStart(a) \/ SiGrant(a) \/ SiInstall(a) \/ SoStart(a) \/ SoGrant(a) \/ SoRevoke(a) \/ SoClear(a) \/ SoAbort(a) \/ SoReload(a)
+    \/ \E a \in Accts : Quiet(SiStart(a) \/ SiGrant(a) \/ SiInstall(a) \/ SoStart(a) \/ SoGrant(a) \/ SoGrantFails(a) \/ SoRevoke(a) \/ SoClear(a) \/ SoAbort(a) \/ SoReload(a)
                         \/ PrStart(a) \/ PrGrant(a) \/ PrWrite(a) \/ Disc(a))
     \/ Quiet(Crash)
     \/ Terminated
@@ -932,6 +952,8 @@ UnreadableKeepsMeaning == \A a \in Accts : unreadMark[a] => mState[a] = "store_u
 
 NoEraseOnTransient ==
     \A a \in Accts : (dState[a] = "needs_sign_in" => sRev[a]) /\ (mState[a] = "needs_sign_in" => sRev[a])
+
+TransientNeverSignsOut == \A a \in Accts : dState[a] = "needs_sign_in" => dCause[a] # "transient"
 
 LossDetected ==
     \A a \in Accts : (dState[a] = "needs_sign_in" => dCause[a] # None) /\ dSub[a] = AcctSub[a] /\ dClient[a] = AcctClient[a]

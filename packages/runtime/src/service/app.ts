@@ -4,11 +4,9 @@ import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, serverKeyOfLabel, stripCredentialEnv } from '@momonga/config';
 import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
-import { denyingRuleFor } from '@momonga/policy';
-import { shellCommandSubject } from '@momonga/tools';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
@@ -19,6 +17,7 @@ import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { registerUserShellRoutes } from './user-shell-routes.ts';
+import type { UserCommandRegistry } from './user-shell-routes.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
   ApiError,
@@ -49,6 +48,7 @@ import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, pageLimitOf, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
 import { compactInputOf, compactPinOf } from '../worker/compact-pin.ts';
+import { deniedConditionOf, deniedConditionText } from '../worker/completion-pin.ts';
 import type { AddInboxBody, CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
@@ -58,7 +58,7 @@ import { registerGuidelineRoutes } from './guidelines.ts';
 import { registerMemoryRoutes } from './memories.ts';
 import { registerMarkerRoutes } from './markers.ts';
 import { registerRuleRoutes } from './rules.ts';
-import type { PolicyVerification } from '../process/folder-verification.ts';
+import type { MandateRunVerification, PolicyVerification } from '../process/folder-verification.ts';
 import type { GatewayStanding } from '../process/supervised-gateway.ts';
 import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
@@ -114,6 +114,7 @@ export type RunAppDeps = {
   agents: AgentCatalogPort;
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
   policyVerification: PolicyVerification;
+  mandateVerification: MandateRunVerification;
   gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
@@ -122,7 +123,7 @@ export type RunAppDeps = {
   isDraining(): boolean;
   beginDraining(): void;
   role(): GenerationRole;
-  work: { steps(): number; jobs(): number };
+  work: { runs(): readonly string[]; jobs(): readonly { id: string; command: string }[] };
   health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind> };
   protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
@@ -131,6 +132,7 @@ export type RunAppDeps = {
   keepAliveMs: number;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
+  userCommands: UserCommandRegistry;
   retireSignal: AbortSignal;
   retireFrame: () => Uint8Array | undefined;
   runTrace: (runId: string, signal: AbortSignal) => Promise<RunTraceView | undefined>;
@@ -295,8 +297,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     startedAt: deps.health.startedAt,
     state: deps.isDraining() ? 'draining' : deps.role() === 'retiring' ? 'retiring' : 'running',
     role: deps.role(),
-    steps: deps.work.steps(),
-    jobs: deps.work.jobs(),
+    steps: deps.work.runs().length,
+    jobs: deps.work.jobs().length,
+    interrupts: interruptedWorkOf(deps.work.runs(), deps.work.jobs()),
     sandbox: await deps.health.sandbox(context.req.raw.signal),
   });
 
@@ -496,15 +499,16 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   const refuseDeniedConditions = async (session: Session, mandate: Mandate | undefined, signal: AbortSignal): Promise<void> => {
-    const conditions = mandate?.completion?.conditions ?? [];
+    const conditions = (mandate?.completion?.conditions ?? []).map(({ command }) => ({ command, source: 'request' as const }));
     if (conditions.length === 0) return;
-    const rules = await deps.permissionRules(session, signal);
-    for (const condition of conditions) {
-      const rule = denyingRuleFor(rules, knownValue(session.permissionMode, `the permission mode of session ${session.id}`), shellCommandSubject(condition.command));
-      if (rule !== undefined) {
-        throw invalidRequest(`the completion condition ${JSON.stringify(condition.command)} is denied by the permission rule ${rule.text} (${rule.origin}: ${rule.source})`, 'mandate');
-      }
-    }
+    const denied = deniedConditionOf(await deps.permissionRules(session, signal), knownValue(session.permissionMode, `the permission mode of session ${session.id}`), conditions);
+    if (denied !== undefined) throw invalidRequest(deniedConditionText(denied), 'mandate');
+  };
+
+  const refuseRefutedMandate = async (session: Session, mandate: Mandate | undefined, signal: AbortSignal): Promise<void> => {
+    if (mandate?.scope === undefined) return;
+    const verdict = await deps.mandateVerification({ cwd: session.cwd, mode: knownValue(session.permissionMode, `the permission mode of session ${session.id}`), mandate }, signal);
+    if (refusingRefutations(verdict).length > 0) throw conflict(POLICY_REFUTED_CODE, policyRefutedMessage(verdict));
   };
 
   const standingOfGateway = async (signal: AbortSignal): Promise<GatewayStanding> => {
@@ -545,6 +549,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       },
     });
     await refuseDeniedConditions(session, terms.mandate, signal);
+    await refuseRefutedMandate(session, terms.mandate, signal);
     return terms;
   };
 
@@ -847,7 +852,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval }, { person: ['POST'] });
   registerReportRoutes(route, { store, now: () => deps.clock.now(), maxBodyBytes: deps.maxBodyBytes, reportCost: deps.reportCost, runTraceContent: deps.runTraceContent, recomputeFacts: deps.recomputeFacts });
-  registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
+  registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes, home: deps.home });
   registerMemoryRoutes(route, {
     store,
     views: createRecordViews({ store, evidenceRun: deps.evidenceRun }),
@@ -870,7 +875,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     policyVerification: deps.policyVerification,
   });
   registerMarkerRoutes(route, { markerDirectories: deps.ignorableMarkerDirectories, owners: deps.markerOwners, files: deps.files });
-  registerUserShellRoutes(route, { store, userInput: deps.userInput, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
+  registerUserShellRoutes(route, { store, userInput: deps.userInput, userCommands: deps.userCommands, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
   registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal, refuseWhileRetiring });
 
   app.notFound(() => errorResponse(notFound('no such route')));

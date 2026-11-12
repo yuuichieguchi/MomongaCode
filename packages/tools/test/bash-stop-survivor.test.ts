@@ -1,4 +1,4 @@
-import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import { PassThrough } from 'node:stream';
@@ -8,7 +8,7 @@ import type { Sandbox } from '@momonga/sandbox';
 import { launch } from '../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../sandbox/src/process.ts';
 import { virtualTiming, driveUntil } from '../../foundation/test/support/probe-fakes.ts';
-import { bashTool } from '../src/builtins/bash.ts';
+import { bashToolFor } from '../src/builtins/bash.ts';
 import { call, toolSetOf } from './harness.ts';
 import { LEAVER_PGID, markerOf, resultOf, world } from './guard-world.ts';
 
@@ -51,7 +51,7 @@ describe('a command whose process group keeps a member that survives the stop', 
     const timing = virtualTiming();
     const h = world('held', {}, new Set([LEAVER_PGID]));
     const batch = h.harness.executor.runBatch(
-      await h.harness.input(await toolSetOf(bashTool), [call('survivor', 'Bash', { command: 'echo survivor-output' }, 'allow_once')], { sandbox: survivingSandbox(timing) }),
+      await h.harness.input(await toolSetOf(bashToolFor(TEST_BUILTIN_TOOL_OFFER)), [call('survivor', 'Bash', { command: 'echo survivor-output' }, 'allow_once')], { sandbox: survivingSandbox(timing) }),
     );
     let done = false;
     void batch.finally(() => {

@@ -23,7 +23,7 @@ export type FakeSupervisorOptions = {
   holdsKernelLock?: boolean;
   publishes?: boolean;
   startRecordVersion?: string;
-  reports?: Pick<SupervisorHealth, 'steps' | 'jobs' | 'calls' | 'role'>;
+  reports?: Pick<SupervisorHealth, 'steps' | 'jobs' | 'calls' | 'role' | 'interrupts'>;
 };
 
 export type FakeWork = {

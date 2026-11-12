@@ -66,7 +66,7 @@ export type ClaimContext = {
   targetFacts(target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }>;
   pinnedDigest: { value: string | undefined };
   memory: RunMemory;
-  completion: { conditions: readonly PinnedCondition[]; requirements: readonly string[]; required: boolean };
+  completion: { conditions: readonly PinnedCondition[]; required: boolean };
   verificationCommands: readonly string[];
   autoCompact: boolean;
   token: TokenPolicy;

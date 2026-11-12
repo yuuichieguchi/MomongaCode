@@ -2,44 +2,63 @@ import { SWITCH_CHUNK_ROWS } from './constants.ts';
 import type { ViewSource } from './viewport.ts';
 import type { Row } from './wrap.ts';
 
-export type HistoryFeed = {
-  pending(settled: number): boolean;
-  next(source: ViewSource, settled: number): Row[];
-  handed(): number;
-  live(source: ViewSource, settled: number): Row[];
-};
+export type SettledAt = (index: number) => boolean;
 
-const rowsFrom = (source: ViewSource, entryIndex: number, rowOffset: number): Row[] => {
-  const rows: Row[] = [];
-  for (let index = entryIndex; index < source.count(); index += 1) rows.push(...(index === entryIndex ? source.rowsOf(source.at(index)).slice(rowOffset) : source.rowsOf(source.at(index))));
-  return rows;
+export type HistoryFeed = {
+  pending(source: ViewSource, settled: SettledAt): boolean;
+  next(source: ViewSource, settled: SettledAt): Row[];
+  handed(): number;
+  live(source: ViewSource, settled: SettledAt): Row[];
 };
 
 export const createHistoryFeed = (printed = 0): HistoryFeed => {
-  let entryIndex = printed;
-  let rowOffset = 0;
+  let floor = printed;
+  const above = new Set<number>();
+  let partial: { index: number; offset: number } | undefined;
   let caughtUp = false;
+  const isHanded = (index: number): boolean => index < floor || above.has(index);
+  const markHanded = (index: number): void => {
+    above.add(index);
+    while (above.has(floor)) {
+      above.delete(floor);
+      floor += 1;
+    }
+  };
+  const waiting = (source: ViewSource, settled: SettledAt): boolean => {
+    for (let index = floor; index < source.count(); index += 1) if (!isHanded(index) && settled(index)) return true;
+    return false;
+  };
   return {
-    pending: (settled) => entryIndex < settled,
+    pending: waiting,
     next: (source, settled) => {
       const chunk: Row[] = [];
-      while (entryIndex < settled && chunk.length < SWITCH_CHUNK_ROWS) {
-        const entry = source.at(entryIndex);
+      for (let index = floor; index < source.count() && chunk.length < SWITCH_CHUNK_ROWS; index += 1) {
+        if (isHanded(index) || !settled(index)) continue;
+        const entry = source.at(index);
         const rows = source.rowsOf(entry);
         if (!source.parsed(entry)) break;
-        const taken = rows.slice(rowOffset, rowOffset + SWITCH_CHUNK_ROWS - chunk.length);
+        const offset = partial?.index === index ? partial.offset : 0;
+        const taken = rows.slice(offset, offset + SWITCH_CHUNK_ROWS - chunk.length);
         chunk.push(...taken);
-        rowOffset += taken.length;
-        if (rowOffset < rows.length) break;
-        entryIndex += 1;
-        rowOffset = 0;
+        if (offset + taken.length < rows.length) {
+          partial = { index, offset: offset + taken.length };
+          break;
+        }
+        partial = undefined;
+        markHanded(index);
       }
       return chunk;
     },
-    handed: () => entryIndex,
+    handed: () => floor,
     live: (source, settled) => {
-      caughtUp ||= entryIndex >= settled;
-      return caughtUp ? rowsFrom(source, entryIndex, rowOffset) : rowsFrom(source, settled, 0);
+      caughtUp ||= !waiting(source, settled);
+      const rows: Row[] = [];
+      for (let index = floor; index < source.count(); index += 1) {
+        if (isHanded(index) || (!caughtUp && settled(index))) continue;
+        const all = source.rowsOf(source.at(index));
+        rows.push(...(partial?.index === index ? all.slice(partial.offset) : all));
+      }
+      return rows;
     },
   };
 };

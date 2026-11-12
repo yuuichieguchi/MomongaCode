@@ -1,8 +1,10 @@
 import { CONTROL_REQUEST_TIMEOUT_MS, createUdsClient, fixedSocket, parseOutsideJson } from '@momonga/foundation';
+import { parseInterruptedWork } from '@momonga/protocol';
+import type { InterruptedWorkItem } from '@momonga/protocol';
 import { HEALTH_BODY_MAX_BYTES } from './lock-watch.ts';
 import type { ChildRole } from './launcher.ts';
 
-export type GenerationCounts = { steps?: number; jobs?: number; calls?: number };
+export type GenerationCounts = { steps?: number; jobs?: number; calls?: number; interrupts?: InterruptedWorkItem[] };
 
 export type ChildCountsReader = (role: ChildRole, socketPath: string) => Promise<GenerationCounts>;
 
@@ -24,11 +26,20 @@ const readBounded = async (body: AsyncIterable<Uint8Array>, maxBytes: number): P
   return Buffer.concat(chunks).toString('utf8');
 };
 
-const withoutUndefined = (counts: { steps: number | undefined; jobs: number | undefined; calls: number | undefined }): GenerationCounts => ({
-  ...(counts.steps === undefined ? {} : { steps: counts.steps }),
-  ...(counts.jobs === undefined ? {} : { jobs: counts.jobs }),
-  ...(counts.calls === undefined ? {} : { calls: counts.calls }),
-});
+export const countsOfHealthBody = (role: ChildRole, body: Readonly<Record<string, unknown>>): GenerationCounts => {
+  if (role === 'gateway') {
+    const calls = countOf(body, 'activeRequests');
+    return calls === undefined ? {} : { calls };
+  }
+  const steps = countOf(body, 'steps');
+  const jobs = countOf(body, 'jobs');
+  const interrupts = parseInterruptedWork(body['interrupts']);
+  return {
+    ...(steps === undefined ? {} : { steps }),
+    ...(jobs === undefined ? {} : { jobs }),
+    ...(interrupts === undefined ? {} : { interrupts }),
+  };
+};
 
 export const readChildCounts: ChildCountsReader = async (role, socketPath) => {
   const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: CONTROL_REQUEST_TIMEOUT_MS, headersTimeoutMs: CONTROL_REQUEST_TIMEOUT_MS, bodyTimeoutMs: CONTROL_REQUEST_TIMEOUT_MS });
@@ -38,10 +49,7 @@ export const readChildCounts: ChildCountsReader = async (role, socketPath) => {
     if (response.status !== 200 || text === undefined) return {};
     const parsed: unknown = parseOutsideJson(text);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    const body = parsed as Readonly<Record<string, unknown>>;
-    return role === 'runtime'
-      ? withoutUndefined({ steps: countOf(body, 'steps'), jobs: countOf(body, 'jobs'), calls: undefined })
-      : withoutUndefined({ steps: undefined, jobs: undefined, calls: countOf(body, 'activeRequests') });
+    return countsOfHealthBody(role, parsed as Readonly<Record<string, unknown>>);
   } finally {
     await client.destroy();
   }

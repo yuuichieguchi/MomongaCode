@@ -179,6 +179,7 @@ export {
   storedModelRef,
   typedModelText,
   withDefaultTag,
+  sessionModelNotConfiguredText,
 } from './model-ref.ts';
 export type { ModelRefErrorCode, ModelView, ModelViews, StoredModelRef, TypedModelText, TypedResolution } from './model-ref.ts';
 export {
@@ -701,6 +702,9 @@ export type {
   AppliedDiffFields,
   ApprovalShown,
   ApprovalShownPart,
+  TrustItem,
+  TrustItemChange,
+  TrustItemsView,
   ToolAwait,
   ToolKind,
   ModelRejectionReason,
@@ -816,7 +820,9 @@ export type {
   SupervisorHealth,
   SupervisorPhase,
   SupervisorShutdownResponse,
+  InterruptedWorkItem,
 } from './supervisor-api.ts';
+export { INTERRUPTED_COMMAND_SHOWN_CHARS, INTERRUPTED_WORK_LISTED, interruptedWorkOf, parseInterruptedWork } from './supervisor-api.ts';
 export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList, isSpanFallbackCause, isSpanFallbackCauseList, spanFallbackCauseOf } from './fallback-cause.ts';
 export type { BillingChangeReason, BillingChangeRecord, FallbackCause, SpanFallbackCause } from './fallback-cause.ts';
 export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';

@@ -4,6 +4,7 @@ import { readSettingsSnapshot } from '@momonga/config';
 import type { LocalServerDetection, PlanCatalogEntry } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import type { TuiBackend } from '../src/tui/backend.ts';
+import { folderTrustFakes } from './fake-backend.ts';
 import { runAddFlow } from '../src/tui/models/add.ts';
 import { runModelsHub } from '../src/tui/models/hub.ts';
 import { runBillingFlow, runFallbackFlow, runRoleFlow, runStartFlow, runTimeoutsFlow } from '../src/tui/models/order.ts';
@@ -334,7 +335,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const slash = {
       ...harness.context,
       commands: [],
-      backend: { ...harness.context.backend, settings: async () => readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }) },
+      backend: { ...harness.context.backend, ...folderTrustFakes({ settingsPlace: () => ({ home: harness.place.home, projectDir: project }), trust: undefined, trustItems: undefined, cwd: () => project, record: () => undefined }), settings: async () => readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }) },
       background: (_label: string, work: (signal: AbortSignal) => Promise<unknown>) => work(new AbortController().signal),
     } as unknown as SlashContext;
     await runSettingsScreen(slash, []);
@@ -366,7 +367,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
 
     const plan = flowOf(context, S3, [], { health: { 'chatgpt/gpt-5.5': { ok: false, breaker: 'closed', reason: 'sign_in_required' } } });
     await runModelsHub(plan.context);
-    expect(plan.picks()[0]?.rows.slice(0, 4)).toEqual(['chatgpt', '  chatgpt/gpt-5.5  ·  plan  ·  starts new sessions  ·  sign in required', 'openai  ·  https://api.openai.com/v1', '  openai/gpt-5.5  ·  400k tokens  ·  metered']);
+    expect(plan.picks()[0]?.rows.slice(0, 4)).toEqual(['chatgpt', '  chatgpt/gpt-5.5  ·  plan  ·  available  ·  starts new sessions  ·  sign in required', 'openai  ·  https://api.openai.com/v1', '  openai/gpt-5.5  ·  400k tokens  ·  metered']);
 
     const plain = flowOf(context, { models: { connections: [{ adapter: 'chat-completions', provider: 'gpu-box', baseUrl: 'http://192.168.1.20:8080/v1', models: [{ id: 'm', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }] } }, []);
     await runModelsHub(plain.context);

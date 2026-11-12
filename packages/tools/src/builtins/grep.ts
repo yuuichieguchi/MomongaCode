@@ -230,8 +230,8 @@ const completeRecordsOf = (stdout: string, mode: OutputMode): string => stdout.s
 export const partialSearchNote = (ms: number, found: 'matches' | 'entries'): string => `Search stopped after ${ms} ms; the ${found} above are partial. Try a narrower path or pattern.`;
 
 const grepPolicyOf = (ctx: ToolContext): SandboxPolicy => {
-  const { readDenied, readAllowed } = ctx.sandboxPolicy;
-  return { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules, protectedSet: EMPTY_PROTECTED_SET };
+  const { readDenied, readAllowed, network } = ctx.sandboxPolicy;
+  return { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network, fileRules: ctx.sandboxPolicy.fileRules, protectedSet: EMPTY_PROTECTED_SET };
 };
 
 const RIPGREP_VERSION_LINE = /^ripgrep (\S+)/;

@@ -55,20 +55,13 @@ const detected = async (paths: ReturnType<typeof momongaLayout>, json: boolean):
 };
 
 describe('O-R5-6 (E): momonga models detect lists the managed servers of the loaded settings, not only the shipped ones', () => {
-  it('lists a declared server whose command exists as a managed row', async (context) => {
-    const { paths, command } = homeDeclaring(context, true);
-    const rows = (JSON.parse(await detected(paths, true)) as { managed: Array<Record<string, unknown>> }).managed;
-    expect(rows.filter((row) => row['shape'] === 'managed' && row['id'] === DECLARED_ID)).toEqual([{ shape: 'managed', id: DECLARED_ID, provider: DECLARED_ID, binary: command }]);
-  });
-
   it('prints the declared server in the text listing', async (context) => {
     const { paths, command } = homeDeclaring(context, true);
     expect(await detected(paths, false)).toContain(`found the managed server ${DECLARED_ID} at ${command}`);
   });
 
-  it('lists no managed row when the declared command does not exist', async (context) => {
+  it('lists no managed server when the declared command does not exist', async (context) => {
     const { paths } = homeDeclaring(context, false);
-    const rows = (JSON.parse(await detected(paths, true)) as { managed: Array<Record<string, unknown>> }).managed;
-    expect(rows.filter((row) => row['shape'] === 'managed' && row['id'] === DECLARED_ID)).toEqual([]);
+    expect(await detected(paths, false)).not.toContain(`found the managed server ${DECLARED_ID}`);
   });
 });

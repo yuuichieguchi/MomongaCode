@@ -1,3 +1,4 @@
+import { approvalDigest } from './settings.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
@@ -257,7 +258,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
   };
   let unixSockets: { source: string; allow: string[] } | undefined;
   let declaredCommands: string[] | undefined;
-  const approvedHooks = new Set(layers.find((layer) => layer.origin === 'user')?.settings.projectApprovals?.[projectReal]?.hooks ?? []);
+  const approvedHooks = new Set((layers.find((layer) => layer.origin === 'user')?.settings.projectApprovals?.[projectReal]?.hooks ?? []).map(approvalDigest));
   const isApprovedHookGroup = (event: keyof HooksSettings, group: HookGroups[number], source: string): boolean => {
     const digest = hookGroupApprovalDigestOf(event, group);
     if (approvedHooks.has(digest)) return true;

@@ -34,7 +34,7 @@ export class LogDirectoryMissingError extends Error {
   readonly directory: string;
 
   constructor(directory: string) {
-    super(`the log directory ${directory} does not exist; the log never creates it, because a removed home stays removed`);
+    super(`the log folder ${directory} does not exist; the log never creates it, because a removed home stays removed`);
     this.name = 'LogDirectoryMissingError';
     this.directory = directory;
   }

@@ -3,6 +3,7 @@ import type { MomongaModelList } from '@momonga/protocol';
 import type { TestContext } from 'vitest';
 import { offeredServers } from '../src/commands/models.ts';
 import type { TuiBackend } from '../src/tui/backend.ts';
+import { folderTrustFakes } from './fake-backend.ts';
 import { modelListRows } from '../src/tui/models/model-list.ts';
 import { createPlanFlows } from '../src/tui/plan-flows.ts';
 import { switchModel } from '../src/tui/slash.ts';
@@ -20,7 +21,7 @@ const listingWith = (context: TestContext, settings: unknown): MomongaModelList 
 const pickerOf = (harness: FlowHarness, connected: string[] = []) => {
   const { choose, promptText } = harness.context.overlays;
   return createPlanFlows({
-    backend: { ...harness.context.backend, models: async () => (await harness.context.backend.modelList()).data } as unknown as TuiBackend,
+    backend: { ...harness.context.backend, ...folderTrustFakes({ settingsPlace: () => ({ home: harness.place.home, projectDir: harness.place.home }), trust: undefined, trustItems: undefined, cwd: () => harness.place.home, record: () => undefined }), models: async () => (await harness.context.backend.modelList()).data } as unknown as TuiBackend,
     pick: async (request) => (await choose(request))?.index,
     choose,
     promptText,

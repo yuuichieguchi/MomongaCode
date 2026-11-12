@@ -1,4 +1,4 @@
-import { testSecretLocations } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, testSecretLocations } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { decide } from '@momonga/policy';
@@ -65,9 +65,9 @@ describe('git checkout in a run under a mandate', () => {
 
 describe('the write tools', () => {
   it('are Write and Edit alone: there is no Patch tool', () => {
-    const names = createBuiltinTools().map((tool) => tool.name);
+    const names = createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).map((tool) => tool.name);
     expect(names).not.toContain('Patch');
     expect(names.filter((name) => /patch/i.test(name))).toEqual([]);
-    expect(createBuiltinTools().filter((tool) => tool.kind === 'edit').map((tool) => tool.name).sort()).toEqual(['Edit', 'Write']);
+    expect(createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).filter((tool) => tool.kind === 'edit').map((tool) => tool.name).sort()).toEqual(['Edit', 'Write']);
   });
 });

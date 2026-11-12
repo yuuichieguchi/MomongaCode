@@ -38,7 +38,7 @@ describe('editProjectMandate: the one writer of .momonga/mandate.json', () => {
   it('records the edit as the approval of what it wrote, and a later change by other means is refused', async () => {
     const tree = makeTree();
     await trustedEdit(tree, setting(DECLARED));
-    expect(await storedApprovals(tree)).toEqual({ [tree.project]: { mandate: approvalDigestOf(DECLARED) } });
+    expect(await storedApprovals(tree)).toEqual({ [tree.project]: { mandate: { digest: approvalDigestOf(DECLARED), document: DECLARED } } });
     writeJson(mandateFile(tree), { ...DECLARED, until: ['true'] });
     await expect(loadProjectMandate({ projectDir: tree.project, trusted: true, approvals: await storedApprovals(tree), signal })).rejects.toThrow('changed since it was approved');
   });

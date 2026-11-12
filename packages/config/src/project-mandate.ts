@@ -5,7 +5,8 @@ import { askerOf } from './asker.ts';
 import { ConfigError } from './config-error.ts';
 import { readJsonFile } from './json-file.ts';
 import { approvalDigestOf } from './approval-digest.ts';
-import type { ProjectApprovalsSettings } from './settings.ts';
+import { approvalDigest } from './settings.ts';
+import type { MandateApproval, ProjectApprovalsSettings } from './settings.ts';
 import { RuleParseError, checkRuleText } from './rule.ts';
 
 export const PROJECT_MANDATE_FILE = path.join('.momonga', 'mandate.json');
@@ -80,7 +81,8 @@ export const loadProjectMandate = async ({ projectDir, trusted, approvals, signa
   if (!read.found) return undefined;
   const mandate = parseProjectMandate(read.value, file);
   const folder = await asker.paths.canonicalPath(projectDir);
-  if (approvals?.[folder]?.mandate !== approvalDigestOf(read.value)) {
+  const approved = approvals?.[folder]?.mandate;
+  if (approved === undefined || approvalDigest(approved) !== approvalDigestOf(read.value)) {
     throw new ConfigError(`${file}: the mandate file is not approved for this folder, or changed since it was approved; new runs are refused until it is approved`);
   }
   return mandate;
@@ -88,7 +90,7 @@ export const loadProjectMandate = async ({ projectDir, trusted, approvals, signa
 
 export type ProjectMandateState =
   | { file: string; found: false }
-  | { file: string; found: true; document: unknown; digest: string; approval: 'approved' | 'new' | 'changed' };
+  | { file: string; found: true; document: unknown; digest: string; approval: 'approved' | 'new' | 'changed'; earlier?: MandateApproval };
 
 export type ProjectMandateStateInput = { projectDir: string; approvals: ProjectApprovalsSettings | undefined; signal: AbortSignal };
 
@@ -99,5 +101,6 @@ export const projectMandateState = async ({ projectDir, approvals, signal }: Pro
   if (!read.found) return { file, found: false };
   const digest = approvalDigestOf(read.value);
   const approved = approvals?.[await asker.paths.canonicalPath(projectDir)]?.mandate;
-  return { file, found: true, document: read.value, digest, approval: approved === digest ? 'approved' : approved === undefined ? 'new' : 'changed' };
+  if (approved === undefined) return { file, found: true, document: read.value, digest, approval: 'new' };
+  return { file, found: true, document: read.value, digest, approval: approvalDigest(approved) === digest ? 'approved' : 'changed', earlier: approved };
 };

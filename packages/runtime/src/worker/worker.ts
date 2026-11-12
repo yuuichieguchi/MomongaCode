@@ -3,13 +3,13 @@ import type { RunMemory } from './claim-context.ts';
 import type { ClaimControl } from './claim-control.ts';
 import { runClaim } from './claim-runner.ts';
 import type { ClaimHost } from './claim-runner.ts';
+import { TERMINAL_STATUSES } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import { describeError } from './errors.ts';
 import { reportError } from './report.ts';
 import type { Worker, WorkerErrorContext, WorkerOptions } from './types.ts';
 
 const DEFAULT_IDLE_POLL_MS = 250;
-const TERMINAL_STATUSES: readonly string[] = ['COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED'];
 
 export const createWorker = (options: WorkerOptions): Worker => {
   const idlePollMs = options.idlePollMs ?? DEFAULT_IDLE_POLL_MS;
@@ -20,7 +20,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
   let unsubscribeWake: (() => void) | undefined;
   let aborted = false;
   const controls = new Set<ClaimControl>();
-  const inFlight = new Set<Promise<unknown>>();
+  const inFlight = new Map<Promise<unknown>, string>();
   const memories = new Map<string, RunMemory>();
 
   const host: ClaimHost = {
@@ -71,7 +71,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
     if (claim === null) return 'idle';
     onClaim?.(claim);
     const running = runClaim(options, claim, host);
-    inFlight.add(running);
+    inFlight.set(running, claim.runId);
     try {
       await running;
     } finally {
@@ -123,7 +123,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
     const now = options.clock.now();
     for (const [runId, memory] of memories) {
       const status = options.store.getRun(runId)?.status;
-      if (memory.deadlineAt <= now || status === undefined || TERMINAL_STATUSES.includes(status)) memories.delete(runId);
+      if (memory.deadlineAt <= now || status === undefined || TERMINAL_STATUSES.some((terminal) => terminal === status)) memories.delete(runId);
     }
   };
 
@@ -154,10 +154,10 @@ export const createWorker = (options: WorkerOptions): Worker => {
       const running = loop;
       loop = undefined;
       if (running !== undefined) await running;
-      await Promise.allSettled([...inFlight]);
+      await Promise.allSettled([...inFlight.keys()]);
     },
     memorySize: () => memories.size,
-    claimsInFlight: () => inFlight.size,
+    runsInFlight: () => [...inFlight.values()],
     abort: async () => {
       aborted = true;
       stopping = true;
@@ -168,7 +168,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
       const running = loop;
       loop = undefined;
       if (running !== undefined) await running;
-      await Promise.allSettled([...inFlight]);
+      await Promise.allSettled([...inFlight.keys()]);
     },
   };
 };

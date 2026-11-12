@@ -149,3 +149,5 @@ export { YIELD_ARMS, acceptedByAnchors, runYieldDataset, yieldCaseIdOf } from '.
 export type { YieldArm, YieldCandidate, YieldFamilyRun, YieldLearnHost, YieldPorts, YieldReuseHost } from './yield-run.ts';
 export { YIELD_ACCEPTANCE, YIELD_REPORT_KIND, buildYieldReport, encodeYieldReport, formatYieldReport, judgeYield } from './yield-report.ts';
 export type { BuildYieldReportInput, YieldArmMetrics, YieldArmReport, YieldCheck, YieldCheckName, YieldFamilyReport, YieldGate, YieldReflection, YieldReport } from './yield-report.ts';
+export { FIGURE_DATASET_FORMATS, PRODUCIBLE_FIGURES } from './figures.ts';
+export type { ProducibleFigure } from './figures.ts';

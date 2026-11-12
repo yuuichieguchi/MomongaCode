@@ -132,3 +132,5 @@ export const decodeStoredModel = (record: Record<string, unknown>, keys: { curre
   const legacy = record[keys.legacy];
   return typeof legacy === 'string' ? storedModelRef(legacy) : undefined;
 };
+
+export const sessionModelNotConfiguredText = (stored: string): string => `The model "${stored}" of this session is not configured any more. Choose another with /model.`;

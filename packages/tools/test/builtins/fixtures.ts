@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { killGroupsForCleanup, killPidsForCleanup, pollUntil } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, killGroupsForCleanup, killPidsForCleanup, pollUntil } from '@momonga/testkit';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createBuiltinTools } from '@momonga/tools';
 import type { BackgroundJobs, CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolExecutorOptions, ToolSet } from '@momonga/tools';
@@ -85,7 +85,7 @@ export const makeBuiltins = async (options: { outputLimitChars?: number; realSan
   const tmpDir = sessionTmpDirOf(layout);
   const sandboxTmpRoot = path.join(layout.root, 'sandbox-tmp');
   fs.mkdirSync(sandboxTmpRoot);
-  const toolSet: ToolSet = await toolSetOf(...createBuiltinTools());
+  const toolSet: ToolSet = await toolSetOf(...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER));
   const sandboxPolicy: SandboxPolicy = await policyFor({ layout, tmpDir });
   const sandbox: Sandbox | undefined = options.sandbox ?? (options.realSandbox === true ? createHostSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 }) : undefined);
   let counter = 0;

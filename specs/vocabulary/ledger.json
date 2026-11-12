@@ -271,6 +271,9 @@
       "packages/eval/src/context-live.ts": {
         "cap": 1
       },
+      "packages/eval/src/figures.ts": {
+        "task": 3
+      },
       "packages/eval/src/guideline-prompts.ts": {
         "conversation": 2,
         "summaries": 1,
@@ -752,9 +755,6 @@
       },
       "packages/tools/src/builtins/write.ts": {
         "directory": 5
-      },
-      "packages/tools/src/executor.ts": {
-        "limit": 1
       },
       "packages/tools/src/governance/tools.ts": {
         "project": 3,

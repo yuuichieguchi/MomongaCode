@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { DirectoryEntry, SkillFileSystem } from '@momonga/skills';
-import { AGENT_TOOL_NAME, ChildRunError, agentSystemPrompt, createAgentLoader, pinOf, readAgentPin } from '@momonga/agents';
+import { AGENT_TOOL_NAME, ChildRunError, agentSystemPrompt, childToolResultOf, createAgentLoader, pinOf, readAgentPin } from '@momonga/agents';
 import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
 import type { ToolContext } from '@momonga/tools';
 import { testPaths } from '@momonga/testkit';
+import type { RunReport } from '@momonga/protocol';
 
 const HOME = '/home/u';
 const PROJECT = '/work/app';
@@ -145,6 +146,21 @@ describe('the Agent tool', () => {
   ])('reports a finished child %#', async (outcome, status, output) => {
     const tool = await toolWith(async () => outcome);
     expect(await tool.execute(input, context, undefined)).toEqual({ status, output });
+  });
+
+  it('gives the parent the paths the child wrote with its completion', () => {
+    const report = { conditions: [], residualRisk: [], changes: { files: [{ path: '/p/package.json', sha256: 'abc', lastSeq: 4 }, { path: '/p/notes.txt', lastSeq: 6 }], mutatingCalls: 2 } };
+    const outcome = finished('COMPLETED', { report: report as unknown as RunReport });
+    if (outcome.state !== 'finished') throw new Error('expected a finished child');
+    expect(childToolResultOf('r', outcome)).toEqual({
+      status: 'completed',
+      output: expect.any(String),
+      mutated: true,
+      files: [
+        { path: '/p/package.json', sha256: 'abc', access: 'write' },
+        { path: '/p/notes.txt', access: 'write' },
+      ],
+    });
   });
 
   it('turns a refusal to start into a tool error and lets other errors through', async () => {

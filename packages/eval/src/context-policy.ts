@@ -125,5 +125,13 @@ export const parsePolicyOverlay = (text: string, source: string): PolicyOverlay 
   if (verdict.value.context?.autoCompact !== undefined) {
     throw new EvalError(`${source}: context.autoCompact is set by the compaction field of each case, so an overlay that sets it would be recorded as a policy the runs did not have; remove it from the overlay`);
   }
+  const defaults = resolvePolicyOverlay({});
+  const restated = CORE_PATHS.filter((path) => {
+    const value = valueAt(verdict.value, path);
+    return value !== undefined && JSON.stringify(canonicalValue(value)) === JSON.stringify(valueAt(defaults, path));
+  }).map((path) => path.join('.'));
+  if (restated.length > 0) {
+    throw new EvalError(`${source}: ${restated.join(', ')} ${restated.length === 1 ? 'restates its default' : 'restate their defaults'}, so the overlay would be recorded as a change it does not make; set a value that differs from the default or remove the key`);
+  }
   return verdict.value;
 };
