@@ -4,6 +4,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { MODEL_COST_SCHEMA, carriesOutput, planAccountRefOf, reportedCachedTokensOf } from '@momonga/protocol';
 import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ClaimContext } from './claim-context.ts';
+import { elapsedMsSince } from '../service/timers.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { streamAdmitted } from './admitted-request.ts';
 import type { AdmissionProof } from './admitted-request.ts';
@@ -157,7 +158,7 @@ export const streamModel = async (
           traceparent: ctx.agentSpan.traceparent,
         });
         for await (const event of events) {
-          if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = timers.monotonicMs() - startedAt;
+          if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = elapsedMsSince(timers, startedAt);
           switch (event.type) {
             case 'response.output_text.delta':
               buffer.add('agent.message.delta', event.item_id, event.delta);
@@ -187,5 +188,5 @@ export const streamModel = async (
   delete ctx.control.inFlight.modelKey;
   if (terminal === undefined) throw new GatewayRequestError({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the gateway stream ended without a terminal event' });
   buffer.flush();
-  return { result: terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: timers.monotonicMs() - startedAt } };
+  return { result: terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: elapsedMsSince(timers, startedAt) } };
 };

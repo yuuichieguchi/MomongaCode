@@ -25,4 +25,21 @@ describe('the elapsed times of a model call are measured on the monotonic clock'
     expect(timing?.durationMs).toBeLessThan(HOUR_MS);
     expect(timing?.firstEventMs).toBeGreaterThanOrEqual(0);
   });
+
+  it('records whole milliseconds when the monotonic clock reads a fraction', async () => {
+    const env = await makeEnv();
+    const blocked = gated(textStep('Done.'), 1);
+    env.gateway.script.push(blocked);
+    const run = await env.enqueue('Work');
+    const running = env.runOnce(env.worker());
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
+
+    env.clock.advance(CALL_MS + 0.4);
+    blocked.gate.release.resolve();
+    await env.settled(running, 'the worker');
+
+    const timing = env.ofType(run.id, 'model.responded')[0]?.response.timing;
+    expect(Number.isInteger(timing?.durationMs)).toBe(true);
+    expect(Number.isInteger(timing?.firstEventMs)).toBe(true);
+  });
 });

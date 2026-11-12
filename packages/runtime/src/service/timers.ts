@@ -11,3 +11,5 @@ export const systemTimers: ServiceTimers = {
   clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
   monotonicMs: () => systemTiming.monotonicMs(),
 };
+
+export const elapsedMsSince = (timers: Pick<ServiceTimers, 'monotonicMs'>, startedAt: number): number => Math.round(timers.monotonicMs() - startedAt);
