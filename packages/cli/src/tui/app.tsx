@@ -831,6 +831,7 @@ export function App(props: AppProps) {
         } else {
           store.update({ runId: run.id });
           await watchRun(run.id, { queue, before, notes }, undefined);
+          await watchQueuedRuns(run.id);
         }
         before += run.lastSeq;
       }

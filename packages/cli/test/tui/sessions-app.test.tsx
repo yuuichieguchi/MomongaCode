@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame } from '../../src/client/runtime-client.ts';
 import { RESUME_PICKER_TITLE, conversationRow } from '../../src/tui/commands/resume.ts';
@@ -112,6 +112,18 @@ describe('reopening a session from the shell (9.1, 9.2)', () => {
     await untilFrame(app, 'Working on it still.');
     backend.finish(runView({ id: 'open-1' }));
     await untilFrame(app, IDLE);
+    app.unmount();
+  });
+
+  it('follows the queued run that follows the open run of a reopened conversation (P-222)', async () => {
+    const open: FakeConversation = { session: { id: 'cccccccc33333333', createdAt: NOW }, firstPrompt: 'long task', runs: [{ id: 'open-1', status: 'RUNNING', frames: framesOf('open-1', [{ type: 'user.message', text: 'long task' }]) }] };
+    const { app, backend } = await start({ conversations: [open] }, { reopen: { kind: 'id', id: 'cccccccc' }, now: () => NOW });
+    await untilFrame(app, 'long task');
+    backend.succeed('open-1', runView({ id: 'next-2', ordinal: 2, status: 'QUEUED', previousRunId: 'open-1' }));
+    backend.finish(runView({ id: 'open-1' }));
+    await vi.waitFor(() => expect(backend.followed).toContain('next-2'));
+    backend.emit({ id: 1, event: 'user.message', data: { runId: 'next-2', sessionId: 's', step: 1, createdAt: 1000, id: 1, seq: 1, type: 'user.message', text: 'queued after', source: 'queue' } as PublicRunEvent });
+    await untilOutput(app, '> queued after');
     app.unmount();
   });
 });
