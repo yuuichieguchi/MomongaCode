@@ -33,7 +33,7 @@ export class ReconnectBoundExceeded extends Error {
   }
 }
 
-export type StreamOpener = (options: { lastEventId?: number; signal?: AbortSignal }) => AsyncIterable<RunEventFrame>;
+export type StreamOpener = (options: { lastEventId?: number; signal?: AbortSignal; onOpen?: () => void }) => AsyncIterable<RunEventFrame>;
 
 export type ReconnectPolicy = {
   clock: CliClock;
@@ -45,19 +45,26 @@ export type ReconnectPolicy = {
   signal?: AbortSignal;
 };
 
-type Reconnector = { delivered(): void; reconnect(failure: unknown): Promise<void> };
+type Reconnector = { opened(): void; delivered(): void; reconnect(failure: unknown): Promise<void> };
 
 const createReconnector = (policy: ReconnectPolicy): Reconnector => {
   let attempt = 0;
+  let lostMs = 0;
   let lostSince: number | undefined;
   return {
+    opened: () => {
+      if (lostSince === undefined) return;
+      lostMs += policy.clock.now() - lostSince;
+      lostSince = undefined;
+    },
     delivered: () => {
       attempt = 0;
+      lostMs = 0;
       lostSince = undefined;
     },
     reconnect: async (failure) => {
       lostSince ??= policy.clock.now();
-      if (policy.clock.now() - lostSince >= policy.reconnectBoundMs) throw policy.boundExceeded(policy.reconnectBoundMs, failure);
+      if (lostMs + policy.clock.now() - lostSince >= policy.reconnectBoundMs) throw policy.boundExceeded(policy.reconnectBoundMs, failure);
       policy.onReconnecting?.(attempt);
       await policy.clock.sleep(
         computeBackoff({ attempt, baseMs: RECONNECT_FIRST_RETRY_MS, maxMs: RECONNECT_MAX_INTERVAL_MS, random: { float: policy.random } }),
@@ -107,6 +114,7 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
       const streamOptions = {
         ...(cursor > 0 ? { lastEventId: cursor } : {}),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
+        onOpen: reconnector.opened,
       };
       for await (const frame of options.open(streamOptions)) {
         cursor = frame.id;
