@@ -5,7 +5,7 @@ import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import type { E2eStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions } from './support/upstream.ts';
@@ -21,7 +21,7 @@ const runRowOf = (home: E2eHome, runId: string) =>
 
 const killRuntimeDuringModelCall = async (release: ReleaseTiming): Promise<void> => {
   const home = await createE2eHome();
-  const stack: E2eStack = await startStack({ home, deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY } });
+  const stack: E2eStack = await startStack({ home, deps: { restart: E2E_RESTART_POLICY } });
   const runtime = createRuntimeClient(home);
   const hold = stack.fake.hold();
   let released = false;
@@ -31,7 +31,7 @@ const killRuntimeDuringModelCall = async (release: ReleaseTiming): Promise<void>
     hold.release();
   };
   try {
-    const { session } = await runtime.createSession();
+    const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const { run } = await runtime.createRun(session.id, 'Say hello');
     await hold.waitForRequest();
 

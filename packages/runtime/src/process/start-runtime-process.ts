@@ -175,7 +175,7 @@ type Phase = 'starting' | 'running' | 'draining' | 'aborting' | 'tearingDown' | 
 
 type StartedWorker = { id: string; worker: Worker };
 
-const DEFAULT_LEASE_MS = 30_000;
+export const DEFAULT_LEASE_MS = 30_000;
 const SPAWN_DIRECTORY_MODE = 0o700;
 
 const assertPositiveInteger = (name: string, value: number): void => {

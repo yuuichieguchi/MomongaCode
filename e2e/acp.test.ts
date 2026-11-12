@@ -330,7 +330,7 @@ describe('acp: momonga acp', () => {
     const skillDirectory = path.join(project, '.agents', 'skills', 'pdf');
     fs.mkdirSync(skillDirectory, { recursive: true });
     fs.writeFileSync(path.join(skillDirectory, 'SKILL.md'), `---\nname: pdf\ndescription: Extract PDF text\n---\n# PDF\n\n${SKILL_BODY_MARKER}\n`);
-    const stack = await startStack({ home, sandbox: 'none', script: [textReply('Started with the skill.')], version: cliPackage.version });
+    const stack = await startStack({ home, script: [textReply('Started with the skill.')], version: cliPackage.version });
     const runtime = createRuntimeClient(home);
     try {
       expect((await runtime.json('PUT', '/v1/trust', { path: project, decision: 'trusted' })).status).toBe(200);

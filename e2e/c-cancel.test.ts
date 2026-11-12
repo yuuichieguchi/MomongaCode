@@ -42,7 +42,7 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
   expect(stack.sandbox).toBe(platformSandbox());
   const runtime = createRuntimeClient(home);
   try {
-    const { session } = await runtime.createSession();
+    const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const { run } = await runtime.createRun(session.id, 'Say hello');
     const pgid = await until(() => toolGroupsOf(home)[0], { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'idempotency row with a pgid' });
     expect(groupAlive(pgid)).toBe(true);
@@ -93,7 +93,7 @@ describe('c: cancel', () => {
     const stack = await startStack({ home, script: [hangReply(PARTIAL_TEXT)] });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Say hello');
       const stream = runtime.events(run.id);
       const delta = await stream.until((frame) => frame.data.type === 'agent.message.delta', E2E_RECOVERY_BOUND_MS);
@@ -134,11 +134,11 @@ describe('c: cancel', () => {
       hold.release();
     };
     try {
-      const first = await runtime.createSession();
+      const first = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const runA = (await runtime.createRun(first.session.id, 'Say hello')).run;
       await hold.waitForRequest();
 
-      const second = await runtime.createSession();
+      const second = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       expect(second.session.id).not.toBe(first.session.id);
       const runB = (await runtime.createRun(second.session.id, 'Say hello')).run;
       expect((await runtime.getRun(runB.id)).run.status).toBe('QUEUED');

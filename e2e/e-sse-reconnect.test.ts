@@ -28,7 +28,7 @@ describe('e: SSE reconnect', () => {
     await startStack({ home, script: SCRIPT });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Plan the work');
       await until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${run.id} COMPLETED` });
       const last = (await runtime.getRun(run.id)).run.lastSeq;
@@ -69,7 +69,7 @@ describe('e: SSE reconnect', () => {
     const runtime = createRuntimeClient(home);
     const hold = stack.fake.hold();
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Plan the work');
       const live = runtime.events(run.id);
       const requested = await live.until((frame) => frame.data.type === 'model.requested', E2E_RUN_COMPLETED_BOUND_MS);

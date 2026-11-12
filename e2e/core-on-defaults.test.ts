@@ -1,10 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { DEFAULT_MEMORY_SHARE } from '@momonga/memory';
 import { createBuiltinTools } from '@momonga/tools';
-import { firstGeneration } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { journalOfRows, ofType } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
@@ -27,7 +25,7 @@ const REFLECTION_ALIAS = 'reflector';
 const emptyHomeSettings = (home: E2eHome, extra: Readonly<Record<string, unknown>> = {}): string => {
   const base = baseSettings(home, 'none');
   const ripgrep = (base['tools'] as { ripgrep: string }).ripgrep;
-  return JSON.stringify({ ...extra, models: extra['models'] ?? base['models'], sandbox: 'none', tools: { ripgrep } }, null, 2);
+  return JSON.stringify({ ...extra, models: extra['models'] ?? base['models'], tools: { ripgrep } }, null, 2);
 };
 
 const journalOf = (home: E2eHome, runId: string) =>
@@ -40,6 +38,8 @@ const runToEnd = async (runtime: RuntimeClient, runId: string) => {
   return frames;
 };
 
+const ONE_ASK_FOR_THE_WRITE_THE_ECHO_IS_READ_ONLY = 1;
+
 const approveEachAsk = async (runtime: RuntimeClient, runId: string, asks: number): Promise<void> => {
   for (let handled = 0; handled < asks; handled += 1) {
     const [pending] = await until(async () => {
@@ -51,21 +51,15 @@ const approveEachAsk = async (runtime: RuntimeClient, runId: string, asks: numbe
   }
 };
 
-const trust = async (home: E2eHome, project: string): Promise<void> => {
-  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime), { connectTimeoutMs: 0 });
-  try {
-    const response = await client.request({ method: 'PUT', path: '/v1/trust', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: project, decision: 'trusted' }) });
-    expect(response.status).toBe(200);
-    await response.text();
-  } finally {
-    await client.close();
-  }
+const trust = async (runtime: RuntimeClient, project: string): Promise<void> => {
+  const response = await runtime.json('PUT', '/v1/trust', { path: project, decision: 'trusted' });
+  expect(response.status).toBe(200);
 };
 
 describe('the core areas on by default (design core-on 6, test 11)', () => {
   it(titleOf('core-on-token-defaults'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, sandbox: 'none', version: cliPackage.version, settingsText: emptyHomeSettings(home), script: [textReply('Done.')] });
+    const stack = await startStack({ home, version: cliPackage.version, settingsText: emptyHomeSettings(home), script: [textReply('Done.')] });
     const runtime = createRuntimeClient(home);
     try {
       const { session } = await runtime.createSession({ permissionMode: 'manual' });
@@ -98,7 +92,6 @@ describe('the core areas on by default (design core-on 6, test 11)', () => {
     const project = fs.realpathSync.native(home.project);
     const stack = await startStack({
       home,
-      sandbox: 'none',
       version: cliPackage.version,
       settingsText: emptyHomeSettings(home, withStructuredRole({ models: baseSettings(home, 'none')['models'], verification: { commands: ['echo verified'] } }, 'reflection', REFLECTION_ALIAS)),
       script: [
@@ -110,10 +103,10 @@ describe('the core areas on by default (design core-on 6, test 11)', () => {
     });
     const runtime = createRuntimeClient(home);
     try {
-      await trust(home, project);
+      await trust(runtime, project);
       const { session } = await runtime.createSession({ permissionMode: 'manual' });
       const { run } = await runtime.createRun(session.id, 'Write answer.ts and run the check');
-      await approveEachAsk(runtime, run.id, 2);
+      await approveEachAsk(runtime, run.id, ONE_ASK_FOR_THE_WRITE_THE_ECHO_IS_READ_ONLY);
       expect((await runToEnd(runtime, run.id)).at(-1)?.data['to']).toBe('COMPLETED');
 
       const review = await until(

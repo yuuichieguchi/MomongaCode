@@ -19,15 +19,15 @@ import { VERIFY_BUDGET_MS } from '../../packages/cli/src/commands/policy.ts';
 import { daemonReadyBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
 import { REFLECTION_PICKUP_BOUND_MS, reflectionAttemptsBoundMs } from '../../packages/runtime/src/memory/reflection-bound.ts';
 import { RUNTIME_DEFAULTS } from '../../packages/runtime/src/process/defaults.ts';
+import { DEFAULT_LEASE_MS } from '../../packages/runtime/src/process/start-runtime-process.ts';
 import { SWEEP_INTERVAL_MS } from '../../packages/runtime/src/service/service.ts';
 import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 
 export const E2E_REFLECTION_ATTEMPTS_BOUND_MS = reflectionAttemptsBoundMs(RUNTIME_DEFAULTS.runTimeoutMs);
 export const E2E_REFLECTION_SETTLED_BOUND_MS = REFLECTION_PICKUP_BOUND_MS + E2E_REFLECTION_ATTEMPTS_BOUND_MS;
 export const E2E_MARGIN_MS = 4000;
-export const E2E_LEASE_MS = 3000;
-export const E2E_DRAIN_TIMEOUT_MS = 1000;
-export const E2E_STOP_VALUES: StopValues = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS };
+export const E2E_LEASE_MS = DEFAULT_LEASE_MS;
+export const E2E_STOP_VALUES: StopValues = DEFAULT_STOP_VALUES;
 export const e2eStartBoundMs = (deps: Parameters<typeof resolveStartTiming>[0]): number => supervisorStartBoundMs(resolveStartTiming(deps));
 export const E2E_READY_DEADLINE_MS = e2eStartBoundMs({});
 export const DEFAULT_TEST_TIMEOUT_MS = 60_000;

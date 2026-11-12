@@ -6,7 +6,7 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import type { E2eStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
@@ -80,7 +80,7 @@ describe('memory', () => {
     const text = 'The team deploys with pnpm and needs the staging VPN.';
     const stack = await startStack({
       home,
-      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      deps: { restart: E2E_RESTART_POLICY },
       script: [toolCallReply('MemorySave', { text, scope: 'user' }, 'call_mem'), textReply('Saved.'), textReply('Hello from B.'), textReply('Hello from C.')],
     });
     const runtime = createRuntimeClient(home);
@@ -109,7 +109,7 @@ describe('memory', () => {
 
       await restartRuntime(stack);
 
-      const { session: sessionB } = await runtime.createSession();
+      const { session: sessionB } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run: runB } = await runtime.createRun(sessionB.id, 'Say hello');
       expect((await runToEnd(runtime, runB.id)).at(-1)?.data['to']).toBe('COMPLETED');
       const recalled = recalledTextOf(stack, 2);
@@ -131,7 +131,7 @@ describe('memory', () => {
       expect(memoryRows(home).map((row) => row.id)).toEqual([saved['id']]);
       expect((await raw.call('GET', '/v1/memories')).json['memories']).toEqual([]);
 
-      const { session: sessionC } = await runtime.createSession();
+      const { session: sessionC } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run: runC } = await runtime.createRun(sessionC.id, 'Say hello again');
       expect((await runToEnd(runtime, runC.id)).at(-1)?.data['to']).toBe('COMPLETED');
       expect(recalledTextOf(stack, 3)).toBeUndefined();
@@ -162,7 +162,7 @@ describe('memory', () => {
     const raw = rawClient(home);
     try {
       await trustProject(home, 'trusted');
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run: saver } = await runtime.createRun(session.id, 'Remember two things', { history: 'fresh' });
       expect((await runToEnd(runtime, saver.id)).at(-1)?.data['to']).toBe('COMPLETED');
       const rows = (await raw.call('GET', '/v1/memories')).json['memories'] as Json[];
@@ -219,7 +219,7 @@ describe('memory', () => {
       expect(String(completed?.data['output'])).not.toContain(FAKE_KEY);
       expect(memoryRows(home)).toEqual([]);
 
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run: saver } = await runtime.createRun(session.id, 'Remember this', { history: 'fresh' });
       await runToEnd(runtime, saver.id);
       expect(memoryRows(home).map((row) => row.text)).toEqual([forged]);

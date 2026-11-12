@@ -18,7 +18,7 @@ import {
   stepTokensToOverflowTheRoom,
 } from './support/context-window.ts';
 import { createE2eHome } from './support/home.ts';
-import { UPSTREAM_MODEL_REF, baseSettings, sandboxChoiceOf, settingsWithTarget, startUpstream, upstreamModelRef, withStructuredRole, writeSettingsFile } from './support/stack.ts';
+import { UPSTREAM_MODEL_REF, baseSettings, sandboxChoiceOf, settingsWithModel, startUpstream, upstreamModelRef, withStructuredRole, writeSettingsFile } from './support/stack.ts';
 import { SCRIPTED_USAGE, chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, e2eTestTimeoutMs } from './support/wait.ts';
 
@@ -244,7 +244,7 @@ describe('momonga context improve', () => {
       routes: [...routesWith(() => benchmarkStepText, () => candidateCallTokens), walkRoute(FOLLOW_UP_TASK, 'follow-up.txt', false, stepTextOf(() => followUpStepText))],
     });
     const settingsAnsweredBy = (answers: 'model' | 'script'): Record<string, unknown> =>
-      withStructuredRole(settingsWithTarget(baseSettings(home, sandboxChoiceOf({ home }).kind), { answers }), 'analysis', ANALYSIS_MODEL_ID);
+      withStructuredRole(settingsWithModel(baseSettings(home, sandboxChoiceOf({ home }).kind), { answers }), 'analysis', ANALYSIS_MODEL_ID);
     writeSettingsFile(home, settingsAnsweredBy('script'));
     expect(
       STEPS,

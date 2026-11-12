@@ -9,6 +9,7 @@ import { readDb } from './db.ts';
 import { readLog } from './log-reader.ts';
 import { appendHarnessFile } from './run-env.ts';
 
+export const TOOL_GROUPS_TABLE_SQL = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'idempotency'";
 export const TOOL_GROUPS_SQL = 'SELECT pgid FROM idempotency WHERE pgid IS NOT NULL';
 export const UNREACHABLE_ERRNO_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOENT']);
 
@@ -222,6 +223,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
 
   const collectDatabase = async (paths: MomongaPaths): Promise<void> => {
     if (!fs.existsSync(paths.databases.runtime)) return;
+    if (readDb(paths.databases.runtime, TOOL_GROUPS_TABLE_SQL).length === 0) return;
     for (const row of readDb(paths.databases.runtime, TOOL_GROUPS_SQL)) {
       if (typeof row['pgid'] === 'number') await add(row['pgid'], 'db');
     }

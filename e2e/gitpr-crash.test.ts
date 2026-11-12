@@ -1,3 +1,4 @@
+import { PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
 import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,12 +7,12 @@ import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { firstGeneration, startFakeForge } from '@momonga/testkit';
 import type { FakeForge, Fault } from '@momonga/testkit';
 import { skipCase, titleOf } from './support/cases.ts';
-import { E2E_SECRETS_FILE_NAME } from './support/gateway-secrets-main.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
+import { createRuntimeClient, personCapabilityOfHome, framesOfType } from './support/runtime-client.ts';
+import { storeSecretThroughProduct } from './support/secrets.ts';
 import { sandboxOrSkip } from './support/sandbox.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -44,7 +45,7 @@ const initRepository = (home: E2eHome, origin: string): string => {
 const trustProject = async (home: E2eHome): Promise<void> => {
   const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime), { connectTimeoutMs: 0 });
   try {
-    const response = await client.request({ method: 'PUT', path: '/v1/trust', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: home.project, decision: 'trusted' }) });
+    const response = await client.request({ method: 'PUT', path: '/v1/trust', headers: { 'content-type': 'application/json', [PERSON_CAPABILITY_HEADER]: await personCapabilityOfHome(home) }, body: JSON.stringify({ path: home.project, decision: 'trusted' }) });
     expect(response.status).toBe(200);
     await response.text();
   } finally {
@@ -74,11 +75,11 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
     fs.writeFileSync(path.join(home.project, '.git', 'hooks', 'pre-commit'), `#!/bin/sh\necho run >> ${runs}\n[ "$(wc -l < ${runs} | tr -d ' ')" -gt 1 ] || sleep 60\n`, { mode: 0o755 });
     fs.writeFileSync(path.join(home.project, 'a.txt'), 'two\n');
     gitIn(home, 'add', 'a.txt');
-    const stack = await startStack({ home, needsBash: true, deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY }, script: loadThen('GitCommit', { message: COMMIT_MESSAGE }) });
+    const stack = await startStack({ home, needsBash: true, deps: { restart: E2E_RESTART_POLICY }, script: loadThen('GitCommit', { message: COMMIT_MESSAGE }) });
     const runtime = createRuntimeClient(home);
     try {
       await trustProject(home);
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Commit the staged change');
       await until(() => linesOf(runs).length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the commit hook of the first attempt has started' });
       expect(gitIn(home, 'rev-parse', 'HEAD')).toBe(base);
@@ -107,17 +108,17 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
     const head = initRepository(home, `${forge.origin}/acme/widgets.git`);
     forge.branchSha.set(HEAD_BRANCH, head);
     forge.faultNext('create', fault);
-    fs.writeFileSync(path.join(home.root, E2E_SECRETS_FILE_NAME), JSON.stringify({ [FORGE_SECRET]: FORGE_CREDENTIAL }), { mode: 0o600 });
+    await storeSecretThroughProduct(home, FORGE_SECRET, FORGE_CREDENTIAL);
     const stack = await startStack({
       home,
-      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      deps: { restart: E2E_RESTART_POLICY },
       settings: { forges: [{ id: 'local', descriptor: 'github', hosts: [forge.host], apiBaseUrl: forge.origin, credential: { secret: FORGE_SECRET } }] },
       script: loadThen('PullRequestCreate', { head: HEAD_BRANCH, base: 'main', title: 'Add x', body: 'Adds x', headSha: head }),
     });
     const runtime = createRuntimeClient(home);
     try {
       await trustProject(home);
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Open the pull request');
       await until(() => forge.creates() === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the create request reached the forge' });
 

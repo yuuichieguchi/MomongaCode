@@ -148,18 +148,30 @@ const JOURNAL_TAIL_SQL = `SELECT run_id, seq, type FROM events ORDER BY id DESC 
 
 const liveSupervisorsOf = (home: E2eHome): number[] => home.ledger.entries().filter((entry) => entry.source === 'supervisor' && groupAlive(entry.pgid)).map((entry) => entry.pgid);
 
+type StopReading = { readonly survivors: LedgerSurvivor[]; readonly collectFailure: unknown };
+
+const readSurvivors = async (home: E2eHome): Promise<StopReading> => {
+  let collectFailure: unknown;
+  try {
+    await home.ledger.collect({});
+  } catch (error) {
+    collectFailure = error;
+  }
+  return { survivors: await home.ledger.survivors(), collectFailure };
+};
+
 const survivorsAfterStop = async (home: E2eHome, bounds: E2eStopBounds): Promise<LedgerSurvivor[]> => {
-  await home.ledger.collect({});
+  const first = await readSurvivors(home);
   const supervisors = liveSupervisorsOf(home);
   for (const pid of supervisors) process.kill(pid, 'SIGTERM');
   const deadline = performance.now() + (supervisors.length > 0 ? bounds.supervisorAsked : bounds.orphaned);
-  let survivors = await home.ledger.survivors();
-  while (survivors.length > 0 && performance.now() < deadline) {
+  let reading = first;
+  while ((reading.survivors.length > 0 || reading.collectFailure !== undefined) && performance.now() < deadline) {
     await abortableWait(UNTIL_DEFAULT_INTERVAL_MS);
-    await home.ledger.collect({});
-    survivors = await home.ledger.survivors();
+    reading = await readSurvivors(home);
   }
-  return survivors;
+  if (reading.collectFailure !== undefined) throw reading.collectFailure;
+  return reading.survivors;
 };
 
 const survivorErrors = (outcome: E2eTestOutcome, survivors: readonly LedgerSurvivor[]): Error[] =>
@@ -224,8 +236,9 @@ export const disposeAll = async (outcome: E2eTestOutcome, bounds: E2eStopBounds 
     }
   };
   const work = async (): Promise<void> => {
-    const stopped = await Promise.all(disposing.map(async (home) => ({ home, errors: await stopProcessesOf(home, outcome, bounds) })));
-    for (const { errors } of stopped) failures.push(...errors);
+    await Promise.all(disposing.map((home) => attempt(async () => {
+      failures.push(...(await stopProcessesOf(home, outcome, bounds)));
+    })));
     for (const callback of callbacks) await attempt(callback);
     const keep = outcome.failed || failures.length > 0;
     for (const home of disposing) await attempt(async () => {

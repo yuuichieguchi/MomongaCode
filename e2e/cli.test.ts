@@ -11,7 +11,7 @@ import { readDb } from './support/db.ts';
 import { supervisorLog } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { DEFAULT_E2E_DEPS, baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
+import { baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { SCRIPTED_USAGE, chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { pidOf } from './support/supervisor-client.ts';
@@ -312,7 +312,7 @@ describe('cli: momonga -p', () => {
     const stack = await startStack({ home, script: [textReply('another run'), textReply('held run')], version: '1.0.0' });
     const hold = stack.fake.hold();
     const runtime = createRuntimeClient(home);
-    const session = await runtime.createSession();
+    const session = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const held = (await runtime.createRun(session.session.id, 'work in progress')).run;
     await hold.waitForRequest();
     const oldPid = stack.supervisor.pid;
@@ -364,7 +364,7 @@ describe('cli: momonga -p', () => {
     const stack = await startStack({ home, script: [textReply('held run'), textReply('another run')], version: '1.0.0' });
     const hold = stack.fake.hold();
     const runtime = createRuntimeClient(home);
-    const session = await runtime.createSession();
+    const session = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     await runtime.createRun(session.session.id, 'work in progress');
     await hold.waitForRequest();
     const oldPid = stack.supervisor.pid;
@@ -401,7 +401,7 @@ describe('cli: momonga -p', () => {
 
   it(titleOf('cli-reconnect'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, script: [textReply('survived the restart')], version: cliPackage.version, deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY } });
+    const stack = await startStack({ home, script: [textReply('survived the restart')], version: cliPackage.version, deps: { restart: E2E_RESTART_POLICY } });
     const hold = stack.fake.hold();
 
     const running = startCli(home, ['-p', 'Say hello', '--output-format', 'stream-json']);
