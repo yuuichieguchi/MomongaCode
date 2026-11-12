@@ -92,7 +92,7 @@ describe('the final notice of a survivor is said only after the fourth chance, w
     const { dir } = markerDirectoryWith('r01110\n');
     await reapAt(dir, 'guard', world, label);
     expect(world.warnings).toContain(
-      `a ${label} process (marker ${MARKER_NAME}) may still be running. MomongaCode has used its 4 retries and will not try again. If it can stay running, run /markers ignore ${MARKER_NAME}.`,
+      `a ${label} process (marker ${MARKER_NAME}) may still be running. MomongaCode has used its 4 retries and will not try again. Stop the process that holds it, or, if it can stay running, run /markers ignore ${MARKER_NAME} in an interactive session.`,
     );
   });
 
