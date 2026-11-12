@@ -177,7 +177,7 @@ describe('PreToolUse hook processes', () => {
     const pidFile = path.join(dir, 'pid');
     const { context, executions } = contextFor(settings('PreToolUse', `echo $$ > ${pidFile}; sleep 30`), { deadlineAt: Date.now() + 300 });
     expect(await createToolHooks(context).preToolUse(call)).toMatchObject({ decision: 'ask' });
-    expect(executions[0]).toMatchObject({ outcome: 'timed_out' });
+    expect(executions[0]).toMatchObject({ outcome: 'timed_out', message: expect.stringMatching(/^the hook exceeded its [\d.]+ s timeout$/) });
     const pid = Number(fs.readFileSync(pidFile, 'utf8'));
     await expect((async () => process.kill(pid, 0))()).rejects.toThrow();
   });

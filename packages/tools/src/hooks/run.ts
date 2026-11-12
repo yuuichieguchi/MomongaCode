@@ -99,7 +99,7 @@ const executeHook = async (
   });
   if (result.kind === 'spawn_error') return finish({ outcome: 'error', message: `the hook could not start: ${result.message}` });
   groupNotice = result.groupNotice;
-  if (result.kind === 'timed_out') return finish({ outcome: 'timed_out', message: `the hook exceeded its ${timeoutMs} ms timeout` }, undefined, result.stderr);
+  if (result.kind === 'timed_out') return finish({ outcome: 'timed_out', message: `the hook exceeded its ${timeoutMs / 1000} s timeout` }, undefined, result.stderr);
   if (result.kind === 'cancelled') return finish({ outcome: 'cancelled' }, undefined, result.stderr);
   if (result.kind === 'signaled') return finish({ outcome: 'error', message: `the hook was terminated by ${result.signal}` }, undefined, result.stderr);
   const { exitCode, stdout, stderr } = result;
