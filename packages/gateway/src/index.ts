@@ -8,7 +8,7 @@ export type { EndpointKey, EndpointRecord } from './probe/endpoint-record.ts';
 export { probeEndpointTarget } from './probe/probe-endpoint.ts';
 export { MeasurementConsentRequiredError, isMeteredTarget, loadMeasurementConsent, measurementConsentPath, saveMeasurementConsent } from './probe/consent.ts';
 export type { MeasurementBound, MeteredMeasurement } from './probe/consent.ts';
-export { DEFAULT_SAMPLES, measurementBoundOf } from './probe/run-probe.ts';
+export { DEFAULT_SAMPLES, DEFAULT_STEP_TIMEOUT_MS, measurementBoundOf } from './probe/run-probe.ts';
 export type { ProbeEndpointTargetOptions, ProbeEndpointTargetResult } from './probe/probe-endpoint.ts';
 export { endpointKeyOf } from './probe/endpoint-target.ts';
 export { ProbeTimeoutError } from './probe/client.ts';

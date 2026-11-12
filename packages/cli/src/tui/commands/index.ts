@@ -12,6 +12,7 @@ import { initCommand } from './init.ts';
 import { keybindingsCommand } from './keybindings.ts';
 import { mcpCommand } from './mcp.ts';
 import { modelsCommand } from './models.ts';
+import { networkCommand } from './network.ts';
 import { permissionsCommand } from './permissions.ts';
 import { markersCommand } from './markers.ts';
 import { memoryCommand } from './memory.ts';
@@ -23,4 +24,4 @@ import { skillsCommand } from './skills.ts';
 import { themeCommand } from './theme.ts';
 import { tuiCommand } from './tui.ts';
 
-export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, delegateCommand, resumeCommand, autoModeCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, permissionsCommand, hooksCommand, mcpCommand, modelsCommand, initCommand, reportCommand, copyCommand, skillsCommand, agentsCommand, ...shellSlashCommands];
+export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, delegateCommand, resumeCommand, autoModeCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, permissionsCommand, hooksCommand, mcpCommand, modelsCommand, initCommand, reportCommand, copyCommand, skillsCommand, agentsCommand, networkCommand, ...shellSlashCommands];

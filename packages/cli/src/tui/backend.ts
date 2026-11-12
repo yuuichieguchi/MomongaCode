@@ -1,5 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { findProgramOnPath, nodeFileSystem, resolveLayoutLocks } from '@momonga/foundation';
+import { createOutboundDispatcher, findOutboundError, findProgramOnPath, outboundFetch, resolveLayoutLocks, routeOf } from '@momonga/foundation';
+import { withOutboundNetwork } from '../network.ts';
+import type { NetworkCheck, NetworkView } from './commands/network.ts';
 import type { FileCandidates } from '@momonga/foundation';
 import type { TrustItemsView } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
@@ -92,6 +94,8 @@ export type TuiBackend = {
   copyToClipboard(text: string): Promise<CopyOutcome>;
   skills(): Promise<SkillsResponse>;
   agents(): Promise<AgentsResponse>;
+  network(signal: AbortSignal): Promise<NetworkView>;
+  checkNetwork(url: URL, signal: AbortSignal): Promise<NetworkCheck>;
   createFromTemplate(kind: TemplateKind, name: string): Promise<CreatedFile>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
@@ -164,7 +168,7 @@ export const createTuiBackend = (
     }
   };
 
-  const clipboardPrograms = cachedProgramSearch((name) => findProgramOnPath(name, ports.env, nodeFileSystem));
+  const clipboardPrograms = cachedProgramSearch((name) => findProgramOnPath(name, ports.env, ports.files));
 
   const conversationRuns = (sessionId: string): Promise<RunView[]> => ownRunsOf(runtime(), sessionId);
 
@@ -316,6 +320,28 @@ export const createTuiBackend = (
     },
     skills: () => runtime().skills(current().id),
     agents: () => runtime().agents(current().id),
+    network: async (signal) => ({
+      settings: (await loadUserSettings({ home: paths.home, signal })).settings.network,
+      env: ports.env,
+      trust: await withOutboundNetwork(ports, signal, async (network) => network.trust),
+    }),
+    checkNetwork: (url, signal) =>
+      withOutboundNetwork(ports, signal, async (network) => {
+        const { DEFAULT_STEP_TIMEOUT_MS } = await import('@momonga/gateway');
+        const dispatcher = createOutboundDispatcher(network, { connectReplyTimeoutMs: DEFAULT_STEP_TIMEOUT_MS, headersTimeout: DEFAULT_STEP_TIMEOUT_MS, bodyTimeout: DEFAULT_STEP_TIMEOUT_MS });
+        const route = routeOf(url, network.config);
+        try {
+          const response = await outboundFetch(dispatcher)(url, { method: 'HEAD', signal });
+          await response.body?.cancel();
+          return { route, result: { kind: 'answered', status: response.status } };
+        } catch (error) {
+          const found = findOutboundError(error);
+          if (found === undefined) throw error;
+          return { route, result: { kind: 'failed', hop: found.hop, text: found.message } };
+        } finally {
+          await dispatcher.close();
+        }
+      }),
     createFromTemplate: (kind, name) => createFromTemplate(ports.files, paths.home, kind, name),
     memories: (filter) => runtime().memories(filter),
     memory: (id) => runtime().memory(id),

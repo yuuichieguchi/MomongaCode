@@ -18,6 +18,7 @@ import { freshHome } from './fresh-home.ts';
 import { listingOf } from './models-shell-harness.ts';
 import type { AgentView, McpServerView } from '@momonga/protocol';
 import { createFromTemplate } from '../src/tui/file-templates.ts';
+import type { NetworkCheck, NetworkView } from '../src/tui/commands/network.ts';
 import type { TemplateFiles } from '../src/tui/file-templates.ts';
 
 const templateFiles: TemplateFiles = {
@@ -90,6 +91,8 @@ export type FakeBackend = TuiBackend & {
 export type FakeBackendOptions = {
   storedResults?: Readonly<Record<string, string>>;
   agents?: readonly AgentView[];
+  network?: NetworkView;
+  networkCheck?: NetworkCheck;
   trust?: TrustView;
   trustItems?: TrustItemsView;
   session?: Partial<SessionView>;
@@ -500,6 +503,14 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     skills: async () => ({ skills: [...(options.skills ?? [])], warnings: [...(options.skillWarnings ?? [])] }),
     agents: async () => ({ agents: [...(options.agents ?? [])], warnings: [] }),
+    network: async () => {
+      if (options.network === undefined) throw new Error('the fake backend was given no network view');
+      return options.network;
+    },
+    checkNetwork: async () => {
+      if (options.networkCheck === undefined) throw new Error('the fake backend was given no network check');
+      return options.networkCheck;
+    },
     createFromTemplate: (kind, name) => createFromTemplate(templateFiles, settingsPlace().home, kind, name),
     memories: async () => memories,
     memory: async (id) => {
