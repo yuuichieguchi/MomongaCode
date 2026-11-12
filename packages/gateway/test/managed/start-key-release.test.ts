@@ -95,7 +95,7 @@ const wired = async ({ spawnFails, afterChildStarting }: Wiring) => {
     onInstanceEnd: () => undefined,
     startProbe: async (key) => {
       started.push(key);
-      return { state: 'probing', message: 'probing', retryAfterSeconds: 120 } as const;
+      return { state: 'probing', message: 'probing', retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } } as const;
     },
     instanceProbe: () => {
       throw new Error('every key component is read in this test');

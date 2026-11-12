@@ -25,6 +25,7 @@ export interface ManagedServerTimers {
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
   now(): number;
+  monotonicMs(): number;
 }
 
 export type ManagedServerOptions = {

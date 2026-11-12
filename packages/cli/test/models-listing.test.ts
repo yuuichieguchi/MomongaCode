@@ -29,7 +29,7 @@ describe('momonga models', () => {
   it('prints the window a measured model is configured with', async (context) => {
     const at = homeWith(context, S2);
     const listed = listingOf(at.home);
-    const measuring = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' } as const;
+    const measuring = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' } as const;
     const harness = shellOf(at, { listing: () => ({ ...listed, data: listed.data.map((entry) => (entry.provider === 'lmstudio' ? { ...entry, capabilities: measuring } : entry)) }) });
 
     await listModels(harness.shell, { json: false });

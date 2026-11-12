@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { EntryUsageError, nodeFileSystem, systemClock } from '@momonga/foundation';
+import { EntryUsageError, nodeFileSystem, systemTiming } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type { GatewayTimers } from './types.ts';
 
@@ -12,7 +12,7 @@ export type ProcessFilePorts = {
 };
 
 export type ProcessPorts = {
-  clock: Clock;
+  clock: Clock & { monotonicMs(): number };
   timers: GatewayTimers;
   random: () => number;
   files: ProcessFilePorts;
@@ -90,7 +90,7 @@ export const systemProcessFiles: ProcessFilePorts = {
 };
 
 export const systemProcessPorts: ProcessPorts = {
-  clock: systemClock,
+  clock: systemTiming,
   timers: realTimers,
   random: Math.random,
   files: systemProcessFiles,

@@ -59,6 +59,7 @@ export type ModelsShell = {
   detect(request: DetectRequest): Promise<readonly LocalServerDetection[]>;
   describe(server: DetectedLocalServer, model: DetectedModel, signal: AbortSignal): Promise<DetectedModel>;
   programModel(program: ServerProgram, signal: AbortSignal): Promise<string>;
+  describe(server: DetectedLocalServer, model: DetectedModel, signal: AbortSignal): Promise<DetectedModel>;
 };
 
 export type ModelsHost = Omit<ModelsShell, 'stdout' | 'stderr'>;
@@ -910,8 +911,10 @@ type DescribeFetch = (
 export const modelDescriber =
   (fetch: DescribeFetch): ModelsShell['describe'] =>
   async (server, model, signal) => {
-    const { describeModel } = await import('@momonga/gateway');
-    return describeModel({ server, model, signal, fetch });
+    const { describeModel, reportedWindowOf } = await import('@momonga/gateway');
+    const described = await describeModel({ server, model, signal, fetch });
+    const window = reportedWindowOf(described);
+    return window === undefined ? described : { ...described, contextWindow: window };
   };
 
 export const modelsShellOf = (ports: CliPorts, paths: MomongaPaths, interrupt: AbortSignal): ModelsShell => ({

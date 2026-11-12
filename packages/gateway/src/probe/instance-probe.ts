@@ -1,8 +1,10 @@
 import { probeKeyComponentLabel } from '@momonga/foundation';
 import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Probing } from '@momonga/protocol';
-import { probeBackoffOf, targetProbeFailedError } from './auto-probe.ts';
-import type { ProbeBackoff } from './auto-probe.ts';
+import type { Redactor } from '@momonga/foundation';
+import { probeFailureOf, targetProbeFailedError } from './auto-probe.ts';
+import type { MeasuringAsk, ProbeFailure } from './auto-probe.ts';
+import type { MeasurementProgress } from './client.ts';
 
 const MS_PER_SECOND = 1000;
 
@@ -18,9 +20,11 @@ export type InstanceProbeOptions<Report> = {
   target: string;
   unknown: { component: string; reason: string };
   dir: string;
-  measure: (signal: AbortSignal) => Promise<Report>;
+  ask: MeasuringAsk;
+  redactor: Pick<Redactor, 'text'>;
+  measure: (signal: AbortSignal, progress: MeasurementProgress) => Promise<Report>;
   retryAfterMs: number;
-  clock: { now(): number };
+  clock: { now(): number; monotonicMs(): number };
   onNotice: (text: string) => void;
   onFailure?: (error: unknown) => void;
 };
@@ -30,22 +34,41 @@ export const unreadableKeyNotice = (target: string, component: string, reason: s
 
 export const createInstanceProbe = <Report>(options: InstanceProbeOptions<Report>): InstanceProbe<Report> => {
   const stop = new AbortController();
-  const probing: Probing = { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: Math.ceil(options.retryAfterMs / MS_PER_SECOND) };
+  let started = options.clock.monotonicMs();
+  let step: { name: string; boundMs: number } | null = null;
+  const probing = (): Probing => ({
+    state: 'probing',
+    message: TARGET_PROBING_MESSAGE,
+    retryAfterSeconds: Math.ceil((step?.boundMs ?? options.retryAfterMs) / MS_PER_SECOND),
+    measuring: {
+      fields: [...options.ask.fields],
+      step: step?.name ?? null,
+      elapsedSeconds: Math.floor((options.clock.monotonicMs() - started) / MS_PER_SECOND),
+      declaration: options.ask.declaration,
+    },
+  });
   let instance = 0;
   let noticed = false;
   let measured: { report: Report } | undefined;
-  let backoff: ProbeBackoff | undefined;
+  let failure: ProbeFailure | undefined;
   let flight: Promise<void> | undefined;
 
   const startFlight = (): void => {
     const flightInstance = instance;
-    const running = options.measure(stop.signal).then(
+    started = options.clock.monotonicMs();
+    step = null;
+    const progress: MeasurementProgress = {
+      step: (name, boundMs) => {
+        if (flightInstance === instance) step = { name, boundMs };
+      },
+    };
+    const running = options.measure(stop.signal, progress).then(
       (report) => {
         if (flightInstance === instance) measured = { report };
       },
       (error: unknown) => {
         if (stop.signal.aborted) return;
-        if (flightInstance === instance) backoff = probeBackoffOf(error, options.clock.now() + options.retryAfterMs);
+        if (flightInstance === instance) failure = probeFailureOf(error, options.target, options.ask, options.redactor);
         options.onFailure?.(error);
       },
     );
@@ -62,18 +85,14 @@ export const createInstanceProbe = <Report>(options: InstanceProbeOptions<Report
         noticed = true;
         options.onNotice(unreadableKeyNotice(options.target, options.unknown.component, options.unknown.reason));
       }
-      if (backoff !== undefined) {
-        const remaining = backoff.until - options.clock.now();
-        if (remaining > 0) throw targetProbeFailedError(backoff, remaining);
-        backoff = undefined;
-      }
+      if (failure !== undefined) throw targetProbeFailedError(failure);
       if (flight === undefined && !stop.signal.aborted) startFlight();
-      return { kind: 'probing', probing };
+      return { kind: 'probing', probing: probing() };
     },
     restarted: () => {
       instance += 1;
       measured = undefined;
-      backoff = undefined;
+      failure = undefined;
       noticed = false;
     },
     close: async () => {

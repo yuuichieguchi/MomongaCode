@@ -1,3 +1,5 @@
+import { PERSON_TRAFFIC } from '../src/probe/request-gate.ts';
+import { NO_PROGRESS_LISTENER } from '../src/probe/auto-probe.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -16,6 +18,7 @@ describe('the probe server stop reads the stop grace at its begin (design 3.2)',
     const events: string[] = [];
     const probe = measureManagedServer({
       timers: systemTiming,
+      gate: PERSON_TRAFFIC,
       inspector: testProcessInspector(),
       lock: testKernelLock(),
       description: FM_SERVER,
@@ -37,7 +40,7 @@ describe('the probe server stop reads the stop grace at its begin (design 3.2)',
         return FILE_GRACE_MS;
       },
     });
-    await expect(probe({ key: {}, signal: new AbortController().signal })).rejects.toThrow();
+    await expect(probe({ key: {}, signal: new AbortController().signal, progress: NO_PROGRESS_LISTENER })).rejects.toThrow();
     expect(events.slice(events.indexOf('spawn'))).toEqual(['spawn', 'read']);
   });
 });

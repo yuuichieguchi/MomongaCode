@@ -1,5 +1,5 @@
 import { agentReadiness, escapeTerminalLine, readinessShownText } from '@momonga/protocol';
-import type { MomongaModelEntry, Readiness, RemedySurface } from '@momonga/protocol';
+import type { Measuring, MomongaModelEntry, Readiness, RemedySurface } from '@momonga/protocol';
 import type { MomongaPaths, Timing } from '@momonga/foundation';
 
 export const readinessNoticeOf = (readiness: Readiness, surface: RemedySurface): string | undefined =>
@@ -7,7 +7,13 @@ export const readinessNoticeOf = (readiness: Readiness, surface: RemedySurface):
 
 export type MeasurementPorts = { read(): Promise<MomongaModelEntry>; timers: Pick<Timing, 'setTimeout' | 'clearTimeout'> };
 
-export const followMeasurement = (ports: MeasurementPorts, retryAfterSeconds: number, settled: (entry: MomongaModelEntry) => void, failed: (error: unknown) => void): (() => void) => {
+export const followMeasurement = (
+  ports: MeasurementPorts,
+  retryAfterSeconds: number,
+  settled: (entry: MomongaModelEntry) => void,
+  failed: (error: unknown) => void,
+  measuring: (state: Measuring) => void,
+): (() => void) => {
   let stopped = false;
   let handle: unknown;
   const wait = (seconds: number): void => {
@@ -16,7 +22,10 @@ export const followMeasurement = (ports: MeasurementPorts, retryAfterSeconds: nu
         (entry) => {
           if (stopped) return;
           const readiness = agentReadiness(entry.capabilities);
-          if (readiness.state === 'probing') wait(readiness.retryAfterSeconds);
+          if (readiness.state === 'probing') {
+            measuring(readiness.measuring);
+            wait(readiness.retryAfterSeconds);
+          }
           else settled(entry);
         },
         (error: unknown) => {

@@ -60,6 +60,7 @@ const pollNow = (): ManagedServerTimers => ({
   },
   clearTimeout: () => undefined,
   now: () => 0,
+  monotonicMs: () => 0,
 });
 
 const okExec = async (): Promise<ExecResult> => ({ exitCode: 0, stdout: '', stderr: '' });
