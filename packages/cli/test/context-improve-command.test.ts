@@ -4,7 +4,7 @@ import type { CommanderError } from 'commander';
 import { encodeOutcomeFile, formatImproveOutcome, outcomeFileOf, parseGuidelineCandidate } from '@momonga/eval';
 import type { ImproveOutcome } from '@momonga/eval';
 import type { EntryIo } from '@momonga/foundation';
-import { adoptOutcome, formatGuidelines } from '../src/commands/context.ts';
+import { adoptOutcome, exitOfImproveOutcome, formatGuidelines } from '../src/commands/context.ts';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
@@ -234,5 +234,17 @@ describe('listing guidelines', () => {
 describe('momonga context guideline rollback', () => {
   it('guards a typo: the version must be an integer of at least 1', async () => {
     await assertRejected(['context', 'guideline', 'rollback', 'latest'], /integer/);
+  });
+});
+
+describe('the exit of context improve', () => {
+  it.for([
+    ['winner', 0],
+    ['empty', 1],
+    ['no_analysis', 1],
+    ['no_winner', 1],
+    ['stopped', 1],
+  ] as const)('exits %s with %i: only a winner is a measured improvement', ([status, exit]) => {
+    expect(exitOfImproveOutcome({ status })).toBe(exit);
   });
 });
