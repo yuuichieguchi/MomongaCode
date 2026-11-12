@@ -211,6 +211,15 @@ describe('repository facts with reflection on', () => {
     ]);
   });
 
+  it('counts one candidate per distinct text: the fact of the accepted check and the model candidates, never a second copy or the fact of a check that is not accepted', async () => {
+    const env = await setup({ enabled: true, facts: true, accepted: ['npm test'] });
+    const run = await env.finishedRun(VERIFIED_TWICE(env.project));
+    env.gateway.script.push(textStep(JSON.stringify({ candidates: [{ text: NPM_TEST_FACT, kind: 'fact', paths: [] }, { text: 'the fixture needs a seed', kind: 'fact', paths: [] }] })));
+    await env.reflector().runOne(SIGNAL);
+    expect((await candidatesOf(env, (await run).id)).map((candidate) => candidate.text)).toEqual([NPM_TEST_FACT, 'the fixture needs a seed']);
+    expect(env.api.reflection.get((await run).id)?.dropped.map((drop) => drop.cause)).toEqual(['duplicate']);
+  });
+
   it('writes the facts when the job fails at its last attempt, and not before', async () => {
     const env = await setup({ enabled: true, facts: true });
     const run = await env.finishedRun(VERIFIED_TWICE(env.project));
