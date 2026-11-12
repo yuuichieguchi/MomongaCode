@@ -20,7 +20,7 @@ import { fenceBoundaryIn } from '@momonga/testkit';
 const ORIGINAL = 'greeting = "hello"\n';
 const EDITED = 'greeting = "hello, momonga"\n';
 const FINAL_TEXT = 'Updated the greeting in config.toml.';
-const REJECTED_OUTPUT = 'The user rejected this tool call.';
+import { REJECTED_OUTPUT } from '../packages/runtime/src/worker/held-calls.ts';
 const SKILL_BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
 
 type Prepared = { home: E2eHome; project: string; target: string; fake: Awaited<ReturnType<typeof startUpstream>> };

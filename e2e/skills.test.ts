@@ -14,7 +14,7 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { SESSION_PATH, createRuntimeClient } from './support/runtime-client.ts';
 import { personCapabilityOfHome } from './support/runtime-client.ts';
-import { REFUSED_READ_TEXT, platformSandbox, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
+import { platformSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
@@ -300,8 +300,8 @@ describe('g: agent skills', () => {
       expect(completed).toHaveLength(3);
       expect(String(completed[1]?.data['output'])).toContain(GUIDE_MARKER);
       expect(String(completed[1]?.data['output'])).toContain('rc=0');
-      expect(String(completed[2]?.data['output'])).toContain(REFUSED_READ_TEXT[productSandbox()]);
-      expect(String(completed[2]?.data['output'])).toContain('rc=1');
+      expect(String(completed[2]?.data['output'])).toContain(`reading ${home.paths.settingsFile} is denied in every permission mode`);
+      expect(String(completed[2]?.data['output'])).not.toContain('rc=');
       expect(chatCompletions(stack.fake)).toHaveLength(4);
     } finally {
       await runtime.close();

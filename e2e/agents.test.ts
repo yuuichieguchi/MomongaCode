@@ -302,7 +302,7 @@ describe('agents: background bash', () => {
       expect(outputs[1]).toContain('ready');
       expect(jobRow(home, jobId)).toMatchObject({ status: 'exited', exit_code: 0 });
       expect(groupAlive(pgid as number)).toBe(false);
-      expect(fs.readdirSync(markersOf(home).tools)).toEqual([]);
+      await until(() => fs.readdirSync(markersOf(home).tools).length === 0, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the marker of the finished job to be removed' });
 
       const listed = (await rawGet(home, `/v1/sessions/${session.id}/jobs`)).json['jobs'] as Json[];
       expect(listed).toMatchObject([{ id: jobId, status: 'exited', exitCode: 0, command: 'echo started; sleep 2; echo ready' }]);
