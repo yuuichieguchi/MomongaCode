@@ -1848,7 +1848,21 @@ export const RUN_API_SCHEMAS = {
     ),
   ),
   ErrorBody: root(
-    closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
+    closed(
+      {
+        error: closed(
+          {
+            type: string,
+            code: string,
+            message: string,
+            param: string,
+            measuring: closed({ fields: { type: 'array', items: string }, step: nullable(string), elapsed_seconds: nonNegativeInteger, declaration: string }, ['fields', 'step', 'elapsed_seconds', 'declaration']),
+          },
+          ['type', 'code', 'message'],
+        ),
+      },
+      ['error'],
+    ),
   ),
   PublicRunEvent: root({ type: 'object', oneOf: [...EVENT_TYPES.map(publicEventVariant), publicOpaqueVariant()] }),
   ReportPage: root(

@@ -8,7 +8,7 @@ const UNKNOWN_SIZE_TEXT =
 const UNAVAILABLE = { toolCalling: { state: 'unavailable', status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: UNKNOWN_SIZE_TEXT, param: 'model' }, source: 'unprobed' };
 const UNAVAILABLE_ERROR = { status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: UNKNOWN_SIZE_TEXT, param: 'model' };
 const RETRY_AFTER_SECONDS = 120;
-const PROBING = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: RETRY_AFTER_SECONDS }, source: 'unprobed' };
+const PROBING = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: RETRY_AFTER_SECONDS, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' };
 const READY = { contextWindow: 8192 };
 
 const entry = (id: string, capabilities: unknown, members: Record<string, unknown>) =>

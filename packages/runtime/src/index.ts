@@ -63,6 +63,7 @@ export { GATEWAY_UNAVAILABLE_CODE, GatewayRequestError, MODEL_NOT_FOUND_CODE, Mo
 export type { GatewayChainMember, GatewayClient, GatewayClientOptions, GatewayListing, GatewayModel, GatewayRequestErrorFields, ListedChainMember, ListedGatewayModel } from './gateway-client.ts';
 export { createTracerPort, fixedTracers } from './tracer.ts';
 export { LeaseLostError, ShutdownError } from './worker/errors.ts';
+export { MEASURING_SAME_STATE_WAITS } from './worker/gateway-policy.ts';
 export { asError } from './process/as-error.ts';
 export { POOL_IDLE_CLOSE_MS, POOL_REFERENCE_AUDIT_MS, SESSION_STATE_IDLE_MS } from './process/constants.ts';
 export { RUNTIME_DEFAULTS } from './process/defaults.ts';

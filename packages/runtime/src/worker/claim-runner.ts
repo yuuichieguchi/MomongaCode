@@ -5,15 +5,15 @@ import { reapTimingOf } from '../process/reap-timing.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex, sleep } from '@momonga/foundation';
-import { REFERENCE_KINDS, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
-import type { Capabilities, FunctionTool } from '@momonga/protocol';
+import { REFERENCE_KINDS, measuringLineOf, measuringSkipOf, measuringStepOf, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
+import type { Capabilities, FunctionTool, Measuring } from '@momonga/protocol';
 import { JournalThreadError, UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
-import { dispositionOf, observedCodeOf, retireDecisionOf, terminalOf } from './gateway-policy.ts';
+import { MEASURING_SAME_STATE_WAITS, dispositionOf, observedCodeOf, retireDecisionOf, terminalOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
@@ -212,7 +212,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
     detach();
     if (!fatal && !leftToRecovery) {
       try {
-        if (memory.streak === 0 || store.getRun(claim.runId)?.status !== 'QUEUED') host.forget(claim.runId);
+        if ((memory.streak === 0 && memory.measuring === undefined) || store.getRun(claim.runId)?.status !== 'QUEUED') host.forget(claim.runId);
       } catch (lookupError) {
         if (!escaping) throw lookupError;
       }
@@ -235,6 +235,11 @@ const stopRejectedWrapUp = async (options: WorkerOptions, claim: Claim, journal:
   return true;
 };
 
+const measuringStateOf = (measuring: Measuring): string => JSON.stringify([measuring.fields, measuring.step]);
+
+const measuringStalledText = (measuring: Measuring): string =>
+  `${measuringStepOf(measuring)}, and it did not move on in ${MEASURING_SAME_STATE_WAITS} waits of its own bound; ${measuringSkipOf(measuring)}`;
+
 const requeueOrStop = async (
   options: WorkerOptions,
   claim: Claim,
@@ -255,13 +260,23 @@ const requeueOrStop = async (
     return;
   }
   if (disposition.kind === 'wait') {
+    const state = measuringStateOf(disposition.measuring);
+    const elapsedSeconds = disposition.measuring.elapsedSeconds;
+    const previous = memory.measuring;
+    const shown = previous?.state === state;
+    const stalls = shown && elapsedSeconds <= previous.elapsedSeconds ? previous.stalls + 1 : 0;
+    if (stalls >= MEASURING_SAME_STATE_WAITS) {
+      await terminals.finish('FAILED', { error: { code: disposition.code, message: measuringStalledText(disposition.measuring) } });
+      return;
+    }
     const availableAt = options.clock.now() + disposition.retryAfterMs;
     const deadlineAt = options.store.getRun(claim.runId)?.deadlineAt;
     if (deadlineAt !== undefined && availableAt >= deadlineAt) {
       await terminals.finish('STOPPED', { stopReason: 'timeout' });
       return;
     }
-    journal.append([{ type: 'notice', level: 'info', message: disposition.message, code: disposition.code }]);
+    if (!shown) journal.append([{ type: 'notice', level: 'info', message: measuringLineOf(disposition.measuring), code: disposition.code }]);
+    memory.measuring = { state, elapsedSeconds, stalls };
     await terminals.yieldTo('QUEUED', availableAt, { refundAttempt: true });
     return;
   }
