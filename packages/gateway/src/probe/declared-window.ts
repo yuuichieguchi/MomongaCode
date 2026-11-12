@@ -1,5 +1,6 @@
 import { SERVER_KINDS } from '@momonga/protocol';
-import type { DetectedModel } from '@momonga/protocol';
+import type { DetectedModel, ProviderAdapter } from '@momonga/protocol';
+import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import { describeModel, detectLocalServers } from '../detect-local-servers.ts';
 import type { DetectFetch } from '../detect-local-servers.ts';
 import type { ExecFn } from '../managed/preconditions.ts';
@@ -29,14 +30,24 @@ export const reportedWindowAt = async (read: ReportedWindowRead): Promise<number
   return undefined;
 };
 
-export class DeclaredWindowAboveReportedError extends Error {
+export class DeclaredWindowAboveReportedError extends PreconditionFailedError {
   constructor(display: string, declared: number, reported: number, address: string) {
     super(
-      aboutModel(
-        display,
-        `the declared capabilities.contextWindow ${declared} is above the ${reported} tokens the server at ${address} reports for it; declare capabilities.contextWindow ${reported}, or load the model with a context length of at least ${declared}`,
-      ),
+      aboutModel(display, `the declared capabilities.contextWindow ${declared} is above the ${reported} tokens the server at ${address} reports for it`),
+      undefined,
+      `declare capabilities.contextWindow ${reported}, or load the model with a context length of at least ${declared}`,
     );
     this.name = 'DeclaredWindowAboveReportedError';
   }
 }
+
+export const refusingAdapter = (adapter: ProviderAdapter, refusal: PreconditionFailedError): ProviderAdapter => ({
+  ...adapter,
+  capabilities: async () => {
+    throw refusal;
+  },
+  create: async function* () {
+    yield* [];
+    throw refusal;
+  },
+});
