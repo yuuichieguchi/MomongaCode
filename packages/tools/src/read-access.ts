@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { absoluteFrom } from '@momonga/policy';
-import { fileRuleBlockingForm, filterAsync, mapAsync, someAsync } from '@momonga/foundation';
+import { containsByComponents, fileRuleBlockingForm, filterAsync, mapAsync, someAsync } from '@momonga/foundation';
 import type { FileRuleEntry, FileRuleProvenance, FileRuleSet, PathResolver } from '@momonga/foundation';
+
+type LocatedParts = Awaited<ReturnType<PathResolver['locate']>>['parts'];
 
 export type ReadAccessPolicy = {
   readDenied: readonly string[];
@@ -38,13 +40,17 @@ export const createReadAccessMatcher = async (policy: ReadAccessPolicy, paths: P
   const isStrictlyInside = async (candidate: string, directory: string): Promise<boolean> =>
     (await paths.comparableContains(directory, candidate)) && !(await paths.comparableContains(candidate, directory));
 
-  const blocksResolved = (resolved: string): Promise<boolean> =>
-    someAsync(
-      denied,
-      async (guard) =>
-        (await paths.comparableContains(guard, resolved)) &&
-        !(await someAsync(allowed, async (exception) => (await isStrictlyInside(exception, guard)) && (await paths.comparableContains(exception, resolved)))),
-    );
+  const locatedAllowed = await mapAsync(allowed, async (exception) => ({ exception, parts: (await paths.locate(exception)).parts }));
+  const locatedDenied = await mapAsync(denied, async (guard) => ({
+    parts: (await paths.locate(guard)).parts,
+    exceptions: (await filterAsync(locatedAllowed, ({ exception }) => isStrictlyInside(exception, guard))).map(({ parts }) => parts),
+  }));
+
+  const blocksResolved = async (resolved: string): Promise<boolean> => {
+    const located = await paths.locate(resolved);
+    const within = (parts: LocatedParts): boolean => containsByComponents(parts, located.parts, located.caseInsensitive);
+    return locatedDenied.some(({ parts, exceptions }) => within(parts) && !exceptions.some(within));
+  };
 
   const formsOf = async (target: string, cwd: string): Promise<{ requested: string; resolved: string }> => {
     const requested = path.resolve(cwd, target);
@@ -87,7 +93,10 @@ export const createReadAccessMatcher = async (policy: ReadAccessPolicy, paths: P
       if (await blocksResolved(requested)) return requested;
       return (await blocksResolved(resolved)) ? resolved : undefined;
     },
-    isAllowedEntry: (resolved: string): Promise<boolean> => someAsync(allowed, (guard) => paths.comparableContains(guard, resolved)),
+    isAllowedEntry: async (resolved: string): Promise<boolean> => {
+      const located = await paths.locate(resolved);
+      return locatedAllowed.some(({ parts }) => containsByComponents(parts, located.parts, located.caseInsensitive));
+    },
     leadsToAllowed: (resolved: string): Promise<boolean> => someAsync(allowed, (guard) => isStrictlyInside(guard, resolved)),
     deniedWithin: (directory: string): Promise<string[]> => filterAsync(denied, (guard) => isStrictlyInside(guard, directory)),
     allowedWithin: (directory: string): Promise<string[]> => filterAsync(allowed, (guard) => isStrictlyInside(guard, directory)),
