@@ -26,7 +26,7 @@ describe('the documents state that a model request can be sent twice (Q20 B3)', 
     expect(text).toMatch(/after a crash/i);
     expect(text).toContain('`idempotencyKeyHeader`');
     expect(text).toContain('`retry_of`');
-    expect(text).toMatch(/usage/);
+    expect(text).not.toContain('/v1/momonga/usage');
     expect(text).toMatch(/trace/);
   });
 
