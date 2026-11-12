@@ -74,6 +74,7 @@
       } catch {
         Fail "$target is in use and could not be moved aside ($($_.Exception.Message)): stop the daemon, then run the command again"
       }
+      New-Item -ItemType File -Path ($aside + '.sqlite') | Out-Null
     }
     try {
       Move-Item -LiteralPath $candidate -Destination $target

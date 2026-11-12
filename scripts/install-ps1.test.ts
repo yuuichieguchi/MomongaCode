@@ -83,6 +83,14 @@ describe('install.ps1', () => {
     expect(source).toContain('stop the daemon, then run the command again');
   });
 
+  it('writes beside the aside the empty lock database the update sweep claims, so that sweep removes the aside on every lock form', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    const aside = source.indexOf('Move-Item -LiteralPath $target -Destination $aside');
+    const sidecar = source.indexOf("New-Item -ItemType File -Path ($aside + '.sqlite')");
+    expect(sidecar).toBeGreaterThan(-1);
+    expect(sidecar).toBeGreaterThan(aside);
+  });
+
   it('runs the candidate with --version before it is moved into place, and refuses another version than the one asked for', () => {
     const source = fs.readFileSync(SCRIPT, 'utf8');
     const check = source.indexOf('$reported = & $candidate --version');
