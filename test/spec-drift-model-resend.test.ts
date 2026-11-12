@@ -42,16 +42,18 @@ const charge = (totalTokens: number): RunEventPayload => ({
 
 describe('ModelResend.tla matches the code', () => {
   const CITATIONS: readonly (readonly [string, number, string])[] = [
-    ['packages/runtime/src/worker/model-step.ts', 316, 'modelKey(ctx.run.id, position.step, position.attempt)'],
-    ['packages/runtime/src/worker/model-step.ts', 330, 'export const resumeInFlight'],
-    ['packages/runtime/src/worker/model-step.ts', 334, 'attempt: inFlight.attempt'],
-    ['packages/runtime/src/worker/model-step.ts', 176, 'const reject = '],
-    ['packages/store/src/fold.ts', 444, "case 'model.requested'"],
-    ['packages/store/src/fold.ts', 467, "case 'model.rejected'"],
-    ['packages/store/src/fold.ts', 470, 'attempt: event.attempt + 1'],
-    ['packages/gateway/src/core/idempotency.ts', 43, "kind: 'inflight'"],
-    ['packages/gateway/src/core/idempotency.ts', 52, "kind: 'stored'"],
-    ['packages/gateway/src/core/store.ts', 246, 'putIdempotency.run(key, digest'],
+    ['packages/runtime/src/worker/model-step.ts', 327, 'modelKey(ctx.run.id, position.step, position.attempt)'],
+    ['packages/runtime/src/worker/model-step.ts', 346, 'export const resumeInFlight'],
+    ['packages/runtime/src/worker/model-step.ts', 350, 'attempt: inFlight.attempt'],
+    ['packages/runtime/src/worker/model-step.ts', 177, 'const reject = '],
+    ['packages/store/src/fold.ts', 454, "case 'model.requested'"],
+    ['packages/store/src/fold.ts', 477, "case 'model.rejected'"],
+    ['packages/store/src/fold.ts', 480, 'attempt: event.attempt + 1'],
+    ['packages/gateway/src/core/idempotency.ts', 44, "kind: 'inflight'"],
+    ['packages/gateway/src/core/idempotency.ts', 54, "kind: 'stored'"],
+    ['packages/gateway/src/core/store-database.ts', 225, 'statements.putIdempotency.run(key, digest'],
+    ['packages/gateway/src/core/idempotency.ts', 43, 'throw idempotencyInProgressError(key)'],
+    ['packages/gateway/src/core/run.ts', 228, 'joinable: () => retained'],
   ];
 
   it('cites code lines that still hold the code it names, each cited in the spec header, and no retired symbol', () => {
@@ -95,5 +97,16 @@ describe('ModelResend.tla matches the code', () => {
     for (const action of ['Claim', 'Record', 'Send', 'Finish', 'Deliver', 'Decide', 'RecordAccept', 'RecordReject']) {
       expect(spec).toMatch(new RegExp(`^${action} ==`, 'm'));
     }
+  });
+});
+
+describe('SettingsHealth.tla cites code lines that hold what it names', () => {
+  const header = fs.readFileSync(path.join(specs, 'SettingsHealth.tla'), 'utf8').split('\nEXTENDS')[0] ?? '';
+
+  const CITATIONS: readonly (readonly [string, number, string, string])[] = [['packages/runtime/src/service/app.ts', 350, 'const sessionSettingsOf = ', 'app.ts:350']];
+
+  it.each(CITATIONS)('%s:%i holds %s and the header cites it as %s', (file, line, text, cited) => {
+    expect(lineOf(file, line), `${file}:${line}`).toContain(text);
+    expect(header).toContain(cited);
   });
 });
