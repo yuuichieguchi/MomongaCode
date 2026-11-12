@@ -221,6 +221,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
           const reason = event.status === 'failed' && event.effect !== undefined ? event.output.trimEnd() : '';
           note([`momonga: tool ${titles.get(event.callId) ?? event.callId} ${outcome}`, ...(reason === '' ? [] : reason.split('\n').map((line) => `  ${line}`))]);
         }
+        if (event.status === 'completed' && event.effect?.outcome === 'applied') note(leadWith('momonga: ', event.output.trimEnd().split('\n')));
         break;
       case 'hook.completed':
         note(leadWith('momonga: ', describeHook(event, agent)));
