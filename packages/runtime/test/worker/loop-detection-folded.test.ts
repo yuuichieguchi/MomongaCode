@@ -3,7 +3,7 @@ import { canonicalJson } from '@momonga/foundation';
 import type { RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem, materializeEvents, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
-import { isLoop } from '../../src/worker/loop-detection.ts';
+import { loopSignatureOf } from '../../src/worker/loop-detection.ts';
 import { readRunLimits } from '../../src/worker/limits.ts';
 import { TEST_FENCE } from '@momonga/testkit';
 
@@ -96,7 +96,7 @@ const randomRun = (random: ReturnType<typeof seeded>) => {
   return { payloads, items };
 };
 
-describe('isLoop over folded loop groups', () => {
+describe('the loop signature over folded loop groups', () => {
   it('equals today\'s callGroups semantics on random histories with parallel batches and compactions', () => {
     const random = seeded(31);
     let loops = 0;
@@ -106,7 +106,7 @@ describe('isLoop over folded loop groups', () => {
       for (const threshold of [2, 3, 4]) {
         const expected = referenceIsLoop(items, threshold);
         if (expected) loops += 1;
-        expect(isLoop(state, threshold)).toBe(expected);
+        expect(loopSignatureOf(state, threshold) !== undefined).toBe(expected);
       }
     }
     expect(loops).toBeGreaterThan(20);

@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { createRun, createSession, makeRuntimeFixture, writeProjectSettings, writeUserSettings } from '../process/helpers.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
-import { bash, exported, finishClaimed, checked } from './reflection-fixture.ts';
+import { bash, finishClaimed, checked } from './reflection-fixture.ts';
 import { NEVER_CANCELLED } from '@momonga/testkit';
 
 type Fixture = Awaited<ReturnType<typeof makeRuntimeFixture>>;
 
-const verified = (f: Fixture, runId: string): Promise<boolean> =>
-  exported<(deps: unknown, runId: string, signal: AbortSignal) => Promise<boolean>>('isRunVerified')({ store: withInProcessFacts(f.store, f.temp.dbPath), settings: f.composition.settings }, runId, NEVER_CANCELLED);
+const verified = async (f: Fixture, runId: string): Promise<boolean> => {
+  const store = withInProcessFacts(f.store, f.temp.dbPath);
+  const run = store.getRun(runId);
+  if (run === undefined) throw new Error(`run ${runId} does not exist`);
+  const session = store.getSession(run.sessionId);
+  if (session === undefined) throw new Error(`session ${run.sessionId} does not exist`);
+  const verification = await f.composition.settings.verification(session, NEVER_CANCELLED);
+  return (await store.journalFacts.verdict({ runId, commands: verification.commands, manifests: verification.manifests })).verified;
+};
 
 const projectCheckRun = async (f: Fixture) => {
   const session = createSession(f.store, f.temp.project);
@@ -16,7 +23,7 @@ const projectCheckRun = async (f: Fixture) => {
   return runId;
 };
 
-describe('isRunVerified with real settings', () => {
+describe('the verdict of a run with real settings', () => {
   it('reads the verdict of the conditions pinned when the run started, whatever the settings of the folder say now', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});

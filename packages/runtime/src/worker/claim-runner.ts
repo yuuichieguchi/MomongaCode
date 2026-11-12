@@ -590,7 +590,6 @@ const drive = async (
     memory,
     completion: {
       conditions: pins.mandate?.completion.conditions ?? [],
-      requirements: pins.mandate?.completion.requirements ?? [],
       required: pins.verificationRequired === true,
     },
     verificationCommands: (await options.settings.verification(session, control.signal)).commands,
