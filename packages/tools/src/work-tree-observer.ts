@@ -27,7 +27,7 @@ export type GitWorkTreeObserverOptions = { storeRoot: string; cwd: string; trust
 
 export type WorkTreeObserverPorts = {
   child: Pick<ChildPorts, 'spawn'>;
-  files: Pick<FileSystem, 'stat' | 'lstat' | 'mkdir'>;
+  files: Pick<FileSystem, 'stat' | 'lstat' | 'mkdir' | 'readdir'>;
   searchPath: string | undefined;
   processId: number;
   launch: ChildLaunch;
@@ -167,6 +167,21 @@ export const workTreeObserverOn = (ports: WorkTreeObserverPorts, { storeRoot, cw
       return { files: changesOf(store.workTree, diff.toString('utf8')), mark: closing, oversized: closing.oversized.filter((file) => !before.has(file)) };
     },
   };
+};
+
+export type ObserverStorePrune = { storeRoot: string; cutoffMs: number };
+
+const MS_PER_SECOND = 1000;
+
+export const pruneObserverStores = async (ports: Omit<WorkTreeObserverPorts, 'processId'>, { storeRoot, cutoffMs }: ObserverStorePrune, signal: AbortSignal): Promise<void> => {
+  if (!(await exists(ports.files, storeRoot))) return;
+  const expire = `--expire=@${Math.floor(cutoffMs / MS_PER_SECOND)}`;
+  for (const name of await ports.files.readdir(storeRoot)) {
+    const storeDir = path.join(storeRoot, name);
+    if (!(await exists(ports.files, path.join(storeDir, 'HEAD')))) continue;
+    const runGit = gitRunOn(ports.child, ports.launch, storeDir, storeRoot, { ...(ports.searchPath === undefined ? {} : { PATH: ports.searchPath }), ...GIT_ENV, GIT_DIR: storeDir });
+    await runGit(['prune', expire], signal);
+  }
 };
 
 const sha256Paged = async (files: Pick<FileSystem, 'openRead'>, file: string, signal: AbortSignal): Promise<string | undefined> => {

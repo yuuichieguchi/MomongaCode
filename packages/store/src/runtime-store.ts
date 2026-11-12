@@ -8,6 +8,7 @@ import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore } from './blobs.ts';
+import { retentionSweep } from './retention.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeSession, decodeStoredEvent, userShellRecordOf } from './codec.ts';
 import { createDerivedReads, createDerivedRepair } from './derived-repair.ts';
@@ -486,7 +487,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }
   const sql = statements;
   const lifetime = new AbortController();
-  const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, random, lock: options.lock });
+  const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, fileSystemSync: options.fileSystemSync, random, lock: options.lock });
   const decodeContext = decodeContextOf(db);
   const approvalOps = createApprovalStore(db, clock, decodeContext);
   const memories = createMemoryStore(db, clock, decodeContext);
@@ -898,8 +899,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const error = overTotal
       ? { code: 'max_total_attempts', message: `run ${run.id} exceeded ${maxTotalAttempts} total attempts` }
       : { code: 'max_attempts', message: `run ${run.id} exceeded ${failedMaximum} consecutive failed attempts` };
-    const cancelled = run.cancelRequested || run.status === 'CANCELLING';
-    changeStatus(run, cancelled ? 'CANCELLED' : 'FAILED', {
+    changeStatus(run, run.status === 'CANCELLING' ? 'CANCELLED' : 'FAILED', {
       edges: DEAD_LETTER_TRANSITIONS,
       deadLetter: true,
       patch: { error },
@@ -2014,6 +2014,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined, decodeContext),
     approvals: approvalOps.store,
     blobs,
+    retention: { sweep: (request, signal) => retentionSweep({ db, clock, blobs }, request, signal) },
     trust,
     ruleVerdicts,
     inbox,

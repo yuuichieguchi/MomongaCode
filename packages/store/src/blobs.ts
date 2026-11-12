@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, modeIsPrivate, sha256Hex, writeFileAtomically } from '@momonga/foundation';
-import type { Clock, FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
+import type { Clock, FileSystem, FileSystemSync, KernelLockMechanism, Random } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
 import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobScope, BlobSlice, BlobStore } from './types.ts';
 
@@ -14,7 +14,9 @@ const READ_PAGE_BYTES = 64 * 1024;
 
 export type BlobFileSystem = Pick<FileSystem, 'mkdir' | 'stat' | 'readFile' | 'readRange' | 'open' | 'descriptors' | 'rename' | 'link' | 'rm'>;
 
-export type BlobPorts = { fileSystem: BlobFileSystem; random: Random; lock: KernelLockMechanism };
+export type BlobFileSystemSync = Pick<FileSystemSync, 'rmSync'>;
+
+export type BlobPorts = { fileSystem: BlobFileSystem; fileSystemSync: BlobFileSystemSync; random: Random; lock: KernelLockMechanism };
 
 export const prepareBlobDirectory = async (fileSystem: Pick<FileSystem, 'mkdir' | 'stat'>, dir: string): Promise<void> => {
   await fileSystem.mkdir(dir, BLOB_DIRECTORY_MODE);
@@ -74,9 +76,11 @@ const assertNonNegativeInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 0) throw new RangeError(`blob range ${name} must be a non-negative integer, got ${value}`);
 };
 
+export type BlobCollector = { collectUnowned(limit: number): number };
+
 export const blobDirectoryOf = (databasePath: string): string => path.join(path.dirname(databasePath), 'blobs');
 
-export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, { fileSystem, random, lock }: BlobPorts): BlobStore => {
+export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, { fileSystem, fileSystemSync, random, lock }: BlobPorts): BlobStore & BlobCollector => {
   let directoryPrepared: Promise<void> | undefined;
   const prepare = (): Promise<void> => {
     directoryPrepared ??= prepareBlobDirectory(fileSystem, dir).catch((error: unknown) => {
@@ -91,6 +95,16 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, { f
       return await fileSystem.readFile(target);
     } catch (error) {
       if (isMissing(error)) return undefined;
+      throw error;
+    }
+  };
+
+  const present = async (target: string): Promise<boolean> => {
+    try {
+      await fileSystem.stat(target);
+      return true;
+    } catch (error) {
+      if (isMissing(error)) return false;
       throw error;
     }
   };
@@ -135,6 +149,8 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, { f
      ON CONFLICT (sha256) DO NOTHING`,
   );
   const select = db.prepare('SELECT * FROM blobs WHERE sha256 = :sha256');
+  const unowned = db.prepare('SELECT b.sha256 FROM blobs b WHERE NOT EXISTS (SELECT 1 FROM blob_owners o WHERE o.sha256 = b.sha256) ORDER BY b.sha256 LIMIT :limit');
+  const removeUnowned = db.prepare('DELETE FROM blobs WHERE sha256 = :sha256 AND NOT EXISTS (SELECT 1 FROM blob_owners o WHERE o.sha256 = :sha256)');
   const own = db.prepare('INSERT OR IGNORE INTO blob_owners (sha256, run_id) VALUES (:sha256, :runId)');
   const readableBy = db.prepare(
     `SELECT 1 AS readable FROM blob_owners o
@@ -186,16 +202,27 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string, { f
       const sha256 = handleOfBytes(bytes);
       const target = path.join(dir, sha256);
       await prepare();
-      if (!(await holdsContent(target, sha256, bytes.length))) {
-        await writeFileAtomically(fileSystem, random, target, bytes, { mode: BLOB_FILE_MODE, lock });
-      }
+      const write = (): Promise<unknown> => writeFileAtomically(fileSystem, random, target, bytes, { mode: BLOB_FILE_MODE, lock });
+      if (!(await holdsContent(target, sha256, bytes.length))) await write();
       const lineCount = countLines(bytes);
       immediateTx(db, () => {
         insert.run({ sha256, byteLength: bytes.length, lineCount, mediaType: options.mediaType, createdAt: clock.now() });
         if (options.runId !== undefined) own.run({ sha256, runId: options.runId });
       });
+      if (!(await present(target))) await write();
       return { handle: sha256, sha256, byteLength: bytes.length, lineCount } satisfies BlobRef;
     },
     read,
+    collectUnowned: (limit) =>
+      immediateTx(db, () => {
+        let collected = 0;
+        for (const row of unowned.all({ limit })) {
+          const sha256 = readerFor('blobs', 'unowned', row).string('sha256');
+          if (Number(removeUnowned.run({ sha256 }).changes) !== 1) continue;
+          fileSystemSync.rmSync(path.join(dir, sha256));
+          collected += 1;
+        }
+        return collected;
+      }),
   };
 };

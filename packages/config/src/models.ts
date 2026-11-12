@@ -19,6 +19,7 @@ import { chainRoomVerdict, roomNumbersText } from './chain-room.ts';
 import type { ChainMember } from './chain-room.ts';
 import { checkModelDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
+import { FIVE_MINUTES_MS } from './setting-defaults.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { ADAPTERS } from './adapters.ts';
 import type { AdapterKind, WireFacts } from './adapters.ts';
@@ -86,8 +87,6 @@ export type ResolvedModels = {
 };
 
 export const plainHttpWarningText = (server: string): string => `The address of ${server} is plain http to another computer: what you send to it is not encrypted.`;
-
-export const FIVE_MINUTES_MS = 300_000;
 
 export type PlanProfiles = Readonly<Record<string, PlanProfile>>;
 

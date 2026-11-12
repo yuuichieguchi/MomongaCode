@@ -27,7 +27,7 @@ const setup = (captureMessageContent?: boolean) => {
   const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(dir, 'traces.db'), clock });
+  const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(dir, 'traces.db') });
   cleanups.push(() => store.close());
   const memory = new InMemorySpanExporter();
   const telemetry = createTelemetry({ serviceName: 'momonga-test', serviceVersion: '9.9.9', clock, store, exporters: [memory], batch: QUIET_BATCH, ...(captureMessageContent === undefined ? {} : { captureMessageContent, contentRetentionMs: 60_000 }) });

@@ -10,8 +10,8 @@ import { policyFilesystemOn } from './policy-filesystem.ts';
 import type { ChildLaunch, ChildPorts } from './ports.ts';
 import { ripgrepLocatorOn } from './ripgrep-locator.ts';
 import type { HostRipgrepLocatorOptions, RipgrepLocator } from './ripgrep-locator.ts';
-import { workTreeObserverOn } from './work-tree-observer.ts';
-import type { GitWorkTreeObserverOptions, WorkTreeObserver } from './work-tree-observer.ts';
+import { pruneObserverStores, workTreeObserverOn } from './work-tree-observer.ts';
+import type { GitWorkTreeObserverOptions, ObserverStorePrune, WorkTreeObserver } from './work-tree-observer.ts';
 import { homeProtectedLaunch } from './home-protected-launch.ts';
 import type { HomeProtectedLaunchInput } from './home-protected-launch.ts';
 
@@ -37,6 +37,9 @@ export const createHostRipgrepLocator = (options: HostRipgrepLocatorOptions): Ri
 
 export const createGitWorkTreeObserver = (options: GitWorkTreeObserverOptions, launch: ChildLaunch): WorkTreeObserver =>
   workTreeObserverOn({ child: nodeChildPorts(), files: nodeFileSystem, searchPath: process.env['PATH'], processId: process.pid, launch }, options);
+
+export const pruneGitObserverStores = (prune: ObserverStorePrune, launch: ChildLaunch, signal: AbortSignal): Promise<void> =>
+  pruneObserverStores({ child: nodeChildPorts(), files: nodeFileSystem, searchPath: process.env['PATH'], launch }, prune, signal);
 
 const hostListing = (launch: ChildLaunch): FileListingPorts => ({ child: nodeChildPorts(), files: nodeFileSystem, launch });
 

@@ -170,6 +170,11 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       startedAtSeconds: Math.floor(startedAtMs / 1000),
       billedCalls: options.billedCalls,
       traceContent: options.traceContent,
+      retentionPurge: async (runIds, cutoffMs, signal) => {
+        const rows = await store.purgeRetained({ runIds, cutoffMs }, signal);
+        await options.retentionPurge?.(runIds, cutoffMs, signal);
+        return rows;
+      },
       startedAt,
       pid: options.pid,
       version: options.version,

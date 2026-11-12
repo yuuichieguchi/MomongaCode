@@ -28,6 +28,8 @@ export const STOP_REASONS = ['max_steps', 'budget', 'max_tokens', 'timeout', 'lo
 
 export const PERMISSION_MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
 
+export const DEFAULT_PERMISSION_MODE = 'manual' as const satisfies (typeof PERMISSION_MODES)[number];
+
 export const PERMISSION_MODE_DESCRIPTIONS: Readonly<Record<(typeof PERMISSION_MODES)[number], string>> = {
   manual: 'asks before every file change and command',
   acceptEdits: 'accepts file edits inside the workspace, asks before commands',

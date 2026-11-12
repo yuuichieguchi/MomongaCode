@@ -32,6 +32,7 @@ export type AppDependencies = {
   version: string;
   billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>) | undefined;
   traceContent: ((runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>) | undefined;
+  retentionPurge: (runIds: readonly string[], cutoffMs: number, signal: AbortSignal) => Promise<number>;
   errors: ErrorExit;
   plan: PlanApi | undefined;
 };
@@ -198,6 +199,15 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       throw invalidRequest('invalid_body', `limit must be an integer from 1 to ${MAX_BILLED_CALLS_PAGE}`, 'limit');
     }
     return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], after: cursor['after'] }, limit, includeRunless, readSignalOf(context)));
+  });
+
+  app.post('/v1/momonga/retention/purge', async (context) => {
+    const { runIds, cutoffMs } = await jsonObjectBody(context);
+    if (!Array.isArray(runIds) || !runIds.every((runId): runId is string => typeof runId === 'string')) {
+      throw invalidRequest('invalid_body', 'runIds must be a list of run ids', 'runIds');
+    }
+    if (typeof cutoffMs !== 'number' || !Number.isSafeInteger(cutoffMs)) throw invalidRequest('invalid_body', 'cutoffMs must be an integer time in milliseconds', 'cutoffMs');
+    return context.json({ purged: await dependencies.retentionPurge(runIds, cutoffMs, readSignalOf(context)) });
   });
 
   app.get('/v1/momonga/content', async (context) => {

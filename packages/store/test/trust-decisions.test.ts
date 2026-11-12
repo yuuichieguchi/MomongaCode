@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, RuntimeStoreOptions } from '@momonga/store';
 import { createFakeClock, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
-import { nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { nodeFileSystem, nodeFileSystemSync, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { START_MS, exactTrustOf, makeStoreDir, openStoreAt, rawDb, UNASKED_COMMANDS } from './helpers.ts';
 
 type TrustTree = { root: string; home: string; dbPath: string; store: RuntimeStore };
@@ -45,6 +45,7 @@ const openOptions = (dir: string, home: string): RuntimeStoreOptions => ({
   maxTotalAttempts: 100,
   unaskedCommands: UNASKED_COMMANDS,
   fileSystem: nodeFileSystem,
+  fileSystemSync: nodeFileSystemSync,
   random: systemRandom,
 });
 

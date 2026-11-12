@@ -67,16 +67,21 @@ describe('momonga secret set through a pty', () => {
 });
 
 describe('the startup screen through a pty', () => {
-  it('shows the squirrel, the version, the model with its target and the mode above the first prompt', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it('shows the squirrel, the version and the model by its own name on the start screen, and the mode only in the footer (design-screens 6.4)', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home } = await prepareProduct();
     const pty = await spawnWithFakes(home);
     await answerTrust(pty, 'trust');
-    await pty.waitFor('model: default → primary');
-    const screen = pty.screen();
-    console.log(screen.slice(screen.indexOf('╭')));
-    expect(screen).toContain('MomongaCode v0.0.0');
-    expect(screen).toContain('(•ᴥ•)');
-    expect(screen).toContain('mode: manual');
+    await pty.waitFor('mode: manual (shift+tab)');
+    const shown = pty.visible();
+    const banner = shown.filter((line) => line.startsWith('│'));
+    const screen = shown.join('\n');
+    expect(banner.some((line) => line.includes('(•ᴥ•)')), screen).toBe(true);
+    expect(banner.some((line) => line.includes('MomongaCode v0.0.0')), screen).toBe(true);
+    const modelLines = banner.filter((line) => /model: \S/.test(line));
+    expect(modelLines, screen).toHaveLength(1);
+    expect(modelLines[0], screen).not.toMatch(/model: default|→/);
+    expect(banner.some((line) => line.includes('mode:')), screen).toBe(false);
+    expect(shown.filter((line) => line.startsWith('mode: manual (shift+tab)')), screen).toHaveLength(1);
     await leave(pty);
   });
 });
@@ -89,7 +94,7 @@ describe('skills, memory and images in the terminal', () => {
     await trustAndWait(pty);
 
     pty.write('/pd');
-    await pty.waitFor('/pdf (tab completes)');
+    await pty.waitFor('› /pdf <task>  Extract PDF text');
     pty.write('\t');
     await pty.waitFor('> /pdf');
     pty.write('summarize the report');
@@ -151,11 +156,11 @@ describe('MCP input in the terminal', () => {
       await submit(pty, 'ask me who I am');
       await pty.waitFor('MCP server remote asks for input');
       await pty.waitFor('Who are you?');
-      await pty.waitFor('name (name, string, required)');
+      await pty.waitForPrompt('name (name, string, required)');
       pty.write('Ada');
-      await pty.waitFor('> Ada');
+      await pty.waitFor('Ada');
       pty.write(KEYS.enter);
-      await pty.waitFor('1. Submit');
+      await pty.waitForPrompt('1. Submit');
       pty.write('1');
       await pty.waitFor('form done');
       await untilRunEnds(pty, 'bypassPermissions');
@@ -165,7 +170,7 @@ describe('MCP input in the terminal', () => {
       await pty.waitFor('Connect your account.');
       await pty.waitFor('URL: https://example.test/connect?s=1');
       expect(fs.existsSync(path.join(home.root, OPEN_LOG_FILE_NAME))).toBe(false);
-      await pty.waitFor('1. Open the URL in the browser and accept');
+      await pty.waitForPrompt('1. Open the URL in the browser and accept');
       pty.write('1');
       await pty.waitFor('link done');
       expect(fs.readFileSync(path.join(home.root, OPEN_LOG_FILE_NAME), 'utf8')).toBe('https://example.test/connect?s=1\n');
@@ -186,7 +191,7 @@ describe('MCP input in the terminal', () => {
     fs.writeFileSync(path.join(skills, 'SKILL.md'), '---\nname: nameless\n---\nBody.\n');
     const pty = await spawnWithFakes(home);
     await answerTrust(pty, 'trust');
-    await pty.waitFor('model: default → primary');
+    await pty.waitFor('mode: manual (shift+tab)');
     await pty.waitFor('! Agent at');
     await pty.waitFor(wrappedText('broken.md was skipped: the description is missing or empty'));
     await pty.waitFor('! Skill at');

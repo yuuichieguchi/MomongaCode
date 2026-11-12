@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, openDatabase, sha256Hex, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { canonicalJson, openDatabase, sha256Hex, systemRandom, nodeFileSystem, nodeFileSystemSync, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, HistoryQueryResult, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
@@ -96,7 +96,7 @@ export const hookPreparer = (hook: TerminalContribution, dbPath: string): Contri
 });
 
 export const openStoreAt =(dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: options.fileSystem ?? nodeFileSystem, random: systemRandom,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: options.fileSystem ?? nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom,
     unaskedCommands: options.unaskedCommands ?? UNASKED_COMMANDS,
     path: dbPath,
     home: options.home ?? path.dirname(dbPath),

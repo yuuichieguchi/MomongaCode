@@ -90,22 +90,41 @@ const typeOf = (schema: Schema): string => {
   return 'any value';
 };
 
-type SettingRow = { readonly key: string; readonly type: string };
+type SettingRow = { readonly key: string; readonly type: string; readonly defaultText: string; readonly unit: string };
 
 const ENTRY = '<name>';
+
+const DEFAULTS_BY_TEXT: Readonly<Record<string, (key: string, value: string) => string>> = {
+  platform: (key, value) => `${value} on ${key}`,
+  event: (key, value) => `${code(key)}: ${value}`,
+};
+
+const valueText = (value: unknown): string => code(JSON.stringify(value));
+
+const defaultsByOf = (schema: Schema): string[] => {
+  const defaultsBy = schema['defaultsBy'];
+  if (!isSchema(defaultsBy) || typeof defaultsBy['by'] !== 'string' || !isSchema(defaultsBy['values'])) return [];
+  const text = DEFAULTS_BY_TEXT[defaultsBy['by']];
+  if (text === undefined) throw new Error(`the reference has no text for defaults by ${defaultsBy['by']}`);
+  return Object.entries(defaultsBy['values']).map(([key, value]) => text(key, valueText(value)));
+};
+
+const defaultTextOf = (schema: Schema): string => [...(schema['default'] === undefined ? [] : [valueText(schema['default'])]), ...defaultsByOf(schema)].join('; ');
+
+const unitOf = (schema: Schema): string => (typeof schema['unit'] === 'string' ? schema['unit'] : '');
 
 const settingRows = (schema: Schema, prefix: string): SettingRow[] => {
   const properties = schema['properties'];
   if (isSchema(properties)) {
     return Object.entries(properties).flatMap(([name, child]) => {
       const key = prefix === '' ? name : `${prefix}.${name}`;
-      return isSchema(child) ? [{ key, type: typeOf(child) }, ...settingRows(child, key)] : [];
+      return isSchema(child) ? [{ key, type: typeOf(child), defaultText: defaultTextOf(child), unit: unitOf(child) }, ...settingRows(child, key)] : [];
     });
   }
   const entry = schema['additionalProperties'];
-  if (schema['type'] === 'object' && isSchema(entry) && isSchema(entry['properties'])) return settingRows(entry, `${prefix}.${ENTRY}`);
+  if (schema['type'] === 'object' && isSchema(entry)) return settingRows(entry, `${prefix}.${ENTRY}`);
   const items = schema['items'];
-  if (schema['type'] === 'array' && isSchema(items) && isSchema(items['properties'])) return settingRows(items, `${prefix}[]`);
+  if (schema['type'] === 'array' && isSchema(items)) return settingRows(items, `${prefix}[]`);
   return [];
 };
 
@@ -164,9 +183,9 @@ export const renderReference = async (): Promise<string> => {
     '',
     'The layer column names the settings files that may set the key: the user file `~/.momonga/settings.json`, the project file `.momonga/settings.json` of a trusted folder, and the local file of the folder. A key that a project or local file sets outside its layer is discarded with a warning. `<name>` stands for a name you choose and `[]` for each entry of a list.',
     '',
-    '| Key | Value | Layer |',
-    '| --- | --- | --- |',
-    ...settings.map((row) => `| ${code(row.key)} | ${cell(row.type)} | ${cell(layerOf(row.key))} |`),
+    '| Key | Value | Default | Unit | Layer |',
+    '| --- | --- | --- | --- | --- |',
+    ...settings.map((row) => `| ${code(row.key)} | ${cell(row.type)} | ${cell(row.defaultText)} | ${row.unit} | ${cell(layerOf(row.key))} |`),
     '',
     '## Environment variables',
     '',

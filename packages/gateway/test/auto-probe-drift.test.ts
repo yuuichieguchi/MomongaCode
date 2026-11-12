@@ -10,10 +10,11 @@ import { createFakeKernelLock } from '@momonga/testkit';
 import { recordProbe, targetProbingError } from '../src/probe/auto-probe.ts';
 import type { ProbeLockKey, ProbeSubject } from '../src/probe/auto-probe.ts';
 import { makeDir } from './gateway-helpers.ts';
+import { cfgNames } from '../../../test/formal/cfg-names.ts';
 
 const specDir = path.resolve(import.meta.dirname, '..', '..', '..', 'specs', 'tla');
 const spec = fs.readFileSync(path.join(specDir, 'AutoProbe.tla'), 'utf8');
-const config = fs.readFileSync(path.join(specDir, 'AutoProbe.cfg'), 'utf8');
+const config = cfgNames(specDir, 'AutoProbe');
 const invariantTests = ['auto-probe.test.ts', 'auto-probe-endpoints.test.ts'].map((file) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8')).join('\n');
 const cliProbe = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', 'cli', 'src', 'commands', 'gateway.ts'), 'utf8');
 
@@ -25,16 +26,12 @@ const definitionOf = (name: string): string => {
 };
 
 const constantOf = (name: string): string => {
-  const match = new RegExp(`^\\s*${name}\\s*=\\s*(.+)$`, 'm').exec(config);
-  if (match === null) throw new Error(`AutoProbe.cfg sets no ${name}`);
-  return (match[1] as string).trim();
+  const value = config.constants[name];
+  if (value === undefined) throw new Error(`AutoProbe.cfg sets no ${name}`);
+  return value;
 };
 
-const invariantsOf = (): string[] => {
-  const block = /INVARIANTS\n([\s\S]*?)\n\n/.exec(config);
-  if (block === null) throw new Error('AutoProbe.cfg lists no invariants');
-  return (block[1] as string).split('\n').map((line) => line.trim()).filter((line) => line !== '' && line !== 'TypeOK');
-};
+const invariantsOf = (): string[] => config.invariants.filter((name) => name !== 'TypeOK');
 
 const PROPERTY_OF_INVARIANT: Record<string, string> = {
   SingleProbePerKey: 'P1',
@@ -127,21 +124,21 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
   });
 
   it('checks the endpoint adapter under the same properties, and names its key source and the backoff in the model', () => {
-    const endpoint = fs.readFileSync(path.join(specDir, 'AutoProbe.endpoint.cfg'), 'utf8');
+    const endpoint = cfgNames(specDir, 'AutoProbe.endpoint');
 
-    expect(endpoint).toMatch(/HostKeyed = FALSE/);
-    expect(endpoint).toMatch(/SaveLock = TRUE/);
+    expect(endpoint.constants.HostKeyed).toBe('FALSE');
+    expect(endpoint.constants.SaveLock).toBe('TRUE');
     expect(spec).toContain('file identity');
     expect(spec).toContain('gateway/src/probe/auto-probe.ts (createAutoProbe');
     expect(spec).toContain('packages/gateway/src/probe/probe-endpoint.ts');
   });
 
   it('decides a record of another key by one comparison for every adapter, and keeps the evidence that a 412 for the mismatch breaks P6', () => {
-    const rejectStale = fs.readFileSync(path.join(specDir, 'AutoProbe.rejectStale.cfg'), 'utf8');
+    const rejectStale = cfgNames(specDir, 'AutoProbe.rejectStale');
     const sourceOf = (file: string): string => fs.readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
 
-    expect(rejectStale).toMatch(/RejectStale = TRUE/);
-    expect(rejectStale).toMatch(/RecordMatchesKey/);
+    expect(rejectStale.constants.RejectStale).toBe('TRUE');
+    expect(rejectStale.invariants).toContain('RecordMatchesKey');
     expect(spec).toContain('record.ts recordForIdentity');
     for (const file of ['probe/record.ts', 'probe/endpoint-target.ts', 'probe/ollama-target.ts']) {
       expect(sourceOf(file)).toContain('recordForIdentity(');

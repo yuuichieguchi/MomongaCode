@@ -29,6 +29,8 @@ export const KEYS = {
   ctrlC: '\u0003',
   ctrlD: '\u0004',
   ctrlJ: '\n',
+  ctrlHome: '\u001b[1;5H',
+  ctrlEnd: '\u001b[1;5F',
 } as const;
 
 export type PtyExit = { code: number | null; signal: NodeJS.Signals | null };
@@ -44,8 +46,15 @@ export type PtySession = {
   exit(boundMs?: number): Promise<PtyExit>;
 };
 
-export const untilRunEnds = (pty: PtySession, mode: string): Promise<void> =>
-  pty.waitFor(new RegExp(`mode: ${mode} \\(shift\\+tab\\) · tokens: [\\d.]+k?( · context: \\d+%)?\\s*$`, 'm'));
+const WAITING_ROW = /\d+s · esc to cancel/;
+
+export const untilRunEnds = async (pty: PtySession, mode: string): Promise<void> => {
+  const footer = new RegExp(`^mode: ${mode} \\(shift\\+tab\\) · tokens: [\\d.]+k?( · context: \\d+%)?( |$)`);
+  await until(() => pty.visible().some((line) => footer.test(line)) && !pty.visible().some((line) => WAITING_ROW.test(line)), {
+    deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+    description: `the run to end with the footer of mode ${mode} and no waiting row`,
+  });
+};
 
 const TRUST_ROWS = { trust: '1', decline: '2' } as const;
 

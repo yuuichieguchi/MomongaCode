@@ -10,6 +10,7 @@ import { PLAN_PROFILES } from './plan-profiles.ts';
 import { connectionAddressProblem } from './probe-record-key.ts';
 import { describeSchemaErrors, invalidSettingsMessage, schemaProblemOf } from './schema-errors.ts';
 import { BASH_ON_TIMEOUT, ISSUE_AUTHOR_ASSOCIATIONS, MCP_SERVERS_FILE_SCHEMA, apiKeyChoiceProblem, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
+import { DEFAULT_CAPTURE_MESSAGE_CONTENT, DEFAULT_RETENTION_DAYS } from './setting-defaults.ts';
 
 export type PermissionsSettings = {
   defaultMode?: PermissionMode;
@@ -312,9 +313,6 @@ export type SandboxUnixSocketsSettings = { allow?: string[] };
 
 export type ResolvedSandboxUnixSockets = { allow: string[] };
 
-export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting =>
-  platform === 'darwin' ? 'seatbelt' : platform === 'linux' ? 'bubblewrap' : 'none';
-
 export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
 
 export type IssueWatchEntry = { repository: string; folder: string; forge: string; labels?: string[]; authorAssociation?: (typeof ISSUE_AUTHOR_ASSOCIATIONS)[number][]; mandate: string };
@@ -326,7 +324,7 @@ export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: b
 export type ResolvedTelemetrySettings = { captureMessageContent: boolean };
 
 export const resolveTelemetrySettings = (settings: TelemetrySettings | undefined): ResolvedTelemetrySettings => ({
-  captureMessageContent: settings?.captureMessageContent === true,
+  captureMessageContent: settings?.captureMessageContent ?? DEFAULT_CAPTURE_MESSAGE_CONTENT,
 });
 
 export type RetentionSettings = { days?: number };
@@ -348,8 +346,6 @@ export type ProjectApprovalsSettings = Record<string, { hooks?: HookApproval[]; 
 export const approvalDigest = (approval: HookApproval | MandateApproval): string => (typeof approval === 'string' ? approval : approval.digest);
 
 export type ResolvedRetentionSettings = { days: number };
-
-export const DEFAULT_RETENTION_DAYS = 30;
 
 export const resolveRetentionSettings = (settings: RetentionSettings | undefined): ResolvedRetentionSettings => ({
   days: settings?.days ?? DEFAULT_RETENTION_DAYS,
@@ -477,8 +473,6 @@ export type TuiScreen = (typeof TUI_SCREEN_MODES)[number];
 export type TuiSettings = { theme?: TuiTheme; notify?: TuiNotify; screenReader?: boolean; reducedMotion?: boolean; screen?: TuiScreen; mouse?: boolean; copyOnSelect?: boolean; attachFileMentions?: boolean };
 
 export type ResolvedTuiSettings = Required<TuiSettings>;
-
-export const defaultTuiSettings = (): ResolvedTuiSettings => ({ theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
 
 export type GatewaySettings = { closeGraceMs?: number; managedServerStopGraceMs?: number };
 

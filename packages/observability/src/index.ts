@@ -1,6 +1,4 @@
 export { createBodyQueue } from './body-queue.ts';
-export { BODY_PURGE_INTERVAL_MS, startBodyPurge } from './body-purge.ts';
-export type { BodyPurge, BodyPurgeOptions, BodyPurgeTimers } from './body-purge.ts';
 export type { BodyQueue, BodyQueueLimits } from './body-queue.ts';
 export { installOtelErrorHandler } from './errors.ts';
 export { RUN_REPORT_EVENT_TYPES, buildRunReport, createRunReportFold } from './run-report.ts';

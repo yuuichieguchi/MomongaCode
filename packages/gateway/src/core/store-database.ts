@@ -85,6 +85,8 @@ export type StoredCompaction = { digest: string; expiresAtMs: number; resource: 
 
 export type CompactionCommit = { key: string; digest: string; resource: CompactResource; createdAtMs: number; expiresAtMs: number };
 
+export type RetainedPurge = { runIds: readonly string[]; cutoffMs: number };
+
 export type CommitRequest = {
   recordedAtMs: number;
   idempotencyExpiredBeforeMs: number;
@@ -99,6 +101,7 @@ export type StoreDatabase = {
   getCompaction(key: string): StoredCompaction | undefined;
   deleteCompaction(key: string): void;
   commitCompaction(commit: CompactionCommit): void;
+  purgeRetained(purge: RetainedPurge): number;
   close(): void;
 };
 
@@ -147,6 +150,8 @@ type Statements = {
   firstSend: StatementSync;
   putSend: StatementSync;
   pruneSends: StatementSync;
+  purgeSendsOfRun: StatementSync;
+  purgeResponsesBefore: StatementSync;
 };
 
 const prepare = (db: DatabaseSync): Statements => ({
@@ -163,6 +168,8 @@ const prepare = (db: DatabaseSync): Statements => ({
   firstSend: db.prepare('SELECT MIN(seq) AS seq FROM sends WHERE call_key = ?'),
   putSend: db.prepare('INSERT INTO sends (call_key, target, run_id, step, sent_at_ms) VALUES (?, ?, ?, ?, ?)'),
   pruneSends: db.prepare('DELETE FROM sends WHERE sent_at_ms <= ?'),
+  purgeSendsOfRun: db.prepare('DELETE FROM sends WHERE run_id = ?'),
+  purgeResponsesBefore: db.prepare('DELETE FROM responses WHERE created_at_ms <= ?'),
 });
 
 export const openStoreDatabase = (dbPath: string, checks: StoredDataChecks): StoreDatabase => {
@@ -224,6 +231,12 @@ export const openStoreDatabase = (dbPath: string, checks: StoredDataChecks): Sto
           const first = statements.firstSend.get(send.callKey)?.['seq'];
           const inserted = statements.putSend.run(send.callKey, send.target, send.runId, send.step, send.sentAtMs);
           return { seq: Number(inserted.lastInsertRowid), retryOfSeq: first === null || first === undefined ? undefined : requireNumber(first, 'seq') };
+        }),
+      purgeRetained: ({ runIds, cutoffMs }) =>
+        immediateTx(db, () => {
+          let rows = 0;
+          for (const runId of runIds) rows += Number(statements.purgeSendsOfRun.run(runId).changes);
+          return rows + Number(statements.purgeResponsesBefore.run(cutoffMs).changes);
         }),
       close: () => {
         db.close();
