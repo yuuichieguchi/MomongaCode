@@ -50,18 +50,6 @@ const renderChat = (mode: ToolCallingMode, request: AdapterRequest): { messages?
   return render.call(adapter, request, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: { ...CC_CAPABILITIES, toolCalling: mode } }) as { messages?: unknown[] };
 };
 
-const parsesAsJsonObject = (text: unknown): boolean => {
-  if (typeof text !== 'string') return false;
-  try {
-    const value: unknown = JSON.parse(text);
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-  } catch {
-    return false;
-  }
-};
-
-const isPlainObject = (value: unknown): boolean => typeof value === 'object' && value !== null && !Array.isArray(value);
-
 type WireMessage = { tool_calls?: Array<{ function: { arguments: unknown } }> };
 
 const chatToolCallArguments = (messages: readonly unknown[] | undefined): unknown[] =>
@@ -76,51 +64,51 @@ describe('a history holding a model call with arguments that are a JSON object',
   });
 });
 
+const expectCutOff = (wire: unknown): void => {
+  const text = JSON.stringify(wire);
+  expect(text).toContain('cut_off_tool_call');
+  expect(text).not.toContain('Invalid JSON arguments for Write');
+};
+
 describe.each(MALFORMED_ARGUMENTS)('a history holding a model call with %s', (_label, args) => {
-  it('reaches a chat-completions upstream with tool_calls arguments that parse as a JSON object', () => {
+  it('reaches a chat-completions upstream without the call and its output, with the cut-off note in their place', () => {
     const wire = renderChat('native', requestWith(args, [WRITE_TOOL]));
 
-    const rendered = chatToolCallArguments(wire.messages);
-    expect(rendered).toHaveLength(1);
-    expect(rendered.map(parsesAsJsonObject)).toEqual([true]);
+    expect(chatToolCallArguments(wire.messages)).toEqual([]);
+    expectCutOff(wire);
   });
 
   it('renders for a chat-completions request that offers no tools, as the wrap-up request and its count do', () => {
-    expect(() => renderChat('native', requestWith(args, []))).not.toThrow();
+    expectCutOff(renderChat('native', requestWith(args, [])));
   });
 
   it('renders for a chat-completions target in constrained tool calling', () => {
-    expect(() => renderChat('constrained', requestWith(args, [WRITE_TOOL]))).not.toThrow();
+    expectCutOff(renderChat('constrained', requestWith(args, [WRITE_TOOL])));
   });
 
-  it('reaches an Open Responses upstream with function_call arguments that parse as a JSON object', () => {
+  it('reaches an Open Responses upstream without the call and its output', () => {
     const body = buildResponsesBody(requestWith(args, [WRITE_TOOL]), EVERY_REASONING_IS_OWN);
 
-    const calls = (body.input as Array<{ type?: string; arguments?: unknown }>).filter((item) => item.type === 'function_call');
-    expect(calls.map((item) => parsesAsJsonObject(item.arguments))).toEqual([true]);
+    const calls = (body.input as Array<{ type?: string }>).filter((item) => item.type === 'function_call' || item.type === 'function_call_output');
+    expect(calls).toEqual([]);
+    expectCutOff(body.input);
   });
 
-  it('reaches an Ollama upstream with tool_calls arguments that are a JSON object', () => {
-    const render = () => buildOllamaChatBody(requestWith(args, [WRITE_TOOL]), { contextWindow: 4096, maxOutputTokens: 1024 }, true, EVERY_REASONING_IS_OWN);
+  it('reaches an Ollama upstream without the call and its output', () => {
+    const body = buildOllamaChatBody(requestWith(args, [WRITE_TOOL]), { contextWindow: 4096, maxOutputTokens: 1024 }, true, EVERY_REASONING_IS_OWN);
 
-    expect(render).not.toThrow();
-    const rendered = (render().messages as unknown[]).flatMap((message) =>
-      ((message as { tool_calls?: Array<{ function: { arguments: unknown } }> }).tool_calls ?? []).map((call) => call.function.arguments),
-    );
-    expect(rendered.map(isPlainObject)).toEqual([true]);
+    const rendered = (body.messages as unknown[]).flatMap((message) => (message as { tool_calls?: unknown[] }).tool_calls ?? []);
+    expect(rendered).toEqual([]);
+    expectCutOff(body.messages);
   });
 
-  it('reaches an Anthropic upstream, for a reply and for a token count, with a tool_use input that is a JSON object', () => {
+  it('reaches an Anthropic upstream, for a reply and for a token count, without a tool_use for the call', () => {
     const request = requestWith(args, [WRITE_TOOL]);
-    const render = () => buildMessagesBody(request, 4096, { cache: undefined }, EVERY_REASONING_IS_OWN);
+    const body = buildMessagesBody(request, 4096, { cache: undefined }, EVERY_REASONING_IS_OWN);
 
-    expect(render).not.toThrow();
     expect(() => buildCountTokensBody(request, EVERY_REASONING_IS_OWN)).not.toThrow();
-    const inputs = render().messages.flatMap((message) =>
-      (Array.isArray(message.content) ? (message.content as Array<{ type?: string; input?: unknown }>) : [])
-        .filter((block) => block.type === 'tool_use')
-        .map((block) => block.input),
-    );
-    expect(inputs.map(isPlainObject)).toEqual([true]);
+    const uses = body.messages.flatMap((message) => (Array.isArray(message.content) ? (message.content as Array<{ type?: string }>) : []).filter((block) => block.type === 'tool_use' || block.type === 'tool_result'));
+    expect(uses).toEqual([]);
+    expectCutOff(body.messages);
   });
 });
