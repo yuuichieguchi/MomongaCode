@@ -169,7 +169,7 @@ describe('skills in the TUI', () => {
     await untilFrame(app, '> /pdf summarize report.pdf');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, '> summarize report.pdf');
-    expect(backend.started).toEqual([{ text: 'summarize report.pdf', history: 'inherit', options: { skill: 'pdf' } }]);
+    expect(backend.started).toEqual([{ text: 'summarize report.pdf', options: { skill: 'pdf' } }]);
     app.unmount();
   });
 
@@ -193,7 +193,7 @@ describe('images in the TUI', () => {
     app.stdin.write(KEYS.enter);
     await untilOutput(app, '> what is this');
     await backend.called('openSession');
-    expect(backend.started).toEqual([{ text: 'what is this', history: 'inherit', options: { images: [PNG] } }]);
+    expect(backend.started).toEqual([{ text: 'what is this', options: { images: [PNG] } }]);
     app.unmount();
   });
 
@@ -205,7 +205,7 @@ describe('images in the TUI', () => {
     await untilFrame(app, 'tokens: 2');
     app.stdin.write(pasted('/tmp/shot.png'));
     await untilFrame(app, '> /tmp/shot.png');
-    expect(backend.started).toEqual([{ text: 'first', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: 'first' }]);
     app.unmount();
   });
 

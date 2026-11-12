@@ -130,6 +130,14 @@ describe('an MCP server of .mcp.json is asked about by the same mechanism', () =
     writeJson(mcpFile(tree), { mcpServers: { docs: DOCS } });
     expect((await pendingProjectItems(trusted(tree))).items).toEqual([]);
   });
+
+  it('shows a disabled server when it is asked about by name, and only that one, without changing the disabled list', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { disabledMcpjsonServers: ['docs', 'wiki'] });
+    writeJson(mcpFile(tree), { mcpServers: { docs: DOCS, wiki: DOCS } });
+    expect((await pendingProjectItems({ ...trusted(tree), askedServer: 'docs' })).items).toEqual([{ kind: 'mcp', name: 'docs', config: DOCS, digest: approvalDigestOf(DOCS), source: mcpFile(tree), change: { kind: 'new' } }]);
+    expect((await loadUserSettings({ home: tree.home, signal })).settings.disabledMcpjsonServers).toEqual(['docs', 'wiki']);
+  });
 });
 
 describe('a project agent, which runs with tools, is asked about by the same mechanism', () => {

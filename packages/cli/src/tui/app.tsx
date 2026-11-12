@@ -1033,7 +1033,7 @@ export function App(props: AppProps) {
         ...(attachOn && hasMentionToken(text) ? { attachMentions: true } : {}),
       };
       const runModel = sessionModelRef.current;
-      return { start: () => backend.startRun(text, 'inherit', runOptions), resubmit: runModel === undefined ? undefined : { text, options: runOptions, sessionModel: runModel } };
+      return { start: () => backend.startRun(text, runOptions), resubmit: runModel === undefined ? undefined : { text, options: runOptions, sessionModel: runModel } };
     });
 
   const runCompaction = (instructions: string | undefined): Promise<void> =>

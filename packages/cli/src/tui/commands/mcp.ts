@@ -1,6 +1,6 @@
 import { mcpServerNameProblem } from '@momonga/config';
 import type { McpServerView } from '@momonga/protocol';
-import { APPLIES_NEXT_SESSION, confirmed, writeSetting } from '../settings-screen.tsx';
+import { APPLIES_NEXT_SESSION, SAVE_TO_TITLE, confirmed, savedOrRefused, writeSetting } from '../settings-screen.tsx';
 import type { Refusal } from '../settings-screen.tsx';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 import { shellFormOf } from './shell-commands.ts';
@@ -47,7 +47,19 @@ const withoutName = (name: string) => (current: unknown): unknown => {
   return next.length === 0 ? undefined : next;
 };
 
-const addServer = (context: SlashContext, name: string, server: Readonly<Record<string, unknown>>): Promise<Refusal | undefined> => writeSetting(context, 'user', { kind: 'set', path: ['mcpServers', name], value: server });
+const serverPlaceOf = async (context: SlashContext): Promise<'user' | 'project' | undefined> => {
+  const places = (await context.backend.settings()).targets.filter((layer) => layer !== 'local');
+  if (places.length < 2) return 'user';
+  const choice = await context.overlays.choose({ title: SAVE_TO_TITLE, rows: places.map((label) => ({ label })), initial: 0, decideOn: 'enter', escape: 'back', filter: false });
+  return choice === undefined ? undefined : places[choice.index] === 'project' ? 'project' : 'user';
+};
+
+const addServer = async (context: SlashContext, name: string, server: Readonly<Record<string, unknown>>): Promise<Refusal | 'left' | undefined> => {
+  const place = await serverPlaceOf(context);
+  if (place === undefined) return 'left';
+  if (place === 'project') return savedOrRefused(context, (signal) => context.backend.writeProjectMcpServer(name, server, signal));
+  return writeSetting(context, 'user', { kind: 'set', path: ['mcpServers', name], value: server });
+};
 
 const addStdio = async (context: SlashContext): Promise<Refusal | 'left' | undefined> => {
   const { promptText } = context.overlays;
@@ -85,10 +97,8 @@ const switchProjectServer = async (context: SlashContext, server: McpServerView)
   const choice = await context.overlays.choose({ title: server.name, rows: PROJECT_SERVER_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
   if (choice === undefined) return 'left';
   if (PROJECT_SERVER_ACTIONS[choice.index] === 'Enable') {
-    const undisabled = await writeSetting(context, 'user', { kind: 'update', path: ['disabledMcpjsonServers'], update: withoutName(server.name) });
-    if (undisabled !== undefined) return undisabled;
     for (;;) {
-      const item = (await context.backend.trustItems()).items.find((pending) => pending.kind === 'mcp' && pending.name === server.name);
+      const item = (await context.backend.trustItems(server.name)).items.find((pending) => pending.kind === 'mcp' && pending.name === server.name);
       if (item === undefined) return undefined;
       const [approved] = await askTrustItems([item], context.overlays.choose);
       if (approved === undefined) return 'left';

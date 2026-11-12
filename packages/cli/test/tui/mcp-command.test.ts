@@ -16,7 +16,7 @@ describe('/mcp: a credential of a server is a reference (product-surface-21)', (
     const place = freshPlace();
     const { context, recorded } = contextOf(
       {},
-      { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: SERVERS },
+      { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: SERVERS, trust: { path: place.project, decision: 'untrusted' } },
       { choices: [{ index: ADD_STDIO_INDEX, alt: false }], texts: ['github', 'npx', '-y github-server', 'GITHUB_HOST', 'GITHUB_TOKEN=github-token'] },
     );
     await runSlash('mcp', '', context);
@@ -47,7 +47,7 @@ describe('/mcp: a credential of a server is a reference (product-surface-21)', (
 describe('/mcp needs no session for the settings (product-surface-26)', () => {
   it('lists the servers of the folder and adds one with no session open', async () => {
     const place = freshPlace();
-    const { context, recorded, backend } = contextOf({ model: undefined }, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: SERVERS }, { choices: [{ index: ADD_HTTP_INDEX, alt: false }], texts: ['tracker', 'https://tracker.example/mcp'] });
+    const { context, recorded, backend } = contextOf({ model: undefined }, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: SERVERS, trust: { path: place.project, decision: 'untrusted' } }, { choices: [{ index: ADD_HTTP_INDEX, alt: false }], texts: ['tracker', 'https://tracker.example/mcp'] });
     await runSlash('mcp', '', context);
     expect(recorded.infos).toEqual([]);
     expect(recorded.prompts).toContain(MCP_ADDRESS_TITLE);
@@ -82,6 +82,25 @@ describe('/mcp Enable asks the item question and approves exactly what was shown
     await runSlash('mcp', '', context);
     expect(recorded.picks.map((pick) => pick.title)).toContain('The MCP server tracker of this folder is new');
     expect(backend.calls.filter((call) => call.startsWith('approve:'))).toEqual([`approve:${JSON.stringify([{ kind: 'mcp', name: 'tracker', config: item.config, digest: item.digest }])}`]);
+  });
+
+  it('asks about the disabled server by its name and, on Not now, leaves it disabled with no settings write', async () => {
+    const place = placeWith(config);
+    const item = await shownItem(place);
+    const { context, backend } = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: servers, trustItems: { items: [item], refused: [] } }, { choices: [{ index: 0, alt: false }, { index: 0, alt: false }, { index: 1, alt: false }] });
+    await runSlash('mcp', '', context);
+    expect(backend.calls).toContain('trustItems:tracker');
+    expect(backend.calls.filter((call) => call.startsWith('approve:'))).toEqual([]);
+    expect(stored(place.userFile)).toEqual({ disabledMcpjsonServers: ['tracker'] });
+  });
+
+  it('changes the disabled list only through the approval itself', async () => {
+    const place = placeWith(config);
+    const item = await shownItem(place);
+    const { context, backend } = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: servers, trustItems: { items: [item], refused: [] } }, { choices: [{ index: 0, alt: false }, { index: 0, alt: false }, { index: 0, alt: false }] });
+    await runSlash('mcp', '', context);
+    expect(backend.calls.filter((call) => call.startsWith('approve:'))).toHaveLength(1);
+    expect(stored(place.userFile)).toEqual({ disabledMcpjsonServers: ['tracker'] });
   });
 
   it('approves nothing when the file changed between the question and the approval, and asks again', async () => {

@@ -10,7 +10,7 @@ import { continuedSession, resolveSession } from '../src/run/resolve-session.ts'
 import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } from '../src/tui/backend.ts';
 import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
 import type { UserShellRecord } from '@momonga/protocol';
-import { editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import { editProjectMandate, writeProjectMcpServer, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
 import type { TrustItemsView } from '@momonga/protocol';
 import { momongaLayout } from '@momonga/foundation';
@@ -77,7 +77,7 @@ export type FakeBackend = TuiBackend & {
   modelsFile(): string;
   readonly calls: string[];
   called(call: string): Promise<void>;
-  readonly started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[];
+  readonly started: { text: string; options?: StartRunOptions }[];
   readonly elicitationAnswers: { inputId: string; responses: Readonly<Record<string, ElicitationAnswerRecord>> }[];
   readonly openedUrls: string[];
   readonly openUrlCalls: { url: URL; watch: AbortSignal; onFailure(message: string): void }[];
@@ -199,7 +199,7 @@ export type FolderTrustFakeOptions = {
   record: (call: string) => void;
 };
 
-export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record }: FolderTrustFakeOptions): Pick<TuiBackend, 'decideTrust' | 'trust' | 'clearTrust' | 'trustItems' | 'approveProjectItems' | 'projectMandate' | 'writeProjectMandate'> => {
+export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record }: FolderTrustFakeOptions): Pick<TuiBackend, 'decideTrust' | 'trust' | 'clearTrust' | 'trustItems' | 'approveProjectItems' | 'projectMandate' | 'writeProjectMandate' | 'writeProjectMcpServer'> => {
   let trustNow: TrustView | undefined;
   return {
     decideTrust: async (decision) => {
@@ -211,7 +211,10 @@ export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record
       record('trust:clear');
       trustNow = { path: cwd(), decision: null };
     },
-    trustItems: async () => trustItems ?? { items: [], refused: [] },
+    trustItems: async (server) => {
+      if (server !== undefined) record(`trustItems:${server}`);
+      return trustItems ?? { items: [], refused: [] };
+    },
     approveProjectItems: async (approval) => {
       record(`approve:${JSON.stringify(approval)}`);
     },
@@ -226,6 +229,8 @@ export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record
         },
         { home: settingsPlace().home, trust: { isTrusted: () => (trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) },
       ),
+    writeProjectMcpServer: (name, server, signal) =>
+      writeProjectMcpServer(settingsPlace().projectDir, name, server, { home: settingsPlace().home, trust: { isTrusted: () => (trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) }),
   };
 };
 
@@ -235,7 +240,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     return options.settingsPlace;
   };
   const calls: string[] = [];
-  const started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[] = [];
+  const started: { text: string; options?: StartRunOptions }[] = [];
   const elicitationAnswers: FakeBackend['elicitationAnswers'] = [];
   const openedUrls: string[] = [];
   const openUrlCalls: FakeBackend['openUrlCalls'] = [];
@@ -416,10 +421,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       session = { ...session, permissionMode: mode };
       return session;
     },
-    startRun: async (text, history, runOptions = {}) => {
+    startRun: async (text, runOptions = {}) => {
       startedHere = true;
       startedPrompt = text;
-      started.push({ text, history, ...(Object.keys(runOptions).length === 0 ? {} : { options: runOptions }) });
+      started.push({ text, ...(Object.keys(runOptions).length === 0 ? {} : { options: runOptions }) });
       if (!conversations.some((conversation) => conversation.session.id === session.id)) conversations.push({ session: { ...session }, firstPrompt: text, runs: [{ id: 'run-1', frames: [] }] });
       return runView({ status: 'QUEUED', sessionId: session.id });
     },

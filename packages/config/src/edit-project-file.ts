@@ -7,6 +7,9 @@ import { editUserSettings } from './edit-user-settings.ts';
 import type { SettingsWriterPorts } from './file-lock.ts';
 import type { TrustOracle } from './layers.ts';
 import { PROJECT_MANDATE_FILE, parseProjectMandate } from './project-mandate.ts';
+import { projectMcpServersFile } from './mcp-servers.ts';
+import { assertMcpServer, assertMcpServersFile } from './settings.ts';
+import { loadUserSettings } from './user-settings.ts';
 
 export type ProjectMandateEdit = (document: Record<string, unknown>) => boolean;
 
@@ -29,6 +32,24 @@ export const editProjectMandate = async (projectDir: string, edit: ProjectMandat
   );
   if (written === undefined) return;
   await approveProjectItems(home, projectDir, [{ kind: 'mandate', ...written }], { lock, mechanism, random, signal });
+};
+
+export const writeProjectMcpServer = async (projectDir: string, name: string, server: Readonly<Record<string, unknown>>, { home, trust, lock, mechanism, random, signal }: EditProjectMandateOptions): Promise<void> => {
+  const file = projectMcpServersFile(projectDir);
+  if (!(await trust.isTrusted(projectDir, signal))) throw new ConfigError(`${file}: the folder ${projectDir} is not trusted, so its MCP servers are not written`);
+  if ('secretEnv' in server) throw new ConfigError(`${file}: MCP server ${JSON.stringify(name)}: secretEnv names an entry of the person's secret store and is only honored in user settings`);
+  if ((await loadUserSettings({ home, signal })).settings.mcpServers?.[name] !== undefined) throw new ConfigError(`${file}: the user settings already define an MCP server named ${JSON.stringify(name)}`);
+  const config = assertMcpServer(structuredClone(server), file, name);
+  await editUserSettings(
+    file,
+    (document) => {
+      document['mcpServers'] = { ...(isRecord(document['mcpServers']) ? document['mcpServers'] : {}), [name]: config };
+      assertMcpServersFile(document, file);
+      return true;
+    },
+    { lock, mechanism, random, signal, confine: { to: projectDir, paths: hostPaths(signal) } },
+  );
+  await approveProjectItems(home, projectDir, [{ kind: 'mcp', name, config, digest: approvalDigestOf(config) }], { lock, mechanism, random, signal });
 };
 
 export type ApprovedItem = { kind: 'hook'; event: string; group: unknown; digest: string } | { kind: 'mandate'; document: unknown; digest: string } | { kind: 'mcp'; name: string; config: unknown; digest: string }

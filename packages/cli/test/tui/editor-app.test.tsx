@@ -58,7 +58,7 @@ describe('the editor while the daemon is starting', () => {
     app.stdin.write(KEYS.enter);
     await backend.called('openSession');
     await untilOutput(app, '> early!');
-    expect(backend.started).toEqual([{ text: 'early!', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: 'early!' }]);
     app.unmount();
   });
 
@@ -98,7 +98,7 @@ describe('the newline keys', () => {
     expect(backend.started).toEqual([]);
     app.stdin.write(KEYS.enter);
     await untilOutput(app, '> abc\n  def');
-    expect(backend.started).toEqual([{ text: 'abc\ndef', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: 'abc\ndef' }]);
     app.unmount();
   });
 
@@ -195,7 +195,7 @@ describe('pastes', () => {
     app.stdin.write(KEYS.enter);
     await backend.called('openSession');
     await untilOutput(app, '> see l1');
-    expect(backend.started).toEqual([{ text: `see ${pasted}`, history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: `see ${pasted}` }]);
     expect(backend.recorded).toEqual([`see ${pasted}`]);
     app.unmount();
   });
