@@ -24,7 +24,7 @@ const programOf = () => {
   const written: string[] = [];
   const sink = { write: (text: string) => written.push(text) > 0 };
   const interrupt = new AbortController().signal;
-  const ports = { version: '9.9.9', interrupt, home: freshHome(), env: {}, platform: process.platform, cwd: '/c', stdout: sink, stderr: sink } as unknown as CliPorts;
+  const ports = { version: '9.9.9', interrupt, home: freshHome(), env: {}, platform: process.platform, cwd: '/c', stdout: sink, stderr: sink, stdin: { isTerminal: true, bytes: async function* () {} } } as unknown as CliPorts;
   const program = buildProgram(
     {
       ports,
