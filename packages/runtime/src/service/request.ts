@@ -26,6 +26,7 @@ export type CreateRunBody = {
   images?: ImageAttachment[];
   attachMentions?: boolean;
   mandate?: Mandate;
+  issue?: { url: string; once?: boolean };
 };
 
 export type ResolveApprovalBody = { optionId: string };

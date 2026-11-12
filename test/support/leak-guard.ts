@@ -28,7 +28,9 @@ export const leakedTempEntries = (tmpRoots: readonly string[], token: string, re
 export const assertNoLeakedTempDirs = (tmpRoots: readonly string[], token: string, recorded: readonly string[]): void => {
   const leaked = leakedTempEntries(tmpRoots, token, recorded);
   if (leaked.length === 0) return;
-  throw new Error(`test run ${token} left ${leaked.length} temp dir(s): ${leaked.join(', ')}`);
+  const failure = new Error(`test run ${token} left ${leaked.length} temp dir(s): ${leaked.join(', ')}`);
+  for (const entry of leaked) fs.rmSync(entry, { recursive: true, force: true });
+  throw failure;
 };
 
 export const newRunToken = (): string => randomBytes(2).toString('hex');

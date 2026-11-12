@@ -16,11 +16,14 @@ import { parseCount } from '../managed/target.ts';
 import type { ExecWithStdinFn } from '../managed/target.ts';
 import { decideToolCalling } from './decide.ts';
 import { recordProbe, targetNotReadyError } from './auto-probe.ts';
+import { measuringAskOf } from './sources.ts';
 import type { MeasureProbe, ProbeLockKey, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
 import { managedRecordPath, saveProbeRecord } from './record.ts';
 import type { ManagedRecordCurrency } from './record.ts';
 import { DEFAULT_STEP_TIMEOUT_MS, PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
-import { createProbeClient } from './client.ts';
+import { createProbeClient, fixedStepBound } from './client.ts';
+import { PERSON_TRAFFIC } from './request-gate.ts';
+import type { RequestGate } from './request-gate.ts';
 import { parseExternalJson } from '../adapters/shared/json.ts';
 import { valueAtPath } from './reply.ts';
 
@@ -68,6 +71,7 @@ export type MeasureManagedServerOptions = {
   env: Readonly<Record<string, string>>;
   exec: ExecFn;
   execWithStdin: ExecWithStdinFn;
+  gate: RequestGate;
   model: string;
   samples?: number;
   userDialects?: UserDialects;
@@ -116,7 +120,7 @@ const onManagedServer = async <T>(options: ManagedServerRunOptions, signal: Abor
 
 export const measureManagedServer =
   (options: MeasureManagedServerOptions): MeasureProbe<ProbeLockKey, ProbeReport> =>
-  ({ signal }) => {
+  ({ signal, progress }) => {
     const { description } = options;
     const { tokenCount } = description;
     return onManagedServer(options, signal, (socketPath) =>
@@ -129,7 +133,8 @@ export const measureManagedServer =
         model: options.model,
         ...(tokenCount === 'estimated' ? {} : { countTokens: async (text: string) => parseCount(options.target, await options.execWithStdin(options.binary, tokenCount.argv, text, signal)) }),
         ...(options.samples === undefined ? {} : { samples: options.samples }),
-        ports: { clock: options.timers, timers: options.timers },
+        ports: { clock: options.timers, timers: options.timers, gate: options.gate },
+        progress,
         ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
         signal,
       }),
@@ -161,6 +166,7 @@ export class UnreadableProbeKeyError extends Error {
 
 export const managedProbeSubject = (options: ManagedProbeSubjectOptions): ProbeSubject<ProbeLockKey, ProbeReport> => ({
   target: options.target,
+  unknown: measuringAskOf(options.target, ['toolCalling']),
   readKey: async () => {
     const key = await options.readKey(options.keySignal());
     if (key.kind === 'unknown') throw new UnreadableProbeKeyError(options.target, key.component, key.reason);
@@ -206,11 +212,16 @@ export const listManagedModel = async (options: ListManagedModelOptions): Promis
   const { description } = options;
   const run = { ...options, env: childEnv, exec: options.exec ?? createExecFn(childEnv) };
   return onManagedServer(run, options.signal, async (socketPath) => {
-    const client = createProbeClient({ kind: 'unix', socketPath }, options.signal, DEFAULT_STEP_TIMEOUT_MS, options.timers, {
-      readyPath: description.ready.path,
-      listPath: description.models.listPath,
-      idPath: description.models.idPath,
-    });
+    const client = createProbeClient(
+      { kind: 'unix', socketPath },
+      {
+        signal: options.signal,
+        bound: fixedStepBound(DEFAULT_STEP_TIMEOUT_MS),
+        timers: options.timers,
+        gate: PERSON_TRAFFIC,
+        routes: { readyPath: description.ready.path, listPath: description.models.listPath, idPath: description.models.idPath },
+      },
+    );
     try {
       const listing = await client.get('models');
       if (listing.status !== 200) throw new Error(`the ${WORDS.server} ${description.id} answered GET ${description.models.listPath} with HTTP ${listing.status}`);
@@ -248,6 +259,7 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
       execWithStdin: createExecWithStdin(childEnv),
       readStopGraceMs: options.readStopGraceMs,
       timers: options.timers,
+      gate: PERSON_TRAFFIC,
       ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
       onWarning: options.onWarning,
       model: options.model,
@@ -257,6 +269,6 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
     }),
     currency: managedCurrencyOf(options.description, options),
   });
-  const { key, report } = await recordProbe(subject, options.paths.probe, options.lock, options.timers, options.signal);
+  const { key, report } = await recordProbe(subject, options.paths.probe, options.lock, options.timers, options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
   return { report, toolCalling: decideToolCalling(report).mode, recordFile: managedRecordPath(options.paths.probe, knownKeyOf(key)) };
 };

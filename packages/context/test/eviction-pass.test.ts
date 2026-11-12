@@ -3,7 +3,7 @@ import { ContextOverflowError, budgetFor, buildContext, createTokenMeter } from 
 import type { BuildContextInput, BuildContextPorts, BuiltContext, HistoryItem, MeterRequest, TokenCounter, TokenMeter } from '@momonga/context';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { Capabilities, InputItem } from '@momonga/protocol';
-import { MODEL, argsCall, assistant, capabilitiesFor, fakeBlobs, fakeCounter, fakeReader, handleOf, inputFor, output, shapeCounter, sourcesWith, tokensOfItem, user } from './helpers.ts';
+import { MODEL, argsCall, assistant, capabilitiesFor, fakeBlobs, fakeCounter, fakeReader, handleOf, inputFor, output, shapeCounter, sourcesWith, tokensOfItem, user, withTurnsBeforeCurrent } from './helpers.ts';
 
 const ESTIMATED = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
 const EXACT = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'exact' });
@@ -96,7 +96,7 @@ const builtOf = async (build: Promise<BuiltContext>, trail: () => string): Promi
   return outcome as BuiltContext;
 };
 
-const NEXT_TURN: HistoryItem[] = [assistant(9, 'done'), user(10, 'next')];
+const NEXT_TURN: HistoryItem[] = withTurnsBeforeCurrent([assistant(9, 'done'), user(10, 'next')]);
 
 const passSteps: HistoryItem[][] = [
   [argsCall(1, 'c0', 0), output(2, 'c0', 'r'.repeat(120))],
@@ -109,7 +109,7 @@ const passMembers = [passSteps[0]?.[1], passSteps[1]?.[1], passSteps[2]?.[1]] as
 
 const passFixture = async (overrides: Partial<BuildContextInput>) => {
   const session = sessionOf();
-  const options = { keepRecentTurns: 1, ...overrides };
+  const options = { ...overrides };
   for (let count = 1; count <= passSteps.length; count += 1) await reported(session, passSteps.slice(0, count).flat(), options);
   const lastReported = await buildAt(session, passSteps.flat(), options);
   const kept = [...lastReported.input, ...itemsOf(NEXT_TURN)];
@@ -130,9 +130,9 @@ describe('R1: the eviction pass is the unit, judged by the fit test’s own meas
   for (const layout of [undefined, 'cachePrefix'] as const) {
     it(`keeps a fitting pass whose oldest member alone would push the input over I0 (layout ${layout ?? 'default'})`, async () => {
       const fixture = await passFixture(layout === undefined ? {} : { layout });
-      expect(fixture.keptMeasure).toEqual({ tokens: 2599, known: 2568, uncounted: 31, bound: 10 });
-      expect(fixture.memberAlone).toEqual({ tokens: 2588, known: 1527, uncounted: 2568 - 1527 + (2588 - 1527), bound: 632 });
-      expect(fixture.passMeasure).toEqual({ tokens: 2226, known: 1527, uncounted: 2568 - 1527 + (2226 - 1527), bound: 523 });
+      expect(fixture.keptMeasure).toEqual({ tokens: 2669, known: 2568, uncounted: 101, bound: 31 });
+      expect(fixture.memberAlone).toEqual({ tokens: 2658, known: 1527, uncounted: 2568 - 1527 + (2658 - 1527), bound: 653 });
+      expect(fixture.passMeasure).toEqual({ tokens: 2296, known: 1527, uncounted: 2568 - 1527 + (2296 - 1527), bound: 544 });
       expect(loadOf(fixture.keptMeasure)).toBeLessThanOrEqual(I);
       expect(loadOf(fixture.memberAlone)).toBeGreaterThan(I);
       expect(loadOf(fixture.passMeasure)).toBeLessThanOrEqual(I);
@@ -140,8 +140,8 @@ describe('R1: the eviction pass is the unit, judged by the fit test’s own meas
       const built = await builtOf(buildAt(fixture.session, [...passSteps.flat(), ...NEXT_TURN], fixture.options), trailOf(fixture.session));
       expect(omittedIds(built)).toEqual(['c0', 'c1', 'c2']);
       expect(built.input).toEqual(fixture.pass);
-      expect(built.inputTokens).toBe(2226);
-      expect(built.budget.I).toBe(I - 523);
+      expect(built.inputTokens).toBe(2296);
+      expect(built.budget.I).toBe(I - 544);
     });
   }
 
@@ -177,7 +177,7 @@ describe('R1: the eviction pass is the unit, judged by the fit test’s own meas
   it('keeps a pass that lowers the load of an input that does not fit, and the error carries the lowered load', async () => {
     const session = sessionOf();
     await reported(session, []);
-    const history: HistoryItem[] = [
+    const history: HistoryItem[] = withTurnsBeforeCurrent([
       argsCall(1, 'c0', 0),
       output(2, 'c0', 'a'.repeat(800)),
       argsCall(3, 'c1', 0),
@@ -186,7 +186,7 @@ describe('R1: the eviction pass is the unit, judged by the fit test’s own meas
       user(6, 'continue'),
       argsCall(7, 'c2', 4000),
       output(8, 'c2', 'ok'),
-    ];
+    ]);
     const unevicted = await buildAt(sessionOf(), history.slice(0, 4));
     const kept = [...unevicted.input, ...itemsOf(history.slice(4))];
     const keptMeasure = await measure(session.meter, kept);
@@ -195,7 +195,7 @@ describe('R1: the eviction pass is the unit, judged by the fit test’s own meas
     expect(loadOf(passMeasure)).toBeLessThan(loadOf(keptMeasure));
     expect(loadOf(passMeasure)).toBeGreaterThan(I);
 
-    const error = await overflowOf(buildAt(session, history, { keepRecentTurns: 1 }));
+    const error = await overflowOf(buildAt(session, history, {}));
     expect(error.level).toBe(0);
     expect(error.inputTokens).toBe(passMeasure.tokens);
     expect(error.inputBudget).toBe(I - passMeasure.bound);
@@ -225,7 +225,7 @@ describe('R1: the eviction pass is the unit, judged by the fit test’s own meas
 
   it('restores the input exactly after a refused pass with M6 forms on: no re-truncated or restored form, no truncation report, no count of the pass', async () => {
     const forms = new Map([['c2', 1]]);
-    const options: Partial<BuildContextInput> = { itemCap: 64, forms, renderedFull: new Set(['c3']) };
+    const options: Partial<BuildContextInput> = { forms, renderedFull: new Set(['c3']) };
     const steps: HistoryItem[][] = [
       [argsCall(1, 'c0', 0), output(2, 'c0', 'r'.repeat(120))],
       [argsCall(3, 'c1', 1000), output(4, 'c1', 'ok')],
@@ -263,7 +263,7 @@ describe('R1: the eviction pass is the unit, judged by the fit test’s own meas
       [argsCall(5, 'c2', 1000), output(6, 'c2', 'ok')],
       [argsCall(7, 'c3', 1800), output(8, 'c3', 'ok')],
     ];
-    const options: Partial<BuildContextInput> = { keepRecentTurns: 1, outputFormatters: ['identicalOutput'] };
+    const options: Partial<BuildContextInput> = { outputFormatters: ['identicalOutput'] };
     const session = sessionOf();
     for (let count = 1; count <= steps.length; count += 1) await reported(session, steps.slice(0, count).flat(), options);
     const lastReported = await buildAt(session, steps.flat(), options);

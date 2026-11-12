@@ -308,7 +308,7 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { EventPayload, JsonLogger, LogFields, LogLevel, LogValue, ReadyFields, ReservedLogKey, StopValueName, StopValues, TextStream } from './process-contract.ts';
-export { findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export { findHolders, holderGroups, markerReapClockBoundMs, markerRemedyText, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
 export type { ReapMarkerDirectoryResult } from './process-markers.ts';
 export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';
@@ -432,7 +432,8 @@ export type {
   KeptGroup,
   KeptLaunch,
 } from './platform/windows-keeper.ts';
-export { createNodeKeeperHost, provideCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
+export { createNodeKeeperHost, hostCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
+export type { KeeperPreparation } from './platform/windows-keeper-host.ts';
 export { CONTROL_PLANE_LAUNCH } from './child-protection.ts';
 export type { ChildProtection, LaunchProtection } from './child-protection.ts';
 export { unixSocketPolicyOf } from './unix-socket-policy.ts';

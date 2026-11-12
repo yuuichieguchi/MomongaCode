@@ -64,5 +64,5 @@ export type Worker = {
   stop(): Promise<void>;
   abort(reason: 'shutdown'): Promise<void>;
   memorySize(): number;
-  claimsInFlight(): number;
+  runsInFlight(): readonly string[];
 };

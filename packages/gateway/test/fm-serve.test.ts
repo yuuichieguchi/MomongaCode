@@ -126,6 +126,7 @@ const createManualTimers = () => {
       pending.delete(handle as number);
     },
     now: () => clock,
+    monotonicMs: () => clock,
   };
   return {
     timers,
@@ -194,7 +195,7 @@ const setup = (config: SetupConfig = {}) => {
   const exec = vi.fn(config.exec ?? okExec);
   const manual = createManualTimers();
   let nextPid = 1000;
-  const spawn = vi.fn((_file: string, _args: readonly string[]) => {
+  const spawn = vi.fn(async (_file: string, _args: readonly string[]) => {
     const index = children.length;
     const childOptions = typeof config.child === 'function' ? config.child(index) : (config.child ?? {});
     events.push(`spawn:${nextPid}`);

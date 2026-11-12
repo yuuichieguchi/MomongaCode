@@ -1,3 +1,5 @@
+import { measuringAskOf } from '../probe/sources.ts';
+import type { MeasuringAsk } from '../probe/auto-probe.ts';
 import { canonicalJson, createUdsClient, fixedSocket, probeKeyComponentLabel, startSharedCall } from '@momonga/foundation';
 import type { SharedCall } from '@momonga/foundation';
 import { WORDS, countReplyOf } from '@momonga/protocol';
@@ -67,7 +69,7 @@ export type ManagedTargetOptions = {
   isUsableBinary: (binary: string) => Promise<boolean>;
   readKey: (signal: AbortSignal) => Promise<ProbeKey>;
   onInstanceEnd: () => void;
-  startProbe: (key: KnownProbeKey) => Promise<Probing>;
+  startProbe: (key: KnownProbeKey, ask: MeasuringAsk) => Promise<Probing>;
   instanceProbe: (unknown: { component: string; reason: string }) => InstanceProbe<ProbeReport>;
   currency: ManagedRecordCurrency;
   declaredCapabilities?: { contextWindow: number; maxOutputTokens: number };
@@ -200,6 +202,8 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
   const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
   const declaredBounds = options.declaredCapabilities;
   const declaredMode = options.toolCallingSetting === 'auto' ? undefined : options.toolCallingSetting;
+  const measuredAsk = (): MeasuringAsk =>
+    measuringAskOf(modelName(), [...(declaredMode === undefined ? (['toolCalling'] as const) : []), ...(declaredBounds === undefined ? (['contextWindow'] as const) : [])]);
   const declaredOnly: Recorded | undefined =
     declaredBounds === undefined || declaredMode === undefined
       ? undefined
@@ -266,7 +270,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     const report = await loadProbeRecord(options.probeRecordDir, key, options.currency, modelName(), servedId);
     if (report === null) {
       if (declaredOnly !== undefined) return (recorded = declaredOnly);
-      throw targetProbingError(await options.startProbe(key));
+      throw targetProbingError(await options.startProbe(key, measuredAsk()));
     }
     recorded = recordedOf(`the probe key of the ${WORDS.model} "${modelName()}" (${keyText(description, key)})`, report);
     return recorded;

@@ -83,4 +83,17 @@ describe('a hook group or mandate file of a trusted folder that is new or change
     expect(question).toContain('"Bash(rm:*)"');
     app.unmount();
   });
+
+  it('asks about a project agent of the folder with every line of its file and records the file on Approve', async () => {
+    const text = '---\nname: reviewer\ndescription: Reviews\ntools: Read, Bash\n---\nReview the change.\n';
+    const { backend, app } = start({ trustItems: { items: [{ kind: 'agent', name: 'reviewer', text, digest: 'a1', source: '/work/.momonga/agents/reviewer.md', change: { kind: 'new' } }], refused: [] } });
+    const question = await untilFrame(app, APPROVE_ROW);
+    expect(question).toContain('The agent reviewer of this folder is new');
+    expect(question).toContain('/work/.momonga/agents/reviewer.md');
+    expect(question).toContain('tools: Read, Bash');
+    expect(question).toContain('Review the change.');
+    app.stdin.write(KEYS.enter);
+    await backend.called(`approve:${JSON.stringify([{ kind: 'agent', name: 'reviewer', text, digest: 'a1' }])}`);
+    app.unmount();
+  });
 });

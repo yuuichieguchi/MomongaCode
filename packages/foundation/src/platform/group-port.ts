@@ -27,7 +27,7 @@ export type GroupNames = {
 };
 
 export type GroupKeeper = {
-  open<P extends KeptProcess>(request: KeptOpenRequest<P>): KeptOpening<P>;
+  open<P extends KeptProcess>(request: KeptOpenRequest<P>): Promise<KeptOpening<P>>;
 };
 
 export interface ProcessGroupPort {

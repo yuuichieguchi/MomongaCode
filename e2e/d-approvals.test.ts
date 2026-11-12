@@ -13,7 +13,7 @@ import { chatCompletions, messagesOf, textReply, toolCallReply } from './support
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 import { fenceBoundaryIn } from '@momonga/testkit';
 
-const REJECTED_OUTPUT = 'The user rejected this tool call.';
+import { REJECTED_OUTPUT } from '../packages/runtime/src/worker/held-calls.ts';
 const WRITTEN_CONTENT = 'written by the model\n';
 
 const writeCall = (file: string) => toolCallReply('Write', { file_path: file, content: WRITTEN_CONTENT });

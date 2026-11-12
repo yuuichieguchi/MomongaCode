@@ -1,4 +1,6 @@
 import type { Stored } from './stored-value.ts';
+import { INTERRUPTED_COMMAND_SHOWN_CHARS, INTERRUPTED_WORK_LISTED } from './supervisor-api.ts';
+import type { InterruptedWorkItem } from './supervisor-api.ts';
 import { anything, boolean, boundedInteger, closed, constant, enumOf, integer, nonNegativeInteger, nullable, root, storedEnumOf, string } from './schema-helpers.ts';
 import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
@@ -86,15 +88,17 @@ const attachmentSummary: JsonSchema = {
   anyOf: [
     closed({ type: constant('attached_file'), path: string, lines: nonNegativeInteger }, ['type', 'path', 'lines']),
     closed({ type: constant('attachment_note'), path: string, shown: string }, ['type', 'path', 'shown']),
+    closed({ type: constant('forge_issue'), issue: string }, ['type', 'issue']),
   ],
 };
 
-export type AttachmentSummary = { type: 'attached_file'; path: string; lines: number } | { type: 'attachment_note'; path: string; shown: string };
+export type AttachmentSummary = { type: 'attached_file'; path: string; lines: number } | { type: 'attachment_note'; path: string; shown: string } | { type: 'forge_issue'; issue: string };
 
-export const attachmentSummaryOf = (part: MessageAttachment): AttachmentSummary =>
-  part.type === 'attached_file'
-    ? { type: 'attached_file', path: part.path, lines: part.content === '' ? 0 : part.content.split('\n').length }
-    : { type: 'attachment_note', path: part.path, shown: part.shown };
+export const attachmentSummaryOf = (part: MessageAttachment): AttachmentSummary => {
+  if (part.type === 'attached_file') return { type: 'attached_file', path: part.path, lines: part.content === '' ? 0 : part.content.split('\n').length };
+  if (part.type === 'forge_issue') return { type: 'forge_issue', issue: part.issue };
+  return { type: 'attachment_note', path: part.path, shown: part.shown };
+};
 
 const inboxRowView = closed(
   {
@@ -904,6 +908,7 @@ const trustItemsView = closed(
           closed({ kind: constant('hook'), event: string, group: anything, digest: string, source: string, change: trustItemChange }, ['kind', 'event', 'group', 'digest', 'source', 'change']),
           closed({ kind: constant('mandate'), document: anything, digest: string, source: string, change: trustItemChange }, ['kind', 'document', 'digest', 'source', 'change']),
           closed({ kind: constant('mcp'), name: string, config: anything, digest: string, source: string, change: trustItemChange }, ['kind', 'name', 'config', 'digest', 'source', 'change']),
+          closed({ kind: constant('agent'), name: string, text: string, digest: string, source: string, change: trustItemChange }, ['kind', 'name', 'text', 'digest', 'source', 'change']),
         ],
       },
     },
@@ -914,6 +919,7 @@ const trustItemsView = closed(
 
 const costTotalsProperties: Record<string, JsonSchema> = {
   calls: nonNegativeInteger,
+  retries: nonNegativeInteger,
   localCalls: nonNegativeInteger,
   unpricedCalls: nonNegativeInteger,
   unknownBillingCalls: nonNegativeInteger,
@@ -1332,6 +1338,7 @@ export type RoleCostView = {
   fallbackCalls?: number;
   fallbacks?: CostFallbackView[];
   calls: number;
+  retries: number;
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
@@ -1426,6 +1433,7 @@ export type RunHealth = {
   role: 'starting' | 'serving' | 'retiring';
   steps: number;
   jobs: number;
+  interrupts: InterruptedWorkItem[];
   sandbox: 'seatbelt' | 'bubblewrap' | 'none';
 };
 
@@ -1532,6 +1540,7 @@ export const RUN_API_SCHEMAS = {
         images: { type: 'array', items: imageAttachment },
         attachMentions: boolean,
         mandate,
+        issue: closed({ url: { type: 'string', minLength: 1, pattern: '^https://' }, once: boolean }, ['url']),
       },
       ['input'],
     ),
@@ -1621,9 +1630,19 @@ export const RUN_API_SCHEMAS = {
         role: enumOf(['starting', 'serving', 'retiring']),
         steps: integer,
         jobs: integer,
+        interrupts: {
+          type: 'array',
+          maxItems: INTERRUPTED_WORK_LISTED,
+          items: {
+            oneOf: [
+              closed({ kind: constant('run'), id: string }, ['kind', 'id']),
+              closed({ kind: constant('job'), id: string, command: { type: 'string', maxLength: INTERRUPTED_COMMAND_SHOWN_CHARS } }, ['kind', 'id', 'command']),
+            ],
+          },
+        },
         sandbox: enumOf(['seatbelt', 'bubblewrap', 'none']),
       },
-      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'role', 'steps', 'jobs', 'sandbox'],
+      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'role', 'steps', 'jobs', 'interrupts', 'sandbox'],
     ),
   ),
   SessionView: root(

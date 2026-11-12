@@ -51,6 +51,7 @@ export type BackgroundJobRegistry = BackgroundJobs & {
   liveKeys(): ReadonlySet<string>;
   finalized(jobId: string): Promise<void>;
   liveCount(): number;
+  liveJobs(): readonly { id: string; command: string }[];
   stopKillRequested(): void;
   reconcileOrphans(options?: { batch: number }): Promise<void>;
   stopAll(): Promise<void>;
@@ -503,6 +504,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       await Promise.allSettled([...live.values()].map((entry) => stop(entry, 'shutdown')));
     },
     liveCount: () => live.size,
+    liveJobs: () => [...live.values()].map(({ job }) => ({ id: job.id, command: job.command })),
     stopKillRequested: () => {
       for (const entry of live.values()) {
         if (entry.stopReason === undefined && store.jobs.get(entry.job.id)?.killRequestedAt !== undefined) void stop(entry, 'killed');

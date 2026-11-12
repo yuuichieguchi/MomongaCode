@@ -41,7 +41,7 @@ export const UNAVAILABLE_PLAN: UnavailableCapabilities = {
   source: 'unprobed',
 };
 
-export const PROBING_PLAN: ProbingCapabilities = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 5 }, source: 'unprobed' };
+export const PROBING_PLAN: ProbingCapabilities = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 5, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' };
 
 export const PLAN_MODEL = 'plan-model';
 export const PLAN_PROVIDER = 'chatgpt';

@@ -30,7 +30,6 @@ const inputWith = (history: HistoryItem[], tools: FunctionTool[], touched: boole
   trusted: true,
   projectRoot: PROJECT,
   home: HOME,
-  keepRecentTurns: 1,
   observedCapacity: true,
   renderedFull: new Set(['c1']),
   fence: TEST_FENCE,

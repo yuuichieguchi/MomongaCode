@@ -15,23 +15,22 @@ import {
   resolveStartTiming,
   supervisorStartBoundMs,
 } from '@momonga/supervisor';
+import { CLEANUP_KILL_DEADLINE_MS } from '@momonga/testkit';
 import { daemonReadyBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
 import { REFLECTION_PICKUP_BOUND_MS, reflectionAttemptsBoundMs } from '../../packages/runtime/src/memory/reflection-bound.ts';
 import { RUNTIME_DEFAULTS } from '../../packages/runtime/src/process/defaults.ts';
+import { DEFAULT_LEASE_MS } from '../../packages/runtime/src/process/start-runtime-process.ts';
 import { SWEEP_INTERVAL_MS } from '../../packages/runtime/src/service/service.ts';
 import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 
 export const E2E_REFLECTION_ATTEMPTS_BOUND_MS = reflectionAttemptsBoundMs(RUNTIME_DEFAULTS.runTimeoutMs);
 export const E2E_REFLECTION_SETTLED_BOUND_MS = REFLECTION_PICKUP_BOUND_MS + E2E_REFLECTION_ATTEMPTS_BOUND_MS;
 export const E2E_MARGIN_MS = 4000;
-export const E2E_LEASE_MS = 3000;
-export const E2E_DRAIN_TIMEOUT_MS = 1000;
-export const E2E_STOP_VALUES: StopValues = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS };
+export const E2E_LEASE_MS = DEFAULT_LEASE_MS;
+export const E2E_STOP_VALUES: StopValues = DEFAULT_STOP_VALUES;
 export const e2eStartBoundMs = (deps: Parameters<typeof resolveStartTiming>[0]): number => supervisorStartBoundMs(resolveStartTiming(deps));
 export const E2E_READY_DEADLINE_MS = e2eStartBoundMs({});
-export const E2E_HOOK_TIMEOUT_MS = 30_000;
 export const DEFAULT_TEST_TIMEOUT_MS = 60_000;
-export const E2E_DISPOSE_BOUND_MS = 25_000;
 export const E2E_RESTART_BACKOFF_MS = 200;
 export const E2E_RESTART_POLICY = { baseMs: E2E_RESTART_BACKOFF_MS, maxMs: E2E_RESTART_BACKOFF_MS, minMs: E2E_RESTART_BACKOFF_MS } as const;
 export const E2E_RESTART_BOUND_MS = childRestartBoundMs({ policy: resolveRestartPolicy(E2E_RESTART_POLICY), startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS });
@@ -41,6 +40,9 @@ export const E2E_SETTINGS_RESTART_BOUND_MS = SETTINGS_DEBOUNCE_MS + SETTINGS_POL
 export const E2E_HELD_RETRY_MS = 3000;
 export const E2E_ORPHAN_CLOSE_BOUND_MS = Math.max(runtimeMaxCloseMs(E2E_STOP_VALUES), gatewayMaxCloseMs(E2E_STOP_VALUES)) + E2E_MARGIN_MS;
 export const E2E_SUPERVISOR_CLOSE_BOUND_MS = supervisorMaxCloseMs(E2E_STOP_VALUES) + ENTRY_HARD_EXIT_MARGIN_MS + E2E_MARGIN_MS;
+export const E2E_STOP_SETTLED_BOUNDS_MS = { supervisorAsked: E2E_SUPERVISOR_CLOSE_BOUND_MS, orphaned: E2E_ORPHAN_CLOSE_BOUND_MS } as const;
+export const E2E_DISPOSE_BOUND_MS = Math.max(...Object.values(E2E_STOP_SETTLED_BOUNDS_MS)) + CLEANUP_KILL_DEADLINE_MS + E2E_MARGIN_MS;
+export const E2E_HOOK_TIMEOUT_MS = E2E_DISPOSE_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_REAP_CLOSE_BOUND_MS = SHUTDOWN_RELEASE_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_TERM_BOUND_MS = E2E_MARGIN_MS;
 export const E2E_CANCEL_SWEEP_BOUND_MS = SWEEP_INTERVAL_MS + E2E_MARGIN_MS;

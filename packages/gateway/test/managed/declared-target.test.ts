@@ -1,3 +1,5 @@
+import { PERSON_TRAFFIC } from '../../src/probe/request-gate.ts';
+import { NO_PROGRESS_LISTENER } from '../../src/probe/auto-probe.ts';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,7 +52,7 @@ const idleServer: ManagedServer = {
   health: async () => ({ ok: true }),
 };
 
-const probingAnswer = { state: 'probing', message: 'probing', retryAfterSeconds: 120 } as const;
+const probingAnswer = { state: 'probing', message: 'probing', retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } } as const;
 
 describe('a declared server record is current only for the description it was measured with (design-managed-servers 19.4; R-S19-12)', () => {
   const recordUnder = async (measured: typeof DECLARATION, current: typeof DECLARATION): Promise<ProbeReport | null> => {
@@ -222,6 +224,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
     fs.mkdirSync(instance.markerDirectory, { recursive: true, mode: 0o700 });
     const report = await measureManagedServer({
       timers: systemTiming,
+      gate: PERSON_TRAFFIC,
       inspector: testProcessInspector(),
       lock: testKernelLock(),
       description,
@@ -236,7 +239,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
       samples: 2,
       readStopGraceMs: () => 1_000,
       onWarning: () => undefined,
-    })({ key: {} as never, signal: AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS) });
+    })({ key: {} as never, signal: AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS), progress: NO_PROGRESS_LISTENER });
     return { mode: decideToolCalling(report).mode, report };
   };
 

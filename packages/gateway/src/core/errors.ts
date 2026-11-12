@@ -9,7 +9,7 @@ import {
   USAGE_PAUSED_CODE,
   WORDS,
 } from '@momonga/protocol';
-import type { ErrorBody, ErrorType, PlanAccountRef } from '@momonga/protocol';
+import type { ErrorBody, ErrorType, MeasuringWire, PlanAccountRef } from '@momonga/protocol';
 
 export type GatewayErrorInit = {
   status: number;
@@ -19,6 +19,7 @@ export type GatewayErrorInit = {
   param?: string | null;
   headers?: Record<string, string>;
   plan?: PlanAccountRef;
+  measuring?: MeasuringWire;
 };
 
 export class GatewayError extends Error {
@@ -30,7 +31,7 @@ export class GatewayError extends Error {
     super(init.message);
     this.name = 'GatewayError';
     this.status = init.status;
-    this.body = { message: init.message, type: init.type, param: init.param ?? null, code: init.code, ...(init.plan === undefined ? {} : { plan: init.plan }) };
+    this.body = { message: init.message, type: init.type, param: init.param ?? null, code: init.code, ...(init.plan === undefined ? {} : { plan: init.plan }), ...(init.measuring === undefined ? {} : { measuring: init.measuring }) };
     this.headers = init.headers ?? {};
   }
 }

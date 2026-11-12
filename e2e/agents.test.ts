@@ -1,3 +1,4 @@
+import { PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -11,10 +12,11 @@ import { createE2eHome, markersOf } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
 import { groupAlive } from './support/process.ts';
-import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
+import { createRuntimeClient, personCapabilityOfHome, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { SANDBOX_ENDS_WITH_RUNTIME, SIGTERM_DEATH, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
-import { DEFAULT_E2E_DEPS, shutdownBarrier, startStack } from './support/stack.ts';
+import { shutdownBarrier, startStack, writeSettingsFile } from './support/stack.ts';
+import { projectAgentDigestOf } from '@momonga/config';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import {
@@ -50,7 +52,7 @@ const trustProject = async (home: E2eHome): Promise<void> => {
     const response = await client.request({
       method: 'PUT',
       path: '/v1/trust',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', [PERSON_CAPABILITY_HEADER]: await personCapabilityOfHome(home) },
       body: JSON.stringify({ path: home.project, decision: 'trusted' }),
     });
     expect(response.status).toBe(200);
@@ -60,10 +62,18 @@ const trustProject = async (home: E2eHome): Promise<void> => {
   }
 };
 
+const agentText = (name: string, body: string): string => `---\nname: ${name}\ndescription: ${name} helper\ntools: Read\n---\n${body}\n`;
+
 const writeAgent = (home: E2eHome, name: string, body: string): void => {
   const directory = path.join(home.project, '.momonga', 'agents');
   fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, `${name}.md`), `---\nname: ${name}\ndescription: ${name} helper\ntools: Read\n---\n${body}\n`);
+  fs.writeFileSync(path.join(directory, `${name}.md`), agentText(name, body));
+};
+
+const approveAgent = (home: E2eHome, name: string, body: string): void => {
+  const settings: Json = JSON.parse(fs.readFileSync(home.paths.settingsFile, 'utf8'));
+  const text = agentText(name, body);
+  writeSettingsFile(home, { ...settings, projectApprovals: { [fs.realpathSync(home.project)]: { agents: [{ name, digest: projectAgentDigestOf(name, text), text }] } } });
 };
 
 const agentCall = (callId = 'call_agent'): FakeScriptedReply =>
@@ -93,11 +103,12 @@ describe('agents: subagents', () => {
   it(titleOf('agent-run'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     writeAgent(home, 'reviewer', 'You are a terse reviewer.');
-    const stack = await startStack({ home, sandbox: 'none', script: [agentCall(), textReply('child verdict: ship it'), textReply('parent done')] });
+    const stack = await startStack({ home, script: [agentCall(), textReply('child verdict: ship it'), textReply('parent done')] });
     await trustProject(home);
+    approveAgent(home, 'reviewer', 'You are a terse reviewer.');
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Review my change');
       await untilStatus(runtime, run.id, 'COMPLETED', E2E_RUN_COMPLETED_BOUND_MS);
 
@@ -142,11 +153,12 @@ describe('agents: subagents', () => {
   it(titleOf('agent-cancel'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     writeAgent(home, 'reviewer', 'You review.');
-    const stack = await startStack({ home, sandbox: 'none', script: [agentCall(), hangReply('child partial')] });
+    const stack = await startStack({ home, script: [agentCall(), hangReply('child partial')] });
     await trustProject(home);
+    approveAgent(home, 'reviewer', 'You review.');
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Review my change');
       const child = await until(() => childRunsOf(home, run.id)[0], { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'a child run' });
       await until(() => stack.fake.openConnections() === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the child holds an upstream connection' });
@@ -183,14 +195,14 @@ describe('agents: subagents', () => {
     writeAgent(home, 'reviewer', 'You review.');
     const stack = await startStack({
       home,
-      sandbox: 'none',
-      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      deps: { restart: E2E_RESTART_POLICY },
       script: [agentCall(), textReply('child recovered'), textReply('parent done')],
     });
     const parentRequest = stack.fake.hold();
     parentRequest.release();
     const childRequest = stack.fake.hold();
     await trustProject(home);
+    approveAgent(home, 'reviewer', 'You review.');
     const runtime = createRuntimeClient(home);
     let released = false;
     const releaseChild = (): void => {
@@ -199,7 +211,7 @@ describe('agents: subagents', () => {
       childRequest.release();
     };
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Review my change');
       await childRequest.waitForRequest();
       const child = await until(() => childRunsOf(home, run.id)[0], { deadlineMs: E2E_MARGIN_MS, description: 'a child run' });
@@ -280,7 +292,7 @@ describe('agents: background bash', () => {
     });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Start the build');
       await until(() => runRow(home, run.id)?.status === 'WAITING_TOOL', { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the run waits on the job' });
       const jobId = jobIdOf(home);
@@ -302,7 +314,7 @@ describe('agents: background bash', () => {
       expect(outputs[1]).toContain('ready');
       expect(jobRow(home, jobId)).toMatchObject({ status: 'exited', exit_code: 0 });
       expect(groupAlive(pgid as number)).toBe(false);
-      expect(fs.readdirSync(markersOf(home).tools)).toEqual([]);
+      await until(() => fs.readdirSync(markersOf(home).tools).length === 0, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the marker of the finished job to be removed' });
 
       const listed = (await rawGet(home, `/v1/sessions/${session.id}/jobs`)).json['jobs'] as Json[];
       expect(listed).toMatchObject([{ id: jobId, status: 'exited', exitCode: 0, command: 'echo started; sleep 2; echo ready' }]);
@@ -324,7 +336,7 @@ describe('agents: background bash', () => {
     });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Start the server');
       await untilStatus(runtime, run.id, 'COMPLETED', E2E_RUN_COMPLETED_BOUND_MS);
       const jobId = jobIdOf(home);
@@ -353,13 +365,13 @@ describe('agents: background bash', () => {
     const stack = await startStack({
       home,
       needsBash: true,
-      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      deps: { restart: E2E_RESTART_POLICY },
       script: [toolCallReply('Bash', { command: 'sleep 60', run_in_background: true })],
       routes: jobRoutes(home, (jobId) => toolCallReply('BashOutput', { bash_id: jobId, block: true, timeout: 600_000 }, 'call_output'), 'it is over'),
     });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Start the server');
       await until(() => runRow(home, run.id)?.status === 'WAITING_TOOL', { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the run waits on the job' });
       const jobId = jobIdOf(home);

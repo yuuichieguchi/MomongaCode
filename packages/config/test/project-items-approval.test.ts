@@ -1,8 +1,9 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PROJECT_MANDATE_FILE, approvalDigestOf, approveProjectItems, hookGroupApprovalDigestOf, loadMcpServers, loadProjectMandate, loadSettings, loadUserSettings, pendingProjectItems, projectMandateState, settingsFileLock, systemFileLockPorts } from '@momonga/config';
+import { PROJECT_MANDATE_FILE, approvalDigestOf, approveProjectItems, hookGroupApprovalDigestOf, loadMcpServers, projectAgentDigestOf, loadProjectMandate, loadSettings, loadUserSettings, pendingProjectItems, projectMandateState, settingsFileLock, systemFileLockPorts } from '@momonga/config';
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
+import type { ProjectAgentFile } from '@momonga/config';
 import { testKernelLock } from '@momonga/testkit';
 
 const signal = new AbortController().signal;
@@ -55,7 +56,7 @@ describe('approveProjectItems: the writer of projectApprovals for the question',
 });
 
 describe('the approved content is kept beside its digest, and a later change is shown against it', () => {
-  const trusted = (tree: Tree) => ({ home: tree.home, projectDir: tree.project, trust: trusting(tree), signal });
+  const trusted = (tree: Tree) => ({ home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async () => [], signal });
 
   it('stores the approved hook group and mandate document with their digests, replacing a digest-only entry of the same item', async () => {
     const tree = makeTree();
@@ -100,7 +101,7 @@ describe('the approved content is kept beside its digest, and a later change is 
 describe('an MCP server of .mcp.json is asked about by the same mechanism', () => {
   const DOCS = { command: 'npx', args: ['docs-server'] };
   const mcpFile = (tree: Tree): string => path.join(tree.project, '.mcp.json');
-  const trusted = (tree: Tree) => ({ home: tree.home, projectDir: tree.project, trust: trusting(tree), signal });
+  const trusted = (tree: Tree) => ({ home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async () => [], signal });
   const servers = async (tree: Tree) => loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, signal });
 
   it('lists a server never approved as new, and after the approval keeps its config and starts it', async () => {
@@ -128,5 +129,35 @@ describe('an MCP server of .mcp.json is asked about by the same mechanism', () =
     writeJson(userSettingsPath(tree), { disabledMcpjsonServers: ['docs'] });
     writeJson(mcpFile(tree), { mcpServers: { docs: DOCS } });
     expect((await pendingProjectItems(trusted(tree))).items).toEqual([]);
+  });
+});
+
+describe('a project agent, which runs with tools, is asked about by the same mechanism', () => {
+  const TEXT = '---\nname: reviewer\ndescription: Reviews\ntools: Read, Bash\n---\nReview the change.\n';
+  const CHANGED = '---\nname: reviewer\ndescription: Reviews\ntools: Read, Bash, Write\n---\nReview the change.\n';
+  const sourceOf = (tree: Tree): string => path.join(tree.project, '.momonga', 'agents', 'reviewer.md');
+  const listing = (tree: Tree, text: string) => ({ home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async (): Promise<ProjectAgentFile[]> => [{ name: 'reviewer', text, source: sourceOf(tree) }], signal });
+
+  it('lists a project agent never approved as new with its whole file, and stores the file on approval so it is no longer listed', async () => {
+    const tree = makeTree();
+    const digest = projectAgentDigestOf('reviewer', TEXT);
+    expect((await pendingProjectItems(listing(tree, TEXT))).items).toEqual([{ kind: 'agent', name: 'reviewer', text: TEXT, digest, source: sourceOf(tree), change: { kind: 'new' } }]);
+    await approveProjectItems(tree.home, tree.project, [{ kind: 'agent', name: 'reviewer', text: TEXT, digest }], writerOf(tree));
+    expect(await approvals(tree)).toEqual({ [tree.project]: { agents: [{ name: 'reviewer', digest, text: TEXT }] } });
+    expect((await pendingProjectItems(listing(tree, TEXT))).items).toEqual([]);
+  });
+
+  it('says a project agent changed since its approval, with the approved file, and replaces the approval of that name on a new approval', async () => {
+    const tree = makeTree();
+    await approveProjectItems(tree.home, tree.project, [{ kind: 'agent', name: 'reviewer', text: TEXT, digest: projectAgentDigestOf('reviewer', TEXT) }], writerOf(tree));
+    expect((await pendingProjectItems(listing(tree, CHANGED))).items.map((item) => item.change)).toEqual([{ kind: 'changed', earlier: TEXT }]);
+    const digest = projectAgentDigestOf('reviewer', CHANGED);
+    await approveProjectItems(tree.home, tree.project, [{ kind: 'agent', name: 'reviewer', text: CHANGED, digest }], writerOf(tree));
+    expect(await approvals(tree)).toEqual({ [tree.project]: { agents: [{ name: 'reviewer', digest, text: CHANGED }] } });
+  });
+
+  it('lists no agent of a folder that is not trusted', async () => {
+    const tree = makeTree();
+    expect((await pendingProjectItems({ ...listing(tree, TEXT), trust: { isTrusted: async () => false } })).items).toEqual([]);
   });
 });

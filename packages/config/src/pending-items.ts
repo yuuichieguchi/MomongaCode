@@ -5,19 +5,24 @@ import { loadSettings } from './load-settings.ts';
 import { projectMandateState } from './project-mandate.ts';
 import path from 'node:path';
 import { loadMcpServers } from './mcp-servers.ts';
-import type { HookApproval, MandateApproval, McpServerApproval, ProjectApprovalsSettings } from './settings.ts';
-import { hookGroupApprovalDigestOf } from './approval-digest.ts';
+import type { AgentApproval, HookApproval, MandateApproval, McpServerApproval, ProjectApprovalsSettings } from './settings.ts';
+import { hookGroupApprovalDigestOf, projectAgentDigestOf } from './approval-digest.ts';
 import { loadUserSettings } from './user-settings.ts';
 import { hostPaths } from '@momonga/foundation';
 
-export type PendingItemsInput = { home: string; projectDir: string; trust: TrustOracle; signal: AbortSignal };
+export type ProjectAgentFile = { name: string; text: string; source: string };
+
+export type ProjectAgentsLister = (projectDir: string, signal: AbortSignal) => Promise<readonly ProjectAgentFile[]>;
+
+export type PendingItemsInput = { home: string; projectDir: string; trust: TrustOracle; agents: ProjectAgentsLister; signal: AbortSignal };
 
 export type PendingChange = { kind: 'new' } | { kind: 'changed'; earlier: unknown } | { kind: 'not-recorded' };
 
 export type PendingProjectItem =
   | { kind: 'hook'; event: string; group: unknown; digest: string; source: string; change: PendingChange }
   | { kind: 'mandate'; document: unknown; digest: string; source: string; change: PendingChange }
-  | { kind: 'mcp'; name: string; config: unknown; digest: string; source: string; change: PendingChange };
+  | { kind: 'mcp'; name: string; config: unknown; digest: string; source: string; change: PendingChange }
+  | { kind: 'agent'; name: string; text: string; digest: string; source: string; change: PendingChange };
 
 export type PendingProjectItems = { items: PendingProjectItem[]; refused: string[] };
 
@@ -50,13 +55,19 @@ const serverChange = (name: string, approvals: readonly McpServerApproval[]): Pe
   return typeof earlier === 'string' || earlier.config === undefined ? { kind: 'not-recorded' } : { kind: 'changed', earlier: earlier.config };
 };
 
-export const pendingProjectItems = async ({ home, projectDir, trust, signal }: PendingItemsInput): Promise<PendingProjectItems> => {
+const agentChange = (name: string, held: readonly AgentApproval[]): PendingChange => {
+  const earlier = held.find((approval) => approval.name === name);
+  return earlier === undefined ? { kind: 'new' } : { kind: 'changed', earlier: earlier.text };
+};
+
+export const pendingProjectItems = async ({ home, projectDir, trust, agents, signal }: PendingItemsInput): Promise<PendingProjectItems> => {
   if (!(await trust.isTrusted(projectDir, signal))) return { items: [], refused: [] };
   const refused: string[] = [];
   const items: PendingProjectItem[] = [];
   const loaded = await refusalOf(refused, () => loadSettings({ home, projectDir, cli: {}, trust, signal }));
   const approvals: ProjectApprovalsSettings | undefined = loaded === undefined ? (await loadUserSettings({ home, signal })).settings.projectApprovals : loaded.settings.projectApprovals;
-  const held = approvals?.[await hostPaths(signal).canonicalPath(projectDir)]?.hooks ?? [];
+  const folderApprovals = approvals?.[await hostPaths(signal).canonicalPath(projectDir)];
+  const held = folderApprovals?.hooks ?? [];
   const pendingHooks = loaded?.settings.pendingHooks ?? [];
   const current = new Set(Object.entries(loaded?.settings.hooks ?? {}).flatMap(([event, groups]) => (Array.isArray(groups) ? groups : []).map((group: unknown) => hookGroupApprovalDigestOf(event, group))));
   for (const pending of pendingHooks) items.push({ kind: 'hook', event: pending.event, group: pending.group, digest: pending.digest, source: pending.source, change: hookChange(pending.event, pending.group, held, current) });
@@ -68,6 +79,11 @@ export const pendingProjectItems = async ({ home, projectDir, trust, signal }: P
   const mcpJson = path.join(projectDir, '.mcp.json');
   for (const pending of servers?.pendingApproval ?? []) {
     if (!disabled.has(pending.name)) items.push({ kind: 'mcp', name: pending.name, config: pending.config, digest: pending.digest, source: mcpJson, change: serverChange(pending.name, serverApprovals) });
+  }
+  const heldAgents = folderApprovals?.agents ?? [];
+  for (const agent of await agents(projectDir, signal)) {
+    const digest = projectAgentDigestOf(agent.name, agent.text);
+    if (!heldAgents.some((approval) => approval.name === agent.name && approval.digest === digest)) items.push({ kind: 'agent', name: agent.name, text: agent.text, digest, source: agent.source, change: agentChange(agent.name, heldAgents) });
   }
   return { items, refused };
 };

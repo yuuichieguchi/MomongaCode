@@ -11,6 +11,7 @@ import {
   QWEN_DIGEST,
   chunkLine,
   doneLine,
+  fixtureJson,
   tagsWithDevstralDigest,
   startFakeOllama,
 } from './ollama-support.ts';
@@ -22,6 +23,8 @@ import { hostProbePorts } from './probe-ports-support.ts';
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CONTEXT_WINDOW = 12288;
+
+const SHOW_WITHOUT_CAPABILITIES = { model_info: {} };
 
 const ollamaTarget = (baseUrl: string) => ({
   adapter: 'ollama',
@@ -48,8 +51,8 @@ const probedHome = async (options: FakeOllamaOptions) => {
 };
 
 describe('an ollama target in a started gateway', () => {
-  it('answers a request 503 target_probing and starts the probe while no probe record exists, without calling /api/chat', async () => {
-    const fake = await startFakeOllama({ chat: [textReply('never sent')] });
+  it('answers a request 503 target_probing and starts the probe while no probe record exists and the server reports no tool support, without calling /api/chat', async () => {
+    const fake = await startFakeOllama({ chat: [textReply('never sent')], show: SHOW_WITHOUT_CAPABILITIES });
     const home = makeHome();
     writeSettings(home, { models: modelsOf({ local: ollamaTarget(fake.origin) }) });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
@@ -89,9 +92,11 @@ describe('an ollama target in a started gateway', () => {
     });
   });
 
-  it('P6 RecordMatchesKey: once the model is pulled again under the same tag, answers 503 target_probing and measures the new digest, sending no chat', async () => {
+  it('P6 RecordMatchesKey: once the model is pulled again under the same tag, answers 503 target_probing and measures the new digest while the server reports no tool support, sending no chat', async () => {
     let digest = DEVSTRAL_DIGEST;
-    const { fake, home } = await probedHome({ tags: () => tagsWithDevstralDigest(digest), chat: [textReply('never sent')] });
+    const show: Record<string, unknown> = { ...fixtureJson('api-show.json') };
+    const { fake, home } = await probedHome({ tags: () => tagsWithDevstralDigest(digest), chat: [textReply('never sent')], show });
+    delete show['capabilities'];
     const measured: unknown[] = [];
     const handle = await launchGateway({
       generation: FIRST_GENERATION,

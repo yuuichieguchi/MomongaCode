@@ -2,7 +2,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, RunBudgetReport, RunDelegationReport, RunFailedCallReport, RunOperationReport, RunReport, RunReportAnomaly } from '@momonga/protocol';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
-import { CONDITION_STATE_WORDS, RESIDUAL_RISK_WORDS } from '../policy-messages.ts';
+import { CONDITION_STATE_WORDS, HOW_TO_DECLARE_CHECK, RESIDUAL_RISK_WORDS } from '../policy-messages.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { escapedLines } from '../terminal-writer.ts';
@@ -82,7 +82,7 @@ export const renderReport = (report: RunReport): string => {
   const outcome = report.stopReason === undefined ? report.status : `${report.status} (${report.stopReason})`;
   return escapedLines([
     `run ${report.runId}: ${outcome}, ${report.durationMs} ms`,
-    ...(report.declaration === null ? ['no completion condition declared'] : []),
+    ...(report.declaration === null ? [`no completion condition declared (${HOW_TO_DECLARE_CHECK})`] : []),
     ...(report.conditions.length === 0 ? [] : ['conditions:', ...report.conditions.map(conditionLine)]),
     ...(report.notRun.length === 0 ? [] : ['not run:', ...report.notRun.map((entry) => `  ${entry.what}  (${entry.reason})`)]),
     `changes: ${report.changes.mutatingCalls} mutating ${report.changes.mutatingCalls === 1 ? 'call' : 'calls'}`,

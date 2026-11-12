@@ -93,7 +93,7 @@ export const startDetachedKeeper =
   };
 
 export type NodeKeeperHostOptions = {
-  executable(): string;
+  executable(): Promise<string>;
   random: Pick<Random, 'hex'>;
   env: KeeperSpawnEnv;
 };
@@ -112,20 +112,32 @@ export const createNodeKeeperHost = ({ executable, random, env }: NodeKeeperHost
   random,
 });
 
-let providedKeeper: (() => string) | undefined;
+export type KeeperPreparation = () => Promise<() => string>;
 
-export const provideWindowsKeeper = (executable: () => string): void => {
-  providedKeeper = executable;
+let providedKeeper: KeeperPreparation | undefined;
+let preparedKeeper: Promise<() => string> | undefined;
+
+export const provideWindowsKeeper = (prepare: KeeperPreparation): void => {
+  providedKeeper = prepare;
+  preparedKeeper = undefined;
+};
+
+const preparedWindowsKeeper = (): Promise<() => string> => {
+  if (preparedKeeper !== undefined) return preparedKeeper;
+  if (providedKeeper === undefined) return Promise.reject(new Error('no keeper executable was provided to this process, so no command can be started or found in a Job Object'));
+  const preparing = providedKeeper();
+  preparedKeeper = preparing;
+  preparing.then(undefined, () => {
+    if (preparedKeeper === preparing) preparedKeeper = undefined;
+  });
+  return preparing;
 };
 
 export const hostKeeperHost = (): KeeperHost =>
   createNodeKeeperHost({
-    executable: () => {
-      if (providedKeeper === undefined) throw new Error('no keeper executable was provided to this process, so no command can be started or found in a Job Object');
-      return providedKeeper();
-    },
+    executable: async () => (await preparedWindowsKeeper())(),
     random: systemRandom,
     env: process.env,
   });
 
-export const provideCheckedWindowsKeeper = (file: string, sha256: string): void => provideWindowsKeeper(checkedWindowsKeeper(file, sha256, readFileBytesSync));
+export const hostCheckedWindowsKeeper = (file: string, sha256: string): (() => string) => checkedWindowsKeeper(file, sha256, readFileBytesSync);

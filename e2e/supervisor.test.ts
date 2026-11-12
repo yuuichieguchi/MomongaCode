@@ -17,7 +17,7 @@ import { isAlive } from './support/process.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { LAUNCHER_PATH, productSandbox } from './support/sandbox.ts';
-import { DEFAULT_E2E_DEPS, SUPERVISOR_APP_VERSION, baseSettings, spawnSupervisor, startStack, upstreamModelRef, withUpstreamEntry, writeSettingsFile } from './support/stack.ts';
+import { SUPERVISOR_APP_VERSION, baseSettings, spawnSupervisor, startStack, upstreamModelRef, withUpstreamEntry, writeSettingsFile } from './support/stack.ts';
 import type { SpawnedSupervisor, SupervisorExit } from './support/stack.ts';
 import { childOf, createSupervisorClient, pidOf } from './support/supervisor-client.ts';
 import type { E2eDeps } from './support/supervisor-main.ts';
@@ -51,12 +51,12 @@ const S1_TIMEOUT_MS = e2eTestTimeoutMs(
   E2E_MARGIN_MS,
   E2E_ORPHAN_CLOSE_BOUND_MS,
   2 * E2E_ORPHAN_CLOSE_BOUND_MS,
-  e2eStartBoundMs(DEFAULT_E2E_DEPS),
+  e2eStartBoundMs({}),
   E2E_READY_DEADLINE_MS,
 );
-const S1B_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs(DEFAULT_E2E_DEPS), E2E_MARGIN_MS, E2E_REAP_TO_RUNNING_BOUND_MS);
-const S1C_PHASE1_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs(DEFAULT_E2E_DEPS), E2E_MARGIN_MS, E2E_REAP_CLOSE_BOUND_MS);
-const S1C_PHASE2_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs(DEFAULT_E2E_DEPS), E2E_PHASE2_REACHED_BOUND_MS, E2E_REAP_CLOSE_BOUND_MS);
+const S1B_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({}), E2E_MARGIN_MS, E2E_REAP_TO_RUNNING_BOUND_MS);
+const S1C_PHASE1_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({}), E2E_MARGIN_MS, E2E_REAP_CLOSE_BOUND_MS);
+const S1C_PHASE2_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({}), E2E_PHASE2_REACHED_BOUND_MS, E2E_REAP_CLOSE_BOUND_MS);
 const S5_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_SETTINGS_RESTART_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 const S5B_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_HELD_RETRY_MS + E2E_RESTART_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 const S7_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_MARGIN_MS, E2E_LOCK_FREE_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
@@ -151,7 +151,7 @@ const openRuntimeClient = (home: E2eHome): RuntimeClient => {
 };
 
 const spawnNextSupervisor = async (home: E2eHome, deps: E2eDeps, stackNumber: number, generation?: number): Promise<SpawnedSupervisor> => {
-  const supervisor = spawnSupervisor({ home, deps, stackNumber, ...(generation === undefined ? {} : { generation }) });
+  const supervisor = spawnSupervisor({ home, entry: { kind: 'test', deps, ...(generation === undefined ? {} : { generation }) }, stackNumber });
   await home.ledger.add(supervisor.pid, 'supervisor');
   registerE2eCleanup(() => {
     if (isAlive(supervisor.pid)) process.kill(supervisor.pid, 'SIGKILL');
@@ -219,7 +219,7 @@ describe('supervisor cases', () => {
     expect(named(killed, 'entry.exit')).toEqual([]);
     expect(named(killed, 'child.exit')).toEqual([]);
 
-    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY }, 2);
+    const second = await spawnNextSupervisor(home, { restart: E2E_RESTART_POLICY }, 2);
     const secondReady = await second.ready();
     expect(secondReady.pid).toBe(second.pid);
     const client = openClient(home, 2);
@@ -253,7 +253,7 @@ describe('supervisor cases', () => {
     const home = await createE2eHome();
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
 
-    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, reaper: { orphanGraceMs: E2E_ORPHAN_GRACE_MS } }, 2);
+    const second = await spawnNextSupervisor(home, { reaper: { orphanGraceMs: E2E_ORPHAN_GRACE_MS } }, 2);
     const secondReady = await second.ready();
     expect(secondReady).toMatchObject({ service: 'supervisor', pid: second.pid });
     const client = openClient(home, 2);
@@ -292,7 +292,7 @@ describe('supervisor cases', () => {
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
     const orphanMarkers = markerEntries(home.paths, 1);
 
-    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, reaper: { orphanGraceMs: S1C_PHASE1_ORPHAN_GRACE_MS } }, 2);
+    const second = await spawnNextSupervisor(home, { reaper: { orphanGraceMs: S1C_PHASE1_ORPHAN_GRACE_MS } }, 2);
     await second.ready();
     const secondExit = trackExit(second);
     const client = openClient(home, 2);
@@ -329,7 +329,7 @@ describe('supervisor cases', () => {
     const home = await createE2eHome();
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
 
-    const second = await spawnNextSupervisor(home, { ...DEFAULT_E2E_DEPS, reaper: { orphanGraceMs: E2E_ORPHAN_GRACE_MS } }, 2);
+    const second = await spawnNextSupervisor(home, { reaper: { orphanGraceMs: E2E_ORPHAN_GRACE_MS } }, 2);
     await second.ready();
     const secondExit = trackExit(second);
     const client = openClient(home, 2);
@@ -367,7 +367,7 @@ describe('supervisor cases', () => {
 
     editSettings(home, (settings) => ({ ...settings, sandbox: 'none' }));
     await until(async () => {
-      await runtime.createSession();
+      await runtime.createSession({ permissionMode: 'bypassPermissions' });
       return (await runtime.health()).sandbox === 'none' ? true : undefined;
     }, {
       deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS,
@@ -446,7 +446,7 @@ describe('supervisor cases', () => {
     const stack = await startStack({
       home,
       sandbox: 'seatbelt',
-      deps: { ...DEFAULT_E2E_DEPS, runtime: { ...DEFAULT_E2E_DEPS.runtime, sandboxExecPath: '/nonexistent' } },
+      deps: { runtime: { sandboxExecPath: '/nonexistent' } },
       readiness: { phase: 'running', children: { runtime: 'held-config', gateway: 'ready' } },
     });
     const held = await stack.client.untilChild('runtime', (child) => child.state === 'held-config', E2E_RESTART_BOUND_MS);
@@ -481,7 +481,7 @@ describe('supervisor cases', () => {
       home,
       needsBash: true,
       sandbox: productSandbox(),
-      deps: { ...DEFAULT_E2E_DEPS, heldRetryMs: E2E_HELD_RETRY_MS, runtime: { ...DEFAULT_E2E_DEPS.runtime, sandboxExecPath } },
+      deps: { heldRetryMs: E2E_HELD_RETRY_MS, runtime: { sandboxExecPath } },
       readiness: { phase: 'running', children: { runtime: 'held-config', gateway: 'ready' } },
     });
     const held = await stack.client.untilChild('runtime', (child) => child.state === 'held-config', E2E_RESTART_BOUND_MS);
@@ -547,7 +547,7 @@ describe('supervisor cases', () => {
     const holderPid = await startLockHolderFixture(home, firstGeneration(home.paths).locks.runtime);
     expect(await inspectProcessLock(firstGeneration(home.paths).locks.runtime, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: holderPid });
 
-    const stack = await startStack({ home, deps: { ...DEFAULT_E2E_DEPS, lockWaitMs: S7_LOCK_WAIT_MS }, readiness: false, preparedGeneration: FIRST_GENERATION });
+    const stack = await startStack({ home, deps: { lockWaitMs: S7_LOCK_WAIT_MS }, readiness: false, preparedGeneration: FIRST_GENERATION });
     const external = await stack.client.untilChild('runtime', (child) => child.state === 'external', E2E_RESTART_BOUND_MS);
     expect(external.restarts).toBe(0);
     expect(external.pid).toBeUndefined();
@@ -649,7 +649,7 @@ describe('supervisor cases', () => {
     const runtimePid = pidOf(before, 'runtime');
     const gatewayPid = pidOf(before, 'gateway');
 
-    const second = await spawnNextSupervisor(home, DEFAULT_E2E_DEPS, 2, FIRST_GENERATION);
+    const second = await spawnNextSupervisor(home, {}, 2, FIRST_GENERATION);
     expect(second.depsFile).not.toBe(stack.supervisor.depsFile);
     const readyFailure = second.ready().then(
       () => undefined,

@@ -34,7 +34,7 @@ export const keptWorld = (script: (keeper: FakeKeeper) => void = (keeper) => kee
 describe('the spawn port through the keeper', () => {
   it('gives the pid of the command the keeper started, not the pid of the keeper', async () => {
     const { spawn } = keptWorld();
-    const handle = spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
+    const handle = await spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
     const pids: number[] = [];
     handle.onCommandPid((pid) => pids.push(pid));
     await settle();
@@ -44,7 +44,7 @@ describe('the spawn port through the keeper', () => {
 
   it('gives the command pid to a listener that arrives after the keeper reported it', async () => {
     const { spawn } = keptWorld();
-    const handle = spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
+    const handle = await spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
     await settle();
     const pids: number[] = [];
     handle.onCommandPid((pid) => pids.push(pid));
@@ -55,7 +55,7 @@ describe('the spawn port through the keeper', () => {
 
   it('stops gracefully with SIGTERM: the lifeline is closed and the job is not terminated', async () => {
     const { spawn, fake, lifelines } = keptWorld();
-    const handle = spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
+    const handle = await spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
     await settle();
     handle.kill('SIGTERM');
     await settle();
@@ -65,7 +65,7 @@ describe('the spawn port through the keeper', () => {
 
   it('terminates the job at once for SIGINT', async () => {
     const { spawn, fake } = keptWorld();
-    const handle = spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
+    const handle = await spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
     await settle();
     handle.kill('SIGINT');
     await settle();
@@ -74,7 +74,7 @@ describe('the spawn port through the keeper', () => {
 
   it('a SIGINT after a SIGTERM still terminates the job, once, without waiting on the graceful stop', async () => {
     const { spawn, fake } = keptWorld();
-    const handle = spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
+    const handle = await spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
     await settle();
     handle.kill('SIGTERM');
     handle.kill('SIGINT');
@@ -84,7 +84,7 @@ describe('the spawn port through the keeper', () => {
 
   it('kills the group through the job of the port it was given, also after the lifeline closed', async () => {
     const { spawn, fake } = keptWorld();
-    const handle = spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
+    const handle = await spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
     await settle();
     handle.kill('SIGTERM');
     const killed = handle.killGroup();
@@ -96,7 +96,7 @@ describe('the spawn port through the keeper', () => {
 
   it('refuses a graceful stop of a child without a lifeline, which a job port could only terminate', async () => {
     const { spawn } = keptWorld(undefined, false);
-    const handle = spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
+    const handle = await spawn('C:\\node.exe', ['runtime.js'], OPTIONS);
     await settle();
     expect(() => handle.kill('SIGTERM')).toThrow('has no lifeline');
   });

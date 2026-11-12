@@ -139,14 +139,4 @@ describe('measurePinned', () => {
     expect(truncatedMarker.exec(outputTextOf(built.input, 'big') ?? '')).not.toBeNull();
     expect(tokensOfItem(rendered as InputItem)).toBeLessThanOrEqual(measured.itemCap);
   });
-
-  it('uses an item cap passed by the caller instead of measuring one', async () => {
-    const built = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ systemPrompt, history: bigOutputHistory }), itemCap: 200 }),
-      harness(capabilities).ports,
-    );
-    const rendered = built.input.find((item) => item.type === 'function_call_output');
-    expect(tokensOfItem(rendered as InputItem)).toBeLessThanOrEqual(200);
-    expect(tokensOfItem(rendered as InputItem)).toBeGreaterThan(150);
-  });
 });

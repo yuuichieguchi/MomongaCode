@@ -47,7 +47,7 @@ const offeredTools = async (): Promise<readonly AnyTool[]> => {
       agents: createAgentsPort({
         home: env.home,
         fileSystem: createNodeSkillFileSystem(),
-        settings: { trusted: async () => env.settings.trustedValue },
+        settings: { trusted: async () => env.settings.trustedValue, approvedProjectAgents: async () => ({ has: () => true }) },
         runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
       }),
     }),

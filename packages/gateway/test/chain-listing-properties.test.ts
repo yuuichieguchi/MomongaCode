@@ -41,7 +41,7 @@ const capabilitiesOf = (index: number): Capabilities => ({ ...BASE, maxConcurren
 const adapterOf = (state: State, index: number, facts: ChainRoomFacts): ProviderAdapter => {
   const inner: ProviderAdapter = { ...createScriptedAdapter({ calls: [], capabilities: capabilitiesOf(index) }), roomFacts: async () => facts };
   if (state === 'listed') return inner;
-  const fails = state === 'probing' ? () => targetProbingError({ state: 'probing', message: 'measuring', retryAfterSeconds: 60 }) : () => invalidRequest('capabilities_unknown', 'no numbers', 'model', 412);
+  const fails = state === 'probing' ? () => targetProbingError({ state: 'probing', message: 'measuring', retryAfterSeconds: 60, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }) : () => invalidRequest('capabilities_unknown', 'no numbers', 'model', 412);
   return { ...capabilityFailingAdapter({ inner, fails }), roomFacts: async () => { throw fails(); } };
 };
 

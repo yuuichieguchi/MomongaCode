@@ -1,9 +1,11 @@
+import { systemTiming } from '@momonga/foundation';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { OutboundNetwork } from '@momonga/foundation';
 import { hostTimers } from '@momonga/testkit';
-import { createProbeClient } from '../src/probe/client.ts';
+import { createProbeClient, fixedStepBound } from '../src/probe/client.ts';
+import { PERSON_TRAFFIC } from '../src/probe/request-gate.ts';
 import { createEndpointPool } from '../src/adapters/shared/http-client.ts';
 
 const closers: Array<() => Promise<void>> = [];
@@ -38,7 +40,7 @@ const throughProxy = (port: number): OutboundNetwork => ({
 describe('a probe of a TCP endpoint behind a proxy that never answers CONNECT', { timeout: 30_000 }, () => {
   it('ends at the probe step bound', async () => {
     const proxy = await silentProxy();
-    const client = createProbeClient({ kind: 'tcp', baseUrl: 'https://model.example.test/v1', network: throughProxy(proxy.port) }, undefined, 300, hostTimers);
+    const client = createProbeClient({ kind: 'tcp', baseUrl: 'https://model.example.test/v1', network: throughProxy(proxy.port) }, { signal: undefined, bound: fixedStepBound(300), timers: systemTiming, gate: PERSON_TRAFFIC });
     closers.push(() => client.close());
 
     await expect(client.get('models')).rejects.toThrow(/300 ms/);

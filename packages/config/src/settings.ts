@@ -317,7 +317,7 @@ export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platfo
 
 export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
 
-export type IssueWatchEntry = { repository: string; labels?: string[]; authorAssociation?: (typeof ISSUE_AUTHOR_ASSOCIATIONS)[number][]; mandate: string };
+export type IssueWatchEntry = { repository: string; folder: string; forge: string; labels?: string[]; authorAssociation?: (typeof ISSUE_AUTHOR_ASSOCIATIONS)[number][]; mandate: string };
 
 export type IssuesSettings = { watch?: IssueWatchEntry[] };
 
@@ -341,7 +341,9 @@ export type HookApproval = string | { digest: string; event: string; group: unkn
 
 export type MandateApproval = string | { digest: string; document: unknown };
 
-export type ProjectApprovalsSettings = Record<string, { hooks?: HookApproval[]; mandate?: MandateApproval }>;
+export type AgentApproval = { name: string; digest: string; text: string };
+
+export type ProjectApprovalsSettings = Record<string, { hooks?: HookApproval[]; mandate?: MandateApproval; agents?: AgentApproval[] }>;
 
 export const approvalDigest = (approval: HookApproval | MandateApproval): string => (typeof approval === 'string' ? approval : approval.digest);
 
@@ -655,11 +657,18 @@ export const assertMcpServer = (value: unknown, source: string, name: string): M
 const watchMandateProblem = (mandate: string, declared: readonly string[]): string | undefined =>
   declared.includes(mandate) ? undefined : `${JSON.stringify(mandate)} is not a mandate declared under mandates; the mandates are ${declared.length === 0 ? 'none' : declared.join(', ')}`;
 
+const watchForgeProblem = (forge: string, declared: readonly string[]): string | undefined =>
+  declared.includes(forge) ? undefined : `${JSON.stringify(forge)} is not a forge declared under forges; the forges are ${declared.length === 0 ? 'none' : declared.join(', ')}`;
+
 export const checkIssueWatch = (settings: Settings, source: string, warnings: string[]): void => {
   const declared = Object.keys(settings.mandates ?? {});
+  const forges = (settings.forges ?? []).map((forge) => forge.id);
   (settings.issues?.watch ?? []).forEach((entry, index) => {
     const problem = watchMandateProblem(entry.mandate, declared);
     if (problem !== undefined) throw new ConfigError(invalidSettingsMessage(source, `/issues/watch/${index}/mandate`, problem));
+    const forgeProblem = watchForgeProblem(entry.forge, forges);
+    if (forgeProblem !== undefined) throw new ConfigError(invalidSettingsMessage(source, `/issues/watch/${index}/forge`, forgeProblem));
+    if (!path.isAbsolute(entry.folder)) throw new ConfigError(invalidSettingsMessage(source, `/issues/watch/${index}/folder`, `${JSON.stringify(entry.folder)} is not an absolute path; give the absolute path of the clone the run acts in`));
     if (entry.labels === undefined && entry.authorAssociation === undefined) {
       warnings.push(`${source}: issues.watch[${index}] for ${entry.repository} has no labels and no authorAssociation, so it takes no issue; add a filter`);
     }

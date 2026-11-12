@@ -1,0 +1,31 @@
+{
+  "name": "IssueComment",
+  "description": "Posts a comment on an issue. The comment carries a hidden marker so that a call that was interrupted can be matched with the comment it posted. A posted comment cannot be taken back, so an interrupted call whose comment cannot be found is reported as unknown and not repeated.",
+  "kind": "other",
+  "sideEffect": "write",
+  "title": "Comment on issue #{input.number}",
+  "subject": { "kind": "forge" },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": {
+      "number": { "type": "integer", "minimum": 1, "description": "The issue number" },
+      "body": { "type": "string", "minLength": 1 },
+      "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote whose forge is asked; origin when left out" }
+    },
+    "required": ["number", "body"],
+    "additionalProperties": false
+  },
+  "observe": [
+    {
+      "id": "markerCount",
+      "via": { "forge": "listIssueComments", "args": { "number": "{input.number}" }, "shape": "count", "contains": { "field": "body", "value": "momonga-operation:{call.key}" } }
+    }
+  ],
+  "effect": { "forge": "createIssueComment", "args": { "number": "{input.number}", "body": "{input.body}\n\n<!-- momonga-operation:{call.key} -->" } },
+  "applied": [["after.markerCount", { "literal": "1" }]],
+  "unchanged": [["after.markerCount", { "literal": "0" }]],
+  "guard": "none",
+  "supersedes": [["gh", "issue", "comment"]],
+  "report": "Comment posted on issue #{input.number}."
+}

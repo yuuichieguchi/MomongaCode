@@ -12,6 +12,8 @@ const AT_JULY = Date.parse('2026-07-10T00:00:00Z');
 
 const costReport = (RUN_API_SCHEMAS as unknown as Record<string, SchemaNode>)['CostReport'] as SchemaNode;
 const causeSchema = costReport.properties['runs']!.items.properties['fallbacks']!.items.properties['failed']!.items;
+const runsAccepted = new Ajv2020.default({ strict: true, allErrors: true }).compile(costReport.properties['runs'] as unknown as Record<string, unknown>);
+const totalAccepted = new Ajv2020.default({ strict: true, allErrors: true }).compile(costReport.properties['total'] as unknown as Record<string, unknown>);
 const causeAccepted = new Ajv2020.default({ strict: true, allErrors: true }).compile(causeSchema as unknown as Record<string, unknown>);
 
 const ALLOWED_CAUSE = { target: 'plan', code: 'plan_usage_unavailable', message: 'Try again later.', fromBilling: 'plan', toBilling: 'metered', reason: 'billing_change_allowed' } as const;
@@ -40,5 +42,23 @@ describe('a cost report holding a billing change keeps the Run API contract', ()
     const failed = report.total.fallbacks?.[0]?.failed;
     expect(failed).toEqual([ALLOWED_CAUSE]);
     expect((failed ?? []).map((cause) => causeAccepted(cause))).toEqual([true]);
+  });
+
+  it('the runs and the total of a report, which counts the retries, are accepted by the schema, retries included', async () => {
+    const h = harness();
+    const agent = startAgentSpan(h.telemetry.tracer, { agentName: 'momonga', agentId: 'momonga', conversationId: 's', runId: 'run-a' });
+    const parent = trace.setSpan(ROOT_CONTEXT, agent);
+    h.clock.set(AT_JULY);
+    const chat = startChatSpan(h.telemetry.tracer, { providerName: 'acme', billing: 'metered', requestModel: 'm1', stream: true, runId: 'run-a', step: 1, attempt: 1, target: 'metered' }, parent);
+    recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: 10, outputTokens: 5 } });
+    chat.end(h.clock.now());
+    agent.end(h.clock.now());
+    await h.telemetry.forceFlush();
+
+    const report = costReportOfSpans(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+
+    expect(report.total.retries).toBe(0);
+    expect([runsAccepted(report.runs), runsAccepted.errors]).toEqual([true, null]);
+    expect([totalAccepted(report.total), totalAccepted.errors]).toEqual([true, null]);
   });
 });

@@ -1,3 +1,4 @@
+import { createRedactor } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -112,16 +113,17 @@ describe('a declared server whose binary exists but cannot be read for its hash 
         throw new Error('a key with an unreadable component never starts a recorded probe');
       },
       instanceProbe: (unknown) =>
-        createInstanceProbe({
+        createInstanceProbe({ redactor: createRedactor({ credentials: [] }),
           target: 'workbench',
           unknown,
+          ask: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
           dir: probeRecordDir,
           measure: async () => {
             measured += 1;
             return makeReport(1, 1);
           },
           retryAfterMs: 120_000,
-          clock: { now: () => 0 },
+          clock: { now: () => 0, monotonicMs: () => 0 },
           onNotice: (text) => notices.push(text),
         }),
       currency: managedCurrencyOf(description, { userDialects: {} }),

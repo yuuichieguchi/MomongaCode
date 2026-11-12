@@ -1,6 +1,6 @@
 {
   "name": "PullRequestCreate",
-  "description": "Opens a pull request from a pushed branch. The forge refuses a second open pull request for the same head and base, and a pull request that already exists at the given head commit completes the call without a request.",
+  "description": "Opens a pull request from a pushed branch. Give issue when the pull request resolves an issue, so that the forge links them. The forge refuses a second open pull request for the same head and base, and a pull request that already exists at the given head commit completes the call without a request.",
   "kind": "other",
   "sideEffect": "write",
   "title": "Open a pull request from {input.head} into {input.base}",
@@ -14,6 +14,7 @@
       "title": { "type": "string", "minLength": 1 },
       "body": { "type": "string" },
       "headSha": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The commit the head branch is expected to be at" },
+      "issue": { "type": "integer", "minimum": 1, "description": "The issue this pull request resolves; the body then ends with Closes #<issue>, which links the two" },
       "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote whose forge is asked; origin when left out" }
     },
     "required": ["head", "base", "title", "body", "headSha"],
@@ -24,7 +25,7 @@
     { "id": "headBranch", "via": { "forge": "getBranch", "args": { "branch": "{input.head}" }, "shape": "one" } }
   ],
   "require": [["before.headBranch.sha", "input.headSha"]],
-  "effect": { "forge": "createPullRequest", "args": { "head": "{input.head}", "base": "{input.base}", "title": "{input.title}", "body": "{input.body}" } },
+  "effect": { "forge": "createPullRequest", "args": { "head": "{input.head}", "base": "{input.base}", "title": "{input.title}", "body": { "ifObserved": "input.issue", "then": "{input.body}\n\nCloses #{input.issue}", "else": "{input.body}" } } },
   "applied": [
     ["after.existing.count", { "literal": "1" }],
     ["after.existing.headSha", "input.headSha"]

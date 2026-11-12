@@ -22,7 +22,7 @@ describe('a group member that survives the stop after the leader exits is report
       alive: async () => true,
     };
     const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
-    const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
+    const launched = await launch({ protection: TEST_CHILD_UNPROTECTED,
       file: '/bin/sh',
       args: [],
       cwd: '/',
@@ -52,7 +52,7 @@ describe('a group member that survives the stop after the leader exits is report
       alive: async () => alive,
     };
     const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
-    const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
+    const launched = await launch({ protection: TEST_CHILD_UNPROTECTED,
       file: '/bin/sh',
       args: [],
       cwd: '/',
@@ -103,7 +103,7 @@ describe('a group member that survives the stop after the leader exits is report
     fs.writeFileSync(markerFile, `${FAKE_PID}\n`, { mode: 0o600 });
     try {
       const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
-      const launched = launch({ protection: TEST_CHILD_UNPROTECTED,
+      const launched = await launch({ protection: TEST_CHILD_UNPROTECTED,
         file: '/bin/sh',
         args: [],
         cwd: '/',

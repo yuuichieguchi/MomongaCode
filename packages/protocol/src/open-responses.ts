@@ -1,6 +1,7 @@
 import type { SchemaNarrowing } from './dialect.ts';
 import type { FallbackCause } from './fallback-cause.ts';
 import type { PlanAccountRef } from './plan-account.ts';
+import type { MeasuringWire } from './measuring.ts';
 import { MAX_TOOL_NAME_CHARS } from './reference-kinds.ts';
 import type { ModelCost, UnpricedOutcome } from './token-anatomy.ts';
 
@@ -45,7 +46,7 @@ export type StreamEventType = (typeof OPEN_RESPONSES_STREAM_EVENT_TYPES)[number]
 export type TerminalStreamEventType = (typeof TERMINAL_STREAM_EVENT_TYPES)[number];
 export type ErrorType = (typeof ERROR_TYPES)[number];
 
-export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null; plan?: PlanAccountRef };
+export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null; plan?: PlanAccountRef; measuring?: MeasuringWire };
 export type ErrorEnvelope = { error: ErrorBody };
 
 export type Annotation = { type: string; [key: string]: unknown };

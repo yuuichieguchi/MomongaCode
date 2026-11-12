@@ -175,6 +175,8 @@ export type { Destinations, GitRead, GitReadOptions, GitReader } from './operati
 export { ForgeDescriptorError, loadForgeDescriptors, parseForgeDescriptor } from './forge/descriptor.ts';
 export type { ForgeDescriptor, ForgeOperationDescriptor } from './forge/descriptor.ts';
 export { createForgeAccess } from './forge/instances.ts';
+export { ISSUE_URL_FORM, hasFilter, issueLocationOf, listMatchingIssues, parseIssueUrl, readIssue } from './forge/issues.ts';
+export type { IssueAsk, IssueFilter, IssueLocation } from './forge/issues.ts';
 export type { ForgeAccess, ForgeAccessOptions, ForgeCredentialReference, ForgeInstance, ForgeRequest } from './forge/instances.ts';
 export type { ForgeFetch } from './forge/http.ts';
 export { EMPTY_FOOTPRINT, blockedByHeldText, blockerOf, footprintOf, footprintsConflict } from './footprint.ts';

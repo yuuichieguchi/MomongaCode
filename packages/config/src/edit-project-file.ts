@@ -31,7 +31,8 @@ export const editProjectMandate = async (projectDir: string, edit: ProjectMandat
   await approveProjectItems(home, projectDir, [{ kind: 'mandate', ...written }], { lock, mechanism, random, signal });
 };
 
-export type ApprovedItem = { kind: 'hook'; event: string; group: unknown; digest: string } | { kind: 'mandate'; document: unknown; digest: string } | { kind: 'mcp'; name: string; config: unknown; digest: string };
+export type ApprovedItem = { kind: 'hook'; event: string; group: unknown; digest: string } | { kind: 'mandate'; document: unknown; digest: string } | { kind: 'mcp'; name: string; config: unknown; digest: string }
+  | { kind: 'agent'; name: string; text: string; digest: string };
 
 export const approveProjectItems = async (home: string, projectDir: string, approved: readonly ApprovedItem[], ports: SettingsWriterPorts): Promise<void> => {
   const folder = await hostPaths(ports.signal).canonicalPath(projectDir);
@@ -60,8 +61,15 @@ const recordApproval = (settings: Record<string, unknown>, folder: string, appro
   const added = approvedHooks.filter((hook, index) => !held.some((entry) => heldDigest(entry) === hook.digest) && approvedHooks.findIndex((other) => other.digest === hook.digest) === index);
   const hooks = [...kept, ...added];
   const mandate = approved.find((item) => item.kind === 'mandate');
-  const next = { ...current, ...(hooks.length === 0 ? {} : { hooks }), ...(mandate === undefined ? {} : { mandate: { digest: mandate.digest, document: mandate.document } }) };
+  const agents = approvedAgentsOf(current['agents'], approved);
+  const next = { ...current, ...(hooks.length === 0 ? {} : { hooks }), ...(agents.length === 0 ? {} : { agents }), ...(mandate === undefined ? {} : { mandate: { digest: mandate.digest, document: mandate.document } }) };
   if (JSON.stringify(next) === JSON.stringify(current)) return false;
   settings['projectApprovals'] = { ...approvals, [folder]: next };
   return true;
+};
+
+const approvedAgentsOf = (held: unknown, approved: readonly ApprovedItem[]): unknown[] => {
+  const agents = approved.flatMap((item) => (item.kind === 'agent' ? [{ name: item.name, digest: item.digest, text: item.text }] : []));
+  const names = new Set(agents.map((agent) => agent.name));
+  return [...(Array.isArray(held) ? held : []).filter((entry) => !names.has(String(nameOf(entry)))), ...agents];
 };

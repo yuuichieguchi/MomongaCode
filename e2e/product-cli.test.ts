@@ -109,7 +109,7 @@ describe('momonga models, cost and memory', () => {
     expect(text.stdout).toContain('cost report');
     expect(text.stdout).toContain(`total: 2 call(s), ${CACHE_READ_TEXT.inputClause({ calls: 2, notReported: 2, inputTokens, cachedInputTokens: null })} + 10 output tokens, not complete: ${CACHE_READS_NOT_REPORTED} in 2 call(s)\n`);
     const mixed = await runCli(home, ['cost', secondRun.run_id, '--all']);
-    expect(mixed.code).toBe(1);
+    expect(mixed.code).toBe(EXIT_USAGE);
     expect(mixed.stderr).toContain('choose one of a run id, --session and --all');
   });
 
@@ -182,7 +182,7 @@ describe('momonga -p with skills and images', () => {
     const shot = writePng(capable.home.project, 'shot.png');
 
     const described = await runCli(capable.home, ['-p', 'What is in the picture?', '--image', 'shot.png']);
-    expect(described.stderr).toBe('');
+    expect(described.stderr).toBe(`momonga: the folder ${capable.home.project} is not decided, so its own settings and everything they could make the product run are not loaded; decide it with momonga trust ${capable.home.project}\n`);
     expect(described.stdout).toBe('It is a picture.\n');
     expect(requestText(chatCompletions(capable.fake)[0])).toContain(`data:image/png;base64,${PNG_BYTES.toString('base64')}`);
 

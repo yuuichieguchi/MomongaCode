@@ -5,6 +5,7 @@ import { FIRST_GENERATION, generationLayout, isProcessAlive, momongaLayout } fro
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { OWNER_FILE, ROOT_PREFIX, ownerRecord } from '../../packages/cli/src/eval/context-host.ts';
+import { KEPT_HOME_FILE_NAME } from './home.ts';
 import { runE2eTeardown } from './teardown.ts';
 
 const RUN = 'ab12';
@@ -46,5 +47,18 @@ describe('runE2eTeardown', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(fs.existsSync(own.root)).toBe(false);
     expect(isProcessAlive(foreign.holder)).toBe(true);
     expect(fs.existsSync(foreign.root)).toBe(true);
+  });
+
+  it('leaves the home a failed test kept and names it, without counting it as a leak', async (context) => {
+    const tmpRoot = withTempDir(context);
+    const kept = path.join(tmpRoot, `mme-${RUN}-dddddd`);
+    fs.mkdirSync(kept, { mode: 0o700 });
+    fs.writeFileSync(path.join(kept, KEPT_HOME_FILE_NAME), 'the failing test\n');
+    const lines: string[] = [];
+
+    await runE2eTeardown({ tmpRoot, run: RUN, evalBase: withTempDir(context), report: (line) => lines.push(line) });
+
+    expect(fs.existsSync(kept)).toBe(true);
+    expect(lines).toEqual([`e2e teardown: kept the home of the failed test the failing test at ${kept}`]);
   });
 });

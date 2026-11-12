@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -18,7 +17,7 @@ describe('the interactive entry of the single-file bundle', () => {
     async () => {
       const outfile = path.join(scratch, 'main.js');
       await bundle({ entry: defaultEntry, outfile, journalThreadModule: path.join(scratch, 'journal-thread-code.generated.ts'), ruleVerifierThreadModule: path.join(scratch, 'rule-verifier-thread-code.generated.ts') });
-      const home = await createE2eHome({ run: randomBytes(2).toString('hex') });
+      const home = await createE2eHome();
 
       const pty = await spawnPty(home, [], {}, { bundle: outfile });
 

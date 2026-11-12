@@ -56,7 +56,6 @@ const buildWith = (capabilities: Capabilities, under: UnderRule, { memories, fil
     trusted: true,
     projectRoot: PROJECT,
     home: HOME,
-    keepRecentTurns: 1,
     ...(observed ? { observedCapacity: true as const } : {}),
   };
   return buildContext(input, { meter: weightMeter(under), blobs: fakeBlobs(), instructions: fakeReader(files ?? {}) });

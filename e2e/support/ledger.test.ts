@@ -48,6 +48,7 @@ const fakeWorld = (initial: Record<number, bigint>): FakeWorld => {
       }
     },
     findHolders: async () => [],
+    commandOf: async (pid) => (alive.has(pid) ? `fake ${pid}` : undefined),
     pgidOf: async (pid) => (alive.has(pid) ? pid : undefined),
   };
   return { ports, alive, groups, killed, survivors };

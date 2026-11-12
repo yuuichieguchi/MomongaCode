@@ -60,6 +60,7 @@ const pollNow = (): ManagedServerTimers => ({
   },
   clearTimeout: () => undefined,
   now: () => 0,
+  monotonicMs: () => 0,
 });
 
 const okExec = async (): Promise<ExecResult> => ({ exitCode: 0, stdout: '', stderr: '' });
@@ -80,7 +81,7 @@ const managedFm = async () => {
     binary: '/usr/bin/fm',
     socketPath,
     exec: okExec,
-    spawn: () => {
+    spawn: async () => {
       const child = new Child(socketPath);
       children.push(child);
       return child;

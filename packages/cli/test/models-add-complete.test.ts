@@ -80,7 +80,7 @@ describe('momonga models add writes a complete entry from what the server report
 
   it('shows the window a model is configured with while the gateway measures it', async (context) => {
     const home = homeWith(context, { models: { connections: [{ adapter: 'ollama', baseUrl: OLLAMA_ADDRESS, models: [{ id: 'qwen3.8:27b', capabilities: { contextWindow: 32768, maxOutputTokens: 8192 } }] }] } });
-    const measuring = { toolCalling: { state: 'probing', message: 'measuring', retryAfterSeconds: 120 }, source: 'unprobed' } as const;
+    const measuring = { toolCalling: { state: 'probing', message: 'measuring', retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' } as const;
     const listed = listingOf(home.home);
     const listing: MomongaModelList = { ...listed, data: listed.data.map((entry) => ({ ...entry, capabilities: measuring })) };
     const harness = shellOf(home, { listing: () => listing });

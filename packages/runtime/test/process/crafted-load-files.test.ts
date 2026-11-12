@@ -70,7 +70,7 @@ const agentPortFor = (home: string) =>
   createAgentsPort({
     home,
     fileSystem: createNodeSkillFileSystem(),
-    settings: { trusted: async () => true },
+    settings: { trusted: async () => true, approvedProjectAgents: async () => ({ has: () => true }) },
     runs: {
       spawn: () => Promise.reject(new Error('no child runs in this test')),
       outcomeOf: () => {

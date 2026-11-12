@@ -66,7 +66,7 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
   });
 
   it('answers an ollama target with no record 503 target_probing and measures its endpoint key', async () => {
-    const fake = await startFakeOllama({ chat: [] });
+    const fake = await startFakeOllama({ chat: [], show: { model_info: {} } });
     const gateway = await launchWith({ adapter: 'ollama', model: OLLAMA_LISTED, baseUrl: fake.origin, capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } });
 
     const response = await gateway.ask();

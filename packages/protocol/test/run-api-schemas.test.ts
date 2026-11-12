@@ -157,19 +157,22 @@ describe('request schemas', () => {
 
 describe('response schemas', () => {
   it('describes the health body', () => {
-    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', role: 'serving', steps: 0, jobs: 0, sandbox: 'seatbelt' };
+    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', role: 'serving', steps: 0, jobs: 0, interrupts: [], sandbox: 'seatbelt' };
     expect(accepts('Health', health)).toBe(true);
     expect(accepts('Health', { ...health, apiVersion: 2 })).toBe(false);
   });
 
-  it('Health accepts the ten fields, and rejects a missing or extra field, an unknown state, role and sandbox', () => {
-    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', role: 'serving', steps: 0, jobs: 0, sandbox: 'seatbelt' };
+  it('Health accepts the eleven fields, and rejects a missing or extra field, an unknown state, role and sandbox', () => {
+    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', role: 'serving', steps: 0, jobs: 0, interrupts: [], sandbox: 'seatbelt' };
     expect(accepts('Health', health)).toBe(true);
     expect(accepts('Health', { ...health, state: 'draining', sandbox: 'none' })).toBe(true);
     expect(accepts('Health', { ...health, state: 'retiring', role: 'retiring', steps: 2, jobs: 1 })).toBe(true);
     expect(accepts('Health', { ...health, role: 'starting' })).toBe(true);
     expect(accepts('Health', { ...health, role: 'draining' })).toBe(false);
     expect(accepts('Health', { ...health, steps: 0.5 })).toBe(false);
+    expect(accepts('Health', { ...health, steps: 1, interrupts: [{ kind: 'run', id: 'run-a' }] })).toBe(true);
+    expect(accepts('Health', { ...health, interrupts: [{ kind: 'job', id: 'job-1' }] })).toBe(false);
+    expect(accepts('Health', { ...health, interrupts: [{ kind: 'job', id: 'job-1', command: 'x'.repeat(41) }] })).toBe(false);
     for (const field of Object.keys(health)) {
       const { [field]: _omitted, ...missing } = health as Record<string, unknown>;
       expect(accepts('Health', missing), field).toBe(false);
@@ -607,7 +610,7 @@ describe('PublicRunEvent projection', () => {
   });
 
   it('counts calls of unknown billing in every cost total', () => {
-    const totals = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 1, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { unknown_billing: 1 }, roles: {} };
+    const totals = { calls: 1, retries: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 1, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { unknown_billing: 1 }, roles: {} };
     const { unknownBillingCalls: _unknownBillingCalls, ...withoutUnknown } = totals;
     const report = (entry: typeof withoutUnknown) => ({
       runs: [{ runId: 'r', sessionId: 's', ...entry }],
@@ -620,7 +623,7 @@ describe('PublicRunEvent projection', () => {
   });
 
   it('counts the plan calls and their tokens in every cost total', () => {
-    const totals = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 1, planInputTokens: 2, planOutputTokens: 3, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { plan: 1 }, roles: {} };
+    const totals = { calls: 1, retries: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 1, planInputTokens: 2, planOutputTokens: 3, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { plan: 1 }, roles: {} };
     const { planCalls: _planCalls, ...withoutPlan } = totals;
     const report = (entry: object) => ({
       runs: [{ runId: 'r', sessionId: 's', ...entry }],
@@ -633,7 +636,7 @@ describe('PublicRunEvent projection', () => {
   });
 
   it('carries the model calls made for context purposes beside the cost totals', () => {
-    const totals = { calls: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: 0, currency: 'USD', priceVersions: [], unpriced: {}, roles: {} };
+    const totals = { calls: 0, retries: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: 0, currency: 'USD', priceVersions: [], unpriced: {}, roles: {} };
     const charge = { id: 1, purpose: 'reflection', runId: null, project: '/work/a', model: 'fm', inputTokens: 100, outputTokens: 20, totalTokens: 120, createdAt: 1 };
     const report = (contextCharges: unknown) => ({ runs: [], sessions: [], total: totals, contextCharges });
     expect(accepts('CostReport', report({ charges: [charge], totalTokens: 120 }))).toBe(true);

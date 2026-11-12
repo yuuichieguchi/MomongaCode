@@ -4,11 +4,13 @@ import { attemptRead, describeUnreadable, parseSkillFile } from '@momonga/skills
 import type { SkillFileSystem } from '@momonga/skills';
 import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_NAME_MAX_LENGTH, INHERIT_MODEL, SUPPORTED_FIELDS } from './constants.ts';
 import type { Mandate } from '@momonga/protocol';
+import { projectAgentDigestOf } from '@momonga/config';
+import type { ProjectAgentFile } from '@momonga/config';
 import type { AgentDefinition, AgentScope } from './types.ts';
 
-export type AgentScanRequest = { home: string; projectRoot: string; trusted: boolean };
+export type AgentScanRequest = { home: string; projectRoot: string; trusted: boolean; approvedProjectAgents: Pick<ReadonlySet<string>, 'has'> };
 
-export type AgentScanResult = { agents: AgentDefinition[]; warnings: string[] };
+export type AgentScanResult = { agents: AgentDefinition[]; warnings: string[]; pendingApproval: ProjectAgentFile[] };
 
 const byName = (left: { name: string }, right: { name: string }): number => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
 
@@ -47,7 +49,9 @@ const mandateOf = (fields: Readonly<Record<string, unknown>>, location: string, 
   };
 };
 
-const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSystem, warnings: string[]): Promise<AgentDefinition | undefined> => {
+type ReadAgent = { agent: AgentDefinition; text: string };
+
+const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSystem, warnings: string[]): Promise<ReadAgent | undefined> => {
   const reading = await attemptRead(() => fileSystem.readText(file));
   if (reading.kind === 'unreadable') {
     warnings.push(`Agent at ${file} was skipped: ${describeUnreadable(reading.error)}`);
@@ -93,7 +97,7 @@ const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSys
     if (!SUPPORTED_FIELDS.has(field)) warnings.push(`Agent ${JSON.stringify(trimmedName)} at ${file} uses the field ${JSON.stringify(field)}, which is not supported and was ignored`);
   }
   const trimmedModel = typeof model === 'string' ? model.trim() : undefined;
-  return {
+  const agent: AgentDefinition = {
     name: trimmedName,
     description: description.trim(),
     prompt: parsed.body,
@@ -103,11 +107,13 @@ const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSys
     scope,
     location: file,
   };
+  return { agent, text };
 };
 
-export const scanAgents = async ({ home, projectRoot, trusted }: AgentScanRequest, fileSystem: SkillFileSystem): Promise<AgentScanResult> => {
+export const scanAgents = async ({ home, projectRoot, trusted, approvedProjectAgents }: AgentScanRequest, fileSystem: SkillFileSystem): Promise<AgentScanResult> => {
   const warnings: string[] = [];
   const chosen = new Map<string, AgentDefinition>();
+  const waiting = new Map<string, ProjectAgentFile>();
   const locations: { scope: AgentScope; directory: string }[] = [
     { scope: 'project', directory: path.join(projectRoot, AGENT_DIRECTORY_SEGMENTS) },
     { scope: 'user', directory: homeLayout(home).agents },
@@ -126,12 +132,21 @@ export const scanAgents = async ({ home, projectRoot, trusted }: AgentScanReques
     }
     const files = entries.filter((entry) => entry.kind === 'file' && entry.name.endsWith(AGENT_FILE_SUFFIX)).map((entry) => entry.name).sort();
     for (const fileName of files) {
-      const agent = await agentOf(path.join(directory, fileName), scope, fileSystem, warnings);
-      if (agent === undefined) continue;
-      const existing = chosen.get(agent.name);
-      if (existing === undefined) chosen.set(agent.name, agent);
-      else warnings.push(`Agent ${JSON.stringify(agent.name)} at ${agent.location} was ignored because ${existing.location} takes precedence`);
+      const read = await agentOf(path.join(directory, fileName), scope, fileSystem, warnings);
+      if (read === undefined) continue;
+      const { agent, text } = read;
+      const existing = chosen.get(agent.name)?.location ?? waiting.get(agent.name)?.source;
+      if (existing !== undefined) {
+        warnings.push(`Agent ${JSON.stringify(agent.name)} at ${agent.location} was ignored because ${existing} takes precedence`);
+        continue;
+      }
+      if (scope === 'project' && !approvedProjectAgents.has(projectAgentDigestOf(agent.name, text))) {
+        waiting.set(agent.name, { name: agent.name, text, source: agent.location });
+        warnings.push(`Agent ${JSON.stringify(agent.name)} at ${agent.location} is not run until it is approved: it is new, or changed since it was approved`);
+        continue;
+      }
+      chosen.set(agent.name, agent);
     }
   }
-  return { agents: [...chosen.values()].sort(byName), warnings };
+  return { agents: [...chosen.values()].sort(byName), warnings, pendingApproval: [...waiting.values()].sort(byName) };
 };

@@ -6,7 +6,7 @@ import { createE2eHome, markersOf } from './support/home.ts';
 import { groupAlive, isAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import { sandboxOrSkip } from './support/sandbox.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, textReply } from './support/upstream.ts';
 import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -23,12 +23,12 @@ describe('v: a completion check interrupted by a runtime SIGKILL', () => {
     const stack = await startStack({
       home,
       needsBash: true,
-      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      deps: { restart: E2E_RESTART_POLICY },
       script: [textReply('done')],
     });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Say hello', { mandate: { completion: { conditions: [{ command }] } } });
 
       await until(() => linesOf(runs)?.length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the first run of the check has started' });

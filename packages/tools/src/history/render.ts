@@ -71,6 +71,10 @@ const contentTextOf = (content: readonly unknown[]): string =>
     .flatMap((entry) => (typeof entry === 'object' && entry !== null && 'text' in entry && typeof entry.text === 'string' ? [entry.text] : []))
     .join('\n');
 
+const unlistedEvent = (event: never): never => {
+  throw new Error(`the history has no text for the event ${JSON.stringify(event)}`);
+};
+
 const eventText = (event: RunEvent, ownRun: boolean): string => {
   switch (event.type) {
     case 'user.message':
@@ -97,8 +101,106 @@ const eventText = (event: RunEvent, ownRun: boolean): string => {
       return `${event.level} notice: ${event.message}`;
     case 'context.compacted':
       return `context compacted through seq ${event.replacedThroughSeq}: ${event.summary}`;
+    case 'run.started':
+      return `run started, attempt ${event.attempt}`;
+    case 'attempt.failed':
+      return `attempt ${event.attempt} failed: ${event.code}`;
+    case 'attempt.lost':
+      return 'the attempt stopped answering';
+    case 'agent.message.delta':
+      return `model text, step ${event.step}: ${event.text}`;
+    case 'agent.thought.delta':
+      return `model reasoning, step ${event.step}: ${event.text}`;
+    case 'model.stream.restarted':
+      return `model answer restarted, step ${event.step}`;
+    case 'model.rejected':
+      return `model request refused, step ${event.step}: ${event.reason}`;
+    case 'meter.observed':
+      return `tokens counted: ${event.counted}`;
+    case 'tool.permission.requested':
+      return `approval asked for ${event.callId}: ${event.reason}`;
+    case 'tool.permission.classified':
+      return `approval classified for ${event.callId}: ${event.outcome}`;
+    case 'tool.permission.classifying':
+      return `approval being classified for ${event.callId}`;
+    case 'tool.permission.resolved':
+      return `approval ${event.approvalId} answered: ${event.optionId}`;
+    case 'tool.permission.cancelled':
+      return `approval ${event.approvalId} withdrawn: ${event.reason}`;
+    case 'tool.unknown.requested':
+      return `approval asked for calls of unknown effect: ${event.callIds.join(', ')}`;
+    case 'tool.unknown.resolved':
+      return `approval ${event.approvalId} answered: ${event.optionId}`;
+    case 'tool.unknown.cancelled':
+      return `approval ${event.approvalId} withdrawn: ${event.reason}`;
+    case 'tool.elicitation.requested':
+      return `input asked by ${event.server} for ${event.callId}`;
+    case 'tool.elicitation.resolved':
+      return `input ${event.inputId} answered`;
+    case 'tool.elicitation.cancelled':
+      return `input ${event.inputId} withdrawn: ${event.reason}`;
+    case 'mcp.authorization.required':
+      return `sign-in needed for ${event.server}`;
+    case 'hook.started':
+      return `hook started for ${event.event}: ${event.command}`;
+    case 'hook.completed':
+      return `hook ended for ${event.hookEvent}: ${event.command} ${event.outcome}`;
+    case 'tool.started':
+      return `tool started ${event.callId}`;
+    case 'tool.held':
+      return `tool held ${event.callId}: ${event.reason}`;
+    case 'tool.held.resolved':
+      return `tool held ${event.callId} ended ${event.status}: ${event.output}`;
+    case 'tool.waiting':
+      return `tool waiting ${event.callId}`;
+    case 'tool.loaded':
+      return `tools loaded: ${event.names.join(', ')}`;
+    case 'tool.offered':
+      return `tools offered: ${event.names.join(', ')}`;
+    case 'verification.started':
+      return `check ${event.conditionId} started: ${event.command}`;
+    case 'verification.completed':
+      return `check ${event.conditionId} ${event.outcome}: ${event.output}`;
+    case 'loop.warned':
+      return 'repeated calls noticed';
+    case 'budget.exhausted':
+      return `budget spent: ${event.dimension}`;
+    case 'run.quiescent':
+      return `run waits on ${event.held.length} held calls`;
+    case 'job.finished':
+      return `background command ${event.jobId} ended ${event.status}`;
+    case 'plan.updated':
+      return `plan: ${event.entries.map((entry) => `[${entry.status}] ${entry.content}`).join('; ')}`;
+    case 'usage.updated':
+      return `tokens used: ${event.totalTokens}`;
+    case 'usage.charged':
+      return `tokens charged for ${event.purpose}: ${event.totalTokens}`;
+    case 'context.inherited_compacted':
+      return `inherited context compacted through seq ${event.replacedThroughSeq}: ${event.summary}`;
+    case 'context.governing_loaded':
+      return `guidelines loaded: ${event.active.map((entry) => entry.id).join(', ')}`;
+    case 'context.memories_loaded':
+      return `memories loaded: ${event.memories.map((entry) => entry.id).join(', ')}`;
+    case 'context.contribution':
+      return `context contributions: ${event.items.filter((item) => item.contributed).map((item) => item.id).join(', ')}`;
+    case 'context.compacting':
+      return `context compacting, step ${event.step}`;
+    case 'context.compaction_rejected':
+      return 'context compaction refused';
+    case 'context.inherited':
+      return `context inherited from run ${event.fromRunId}`;
+    case 'context.truncated':
+      return `tool result ${event.callId} ${event.kind} in the context`;
+    case 'instructions.loaded':
+      return `instructions loaded from ${event.path}`;
+    case 'skill.activated':
+      return `skill activated: ${event.name}`;
+    case 'approval.rule.persisted':
+      return `rule saved: ${event.effect} ${event.rule}`;
+    case 'user.compact':
+      return 'compaction asked by the person';
     default:
-      return event.type;
+      return unlistedEvent(event);
   }
 };
 

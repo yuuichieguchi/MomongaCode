@@ -58,12 +58,12 @@ export type GroupSpawnOptions = { env: ChildEnv | undefined; markerDirectory: st
 
 export const createGroupSpawn =
   ({ env, markerDirectory, onWarning, inspector }: GroupSpawnOptions): SpawnFn =>
-  (file, args) => {
+  async (file, args) => {
     const marker = path.join(markerDirectory, randomUUID());
     fs.closeSync(fs.openSync(marker, 'w', 0o600));
     let launched: GroupLaunch;
     try {
-      launched = launchGroupLeader({ file, args, ...envOption(env), stdio: ['ignore', 'ignore', 'ignore'], protection: MANAGED_SERVER_LAUNCH, marker: { slot: MARKER_FD_INDEX, file: marker } });
+      launched = await launchGroupLeader({ file, args, ...envOption(env), stdio: ['ignore', 'ignore', 'ignore'], protection: MANAGED_SERVER_LAUNCH, marker: { slot: MARKER_FD_INDEX, file: marker } });
     } catch (error) {
       fs.rmSync(marker, { force: true });
       throw error;

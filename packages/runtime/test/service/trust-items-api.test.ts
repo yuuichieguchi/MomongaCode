@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { approvalDigestOf, hookGroupApprovalDigestOf } from '@momonga/config';
+import { approvalDigestOf, hookGroupApprovalDigestOf, projectAgentDigestOf } from '@momonga/config';
 import { expectSchema, startService } from './helpers.ts';
 
 const GROUP = { matcher: 'Bash', hooks: [{ type: 'command', command: './scripts/check.sh' }] };
@@ -74,5 +74,24 @@ describe('GET /v1/trust/items: what a trusted folder could make the product run 
     const response = await env.http('GET', items(folder));
     expectSchema('TrustItemsResponse', response.json);
     expect(response.json).toMatchObject({ items: [{ kind: 'mcp', name: 'docs', config: { command: 'npx', args: ['docs-server'] }, source: path.join(folder, '.mcp.json'), change: { kind: 'new' } }] });
+  });
+
+  it('answers a project agent that waits for an approval with its whole file, and a changed one with the diff of the approved file against the file now', async () => {
+    const env = await startService({ fakeTimers: true });
+    const folder = env.layout.projectReal;
+    const file = path.join(folder, '.momonga', 'agents', 'reviewer.md');
+    const approved = '---\nname: reviewer\ndescription: Reviews\ntools: Read\n---\nReview the change.\n';
+    const now = '---\nname: reviewer\ndescription: Reviews\ntools: Read, Bash\n---\nReview the change.\n';
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, approved);
+    expect((await env.http('PUT', '/v1/trust', { body: { path: folder, decision: 'trusted' } })).status).toBe(200);
+    const fresh = await env.http('GET', items(folder));
+    expectSchema('TrustItemsResponse', fresh.json);
+    expect(fresh.json).toEqual({ items: [{ kind: 'agent', name: 'reviewer', text: approved, digest: projectAgentDigestOf('reviewer', approved), source: file, change: { kind: 'new' } }], refused: [] });
+    writeJson(path.join(env.layout.home, '.momonga', 'settings.json'), { projectApprovals: { [folder]: { agents: [{ name: 'reviewer', digest: projectAgentDigestOf('reviewer', approved), text: approved }] } } });
+    fs.writeFileSync(file, now);
+    const changed = await env.http('GET', items(folder));
+    expectSchema('TrustItemsResponse', changed.json);
+    expect(changed.json).toMatchObject({ items: [{ kind: 'agent', name: 'reviewer', text: now, change: { kind: 'changed', diff: { hunks: [{ lines: expect.arrayContaining(['-tools: Read', '+tools: Read, Bash']) }], added: 1, removed: 1 } } }] });
   });
 });

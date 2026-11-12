@@ -6,7 +6,6 @@ import {
   findUnpairedCalls,
   floorRatio,
   largestSummaryCapFor,
-  quantizedRatioOf,
   summaryItemTokensFor,
   summaryPromptTokensFor,
   summaryTokenCapFor,
@@ -20,7 +19,7 @@ import { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoom
 import { governingMessageOf, governingNoticesOf, loadedGoverningOf } from './governing.ts';
 import { discoverInstructions, recordedNestedFile } from './instructions.ts';
 import type { DiscoveredInstructions, LoadedInstructionFile } from './instructions.ts';
-import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, positiveInteger, protectionRungsOf, retainedHistoryOf, shapeOf } from './levels.ts';
+import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, protectionRungsOf, retainedHistoryOf, shapeOf } from './levels.ts';
 import { textOfItem } from './item-text.ts';
 import { renderMemories } from './memory.ts';
 import { readerNamesOf, readersOffered } from './references.ts';
@@ -621,9 +620,8 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   };
   ports = { ...ports, meter };
   const trailing = [...(input.trailing ?? [])];
-  const compactAt = input.compactAt === undefined ? COMPACT_AT : quantizedRatioOf(input.compactAt);
-  const requestedKeepTurns = positiveInteger('keepRecentTurns', input.keepRecentTurns ?? DEFAULT_KEEP_RECENT_TURNS);
-  const requestedKeepSteps = positiveInteger('keepRecentSteps', input.keepRecentSteps ?? DEFAULT_KEEP_RECENT_STEPS);
+  const requestedKeepTurns = DEFAULT_KEEP_RECENT_TURNS;
+  const requestedKeepSteps = DEFAULT_KEEP_RECENT_STEPS;
   const requestedLevel = input.level ?? 0;
   if (!Number.isInteger(requestedLevel) || requestedLevel < 0) throw new RangeError(`level must be a non-negative integer, received ${requestedLevel}`);
 
@@ -645,7 +643,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const prefixDigest = chainTail(digestChain({ scope: 'prefix', tools }, [...layers, ...summaryItems]));
 
   const roomLeft = ceiling - floorTokens;
-  const itemCap = input.itemCap ?? itemCapFor(capabilities, roomLeft);
+  const itemCap = itemCapFor(capabilities, roomLeft);
   const callNames = new Map<string, string>();
   const countContextFor = (callId: string): ItemCountContext => {
     const name = callNames.get(callId);
@@ -1040,7 +1038,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   let total = await measureAssembled();
   const inputBudgetAtZero = budgetFor(capabilities, 0).I;
   const boundOfBuild = (tokens: number): number => counts.reduce((widest, counted) => Math.max(widest, counted.underAt(tokens)), 0);
-  const exactHighMark = (): number => floorTokens + floorRatio(compactAt, ceiling - floorTokens);
+  const exactHighMark = (): number => floorTokens + floorRatio(COMPACT_AT, ceiling - floorTokens);
   const pinnedBoundError = async (maxInput: number | undefined, boundAtZero: number): Promise<PinnedBoundError> =>
     new PinnedBoundError({
       pinnedTokens,

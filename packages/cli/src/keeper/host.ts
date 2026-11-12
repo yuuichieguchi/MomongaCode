@@ -1,5 +1,6 @@
 import { getAssetKeys, getRawAsset, isSea } from 'node:sea';
-import { WINDOWS_KEEPER_MANIFEST_ASSET, ensureBundledWindowsKeeper, hostProcessGroupPort, nodeFileSystem, parseWindowsKeeperManifest, provideCheckedWindowsKeeper, provideWindowsKeeper, resolveLayoutLocks, systemRandom } from '@momonga/foundation';
+import { WINDOWS_KEEPER_MANIFEST_ASSET, ensureBundledWindowsKeeper, hostCheckedWindowsKeeper, hostProcessGroupPort, nodeFileSystem, parseWindowsKeeperManifest, provideWindowsKeeper, resolveLayoutLocks, systemRandom } from '@momonga/foundation';
+import type { KeeperPreparation } from '@momonga/foundation';
 import type { CliPorts } from '../ports.ts';
 import { pathsOf } from '../paths.ts';
 import { hostSourceBuiltWindowsKeeper } from '../node-ports.ts';
@@ -11,21 +12,22 @@ export const seaKeeperAssets = (): EmbeddedKeeperAssets | undefined =>
 
 export const hostLaunchesThroughKeeper = (): boolean => hostProcessGroupPort().keeper !== undefined;
 
-export const provideEmbeddedWindowsKeeper = async (
+export const provideEmbeddedWindowsKeeper = (
   ports: Pick<CliPorts, 'home' | 'platform' | 'env' | 'interrupt'>,
   assets: EmbeddedKeeperAssets | undefined = seaKeeperAssets(),
-  provide: (file: string, sha256: string) => void = provideCheckedWindowsKeeper,
-  provideSource: (executable: () => string) => void = provideWindowsKeeper,
+  provide: (prepare: KeeperPreparation) => void = provideWindowsKeeper,
   launchesThroughKeeper: () => boolean = hostLaunchesThroughKeeper,
-): Promise<void> => {
+): void => {
   if (!launchesThroughKeeper()) return;
   if (assets === undefined) {
-    provideSource(hostSourceBuiltWindowsKeeper((await pathsOf(ports)).executables));
+    provide(async () => hostSourceBuiltWindowsKeeper((await pathsOf(ports)).executables));
     return;
   }
   if (!assets.present(WINDOWS_KEEPER_MANIFEST_ASSET)) return;
-  const paths = await pathsOf(ports);
-  const extracted = await ensureBundledWindowsKeeper({ asset: assets.raw, executablesRoot: paths.executables, random: systemRandom, files: nodeFileSystem, lock: resolveLayoutLocks(paths).mechanism });
-  const { sha256 } = parseWindowsKeeperManifest(new TextDecoder().decode(assets.raw(WINDOWS_KEEPER_MANIFEST_ASSET))).binary;
-  provide(extracted, sha256);
+  provide(async () => {
+    const paths = await pathsOf(ports);
+    const extracted = await ensureBundledWindowsKeeper({ asset: assets.raw, executablesRoot: paths.executables, random: systemRandom, files: nodeFileSystem, lock: resolveLayoutLocks(paths).mechanism });
+    const { sha256 } = parseWindowsKeeperManifest(new TextDecoder().decode(assets.raw(WINDOWS_KEEPER_MANIFEST_ASSET))).binary;
+    return hostCheckedWindowsKeeper(extracted, sha256);
+  });
 };

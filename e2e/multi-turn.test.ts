@@ -6,7 +6,7 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, hangReply, messagesOf, precedingAssistantCallId, textReply, toolCallReply } from './support/upstream.ts';
 import type { ChatMessage } from './support/upstream.ts';
@@ -67,7 +67,7 @@ describe('multi-turn sessions', () => {
     const runtime = createRuntimeClient(home);
     const hold = { current: undefined as ReturnType<typeof stack.fake.hold> | undefined };
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const first = (await runtime.createRun(session.id, 'Say hello')).run;
       await untilStatus(runtime, first.id, 'COMPLETED');
       const second = (await runtime.createRun(session.id, 'And again')).run;
@@ -95,7 +95,7 @@ describe('multi-turn sessions', () => {
       expect(inherited?.data).not.toHaveProperty('summary');
       expect(inherited?.data).toMatchObject({ fromRunId: first.id, itemCount: 2, nextItemSeq: 3, closures: [], markers: [], partialMessage: false });
 
-      const other = (await runtime.createSession()).session;
+      const other = (await runtime.createSession({ permissionMode: 'bypassPermissions' })).session;
       hold.current = stack.fake.hold();
       const runA = (await runtime.createRun(other.id, 'Count to one')).run;
       const runB = (await runtime.createRun(other.id, 'Count to two')).run;
@@ -123,7 +123,7 @@ describe('multi-turn sessions', () => {
     });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const first = (await runtime.createRun(session.id, 'Plan once')).run;
       await untilStatus(runtime, first.id, 'COMPLETED');
       const second = (await runtime.createRun(session.id, 'Plan again')).run;
@@ -156,7 +156,7 @@ describe('multi-turn sessions', () => {
 
   const killDuringInheritedCall = async (release: 'after-claim' | 'while-down'): Promise<void> => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY }, script: [textReply('first'), textReply('second')] });
+    const stack = await startStack({ home, deps: { restart: E2E_RESTART_POLICY }, script: [textReply('first'), textReply('second')] });
     const runtime = createRuntimeClient(home);
     let hold: ReturnType<typeof stack.fake.hold> | undefined;
     let released = false;
@@ -166,7 +166,7 @@ describe('multi-turn sessions', () => {
       hold.release();
     };
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const first = (await runtime.createRun(session.id, 'Say hello')).run;
       await untilStatus(runtime, first.id, 'COMPLETED');
       hold = stack.fake.hold();
@@ -241,7 +241,7 @@ describe('multi-turn sessions', () => {
     const stack = await startStack({ home, script: [hangReply('partial words'), textReply('second')] });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const first = (await runtime.createRun(session.id, 'Say hello')).run;
       const stream = runtime.events(first.id);
       await stream.until((frame) => frame.data.type === 'agent.message.delta', E2E_RECOVERY_BOUND_MS);
@@ -280,7 +280,7 @@ describe('multi-turn sessions', () => {
     const stack = await startStack({ home, script: [textReply('one'), textReply('two'), textReply('three'), textReply('four')] });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       for (const input of ['First', 'Second']) {
         const run = (await runtime.createRun(session.id, input)).run;
         await untilStatus(runtime, run.id, 'COMPLETED');

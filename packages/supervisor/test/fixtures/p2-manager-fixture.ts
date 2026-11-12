@@ -67,7 +67,7 @@ process.on('SIGTERM', () => {
   void manager.stop('shutdown', 'term').then(() => process.exit(0));
 });
 
-manager.spawnWith(loaded, 'initial');
+await manager.spawnWith(loaded, 'initial');
 const pid = manager.health().pid;
 process.stdout.write(`${JSON.stringify({ childPid: pid })}\n`);
 setInterval(() => undefined, 60_000);

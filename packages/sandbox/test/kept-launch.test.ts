@@ -74,7 +74,7 @@ const running =
 describe('on a port whose identity is a job the launch goes through the keeper', () => {
   it('starts the keeper, not the command: the command and its arguments after --, the marker by its path, the standard streams of the keeper for the command', async () => {
     const world = worldOf(running(() => [COMMAND_PID]));
-    const launched = world.start({ markerFile: 'C:\\m\\marker' });
+    const launched = await world.start({ markerFile: 'C:\\m\\marker' });
     launched.exited.catch(() => undefined);
     expect(launched.pid).toBe(KEEPER_PID);
     expect(launched.pgid).toBe(KEEPER_PID);
@@ -91,7 +91,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
   it('resolves with the exit code the keeper reports for the command, after the group is confirmed gone', async () => {
     let members = [COMMAND_PID];
     const world = worldOf(running(() => members));
-    const launched = world.start();
+    const launched = await world.start();
     await settle();
     members = [];
     world.fake.keepers[0]?.say('exit 3\n');
@@ -111,7 +111,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
         } else answer(line);
       };
     });
-    const launched = world.start();
+    const launched = await world.start();
     await settle();
     members = [77];
     world.fake.keepers[0]?.say('exit 0\n');
@@ -124,7 +124,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
       if (index === 0) running(() => [COMMAND_PID])(keeper);
       else keeper.say('failed job-absent 2\n');
     });
-    const launched = world.start();
+    const launched = await world.start();
     await settle();
     world.fake.keepers[0]?.hangUp();
     expect(await launched.exited).toEqual({ code: null, signal: 'SIGKILL', stop: 'confirmed' });
@@ -134,7 +134,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
 describe('T-JO-7 at the product level on a fake keeper', () => {
   it('reports containment-unavailable as the failure of the launch, and the cleanup after the exit still runs', async () => {
     const world = worldOf((keeper) => keeper.say('failed containment-unavailable 5\n'));
-    const launched = world.start();
+    const launched = await world.start();
     const failure = await launched.exited.then(
       () => undefined,
       (error: unknown) => error,
@@ -156,7 +156,7 @@ describe('an abort on a port with one signal', () => {
         if (line !== 'terminate') answer(line);
       };
     });
-    const launched = world.start();
+    const launched = await world.start();
     await settle();
     world.controller.abort();
     await driveUntil(world.timing, () => world.timing.pending().length > 0, 0, 'the kill grace to be armed');
@@ -170,7 +170,7 @@ describe('an abort on a port with one signal', () => {
 
   it('rejects at the stop bound of the launch, in virtual time, when the pipe never answers', async () => {
     const world = worldOf((keeper) => keeper.say(`started ${COMMAND_PID}\n`));
-    const launched = world.start();
+    const launched = await world.start();
     const exited = launched.exited;
     const stopped = settlementOf(exited);
     await settle();

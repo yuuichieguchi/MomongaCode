@@ -138,6 +138,7 @@ export type CreateRunOptions = {
   images?: readonly ImageAttachment[];
   attachMentions?: boolean;
   mandate?: Mandate;
+  issue?: string;
 };
 
 export type UserShellEnd = { kind: 'refused'; reason: string } | { kind: 'exit'; record: UserShellRecord };
@@ -256,6 +257,7 @@ export const createRunBody = (input: string, options: CreateRunOptions = {}): Re
   ...(options.images === undefined || options.images.length === 0 ? {} : { images: options.images }),
   ...(options.attachMentions === true ? { attachMentions: true } : {}),
   ...(options.mandate === undefined ? {} : { mandate: options.mandate }),
+  ...(options.issue === undefined ? {} : { issue: { url: options.issue } }),
 });
 
 const parsed = (text: string, description: string): unknown => {

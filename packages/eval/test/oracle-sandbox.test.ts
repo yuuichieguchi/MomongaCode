@@ -24,8 +24,8 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-const launched = (file: string, args: readonly string[], cwd: string, env: Readonly<Record<string, string>>) => {
-  const { pgid, onExit } = launchGroupLeader({ file, args, cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: CONTROL_PLANE_LAUNCH });
+const launched = async (file: string, args: readonly string[], cwd: string, env: Readonly<Record<string, string>>) => {
+  const { pgid, onExit } = await launchGroupLeader({ file, args, cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: CONTROL_PLANE_LAUNCH });
   if (pgid === undefined) throw new Error(`${file} started with no process group`);
   return { pgid, exited: new Promise<{ code: number | null }>((resolve, reject) => onExit(({ code }) => resolve({ code }), reject)) };
 };
