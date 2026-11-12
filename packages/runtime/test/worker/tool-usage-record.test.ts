@@ -120,7 +120,7 @@ describe('the tool usage window reads one offered-names record per run (person i
       createAgentsPort({
         home: env.home,
         fileSystem: createNodeSkillFileSystem(),
-        settings: { trusted: async () => env.settings.trustedValue },
+        settings: { trusted: async () => env.settings.trustedValue, approvedProjectAgents: async () => ({ has: () => true }) },
         runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
       });
     const rootWorker = env.worker('root', { agents: agents(), toolList: toolsOf(env, ['Echo']) });

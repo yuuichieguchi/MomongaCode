@@ -4,7 +4,7 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { tokensForText } from '@momonga/protocol';
+import { TOOL_OUTPUT_TAG, tokensForText } from '@momonga/protocol';
 import { fmSchemaRefusalOf, fmToolsRefusalOf } from './fm-schema-decoding.ts';
 import { collectAllowedNames, findUsedKeywords, generateInstance } from './schema-instance.ts';
 
@@ -288,7 +288,7 @@ const mutateTypes = (value: unknown): unknown | undefined => {
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, wrongTyped(entry)]));
 };
 
-const TOOL_RESULT_PREFIX = '<tool_result';
+const TOOL_RESULT_OPENING = `<${TOOL_OUTPUT_TAG} `;
 
 const MALFORMED_JSON = '{"kind": "tool_calls", "calls": [{"name": ';
 
@@ -414,7 +414,7 @@ export const startFakeChatCompletions = async (
 
   const constrainedCompletion = (schema: unknown, lastText: string, lastRole: unknown): CompletionOut => {
     const requiredToolName =
-      lastRole === 'user' && !lastText.trimStart().startsWith(TOOL_RESULT_PREFIX) ? findRequestedName(lastText, collectAllowedNames(schema)) : undefined;
+      lastRole === 'user' && !lastText.includes(TOOL_RESULT_OPENING) ? findRequestedName(lastText, collectAllowedNames(schema)) : undefined;
     if (requiredToolName === undefined) {
       return { content: JSON.stringify(generateInstance(schema)), toolCalls: [], finishReason: 'stop' };
     }

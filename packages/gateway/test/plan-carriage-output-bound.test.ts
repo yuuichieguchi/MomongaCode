@@ -27,7 +27,7 @@ const startAlias = async (members: Record<string, CapabilityOverride>) => {
 
 describe('narrowing refuses a target that carries no output bound for a request that carries one (P2 item 2, I-K1)', () => {
   it('names outputBound and inputKinds as refusal stages of their own', () => {
-    expect(REFUSAL_STAGES).toEqual({ tools: 0, images: 1, inputKinds: 2, sampling: 3, outputBound: 4, toolChoice: 5, summaryCap: 6, unknownFields: 7, inputSize: 8 });
+    expect(REFUSAL_STAGES).toEqual({ tools: 0, images: 1, inputKinds: 2, sampling: 3, outputBound: 4, toolChoice: 5, summaryCap: 6, unknownFields: 7, inputSize: 8, carry: 9 });
   });
 
   it('passes over the unbounded member and serves max_output_tokens from the bounded one', async () => {

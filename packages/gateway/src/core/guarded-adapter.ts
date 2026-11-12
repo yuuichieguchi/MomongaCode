@@ -52,7 +52,7 @@ export const redactedGatewayError = (redactor: Redactor, error: GatewayError): G
   const code = redactedOrNull(redactor, error.body.code);
   const param = redactedOrNull(redactor, error.body.param);
   if (message === error.body.message && code === error.body.code && param === error.body.param) return error;
-  return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message, ...(error.body.plan === undefined ? {} : { plan: error.body.plan }) });
+  return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message, ...(error.body.plan === undefined ? {} : { plan: error.body.plan }), ...(error.body.measuring === undefined ? {} : { measuring: error.body.measuring }) });
 };
 
 export const redactedEvent = (redactor: Redactor, event: StreamEvent): StreamEvent => {

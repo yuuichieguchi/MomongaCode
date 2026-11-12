@@ -17,7 +17,7 @@ export const SAVING_PHASE = 'saving the setting';
 
 export const windowPrompt = (display: string, ceiling: number | undefined): string => (ceiling === undefined ? `Context window for ${display}:` : `Context window for ${display} (at most ${ceiling}):`);
 
-export const windowProblem = (ceiling: number | undefined): string => (ceiling === undefined ? 'Enter a whole number of at least 1.' : `Enter a whole number from 1 to ${ceiling}.`);
+export { windowProblem } from '../../models-check.ts';
 
 const [EXAMPLE_ADDRESS] = LOCAL_SERVER_CANDIDATES;
 
@@ -126,7 +126,7 @@ export const ALSO_AT_START_LABEL = 'also use at every start';
 
 export const startingModelSetText = (display: string): string => `Starting model set to ${display}`;
 
-export const notConfiguredAnyMoreText = (stored: string): string => `The model "${stored}" of this session is not configured any more. Choose another with /model.`;
+export { sessionModelNotConfiguredText as notConfiguredAnyMoreText } from '@momonga/protocol';
 
 export const START_ONE_TEXT = 'Start one, or add it with /models add.';
 

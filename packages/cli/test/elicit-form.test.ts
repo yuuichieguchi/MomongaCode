@@ -47,36 +47,36 @@ describe('fieldsOf', () => {
 
 describe('parseFieldInput', () => {
   it('coerces text to the type the schema declares', async () => {
-    expect(await parseFieldInput(ORIGIN, field('name'), 'Ada')).toEqual({ ok: true, value: 'Ada' });
-    expect(await parseFieldInput(ORIGIN, field('age'), '36')).toEqual({ ok: true, value: 36 });
-    expect(await parseFieldInput(ORIGIN, field('ratio'), '0.5')).toEqual({ ok: true, value: 0.5 });
-    expect(await parseFieldInput(ORIGIN, field('agree'), 'Yes')).toEqual({ ok: true, value: true });
-    expect(await parseFieldInput(ORIGIN, field('agree'), 'no')).toEqual({ ok: true, value: false });
-    expect(await parseFieldInput(ORIGIN, field('color'), '2')).toEqual({ ok: true, value: 'green' });
-    expect(await parseFieldInput(ORIGIN, field('color'), 'Red')).toEqual({ ok: true, value: 'red' });
-    expect(await parseFieldInput(ORIGIN, field('tags'), '1, c')).toEqual({ ok: true, value: ['a', 'c'] });
+    expect(await parseFieldInput(ORIGIN, field('name'), 'Ada', 'listed')).toEqual({ ok: true, value: 'Ada' });
+    expect(await parseFieldInput(ORIGIN, field('age'), '36', 'listed')).toEqual({ ok: true, value: 36 });
+    expect(await parseFieldInput(ORIGIN, field('ratio'), '0.5', 'listed')).toEqual({ ok: true, value: 0.5 });
+    expect(await parseFieldInput(ORIGIN, field('agree'), 'Yes', 'listed')).toEqual({ ok: true, value: true });
+    expect(await parseFieldInput(ORIGIN, field('agree'), 'no', 'listed')).toEqual({ ok: true, value: false });
+    expect(await parseFieldInput(ORIGIN, field('color'), '2', 'listed')).toEqual({ ok: true, value: 'green' });
+    expect(await parseFieldInput(ORIGIN, field('color'), 'Red', 'listed')).toEqual({ ok: true, value: 'red' });
+    expect(await parseFieldInput(ORIGIN, field('tags'), '1, c', 'listed')).toEqual({ ok: true, value: ['a', 'c'] });
   });
 
   it('validates each value against the schema of its field', async () => {
-    expect(await parseFieldInput(ORIGIN, field('name'), 'A')).toMatchObject({ ok: false, error: expect.stringContaining('must NOT have fewer than 2 characters') });
-    expect(await parseFieldInput(ORIGIN, field('age'), '1.5')).toMatchObject({ ok: false, error: expect.stringContaining('must be integer') });
-    expect(await parseFieldInput(ORIGIN, field('age'), '200')).toMatchObject({ ok: false, error: expect.stringContaining('must be <= 150') });
-    expect(await parseFieldInput(ORIGIN, field('age'), 'old')).toEqual({ ok: false, reason: 'invalid', error: 'age must be a number' });
-    expect(await parseFieldInput(ORIGIN, field('agree'), 'maybe')).toEqual({ ok: false, reason: 'invalid', error: 'agree must be yes or no' });
-    expect(await parseFieldInput(ORIGIN, field('color'), 'blue')).toMatchObject({ ok: false });
-    expect(await parseFieldInput(ORIGIN, field('tags'), 'a,z')).toMatchObject({ ok: false });
+    expect(await parseFieldInput(ORIGIN, field('name'), 'A', 'listed')).toMatchObject({ ok: false, error: expect.stringContaining('must NOT have fewer than 2 characters') });
+    expect(await parseFieldInput(ORIGIN, field('age'), '1.5', 'listed')).toMatchObject({ ok: false, error: expect.stringContaining('must be integer') });
+    expect(await parseFieldInput(ORIGIN, field('age'), '200', 'listed')).toMatchObject({ ok: false, error: expect.stringContaining('must be <= 150') });
+    expect(await parseFieldInput(ORIGIN, field('age'), 'old', 'listed')).toEqual({ ok: false, reason: 'invalid', error: 'age must be a number' });
+    expect(await parseFieldInput(ORIGIN, field('agree'), 'maybe', 'listed')).toEqual({ ok: false, reason: 'invalid', error: 'agree must be yes or no' });
+    expect(await parseFieldInput(ORIGIN, field('color'), 'blue', 'listed')).toMatchObject({ ok: false });
+    expect(await parseFieldInput(ORIGIN, field('tags'), 'a,z', 'listed')).toMatchObject({ ok: false });
   });
 
   it('skips an empty optional field, reports a required one and still holds an empty string to the string schema', async () => {
-    expect(await parseFieldInput(ORIGIN, field('age'), '')).toEqual({ ok: true, value: undefined });
-    expect(await parseFieldInput(ORIGIN, field('name'), '')).toMatchObject({ ok: false, error: expect.stringContaining('fewer than 2 characters') });
+    expect(await parseFieldInput(ORIGIN, field('age'), '', 'listed')).toEqual({ ok: true, value: undefined });
+    expect(await parseFieldInput(ORIGIN, field('name'), '', 'listed')).toMatchObject({ ok: false, error: expect.stringContaining('fewer than 2 characters') });
     const required = { ...field('age'), required: true };
-    expect(await parseFieldInput(ORIGIN, required, '')).toEqual({ ok: false, reason: 'invalid', error: 'age is required' });
+    expect(await parseFieldInput(ORIGIN, required, '', 'listed')).toEqual({ ok: false, reason: 'invalid', error: 'age is required' });
   });
 
   it('rejects JSON that is not a form content value', async () => {
-    expect(await parseFieldInput(ORIGIN, field('blob'), '{"a":1}')).toMatchObject({ ok: false, error: expect.stringContaining('must be a string') });
-    expect(await parseFieldInput(ORIGIN, field('blob'), '{')).toMatchObject({ ok: false, error: expect.stringContaining('must be JSON') });
+    expect(await parseFieldInput(ORIGIN, field('blob'), '{"a":1}', 'listed')).toMatchObject({ ok: false, error: expect.stringContaining('must be a string') });
+    expect(await parseFieldInput(ORIGIN, field('blob'), '{', 'listed')).toMatchObject({ ok: false, error: expect.stringContaining('must be JSON') });
   });
 });
 

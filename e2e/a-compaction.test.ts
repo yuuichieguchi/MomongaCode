@@ -92,7 +92,7 @@ const runRowOf = (home: E2eHome, runId: string): RunRow => {
 const runToEnd = async (home: E2eHome): Promise<string> => {
   const runtime = createRuntimeClient(home);
   try {
-    const { session } = await runtime.createSession();
+    const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const { run } = await runtime.createRun(session.id, ACCEPTANCE_TASK);
     const stream = runtime.events(run.id);
     await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
@@ -263,12 +263,12 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     const target = acceptanceTarget(spec.toolCalling);
 
     const planningHome = await createE2eHome();
-    await startStack({ home: planningHome, sandbox: 'none', target, routes: [summaryRoute(summary)] });
+    await startStack({ home: planningHome, model: target, routes: [summaryRoute(summary)] });
     const planningCount = createGatewayCountClient(firstGeneration(planningHome.paths).sockets.gateway);
     const capabilities = await planningCount.capabilities();
     const plan = await planScript({ spec, home, haystack, gatewaySocket: firstGeneration(planningHome.paths).sockets.gateway, summary }, capabilities);
 
-    const stack = await startStack({ home, sandbox: 'none', target, settings: denySettings(spec.deny), script: plan.replies, routes: [summaryRoute(summary)] });
+    const stack = await startStack({ home, model: target, settings: denySettings(spec.deny), script: plan.replies, routes: [summaryRoute(summary)] });
     const count = createGatewayCountClient(firstGeneration(home.paths).sockets.gateway);
     expect(await count.capabilities()).toEqual(capabilities);
     const runId = await runToEnd(home);
@@ -283,7 +283,7 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     const home = await createE2eHome();
     await writeHaystack(home.project);
     const target = acceptanceTarget('constrained');
-    const stack = await startStack({ home, sandbox: 'none', target, script: upstreamRepliesOf([{ kind: 'final', text: 'Done.' }], 'constrained') });
+    const stack = await startStack({ home, model: target, script: upstreamRepliesOf([{ kind: 'final', text: 'Done.' }], 'constrained') });
     const capabilities = await createGatewayCountClient(firstGeneration(home.paths).sockets.gateway).capabilities();
     const runId = await runToEnd(home);
     const row = runRowOf(home, runId);

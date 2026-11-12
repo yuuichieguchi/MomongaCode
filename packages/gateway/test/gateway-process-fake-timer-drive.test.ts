@@ -54,7 +54,7 @@ describe('driving the injected fake timers of an in-process gateway whose body p
     const response = await pending;
 
     expect(response.body.error.code).toBe('provider_unavailable');
-    expect(clock.now() - startedAt).toBeGreaterThanOrEqual(83_625);
+    expect(clock.now() - startedAt).toBeLessThanOrEqual(RETRY_BUDGET_MS);
     expect(timers.pending()).toContainEqual(expect.objectContaining({ delayMs: BODY_PURGE_INTERVAL_MS, dueAt: startedAt + BODY_PURGE_INTERVAL_MS }));
   });
 

@@ -16,7 +16,7 @@ import { systemWaitTiming } from './system-timing.ts';
 import { sleep } from './timing.ts';
 import type { Timing } from './timing.ts';
 import { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
-import { RETRY_KINDS, claimRetry, nodeRecordFiles, parseRecordedGroup, parseRecordedGroupName, readAttemptRecord } from './platform/marker-record.ts';
+import { RETRY_KINDS, claimRetry, nodeRecordFiles, parseRecordedGroup, parseRecordedGroupName, readAttemptRecord, readMarkerGroup } from './platform/marker-record.ts';
 import type { AttemptRecord, RetryKind } from './platform/marker-record.ts';
 
 const asyncSenderOf = (kill: SignalSender | undefined): AsyncSignalSender =>
@@ -664,8 +664,17 @@ const markerFilesUnder = async (dir: string): Promise<string[]> => {
   return nested.flat();
 };
 
-export const survivorNoticeText = (label: string, name: string): string =>
-  `a ${label} process (marker ${name}) may still be running. MomongaCode has used its ${RETRY_KINDS.length} retries and will not try again. If it can stay running, run /markers ignore ${name}.`;
+export type MarkerRemedy = { name: string; group: number | undefined; addressed: 'person' | 'model' };
+
+const holderWords = (group: number | undefined): string => (group === undefined ? 'the process that holds it' : `the process group ${group}`);
+
+export const markerRemedyText = ({ name, group, addressed }: MarkerRemedy): string => {
+  const lead = addressed === 'model' ? `Ask the person to stop ${holderWords(group)}, or, if it can stay running, to` : `Stop ${holderWords(group)}, or, if it can stay running,`;
+  return `${lead} run /markers ignore ${name} in an interactive session.`;
+};
+
+export const survivorNoticeText = (label: string, name: string, group: number | undefined): string =>
+  `a ${label} process (marker ${name}) may still be running. MomongaCode has used its ${RETRY_KINDS.length} retries and will not try again. ${markerRemedyText({ name, group, addressed: 'person' })}`;
 
 const allRetriesSpent = (record: AttemptRecord): boolean => RETRY_KINDS.every((kind) => record.spent[kind]);
 
@@ -684,16 +693,16 @@ const reapOnOccasion = async (marker: string, occasion: RetryKind, label: string
   const record = await readRecordIfPresent(marker);
   if (record === undefined) return { removed: true };
   if (record.ignored) return { removed: false };
-  const tellPerson = (): void => onWarning(survivorNoticeText(label, path.basename(marker)));
+  const tellPerson = async (): Promise<void> => onWarning(survivorNoticeText(label, path.basename(marker), await readMarkerGroup(marker)));
   if (record.spent[occasion]) {
-    if (allRetriesSpent(record)) tellPerson();
+    if (allRetriesSpent(record)) await tellPerson();
     return { removed: false };
   }
   const claim = await claimRetry(marker, occasion, { signal });
   if (claim === 'absent') return { removed: true };
   if (claim !== 'claimed') return { removed: false };
   const reaped = await reap(marker);
-  if (!reaped.removed && allRetriesSpent({ ...record, spent: { ...record.spent, [occasion]: true } })) tellPerson();
+  if (!reaped.removed && allRetriesSpent({ ...record, spent: { ...record.spent, [occasion]: true } })) await tellPerson();
   return reaped;
 };
 

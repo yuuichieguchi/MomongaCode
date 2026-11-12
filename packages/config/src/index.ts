@@ -1,6 +1,8 @@
 export { editUserSettings } from './edit-user-settings.ts';
 export { approveProjectItems, editProjectMandate } from './edit-project-file.ts';
-export type { EditProjectMandateOptions, ProjectItemsApproval, ProjectMandateEdit } from './edit-project-file.ts';
+export { pendingProjectItems } from './pending-items.ts';
+export type { PendingChange, PendingItemsInput, PendingProjectItem, PendingProjectItems, ProjectAgentFile, ProjectAgentsLister } from './pending-items.ts';
+export type { ApprovedItem, EditProjectMandateOptions, ProjectMandateEdit } from './edit-project-file.ts';
 export type { EditUserSettingsOptions, SettingsEdit } from './edit-user-settings.ts';
 export { settingsFileLock, settingsWriterPorts } from './file-lock.ts';
 export type { SettingsFileLockOptions, SettingsLockPort, SettingsWriterOptions, SettingsWriterPorts } from './file-lock.ts';
@@ -79,7 +81,7 @@ export { telemetryWithReferences } from './expansion.ts';
 export type { CoreSettingKey } from './core-settings.ts';
 export { DEFAULT_RETENTION_DAYS, defaultSandboxSetting, resolveRetentionSettings, resolveTelemetrySettings } from './settings.ts';
 export { MAX_RETENTION_DAYS, MIN_RETENTION_DAYS } from './settings-schema.ts';
-export { APPROVAL_DIGEST_PATTERN, approvalDigestOf, hookGroupApprovalDigestOf } from './approval-digest.ts';
+export { APPROVAL_DIGEST_PATTERN, approvalDigestOf, hookGroupApprovalDigestOf, projectAgentDigestOf } from './approval-digest.ts';
 export { DECLARED_CHECK_SOURCES, acceptedCheckOf, declaredChecksOf } from './declared-checks.ts';
 export type { AcceptedCheck, DeclaredCheck, DeclaredCheckSource } from './declared-checks.ts';
 export { resolveNetwork, resolveNetworkSources } from './network.ts';
@@ -97,7 +99,7 @@ export {
   mergeToolsSettings,
 } from './context-settings.ts';
 export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
-export type { RipgrepSetting } from './settings.ts';
+export type { RipgrepSetting, HookApproval, MandateApproval } from './settings.ts';
 export { UnreadableKeptCopyError, createKeptSettings, diskKeptRecords, keptSettingsDirectory, noKeptRecords } from './kept-settings.ts';
 export type { KeptProblem, KeptRecords, KeptSettings } from './kept-settings.ts';
 export type { KeptLayers, TrustOracle, UserLayer } from './layers.ts';

@@ -1,3 +1,4 @@
+import type { FenceBoundary } from './fence-boundary.ts';
 import type { Lease } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import type { PriceTable, Telemetry } from '@momonga/observability';
@@ -29,6 +30,7 @@ export type GatewayServices = {
   epochs: GatewayEpochs;
   store: GatewayStore;
   codec: CompactionCodec;
+  fenceBoundary: FenceBoundary;
   reasoningOrigin: ReasoningOriginCodec;
   closeSignal: AbortSignal;
   forceCloseSignal: AbortSignal;

@@ -163,7 +163,7 @@ describe('a client older than the installed program, with no daemon serving (16.
     const broken = { ...ports, exec: async () => ({ exitCode: 9, stdout: '', stderr: 'cannot execute\n' }) };
     const silent = {
       ...ports,
-      timers: { setTimeout: (expire: () => void) => void expire(), clearTimeout: () => undefined },
+      timers: { setTimeout: (expire: () => void) => void expire(), clearTimeout: () => undefined, monotonicMs: () => 0 },
       exec: (_file: string, _args: readonly string[], options: { signal: AbortSignal }) =>
         new Promise<never>((_resolve, reject) => {
           if (options.signal.aborted) reject(options.signal.reason);

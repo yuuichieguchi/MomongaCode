@@ -26,6 +26,7 @@ import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply, Otlp
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
+import { missingApiKeyError } from '../src/core/errors.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -349,7 +350,7 @@ describe('S1 gateway: a plan target added by a change is applied and served thro
 const CREDENTIAL_ENV = 'MOMONGA_TEST_HANDED_KEY';
 const HANDED_VALUE = 'handed-by-supervisor-0123456789';
 const CAPABILITY = 'c'.repeat(64);
-const UNSET_TEXT = `the environment variable ${CREDENTIAL_ENV} is unset or empty in the gateway process`;
+const UNSET_TEXT = missingApiKeyError(CREDENTIAL_ENV).body.message;
 
 const fakeSupervisor = async (context: CleanupContext, home: string): Promise<{ asked: Array<{ path: string; capability: string | undefined }> }> => {
   const asked: Array<{ path: string; capability: string | undefined }> = [];

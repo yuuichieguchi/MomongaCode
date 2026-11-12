@@ -1,4 +1,6 @@
 import { isRecord } from '@momonga/foundation';
+import { SERVER_KINDS } from '@momonga/protocol';
+import { readModelDetails } from '../detect-local-servers.ts';
 import { field } from './reply.ts';
 import type { DialectId, OllamaProbeReport } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
@@ -7,8 +9,10 @@ import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { buildOllamaChatBody } from '../adapters/ollama/request.ts';
 import { NO_REASONING_IS_OWN } from '../adapters/shared/reasoning-origin.ts';
 import { StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
-import { ProbeTimeoutError, createProbeClient } from './client.ts';
-import type { ProbePorts } from './client.ts';
+import { ProbeTimeoutError, createProbeClient, fixedStepBound, speedStepBound } from './client.ts';
+import type { ProbeHostPorts, ProbePorts, StepBound } from './client.ts';
+import { PERSON_TRAFFIC } from './request-gate.ts';
+import type { RequestGate } from './request-gate.ts';
 import type { HttpResult, ProbeClient } from './client.ts';
 import { saveEndpointRecord } from './endpoint-record.ts';
 import type { EndpointKey } from './endpoint-record.ts';
@@ -27,6 +31,8 @@ import type { JsonModeAnswer } from './json-mode.ts';
 import { jsonReplyPlanOf } from '../adapters/shared/json-reply.ts';
 import { OLLAMA_VOCABULARY } from '../adapters/ollama/vocabulary.ts';
 import { recordProbe } from './auto-probe.ts';
+import { measuringAskOf, readReportedFields } from './sources.ts';
+import type { ReportedFields } from './sources.ts';
 import type { MeasureProbe, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
 import { endpointKeyOfLock, endpointLockKeyOf } from './endpoint-record.ts';
 import type { EndpointLockKey } from './endpoint-record.ts';
@@ -53,17 +59,14 @@ export type ProbeOllamaTargetResult = { report: OllamaProbeReport; key: Endpoint
 const CHAT_PATH = '/api/chat';
 const CACHE_PROBE_OUTPUT_TOKENS = 1;
 const VERSION_PATH = '/api/version';
-const SHOW_PATH = '/api/show';
 const TAGS_PATH = '/api/tags';
 
-const withClient = async <T>(
-  upstream: UpstreamEndpoint,
-  ports: ProbePorts,
-  signal: AbortSignal,
-  use: (client: ProbeClient) => Promise<T>,
-  timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
-): Promise<T> => {
-  const client = createProbeClient(probeEndpointOf(upstream, undefined), signal, timeoutMs, ports.timers);
+type Traffic = { bound: StepBound; gate: RequestGate };
+
+const identityTraffic = (): Traffic => ({ bound: fixedStepBound(IDENTITY_READ_TIMEOUT_MS), gate: PERSON_TRAFFIC });
+
+const withClient = async <T>(upstream: UpstreamEndpoint, ports: ProbeHostPorts, signal: AbortSignal, use: (client: ProbeClient) => Promise<T>, traffic: Traffic): Promise<T> => {
+  const client = createProbeClient(probeEndpointOf(upstream, undefined), { signal, bound: traffic.bound, timers: ports.timers, gate: traffic.gate });
   try {
     return await use(client);
   } catch (error) {
@@ -87,11 +90,17 @@ const versionOf = (body: unknown): string | undefined => {
   return typeof version === 'string' ? version : undefined;
 };
 
-export const answersAsOllama = (upstream: UpstreamEndpoint, ports: ProbePorts, signal: AbortSignal): Promise<boolean> =>
-  withClient(upstream, ports, signal, async (client) => {
-    const result = await client.request('GET', VERSION_PATH);
-    return result.status === 200 && versionOf(usableUpstreamJson(result.text)) !== undefined;
-  });
+export const answersAsOllama = (upstream: UpstreamEndpoint, ports: ProbeHostPorts, signal: AbortSignal): Promise<boolean> =>
+  withClient(
+    upstream,
+    ports,
+    signal,
+    async (client) => {
+      const result = await client.request('GET', VERSION_PATH);
+      return result.status === 200 && versionOf(usableUpstreamJson(result.text)) !== undefined;
+    },
+    identityTraffic(),
+  );
 
 const tagMatches = (listed: string, model: string): boolean => listed === model || (!model.includes(':') && listed === `${model}:latest`);
 
@@ -105,27 +114,30 @@ const digestIn = (tags: unknown, model: string): string | undefined => {
   return digest;
 };
 
-export const readOllamaDigest = (upstream: UpstreamEndpoint, ports: ProbePorts, model: string, signal: AbortSignal): Promise<string | undefined> =>
-  withClient(upstream, ports, signal, async (client) => digestIn(await jsonOf(client, 'GET', TAGS_PATH), model));
+export const readOllamaDigest = (upstream: UpstreamEndpoint, ports: ProbeHostPorts, model: string, signal: AbortSignal): Promise<string | undefined> =>
+  withClient(upstream, ports, signal, async (client) => digestIn(await jsonOf(client, 'GET', TAGS_PATH), model), identityTraffic());
 
-export const trainedContextOf = (show: unknown, model: string): number => {
-  const info = isRecord(show) ? show['model_info'] : undefined;
-  if (!isRecord(info)) throw new Error(`/api/show for model ${model} carries no model_info`);
-  const architecture = info['general.architecture'];
-  if (typeof architecture !== 'string') throw new Error(`/api/show for model ${model} carries no general.architecture`);
-  const length = info[`${architecture}.context_length`];
-  if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 1) {
-    throw new Error(`/api/show for model ${model} carries no ${architecture}.context_length`);
-  }
-  return length;
+const OLLAMA_DETAILS = (() => {
+  const details = SERVER_KINDS.find((kind) => kind.kind === 'ollama')?.read?.details;
+  if (details === undefined) throw new Error('the server kinds have no Ollama details read');
+  return details;
+})();
+
+const reportedJsonOf = async (client: ProbeClient, method: 'GET' | 'POST', path: string, body: unknown): Promise<unknown> => {
+  const result = await client.request(method, path, body);
+  return result.status === 200 ? parseExternalJson(result.text) : undefined;
 };
 
-const capabilitiesOf = (show: unknown, model: string): readonly string[] => {
-  const capabilities = isRecord(show) ? show['capabilities'] : undefined;
-  if (!Array.isArray(capabilities) || !capabilities.every((entry): entry is string => typeof entry === 'string')) {
-    throw new Error(`/api/show for model ${model} carries no capabilities list`);
-  }
-  return capabilities;
+export const readOllamaReported = (upstream: UpstreamEndpoint, ports: ProbeHostPorts, model: string): Promise<ReportedFields> =>
+  withClient(upstream, ports, new AbortController().signal, (client) => readReportedFields((method, path, body) => reportedJsonOf(client, method, path, body), OLLAMA_DETAILS, model), identityTraffic());
+
+type OllamaShow = { trained: number; capabilities: readonly string[] };
+
+const ollamaShowOf = async (client: ProbeClient, model: string): Promise<OllamaShow> => {
+  const details = await readModelDetails((method, path, body) => jsonOf(client, method, path, body), OLLAMA_DETAILS, model);
+  if (details?.window === undefined) throw new Error(`${OLLAMA_DETAILS.path} for model ${model} carries no context length`);
+  if (details.capabilities === undefined) throw new Error(`${OLLAMA_DETAILS.path} for model ${model} carries no capabilities list`);
+  return { trained: details.window, capabilities: details.capabilities };
 };
 
 const promptEvalCountOf = (body: unknown): number | undefined => {
@@ -224,29 +236,35 @@ export type MeasureOllamaOptions = Omit<ProbeOllamaTargetOptions, 'probeRecordDi
 
 export const measureOllama =
   (options: MeasureOllamaOptions): MeasureProbe<EndpointLockKey, OllamaMeasurement> =>
-  async ({ key, signal }) => {
+  async ({ key, signal, progress }) => {
     const { model, upstream } = options;
+    const measured: Traffic = { bound: speedStepBound(options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS), gate: options.ports.gate };
+    const step = (name: string): void => progress.step(name, measured.bound.currentMs(0));
+    step('model details');
     const { version, show, tags } = await withClient(upstream, options.ports, signal, async (client) => ({
       version: await jsonOf(client, 'GET', VERSION_PATH),
-      show: await jsonOf(client, 'POST', SHOW_PATH, { model }),
+      show: await ollamaShowOf(client, model),
       tags: await jsonOf(client, 'GET', TAGS_PATH),
-    }));
+    }), identityTraffic());
     const serverVersion = versionOf(version);
     if (serverVersion === undefined) throw new Error(`the server at ${key.endpoint} did not answer ${VERSION_PATH} in Ollama's form`);
-    const trained = trainedContextOf(show, model);
+    const { trained, capabilities } = show;
     if (options.contextWindow > trained) {
       throw new Error(`the context window ${options.contextWindow} is above the trained context length ${trained} of model ${model}`);
     }
     const identity = digestIn(tags, model);
     if (identity === undefined) throw new Error(`the Ollama server does not list model ${model}; pull it with \`ollama pull ${model}\``);
-    const capabilities = capabilitiesOf(show, model);
     const imageInputAccepted = capabilities.includes('vision');
+    step('image tokens');
     const imageTokens = imageInputAccepted
-      ? await withClient(upstream, options.ports, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS)
+      ? await withClient(upstream, options.ports, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), measured)
       : undefined;
-    const promptCache = await withClient(upstream, options.ports, signal, (client) => measurePromptCache(client, model, options.contextWindow), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
-    const jsonMode = await measureJsonMode(() => withClient(upstream, options.ports, signal, (client) => askJsonOnly(client, model, options.contextWindow), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS));
+    step('prompt cache');
+    const promptCache = await withClient(upstream, options.ports, signal, (client) => measurePromptCache(client, model, options.contextWindow), measured);
+    step('JSON mode');
+    const jsonMode = await measureJsonMode(() => withClient(upstream, options.ports, signal, (client) => askJsonOnly(client, model, options.contextWindow), measured));
     const userDialects = options.userDialects ?? NO_USER_DIALECTS;
+    step('schema dialect');
     const selection = await withClient(
       upstream,
       options.ports,
@@ -258,7 +276,7 @@ export const measureOllama =
           userDialects,
           declaredDialect: options.declaredDialect,
         }),
-      options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS,
+      measured,
     );
     const report: OllamaProbeReport = {
       kind: 'ollama',
@@ -277,10 +295,10 @@ export const measureOllama =
     return { report, identity };
   };
 
-export const ollamaPrecondition = (upstream: UpstreamEndpoint, ports: ProbePorts, model: string): ProbePrecondition => ({
+export const ollamaPrecondition = (upstream: UpstreamEndpoint, ports: ProbeHostPorts, model: string): ProbePrecondition => ({
   boundMs: IDENTITY_READ_TIMEOUT_MS,
   check: async (signal) => {
-    const tags = await withClient(upstream, ports, signal, (client) => jsonOf(client, 'GET', TAGS_PATH));
+    const tags = await withClient(upstream, ports, signal, (client) => jsonOf(client, 'GET', TAGS_PATH), identityTraffic());
     if (digestIn(tags, model) !== undefined) return { kind: 'met' };
     return { kind: 'refused', message: `the Ollama server does not list the model "${model}"`, detail: `GET ${TAGS_PATH} has no entry for it`, remedy: `ollama pull ${model}` };
   },
@@ -298,6 +316,7 @@ export type OllamaProbeSubjectOptions = {
 
 export const ollamaProbeSubject = (options: OllamaProbeSubjectOptions): ProbeSubject<EndpointLockKey, OllamaMeasurement> => ({
   target: options.target,
+  unknown: measuringAskOf(options.target, ['toolCalling']),
   readKey: async () => endpointLockKeyOf(options.key),
   precondition: options.precondition,
   measure: options.measure,
@@ -318,6 +337,6 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
     },
   });
-  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.ports.timers, options.signal ?? new AbortController().signal);
+  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.ports.timers, options.signal ?? new AbortController().signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
   return { report: measured.report, key: options.key, identity: measured.identity };
 };

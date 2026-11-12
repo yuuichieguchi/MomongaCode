@@ -12,7 +12,7 @@ import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { sandboxOrSkip } from './support/sandbox.ts';
-import { DEFAULT_E2E_DEPS, baseSettings, sandboxChoiceOf, startStack, withUpstreamConnection } from './support/stack.ts';
+import { baseSettings, sandboxChoiceOf, startStack, withUpstreamConnection } from './support/stack.ts';
 import { textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -84,7 +84,6 @@ describe('issue: one run from an issue, end to end', () => {
     await startStack({
       home,
       version: cliPackage.version,
-      deps: DEFAULT_E2E_DEPS,
       settings: {
         forges: [{ id: 'local', descriptor: 'github', hosts: [forge.host], apiBaseUrl: forge.origin, credential: { secret: FORGE_SECRET } }],
         mandates: { fix: { allow: ['Write(./widgets.txt)', ...OPERATIONS], until: ['true'], steps: 30 } },

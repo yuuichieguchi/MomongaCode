@@ -179,6 +179,7 @@ export {
   storedModelRef,
   typedModelText,
   withDefaultTag,
+  sessionModelNotConfiguredText,
 } from './model-ref.ts';
 export type { ModelRefErrorCode, ModelView, ModelViews, StoredModelRef, TypedModelText, TypedResolution } from './model-ref.ts';
 export {
@@ -561,7 +562,7 @@ export type {
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
 export { issueRunInput } from './issue-run.ts';
-export { ATTACHED_FILE_TAG, FORGE_ISSUE_TAG, TOOL_OUTPUT_TAG, USER_SHELL_TAG, attachedFileText, attachmentText, fenceUntrusted, imageDataUrl, includedShellTexts, sessionFenceOf, userMessageContent, userShellText } from './user-content.ts';
+export { ATTACHED_FILE_TAG, FENCE_BOUNDARY_MARKER, FORGE_ISSUE_TAG, TOOL_OUTPUT_TAG, USER_SHELL_TAG, attachedFileText, attachmentText, fenceUntrusted, imageDataUrl, includedShellTexts, sessionFenceOf, userMessageContent, userShellText } from './user-content.ts';
 export type { UserMessageExtras } from './user-content.ts';
 export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
@@ -704,6 +705,9 @@ export type {
   AppliedDiffFields,
   ApprovalShown,
   ApprovalShownPart,
+  TrustItem,
+  TrustItemChange,
+  TrustItemsView,
   ToolAwait,
   ToolKind,
   ModelRejectionReason,
@@ -765,7 +769,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbeFailed, isTargetProbing } from './gateway-api.ts';
+export { MODEL_ENTRY_STATES, MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbeFailed, isTargetProbing } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,
@@ -775,6 +779,7 @@ export type {
   ModelList,
   ModelListEntry,
   ChainMemberEntry,
+  ModelEntryState,
   MomongaModelEntry,
   MomongaModelList,
   MomongaModelRoles,
@@ -818,7 +823,9 @@ export type {
   SupervisorHealth,
   SupervisorPhase,
   SupervisorShutdownResponse,
+  InterruptedWorkItem,
 } from './supervisor-api.ts';
+export { INTERRUPTED_COMMAND_SHOWN_CHARS, INTERRUPTED_WORK_LISTED, interruptedWorkOf, parseInterruptedWork } from './supervisor-api.ts';
 export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList, isSpanFallbackCause, isSpanFallbackCauseList, spanFallbackCauseOf } from './fallback-cause.ts';
 export type { BillingChangeReason, BillingChangeRecord, FallbackCause, SpanFallbackCause } from './fallback-cause.ts';
 export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';
@@ -839,3 +846,5 @@ export {
   RULE_PROPOSE_TOOL_NAME,
   TOOL_NAMES,
 } from './tool-names.ts';
+export { isMeasuring, measuringLineOf, measuringOfWire, measuringSkipOf, measuringStepOf, measuringWireOf } from './measuring.ts';
+export type { Measuring, MeasuringWire } from './measuring.ts';

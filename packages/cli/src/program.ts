@@ -299,9 +299,13 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
   daemon.command('start').description('start the daemon, or start a new one beside it when this program is newer').action(async () => {
     deps.complete(await daemonStart(ports, await pathsOf(ports)));
   });
-  daemon.command('status').description('show whether the daemon runs, its version and the state of its processes').action(async () => {
-    deps.complete(await daemonStatus(ports, await pathsOf(ports)));
-  });
+  daemon
+    .command('status')
+    .description('show whether the daemon runs, its version and the state of its processes')
+    .option('--json', 'print the status as one JSON document')
+    .action(async (options: { json?: true }) => {
+      deps.complete(await daemonStatus(ports, await pathsOf(ports), { json: options.json === true }));
+    });
   daemon.command('stop').description('stop the daemon and the work it runs, after a bounded wait for its processes to end').action(async () => {
     deps.complete(await daemonStop(ports, await pathsOf(ports)));
   });

@@ -13,8 +13,57 @@ export const USER_SHELL_RUNNING_CODE = 'user_shell_running';
 export type UserShellRoutesDeps = {
   store: Pick<RuntimeStore, 'getSession' | 'userShell'>;
   userInput: Pick<UserInputPort, 'shell'>;
+  userCommands: UserCommandRegistry;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
+};
+
+export type UserCommands = {
+  inFlight(): number;
+  ended(): Promise<void>;
+  abortAll(reason: string): Promise<void>;
+};
+
+export type UserCommandRegistry = UserCommands & {
+  start(sessionId: string): AbortSignal | undefined;
+  finish(sessionId: string): void;
+  stop(sessionId: string): boolean;
+};
+
+type RunningCommand = { stop: AbortController; ended: Promise<void>; finished: () => void };
+
+export const createUserCommands = (): UserCommandRegistry => {
+  const running = new Map<string, RunningCommand>();
+  const ended = async (): Promise<void> => {
+    await Promise.all([...running.values()].map((command) => command.ended));
+  };
+  return {
+    inFlight: () => running.size,
+    ended,
+    abortAll: (reason) => {
+      for (const command of running.values()) command.stop.abort(reason);
+      return ended();
+    },
+    start: (sessionId) => {
+      if (running.has(sessionId)) return undefined;
+      const stop = new AbortController();
+      let finished: () => void = () => undefined;
+      const ended = new Promise<void>((resolve) => {
+        finished = resolve;
+      });
+      running.set(sessionId, { stop, ended, finished });
+      return stop.signal;
+    },
+    finish: (sessionId) => {
+      running.get(sessionId)?.finished();
+      running.delete(sessionId);
+    },
+    stop: (sessionId) => {
+      const command = running.get(sessionId);
+      command?.stop.abort();
+      return command !== undefined;
+    },
+  };
 };
 
 const encoder = new TextEncoder();
@@ -22,8 +71,7 @@ const encoder = new TextEncoder();
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 export const registerUserShellRoutes = (route: RouteRegistrar, deps: UserShellRoutesDeps): void => {
-  const { store, userInput } = deps;
-  const running = new Map<string, AbortController>();
+  const { store, userInput, userCommands } = deps;
 
   const requireSession = (id: string) => {
     const session = store.getSession(id);
@@ -35,10 +83,9 @@ export const registerUserShellRoutes = (route: RouteRegistrar, deps: UserShellRo
     const session = requireSession(context.req.param('id') ?? '');
     const body = validateBody<UserShellRequest>('UserShellRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
     if (store.userShell.runActive(session.id)) throw conflict(USER_SHELL_RUN_ACTIVE_CODE, 'a run of this session is working; a user command starts when it has ended');
-    if (running.has(session.id)) throw conflict(USER_SHELL_RUNNING_CODE, 'a user command of this session is already running');
-    const stop = new AbortController();
-    running.set(session.id, stop);
-    const signal = AbortSignal.any([stop.signal, context.req.raw.signal, deps.closeSignal]);
+    const stopSignal = userCommands.start(session.id);
+    if (stopSignal === undefined) throw conflict(USER_SHELL_RUNNING_CODE, 'a user command of this session is already running');
+    const signal = AbortSignal.any([stopSignal, context.req.raw.signal, deps.closeSignal]);
     let open = true;
     const stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
@@ -56,7 +103,7 @@ export const registerUserShellRoutes = (route: RouteRegistrar, deps: UserShellRo
           send({ type: 'exit', record });
         };
         work()
-          .finally(() => running.delete(session.id))
+          .finally(() => userCommands.finish(session.id))
           .then(
             () => {
               if (open) controller.close();
@@ -68,7 +115,7 @@ export const registerUserShellRoutes = (route: RouteRegistrar, deps: UserShellRo
       },
       cancel: () => {
         open = false;
-        stop.abort();
+        userCommands.stop(session.id);
       },
     });
     return new Response(stream, { headers: STREAM_HEADERS });
@@ -76,9 +123,7 @@ export const registerUserShellRoutes = (route: RouteRegistrar, deps: UserShellRo
 
   const stopRunning: Handler = (context) => {
     const session = requireSession(context.req.param('id') ?? '');
-    const stop = running.get(session.id);
-    stop?.abort();
-    return json({ stopped: stop !== undefined });
+    return json({ stopped: userCommands.stop(session.id) });
   };
 
   const pending: Handler = (context) => {

@@ -1,4 +1,4 @@
-import type { RunReport } from '@momonga/protocol';
+import type { RunReport, ToolFile } from '@momonga/protocol';
 import { defineTool, ToolExecutionError } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { AGENT_TOOL_NAME, SPAWN_TOOL_TIMEOUT_MS } from './constants.ts';
@@ -43,10 +43,16 @@ export const childResultOf = (agent: string, outcome: Extract<ChildRunOutcome, {
 export const childToolResultOf = (
   agent: string,
   outcome: Extract<ChildRunOutcome, { state: 'finished' }>,
-): { status: 'completed' | 'failed'; output: string; mutated?: true } => ({
-  ...childResultOf(agent, outcome),
-  ...(outcome.report !== undefined && outcome.report.changes.mutatingCalls > 0 ? { mutated: true as const } : {}),
-});
+): { status: 'completed' | 'failed'; output: string; mutated?: true; files?: ToolFile[] } => {
+  const changes = outcome.report?.changes;
+  return {
+    ...childResultOf(agent, outcome),
+    ...(changes !== undefined && changes.mutatingCalls > 0 ? { mutated: true as const } : {}),
+    ...(changes === undefined || changes.files.length === 0
+      ? {}
+      : { files: changes.files.map((file): ToolFile => ({ path: file.path, ...(file.sha256 === undefined ? {} : { sha256: file.sha256 }), access: 'write' })) }),
+  };
+};
 
 export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildRunSpawner): AnyTool => {
   const byName = new Map(agents.map((agent) => [agent.name, agent]));

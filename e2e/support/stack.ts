@@ -8,6 +8,10 @@ import type { SandboxSetting } from '@momonga/config';
 import { MINIMAL_CHILD_PATH, createUdsClient, fixedSocket, parseReadyLine } from '@momonga/foundation';
 import type { ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildState, SupervisorHealth, SupervisorPhase, TargetAnswers } from '@momonga/protocol';
+import { startGenerationForTest } from '@momonga/testkit/first-generation';
+import cliPackage from '../../packages/cli/package.json' with { type: 'json' };
+import { superviseInvocation } from '../../packages/cli/src/daemon/launcher.ts';
+import { CLI_BUNDLE } from './cli-bundles.ts';
 import type { ChildRole } from '@momonga/supervisor';
 import { firstGeneration, modelSettings, productTestEnv, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeRoute, FakeScriptEntry } from '@momonga/testkit';
@@ -22,7 +26,7 @@ import { createSupervisorClient } from './supervisor-client.ts';
 import type { SupervisorClient } from './supervisor-client.ts';
 import { E2E_DEPS_ENV } from './supervisor-main.ts';
 import type { E2eDeps } from './supervisor-main.ts';
-import { E2E_DRAIN_TIMEOUT_MS, E2E_LEASE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, e2eStartBoundMs, until, withinBound } from './wait.ts';
+import { E2E_SUPERVISOR_CLOSE_BOUND_MS, e2eStartBoundMs, until, withinBound } from './wait.ts';
 import { pinnedRipgrepPath } from '../../test/support/pinned-ripgrep.ts';
 
 export const SUPERVISOR_MAIN_PATH = path.join(REPO_ROOT, 'e2e', 'support', 'supervisor-main.ts');
@@ -33,17 +37,15 @@ export const UPSTREAM_MODEL = 'system';
 export const UPSTREAM_PROVIDER = 'fake';
 export const UPSTREAM_CONTEXT_WINDOW = 16_384;
 
-export const DEFAULT_E2E_DEPS: E2eDeps = {
-  runtime: { leaseMs: E2E_LEASE_MS, workerCount: 1 },
-};
+export const RIPGREP_OF_A_JS_BUNDLE_THAT_EMBEDS_NONE = pinnedRipgrepPath;
 
 export type StackSandbox = SandboxSetting;
 
 export type StackReadiness = { phase: SupervisorPhase; children: Readonly<Record<ChildRole, SupervisorChildState>> };
 
-export type StackTargetCapabilities = { readonly contextWindow: number; readonly maxOutputTokens: number };
+export type StackModelCapabilities = { readonly contextWindow: number; readonly maxOutputTokens: number };
 
-export type StackTarget = { readonly capabilities?: StackTargetCapabilities; readonly toolCalling?: 'native' | 'constrained'; readonly answers?: 'model' | 'script' };
+export type StackModel = { readonly capabilities?: StackModelCapabilities; readonly toolCalling?: 'native' | 'constrained'; readonly answers?: 'model' | 'script' };
 
 export type StartStackOptions = {
   home: E2eHome;
@@ -55,7 +57,7 @@ export type StartStackOptions = {
   deps?: E2eDeps;
   script?: FakeScriptEntry[];
   routes?: FakeRoute[];
-  target?: StackTarget;
+  model?: StackModel;
   upstream?: FakeChatCompletionsServer;
   upstreamImageInput?: boolean;
   readiness?: Partial<StackReadiness> | false;
@@ -69,7 +71,7 @@ export type SupervisorExit = { code: number | null; signal: NodeJS.Signals | nul
 export type SpawnedSupervisor = {
   readonly child: ChildProcessByStdio<Writable, Readable, Readable>;
   readonly pid: number;
-  readonly depsFile: string;
+  readonly depsFile: string | undefined;
   ready(deadlineMs?: number): Promise<ReadyFields>;
   exitState(): SupervisorExit | undefined;
   stdoutLines(): readonly string[];
@@ -77,7 +79,9 @@ export type SpawnedSupervisor = {
   exited: Promise<SupervisorExit>;
 };
 
-export type SpawnSupervisorOptions = { home: E2eHome; deps?: E2eDeps; stackNumber?: number; script?: string; version?: string; generation?: number };
+export type SupervisorEntry = { readonly kind: 'product'; readonly generation: number } | { readonly kind: 'test'; readonly deps: E2eDeps; readonly script?: string; readonly version?: string; readonly generation?: number };
+
+export type SpawnSupervisorOptions = { home: E2eHome; entry: SupervisorEntry; stackNumber?: number };
 
 export type E2eStack = {
   readonly home: E2eHome;
@@ -125,8 +129,7 @@ export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<strin
     ],
   }),
   sandbox,
-  tools: { ripgrep: pinnedRipgrepPath() },
-  runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS },
+  tools: { ripgrep: RIPGREP_OF_A_JS_BUNDLE_THAT_EMBEDS_NONE() },
 });
 
 const modelsOf = (settings: Readonly<Record<string, unknown>>): StackModels => settings['models'] as StackModels;
@@ -173,29 +176,24 @@ export const withStructuredRole = (settings: Readonly<Record<string, unknown>>, 
   return { ...structured, models: { ...models, roles: { ...models.roles, [role]: upstreamModelRef(id) } } };
 };
 
-export const withModelsAnswering = (settings: Readonly<Record<string, unknown>>, answers: TargetAnswers): Record<string, unknown> => {
-  const models = modelsOf(settings);
-  return { ...settings, models: { ...models, connections: models.connections.map((connection) => ({ ...connection, answers })) } };
-};
-
 export const contextWindowOf = (home: E2eHome): number => upstreamEntryOf(baseSettings(home, 'none')).capabilities['contextWindow'] as number;
 
-export const settingsWithTarget = (settings: Readonly<Record<string, unknown>>, target: StackTarget): Record<string, unknown> => {
+export const settingsWithModel = (settings: Readonly<Record<string, unknown>>, model: StackModel): Record<string, unknown> => {
   const entryChanged = withUpstreamEntry(settings, (entry) => ({
     ...entry,
-    ...(target.capabilities === undefined ? {} : { capabilities: { ...target.capabilities } }),
-    ...(target.toolCalling === undefined ? {} : { toolCalling: target.toolCalling }),
+    ...(model.capabilities === undefined ? {} : { capabilities: { ...model.capabilities } }),
+    ...(model.toolCalling === undefined ? {} : { toolCalling: model.toolCalling }),
   }));
-  return target.answers === undefined ? entryChanged : withUpstreamConnection(entryChanged, (connection) => ({ ...connection, answers: target.answers }));
+  return model.answers === undefined ? entryChanged : withUpstreamConnection(entryChanged, (connection) => ({ ...connection, answers: model.answers }));
 };
 
 export const writeSettingsFile = (home: E2eHome, value: Readonly<Record<string, unknown>> | string): void => {
-  const target = home.paths.settingsFile;
+  const file = home.paths.settingsFile;
   const text = typeof value === 'string' ? value : `${JSON.stringify(value, null, 2)}\n`;
   settingsWriteCounter += 1;
-  const temporary = path.join(path.dirname(target), `.settings-${process.pid}-${settingsWriteCounter}.tmp`);
+  const temporary = path.join(path.dirname(file), `.settings-${process.pid}-${settingsWriteCounter}.tmp`);
   fs.writeFileSync(temporary, text, { mode: SETTINGS_FILE_MODE, flag: 'wx' });
-  fs.renameSync(temporary, target);
+  fs.renameSync(temporary, file);
 };
 
 export const writeDepsFile = (home: E2eHome, deps: E2eDeps, stackNumber: number, version: string = SUPERVISOR_APP_VERSION): string => {
@@ -205,6 +203,14 @@ export const writeDepsFile = (home: E2eHome, deps: E2eDeps, stackNumber: number,
 };
 
 export const supervisorArgv = (home: E2eHome, generation?: number): string[] => [`--home=${home.home}`, '--log-target=file', ...(generation === undefined ? [] : [`--generation=${generation}`])];
+
+export const productSupervisorEnv = (home: E2eHome): Record<string, string> =>
+  productTestEnv({
+    PATH: SUPERVISOR_ENV_PATH,
+    HOME: home.home,
+    TMPDIR: home.root,
+    LANG: 'C',
+  });
 
 export const supervisorEnv = (home: E2eHome, depsFile: string): Record<string, string> =>
   productTestEnv({
@@ -224,11 +230,25 @@ const trimToUtf8Boundary = (bytes: Buffer): Buffer => {
 
 const describeExit = (exit: SupervisorExit): string => `code ${exit.code}, signal ${exit.signal}`;
 
+type SupervisorLaunch = { command: string; args: readonly string[]; env: Record<string, string>; deps: E2eDeps; depsFile: string | undefined; script: string };
+
+const PRODUCT_SELF = { kind: 'script', execPath: process.execPath, script: CLI_BUNDLE } as const;
+
+const launchOf = (home: E2eHome, entry: SupervisorEntry, stackNumber: number): SupervisorLaunch => {
+  if (entry.kind === 'product') {
+    const invocation = superviseInvocation(PRODUCT_SELF, home.home, entry.generation, undefined);
+    return { command: invocation.command, args: invocation.args, env: productSupervisorEnv(home), deps: {}, depsFile: undefined, script: CLI_BUNDLE };
+  }
+  const depsFile = writeDepsFile(home, entry.deps, stackNumber, entry.version);
+  console.log(`e2e stack ${stackNumber}: the test entry, with the stated settings ${JSON.stringify(entry.deps)}`);
+  const script = entry.script ?? SUPERVISOR_MAIN_PATH;
+  return { command: process.execPath, args: [script, ...supervisorArgv(home, entry.generation)], env: supervisorEnv(home, depsFile), deps: entry.deps, depsFile, script };
+};
+
 export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervisor => {
-  const { home, deps = DEFAULT_E2E_DEPS, stackNumber = 1, script = SUPERVISOR_MAIN_PATH, version, generation } = options;
-  const depsFile = writeDepsFile(home, deps, stackNumber, version);
-  const env = supervisorEnv(home, depsFile);
-  const child = spawn(process.execPath, [script, ...supervisorArgv(home, generation)], {
+  const { home, entry, stackNumber = 1 } = options;
+  const { command, args, env, deps, depsFile, script } = launchOf(home, entry, stackNumber);
+  const child = spawn(command, args, {
     env,
     cwd: home.root,
     detached: true,
@@ -313,7 +333,7 @@ export const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
 
 export const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOptions): Readonly<Record<string, unknown>> | string => {
   if (options.settingsText !== undefined) return options.settingsText;
-  const base = options.target === undefined ? baseSettings(home, kind) : settingsWithTarget(baseSettings(home, kind), options.target);
+  const base = options.model === undefined ? baseSettings(home, kind) : settingsWithModel(baseSettings(home, kind), options.model);
   const callerTools = options.settings?.['tools'] as Readonly<Record<string, unknown>> | undefined;
   return { ...base, ...options.settings, tools: { ...(base['tools'] as Readonly<Record<string, unknown>>), ...callerTools } };
 };
@@ -346,7 +366,7 @@ export const startUpstream = async (home: E2eHome, options: StartStackOptions): 
   }
   const fake = await startFakeChatCompletions({
     scenario: 'tools-ok',
-    contextWindow: options.target?.capabilities?.contextWindow ?? UPSTREAM_CONTEXT_WINDOW,
+    contextWindow: options.model?.capabilities?.contextWindow ?? UPSTREAM_CONTEXT_WINDOW,
     maxConcurrency: 8,
     socketPath: home.upstreamSocket,
     ...(options.upstreamImageInput === undefined ? {} : { imageInput: options.upstreamImageInput }),
@@ -360,20 +380,23 @@ export const startUpstream = async (home: E2eHome, options: StartStackOptions): 
 export const startStack = async (options: StartStackOptions): Promise<E2eStack> => {
   const { home } = options;
   if (options.settings !== undefined && 'sandbox' in options.settings) throw new Error('startStack: settings must not contain a sandbox key; use the sandbox option');
-  const deps = options.deps ?? DEFAULT_E2E_DEPS;
+  const deps = options.deps ?? {};
   const choice = sandboxChoiceOf(options);
   const fake = await startUpstream(home, options);
   writeSettingsFile(home, settingsOf(home, choice.kind, options));
   const deadline = Date.now() + (options.readinessDeadlineMs ?? e2eStartBoundMs(deps));
   const remainingMs = (): number => Math.max(0, deadline - Date.now());
-  const supervisor = spawnSupervisor({
-    home,
-    deps,
-    stackNumber: 1,
-    ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }),
-    ...(options.version === undefined ? {} : { version: options.version }),
-    ...(options.preparedGeneration === undefined ? {} : { generation: options.preparedGeneration }),
-  });
+  const testEntry = options.deps !== undefined || options.supervisorScript !== undefined || options.version !== undefined;
+  const entry: SupervisorEntry = testEntry
+    ? {
+        kind: 'test',
+        deps,
+        ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }),
+        ...(options.version === undefined ? {} : { version: options.version }),
+        ...(options.preparedGeneration === undefined ? {} : { generation: options.preparedGeneration }),
+      }
+    : { kind: 'product', generation: options.preparedGeneration ?? (await startGenerationForTest(home.home, { version: cliPackage.version })).generation };
+  const supervisor = spawnSupervisor({ home, entry, stackNumber: 1 });
   const ready = await supervisor.ready(remainingMs());
   const client = createSupervisorClient(home);
   registerE2eCleanup(() => client.close());
@@ -435,4 +458,6 @@ export const shutdownBarrier = async (stack: E2eStack): Promise<void> => {
   expect(response.body.phase).toBe('draining');
   const settled = await until(() => exit, { deadlineMs: E2E_SUPERVISOR_CLOSE_BOUND_MS, description: 'supervisor exited after POST /v1/shutdown' });
   expect(settled).toEqual({ code: 0, signal: null });
+  await stack.home.ledger.collect({});
+  expect(await stack.home.ledger.survivors()).toEqual([]);
 };

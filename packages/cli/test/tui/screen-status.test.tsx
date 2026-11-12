@@ -64,18 +64,18 @@ describe('the waiting row in the screen (6.1)', () => {
 });
 
 describe('the measuring row ends with its cause (6.2)', () => {
-  const probing: ToolCallingState = { state: 'probing', message: 'target primary is being measured', retryAfterSeconds: 5 };
+  const probing: ToolCallingState = { state: 'probing', message: 'target primary is being measured', retryAfterSeconds: 5, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } };
   const unavailable: ToolCallingState = { state: 'unavailable', status: 503, type: 'server_error', code: 'target_probe_failed', message: 'measuring this model failed: no answer' };
 
   it('is a row while the model is measured, not an entry, and becomes one warning with the cause and the remedy', async () => {
     const clock = manualClock(1000);
     const toolCalling: Record<string, ToolCallingState> = { [SESSION.model]: probing };
     const { app, backend } = await start({ toolCalling }, { now: clock.now, timers: clock.timers }, { columns: 100, rows: 14 });
-    const measuring = linesOf(await untilFrame(app, 'measuring this model'));
-    expect(measuring[9]).toBe('⠋ measuring this model (once per model and OS build) 0s');
+    const measuring = linesOf(await untilFrame(app, 'measuring toolCalling'));
+    expect(measuring[9]).toMatch(/^⠋ measuring toolCalling of this model, starting 0s · to skip it, declare toolCalling/);
     expect(measuring.join('\n')).not.toContain('target primary is being measured');
     clock.advance(5000);
-    await untilFrame(app, 'measuring this model (once per model and OS build) 5s');
+    await untilFrame(app, 'starting 5s');
     toolCalling[SESSION.model] = unavailable;
     clock.advance(5000);
     const ended = await untilFrame(app, 'measuring this model failed: no answer');
@@ -90,7 +90,7 @@ describe('the measuring row ends with its cause (6.2)', () => {
     const clock = manualClock(1000);
     const toolCalling: Record<string, ToolCallingState> = { [SESSION.model]: probing };
     const { app } = await start({ toolCalling }, { now: clock.now, timers: clock.timers }, { columns: 100, rows: 14 });
-    await untilFrame(app, 'measuring this model');
+    await untilFrame(app, 'measuring toolCalling');
     toolCalling[SESSION.model] = 'native';
     clock.advance(5000);
     const ready = await untilFrame(app, (shown) => !shown.includes('measuring') && shown.includes('context: 0%'));

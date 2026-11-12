@@ -73,9 +73,9 @@ const identifier = (services: Services, prefix: string): string => `${prefix}_${
 
 type Sent = { callKey: string; retryOfSeq: number | undefined };
 
-const recordSendOf = (services: Services, call: CallIdentity, target: TargetRuntime, runId: string | undefined): Sent => {
+const recordSendOf = async (services: Services, call: CallIdentity, target: TargetRuntime, runId: string | undefined, signal: AbortSignal): Promise<Sent> => {
   const callKey = upstreamCallKey(call, target.name);
-  const { retryOfSeq } = services.store.recordSend({ callKey, target: target.name, runId: runId ?? null, step: null, sentAtMs: services.clock.now() });
+  const { retryOfSeq } = await services.store.recordSend({ callKey, target: target.name, runId: runId ?? null, step: null, sentAtMs: services.clock.now() }, signal);
   return { callKey, retryOfSeq };
 };
 
@@ -110,9 +110,10 @@ const callTargets = <T>(
     }),
   );
 
-const adapterRequestOf = (model: string, request: CountTokensRequest, input: AdapterInputItem[]): AdapterRequest => ({
+const adapterRequestOf = (model: string, request: CountTokensRequest, input: AdapterInputItem[], fence: string): AdapterRequest => ({
   model,
   input,
+  fence,
   ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
   ...(request.tools === undefined || request.tools.length === 0 ? {} : { tools: request.tools }),
   ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
@@ -137,12 +138,12 @@ const countWireOnce = async (
   attemptNumber: number,
   call: CallIdentity,
 ): Promise<Counted> => {
-  const sentContext = (): AdapterContext => adapterContextOf(services, target, capabilities, signal, attemptNumber, recordSendOf(services, call, target, undefined).callKey);
+  const sentContext = async (): Promise<AdapterContext> => adapterContextOf(services, target, capabilities, signal, attemptNumber, (await recordSendOf(services, call, target, undefined, signal)).callKey);
   const adapterCountWire = target.adapter.countWire;
-  if (adapterCountWire !== undefined) return { result: await adapterCountWire.call(target.adapter, wire, sentContext()), contacted: true };
+  if (adapterCountWire !== undefined) return { result: await adapterCountWire.call(target.adapter, wire, await sentContext()), contacted: true };
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) return { result: estimatedCountOf(wireTokensOf(wire, capabilities.imageTokens)), contacted: false };
-  const counted = await adapterCountTokens.call(target.adapter, { model: target.model, input: textOfWire(wire) }, sentContext());
+  const counted = await adapterCountTokens.call(target.adapter, { model: target.model, input: textOfWire(wire) }, await sentContext());
   const imageTokens = imageTokensOfWire(wire, capabilities.imageTokens);
   return { result: imageTokens === 0 ? counted : estimatedCountOf(counted.input_tokens + imageTokens), contacted: true };
 };
@@ -165,7 +166,7 @@ const countOnTarget = async (
   const capabilities = await narrowed.capabilitiesOf(target);
   const toolChoiceWire = target.adapter.toolChoiceWire(capabilities, adapterTargetOf(target));
   const counted = asGatewayError(target, () =>
-    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter), capabilities.allowedTools, target.display, toolChoiceWire),
+    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter, services.fenceBoundary(resolved.forAdapter)), capabilities.allowedTools, target.display, toolChoiceWire),
   );
   const renderWire = target.adapter.renderWire;
   if (renderWire !== undefined) {
@@ -199,6 +200,7 @@ const countOnTarget = async (
       ? { type: 'message', role: 'user', content: [{ type: 'input_text', text: item.summary }] }
       : item,
   );
+  const context = adapterContextOf(services, target, capabilities, signal, attemptNumber, (await recordSendOf(services, call, target, undefined, signal)).callKey);
   const result = await adapterCountTokens.call(
     target.adapter,
     {
@@ -208,7 +210,7 @@ const countOnTarget = async (
       ...(counted.tools === undefined ? {} : { tools: counted.tools }),
       ...(counted.tool_choice === undefined ? {} : { tool_choice: counted.tool_choice }),
     },
-    adapterContextOf(services, target, capabilities, signal, attemptNumber, recordSendOf(services, call, target, undefined).callKey),
+    context,
   );
   return { result, contacted: true };
 };
@@ -280,7 +282,7 @@ const compactOnce = async (
     model: target.model,
     input: resolved.forAdapter,
     ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
-    momonga: { ...withoutCeiling(request.momonga), max_summary_tokens: cap },
+    momonga: { ...withoutCeiling(request.momonga), fence: request.momonga?.fence ?? services.fenceBoundary(resolved.forAdapter), max_summary_tokens: cap },
   });
   const sizeRefusal: Refusal = {
     stage: REFUSAL_STAGES.inputSize,
@@ -351,7 +353,7 @@ const compactOnce = async (
       if (wire !== undefined && !fitsWindow(capabilities, cap, (await countWireOnce(services, target, capabilities, wire, guarded, attemptNumber, sizingCall)).result)) {
         throw new CandidateRefused(sizeRefusal);
       }
-      sent = recordSendOf(services, call, target, trace.runId);
+      sent = await recordSendOf(services, call, target, trace.runId, guarded);
     } catch (error) {
       if (error instanceof CandidateRefused || error instanceof CandidateDropped || error instanceof UnprobedTarget) throw error;
       const failure = failureFrom(target.adapter, error, guarded);
@@ -468,7 +470,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
     }
   };
 
-  const compactKeyed = (
+  const compactKeyed = async (
     rawBody: unknown,
     key: string,
     signal: AbortSignal,
@@ -480,17 +482,27 @@ export const createUnaryService = (services: GatewayServices, validator: Request
     const unknownFields = validator.unknownCompactFields(rawBody);
     const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
     const digest = sha256Hex(canonicalJson(request.momonga === undefined ? request : { ...request, momonga: withoutCeiling(request.momonga) }));
-    const running = inflight.get(key);
-    if (running !== undefined) {
+    const joinRunning = (): Promise<CompactResource> | undefined => {
+      const running = inflight.get(key);
+      if (running === undefined) return undefined;
       if (running.digest !== digest) throw reusedError(key);
       return wait(running, signal, deadlineAt);
-    }
-    const stored = services.store.getCompaction(key);
+    };
+    const runningBeforeRead = joinRunning();
+    if (runningBeforeRead !== undefined) return runningBeforeRead;
+    const stored = await services.store.getCompaction(key, signal);
+    const runningAfterRead = joinRunning();
+    if (runningAfterRead !== undefined) return runningAfterRead;
     if (stored !== undefined) {
-      if (services.clock.now() >= stored.expiresAtMs) services.store.deleteCompaction(key);
-      else if (stored.digest !== digest) throw reusedError(key);
-      else return Promise.resolve(stored.resource);
+      if (services.clock.now() < stored.expiresAtMs) {
+        if (stored.digest !== digest) throw reusedError(key);
+        return stored.resource;
+      }
+      await services.store.deleteCompaction(key, signal);
+      const runningAfterDelete = joinRunning();
+      if (runningAfterDelete !== undefined) return runningAfterDelete;
     }
+    if (services.closeSignal.aborted) throw gatewayClosedError();
     admitNewCall();
     const controller = new AbortController();
     const entry: InflightCompaction = {
@@ -505,7 +517,7 @@ export const createUnaryService = (services: GatewayServices, validator: Request
           const resource = await withPinnedServices(services, controller.signal, (pinned) => compactOnce(pinned, request, unknownFields, controller.signal, SHARED_WORK_HAS_NO_CALLER_DEADLINE, trace, { kind: 'keyed', key, digest }));
           if (isRunCancelled(controller.signal.reason)) throw controller.signal.reason;
           const now = services.clock.now();
-          services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs });
+          await services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs }, controller.signal);
           return resource;
         } finally {
           entry.settled = true;

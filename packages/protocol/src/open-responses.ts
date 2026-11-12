@@ -1,6 +1,7 @@
 import type { SchemaNarrowing } from './dialect.ts';
 import type { FallbackCause } from './fallback-cause.ts';
 import type { PlanAccountRef } from './plan-account.ts';
+import type { MeasuringWire } from './measuring.ts';
 import { MAX_TOOL_NAME_CHARS } from './reference-kinds.ts';
 import type { ModelCost, UnpricedOutcome } from './token-anatomy.ts';
 
@@ -45,7 +46,7 @@ export type StreamEventType = (typeof OPEN_RESPONSES_STREAM_EVENT_TYPES)[number]
 export type TerminalStreamEventType = (typeof TERMINAL_STREAM_EVENT_TYPES)[number];
 export type ErrorType = (typeof ERROR_TYPES)[number];
 
-export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null; plan?: PlanAccountRef };
+export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null; plan?: PlanAccountRef; measuring?: MeasuringWire };
 export type ErrorEnvelope = { error: ErrorBody };
 
 export type Annotation = { type: string; [key: string]: unknown };
@@ -314,7 +315,7 @@ export type CreateResponseBody = {
   safety_identifier?: string | null;
   service_tier?: string | null;
   background?: boolean;
-  momonga?: { cache?: PromptCacheCounts; exact_model?: boolean; max_cost_nano?: number; max_input_tokens?: number };
+  momonga?: { cache?: PromptCacheCounts; exact_model?: boolean; max_cost_nano?: number; max_input_tokens?: number; fence?: string };
 };
 
 type ResponseEvent<T extends string> = { type: T; sequence_number: number; response: ResponseResource };
@@ -407,7 +408,7 @@ export const carriesOutput = (event: StreamEvent): boolean =>
   event.type === 'response.function_call_arguments.delta' ||
   (event.type === 'response.output_item.added' && event.item.type === 'function_call');
 
-export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string; instructions?: string; exact_model?: boolean; max_cost_nano?: number; max_input_tokens?: number };
+export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string; instructions?: string; exact_model?: boolean; max_cost_nano?: number; max_input_tokens?: number; fence?: string };
 
 export type CompactRequest = {
   model: string;

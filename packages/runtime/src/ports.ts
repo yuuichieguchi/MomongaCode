@@ -56,6 +56,7 @@ export type SettingsPort = {
   autoModeClassifier(): string | undefined;
   appendRule(session: Session, entry: AppendedRule, signal: AbortSignal): Promise<void>;
   trusted(session: Session, signal: AbortSignal): Promise<boolean>;
+  approvedProjectAgents(session: Pick<Session, 'cwd'>, signal: AbortSignal): Promise<Pick<ReadonlySet<string>, 'has'>>;
 };
 
 export type AttachTerms = { ceiling: number; imageInput: boolean; signal: AbortSignal };

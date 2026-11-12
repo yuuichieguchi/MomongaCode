@@ -4,7 +4,7 @@ import { getRequestListener } from '@hono/node-server';
 import { SWEEP_INTERVAL_MS, encodeSse, hostPaths, listenUnix, startDeadlineSignal, systemRandom, personCapabilityOf } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
 import type { MarkerOwners } from '@momonga/tools';
-import type { PolicyVerification } from '../process/folder-verification.ts';
+import type { MandateRunVerification, PolicyVerification } from '../process/folder-verification.ts';
 import type { GatewayStanding } from '../process/supervised-gateway.ts';
 import type { Clock, FileSystem, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
@@ -19,6 +19,8 @@ import type { SkillFileSystem } from '../memory/skill-promotion.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { createRunApp } from './app.ts';
 import type { IssuePort } from './issues.ts';
+import { createUserCommands } from './user-shell-routes.ts';
+import type { UserCommands } from './user-shell-routes.ts';
 import type { ModelListing, RunLimitDefaults, SessionCreateSettings } from './app.ts';
 import type { DelegationPort } from './delegation.ts';
 import type { McpAdminPort } from './input-routes.ts';
@@ -60,6 +62,7 @@ export type RunServiceOptions = {
   agents: AgentCatalogPort;
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
   policyVerification: PolicyVerification;
+  mandateVerification: MandateRunVerification;
   gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
@@ -82,7 +85,7 @@ export type RunServiceOptions = {
   recomputeFacts: ReportRouteDeps['recomputeFacts'];
   mcp: McpAdminPort;
   role: RolePort;
-  work: { steps(): number; jobs(): number };
+  work: { runs(): readonly string[]; jobs(): readonly { id: string; command: string }[] };
   ignorableMarkerDirectories: (signal: AbortSignal) => Promise<readonly string[]>;
   files: FileSystem;
   onRequestEnd?: () => void;
@@ -96,6 +99,7 @@ export type RunService = {
   beginDraining(): void;
   applyRole(): void;
   openRequests(): number;
+  userCommands: UserCommands;
   stopListening(): void;
   retire(current: DaemonCurrentFrame | undefined): Promise<void>;
   close(): Promise<void>;
@@ -146,6 +150,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     else onError(error);
   };
   const closeController = new AbortController();
+  const userCommands = createUserCommands();
   const retireController = new AbortController();
   let retireFrame: Uint8Array | undefined;
   let draining = false;
@@ -166,6 +171,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     agents: options.agents,
     permissionRules: options.permissionRules,
     policyVerification: options.policyVerification,
+    mandateVerification: options.mandateVerification,
     gatewayStanding: options.gatewayStanding,
     userInput: options.userInput,
     evidenceRun: options.evidenceRun,
@@ -186,6 +192,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     keepAliveMs: options.keepAliveMs ?? 15_000,
     maxBodyBytes: options.maxBodyBytes ?? TWO_MIB,
     closeSignal: closeController.signal,
+    userCommands,
     retireSignal: retireController.signal,
     retireFrame: () => retireFrame,
     runTrace: options.runTrace,
@@ -331,6 +338,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     },
     applyRole,
     openRequests: () => openRequests,
+    userCommands,
     stopListening: () => {
       if (server.listening) server.close();
       server.closeIdleConnections();

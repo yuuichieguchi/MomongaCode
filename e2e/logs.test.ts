@@ -9,7 +9,7 @@ import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import { readLog, supervisorLog } from './support/log-reader.ts';
 import type { LogRecord } from './support/log-reader.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
-import { DEFAULT_E2E_DEPS, shutdownBarrier, startStack } from './support/stack.ts';
+import { shutdownBarrier, startStack } from './support/stack.ts';
 import { childOf, pidOf } from './support/supervisor-client.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 import { firstGeneration } from '@momonga/testkit';
@@ -53,7 +53,7 @@ describe('logs', () => {
     const stack = await startStack({ home });
     const runtime = createRuntimeClient(home);
     registerE2eCleanup(() => runtime.close());
-    const { session } = await runtime.createSession();
+    const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const { run } = await runtime.createRun(session.id, 'Say hello');
     const stream = runtime.events(run.id);
     registerE2eCleanup(() => stream.close());
@@ -117,7 +117,7 @@ describe('logs', () => {
     const home = await createE2eHome();
     const stack = await startStack({
       home,
-      deps: { ...DEFAULT_E2E_DEPS, launcherOverrides: { gateway: { script: NOISY_DAEMON_PATH, args: ['--role=gateway'] } } },
+      deps: { launcherOverrides: { gateway: { script: NOISY_DAEMON_PATH, args: ['--role=gateway'] } } },
     });
     const health = await stack.client.health();
     const fixturePid = pidOf(health, 'gateway');

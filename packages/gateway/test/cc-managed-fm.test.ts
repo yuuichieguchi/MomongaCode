@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { contextOf } from './own-reasoning.ts';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { EventEmitter } from 'node:events';
@@ -84,6 +85,7 @@ const pollingTimers = (clock: FakeClock): ManagedServerTimers => ({
   },
   clearTimeout: () => undefined,
   now: () => clock.now(),
+  monotonicMs: () => clock.monotonicMs(),
 });
 
 type Setup = {
@@ -365,7 +367,7 @@ describe('createManagedTarget compaction and wire counting', () => {
     const adapter = adapterFor(managed, clock);
     expect(adapter.compact).toBeTypeOf('function');
     const result = await adapter.compact?.(
-      { model: 'system', input: [userText('summarise this')], momonga: { max_summary_tokens: 64 } },
+      { model: 'system', input: [userText('summarise this')], momonga: { fence: TEST_FENCE, max_summary_tokens: 64 } },
       await contextOf(adapter, TARGET),
     );
     expect(result?.summary).toBe(FAKE_DETERMINISTIC_REPLY);

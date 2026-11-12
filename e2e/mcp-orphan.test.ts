@@ -8,7 +8,7 @@ import { GRANDCHILD_READY_FILE_NAME, MCP_RECORD_FILE_NAME, createE2eHome, marker
 import { isAlive } from './support/process.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { platformSandbox, sandboxOrSkip } from './support/sandbox.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, precedingAssistantCallId, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -32,7 +32,7 @@ describe('mcp: orphaned MCP server tree', () => {
     const stack = await startStack({
       home,
       needsBash: true,
-      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      deps: { restart: E2E_RESTART_POLICY },
       settings: {
         mcpServers: {
           fx: {
@@ -47,7 +47,7 @@ describe('mcp: orphaned MCP server tree', () => {
     expect(stack.sandbox).toBe(platformSandbox());
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Say hello');
       const stream = runtime.events(run.id);
       const frames = await stream.toEnd(E2E_RECOVERY_BOUND_MS);

@@ -41,7 +41,7 @@ describe('decision 76: a settings edit during a held run applies in place (desig
     const before = await stack.client.health();
     const hold = stack.fake.hold();
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run: held } = await runtime.createRun(session.id, 'Say hello');
       await hold.waitForRequest();
       writeSettingsFile(home, withChangedModel(home));
@@ -51,7 +51,7 @@ describe('decision 76: a settings edit during a held run applies in place (desig
       });
       hold.release();
       expect(await completed(runtime, held.id)).toBe('COMPLETED');
-      const { session: later } = await runtime.createSession();
+      const { session: later } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run: next } = await runtime.createRun(later.id, 'Say hello again');
       expect(await completed(runtime, next.id)).toBe('COMPLETED');
       const models = stack.fake.requests.filter((request) => request.path === '/v1/chat/completions').map((request) => (request.body as { model?: string }).model);

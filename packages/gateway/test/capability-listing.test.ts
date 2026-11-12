@@ -33,9 +33,9 @@ const unavailableOf = (message: string, status = 412) => ({
   source: 'unprobed',
 });
 
-const PROBING = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' };
+const PROBING = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' };
 
-const probingError = () => targetProbingError({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
+const probingError = () => targetProbingError({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } });
 
 const available = () => createScriptedAdapter({ calls: [], capabilities: AVAILABLE });
 

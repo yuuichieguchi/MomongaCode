@@ -1,6 +1,6 @@
 import { UnsupportedInputError } from '../core/unsupported-input.ts';
 
-export const RENDER_FAILURE_REASONS = ['loop', 'reject', 'polarity', 'dependency', 'written-key', 'unsatisfiable', 'ref-sibling', 'inverse-ambiguous', 'construct'] as const;
+export const RENDER_FAILURE_REASONS = ['loop', 'reject', 'polarity', 'dependency', 'written-key', 'unsatisfiable', 'ref-sibling', 'inverse-ambiguous', 'construct', 'free-form-object'] as const;
 
 export type RenderFailureReason = (typeof RENDER_FAILURE_REASONS)[number];
 

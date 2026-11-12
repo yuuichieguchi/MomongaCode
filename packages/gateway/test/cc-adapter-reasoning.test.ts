@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { contextOf } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import type { AdapterCompactRequest, Capabilities, ReasoningCapability } from '@momonga/protocol';
@@ -60,7 +61,7 @@ describe('chat-completions reasoning control', () => {
   });
 });
 
-const compactRequest: AdapterCompactRequest = { model: 'system', input: [userText('a long conversation')], momonga: { max_summary_tokens: 64 } };
+const compactRequest: AdapterCompactRequest = { model: 'system', input: [userText('a long conversation')], momonga: { fence: TEST_FENCE, max_summary_tokens: 64 } };
 
 describe('chat-completions compaction summary and reasoning', () => {
   it('asks for the lowest reasoning effort the target accepts and keeps the summary cap as the visible limit', async () => {

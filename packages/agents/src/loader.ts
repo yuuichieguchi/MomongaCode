@@ -6,8 +6,8 @@ import type { AgentLoader } from './types.ts';
 export type AgentLoaderOptions = { home: string; fileSystem: SkillFileSystem };
 
 export const createAgentLoader = ({ home, fileSystem }: AgentLoaderOptions): AgentLoader => ({
-  load: async ({ projectRoot, trusted }) => {
-    const { agents, warnings } = await scanAgents({ home, projectRoot, trusted }, fileSystem);
-    return { agents, warnings, tool: (runs) => (agents.length === 0 ? undefined : createAgentTool(agents, runs)) };
+  load: async (request) => {
+    const { agents, warnings, pendingApproval } = await scanAgents({ home, ...request }, fileSystem);
+    return { agents, warnings, pendingApproval, tool: (runs) => (agents.length === 0 ? undefined : createAgentTool(agents, runs)) };
   },
 });

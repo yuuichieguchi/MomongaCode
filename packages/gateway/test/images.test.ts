@@ -1,3 +1,5 @@
+import { TEST_FENCE } from '@momonga/testkit';
+import { fenceUntrusted } from '@momonga/protocol';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
@@ -212,7 +214,8 @@ describe('open-responses image conversion', () => {
 });
 
 describe('compaction transcript with images', () => {
-  const compactRequest = (input: AdapterInputItem[]) => ({ model: 'm', input });
+  const compactRequest = (input: AdapterInputItem[]) => ({ model: 'm', input, momonga: { fence: TEST_FENCE } });
+  const el = (tag: string, attributes: Record<string, string>, text: string): string => fenceUntrusted(tag, attributes, text, TEST_FENCE);
 
   it('stays one text message when there is no image', () => {
     const [message] = summaryRequestOf(compactRequest([{ type: 'message', role: 'user', content: 'hi' }]), 200, EVERY_REASONING_IS_OWN).input;
@@ -229,9 +232,9 @@ describe('compaction transcript with images', () => {
       200, EVERY_REASONING_IS_OWN).input;
     const content = (message as { content: ContentPart[] }).content;
     expect(content.map((part) => part.type)).toEqual(['input_text', 'input_image', 'input_text', 'input_image', 'input_text']);
-    expect((content[0] as { text: string }).text).toBe('<transcript>\n<item role="user">look');
-    expect((content[2] as { text: string }).text).toContain('after</item>\n<tool_call id="c1" name="shot">{}</tool_call>\n<tool_result id="c1">');
-    expect((content[4] as { text: string }).text.startsWith('</tool_result>\n</transcript>\n')).toBe(true);
+    expect((content[0] as { text: string }).text).toBe(`<transcript>\n${el('item', { role: 'user' }, 'look')}`);
+    expect((content[2] as { text: string }).text).toBe(`${el('item', { role: 'user' }, 'after')}\n${el('tool_call', { id: 'c1', name: 'shot' }, '{}')}\n`);
+    expect((content[4] as { text: string }).text.startsWith('\n</transcript>\n')).toBe(true);
   });
 });
 

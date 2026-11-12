@@ -22,6 +22,7 @@ describe('health', () => {
       role: 'serving',
       steps: 0,
       jobs: 0,
+      interrupts: [],
       sandbox: 'seatbelt',
     });
   });

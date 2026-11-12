@@ -35,7 +35,7 @@ export const NO_PROBE_START = async (): Promise<Probing> => {
   throw new Error('this test keeps a probe record and expects no automatic probe');
 };
 
-export const probingAnswer = (): Probing => ({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
+export const probingAnswer = (): Probing => ({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } });
 
 export const IDLE_AUTO_PROBE: StartProbe = async () => probingAnswer();
 

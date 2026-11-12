@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Runs, Jobs, Clients, Sessions, Lifeline, MaxV, MaxGen, MaxSteps, MaxStarts, MaxExecFails, MaxModals, MaxCrash, MaxOut, MaxCalls, Extended, Gateway, Upkeep, Variant
 
-ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath", "scanAlloc", "noJoin", "releaseEarly", "failSetsNone", "publishNoCheck", "staleStarter", "claimUnchecked", "killWithoutRequest", "readOwnGenOnly", "reconcileLive", "jobRetiring", "sweepRetiring", "pruneAll", "gwAcceptsWhileRetiring", "gwExitEarly", "gwExitWithStep", "gwGraceAbort", "gwSilentRefuse", "killDropped", "gwRefuseNoYield", "userStopNeverEnds", "noReconcile", "noTakeover"}
+ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath", "scanAlloc", "noJoin", "releaseEarly", "failSetsNone", "publishNoCheck", "staleStarter", "claimUnchecked", "killWithoutRequest", "readOwnGenOnly", "reconcileLive", "jobRetiring", "sweepRetiring", "pruneAll", "gwAcceptsWhileRetiring", "gwExitEarly", "gwExitWithStep", "gwGraceAbort", "gwSilentRefuse", "killDropped", "gwRefuseNoYield", "userStopNeverEnds", "noReconcile", "noTakeover", "successorRepeat", "reapUnserved", "restartRetired", "refuseDuringRestart"}
 ASSUME MaxV \in Nat \ {0, 1}
 ASSUME MaxGen \in Nat \ {0}
 ASSUME MaxSteps \in Nat \ {0}
@@ -25,13 +25,13 @@ Gens == 1..MaxGen
 G0 == 0..MaxGen
 Vers == 0..MaxV
 GenStates == {"none", "serving", "retiring", "draining", "gone"}
-RunStates == {"none", "queued", "stepping", "done", "failed"}
+RunStates == {"none", "queued", "stepping", "done", "failed", "refused"}
 JobStates == {"none", "live", "ended", "killed"}
 ClientStates == {"none", "starting", "waiting", "connected", "handing", "refused", "left"}
 RequestStates == {"none", "open", "done", "cut"}
 Messages == {"none", "pending", "connected", "reopen", "stillRunning", "reconnecting", "moving", "handoverFailed", "startFailed", "pathTooLong"}
 
-VARIABLES iv, nextGen, stopped, crashes, faulted, dir, ver, sup, stl, prom, dr, claimed, know, cur, curv, run, stepsLeft, at, job, jat, cs, cv, conn, msg, pend, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin, kreq, out, gw, gwOpen, gwProbe, gwUnanswered, swept, pb
+VARIABLES iv, nextGen, stopped, crashes, faulted, dir, ver, sup, stl, prom, dr, claimed, know, cur, curv, run, stepsLeft, at, job, jat, cs, cv, conn, msg, pend, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin, kreq, out, gw, gwOpen, gwProbe, gwUnanswered, swept, pb, tried, gwr, refusedPromised
 
 gvars == <<dir, ver, sup, stl, prom, dr, claimed, know>>
 cvars == <<cur, curv>>
@@ -40,7 +40,7 @@ tvars == <<iv, nextGen, stopped, crashes, faulted>>
 kvars == <<cs, cv, conn, msg, pend, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 jvars == <<kreq, out>>
 gwv == <<gw, gwOpen, gwProbe, gwUnanswered>>
-xvars == <<swept, pb>>
+xvars == <<swept, pb, tried, gwr, refusedPromised>>
 vars == <<tvars, gvars, cvars, rvars, kvars, jvars, gwv, xvars>>
 
 Live == {g \in Gens : sup[g]}
@@ -61,7 +61,11 @@ ReqHolds(g) == Variant = "noReqWait" \/ ~(\E c \in Clients : rq[c] = "open" /\ r
 
 StopWanted(g) == (prom[g] /\ cur # g) \/ dr[g] \/ (~prom[g] /\ cur > g)
 
-Target(c) == IF Variant = "pinPath" /\ pin[c] # 0 THEN pin[c] ELSE cur
+SameVersionLive(c) == {g \in Gens : sup[g] /\ ver[g] = cv[c]}
+
+PinTarget(c) == IF curv = cv[c] THEN cur ELSE IF SameVersionLive(c) # {} THEN CHOOSE g \in SameVersionLive(c) : \A h \in SameVersionLive(c) : h <= g ELSE 0
+
+Target(c) == IF Variant = "pinPath" THEN (IF pin[c] # 0 THEN pin[c] ELSE cur) ELSE PinTarget(c)
 
 Claimers ==
     IF Variant = "claimRetiring"
@@ -125,6 +129,9 @@ TypeOK ==
     /\ gwUnanswered \in 0..(MaxCalls * MaxGen)
     /\ swept \in {"none", "serving", "retiring"}
     /\ pb \in 0..(MaxV + 1)
+    /\ tried \in [G0 -> 0..MaxV]
+    /\ gwr \in [G0 -> {"up", "restarting", "givenUp"}]
+    /\ refusedPromised \in BOOLEAN
 
 Init ==
     /\ iv = 1
@@ -170,6 +177,9 @@ Init ==
     /\ gwUnanswered = 0
     /\ swept = "none"
     /\ pb = 0
+    /\ tried = [g \in G0 |-> 0]
+    /\ gwr = [g \in G0 |-> "up"]
+    /\ refusedPromised = FALSE
 
 Install(c) ==
     /\ cs[c] = "none"
@@ -375,7 +385,8 @@ SupClaim(g) ==
     /\ (IF Variant = "claimUnchecked" THEN g < nextGen ELSE (dir[g] /\ ver[g] = iv))
     /\ sup' = [sup EXCEPT ![g] = TRUE]
     /\ claimed' = [claimed EXCEPT ![g] = TRUE]
-    /\ UNCHANGED <<jvars, gwv, xvars, tvars, dir, ver, stl, prom, dr, know, cvars, rvars, kvars>>
+    /\ stl' = [stl EXCEPT ![g] = IF stl[g] \in Gens THEN 0 ELSE stl[g]]
+    /\ UNCHANGED <<jvars, gwv, xvars, tvars, dir, ver, prom, dr, know, cvars, rvars, kvars>>
 
 Promote(g) ==
     /\ g \in Gens
@@ -417,6 +428,7 @@ Reap(g) ==
     /\ dir[g]
     /\ ~sup[g]
     /\ ~Holder(g)
+    /\ (Srv \/ Variant = "reapUnserved")
     /\ dir' = [dir EXCEPT ![g] = FALSE]
     /\ ver' = [ver EXCEPT ![g] = 0]
     /\ prom' = [prom EXCEPT ![g] = FALSE]
@@ -478,12 +490,21 @@ ChildMismatch(g) ==
     /\ Srv
     /\ iv > curv
     /\ ~(\E h \in Starting : ver[h] >= iv)
+    /\ (tried[g] < iv \/ Variant = "successorRepeat")
     /\ AllocNo <= MaxGen
     /\ nextGen' = nextGen + 1
     /\ dir' = [dir EXCEPT ![AllocNo] = TRUE]
     /\ ver' = [ver EXCEPT ![AllocNo] = iv]
     /\ stl' = [stl EXCEPT ![AllocNo] = g]
-    /\ UNCHANGED <<jvars, gwv, xvars, iv, stopped, crashes, faulted, sup, prom, dr, claimed, know, cvars, rvars, kvars>>
+    /\ tried' = [tried EXCEPT ![g] = iv]
+    /\ UNCHANGED <<jvars, gwv, swept, pb, gwr, refusedPromised, iv, stopped, crashes, faulted, sup, prom, dr, claimed, know, cvars, rvars, kvars>>
+
+RestartRetired(g) ==
+    /\ Variant = "restartRetired"
+    /\ g \in Gens
+    /\ ~sup[g] /\ claimed[g] /\ prom[g] /\ dir[g] /\ cur # g
+    /\ sup' = [sup EXCEPT ![g] = TRUE]
+    /\ UNCHANGED <<jvars, gwv, xvars, tvars, dir, ver, stl, prom, dr, claimed, know, cvars, rvars, kvars>>
 
 UserStop ==
     /\ ~stopped
@@ -543,6 +564,7 @@ SendRead(c) ==
     /\ rq[c] \in {"none", "done"}
     /\ cs[c] \in {"connected", "starting"}
     /\ Srv
+    /\ Target(c) # 0
     /\ rq' = [rq EXCEPT ![c] = IF Target(c) \in Live THEN "open" ELSE "cut"]
     /\ rqg' = [rqg EXCEPT ![c] = IF Target(c) \in Live THEN Target(c) ELSE 0]
     /\ pin' = [pin EXCEPT ![c] = IF Variant = "pinPath" THEN IF pin[c] = 0 THEN cur ELSE pin[c] ELSE 0]
@@ -638,6 +660,7 @@ GwStart(g) ==
 GwCallStart(g) ==
     /\ g \in Gens /\ sup[g] /\ StepsAt(g) # {}
     /\ (gw[g] = "serving" \/ (Variant = "gwAcceptsWhileRetiring" /\ gw[g] = "retiring"))
+    /\ gwr[g] = "up"
     /\ gwOpen[g] < MaxCalls
     /\ gwOpen' = [gwOpen EXCEPT ![g] = @ + 1]
     /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gw, gwProbe, gwUnanswered, xvars>>
@@ -648,7 +671,7 @@ GwCallEnd(g) ==
     /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gw, gwProbe, gwUnanswered, xvars>>
 
 GwFlightStart(g) ==
-    /\ g \in Gens /\ gw[g] = "serving" /\ ~dr[g] /\ gwProbe[g] = 0
+    /\ g \in Gens /\ gw[g] = "serving" /\ ~dr[g] /\ gwProbe[g] = 0 /\ gwr[g] = "up"
     /\ gwProbe' = [gwProbe EXCEPT ![g] = 1]
     /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gw, gwOpen, gwUnanswered, xvars>>
 
@@ -687,6 +710,41 @@ GwRefuse(r) ==
     /\ gwUnanswered' = IF Variant = "gwSilentRefuse" THEN gwUnanswered + 1 ELSE gwUnanswered
     /\ UNCHANGED <<tvars, gvars, cvars, stepsLeft, job, jat, kvars, jvars, gw, gwOpen, gwProbe, xvars>>
 
+GwDown(g) ==
+    /\ crashes < MaxCrash
+    /\ g \in Gens /\ sup[g] /\ gw[g] = "serving" /\ gwr[g] = "up"
+    /\ gwOpen[g] = 0 /\ gwProbe[g] = 0
+    /\ crashes' = crashes + 1
+    /\ gwr' = [gwr EXCEPT ![g] = "restarting"]
+    /\ UNCHANGED <<iv, nextGen, stopped, faulted, gvars, cvars, rvars, kvars, jvars, gwv, swept, pb, tried, refusedPromised>>
+
+GwBack(g) ==
+    /\ g \in Gens /\ gwr[g] = "restarting"
+    /\ gwr' = [gwr EXCEPT ![g] = "up"]
+    /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gwv, swept, pb, tried, refusedPromised>>
+
+GwGiveUp(g) ==
+    /\ g \in Gens /\ gwr[g] = "restarting"
+    /\ gwr' = [gwr EXCEPT ![g] = "givenUp"]
+    /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gwv, swept, pb, tried, refusedPromised>>
+
+RefuseRun(r) ==
+    /\ run[r] = "none"
+    /\ \E c \in Clients : cs[c] = "connected"
+    /\ Srv
+    /\ (gwr[cur] = "givenUp" \/ (Variant = "refuseDuringRestart" /\ gwr[cur] = "restarting"))
+    /\ run' = [run EXCEPT ![r] = "refused"]
+    /\ refusedPromised' = (refusedPromised \/ gwr[cur] = "restarting")
+    /\ UNCHANGED <<tvars, gvars, cvars, stepsLeft, at, job, jat, kvars, jvars, gwv, swept, pb, tried, gwr>>
+
+FailRequest(r) ==
+    /\ run[r] = "stepping"
+    /\ (gwr[at[r]] = "givenUp" \/ (Variant = "refuseDuringRestart" /\ gwr[at[r]] = "restarting"))
+    /\ run' = [run EXCEPT ![r] = "refused"]
+    /\ at' = [at EXCEPT ![r] = 0]
+    /\ refusedPromised' = (refusedPromised \/ gwr[at[r]] = "restarting")
+    /\ UNCHANGED <<tvars, gvars, cvars, stepsLeft, job, jat, kvars, jvars, gwv, swept, pb, tried, gwr>>
+
 OutWrite(j) ==
     /\ job[j] = "live" /\ sup[jat[j]] /\ out[j] < MaxOut
     /\ out' = [out EXCEPT ![j] = @ + 1]
@@ -724,14 +782,14 @@ Sweep(g) ==
     /\ g \in Gens /\ sup[g]
     /\ (ServingRole(g) \/ (Variant = "sweepRetiring" /\ RetiringRole(g)))
     /\ swept' = IF ServingRole(g) THEN "serving" ELSE "retiring"
-    /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gwv, pb>>
+    /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gwv, pb, tried, gwr, refusedPromised>>
 
 MinLiveVer == CHOOSE v \in Vers : (\E g \in Gens : sup[g] /\ ver[g] = v) /\ (\A h \in Gens : sup[h] => ver[h] >= v)
 
 Prune(g) ==
     /\ ServingRole(g)
     /\ pb' = IF Variant = "pruneAll" THEN curv + 1 ELSE MinLiveVer
-    /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gwv, swept>>
+    /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gwv, swept, tried, gwr, refusedPromised>>
 
 Next ==
     \/ \E c \in Clients :
@@ -740,7 +798,7 @@ Next ==
         \/ GiveUp(c) \/ StarterCrash(c) \/ OpenModal(c) \/ CloseModal(c) \/ Exec(c) \/ ExecFail(c) \/ Finish(c)
         \/ Type(c) \/ Send(c) \/ SendRead(c) \/ AnswerRead(c) \/ Notified(c)
     \/ \E c \in Clients, v \in 1..MaxV : StartClient(c, v)
-    \/ \E g \in Gens : SupCrash(g) \/ SupClaim(g) \/ Promote(g) \/ Notify(g) \/ Exit(g) \/ Reap(g) \/ GiveUpPromotion(g) \/ PromotedCrash(g) \/ ChildMismatch(g)
+    \/ \E g \in Gens : SupCrash(g) \/ SupClaim(g) \/ Promote(g) \/ Notify(g) \/ Exit(g) \/ Reap(g) \/ GiveUpPromotion(g) \/ PromotedCrash(g) \/ ChildMismatch(g) \/ RestartRetired(g)
     \/ UserStop
     \/ \E r \in Runs : Submit(r) \/ StepEnd(r) \/ Takeover(r) \/ \E g \in Gens : Claim(r, g)
     \/ \E j \in Jobs, r \in Runs : JobStart(j, r)
@@ -749,7 +807,8 @@ Next ==
     \/ Gateway /\ (\E g \in Gens : GwStart(g) \/ GwCallStart(g) \/ GwCallEnd(g) \/ GwFlightStart(g) \/ GwFlightEnd(g)
                        \/ GwRetire(g) \/ GwExit(g) \/ GwClose(g))
     \/ Upkeep /\ (\E g \in Gens : Sweep(g) \/ Prune(g))
-    \/ Gateway /\ (\E r \in Runs : GwRefuse(r))
+    \/ Gateway /\ (\E r \in Runs : GwRefuse(r) \/ RefuseRun(r) \/ FailRequest(r))
+    \/ Gateway /\ (\E g \in Gens : GwDown(g) \/ GwBack(g) \/ GwGiveUp(g))
     \/ Extended /\ (\E j \in Jobs : OwnerStop(j) \/ Reconcile(j) \/ OutWrite(j))
     \/ Extended /\ (\E j \in Jobs, g \in Gens : KillReq(j, g) \/ OutputRead(j, g))
 
@@ -758,7 +817,7 @@ Fairness ==
     /\ (Variant # "killDropped" => \A j \in Jobs : WF_vars(OwnerStop(j)))
     /\ \A c \in Clients : WF_vars(ConnectNow(c)) /\ WF_vars(MoveNow(c)) /\ WF_vars(RefuseOlder(c)) /\ WF_vars(FloorNow(c)) /\ WF_vars(JoinNow(c)) /\ WF_vars(AllocNow(c))
     /\ \A c \in Clients : WF_vars(Retry(c)) /\ WF_vars(GiveUp(c)) /\ WF_vars(ConnectStarter(c)) /\ WF_vars(Exec(c)) /\ WF_vars(Notified(c)) /\ WF_vars(CloseModal(c)) /\ WF_vars(AnswerRead(c))
-    /\ \A g \in Gens : WF_vars(SupClaim(g)) /\ WF_vars(Promote(g)) /\ WF_vars(Notify(g)) /\ WF_vars(Exit(g)) /\ WF_vars(Reap(g))
+    /\ \A g \in Gens : WF_vars(SupClaim(g)) /\ WF_vars(Promote(g)) /\ WF_vars(Notify(g)) /\ SF_vars(Exit(g)) /\ WF_vars(Reap(g))
     /\ \A r \in Runs : WF_vars(StepEnd(r)) /\ \A g \in Gens : WF_vars(Claim(r, g))
     /\ (Variant # "killDropped" => \A j \in Jobs : WF_vars(JobEnd(j)))
     /\ \A j \in Jobs : WF_vars(Reconcile(j))
@@ -848,6 +907,16 @@ DraftKept == [][\A c \in Clients : (cs[c] = "handing" /\ cs'[c] = "starting") =>
 HandoverKeepsWork == [][(\E c \in Clients : cs[c] = "handing" /\ cs'[c] # "handing") => (run' = run /\ job' = job /\ at' = at)]_vars
 
 RetiringEnds == \A g \in Gens : Retiring(g) ~> ~sup[g]
+
+SuccessorOncePerVersion == [][\A g \in Gens : (\E h \in Gens : ~dir[h] /\ dir'[h] /\ stl'[h] = g) => tried[g] < tried'[g]]_vars
+
+ReapUnderServing == [][\A g \in Gens : (dir[g] /\ ~dir'[g]) => Srv]_vars
+
+RetiredNeverRestarted == [][\A g \in Gens : (~sup[g] /\ sup'[g]) => ~claimed[g]]_vars
+
+RunAcceptedWhileRestarting == ~refusedPromised
+
+RequestWaitsForRestart == [][\A r \in Runs : (run[r] = "stepping" /\ run'[r] = "refused") => gwr[at[r]] = "givenUp"]_vars
 
 SessionMoves ==
     \A c \in Sessions :

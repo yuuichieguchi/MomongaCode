@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, textReply } from './support/upstream.ts';
 import { E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -14,13 +14,13 @@ describe('b3: kill the gateway during the model call', () => {
     const home = await createE2eHome();
     const stack = await startStack({
       home,
-      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      deps: { restart: E2E_RESTART_POLICY },
       script: [textReply(REPLY_AFTER_RESTART)],
     });
     const runtime = createRuntimeClient(home);
     const hold = stack.fake.hold();
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Say hello');
       await hold.waitForRequest();
       const disconnectsBefore = stack.fake.disconnects();

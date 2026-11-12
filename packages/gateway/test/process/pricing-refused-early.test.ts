@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startFakeOpenResponses, withTempDir, testLocks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, registerOwned, startFakeOpenResponses, withTempDir, testLocks } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, writeSettings, modelsOf, prepareHome } from '../gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -19,7 +19,7 @@ describe('a pricing list the settings refuse stops the gateway before any part i
       pricing: [PRICE, { ...PRICE, inputPerMTok: 9 }],
     });
     await expect(
-      startGatewayProcess({
+      registerOwned(context, () => startGatewayProcess({
         locks: testLocks(),
         generation: FIRST_GENERATION,
         home,
@@ -27,7 +27,7 @@ describe('a pricing list the settings refuse stops the gateway before any part i
         version: PROCESS_VERSION,
         logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: () => true }, level: 'debug' }),
         stdout: { write: () => true },
-      }),
+      })),
     ).rejects.toThrow(/\/pricing\/1/);
     expect(upstream.requests).toHaveLength(0);
   });

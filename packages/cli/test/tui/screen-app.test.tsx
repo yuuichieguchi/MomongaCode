@@ -8,7 +8,7 @@ import { SWITCH_CHUNK_ROWS } from '../../src/tui/screen/constants.ts';
 import { createScreenInput } from '../../src/tui/screen/input.ts';
 import { JUMP_TO_BOTTOM } from '../../src/tui/screen/transcript-view.tsx';
 import type { KeyName, TerminalEvent } from '../../src/tui/terminal/events.ts';
-import { KEYS, untilFrame } from '../ink-helpers.ts';
+import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { runView } from '../fake-backend.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
@@ -162,6 +162,22 @@ describe('the viewport on the screen', () => {
     app.unmount();
   });
 
+  it('follows the end again after /clear, with no jump marker, when the view was scrolled', async () => {
+    const { app, terminal, backend } = await startWith({ columns: 60, rows: 12 }, numbered(40));
+    terminal.emit(named('pageup'));
+    await untilFrame(app, JUMP_TO_BOTTOM);
+    app.stdin.write('/clear');
+    await untilFrame(app, '> /clear');
+    app.stdin.write(KEYS.enter);
+    await backend.called('openSession');
+    await untilFrame(app, (shown) => !shown.includes('line 28'));
+    await runStarted(backend, app, 'again');
+    backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm2', text: numbered(30, 'fresh') }));
+    await untilFrame(app, 'fresh 29');
+    expect(app.lastFrame()).not.toContain(JUMP_TO_BOTTOM);
+    app.unmount();
+  });
+
   it('stays where it was scrolled to while the transcript grows, and follows the end again after the jump marker is clicked', async () => {
     const { app, terminal, backend } = await startWith({ columns: 60, rows: 12 }, numbered(40));
     terminal.emit(named('pageup'));
@@ -299,20 +315,20 @@ describe('the two screen modes', () => {
 
   it('writes the whole conversation to the terminal in chunks of at most 200 rows when it switches to scrollback, and comes back', async () => {
     const { app, terminal } = await startWith({ columns: 60, rows: 12 }, numbered(450, 'row'));
-    const before = app.frames.length;
     app.stdin.write('/tui scrollback');
     await untilFrame(app, '> /tui scrollback');
+    const switched = app.frames.length;
     app.stdin.write(KEYS.enter);
-    await untilFrame(app, (shown) => shown.includes('row 449') && shown.includes('row 0\n') && shown.includes('screen: scrollback'));
+    await untilOutput(app, (shown) => shown.includes('row 449\n') && shown.includes('screen: scrollback'));
     expect(terminal.screens).toEqual(['scrollback']);
-    const written = app.frames.slice(before).map((shown) => countOf(shown, 'row '));
-    const steps = written.map((count, index) => count - (written[index - 1] ?? 0)).filter((step) => step > 0);
+    const handed = app.frames.slice(switched);
+    const steps = handed.map((shown) => countOf(shown, 'row ')).filter((step) => step > 0);
     expect(Math.max(...steps)).toBeLessThanOrEqual(SWITCH_CHUNK_ROWS);
     expect(steps.length).toBeGreaterThanOrEqual(Math.ceil(450 / SWITCH_CHUNK_ROWS));
-    const last = app.lastFrame() ?? '';
-    expect(countOf(last, 'row ')).toBe(450);
-    expect(last.indexOf('row 10\n')).toBeLessThan(last.indexOf('row 400\n'));
-    expect(linesOf(last).at(-1)).toContain('mode: manual');
+    expect(steps.reduce((sum, step) => sum + step, 0)).toBe(450);
+    const written = handed.join('');
+    expect(written.indexOf('row 10\n')).toBeLessThan(written.indexOf('row 400\n'));
+    expect(linesOf(app.lastFrame() ?? '').at(-1)).toContain('mode: manual');
     app.stdin.write('/tui fullscreen');
     await untilFrame(app, '> /tui fullscreen');
     app.stdin.write(KEYS.enter);

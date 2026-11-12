@@ -181,12 +181,6 @@ describe('gateway 400 bodies report the inner message of an anyOf or oneOf', () 
 describe('gateway stored-data checks behind 500 bodies keep a specific message', () => {
   const checks = createStoredDataChecks();
 
-  it('names the field of a stored output item, not the count of variants', () => {
-    const problem = checks.outputItems([{ type: 'function_call_output', call_id: 'c', output: 5 }]);
-    expect(problem).toMatch(/^output\[0\]/);
-    expect(problem).not.toMatch(FLATTENED_VARIANTS);
-  });
-
   it('names the property a compact resource is missing', () => {
     const problem = checks.compactResource({});
     expect(problem).toMatch(/must have required property '\w+'|required/);

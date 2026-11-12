@@ -36,18 +36,18 @@ export const resolveToolChoice = (request: AdapterRequest, declared: readonly Al
   const choice = request.tool_choice;
   if (choice === 'required') {
     if ((request.tools ?? []).length > 0 && !wire.expressesRequired) {
-      throw refusal(target, 'the wire of this target cannot express tool_choice required', 'required');
+      throw refusal(target, 'the API of this model cannot express tool_choice required', 'required');
     }
     return request;
   }
   if (typeof choice === 'object' && choice !== null && choice.type === 'function') {
     const tools = request.tools ?? [];
     if (tools.length > 0 && tools.every((tool) => tool.name === choice.name)) {
-      if (!wire.expressesRequired) throw refusal(target, `the wire of this target cannot require a call of the function "${choice.name}"`, 'naming a function');
+      if (!wire.expressesRequired) throw refusal(target, `the API of this model cannot require a call of the function "${choice.name}"`, 'naming a function');
       return request;
     }
     if (tools.length > 0 && !wire.forms.some((form) => form === 'native' || form === 'envelope' || form === 'single_tool')) {
-      throw refusal(target, `the wire of this target cannot pin tool_choice to the function "${choice.name}" among ${tools.length} tools`, 'naming a function');
+      throw refusal(target, `the API of this model cannot pin tool_choice to the function "${choice.name}" among ${tools.length} tools`, 'naming a function');
     }
     return request;
   }
@@ -58,12 +58,12 @@ export const resolveToolChoice = (request: AdapterRequest, declared: readonly Al
   const tools = request.tools ?? [];
   if (tools.length > 0 && tools.every((tool) => names.includes(tool.name))) {
     if (mode === 'required' && !wire.expressesRequired) {
-      throw refusal(target, 'the wire of this target cannot express mode required');
+      throw refusal(target, 'the API of this model cannot express mode required');
     }
     return rewritten(request, mode);
   }
   if (declared === undefined || declared.length === 0) {
-    throw refusal(target, 'the target declares no capabilities.allowedTools form, so it has no way to restrict the tool choice to a set');
+    throw refusal(target, 'the model declares no capabilities.allowedTools form, so it has no way to restrict the tool choice to a set');
   }
   const usable = FORM_PREFERENCE.filter((form) => declared.includes(form) && wire.forms.includes(form));
   for (const form of usable) {

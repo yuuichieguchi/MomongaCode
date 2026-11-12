@@ -105,7 +105,7 @@ export const diskSkillsPort = (home: string, trusted: () => boolean = () => true
 
 export const diskAgentCatalog = (home: string, trusted: () => boolean = () => true): AgentCatalogPort => {
   const loader = createAgentLoader({ home, fileSystem: createNodeSkillFileSystem() });
-  return { load: async (session) => loader.load({ projectRoot: session.cwd, trusted: trusted() }) };
+  return { load: async (session) => loader.load({ projectRoot: session.cwd, trusted: trusted(), approvedProjectAgents: { has: () => true } }) };
 };
 
 export type FakeInstructions = InstructionReader & { files: Map<string, string>; reads: string[] };
@@ -378,6 +378,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       governance: inertGovernancePort,
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
       ruleVerifier,
+      mandateVerification: async () => ({ verdict: 'not-needed', solver: 'test-solver', refuted: [], unknown: [], notProved: [] }),
       tracers: fixedTracers(tracer),
       clock,
       workerId,

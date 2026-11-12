@@ -46,6 +46,7 @@ const switchableTimers = (fake: FakeTimers): SwitchableTimers => {
       else fake.clearTimeout(handle);
     },
     now: () => fake.now(),
+    monotonicMs: () => fake.monotonicMs(),
     useFake: () => {
       virtual = true;
     },

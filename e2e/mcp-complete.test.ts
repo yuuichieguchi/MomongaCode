@@ -6,7 +6,7 @@ import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_CANCEL_SWEEP_BOUND_MS, E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -27,7 +27,7 @@ const startRemote = async (fixture: McpHttpFixture, script: ReturnType<typeof te
   const home = await createE2eHome();
   const stack = await startStack({
     home,
-    deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+    deps: { restart: E2E_RESTART_POLICY },
     settings: { mcpServers: { remote: { type: 'http', url: fixture.url } } },
     script,
   });
@@ -69,7 +69,7 @@ describe('mcp: client gaps', () => {
     ]);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const first = await runtime.createRun(session.id, 'Use the remote tool');
       const stream = runtime.events(first.run.id);
       const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
@@ -120,7 +120,7 @@ describe('mcp: client gaps', () => {
     const { home, stack } = await startRemote(fixture, [toolCallReply('mcp__remote__mrtr_elicit', {}, 'call_1'), textReply('done')]);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Ask me who I am');
       const stream = runtime.events(run.id);
       const elicitation = await elicitationOf(runtime, run.id);
@@ -156,7 +156,7 @@ describe('mcp: client gaps', () => {
     const { home, stack } = await startRemote(fixture, [toolCallReply('mcp__remote__ask_task', {}, 'call_1'), textReply('done')]);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Run the task that asks me');
       const stream = runtime.events(run.id);
       const elicitation = await elicitationOf(runtime, run.id);
@@ -181,7 +181,7 @@ describe('mcp: client gaps', () => {
     const { home, stack } = await startRemote(fixture, [toolCallReply('mcp__remote__ask_task', {}, 'call_1'), textReply('done')]);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Run the task that asks me');
       await elicitationOf(runtime, run.id);
       expect(fixture.rpcRecords('tasks/cancel')).toHaveLength(0);
@@ -209,7 +209,7 @@ describe('mcp: client gaps', () => {
     const { home, stack } = await startRemote(fixture, [toolCallReply('mcp__remote__ask_task', {}, 'call_1'), textReply('done')]);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Run the task that asks me');
       await elicitationOf(runtime, run.id);
 
@@ -241,7 +241,7 @@ describe('mcp: client gaps', () => {
     const { home, stack } = await startRemote(fixture, [toolCallReply('mcp__remote__long_task', {}, 'call_1'), textReply('done')]);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Start the long task');
       const taskId = await until(() => fixture.taskIds()[0], { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the server to create a task' });
       await until(

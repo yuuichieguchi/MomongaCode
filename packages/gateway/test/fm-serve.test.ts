@@ -126,6 +126,7 @@ const createManualTimers = () => {
       pending.delete(handle as number);
     },
     now: () => clock,
+    monotonicMs: () => clock,
   };
   return {
     timers,

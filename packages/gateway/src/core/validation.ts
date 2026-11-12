@@ -166,8 +166,6 @@ const itemIssue = (kit: SpecKit, item: unknown, index: number): Issue | undefine
 };
 
 export type StoredDataChecks = {
-  inputItems(value: unknown): string | undefined;
-  outputItems(value: unknown): string | undefined;
   streamEvents(value: unknown): string | undefined;
   compactResource(value: unknown): string | undefined;
 };
@@ -176,29 +174,8 @@ const describeIssue = (issue: Issue): string => `${joinParam(issue.segments) ?? 
 
 export const createStoredDataChecks = (): StoredDataChecks => {
   const kit = specKit();
-  const itemField = kit.compile('ItemField');
   const compactResource = kit.compile('CompactResource');
-  const outputIssue = (item: unknown, index: number): Issue | undefined => {
-    const verdict = itemField(item);
-    return verdict.valid ? undefined : issueOf(verdict.errors, ['output', String(index)]);
-  };
   return {
-    inputItems: (value) => {
-      if (!Array.isArray(value)) return 'is not an array';
-      for (const [index, item] of value.entries()) {
-        const asParam = itemIssue(kit, item, index);
-        if (asParam !== undefined && outputIssue(item, index) !== undefined) return describeIssue(asParam);
-      }
-      return undefined;
-    },
-    outputItems: (value) => {
-      if (!Array.isArray(value)) return 'is not an array';
-      for (const [index, item] of value.entries()) {
-        const issue = outputIssue(item, index);
-        if (issue !== undefined) return describeIssue(issue);
-      }
-      return undefined;
-    },
     compactResource: (value) => {
       const verdict = compactResource(value);
       return verdict.valid ? undefined : describeIssue(issueOf(verdict.errors, []));
@@ -310,12 +287,18 @@ const requireCostCeiling = (momonga: SchemaObject): void => {
   }
 };
 
+const requireFence = (momonga: SchemaObject): void => {
+  const fence = momonga['fence'];
+  if (fence !== undefined && (typeof fence !== 'string' || fence === '')) throwIssue({ segments: ['momonga', 'fence'], message: 'must be a non-empty string' });
+};
+
 const validateCompactMomonga = (value: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions', 'exact_model', 'max_cost_nano', 'max_input_tokens'], ['momonga']);
+  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions', 'exact_model', 'max_cost_nano', 'max_input_tokens', 'fence'], ['momonga']);
   requireExactModelFlag(momonga);
   requireCostCeiling(momonga);
+  requireFence(momonga);
   const cap = momonga['max_summary_tokens'];
   if (cap !== undefined && (!Number.isInteger(cap) || (cap as number) < MIN_SUMMARY_TOKENS)) {
     throwIssue({ segments: ['momonga', 'max_summary_tokens'], message: `must be an integer of at least ${MIN_SUMMARY_TOKENS}` });
@@ -363,9 +346,10 @@ const CACHE_MARK_NAMES = ['stable', 'fixed', 'previousHistory', 'history'] as co
 const validateCreateMomonga = (value: unknown, inputLength: number, maxOutputTokens: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['cache', 'exact_model', 'max_cost_nano', 'max_input_tokens'], ['momonga']);
+  requireKnownKeys(momonga, ['cache', 'exact_model', 'max_cost_nano', 'max_input_tokens', 'fence'], ['momonga']);
   requireExactModelFlag(momonga);
   requireCostCeiling(momonga);
+  requireFence(momonga);
   const cache = momonga['cache'];
   if (cache === undefined) return;
   const at = ['momonga', 'cache'];

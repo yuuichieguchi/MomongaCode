@@ -9,7 +9,7 @@ import { baseSettings, writeSettingsFile } from './stack.ts';
 import { E2E_MARGIN_MS, E2E_TEST_TIMEOUT_MS, abortableWait, until } from './wait.ts';
 
 describe('runCli', () => {
-  it('records the daemon the CLI spawned before it returns, and the daemon is stopped when the home is disposed', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it('records the daemon the CLI spawned before it returns, and the daemon is stopped when the home is disposed', { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
     const home = await createE2eHome();
     writeSettingsFile(home, baseSettings(home, 'none'));
 
@@ -18,12 +18,12 @@ describe('runCli', () => {
     expect(result.code).toBe(0);
     const pid = Number(/pid (\d+)/.exec(result.stdout)?.[1]);
     expect(home.ledger.entries().map((entry) => entry.pgid)).toContain(pid);
-    await disposeAll();
+    await disposeAll({ test: context.task.name, failed: false });
     expect(isProcessAlive(pid)).toBe(false);
     expect(fs.existsSync(home.root)).toBe(false);
   });
 
-  it('rejects with both the collection failure and the result of the CLI when the collection fails', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it('rejects with both the collection failure and the result of the CLI when the collection fails', { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
     const home = await createE2eHome();
     writeSettingsFile(home, baseSettings(home, 'none'));
     const collectionFailure = new Error('ledger collection broke');
@@ -40,10 +40,10 @@ describe('runCli', () => {
     const failure = aggregate as AggregateError & { cause: CliResult };
     expect(failure.errors).toContain(collectionFailure);
     expect(failure.cause).toMatchObject({ code: 0, signal: null, stderr: '' });
-    await disposeAll();
+    await disposeAll({ test: context.task.name, failed: false });
   });
 
-  it('bounds a started CLI from when the test waits for its result, not from its start', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it('bounds a started CLI from when the test waits for its result, not from its start', { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
     const home = await createE2eHome();
     const ready = path.join(home.root, 'held.ready');
     const release = path.join(home.root, 'held.release');
@@ -69,6 +69,6 @@ describe('runCli', () => {
     fs.writeFileSync(release, '');
 
     await expect(running.result).resolves.toMatchObject({ code: 0, signal: null });
-    await disposeAll();
+    await disposeAll({ test: context.task.name, failed: false });
   });
 });

@@ -70,7 +70,7 @@ export const buildOllamaChatBody = (
   const dialect = resolveDialect(capabilities.schemaDialect ?? DEFAULT_DIALECT_ID, rendering.userDialects ?? NO_USER_DIALECTS);
   const ledger = rendering.ledger ?? new RenderLedger();
   const system = systemTextOf(request.instructions, request.input);
-  const messages = [...(system.length === 0 ? [] : [{ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) }]), ...ollamaHistoryOf(request.input, origin)];
+  const messages = [...(system.length === 0 ? [] : [{ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) }]), ...ollamaHistoryOf(request.input, origin, request.fence)];
   return {
     model: request.model,
     messages,

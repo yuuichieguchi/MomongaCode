@@ -1,6 +1,6 @@
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
-import { TARGET_NOT_READY, WORDS, agentReadiness, approvalShownLines, attachRunCommand, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
+import { TARGET_NOT_READY, WORDS, agentReadiness, approvalShownLines, measuringLineOf, attachRunCommand, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -631,7 +631,7 @@ type RunStart = { kind: 'started'; id: string } | { kind: 'refused' } | { kind: 
 const startedRun = async (ports: CliPorts, session: CliSession, options: HeadlessOptions): Promise<RunStart> => {
   if (session.created.trustNotice !== undefined) ports.stderr.write(noteText([`momonga: ${session.created.trustNotice}`]));
   const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
-  if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
+  if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${measuringLineOf(readiness.measuring)}`])}\n`);
   if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {
     const message = readinessShownText(readiness, 'shell');
     ports.stderr.write(`${escapedLines(leadWith('momonga: ', message.split('\n')))}\n`);

@@ -14,7 +14,7 @@ import { createE2eHome, disposeAll, e2eTmpRoot, registerE2eCleanup } from './hom
 import type { E2eHome } from './home.ts';
 import { createRuntimeClient } from './runtime-client.ts';
 import type { RunEventStream, RuntimeClient } from './runtime-client.ts';
-import { DEFAULT_E2E_DEPS, spawnSupervisor, startStack } from './stack.ts';
+import { spawnSupervisor, startStack } from './stack.ts';
 import type { E2eStack, StartStackOptions } from './stack.ts';
 import { childOf } from './supervisor-client.ts';
 import { textReply, toolCallReply } from './upstream.ts';
@@ -240,8 +240,8 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
       await (env.stream as RunEventStream).close();
       const stopping = await stack.client.shutdown();
       if (stopping.status !== 202) throw new Error(`scenario ${env.scenario.id}: the first supervisor answered ${stopping.status} to its stop`);
-      const deps = { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY };
-      const second = spawnSupervisor({ home: env.home, stackNumber: 2, deps });
+      const deps = { restart: E2E_RESTART_POLICY };
+      const second = spawnSupervisor({ home: env.home, stackNumber: 2, entry: { kind: 'test', deps } });
       hold.release();
       const bound = E2E_SUPERVISOR_CLOSE_BOUND_MS + E2E_READY_DEADLINE_MS;
       await second.ready(bound);
@@ -251,7 +251,7 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
     extraBoundMs: () => E2E_SUPERVISOR_CLOSE_BOUND_MS + E2E_READY_DEADLINE_MS,
   },
   concurrent_workers: {
-    stackOptions: (env) => ({ deps: { ...DEFAULT_E2E_DEPS, runtime: { ...DEFAULT_E2E_DEPS.runtime, workerCount: env.scenario.params?.workerCount as number } } }),
+    stackOptions: (env) => ({ deps: { runtime: { workerCount: env.scenario.params?.workerCount as number } } }),
   },
   budget: {
     runBody: (env) => ({ limits: { maxTotalTokens: env.scenario.params?.maxTotalTokens } }),
@@ -274,7 +274,7 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
 
 const createRunId = async (env: TrialEnv, fault: Fault): Promise<string> => {
   const runtime = env.runtime as RuntimeClient;
-  const { session } = await runtime.createSession();
+  const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
   const extra = fault.runBody?.(env) ?? {};
   const response = await runtime.json('POST', `/v1/sessions/${session.id}/runs`, { input: env.scenario.task.prompt, ...extra });
   if (response.status !== 202) throw new Error(`scenario ${env.scenario.id}: creating the run answered ${response.status}: ${JSON.stringify(response.body)}`);
@@ -371,14 +371,15 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
     stream: undefined,
     filler: undefined,
   };
+  let completed = false;
   try {
     const stackOptions = fault.stackOptions?.(env) ?? {};
     const script = fault.upstreamScript?.(env, scriptOf(env)) ?? scriptOf(env);
     env.stack = await startStack({
       home,
       needsBash: true,
-      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
-      target: { answers: 'script' },
+      deps: { restart: E2E_RESTART_POLICY },
+      model: { answers: 'script' },
       script,
       ...stackOptions,
       settings: { permissions: { additionalDirectories: [ledgerDirectory] }, ...stackOptions.settings },
@@ -412,6 +413,7 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
     const violations = violationsOf({ ...scenario.expect, ...(point === undefined ? {} : scenario.pointExpect?.[point.type]) }, { frames, facts }, env);
     if (violations.length > 0) throw new Error(`scenario ${resultId} (run ${runId}): ${violations.join('; ')}`);
     const witness = witnessOf(env);
+    completed = true;
     return {
       label: outcomeLabelOf(facts),
       witness,
@@ -422,7 +424,7 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
     fs.writeFileSync(env.hookRelease, '');
     await env.stream?.close();
     await env.runtime?.close();
-    await disposeAll();
+    await disposeAll({ test: resultId, failed: !completed });
   }
 };
 

@@ -56,14 +56,14 @@ describe('the transcript store', () => {
     expect(plainOf(store).entries.map((entry) => entry.kind)).toEqual(['tool', 'plan']);
   });
 
-  it('counts the leading entries that can no longer change, and keeps the banner live while it is the only entry', () => {
+  it('says of each entry whether it can no longer change, and keeps the banner live while it is the last entry', () => {
     const store = createTranscriptStore();
     appendEntry(store, { kind: 'banner', banner: { config: { version: '1', home: '/h' }, model: 'a', cwd: '/h', notices: [] } }, 'banner');
-    expect(store.settledCount()).toBe(0);
+    expect(store.settledAt(0)).toBe(false);
     storeOf([call], store);
-    expect(store.settledCount()).toBe(1);
+    expect([store.settledAt(0), store.settledAt(1)]).toEqual([true, false]);
     storeOf([{ type: 'tool.completed', callId: 'c1', status: 'completed', output: '' }, delta('a', 'x')], store);
-    expect(store.settledCount()).toBe(2);
+    expect([store.settledAt(1), store.settledAt(2)]).toEqual([true, false]);
   });
 
   it('sums the tokens of the session over its runs and adds the live run', () => {

@@ -1,7 +1,7 @@
 import { plainHttpWarningText } from '@momonga/config';
 import { PROVIDER_NAME_PATTERN, SIGN_IN_REQUIRED_CODE, messageOf } from '@momonga/protocol';
 import type { GatewayHealth } from '@momonga/protocol';
-import { SEPARATOR, addressesOf, modelRowOf, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
+import { SEPARATOR, addressesOf, configuredWindowsOf, modelRowOf, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
 import type { ListedModel, ModelsDocument, ModelsEdit } from '../../commands/models.ts';
 import { runAddFlow } from './add.ts';
 import { cancellable, chosenOf, hostOf, openEdit, proposeAndWrite } from './context.ts';
@@ -166,7 +166,7 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
   for (;;) {
     const opened = await openEdit(context);
     const [listing, health] = await Promise.all([context.backend.modelList(), context.backend.health()]);
-    const document = modelsDocumentOf(listing, addressesOf(opened.edit.resolved), notListed);
+    const document = modelsDocumentOf(listing, addressesOf(opened.edit.resolved), notListed, configuredWindowsOf(opened.edit.resolved));
     const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health) });
     const index = await chosenOf(context, {
       title: MODELS_TITLE,

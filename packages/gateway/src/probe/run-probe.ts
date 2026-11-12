@@ -28,7 +28,7 @@ import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
 import { IMAGE_PROMPT, SEARCH_TOLERANCE, TINY_PNG, measureImageTokens } from './image-tokens.ts';
 import type { ImageCostProbe } from './image-tokens.ts';
-import { ProbeTimeoutError, createProbeClient, type HttpResult, type ProbePorts, type ManagedProbeRoutes, type ProbeClient, type ProbeEndpoint } from './client.ts';
+import { ProbeTimeoutError, createProbeClient, speedStepBound, type HttpResult, type MeasurementProgress, type ProbePorts, type ManagedProbeRoutes, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import type { ProbeTool } from './envelope.ts';
 import { NO_USER_DIALECTS, resolveDialect } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
@@ -65,6 +65,7 @@ export interface ProbeOptions {
   signal?: AbortSignal;
   stepTimeoutMs?: number;
   metered?: { measurement: MeteredMeasurement; bound: MeasurementBound };
+  progress?: MeasurementProgress;
 }
 
 export const PROBE_METHOD_VERSION = 4;
@@ -153,11 +154,11 @@ const requestedOutputOf = (body: unknown, contextWindow: number): number => {
   return maxOutputTokensFor(contextWindow);
 };
 
-const meteredProbeClient = (client: ProbeClient, metered: MeteredMeasurement, bound: MeasurementBound): ProbeClient => {
+const meteredCounter = (metered: MeteredMeasurement, bound: MeasurementBound): ((body: unknown) => void) => {
   let requests = 0;
   let inputTokens = 0;
   let outputTokens = 0;
-  const count = (body: unknown): void => {
+  return (body) => {
     const nextRequests = requests + 1;
     const nextInput = inputTokens + tokensForText(JSON.stringify(body));
     const nextOutput = outputTokens + requestedOutputOf(body, metered.declaredContextWindow);
@@ -166,36 +167,26 @@ const meteredProbeClient = (client: ProbeClient, metered: MeteredMeasurement, bo
     inputTokens = nextInput;
     outputTokens = nextOutput;
   };
-  return {
-    hasHealthRoute: client.hasHealthRoute,
-    get: (route) => client.get(route),
-    post: async (route, body) => {
-      count(body);
-      return client.post(route, body);
-    },
-    request: async (method, requestPath, body) => {
-      if (method === 'POST') count(body);
-      return client.request(method, requestPath, body);
-    },
-    stream: async (route, body) => {
-      count(body);
-      return client.stream(route, body);
-    },
-    close: () => client.close(),
-  };
 };
 
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
-  const unmetered = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.ports.timers, options.managed);
-  const client = options.metered === undefined ? unmetered : meteredProbeClient(unmetered, options.metered.measurement, options.metered.bound);
+  const bound = speedStepBound(options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
+  const client = createProbeClient(endpointOf(options), {
+    signal: options.signal,
+    bound,
+    timers: options.ports.timers,
+    gate: options.ports.gate,
+    ...(options.managed === undefined ? {} : { routes: options.managed }),
+    ...(options.metered === undefined ? {} : { onSend: meteredCounter(options.metered.measurement, options.metered.bound) }),
+  });
   try {
-    return await probeWith(client, options);
+    return await probeWith(client, options, (name) => options.progress?.step(name, bound.currentMs(0)));
   } finally {
     await client.close();
   }
 };
 
-const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<ProbeReport> => {
+const probeWith = async (client: ProbeClient, options: ProbeOptions, step: (name: string) => void): Promise<ProbeReport> => {
   const samples = options.samples ?? DEFAULT_SAMPLES;
   const now = (): Date => new Date(options.ports.clock.now());
 
@@ -230,6 +221,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
       return result;
     };
 
+  step('output bound');
   const outputBoundField = await measureOutputBoundField(retryingRateLimits(send));
   const bound = { field: outputBoundField === 'none' ? DEFAULT_OUTPUT_BOUND_FIELD : outputBoundField, tokens: OUTPUT_BOUND_PROBE_TOKENS };
   const post: Chat = (body) => {
@@ -238,22 +230,27 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   };
   const chat = retryingRateLimits(post);
 
+  step('context window');
   const contextWindow: ProbeReport['contextWindow'] =
     options.metered === undefined
       ? (reportedWindowOf(modelsBody, model, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens)))
       : { value: options.metered.measurement.declaredContextWindow, method: 'declared' };
   bound.tokens = maxOutputTokensFor(contextWindow.value);
 
+  step('plain answer');
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
   expectStatus(plain, [200], 'plain completion');
   const usageReported = promptTokensOf(plain.reply.body) !== undefined;
 
+  step('streaming');
   const streaming = await probeStreaming(client, model, outputBoundFor(bound.field, bound.tokens));
 
+  step('stop sequences');
   const stopSequences = isAcceptedOrRejected(
     await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }], stop: ['STOP'] }),
     'stop sequences',
   );
+  step('image input');
   const imageInputAccepted = isAcceptedOrRejected(
     await imagePromptRequest(chat, TINY_PNG),
     'image input',
@@ -271,6 +268,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     }
   }
 
+  step('schema dialect');
   const transport = chatTransport(chat, { responseFormat: true, tools: true });
   const selection = await selectDialect({ transport, samples, userDialects: options.userDialects ?? NO_USER_DIALECTS, declaredDialect: options.declaredDialect });
   const { selected } = selection.dialect;
@@ -278,6 +276,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const keywordSupport = selected !== null && selection.legs.responseFormat ? await probeKeywords(chat, dialect) : undefined;
   const constructSupport = selected === null ? undefined : await probeConstructs(transport, dialect, selection.legs);
 
+  step('tool calls');
   const native = await sampleNative(chat, samples, dialect);
   const { constrained } = selection;
   const roundTripOk = native.firstValidCall === undefined ? false : await roundTrip(chat, native.firstValidCall, dialect);
@@ -286,12 +285,16 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const tokenCalibration =
     usageReported && options.countTokens !== undefined ? await calibrate(chat, options.countTokens) : undefined;
 
+  step('reasoning');
   const reasoning = await measureReasoning(chat, contextWindow.value);
 
+  step('prompt cache');
   const promptCache = await measurePromptCache(chat);
 
+  step('JSON mode');
   const jsonMode = await measureJsonMode(() => askJsonOnly(chat));
 
+  step('concurrency');
   const maxConcurrency = await measureConcurrency(post);
 
   return {
@@ -338,11 +341,15 @@ const outputTokensOf = (result: ChatResult): number => {
   return failProbeStep(result, 'output bound');
 };
 
+const answeredWithOwnError = (result: ChatResult): boolean =>
+  result.reply.kind === 'error' ? result.status < 500 : field(result.reply.body, 'error') !== undefined && field(result.reply.body, 'choices') === undefined;
+
 const honoursOutputBound = async (send: Chat, candidate: OutputBoundField): Promise<boolean> => {
   const result = await send({
     messages: [{ role: 'user', content: LONG_ANSWER_PROMPT }],
     ...outputBoundFor(candidate, OUTPUT_BOUND_PROBE_TOKENS),
   });
+  if (answeredWithOwnError(result)) return false;
   if (!isAcceptedOrRejected(result, `output bound ${candidate}`)) return false;
   return outputTokensOf(result) <= OUTPUT_BOUND_PROBE_TOKENS * OUTPUT_BOUND_HONOURED_FACTOR;
 };
@@ -460,6 +467,7 @@ const roundTrip = async (chat: Chat, call: NativeCall, dialect: ResolvedDialect)
 
 const PARALLEL_TOOL_PROMPT = `Please call ${PROBE_TOOL.name} for Tokyo for 3 days and also for Osaka for 2 days, both at once`;
 const REASONING_BASELINE_SAMPLES = 2;
+const REASONING_THINKING_ALLOWANCE_TOKENS = 2048;
 const REASONING_REDUCTION_FACTOR = 2;
 const PROBED_REASONING_EFFORTS = ['none', 'minimal', 'low'] as const;
 
@@ -505,6 +513,8 @@ const hiddenReasoningOf = (body: unknown): number | undefined => {
 
 const FILLER_SENTENCE = 'The build log lists every file the tool read and every command it ran. ';
 
+const PROBE_TRANSCRIPT_FENCE = '0123456789abcdef0123456789abcdef';
+
 const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
   const maxOutputTokens = maxOutputTokensFor(contextWindow);
   const cap = summaryTokenCapFor({ contextWindow });
@@ -512,7 +522,7 @@ const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
   const transcriptTokens = Math.max(1, Math.floor(limit / (1 + ESTIMATED_ERROR_BOUND_RATIO)) - SUMMARY_PROMPT_TOKENS);
   const transcript = FILLER_SENTENCE.repeat(Math.ceil(transcriptTokens / tokensForText(FILLER_SENTENCE)));
   const summary = summaryRequestOf(
-    { model: '', input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: transcript }] }] },
+    { model: '', input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: transcript }] }], momonga: { fence: PROBE_TRANSCRIPT_FENCE } },
     cap,
     NO_REASONING_IS_OWN,
   );
@@ -522,7 +532,7 @@ const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
       { role: 'system', content: summary.instructions },
       { role: 'user', content },
     ],
-    outputTokens: maxOutputTokens,
+    outputTokens: Math.min(maxOutputTokens, cap + REASONING_THINKING_ALLOWANCE_TOKENS),
   };
 };
 

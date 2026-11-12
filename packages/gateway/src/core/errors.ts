@@ -7,8 +7,9 @@ import {
   SIGN_IN_REQUIRED_CODE,
   TARGET_NOT_READY,
   USAGE_PAUSED_CODE,
+  WORDS,
 } from '@momonga/protocol';
-import type { ErrorBody, ErrorType, PlanAccountRef } from '@momonga/protocol';
+import type { ErrorBody, ErrorType, MeasuringWire, PlanAccountRef } from '@momonga/protocol';
 
 export type GatewayErrorInit = {
   status: number;
@@ -18,6 +19,7 @@ export type GatewayErrorInit = {
   param?: string | null;
   headers?: Record<string, string>;
   plan?: PlanAccountRef;
+  measuring?: MeasuringWire;
 };
 
 export class GatewayError extends Error {
@@ -29,7 +31,7 @@ export class GatewayError extends Error {
     super(init.message);
     this.name = 'GatewayError';
     this.status = init.status;
-    this.body = { message: init.message, type: init.type, param: init.param ?? null, code: init.code, ...(init.plan === undefined ? {} : { plan: init.plan }) };
+    this.body = { message: init.message, type: init.type, param: init.param ?? null, code: init.code, ...(init.plan === undefined ? {} : { plan: init.plan }), ...(init.measuring === undefined ? {} : { measuring: init.measuring }) };
     this.headers = init.headers ?? {};
   }
 }
@@ -97,7 +99,7 @@ export const missingApiKeyError = (apiKeyEnv: string): GatewayError =>
     type: 'invalid_request',
     code: 'missing_api_key',
     param: apiKeyEnv,
-    message: `the environment variable ${apiKeyEnv} is unset or empty in the gateway process`,
+    message: `the environment variable ${apiKeyEnv} is unset or empty in the environment the daemon was started with, and the daemon keeps that environment; set it in your shell and run \`${WORDS.command} daemon stop\`, so that the next ${WORDS.command} command starts the daemon with it`,
   });
 
 export const secretUnavailableError = (secretName: string, cause: Error): GatewayError =>

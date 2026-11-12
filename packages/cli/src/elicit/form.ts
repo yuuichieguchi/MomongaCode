@@ -104,14 +104,16 @@ const checkAgainst = async (origin: ElicitationOrigin, schema: Readonly<Record<s
   }
 };
 
-const optionOf = (field: FormField, token: string): string | undefined => {
+export type FieldEntry = 'typed' | 'listed';
+
+const optionOf = (field: FormField, token: string, entry: FieldEntry): string | undefined => {
   const trimmed = token.trim();
-  const byNumber = /^\d+$/.test(trimmed) ? field.options[Number(trimmed) - 1] : undefined;
-  if (byNumber !== undefined) return byNumber.value;
-  return field.options.find((option) => option.value === trimmed || option.label === trimmed)?.value;
+  const byValue = field.options.find((option) => option.value === trimmed || option.label === trimmed);
+  if (byValue !== undefined || entry === 'typed') return byValue?.value;
+  return /^\d+$/.test(trimmed) ? field.options[Number(trimmed) - 1]?.value : undefined;
 };
 
-const coerce = (field: FormField, text: string): { ok: true; value: unknown } | { ok: false; reason: 'invalid'; error: string } => {
+const coerce = (field: FormField, text: string, entry: FieldEntry): { ok: true; value: unknown } | { ok: false; reason: 'invalid'; error: string } => {
   switch (field.kind) {
     case 'string':
       return { ok: true, value: text };
@@ -128,11 +130,11 @@ const coerce = (field: FormField, text: string): { ok: true; value: unknown } | 
       return { ok: false, reason: 'invalid', error: `${field.name} must be yes or no` };
     }
     case 'choice': {
-      const value = optionOf(field, text);
+      const value = optionOf(field, text, entry);
       return value === undefined ? { ok: false, reason: 'invalid', error: `${field.name} must be one of the listed choices` } : { ok: true, value };
     }
     case 'choices': {
-      const picked = text.split(',').map((token) => optionOf(field, token));
+      const picked = text.split(',').map((token) => optionOf(field, token, entry));
       if (picked.some((value) => value === undefined)) return { ok: false, reason: 'invalid', error: `${field.name} must be a comma separated list of the listed choices` };
       return { ok: true, value: picked };
     }
@@ -145,12 +147,12 @@ const coerce = (field: FormField, text: string): { ok: true; value: unknown } | 
   }
 };
 
-export const parseFieldInput = async (origin: ElicitationOrigin, field: FormField, text: string, signal?: AbortSignal): Promise<ParsedValue> => {
+export const parseFieldInput = async (origin: ElicitationOrigin, field: FormField, text: string, entry: FieldEntry, signal?: AbortSignal): Promise<ParsedValue> => {
   if (text === '' && field.kind !== 'string') {
     return field.required ? { ok: false, reason: 'invalid', error: `${field.name} is required` } : { ok: true, value: undefined };
   }
   if (text === '' && !field.required) return { ok: true, value: undefined };
-  const coerced = coerce(field, text);
+  const coerced = coerce(field, text, entry);
   if (!coerced.ok) return coerced;
   if (!isContentValue(coerced.value)) return { ok: false, reason: 'invalid', error: `${field.name} must be a string, a number, a boolean or a list of strings` };
   const check = await checkAgainst(origin, field.schema, coerced.value, field.name, signal);

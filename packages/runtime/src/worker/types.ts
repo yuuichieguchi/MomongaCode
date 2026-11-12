@@ -3,6 +3,7 @@ import type { ContextOverflowError, InstructionReader } from '@momonga/context';
 import type { RuntimeStore } from '@momonga/store';
 import type { AgentsPort, GatewayPort, GovernancePort, HistoryPort, MemoryPort, RuleVerifierPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerLeases } from '../ports.ts';
 import type { ServiceTimers } from '../service/timers.ts';
+import type { MandateRunVerification } from '../process/folder-verification.ts';
 import type { SystemPromptContext } from '../system-prompt.ts';
 
 export type WorkerDefaults = {
@@ -33,6 +34,7 @@ export type WorkerOptions = {
   agents?: AgentsPort;
   tools: ToolRuntimePort;
   ruleVerifier: RuleVerifierPort;
+  mandateVerification: MandateRunVerification;
   tracers: TracerLeases;
   clock: Clock;
   workerId: string;
@@ -62,5 +64,5 @@ export type Worker = {
   stop(): Promise<void>;
   abort(reason: 'shutdown'): Promise<void>;
   memorySize(): number;
-  claimsInFlight(): number;
+  runsInFlight(): readonly string[];
 };

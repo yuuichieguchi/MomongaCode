@@ -335,9 +335,17 @@ export type ProjectCheckAnswer = { commands: string[] } | { declined: true };
 
 export type ProjectChecksSettings = Record<string, ProjectCheckAnswer>;
 
-export type McpServerApproval = string | { name: string; digest: string };
+export type McpServerApproval = string | { name: string; digest: string; config?: unknown };
 
-export type ProjectApprovalsSettings = Record<string, { hooks?: string[]; mandate?: string }>;
+export type HookApproval = string | { digest: string; event: string; group: unknown };
+
+export type MandateApproval = string | { digest: string; document: unknown };
+
+export type AgentApproval = { name: string; digest: string; text: string };
+
+export type ProjectApprovalsSettings = Record<string, { hooks?: HookApproval[]; mandate?: MandateApproval; agents?: AgentApproval[] }>;
+
+export const approvalDigest = (approval: HookApproval | MandateApproval): string => (typeof approval === 'string' ? approval : approval.digest);
 
 export type ResolvedRetentionSettings = { days: number };
 

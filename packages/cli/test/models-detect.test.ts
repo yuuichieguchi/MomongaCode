@@ -49,7 +49,7 @@ describe('momonga models detect', { timeout: DETECT_TIMEOUT_MS }, () => {
     expect(served.asked.some((url) => url.startsWith(LOCAL_SERVER_CANDIDATES[1] as string))).toBe(true);
   });
 
-  it('prints the servers as JSON, the managed servers found on the host beside the servers that answered', async () => {
+  it('prints the servers that answered as JSON in the settled shape, without the managed servers the text lists', async () => {
     const written: string[] = [];
     const served = answering({ [`${FIRST_CANDIDATE}/v1/models`]: { data: [{ id: 'served' }] } });
 
@@ -57,15 +57,6 @@ describe('momonga models detect', { timeout: DETECT_TIMEOUT_MS }, () => {
 
     expect(JSON.parse(written.join(''))).toEqual({
       servers: [{ kind: 'generic', provider: SERVED_NAME, address: SERVED_AT, models: [{ id: 'served', tools: 'unknown' }] }],
-      managed: [
-        {
-          shape: 'managed',
-          id: 'fm',
-          provider: 'apple',
-          binary: '/usr/bin/fm',
-          refused: { message: 'the Apple Foundation Models licence has not been accepted', remedy: 'sudo fm license' },
-        },
-      ],
     });
   });
 });

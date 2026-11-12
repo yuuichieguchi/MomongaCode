@@ -38,6 +38,7 @@ export type AdapterRequest = {
   text?: TextField;
   promptCacheKey?: string;
   cacheMarks?: PromptCacheCounts;
+  fence?: string;
   unknownFields?: Record<string, unknown>;
 };
 

@@ -18,15 +18,13 @@ import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { E2E_SECRETS_FILE_NAME } from './support/gateway-secrets-main.ts';
-import { REPO_ROOT } from './support/launcher.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RunEventFrame } from './support/runtime-client.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { secretNameOf, storeSecretThroughProduct } from './support/secrets.ts';
+import { startStack } from './support/stack.ts';
 import { E2E_MARGIN_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
-const GATEWAY_SECRETS_MAIN = path.join(REPO_ROOT, 'e2e', 'support', 'gateway-secrets-main.ts');
-const SECRET_NAME = 'provider-main';
+const SECRET_NAME_BASE = 'provider-main';
 const SECRET_VALUE = 'e2e-provider-key-7f3a91c2d4b6';
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 const PLAN_ARGUMENT_FRAGMENTS = ['{"entries": [{"content": "insp', 'ect the code", "status": "in_pro', 'gress", "priority": "high"}]}'];
@@ -44,9 +42,7 @@ const startScriptedAnthropic = (socketPath: string, script: FakeUpstreamReply[])
   });
 };
 
-const writeSecrets = (home: E2eHome, secrets: Record<string, string>): void => {
-  fs.writeFileSync(path.join(home.root, E2E_SECRETS_FILE_NAME), JSON.stringify(secrets), { mode: 0o600 });
-};
+const storeProviderKey = (home: E2eHome): Promise<void> => storeSecretThroughProduct(home, secretNameOf(home, SECRET_NAME_BASE), SECRET_VALUE);
 
 const startProviderStack = async (home: E2eHome, adapter: Adapter, upstream: FakeUpstreamServer) => {
   const model = {
@@ -54,13 +50,12 @@ const startProviderStack = async (home: E2eHome, adapter: Adapter, upstream: Fak
     provider: adapter === 'open-responses' ? 'fake' : 'remote',
     id: 'upstream-model',
     socketPath: upstream.socketPath,
-    apiKeySecret: SECRET_NAME,
+    apiKeySecret: secretNameOf(home, SECRET_NAME_BASE),
     capabilities: CAPABILITIES,
   };
   return startStack({
     home,
     settings: modelSettings({ models: [model] }),
-    deps: { ...DEFAULT_E2E_DEPS, launcherOverrides: { gateway: { script: GATEWAY_SECRETS_MAIN } } },
   });
 };
 
@@ -109,7 +104,7 @@ const expectCompletedToolRun = async (home: E2eHome, runtime: ReturnType<typeof 
 describe('providers through real processes', () => {
   it(titleOf('providers-anthropic'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    writeSecrets(home, { [SECRET_NAME]: SECRET_VALUE });
+    await storeProviderKey(home);
     const upstream = await startScriptedAnthropic(path.join(home.root, 'a.sock'), [
       anthropicToolUseReply('toolu_e2e_1', 'UpdatePlan', PLAN_ARGUMENT_FRAGMENTS),
       anthropicTextReply(['plan recorded, ', 'all done']),
@@ -118,7 +113,7 @@ describe('providers through real processes', () => {
     await startProviderStack(home, 'anthropic', upstream);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Record a plan');
       await expectCompletedToolRun(home, runtime, run.id);
 
@@ -142,7 +137,7 @@ describe('providers through real processes', () => {
 
   it(titleOf('providers-open-responses'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    writeSecrets(home, { [SECRET_NAME]: SECRET_VALUE });
+    await storeProviderKey(home);
     const upstream = await startFakeOpenResponses({
       apiKey: SECRET_VALUE,
       socketPath: path.join(home.root, 'o.sock'),
@@ -152,7 +147,7 @@ describe('providers through real processes', () => {
     await startProviderStack(home, 'open-responses', upstream);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Record a plan');
       await expectCompletedToolRun(home, runtime, run.id);
 
@@ -172,13 +167,12 @@ describe('providers through real processes', () => {
 
   it(titleOf('providers-missing-secret'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    writeSecrets(home, {});
     const upstream = await startScriptedAnthropic(path.join(home.root, 'a.sock'), [anthropicTextReply(['unreachable'])]);
     registerE2eCleanup(() => upstream.close());
     await startProviderStack(home, 'anthropic', upstream);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Say hello');
       await until(async () => (await runtime.getRun(run.id)).run.status === 'FAILED', {
         deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
@@ -197,20 +191,19 @@ describe('providers through real processes', () => {
   });
   it(titleOf('providers-secret-added-after-start'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    writeSecrets(home, {});
     const upstream = await startScriptedAnthropic(path.join(home.root, 'a.sock'), [anthropicTextReply(['now it works'])]);
     registerE2eCleanup(() => upstream.close());
     await startProviderStack(home, 'anthropic', upstream);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const failed = await runtime.createRun(session.id, 'Say hello');
       await until(async () => (await runtime.getRun(failed.run.id)).run.status === 'FAILED', {
         deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
         description: `run ${failed.run.id} is FAILED`,
       });
       expect(upstream.requests).toEqual([]);
-      writeSecrets(home, { [SECRET_NAME]: SECRET_VALUE });
+      await storeProviderKey(home);
       const { run } = await runtime.createRun(session.id, 'Say hello again');
       await until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', {
         deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,

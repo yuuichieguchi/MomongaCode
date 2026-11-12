@@ -90,8 +90,6 @@ export { createReflector } from './memory/reflection.ts';
 export type { Reflector, ReflectorOptions, ReflectorTurn } from './memory/reflection.ts';
 export { runMemoryUpkeep } from './memory/upkeep.ts';
 export type { MemoryUpkeepOptions, MemoryUpkeepResult } from './memory/upkeep.ts';
-export { isRunVerified } from './memory/verified-run.ts';
-export type { VerifiedRunDeps } from './memory/verified-run.ts';
 export { createMemoryUpkeepSchedule } from './memory/upkeep-schedule.ts';
 export type { MemoryUpkeepSchedule, MemoryUpkeepScheduleOptions } from './memory/upkeep-schedule.ts';
 export { contributionAtTerminal } from './memory/contribution.ts';

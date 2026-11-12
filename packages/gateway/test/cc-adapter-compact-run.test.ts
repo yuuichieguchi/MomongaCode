@@ -1,3 +1,4 @@
+import { TEST_FENCE, fenceBoundaryIn } from '@momonga/testkit';
 import { contextOf } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import type { AdapterCompactRequest, AdapterInputItem, ToolCallingMode } from '@momonga/protocol';
@@ -24,6 +25,7 @@ const compactRequest = (overrides: Partial<AdapterCompactRequest> = {}): Adapter
   model: 'system',
   input: conversation,
   ...overrides,
+  momonga: { fence: TEST_FENCE, ...overrides.momonga },
 });
 
 describe('chat-completions adapter compact', () => {
@@ -52,7 +54,7 @@ describe('chat-completions adapter compact', () => {
       expect(result?.summary).toBe('The user wants the parser fixed.');
       const body = lastCompletionBody(fake);
       expect(body.messages).toHaveLength(2);
-      expect(body.messages[0]).toEqual({ role: 'system', content: instructionsFor(64, RESTATE_CLAUSE) });
+      expect(body.messages[0]).toEqual({ role: 'system', content: instructionsFor(64, RESTATE_CLAUSE, fenceBoundaryIn(body.messages[1].content)) });
       expect(body.messages[1].role).toBe('user');
       expect(body.messages[1].content.startsWith('<transcript>')).toBe(true);
       expect(body.messages[1].content.endsWith(TRANSCRIPT_TAIL)).toBe(true);

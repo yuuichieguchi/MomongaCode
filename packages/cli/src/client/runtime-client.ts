@@ -1,3 +1,4 @@
+import type { TrustItemsView } from '@momonga/protocol';
 import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
@@ -47,6 +48,7 @@ import {
   checkSkills,
   checkTrace,
   checkTrust,
+  checkTrustItems,
 } from './contract.ts';
 import type { CliClock } from '../ports.ts';
 import { UsageError } from '../usage-error.ts';
@@ -229,6 +231,7 @@ export type RuntimeClient = {
   trust(path: string): Promise<TrustView>;
   setTrust(path: string, decision: 'trusted' | 'untrusted'): Promise<TrustView>;
   clearTrust(path: string): Promise<void>;
+  trustItems(path: string): Promise<TrustItemsView>;
   streamEvents(runId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
   streamSessionEvents(sessionId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
   close(): Promise<void>;
@@ -810,6 +813,12 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkTrust(fieldOf(body, 'trust', description), description);
   };
 
+  const trustItems = async (path: string): Promise<TrustItemsView> => {
+    const description = 'GET /v1/trust/items';
+    const { body } = await send('GET', `/v1/trust/items?path=${encodeURIComponent(path)}`, [200]);
+    return checkTrustItems(body, description);
+  };
+
   const clearTrust = async (path: string): Promise<void> => {
     await send('DELETE', `/v1/trust?path=${encodeURIComponent(path)}`, [204]);
   };
@@ -929,6 +938,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     trust,
     setTrust,
     clearTrust,
+    trustItems,
     streamEvents,
     streamSessionEvents,
     close: () => http.close(),

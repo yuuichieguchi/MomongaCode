@@ -18,7 +18,7 @@ const runWithRemoteServer = async (era: McpHttpFixtureEra, script: ReturnType<ty
   });
   const runtime = createRuntimeClient(home);
   try {
-    const { session } = await runtime.createSession();
+    const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const { run } = await runtime.createRun(session.id, 'Use the remote tool');
     const stream = runtime.events(run.id);
     const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);

@@ -1,3 +1,4 @@
+import { PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,7 +13,8 @@ import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { SESSION_PATH, createRuntimeClient } from './support/runtime-client.ts';
-import { REFUSED_READ_TEXT, platformSandbox, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
+import { personCapabilityOfHome } from './support/runtime-client.ts';
+import { platformSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
@@ -83,7 +85,8 @@ const rawClient = (home: E2eHome) => {
     const response = await client.request({
       method,
       path: target,
-      ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+      headers: { [PERSON_CAPABILITY_HEADER]: await personCapabilityOfHome(home), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const text = await response.text();
     return { status: response.status, json: text === '' ? {} : (JSON.parse(text) as Json) };
@@ -125,14 +128,13 @@ describe('g: agent skills', () => {
     for (let index = 0; index < LONG_REQUESTS; index += 1) script.push(textReply(`Noted ${index + 1}.`));
     const stack = await startStack({
       home,
-      sandbox: 'none',
       script,
       routes: [summaryRoute(SUMMARY)],
     });
     await trust(home);
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const first = (await runtime.createRun(session.id, FIRST_TASK)).run;
       await runToEnd(runtime, first.id);
       const sizing = await longRequestSizing(home, first.id, chatCompletions(stack.fake));
@@ -190,7 +192,7 @@ describe('g: agent skills', () => {
   it(titleOf('g-skills-explicit'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const directory = writeSkill(path.join(home.project, '.agents', 'skills'), 'pdf', 'Extract PDF text');
-    const stack = await startStack({ home, sandbox: 'none', script: [textReply('Started with the skill.')] });
+    const stack = await startStack({ home, script: [textReply('Started with the skill.')] });
     await trust(home);
     const raw = rawClient(home);
     const runtime = createRuntimeClient(home);
@@ -240,7 +242,6 @@ describe('g: agent skills', () => {
     const guide = path.join(directory, 'references', 'guide.md');
     const stack = await startStack({
       home,
-      sandbox: 'none',
       script: [
         toolCallReply('activate_skill', { name: 'pdf' }, 'call_skill'),
         toolCallReply('Read', { file_path: guide }, 'call_guide'),
@@ -290,7 +291,7 @@ describe('g: agent skills', () => {
     const runtime = createRuntimeClient(home);
     try {
       expect((await runtime.health()).sandbox).toBe(platformSandbox());
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Use the pdf guide');
       await runToEnd(runtime, run.id);
 
@@ -299,8 +300,8 @@ describe('g: agent skills', () => {
       expect(completed).toHaveLength(3);
       expect(String(completed[1]?.data['output'])).toContain(GUIDE_MARKER);
       expect(String(completed[1]?.data['output'])).toContain('rc=0');
-      expect(String(completed[2]?.data['output'])).toContain(REFUSED_READ_TEXT[productSandbox()]);
-      expect(String(completed[2]?.data['output'])).toContain('rc=1');
+      expect(String(completed[2]?.data['output'])).toContain(`reading ${home.paths.settingsFile} is denied in every permission mode`);
+      expect(String(completed[2]?.data['output'])).not.toContain('rc=');
       expect(chatCompletions(stack.fake)).toHaveLength(4);
     } finally {
       await runtime.close();
@@ -311,7 +312,7 @@ describe('g: agent skills', () => {
     const home = await createE2eHome();
     const skills = path.join(home.project, '.agents', 'skills');
     writeSkill(skills, 'pdf', 'Extract PDF text');
-    const stack = await startStack({ home, sandbox: 'none', script: [textReply('No skills here.')] });
+    const stack = await startStack({ home, script: [textReply('No skills here.')] });
     const raw = rawClient(home);
     const runtime = createRuntimeClient(home);
     try {

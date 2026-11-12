@@ -12,4 +12,3 @@ export const loopSignatureOf = (state: RunState, threshold: number): string | un
   return repeats ? signature : undefined;
 };
 
-export const isLoop = (state: RunState, threshold: number): boolean => loopSignatureOf(state, threshold) !== undefined;

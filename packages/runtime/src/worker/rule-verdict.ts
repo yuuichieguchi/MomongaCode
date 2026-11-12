@@ -43,7 +43,7 @@ const WHOLE_VERIFICATION = 'verification';
 
 const unverified = (solver: string, failure: RuleVerificationFailure): RuleVerdict => ({ verdict: 'unknown', solver, refuted: [], unknown: [{ property: WHOLE_VERIFICATION, reason: failure.message }], notProved: [] });
 
-const verdictOrUnverified = async (verifying: Promise<RuleVerdict>, solver: string): Promise<RuleVerdict> => {
+export const verdictOrUnverified = async (verifying: Promise<RuleVerdict>, solver: string): Promise<RuleVerdict> => {
   try {
     return await verifying;
   } catch (error) {
@@ -61,12 +61,39 @@ export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, s
   const solver = await verifier.solverVersion();
   const fingerprint = verdictKey(input, solver);
   if (!(await verifier.needsVerdict(input))) return { fingerprint, solver, ...NOT_NEEDED };
-  const stored = options.store.ruleVerdicts.get(fingerprint);
-  if (stored !== undefined) return { fingerprint, ...stored.verdict };
+  const verdict = await verdictOfKey({
+    verifier,
+    cache: options.store.ruleVerdicts,
+    fingerprint,
+    solver,
+    verify: () => control.recordingRaised(verdictOrUnverified(verifier.verify(input, control.signal), solver)),
+    retry: () => verifier.verify(input, control.signal),
+    onRetryFailure: (error) => {
+      if (!control.signal.aborted) control.fail(error);
+    },
+  });
+  return { fingerprint, ...verdict };
+};
+
+export type VerdictCache = { get(fingerprint: string): { verdict: RuleVerdict } | undefined; put(fingerprint: string, verdict: RuleVerdict): void };
+
+export type KeyedVerification = {
+  verifier: RuleVerifierPort;
+  cache: VerdictCache;
+  fingerprint: string;
+  solver: string;
+  verify: () => Promise<RuleVerdict>;
+  retry: () => Promise<RuleVerdict>;
+  onRetryFailure: (error: unknown) => void;
+};
+
+export const verdictOfKey = async ({ verifier, cache, fingerprint, solver, verify, retry, onRetryFailure }: KeyedVerification): Promise<RuleVerdict> => {
+  const stored = cache.get(fingerprint);
+  if (stored !== undefined) return stored.verdict;
   const undecided = undecidedOf(verifier);
   const settle = (verdict: RuleVerdict): void => {
     if (isFinalRuleVerdict(verdict)) {
-      options.store.ruleVerdicts.put(fingerprint, verdict);
+      cache.put(fingerprint, verdict);
       undecided.delete(fingerprint);
     } else {
       undecided.set(fingerprint, { verdict, retry: undefined });
@@ -74,15 +101,15 @@ export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, s
   };
   const earlier = undecided.get(fingerprint);
   if (earlier === undefined) {
-    const verdict = await control.recordingRaised(verdictOrUnverified(verifier.verify(input, control.signal), solver));
+    const verdict = await verify();
     settle(verdict);
-    return { fingerprint, ...verdict };
+    return verdict;
   }
-  earlier.retry ??= verdictOrUnverified(verifier.verify(input, control.signal), solver).then(settle, (error: unknown) => {
+  earlier.retry ??= verdictOrUnverified(retry(), solver).then(settle, (error: unknown) => {
     earlier.retry = undefined;
-    if (!control.signal.aborted) control.fail(error);
+    onRetryFailure(error);
   });
-  return { fingerprint, ...earlier.verdict };
+  return earlier.verdict;
 };
 
 export type StartVerdictSources = RuleVerdictSources & {
@@ -102,6 +129,17 @@ export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: 
   } finally {
     held.done();
   }
+};
+
+export const mandateRefusal = async (
+  options: Pick<WorkerOptions, 'mandateVerification'>,
+  session: HeldSession,
+  delegation: Pick<Delegation, 'scope'> | undefined,
+  signal: AbortSignal,
+): Promise<RunError | undefined> => {
+  if (delegation === undefined) return undefined;
+  const verdict = await options.mandateVerification({ cwd: session.cwd, mode: session.permissionMode, mandate: { scope: delegation.scope } }, signal);
+  return refusingRefutations(verdict).length > 0 ? { code: POLICY_REFUTED_CODE, message: policyRefutedMessage(verdict) } : undefined;
 };
 
 export const policyRefusal = (verdict: PinnedRuleVerdict): RunError | undefined =>
