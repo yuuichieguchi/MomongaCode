@@ -49,7 +49,7 @@ import type { MandateRunSources } from './folder-verification.ts';
 import { supervisedGatewayStanding } from './supervised-gateway.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
 import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, operationCatalogueFacts, pruneGitObserverStores, sweepCallLocks } from '@momonga/tools';
-import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
+import type { BundledRipgrepResolver, ChildLaunch, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../memory/journal-thread-limits.ts';
@@ -435,6 +435,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const { helperSelf } = options;
     const bubblewrap = platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
     const noneProtection = childProtectionFor({ sandbox: 'none', home: canonicalHome, platform, env: process.env, bubblewrap });
+    const childLaunch: ChildLaunch = {
+      protection: noneProtection,
+      commandOf: (argv, scratch) => protectionCommandOf(noneProtection, { platform, argv, scratch, sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
+    };
     const sandboxOf = createSandboxOf({
       platform,
       paths,
@@ -592,6 +596,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock });
       const runtime: ToolRuntime = createToolRuntime({
         hostParallelism: availableParallelism(),
+        childLaunch,
         version,
         mcpLaunch: {
           protection: noneProtection,
@@ -763,6 +768,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         policyVerification: folderPolicyVerification({ ...verificationSources, mandates: async (requestSignal) => (await settingsComposition.userSnapshot(requestSignal)).settings.mandates }),
         mandateVerification,
         userInput: createUserInputPort({
+          childLaunch,
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
           store,
@@ -1059,7 +1065,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                       traceStore.moveLegacyContent({ retentionMs: retention.days * DAY_MS });
                     },
                     (runIds, cutoffMs, purgeSignal) => gatewayClient.retentionPurge(runIds, cutoffMs, purgeSignal),
-                    (_runIds, cutoffMs, purgeSignal) => pruneGitObserverStores({ storeRoot: observerStoreRoot(paths), cutoffMs }, purgeSignal),
+                    (_runIds, cutoffMs, purgeSignal) => pruneGitObserverStores({ storeRoot: observerStoreRoot(paths), cutoffMs }, childLaunch, purgeSignal),
                   ],
                 },
                 sweepStop.signal,

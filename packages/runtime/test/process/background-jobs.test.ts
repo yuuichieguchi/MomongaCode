@@ -451,6 +451,40 @@ describe('a job that is still starting is owned by its starter', () => {
     await t.settled(jobId);
     expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited', exitCode: 0 });
   });
+
+  it('a reconcile that runs after the spawn and before the process is attached and registered leaves the job alone, and the job ends with its own result', async () => {
+    const nodeMarkerFiles = createNodeJobMarkerFiles();
+    const hook: { afterSpawn: () => Promise<void> } = { afterSpawn: async () => undefined };
+    const t = await setup(
+      {},
+      {
+        markerFiles: {
+          create: async <T>(marker: string, use: Parameters<typeof nodeMarkerFiles.create<T>>[1]): Promise<T> => {
+            const spawned = await nodeMarkerFiles.create(marker, use);
+            await hook.afterSpawn();
+            return spawned;
+          },
+          remove: nodeMarkerFiles.remove,
+        },
+      },
+    );
+    const seenAfterSpawn: { spawned: number; status: string | undefined; live: number }[] = [];
+    hook.afterSpawn = async () => {
+      await t.jobs.reconcileOrphans();
+      seenAfterSpawn.push({ spawned: t.spawned.length, status: t.store.jobs.listRunning()[0]?.status, live: t.jobs.liveCount() });
+    };
+
+    const { jobId } = await t.start('call-1');
+
+    expect(seenAfterSpawn).toEqual([{ spawned: 1, status: 'running', live: 0 }]);
+    expect(t.reaped).toEqual([]);
+    expect(t.reconciled).toEqual([]);
+    expect(t.reports).toEqual([]);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running', pgid: 4000 });
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
+    await t.settled(jobId);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited', exitCode: 0 });
+  });
 });
 
 describe('the output file of a job follows its row', () => {

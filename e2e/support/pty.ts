@@ -1,20 +1,18 @@
-import { execFileSync, spawn } from '@momonga/testkit/child-process';
+import { spawn } from '@momonga/testkit/child-process';
 import type { ChildProcessByStdio } from '@momonga/testkit/child-process';
-import fs from 'node:fs';
+import { createTerminalScreen } from '@momonga/testkit/terminal-screen';
 import path from 'node:path';
+import type { Readable, Writable } from 'node:stream';
 import { CLI_BUNDLE, CLI_FAKES_BUNDLE, cliEnv, fakePortsEnv } from './cli.ts';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { trackStreamErrors } from './stream-errors.ts';
-import { E2E_RUN_COMPLETED_BOUND_MS, until } from './wait.ts';
+import { KEY_SETTLE_MS } from '../../packages/cli/src/tui/terminal/constants.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, abortableWait, until, withinBound } from './wait.ts';
 
-export const SCRIPT_BINARY = '/usr/bin/script';
-export const MKFIFO_BINARY = '/usr/bin/mkfifo';
+export const PYTHON_BINARY = '/usr/bin/python3';
+export const PTY_HOST = path.join(import.meta.dirname, 'pty-host.py');
 
-const SCRIPT_INVOCATION =
-  process.platform === 'darwin' ? 'cat "$3" | "$1" -q -F "$4" /bin/sh -c "$2"' : 'cat "$3" | "$1" -q -f -c "$2" "$4"';
-
-let fifoCounter = 0;
 export const PTY_COLUMNS = 100;
 export const PTY_ROWS = 40;
 
@@ -38,97 +36,103 @@ export type PtyExit = { code: number | null; signal: NodeJS.Signals | null };
 export type PtySession = {
   write(text: string): void;
   screen(): string;
+  visible(): string[];
+  raw(): string;
   sinceLastWrite(): string;
   waitFor(pattern: string | RegExp, boundMs?: number): Promise<void>;
+  waitForPrompt(pattern: string | RegExp): Promise<void>;
   exit(boundMs?: number): Promise<PtyExit>;
 };
 
 export const untilRunEnds = (pty: PtySession, mode: string): Promise<void> =>
-  pty.waitFor(new RegExp(`mode: ${mode} \\(shift\\+tab\\) · tokens: [\\d.]+k?( · context: \\d+%)?\\s*$`));
+  pty.waitFor(new RegExp(`mode: ${mode} \\(shift\\+tab\\) · tokens: [\\d.]+k?( · context: \\d+%)?\\s*$`, 'm'));
 
 const TRUST_ROWS = { trust: '1', decline: '2' } as const;
 
 export const answerTrust = async (pty: PtySession, row: keyof typeof TRUST_ROWS): Promise<void> => {
-  await pty.waitFor('Do you trust the files in');
+  await pty.waitForPrompt('Do you trust the files in');
   pty.write(TRUST_ROWS[row]);
   pty.write(KEYS.enter);
 };
 
-const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
-
 export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true; bundle?: string } = {}): Promise<PtySession> => {
   const bundle = options.bundle ?? (options.fakes === true ? CLI_FAKES_BUNDLE : CLI_BUNDLE);
   const childEnv = options.fakes === true ? { ...fakePortsEnv(home), ...env } : env;
-  fifoCounter += 1;
-  const fifo = path.join(home.root, `pty-input-${fifoCounter}`);
-  execFileSync(MKFIFO_BINARY, [fifo]);
-  const transcript = path.join(home.root, `pty-output-${fifoCounter}`);
-  const exitFile = path.join(home.root, `pty-exit-${fifoCounter}`);
-  const command = `stty cols ${PTY_COLUMNS} rows ${PTY_ROWS}; ${shellQuote(process.execPath)} ${shellQuote(bundle)} ${args.map(shellQuote).join(' ')}; echo $? > ${shellQuote(exitFile)}`;
   const ptyEnv = { ...cliEnv(home, childEnv), TERM: 'xterm-256color' };
-  const child: ChildProcessByStdio<null, null, null> = spawn(
-    '/bin/sh',
-    ['-c', SCRIPT_INVOCATION, 'sh', SCRIPT_BINARY, command, fifo, transcript],
-    {
-      cwd: home.project,
-      env: ptyEnv,
-      detached: true,
-      stdio: ['ignore', 'ignore', 'ignore'],
-    },
+  const child: ChildProcessByStdio<Writable, Readable, null> = spawn(
+    PYTHON_BINARY,
+    [PTY_HOST, String(PTY_COLUMNS), String(PTY_ROWS), process.execPath, bundle, ...args],
+    { cwd: home.project, env: ptyEnv, detached: true, stdio: ['pipe', 'pipe', 'ignore'] },
   );
-  const input = fs.createWriteStream(fifo);
-  const inputPipe = trackStreamErrors(input, 'the input pipe of the pty');
-  const shellClosed = new Promise<void>((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', () => resolve());
+  const terminal = createTerminalScreen({ columns: PTY_COLUMNS, rows: PTY_ROWS });
+  const inputPipe = trackStreamErrors(child.stdin, 'the input pipe of the pty');
+  let rawOutput = '';
+  let rendering = Promise.resolve();
+  terminal.onAnswer((answer) => {
+    if (child.stdin.writable) child.stdin.write(answer);
   });
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    rawOutput += chunk;
+    rendering = rendering.then(() => terminal.write(chunk));
+  });
+  const closed = new Promise<PtyExit>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', (code, signal) => resolve({ code, signal }));
+  });
+
+  const screen = (): string => terminal.everyLine().join('\n');
+  let writtenAt = 0;
+  const sinceLastWrite = (): string => stripEscapes(rawOutput.slice(writtenAt));
+  const withScreen = (error: unknown): Error =>
+    new Error(`${error instanceof Error ? error.message : String(error)}\nscreen:\n${terminal.text().join('\n')}`, { cause: error });
+
   const exit = async (boundMs = E2E_RUN_COMPLETED_BOUND_MS): Promise<PtyExit> => {
-    const { code } = await until(
-      () => {
-        if (!fs.existsSync(exitFile)) return undefined;
-        const text = fs.readFileSync(exitFile, 'utf8').trim();
-        return text === '' ? undefined : { code: Number(text) };
-      },
-      { deadlineMs: boundMs, description: 'the command in the pty to exit' },
-    ).catch((error: unknown) => {
-      throw new Error(`${error instanceof Error ? error.message : String(error)}\nscreen tail:\n${screen().slice(-1500)}`, { cause: error });
+    const result = await withinBound(closed, boundMs, 'the command in the pty to exit').catch((error: unknown) => {
+      throw withScreen(error);
     });
-    input.end();
-    await shellClosed;
+    await rendering;
     inputPipe.assertHealthy();
-    return { code, signal: null };
+    return result;
   };
 
   registerE2eCleanup(async () => {
     if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) process.kill(-child.pid, 'SIGKILL');
-    input.destroy();
-    await shellClosed;
+    await closed;
+    terminal.dispose();
     inputPipe.assertHealthy();
   });
-  const rawOutput = (): string => (fs.existsSync(transcript) ? fs.readFileSync(transcript, 'utf8') : '');
-  let writtenAt = 0;
-  const screen = (): string => stripEscapes(rawOutput());
-  const sinceLastWrite = (): string => stripEscapes(rawOutput().slice(writtenAt));
+
   const waitFor = async (pattern: string | RegExp, boundMs = E2E_RUN_COMPLETED_BOUND_MS): Promise<void> => {
-    const found = until(() => (typeof pattern === 'string' ? sinceLastWrite().includes(pattern) : pattern.test(sinceLastWrite())), {
-      deadlineMs: boundMs,
-      description: `terminal output ${String(pattern)}`,
+    await until(
+      async () => {
+        await rendering;
+        const shown = screen();
+        return typeof pattern === 'string' ? shown.includes(pattern) : pattern.test(shown);
+      },
+      { deadlineMs: boundMs, description: `the terminal screen to show ${String(pattern)}` },
+    ).catch((error: unknown) => {
+      throw withScreen(error);
     });
-    try {
-      await found;
-    } catch (error) {
-      throw new Error(`${error instanceof Error ? error.message : String(error)}\nscreen tail:\n${screen().slice(-1500)}`, { cause: error });
-    }
   };
+
+  const waitForPrompt = async (pattern: string | RegExp): Promise<void> => {
+    await waitFor(pattern);
+    await abortableWait(KEY_SETTLE_MS);
+  };
+
   return {
-    sinceLastWrite,
     write: (text) => {
       inputPipe.assertHealthy();
-      writtenAt = rawOutput().length;
-      input.write(text);
+      writtenAt = rawOutput.length;
+      child.stdin.write(text);
     },
     screen,
+    visible: () => terminal.text(),
+    raw: () => rawOutput,
+    sinceLastWrite,
     waitFor,
+    waitForPrompt,
     exit,
   };
 };

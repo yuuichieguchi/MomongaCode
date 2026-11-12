@@ -26,7 +26,7 @@ import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { holdSandbox } from '../worker/held-sandbox.ts';
 import { createBuiltinTools, offeredBashOf, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { BuiltinToolOffer, BundledRipgrepResolver, ForgeAccess, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
+import type { ChildLaunch, BuiltinToolOffer, BundledRipgrepResolver, ForgeAccess, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolEnv, ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
@@ -54,6 +54,7 @@ export const sandboxNetworkOf = (session: Pick<Session, 'sandboxNetwork'>, setti
 
 export type ToolRuntimeOptions = {
   mcpLaunch: StdioLaunch;
+  childLaunch: ChildLaunch;
   hostParallelism: number;
   lockCapability: LockCapabilityProbe;
   kernelLock: KernelLockMechanism;
@@ -332,7 +333,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       const key = `${trusted ? 'trusted' : 'untrusted'}\n${session.cwd}`;
       const known = observers.get(key);
       if (known !== undefined) return known;
-      const created = createGitWorkTreeObserver({ storeRoot: observerStoreRoot(paths), cwd: session.cwd, trusted });
+      const created = createGitWorkTreeObserver({ storeRoot: observerStoreRoot(paths), cwd: session.cwd, trusted }, options.childLaunch);
       observers.set(key, created);
       return created;
     },

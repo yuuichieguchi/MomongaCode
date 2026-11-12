@@ -69,7 +69,7 @@ export const autoModeConfigured = async (ports: Pick<CliPorts, 'home'>, signal: 
 };
 
 export const connectRuntime = (ports: Pick<CliPorts, 'clock' | 'personCapability'>, paths: MomongaPaths): RuntimeClient =>
-  createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: ports.clock, personCapability: () => ports.personCapability() });
+  createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: ports.clock, personCapability: () => ports.personCapability(paths.home) });
 
 export const connectSessionRuntime = (
   ports: Pick<DaemonPorts, 'version' | 'clock' | 'endpointScope'> & Pick<CliPorts, 'personCapability'>,
@@ -80,7 +80,7 @@ export const connectSessionRuntime = (
   createRuntimeClient({
     resolveSocket: sessionSocketResolver(ports, paths, 'runtime'),
     clock: ports.clock,
-    personCapability: () => ports.personCapability(),
+    personCapability: () => ports.personCapability(paths.home),
     onMoved: endSessionWhenMovedAway(paths, ports.version, onNewer),
     ...(restoreConnection === undefined ? {} : { restoreConnection }),
   });

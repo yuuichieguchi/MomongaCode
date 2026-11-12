@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { createGitWorkTreeObserver, observerStoreOf, pruneGitObserverStores } from '@momonga/tools';
+import { createGitWorkTreeObserver, observerStoreOf, pruneGitObserverStores, unprotectedLaunch } from '@momonga/tools';
+
+const LAUNCH = unprotectedLaunch('the tests of the observer retention start git without the protection of the home');
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -49,25 +51,25 @@ afterEach(() => {
 
 describe('the observer store under retention', () => {
   it('keeps the objects of marks newer than the cutoff', async () => {
-    await createGitWorkTreeObserver({ storeRoot, cwd: project, trusted: true }).mark(signal());
+    await createGitWorkTreeObserver({ storeRoot, cwd: project, trusted: true }, LAUNCH).mark(signal());
     const before = looseObjects();
     expect(before).toBeGreaterThan(0);
 
-    await pruneGitObserverStores({ storeRoot, cutoffMs: Date.now() - HOUR_MS }, signal());
+    await pruneGitObserverStores({ storeRoot, cutoffMs: Date.now() - HOUR_MS }, LAUNCH, signal());
 
     expect(looseObjects()).toBe(before);
   });
 
   it('removes the objects of marks older than the cutoff from every observer store', async () => {
-    await createGitWorkTreeObserver({ storeRoot, cwd: project, trusted: true }).mark(signal());
+    await createGitWorkTreeObserver({ storeRoot, cwd: project, trusted: true }, LAUNCH).mark(signal());
     expect(looseObjects()).toBeGreaterThan(0);
 
-    await pruneGitObserverStores({ storeRoot, cutoffMs: Date.now() + HOUR_MS }, signal());
+    await pruneGitObserverStores({ storeRoot, cutoffMs: Date.now() + HOUR_MS }, LAUNCH, signal());
 
     expect(looseObjects()).toBe(0);
   });
 
   it('does nothing when no observer store was ever made', async () => {
-    await expect(pruneGitObserverStores({ storeRoot, cutoffMs: Date.now() }, signal())).resolves.toBeUndefined();
+    await expect(pruneGitObserverStores({ storeRoot, cutoffMs: Date.now() }, LAUNCH, signal())).resolves.toBeUndefined();
   });
 });

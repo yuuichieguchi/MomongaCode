@@ -30,7 +30,7 @@ export type SandboxedCommandRequest = SandboxedCommandLine & {
   owners?: MarkerOwners;
 };
 
-type Settled = { durationMs: number; groupNotice?: string; drainNote?: string };
+type Settled = { durationMs: number; groupNotice?: string };
 
 export type SandboxedCommandResult =
   | ({ kind: 'exited'; exitCode: number; stdout: string; stderr: string } & Settled)
@@ -99,8 +99,9 @@ export const runSandboxedCommand = async (request: SandboxedCommandRequest): Pro
     const failure = pump.failure();
     if (failure !== undefined) throw failure.error;
     const stdout = captures[0].text();
-    const stderr = captures[1].text();
-    const settled: Settled = { durationMs: elapsed(), ...(groupNotice === undefined ? {} : { groupNotice }), ...(drained.complete ? {} : { drainNote: drained.note }) };
+    const captured = captures[1].text();
+    const stderr = drained.complete ? captured : `${captured}${captured === '' || captured.endsWith('\n') ? '' : '\n'}${drained.note}`;
+    const settled: Settled = { durationMs: elapsed(), ...(groupNotice === undefined ? {} : { groupNotice }), };
     if (timedOut) return { kind: 'timed_out', stdout, stderr, ...settled };
     if (signal.aborted) return { kind: 'cancelled', stderr, ...settled };
     if (exit.signal !== null) return { kind: 'signaled', signal: exit.signal, stdout, stderr, ...settled };

@@ -86,6 +86,7 @@ export type YieldReport = {
   saving?: BootstrapInterval;
   breakEvenReuses?: number;
   families: YieldFamilyReport[];
+  gate?: YieldGate;
 };
 
 const ARM_WORDS: PairWords = { baseline: 'without arm', candidate: 'with arm', unit: 'family', both: 'both arms', either: 'either arm' };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEADLINE_MS, LEASE_MS, START_MS, callEvent, enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
+import { DEADLINE_MS, LEASE_MS, START_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
+import { requestFor } from './approval-fixture.ts';
 
 const EXPIRES_AT = DEADLINE_MS;
 
@@ -140,5 +141,35 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     expect(mustRun(h.store, run.id).status).toBe('CANCELLING');
     expect(await h.store.release(claim, 'WAITING_HUMAN')).toMatchObject({ kind: 'conflict' });
     expect(await h.store.transition(claim, ['CANCELLING'], 'CANCELLED')).toMatchObject({ kind: 'ok', run: { status: 'CANCELLED' } });
+  });
+
+  it('the unknown ask of a step re-uses the approval slot of its call: a call whose permission was answered can be asked about its unknown effect, which only Continue answers', async () => {
+    const h = harness();
+    const run = await enqueue(h.store, newSession(h.store).id);
+    const claim = mustClaim(h.store, 'w1');
+    h.store.append(claim, [callEvent('call_1')]);
+    const permission = await requestFor(h.store, claim, 'call_1');
+    expect((await h.store.resolveApproval(permission.id, 'allow_once')).kind).toBe('ok');
+    h.store.append(claim, [
+      { type: 'tool.started', callId: 'call_1', idemKey: 'idem-call_1' },
+      { type: 'tool.reconciled', callId: 'call_1', outcome: 'unknown', output: 'interrupted' },
+    ]);
+    const asked = await h.store.requestUnknownAck(claim, { callIds: ['call_1'] });
+    if (asked.kind !== 'ok') throw new Error(`expected an unknown ask, got ${asked.kind}`);
+    expect(asked.approval.kind).toBe('unknown_effect');
+    expect(await h.store.resolveApproval(asked.approval.id, 'reject_once')).toEqual({ kind: 'option_not_offered' });
+    expect(h.store.readRunEvents(run.id, 0, 100).map((event) => event.type).filter((type) => type.startsWith('tool.unknown.'))).toEqual(['tool.unknown.requested']);
+  });
+
+  it('a cancel withdraws a pending unknown ask with tool.unknown.cancelled, as Withdraw of the model does', async () => {
+    const h = harness();
+    const run = await enqueue(h.store, newSession(h.store).id);
+    const claim = mustClaim(h.store, 'w1');
+    h.store.append(claim, [callEvent('call_1'), { type: 'tool.started', callId: 'call_1', idemKey: 'idem-call_1' }, { type: 'tool.reconciled', callId: 'call_1', outcome: 'unknown', output: 'interrupted' }]);
+    expect((await h.store.requestUnknownAck(claim, { callIds: ['call_1'] })).kind).toBe('ok');
+    expect((await h.store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
+    await cancel(h.store, run.id);
+    const types = h.store.readRunEvents(run.id, 0, 100).map((event) => event.type);
+    expect(types.filter((type) => type.startsWith('tool.unknown.') || type.startsWith('tool.permission.'))).toEqual(['tool.unknown.requested', 'tool.unknown.cancelled']);
   });
 });

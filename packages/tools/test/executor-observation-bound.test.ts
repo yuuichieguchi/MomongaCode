@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { WorkTreeObservationError } from '@momonga/tools';
 import type { CallOutcome, WorkTreeMark, WorkTreeObserver } from '@momonga/tools';
-import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import type { FakeTimers } from '@momonga/testkit';
+import { call, fakeTimedShellHost, makeHarness, makeTool, onFakeTime, toolSetOf } from './harness.ts';
 
 const COMMAND_SCHEMA = { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false } as const;
 
 const TOOL_TIMEOUT_MS = 200;
 
-const resolvedAfter = <T>(ms: number, value: T): Promise<T> => new Promise((resolve) => setTimeout(() => resolve(value), ms));
+const timers: FakeTimers = createFakeTimers(createFakeClock(0));
+
+const resolvedAfter = <T>(ms: number, value: T): Promise<T> => new Promise((resolve) => timers.setTimeout(() => resolve(value), ms));
 
 const sh = () =>
   makeTool('Sh', {
@@ -34,9 +38,9 @@ const resultOf = (outcome: CallOutcome | undefined) => {
 };
 
 const runWith = async (observer: WorkTreeObserver) => {
-  const harness = makeHarness({ executor: { workTreeObserver: observer } as never });
-  const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(sh()), [call('c1', 'Sh', { command: 'true' }, 'allow_once')]));
-  return resultOf(outcome);
+  const harness = makeHarness({ executor: { workTreeObserver: observer, shellHost: fakeTimedShellHost(timers) } as never });
+  const { value: outcomes } = await onFakeTime(timers, harness.executor.runBatch(await harness.input(await toolSetOf(sh()), [call('c1', 'Sh', { command: 'true' }, 'allow_once')])), TOOL_TIMEOUT_MS * 4, 'the observed call');
+  return resultOf(outcomes[0]);
 };
 
 describe('the observation of file effects is charged to its own bound, not to the tool', () => {

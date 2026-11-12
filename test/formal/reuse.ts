@@ -157,11 +157,12 @@ export type KeyParts = {
   readonly args: readonly string[];
   readonly cfg: string;
   readonly modules: readonly (readonly [string, string])[];
+  readonly inputs: readonly (readonly [string, string])[];
 };
 
-const KEY_FORMAT = 'momonga-tlc-key/1';
+const KEY_FORMAT = 'momonga-tlc-key/2';
 
-const HARNESS_FILES = ['scripts/tlc.sh', 'test/formal/runner.ts', 'test/formal/verdict.ts', 'test/formal/manifest-reader.ts', 'test/formal/reuse.ts', 'test/formal/check-entry.ts', 'test/formal/tier.ts'] as const;
+export const HARNESS_FILES = ['scripts/tlc.sh', 'test/formal/runner.ts', 'test/formal/verdict.ts', 'test/formal/manifest-reader.ts', 'test/formal/cfg-names.ts', 'test/formal/reuse.ts', 'test/formal/check-entry.ts', 'test/formal/tier.ts'] as const;
 
 const JAR_FILE = '.cache/tla/tla2tools.jar';
 
@@ -275,18 +276,28 @@ const moduleDigests = async (specDir: string, rootModule: string): Promise<(read
   return [...digests.entries()].sort(([left], [right]) => (left < right ? -1 : 1));
 };
 
+const INPUT_SUFFIX = '.json';
+
+const MANIFEST_FILE = 'manifest.json';
+
+const inputDigests = async (specDir: string): Promise<(readonly [string, string])[]> => {
+  const names = (await readable(specDir, () => fs.promises.readdir(specDir))).filter((file) => file.endsWith(INPUT_SUFFIX) && file !== MANIFEST_FILE).sort();
+  return Promise.all(names.map(async (name) => [name, await digestOfFile(path.join(specDir, name))] as const));
+};
+
 export type KeyRequest = { readonly repoRoot: string; readonly entry: ManifestEntry; readonly args: readonly string[]; readonly workers: number; readonly java: JavaIdentity };
 
 export const keyPartsOf = async ({ repoRoot, entry, args, workers, java }: KeyRequest): Promise<KeyParts | { unreadable: string }> => {
   const specDir = absoluteOf(repoRoot, SPEC_DIR);
   try {
-    const [harness, jar, cfg, modules] = await Promise.all([
+    const [harness, jar, cfg, modules, inputs] = await Promise.all([
       harnessDigests(repoRoot),
       jarDigest(repoRoot),
       digestOfFile(path.join(specDir, `${entry.config}.cfg`)),
       moduleDigests(specDir, moduleOf(entry.config)),
+      inputDigests(specDir),
     ]);
-    return { format: KEY_FORMAT, config: entry.config, harness, jar, java, workers, args: [...args], cfg, modules };
+    return { format: KEY_FORMAT, config: entry.config, harness, jar, java, workers, args: [...args], cfg, modules, inputs };
   } catch (error) {
     if (error instanceof UnreadableInput) return { unreadable: path.relative(repoRoot, error.file).split(path.sep).join('/') };
     throw error;
