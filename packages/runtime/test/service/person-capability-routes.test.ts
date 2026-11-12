@@ -12,7 +12,7 @@ const PERSON_ROUTES: readonly PersonRoute[] = [
   { method: 'DELETE', target: (env) => `/v1/trust?path=${encodeURIComponent(env.layout.project)}` },
   { method: 'POST', target: () => '/v1/rules', body: () => ({}) },
   { method: 'POST', target: () => '/v1/rules/r1/retire', body: () => ({}) },
-  { method: 'PUT', target: () => '/v1/policy/verdicts/f1', body: () => ({}) },
+  { method: 'POST', target: () => '/v1/policy/verify', body: () => ({}) },
   { method: 'POST', target: () => '/v1/memories', body: () => ({}) },
   { method: 'DELETE', target: () => '/v1/memories/m1' },
   { method: 'POST', target: () => '/v1/memories/m1/accept', body: () => ({}) },

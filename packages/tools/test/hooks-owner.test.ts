@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
@@ -7,7 +6,7 @@ import type { HookExecution } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { createMarkerOwners, createToolHooks, nodeShellHost, unsettledKeys } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, pollUntil, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { createTempDir, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED, testProcessInspector } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -19,7 +18,7 @@ afterEach(() => {
 
 describe('T16 (c) a hook run in flight owns its marker', () => {
   it('while the hook runs its marker is not in the unsettled set, and the hook finishes untouched', async () => {
-    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-hook-owner-')));
+    const dir = createTempDir();
     dirs.push(dir);
     const markerDir = path.join(dir, 'markers');
     fs.mkdirSync(markerDir);

@@ -1,23 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import * as bounds from '../e2e/support/wait.ts';
 import { daemonReadyBoundMs } from '../packages/cli/src/daemon/ensure-daemon.ts';
-import * as policy from '../packages/cli/src/commands/policy.ts';
 
 type DerivedBounds = { policyVerifyBoundMs?: () => Promise<number>; E2E_SOLVER_LOAD_ALLOWANCE_MS?: number };
-type VerifyBudget = { VERIFY_BUDGET_MS?: number };
 
 const sourceOf = (relative: string): string => fs.readFileSync(path.resolve(import.meta.dirname, '..', relative), 'utf8');
 
 describe('the e2e bound of policy verify', () => {
   it('is the daemon ready bound, the solver load allowance and the overall verification budget', async () => {
     const { policyVerifyBoundMs, E2E_SOLVER_LOAD_ALLOWANCE_MS } = bounds as DerivedBounds;
-    const { VERIFY_BUDGET_MS } = policy as VerifyBudget;
 
-    expect(VERIFY_BUDGET_MS).toBeGreaterThan(0);
     expect(E2E_SOLVER_LOAD_ALLOWANCE_MS).toBeGreaterThan(0);
-    expect(await policyVerifyBoundMs?.()).toBe((await daemonReadyBoundMs()) + (E2E_SOLVER_LOAD_ALLOWANCE_MS as number) + (VERIFY_BUDGET_MS as number));
+    expect(await policyVerifyBoundMs?.()).toBe((await daemonReadyBoundMs()) + (E2E_SOLVER_LOAD_ALLOWANCE_MS as number) + RULE_VERIFY_BUDGET_MS);
   });
 
   it('no longer multiplies a query timeout by a hand-restated property count', () => {
@@ -26,7 +23,9 @@ describe('the e2e bound of policy verify', () => {
     expect(sourceOf('e2e/support/wait.ts')).not.toContain('VERIFY_QUERY_TIMEOUT_MS');
   });
 
-  it('gives the product command that same budget', () => {
-    expect(sourceOf('packages/cli/src/commands/policy.ts')).toMatch(/budgetMs: VERIFY_BUDGET_MS/);
+  it('leaves the verification to the daemon: the product command runs no solver of its own', () => {
+    const command = sourceOf('packages/cli/src/commands/policy.ts');
+    expect(command).not.toMatch(/verifyPermissions|openSolver|budgetMs/);
+    expect(sourceOf('packages/runtime/src/process/start-runtime-process.ts')).toMatch(/budgetMs: RULE_VERIFY_BUDGET_MS/);
   });
 });

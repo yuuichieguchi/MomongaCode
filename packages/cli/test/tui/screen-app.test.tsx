@@ -1,5 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { momongaPaths } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
@@ -13,6 +12,7 @@ import { KEYS, untilFrame } from '../ink-helpers.ts';
 import { runView } from '../fake-backend.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', name, ...plain, ...mods });
@@ -364,7 +364,7 @@ describe('the event path of the screen', () => {
 
 describe('the clipboard of the TUI backend', () => {
   it('pipes the text to the clipboard program the host has and writes nothing to the terminal', async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), 'momonga-clipboard-'));
+    const directory = createTempDir();
     try {
       const program = path.join(directory, 'pbcopy');
       writeFileSync(program, '');

@@ -1,14 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createE2eHome } from '../e2e/support/home.ts';
 import { spawnPty } from '../e2e/support/pty.ts';
 import { bundle, defaultEntry } from './bundle.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
+import { createTempDir } from '@momonga/testkit';
 
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-bundle-interactive-'));
+const scratch = createTempDir();
 
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 

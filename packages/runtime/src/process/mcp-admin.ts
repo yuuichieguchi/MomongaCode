@@ -170,6 +170,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
         signal.throwIfAborted();
         const probe = await pool.authState(entry.name, signal);
         const attempt = attempts.get(keyOf(session.id, entry.name));
+        const process = pool.diagnostics().find((diagnostics) => diagnostics.server === entry.name);
         views.push({
           name: entry.name,
           scope: entry.scope,
@@ -178,6 +179,8 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
           auth: probe.state,
           ...(probe.detail === undefined ? {} : { detail: probe.detail }),
           ...(attempt === undefined ? {} : { authorization: { ...attempt.view } }),
+          ...(process === undefined || process.stderrTail === '' ? {} : { stderrTail: process.stderrTail }),
+          ...(process === undefined || process.exit === null ? {} : { exit: { code: process.exit.code, signal: process.exit.signal } }),
         });
       }
       for (const entry of loaded.pendingApproval) {

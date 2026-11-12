@@ -202,6 +202,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
   };
 
   const collectDatabase = async (paths: MomongaPaths): Promise<void> => {
+    if (!fs.existsSync(paths.databases.runtime)) return;
     for (const row of readDb(paths.databases.runtime, TOOL_GROUPS_SQL)) {
       if (typeof row['pgid'] === 'number') await add(row['pgid'], 'db');
     }

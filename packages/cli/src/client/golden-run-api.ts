@@ -103,6 +103,7 @@ export const goldenRunApi = (
         env: envOf(input.env),
         permissionMode: input.permissionMode,
         ...(input.model === undefined ? {} : { model: input.model }),
+        ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
       });
       pinnedModels.set(session.id, session.model);
       return { id: session.id };

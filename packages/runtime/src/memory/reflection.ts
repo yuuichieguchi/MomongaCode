@@ -1,13 +1,14 @@
 import { computeBackoff, readJsonReply } from '@momonga/foundation';
 import type { Clock, RolePort } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
-import { LOWEST_REASONING_EFFORT, jsonReplyOf, jsonReplyPathFor, summaryTokenCapFor } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { NewBilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, TextFormat, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { RunCharge, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { requestKey } from '../model-key.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
+import { elapsedMsSince } from '../service/timers.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { retireDecisionOf } from '../worker/gateway-policy.ts';
 import { readPins } from '../worker/pins.ts';
@@ -81,7 +82,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       role: 'reflection',
     });
     for await (const event of events) {
-      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = options.timers.monotonicMs() - startedAt;
+      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = elapsedMsSince(options.timers, startedAt);
       terminal = terminalResultOf(event) ?? terminal;
       if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
         usage = event.response.usage;
@@ -90,7 +91,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       }
     }
     if (terminal === undefined) throw new Error(`the reflection call of run ${runId} ended without a terminal event`);
-    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: options.timers.monotonicMs() - startedAt };
+    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: elapsedMsSince(options.timers, startedAt) };
     if (responseId === undefined) throw new Error(`the reflection call of run ${runId} ended without a response`);
     return { terminal, usage, detail: billedDetailOf(usage, extension, timing, responseId) };
   };
@@ -192,10 +193,6 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const model = reflectionModelOf(started.pins);
     const capabilities = await gateway.capabilities(model, { signal });
     const format: TextFormat = { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true };
-    if (jsonReplyPathFor(format, capabilities) !== 'enforced') {
-      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: `models.roles.reflection model ${model} reports no structured output` });
-      return;
-    }
     const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
     const input: CreateResponseBody['input'] = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: recordedRun }] }];
     const counted = await gateway.countTokens({ model, input, instructions: REFLECTION_INSTRUCTIONS, momonga: { ...EXACT_MODEL } }, { signal });

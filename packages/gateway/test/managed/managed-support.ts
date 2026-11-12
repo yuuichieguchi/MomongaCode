@@ -1,11 +1,10 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import * as gateway from '@momonga/gateway';
 import * as protocol from '@momonga/protocol';
-import { FAKE_SERVER, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { createTempDir, FAKE_SERVER, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { systemTiming } from '@momonga/foundation';
 import type { KernelLockMechanism, ProcessInspector } from '@momonga/foundation';
 
@@ -185,7 +184,7 @@ export const createManualTimers = () => {
 };
 
 export const makeShortDir = (dirs: string[]): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-ms-')));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   dirs.push(dir);
   return dir;

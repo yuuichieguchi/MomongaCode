@@ -1,5 +1,5 @@
 import { GENERATION_STARTING_CODE, MOVED_CODE } from '@momonga/foundation';
-import { TARGET_NOT_READY, messageOf } from '@momonga/protocol';
+import { TARGET_NOT_READY, TARGET_PROBE_FAILED, messageOf } from '@momonga/protocol';
 import { MODEL_NOT_FOUND_CODE } from '../gateway-client.ts';
 
 export type ApiErrorInit = {
@@ -58,6 +58,17 @@ export const conflict = (
   new ApiError({ status: 409, type: 'conflict', code, message });
 
 export const targetNotReady = (message: string): ApiError => new ApiError({ status: 409, type: 'conflict', code: TARGET_NOT_READY, message });
+
+const MS_PER_SECOND = 1000;
+
+export const targetProbeFailed = (message: string, retryAfterMs: number | undefined): ApiError => {
+  if (retryAfterMs === undefined) return new ApiError({ status: 503, type: 'server_error', code: TARGET_PROBE_FAILED, message });
+  const seconds = Math.ceil(retryAfterMs / MS_PER_SECOND);
+  return new ApiError({ status: 503, type: 'server_error', code: TARGET_PROBE_FAILED, message: `${message}; it is measured again in ${seconds} seconds`, headers: { 'retry-after': String(seconds) } });
+};
+
+export const imageTooLarge = (byteLength: number, maxBytes: number): ApiError =>
+  new ApiError({ status: 413, type: 'invalid_request', code: 'body_too_large', message: `an image of the prompt holds ${byteLength} bytes, more than the ${maxBytes} bytes a pasted image may hold`, param: 'images' });
 
 export const bodyTooLarge = (maxBytes: number): ApiError =>
   new ApiError({ status: 413, type: 'invalid_request', code: 'body_too_large', message: `the request body exceeds the limit of ${maxBytes} bytes` });

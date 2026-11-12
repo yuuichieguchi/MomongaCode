@@ -2,7 +2,7 @@ import path from 'node:path';
 import { loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
 import { createSandboxOf, placeholderJournalDirectoryOf } from './sandbox-of.ts';
-import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs, unixSocketPolicyOf } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -43,8 +43,10 @@ import { unaskedCommandsFor } from '@momonga/policy';
 import { DERIVED_CATCH_UP_PAGES, FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { productRuleVerifier } from './rule-verifier.ts';
+import { folderPolicyVerification } from './folder-verification.ts';
+import { supervisedGatewayStanding } from './supervised-gateway.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
-import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, sweepCallLocks } from '@momonga/tools';
+import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, operationCatalogueFacts, sweepCallLocks } from '@momonga/tools';
 import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
@@ -54,7 +56,7 @@ import type { GatewayClient } from '../gateway-client.ts';
 import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
 import type { RunNotifier } from '../service/notifier.ts';
-import { FACTS_SWEEP_BATCH_RUNS, FIDELITY_FOLD_VERSION } from '@momonga/protocol';
+import { FACTS_SWEEP_BATCH_RUNS, FIDELITY_FOLD_VERSION, RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { DaemonCurrentFrame } from '@momonga/protocol';
 import { recomputeFactsOf, startFactsSweeper } from '../service/facts-sweeper.ts';
 import { startMemorySweeper } from '../service/memory-sweeper.ts';
@@ -692,6 +694,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'cancel-upstream', run: () => tracker.settle(CANCEL_UPSTREAM_SETTLE_MS) });
 
+    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, locks: options.locks, timers, shellHost, env: process.env, clock, budgetMs: RULE_VERIFY_BUDGET_MS });
     const runService = await step('service', () =>
       createRunService({
         ...(signal === undefined ? {} : { startSignal: signal }),
@@ -736,6 +739,24 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         skills: skillsPort,
         agents: agentsPort,
         permissionRules: (session, requestSignal) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session, requestSignal),
+        gatewayStanding: supervisedGatewayStanding(fixedSocket(own.sockets.supervisor)),
+        policyVerification: folderPolicyVerification({
+          verifier: ruleVerifier,
+          ruleVerdicts: store.ruleVerdicts,
+          home: canonicalHome,
+          sessionsRoot: paths.tmp.sessions,
+          folder: async (cwd, requestSignal) => {
+            const { defaultMode, additionalDirectories } = await settingsComposition.sessionReadSettings(cwd, requestSignal);
+            const rules = await permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, { cwd }, requestSignal);
+            const lease = await sandboxes.acquire(requestSignal);
+            const { ruleEnforcement, sandbox } = lease.value;
+            lease.release();
+            const { sandboxUnixSockets } = (await settingsComposition.userSnapshot(requestSignal)).settings;
+            return { rules, additionalDirectories, enforcement: ruleEnforcement, unixSockets: unixSocketPolicyOf(sandbox.kind, sandboxUnixSockets.allow), ...(defaultMode === undefined ? {} : { defaultMode }) };
+          },
+          mandates: async (requestSignal) => (await settingsComposition.userSnapshot(requestSignal)).settings.mandates,
+          catalogue: operationCatalogueFacts,
+        }),
         userInput: createUserInputPort({
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
@@ -796,7 +817,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     service = runService;
     cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
-    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, locks: options.locks, timers, shellHost, env: process.env, clock });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
         const id = `runtime-${process.pid}-${startedAtMs}-${index}`;

@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFsInstructionReader } from '@momonga/context';
-import { NEVER_CANCELLED } from '@momonga/testkit';
+import { createTempDir, NEVER_CANCELLED } from '@momonga/testkit';
 
 const dirs: string[] = [];
 
@@ -12,7 +11,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-ctx-')));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };

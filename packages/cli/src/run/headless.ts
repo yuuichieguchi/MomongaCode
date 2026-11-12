@@ -343,6 +343,10 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
   };
 
+  const withdraw = (event: Extract<PublicRunEvent, { type: 'model.stream.restarted' }>): void => {
+    for (const itemId of event.itemIds) items.delete(itemId);
+  };
+
   const absorb = (frame: RunEventFrame): void => {
     const event = frame.data;
     if (isOpaqueEvent(event)) return;
@@ -350,6 +354,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     if (event.type === 'tool.call') titles.set(event.callId, event.title);
     if (event.type === 'tool.reconciled') found.set(event.callId, event.output);
     if (event.type === 'agent.message.delta') keep(event);
+    if (event.type === 'model.stream.restarted') withdraw(event);
   };
 
   const handle = (frame: RunEventFrame): void => {
@@ -358,6 +363,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     if (isOpaqueEvent(event)) return;
     track(event);
     if (event.type === 'agent.message.delta') keep(event);
+    else if (event.type === 'model.stream.restarted') withdraw(event);
     else present(event, undefined);
   };
 

@@ -2,7 +2,7 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { finishApprovingPrompts, launchRuntime, modelSettings, prepareStack, readDb, scriptedToolCall, sessionEnvFor, startGateway, waitForStatus } from './run-helpers.ts';
 import type { Launched, RunHome } from './run-helpers.ts';
 
@@ -82,7 +82,7 @@ describe('GitCommit through the runtime process, composed as the product compose
     await trust(launched, stack.temp);
     const session = await launched.createSession();
     const run = await launched.createRun(session.id, { input: 'write, stage and commit notes.txt', mandate: { profile: 'stage-commit' } });
-    await waitForStatus(stack.temp, run.id, FINAL);
+    await waitForStatus(stack.temp, run.id, FINAL, undefined, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
     expect(completedCalls(stack.temp, run.id)).toMatchObject([
       { status: 'completed' },
       { status: 'completed', effect: { operation: 'GitStage', outcome: 'applied' } },
@@ -90,7 +90,7 @@ describe('GitCommit through the runtime process, composed as the product compose
     ]);
     expect(gitIn(stack.temp, 'log', '-1', '--format=%s')).toBe('add notes');
     expect(gitIn(stack.temp, 'status', '--porcelain')).toBe('');
-  });
+  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 
   it('offers the Git and pull request operations only in a folder the person trusts', async () => {
     const stack = await prepareStack({ script: [textReply('first'), textReply('second')] });

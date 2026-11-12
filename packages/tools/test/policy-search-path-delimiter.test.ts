@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPolicyFilesystem } from '@momonga/tools';
+import { createTempDir } from '@momonga/testkit';
 
 const cleanups: Array<() => void> = [];
 
@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 const twoDirectories = (): { empty: string; holding: string; program: string } => {
-  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'search-path-'));
+  const root = createTempDir();
   cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
   const empty = path.join(root, 'empty');
   const holding = path.join(root, 'holding');

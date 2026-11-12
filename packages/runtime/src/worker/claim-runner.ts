@@ -229,7 +229,7 @@ const stopRejectedWrapUp = async (options: WorkerOptions, claim: Claim, journal:
   if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
   const { maxSteps } = readRunLimits(run.limits, options.defaults);
   journal.append([
-    { type: 'notice', level: 'error', message: `The gateway rejected the final summary request (${cause.code}): ${cause.message}`, code: 'final_summary_rejected' },
+    { type: 'notice', level: 'error', message: `The model refused the final summary request (${cause.code}): ${cause.message}. The work of the run is kept; ask for a summary in a new prompt.`, code: 'final_summary_rejected' },
   ]);
   await terminals.finish('STOPPED', { stopReason: summaryStopReason(inFlight.step, maxSteps) });
   return true;

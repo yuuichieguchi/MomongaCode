@@ -1,4 +1,4 @@
-import { HELPER_COMMAND, guardStandardStreams, nodeEntryIo, resolveLayoutLocks } from '@momonga/foundation';
+import { HELPER_COMMAND, guardStandardStreams, nodeEntryIo } from '@momonga/foundation';
 import type { ExecutableHelpers } from '@momonga/foundation';
 import { daemonEntries } from './daemon/entries.ts';
 import { helperCallOf } from './helper-mode.ts';
@@ -10,7 +10,6 @@ import { buildProgram, exitOfFailure } from './program.ts';
 import { terminalSink } from './terminal-writer.ts';
 import type { UpdateWiring } from './update/background.ts';
 import { nodeUpdateWiring } from './update/wiring.ts';
-import { nodePolicyVerifyHost } from './verify/host.ts';
 
 const registeredHelpers = async (): Promise<ExecutableHelpers> => (await import('@momonga/tools/executable-helpers')).executableHelpers;
 
@@ -27,10 +26,6 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     let update: UpdateWiring | undefined;
     const program = buildProgram({
       ports,
-      policyVerify: async () => {
-        const paths = await pathsOf(ports);
-        return nodePolicyVerifyHost(ports, paths, resolveLayoutLocks(paths).mechanism);
-      },
       entries: daemonEntries(ports.self, ports.version, ports.spawnDetached),
       helper: { helpers, call: helperCall, host: nodeHelperHost() },
       update: async () => (update ??= nodeUpdateWiring(ports, await pathsOf(ports))),

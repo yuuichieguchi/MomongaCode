@@ -3,8 +3,6 @@ import path from 'node:path';
 import { kernelLockNamed, layoutProcessInspector, resolveLayoutLocks } from '@momonga/foundation';
 import type { ClaimOutcome, KernelLockMechanism, LayoutLocks, LockCapability, LockCapabilityProbe, ProcessInspector } from '@momonga/foundation';
 
-export const LOCK_PROOF_PREFIX = 'momonga-test-lock-proof-';
-
 export const LOCK_PROOF_ENV = 'MOMONGA_TEST_LOCK_PROOF';
 
 let resolved: LayoutLocks | undefined;

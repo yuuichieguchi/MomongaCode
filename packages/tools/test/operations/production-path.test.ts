@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { REDACTED_MARKER } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, unconfiguredNetworkOf, testProcessInspector, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED, testProcessInspector, unconfiguredNetworkOf } from '@momonga/testkit';
 import { createOperationTools, createSandboxedArgvRunner, networkScopeOfDestinations, nodeShellHost } from '@momonga/tools';
 import type { CallOutcome, NeedsApprovalOutcome, ResultOutcome } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
@@ -221,7 +220,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the credential of a git child inside the rea
     };
     const markerDir = path.join(world.base, 'markers');
     fs.mkdirSync(markerDir);
-    const credentialRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cred-')));
+    const credentialRoot = createTempDir();
     onCleanup(() => fs.rmSync(credentialRoot, { recursive: true, force: true }));
     const runArgv = createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir, credentialRoot, credentialHelper: ENTRY_AS_SCRIPT });
     const ctx = contextFor(world.work, world.env);

@@ -7,7 +7,7 @@ import { NEVER_CANCELLED } from '@momonga/testkit';
 type Fixture = Awaited<ReturnType<typeof makeRuntimeFixture>>;
 
 const verified = (f: Fixture, runId: string): Promise<boolean> =>
-  exported<(deps: unknown, runId: string) => Promise<boolean>>('isRunVerified')({ store: withInProcessFacts(f.store, f.temp.dbPath), settings: f.composition.settings }, runId);
+  exported<(deps: unknown, runId: string, signal: AbortSignal) => Promise<boolean>>('isRunVerified')({ store: withInProcessFacts(f.store, f.temp.dbPath), settings: f.composition.settings }, runId, NEVER_CANCELLED);
 
 const projectCheckRun = async (f: Fixture) => {
   const session = createSession(f.store, f.temp.project);
@@ -49,9 +49,9 @@ describe('the memory settings port', () => {
     writeUserSettings(f.temp.home, {});
     writeProjectSettings(f.temp.project, { memory: { reflection: { enabled: false }, forgetAfterDays: 7, repositoryFacts: false } });
     const session = createSession(f.store, f.temp.project);
-    const settings = f.composition.settings as unknown as { memory(session: unknown): Promise<unknown> };
-    expect(await settings.memory(session)).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
+    const settings = f.composition.settings as unknown as { memory(session: unknown, signal: AbortSignal): Promise<unknown> };
+    expect(await settings.memory(session, NEVER_CANCELLED)).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
     await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
-    expect(await settings.memory(session)).toEqual({ reflection: { enabled: false }, forgetAfterDays: 7, repositoryFacts: false });
+    expect(await settings.memory(session, NEVER_CANCELLED)).toEqual({ reflection: { enabled: false }, forgetAfterDays: 7, repositoryFacts: false });
   });
 });

@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { productSources, relativeOf } from './support/source-scan.ts';
 import fs from 'node:fs';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const OWN_ENVIRONMENT = /\bmomonga(?:Layout|Paths)\((?:[^()]|\([^()]*\))*,\s*\{\}\s*\)/;
 

@@ -1,11 +1,10 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { REAL_PROCESS_TEST_TIMEOUT_MS, NEVER_CANCELLED } from '@momonga/testkit';
+import { createTempDir, NEVER_CANCELLED, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 
 import { MAX_POINTER_FILE_BYTES, syncPaths } from '@momonga/foundation';
 
@@ -29,7 +28,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-pfs-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { UNMEASURED_CAPABILITY, createLockCapability, createMarker } from '@momonga/foundation';
 import type { LockCapabilityProbe, MarkerHandle } from '@momonga/foundation';
+import { createTempDir } from '@momonga/testkit';
 
 const created: string[] = [];
 const handles: MarkerHandle[] = [];
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 const tempDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-marker-ro-')));
+  const dir = createTempDir();
   created.push(dir);
   return dir;
 };

@@ -1,8 +1,7 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { Sandbox } from '@momonga/sandbox';
 import { HAS_REAL_SANDBOX, createHostSandbox } from '../helpers.ts';
 import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
@@ -29,7 +28,7 @@ describe.runIf(HAS_RG && HAS_REAL_SANDBOX)('the model glob in the file form has 
   let tmpRoot = '';
 
   beforeAll(() => {
-    tmpRoot = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'grep-argv-form-'));
+    tmpRoot = createTempDir();
     fs.chmodSync(tmpRoot, 0o700);
   });
 

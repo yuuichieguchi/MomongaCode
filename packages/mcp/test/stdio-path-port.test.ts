@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { createStdioTransport } from '@momonga/mcp';
 import { nodeFileSystem } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_STDIO_LAUNCH, testProcessInspector } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -30,7 +29,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-path-')));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };

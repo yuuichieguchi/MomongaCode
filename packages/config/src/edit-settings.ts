@@ -12,6 +12,7 @@ import { repositoryLayerFrom, userSettingsFile } from './layers.ts';
 import { mergingLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
 import { localSettingsFile, worktreeRootOf } from './local-settings.ts';
+import { projectMcpServersFile } from './mcp-servers.ts';
 import type { RuleEffect } from './rule.ts';
 import { defaultUserSettings, userDocumentWarnings } from './user-settings.ts';
 
@@ -198,7 +199,7 @@ export const readSettingsSnapshot = async (settingsPlace: SettingsSnapshotReques
       layers,
       targets: shown,
       defaults: await defaultUserSettings(settingsPlace.home, asker),
-      mcpFile: repository ? path.join(settingsPlace.projectDir, '.mcp.json') : undefined,
+      mcpFile: repository ? projectMcpServersFile(settingsPlace.projectDir) : undefined,
     };
   }, asker);
 };

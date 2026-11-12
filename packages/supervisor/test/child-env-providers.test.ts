@@ -2,9 +2,8 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { secretStoreEnvFor } from '@momonga/foundation';
-import { modelSettings } from '@momonga/testkit';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { createTempDir, modelSettings } from '@momonga/testkit';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 
@@ -16,7 +15,7 @@ const OPEN_RESPONSES_VALUE = 'open-responses-env-value-0002';
 const STORED_SECRET_NAME = 'stored-main';
 
 const settingsWithProviders = async () => {
-  const home = mkdtempSync(path.join(tmpdir(), 'mm-env-'));
+  const home = createTempDir();
   try {
     mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
     writeFileSync(

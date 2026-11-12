@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -10,6 +9,7 @@ import { ensureMomongaDirs, momongaLayout } from '../../src/momonga-paths.ts';
 import { hostInspectorPorts } from '../../src/platform/process-inspector.ts';
 import { makeShortHomeDirectory, makeTemporaryDirectory } from '../support/temporary-directory.ts';
 import { lockIgnoringOps } from '../support/probe-fakes.ts';
+import { systemTempRoot } from '@momonga/testkit';
 
 const PLATFORM_SOURCES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'platform');
 
@@ -47,12 +47,12 @@ describe('one proof decides the lock of a directory', () => {
     const home = makeShortHomeDirectory();
     const paths = momongaLayout(home, process.platform, {});
     await ensureMomongaDirs(paths);
-    const before = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('momonga-lock-proof'));
+    const before = fs.readdirSync(systemTempRoot()).filter((name) => name.startsWith('momonga-lock-proof'));
     const locks = resolveLayoutLocks(paths);
     expect(paths.lockProof).toBe(path.join(paths.run, 'lock-proof'));
     expect(locks.mechanism.name).toBe((await locks.capability.of(paths.callLocks)) === 'proved' ? 'file-lock' : 'sqlite-lock');
     expect(fs.readdirSync(paths.lockProof)).toEqual([]);
-    expect(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('momonga-lock-proof'))).toEqual(before);
+    expect(fs.readdirSync(systemTempRoot()).filter((name) => name.startsWith('momonga-lock-proof'))).toEqual(before);
   });
 
   it.runIf(process.platform === 'darwin')('a layout on a filesystem that enforces BSD locks gets the file lock', async () => {

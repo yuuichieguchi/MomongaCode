@@ -3,26 +3,30 @@ import { isRuleVerdict } from '@momonga/protocol';
 import type { ServiceTimers } from '../service/timers.ts';
 import type { RuleVerification, RuleVerifyAbort, RuleVerifyJob } from './rule-verifier-thread.ts';
 
-export type RuleVerifierThreadOptions = { readonly code: string; readonly timers: ServiceTimers; readonly loadAllowanceMs: number };
+export type RuleVerifierThreadOptions = { readonly code: string; readonly timers: ServiceTimers; readonly startBoundMs: number; readonly onEntered?: () => void };
 
-export const WHOLE_VERIFICATION = 'verification';
-
-const undecided = (job: RuleVerifyJob, reason: string): RuleVerification => ({
-  verdict: { verdict: 'unknown', solver: job.solverVersion, refuted: [], unknown: [{ property: WHOLE_VERIFICATION, reason }], notProved: [] },
-  report: `The rules were not verified: ${reason}`,
-});
+export class RuleVerificationFailure extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'RuleVerificationFailure';
+  }
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
-const verificationOfReply = (job: RuleVerifyJob, reply: unknown): RuleVerification => {
-  if (isRecord(reply) && reply['ok'] === false && typeof reply['reason'] === 'string') return undecided(job, `the verification thread failed: ${reply['reason']}`);
-  if (isRecord(reply) && reply['ok'] === true && isRuleVerdict(reply['verdict']) && typeof reply['report'] === 'string') return { verdict: reply['verdict'], report: reply['report'] };
-  return undecided(job, 'the verification thread gave a reply that is not a verdict');
+const isEntered = (reply: unknown): boolean => isRecord(reply) && reply['entered'] === true;
+
+const verificationOfReply = (reply: unknown): RuleVerification => {
+  if (isRecord(reply) && reply['ok'] === false && typeof reply['reason'] === 'string') throw new RuleVerificationFailure(`the verification thread failed: ${reply['reason']}`);
+  if (isRecord(reply) && reply['ok'] === true && isRuleVerdict(reply['verdict']) && typeof reply['report'] === 'string' && isRecord(reply['findings'])) {
+    return { verdict: reply['verdict'], report: reply['report'], findings: reply['findings'] };
+  }
+  throw new RuleVerificationFailure('the verification thread gave a reply that is not a verdict');
 };
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const verifyInThread = ({ code, timers, loadAllowanceMs }: RuleVerifierThreadOptions, job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerification> =>
+export const verifyInThread = ({ code, timers, startBoundMs, onEntered }: RuleVerifierThreadOptions, job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerification> =>
   new Promise<RuleVerification>((resolve, reject) => {
     if (signal.aborted) {
       reject(signal.reason);
@@ -32,14 +36,20 @@ export const verifyInThread = ({ code, timers, loadAllowanceMs }: RuleVerifierTh
     try {
       worker = new Worker(code, { eval: true, workerData: job });
     } catch (error) {
-      resolve(undecided(job, `the verification thread could not be started: ${messageOf(error)}`));
+      reject(new RuleVerificationFailure(`the verification thread could not be started: ${messageOf(error)}`));
       return;
     }
     let ended = false;
+    let startBound: unknown = timers.setTimeout(() => end(() => reject(new RuleVerificationFailure(`the verification thread did not start within ${startBoundMs} ms`))), startBoundMs);
+    const clearStartBound = (): void => {
+      if (startBound === undefined) return;
+      timers.clearTimeout(startBound);
+      startBound = undefined;
+    };
     const end = (settle: () => void): void => {
       if (ended) return;
       ended = true;
-      timers.clearTimeout(bound);
+      clearStartBound();
       signal.removeEventListener('abort', onAbort);
       worker.terminate().then(settle, reject);
     };
@@ -48,13 +58,21 @@ export const verifyInThread = ({ code, timers, loadAllowanceMs }: RuleVerifierTh
       worker.postMessage(told);
       end(() => reject(signal.reason));
     };
-    const boundMs = job.budgetMs + loadAllowanceMs;
-    const bound = timers.setTimeout(
-      () => end(() => resolve(undecided(job, `the verification thread gave no verdict within ${boundMs} ms, the verification budget of ${job.budgetMs} ms and ${loadAllowanceMs} ms to load the solver`))),
-      boundMs,
-    );
     signal.addEventListener('abort', onAbort, { once: true });
-    worker.on('message', (reply: unknown) => end(() => resolve(verificationOfReply(job, reply))));
-    worker.on('error', (error: unknown) => end(() => resolve(undecided(job, `the verification thread failed: ${messageOf(error)}`))));
-    worker.on('exit', (exitCode: number) => end(() => resolve(undecided(job, `the verification thread exited with code ${exitCode} before it gave a verdict`))));
+    worker.on('message', (reply: unknown) => {
+      if (isEntered(reply)) {
+        clearStartBound();
+        onEntered?.();
+        return;
+      }
+      end(() => {
+        try {
+          resolve(verificationOfReply(reply));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    worker.on('error', (error: unknown) => end(() => reject(new RuleVerificationFailure(`the verification thread failed: ${messageOf(error)}`))));
+    worker.on('exit', (exitCode: number) => end(() => reject(new RuleVerificationFailure(`the verification thread exited with code ${exitCode} before it gave a verdict`))));
   });

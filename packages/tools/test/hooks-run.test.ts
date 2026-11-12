@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, reapMarkerDirectory } from '@momonga/foundation';
@@ -8,14 +7,14 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost, runStop, runUserPromptSubmit, runSessionStart } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, pollUntil, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { createTempDir, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED, testProcessInspector } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 let dir = '';
 
 beforeEach(() => {
-  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-hooks-')));
+  dir = createTempDir();
 });
 
 afterEach(() => {

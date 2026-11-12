@@ -3,7 +3,6 @@ import type { DaemonEntries } from './daemon/entries.ts';
 import type { HelperMode } from './helper-mode.ts';
 import type { CliPorts } from './ports.ts';
 import type { UpdateWiring } from './update/background.ts';
-import type { PolicyVerifyHost } from './verify/host.ts';
 
 export type ProgramDeps = {
   ports: CliPorts;
@@ -12,6 +11,5 @@ export type ProgramDeps = {
   entries: DaemonEntries;
   helper: HelperMode;
   update(): UpdateWiring | Promise<UpdateWiring>;
-  policyVerify(): PolicyVerifyHost | Promise<PolicyVerifyHost>;
   complete(code: number): void;
 };

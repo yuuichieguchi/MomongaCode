@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, POLL_INTERVAL_MS, SHUTDOWN_DRAIN_BOUND_MS } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, waitFor, sleepDrivenTiming, testProcessInspector } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir, sleepDrivenTiming, testProcessInspector, waitFor } from '@momonga/testkit';
 import type { ChildManager } from '../src/child-manager.ts';
 import { SHUTDOWN_REAP_BOUND_MS } from '../src/constants.ts';
 import type { ChildRole } from '../src/launcher.ts';
@@ -21,7 +20,7 @@ afterEach(() => {
 });
 
 const markersWithOne = (): { dir: string; marker: string } => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-probe-abort-'));
+  const dir = createTempDir();
   created.push(dir);
   const marker = path.join(dir, 'runtime-old');
   fs.writeFileSync(marker, '');

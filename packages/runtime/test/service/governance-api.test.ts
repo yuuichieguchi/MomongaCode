@@ -193,30 +193,37 @@ describe('policy governance route', () => {
   });
 });
 
-describe('rule verdict route', () => {
-  const proved = { verdict: 'proved', solver: 'z3 1', refuted: [], unknown: [], notProved: ['shell commands'] };
-  const fingerprint = 'a'.repeat(64);
+describe('policy verification route', () => {
+  const answer = { fingerprint: 'a'.repeat(64), stored: true, exitCode: 0, text: 'policy verification of 1 rule(s)', findings: { exitCode: 0 } };
 
-  it('stores the verdict a client computed under its fingerprint, where a run reads it', async () => {
+  it('has no route through which a client writes a verdict', async () => {
     const env = await startService({ fakeTimers: true });
-    const response = await env.http('PUT', `/v1/policy/verdicts/${fingerprint}`, { body: { verdict: proved } });
-    expect(response.status).toBe(204);
-    expect(env.store.ruleVerdicts.get(fingerprint)?.verdict).toEqual(proved);
+    const proved = { verdict: 'proved', solver: 'z3 1', refuted: [], unknown: [], notProved: [] };
+    const response = await env.http('PUT', `/v1/policy/verdicts/${'a'.repeat(64)}`, { body: { verdict: proved } });
+    expect(response.status).toBe(404);
+    expect(env.store.ruleVerdicts.get('a'.repeat(64))).toBeUndefined();
   });
 
-  it('stores a refuted verdict with its counterexample', async () => {
-    const env = await startService({ fakeTimers: true });
-    const refuted = { ...proved, verdict: 'refuted', refuted: [{ property: 'deny-precedence', subject: 'Read', message: 'a hole', counterexample: 'Read /work/a' }] };
-    expect((await env.http('PUT', `/v1/policy/verdicts/${fingerprint}`, { body: { verdict: refuted } })).status).toBe(204);
-    expect(env.store.ruleVerdicts.get(fingerprint)?.verdict).toEqual(refuted);
+  it('verifies the rules of the canonical folder in the daemon and answers its report', async () => {
+    const asked: unknown[] = [];
+    const env = await startService({
+      fakeTimers: true,
+      policyVerification: async (request) => {
+        asked.push(request);
+        return answer;
+      },
+    });
+    const response = await env.http('POST', '/v1/policy/verify', { body: { project: env.layout.project, mode: 'manual', secrets: ['/vault'], mandate: 'release' } });
+    expect(response.status).toBe(200);
+    expect(response.json).toEqual(answer);
+    expectSchema('PolicyVerifyResponse', response.json);
+    expect(asked).toEqual([{ cwd: env.layout.project, mode: 'manual', secrets: ['/vault'], mandate: 'release' }]);
   });
 
-  it('refuses a fingerprint that is not a sha256 and a body that is not a verdict, and stores nothing', async () => {
-    const env = await startService({ fakeTimers: true });
-    expectError(await env.http('PUT', '/v1/policy/verdicts/abc', { body: { verdict: proved } }), 400, 'invalid_request');
-    expectError(await env.http('PUT', `/v1/policy/verdicts/${fingerprint}`, { body: { verdict: { ...proved, verdict: 'certain' } } }), 400, 'invalid_request');
-    expectError(await env.http('PUT', `/v1/policy/verdicts/${fingerprint}`, { body: { verdict: proved, extra: 1 } }), 400, 'invalid_request');
-    expect(env.store.ruleVerdicts.get(fingerprint)).toBeUndefined();
+  it('refuses a body that is not a verification request, and a secret location that is not absolute', async () => {
+    const env = await startService({ fakeTimers: true, policyVerification: async () => answer });
+    expectError(await env.http('POST', '/v1/policy/verify', { body: { project: env.layout.project, secrets: [], extra: 1 } }), 400, 'invalid_request');
+    expectError(await env.http('POST', '/v1/policy/verify', { body: { project: env.layout.project, secrets: ['vault'] } }), 400, 'invalid_request');
   });
 });
 

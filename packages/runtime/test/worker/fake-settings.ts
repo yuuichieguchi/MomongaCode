@@ -31,7 +31,7 @@ export type FakeSettings = SettingsPort & {
 };
 
 export const createFakeSettings = (layout: { home: string; project: string }): FakeSettings => {
-  const parse = (effect: 'allow' | 'deny' | 'ask', text: string, session: Session): PermissionRule =>
+  const parse = (effect: 'allow' | 'deny' | 'ask', text: string, session: Pick<Session, 'cwd'>): PermissionRule =>
     parseRule(text, { effect, origin: 'local', source: 'settings.local.json', settingsRoot: layout.project, home: layout.home, cwd: session.cwd });
   const settings: FakeSettings = {
     stored: [],

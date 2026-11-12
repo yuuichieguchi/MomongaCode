@@ -1,8 +1,8 @@
 import { fork } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createTempDir } from '@momonga/testkit';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures', 'acp-relay.ts');
 
@@ -16,7 +16,7 @@ const request = (id: number): string => JSON.stringify({ jsonrpc: '2.0', id, met
 
 describe('an ACP client moved by the relay', () => {
   it('a request written after the move began is answered once, by the new process, even when half of it was read by the old one', async () => {
-    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-acp-relay-'));
+    const folder = createTempDir();
     folders.push(folder);
     const child = fork(FIXTURE, ['old', path.join(folder, 'record.json')], { stdio: ['pipe', 'pipe', 'inherit', 'ipc'] });
     let output = '';

@@ -111,3 +111,12 @@ describe('what a mandate must declare before the run is created', () => {
     expect(await refusal(terms({ mandate: { scope: { allow: ['Bash('] } } }))).toContain('the allow rule "Bash(" of the mandate is not a permission rule');
   });
 });
+
+describe('the refusal of a mandate on a model billed by use without a money budget', () => {
+  it('names the settings keys that hold a money budget', async () => {
+    const text = await refusal(terms({ mandate: { scope: { allow: ['Read(*)'] } } }, {}, PRICED));
+    expect(text).toContain('limits.maxCostUsd');
+    expect(text).toContain('budget.costUsd');
+    expect(text).toContain('USD');
+  });
+});

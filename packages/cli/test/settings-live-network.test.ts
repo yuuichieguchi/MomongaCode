@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { systemTiming } from '@momonga/foundation';
 import { withOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const cleanups: Array<() => void> = [];
 
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 const homeWithProxy = (): { ports: CliPorts; writeProxy(proxy: string): void } => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-cli-live-net-'));
+  const home = createTempDir();
   cleanups.push(() => fs.rmSync(home, { recursive: true, force: true }));
   const root = path.join(home, '.momonga');
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });

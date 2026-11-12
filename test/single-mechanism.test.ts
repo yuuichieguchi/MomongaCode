@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { countDeadlineLoops, countRenames } from './support/single-mechanism-scan.ts';
 import { parseSource, perFile, productSources, relativeOf } from './support/source-scan.ts';
 import type { Counts, ParsedSource } from './support/source-scan.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const counted = (text: string, count: (source: ParsedSource) => Counts): Counts => count(parseSource('sample.ts', text));
 

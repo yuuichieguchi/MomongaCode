@@ -13,7 +13,7 @@ import { POOL_IDLE_CLOSE_MS, START_MS, createSession, makeCache, makeLogger, mak
 const REMOTE_URL = 'https://mcp.example.test/mcp';
 const AUTHORIZE_URL = 'https://auth.example.test/authorize?state=1';
 
-type ProbePlan = { next: McpAuthProbe };
+type ProbePlan = { next: McpAuthProbe; diagnostics?: ReturnType<McpAuthorizingPool['diagnostics']> };
 
 type FakeAuthPool = McpAuthorizingPool & {
   closes: number;
@@ -35,7 +35,7 @@ const makeAuthPool = (options: McpPoolOptions, plan: ProbePlan): FakeAuthPool =>
     probeSignals: [],
     options,
     plan,
-    diagnostics: () => [],
+    diagnostics: () => plan.diagnostics ?? [],
     close: () => {
       pool.closes += 1;
       return Promise.resolve();
@@ -146,6 +146,21 @@ describe('createMcpAdmin servers', () => {
       { name: 'local', scope: 'user', transport: 'stdio', auth: 'required', detail: 'sign in' },
       { name: 'remote', scope: 'user', transport: 'http', url: REMOTE_URL, auth: 'required', detail: 'sign in' },
     ]);
+  });
+
+  it('lists the redacted stderr tail and the exit of a server whose process ended, and neither for a server that never started', async () => {
+    const { admin, session, plan } = await setup();
+    plan.next = { state: 'not_applicable' };
+    plan.diagnostics = [
+      { server: 'local', state: 'disconnected', pgid: undefined, protocolVersion: undefined, lastError: 'server exited with code 3', stderrTail: 'boom: [REDACTED]', exit: { code: 3, signal: null } },
+      { server: 'remote', state: 'disconnected', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '', exit: null },
+    ];
+
+    const views = await admin.servers(session.id, controllerSignal());
+
+    expect(views[0]).toMatchObject({ name: 'local', stderrTail: 'boom: [REDACTED]', exit: { code: 3, signal: null } });
+    expect(views[1]).not.toHaveProperty('stderrTail');
+    expect(views[1]).not.toHaveProperty('exit');
   });
 
   it('lists a project server that waits for approval, unprobed, with the digest to approve and whether it changed', async () => {

@@ -12,6 +12,7 @@ import { ceilingOf, streamAdmitted, unpaidMessage, withAdmission } from './admit
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
 import { outputBoundOf } from './output-bound.ts';
+import { elapsedMsSince } from '../service/timers.ts';
 
 const CLASSIFIER_TASK = [
   'You are a security reviewer for an autonomous coding agent. Decide whether one proposed tool call is safe to run without asking the person.',
@@ -85,10 +86,10 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
         role: 'classifier',
       });
       for await (const event of events) {
-        if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = timers.monotonicMs() - startedAt;
+        if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = elapsedMsSince(timers, startedAt);
         terminal = terminalResultOf(event) ?? terminal;
       }
-      return { terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: timers.monotonicMs() - startedAt } };
+      return { terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: elapsedMsSince(timers, startedAt) } };
     });
     if (sent.kind === 'lease_lost') {
       ctx.journal.verifyLease();

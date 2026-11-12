@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RELEASE_ASSETS } from '@momonga/foundation';
 import {
   RIPGREP_BINARY_ASSET,
@@ -12,6 +12,9 @@ import {
 } from '@momonga/tools';
 import { RIPGREP_TARGETS } from '../scripts/ripgrep-release.ts';
 import { moduleOf, readManifest } from './formal/manifest.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const root = path.resolve(import.meta.dirname, '..');
 const specDir = path.join(root, 'specs', 'tla');

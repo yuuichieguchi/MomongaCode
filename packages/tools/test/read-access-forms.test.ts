@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { createReadAccessMatcher } from '../src/read-access.ts';
-import { testProbes, testPaths } from '@momonga/testkit';
+import { createTempDir, testPaths, testProbes } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -16,7 +15,7 @@ afterEach(() => {
 });
 
 const makeProject = (): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-rforms-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

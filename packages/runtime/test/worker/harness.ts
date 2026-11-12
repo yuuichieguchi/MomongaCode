@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
@@ -7,7 +6,7 @@ import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HO
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
-import { applyCapabilityOverride } from '@momonga/protocol';
+import { RULE_VERIFY_BUDGET_MS, applyCapabilityOverride } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, Mandate, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createAgentLoader } from '@momonga/agents';
 import { contributionAtTerminal, createSkillsPort, createWorker } from '@momonga/runtime';
@@ -16,7 +15,7 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
-import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testLocks, testProcessInspector } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testLocks, testProcessInspector, createTempDir } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -218,7 +217,7 @@ const ruleSolverHost = installedRuleSolver(import.meta.url);
 
 export const makeEnv = async (options: EnvOptions = {}) => {
   resetResponseIds();
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-worker-')));
+  const root = createTempDir();
   const project = path.join(root, 'project');
   const home = path.join(root, 'home');
   const markers = path.join(home, '.momonga', 'run', 'markers');
@@ -365,7 +364,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
   });
 
-  const ruleVerifier: RuleVerifierPort = options.ruleVerifier ?? productRuleVerifier({ solver: () => ruleSolverHost, paths: layout, locks: testLocks(), timers: systemTimers, shellHost: nodeShellHost(), env: process.env, clock });
+  const ruleVerifier: RuleVerifierPort = options.ruleVerifier ?? productRuleVerifier({ solver: () => ruleSolverHost, paths: layout, locks: testLocks(), timers: systemTimers, shellHost: nodeShellHost(), env: process.env, clock, budgetMs: RULE_VERIFY_BUDGET_MS });
 
   const worker = (workerId = 'worker-1', overrides: WorkerOverrides = {}): Worker => {
     const { tools: toolOverrides, toolList, ...rest } = overrides;

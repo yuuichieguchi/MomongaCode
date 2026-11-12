@@ -1,4 +1,3 @@
-import { testKernelLock } from '@momonga/testkit';
 import http from 'node:http';
 import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
@@ -12,7 +11,6 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { freshHome } from './fresh-home.ts';
 import { NO_HELPER } from './no-helper.ts';
 
@@ -148,7 +146,6 @@ describe('a headless run reads the capabilities of its model from the gateway of
     const program = buildProgram(
       {
         ports,
-        policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
         entries,
         update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
         interrupt,

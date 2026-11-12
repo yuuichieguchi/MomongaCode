@@ -1,16 +1,15 @@
-import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIRST_GENERATION, SocketPathUnsupportedError, beginGenerationStart, ensureMomongaDirs, generationLayout, momongaPaths, shortTempBase } from '@momonga/foundation';
-import { firstRefusedSocketPathBytes, testKernelLock } from '@momonga/testkit';
+import { FIRST_GENERATION, SocketPathUnsupportedError, beginGenerationStart, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
+import { createTempDir, firstRefusedSocketPathBytes, testKernelLock } from '@momonga/testkit';
 
 const UNIX_ENDPOINTS = { form: 'unix' } as const;
 
 const SUPERVISOR_SOCKET_SUFFIX = Buffer.byteLength(path.join('.momonga', 'run', `g${FIRST_GENERATION}`, 'supervisor.sock')) + 1;
 
 const homeWhoseFirstSupervisorSocketIs = async (fromFirstRefused: number): Promise<{ home: string; byteLength: number }> => {
-  const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(shortTempBase(process.platform, os.tmpdir()), 'mm-fit-')));
+  const parent = createTempDir({ asHome: true });
   const byteLength = (await firstRefusedSocketPathBytes(parent)) + fromFirstRefused;
   const nameLength = byteLength - SUPERVISOR_SOCKET_SUFFIX - Buffer.byteLength(parent) - 1;
   return { home: path.join(parent, 'h'.repeat(nameLength)), byteLength };

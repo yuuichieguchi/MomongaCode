@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { findProgramOnPath, nodeFileSystem, openCommandFor } from '@momonga/foundation';
+import { createTempDir } from '@momonga/testkit';
 
 const URL_TO_OPEN = new URL('https://auth.example.com/authorize?client_id=a&state=b');
 
@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 const tempDir = (prefix: string): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
@@ -7,7 +6,7 @@ import { canonicalJson, openDatabase, sha256Hex, systemRandom, nodeFileSystem, B
 import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, HistoryQueryResult, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
-import { NEVER_CANCELLED, createFakeClock, testKernelLock } from '@momonga/testkit';
+import { createFakeClock, createTempDir, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, SettledBeforeCleanup } from '@momonga/testkit';
 import { UNASKED_COMMANDS } from './support/unasked.ts';
 
@@ -27,7 +26,7 @@ export const registerCleanup = (cleanup: () => void): void => {
 };
 
 export const makeStoreDir = (mode = 0o700): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, mode);
   registerCleanup(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;

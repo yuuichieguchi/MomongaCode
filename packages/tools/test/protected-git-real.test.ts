@@ -1,13 +1,12 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { isProtectedWrite, protectedSetFor, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs, askedBy } from '@momonga/policy';
 import type { SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
+import { createTempDir, isWritableFor, NEVER_CANCELLED, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, testProbes, testSecretLocations } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { HOST_SANDBOX_KIND, createHostSandbox } from './helpers.ts';
 
@@ -69,7 +68,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
 
   beforeAll(() => {
     if (!fs.existsSync(SYSTEM_GIT)) throw new Error(`system git required at ${SYSTEM_GIT}`);
-    root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-git-')));
+    root = createTempDir();
     const home = path.join(root, 'home');
     fs.mkdirSync(home);
     gitEnv = {
