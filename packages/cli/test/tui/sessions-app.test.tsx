@@ -227,7 +227,7 @@ describe('/clear (9.4)', () => {
     app.stdin.write(KEYS.escape);
     await untilFrame(app, IDLE);
     await runStarted(backend, app, 'second task');
-    expect(backend.started.at(-1)).toEqual({ text: 'second task', history: 'inherit' });
+    expect(backend.started.at(-1)).toEqual({ text: 'second task' });
     backend.finish(runView());
     await untilFrame(app, IDLE);
     await enter(app, '/exit');

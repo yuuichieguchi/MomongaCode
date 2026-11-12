@@ -87,7 +87,7 @@ export type TuiBackend = {
   models(): Promise<readonly MomongaModelEntry[]>;
   setModel(model: string): Promise<SessionView>;
   autoModeAvailable(): Promise<boolean>;
-  startRun(text: string, history: 'inherit' | 'fresh', options?: StartRunOptions): Promise<RunView>;
+  startRun(text: string, options?: StartRunOptions): Promise<RunView>;
   compact(instructions?: string): Promise<RunView>;
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
   cancel(runId: string): Promise<void>;
@@ -233,7 +233,7 @@ export const createTuiBackend = (
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
     boot: async () => {
       await ensureSessionDaemon(ports, paths, { signal: closing.signal, ...(onNewer === undefined ? {} : { onNewer }) });
-      client = connectSessionRuntime(ports, paths, onNewer);
+      client = connectSessionRuntime(ports, paths, onNewer, () => restoreDaemon(ports, paths, onNewer)(closing.signal));
       return client.trust(ports.cwd);
     },
     decideTrust: async (decision) => {
@@ -287,8 +287,7 @@ export const createTuiBackend = (
       return session;
     },
     autoModeAvailable: () => autoModeConfigured(ports, closing.signal),
-    startRun: async (text, history, runOptions = {}) =>
-      (await runtime().createRun(current().id, text, { history, ...runBoundsOf(options), ...runOptions })).run,
+    startRun: async (text, runOptions = {}) => (await runtime().createRun(current().id, text, { history: 'inherit', ...runBoundsOf(options), ...runOptions })).run,
     compact: (instructions) => runtime().compact(current().id, instructions),
     follow: async (runId, handlers) =>
       followRun({

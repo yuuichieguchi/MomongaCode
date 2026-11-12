@@ -81,7 +81,7 @@ describe('@ completion (design 5.7)', () => {
     expect(backend.started).toEqual([]);
     app.stdin.write(KEYS.enter);
     await vi.waitFor(() => expect(backend.started).toHaveLength(1));
-    expect(backend.started).toEqual([{ text: 'see @src/app.tsx ', history: 'inherit', options: { attachMentions: true } }]);
+    expect(backend.started).toEqual([{ text: 'see @src/app.tsx ', options: { attachMentions: true } }]);
     app.unmount();
   });
 
@@ -140,7 +140,7 @@ describe('@ attach (design 5.8)', () => {
     await type(app, 'explain @src/app.tsx and @.env now', '> explain @src/app.tsx and @.env now');
     app.stdin.write(KEYS.enter);
     await vi.waitFor(() => expect(backend.started).toHaveLength(1));
-    expect(backend.started).toEqual([{ text: 'explain @src/app.tsx and @.env now', history: 'inherit', options: { attachMentions: true } }]);
+    expect(backend.started).toEqual([{ text: 'explain @src/app.tsx and @.env now', options: { attachMentions: true } }]);
     backend.emit(
       frame({
         type: 'user.message',
@@ -161,7 +161,7 @@ describe('@ attach (design 5.8)', () => {
   it('does not ask for files when the text names none', async () => {
     const { app, backend } = await ready();
     await runStarted(backend, app, 'mail me@example.com');
-    expect(backend.started).toEqual([{ text: 'mail me@example.com', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: 'mail me@example.com' }]);
     app.unmount();
   });
 
@@ -178,7 +178,7 @@ describe('@ attach (design 5.8)', () => {
     await untilFrame(app, (now) => !now.includes(SWITCH_OFF));
     app.stdin.write(KEYS.enter);
     await vi.waitFor(() => expect(backend.started).toHaveLength(1));
-    expect(backend.started).toEqual([{ text: '@READ', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: '@READ' }]);
     app.unmount();
   });
 
@@ -190,7 +190,7 @@ describe('@ attach (design 5.8)', () => {
     await untilFrame(app, (now) => !now.includes(SWITCH_OFF));
     app.stdin.write(KEYS.enter);
     await vi.waitFor(() => expect(backend.started).toHaveLength(1));
-    expect(backend.started).toEqual([{ text: '@READ', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: '@READ' }]);
     app.unmount();
   });
 });
@@ -204,7 +204,7 @@ describe('image paste (design 5.7)', () => {
     expect(shown).toContain('attached [Image #1] (image/png, 11 bytes)');
     app.stdin.write(KEYS.enter);
     await vi.waitFor(() => expect(backend.started).toHaveLength(1));
-    expect(backend.started).toEqual([{ text: 'look [Image #1]', history: 'inherit', options: { images: [PNG] } }]);
+    expect(backend.started).toEqual([{ text: 'look [Image #1]', options: { images: [PNG] } }]);
     app.unmount();
   });
 
@@ -215,7 +215,7 @@ describe('image paste (design 5.7)', () => {
     app.stdin.write(KEYS.backspace);
     await untilFrame(app, (now) => inputLines(now)[0] === '>' && !now.includes('attached [Image #1]'));
     await runStarted(backend, app, 'no image');
-    expect(backend.started).toEqual([{ text: 'no image', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: 'no image' }]);
     app.unmount();
   });
 

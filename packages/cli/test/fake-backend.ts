@@ -77,7 +77,7 @@ export type FakeBackend = TuiBackend & {
   modelsFile(): string;
   readonly calls: string[];
   called(call: string): Promise<void>;
-  readonly started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[];
+  readonly started: { text: string; options?: StartRunOptions }[];
   readonly elicitationAnswers: { inputId: string; responses: Readonly<Record<string, ElicitationAnswerRecord>> }[];
   readonly openedUrls: string[];
   readonly openUrlCalls: { url: URL; watch: AbortSignal; onFailure(message: string): void }[];
@@ -240,7 +240,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     return options.settingsPlace;
   };
   const calls: string[] = [];
-  const started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[] = [];
+  const started: { text: string; options?: StartRunOptions }[] = [];
   const elicitationAnswers: FakeBackend['elicitationAnswers'] = [];
   const openedUrls: string[] = [];
   const openUrlCalls: FakeBackend['openUrlCalls'] = [];
@@ -421,10 +421,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       session = { ...session, permissionMode: mode };
       return session;
     },
-    startRun: async (text, history, runOptions = {}) => {
+    startRun: async (text, runOptions = {}) => {
       startedHere = true;
       startedPrompt = text;
-      started.push({ text, history, ...(Object.keys(runOptions).length === 0 ? {} : { options: runOptions }) });
+      started.push({ text, ...(Object.keys(runOptions).length === 0 ? {} : { options: runOptions }) });
       if (!conversations.some((conversation) => conversation.session.id === session.id)) conversations.push({ session: { ...session }, firstPrompt: text, runs: [{ id: 'run-1', frames: [] }] });
       return runView({ status: 'QUEUED', sessionId: session.id });
     },

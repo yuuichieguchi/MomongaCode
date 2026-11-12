@@ -291,12 +291,18 @@ const failedOf = (data: string, description: string): StreamFailed => {
   return new StreamFailed(description, body['code'], body['message']);
 };
 
-const socketErrorCodeOf = (error: unknown): string | undefined => {
+const errorCodeIn = (codes: ReadonlySet<string>) => (error: unknown): string | undefined => {
   for (let current: unknown = error; isRecord(current); current = current['cause']) {
-    if (typeof current['code'] === 'string' && RESENT_SOCKET_CODES.has(current['code'])) return current['code'];
+    if (typeof current['code'] === 'string' && codes.has(current['code'])) return current['code'];
   }
   return undefined;
 };
+
+const socketErrorCodeOf = errorCodeIn(RESENT_SOCKET_CODES);
+
+const DAEMON_ABSENT_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOENT']);
+
+const daemonAbsentCodeOf = errorCodeIn(DAEMON_ABSENT_CODES);
 
 const frameOf = (event: { id?: string; event?: string; data: string }, description: string): RunEventFrame => {
   if (event.id === undefined && event.event === DAEMON_CURRENT_EVENT) throw movedOf(event.data, description);
@@ -318,7 +324,7 @@ export const pathSegment = (value: string): string => {
   return encodeURIComponent(value);
 };
 
-export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; personCapability: () => Promise<string>; onMoved?: () => Promise<void> };
+export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; personCapability: () => Promise<string>; onMoved?: () => Promise<void>; restoreConnection?: () => Promise<void> };
 
 export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
   const http = createUdsClient(options.resolveSocket, { connectTimeoutMs: HOST_READ_BOUND_MS, headersTimeoutMs: HOST_READ_BOUND_MS });
@@ -335,6 +341,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     const headers: Record<string, string> = { ...(await personHeaders()), ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
     const repeatable = REPEATABLE_METHODS.has(method) || (method === 'POST' && headers['idempotency-key'] !== undefined);
     let socketResends = 0;
+    let restored = false;
     for (let movedResends = 0; ; ) {
       let response: UdsResponse;
       try {
@@ -345,6 +352,11 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
           ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
         });
       } catch (error) {
+        if (!restored && options.restoreConnection !== undefined && daemonAbsentCodeOf(error) !== undefined) {
+          restored = true;
+          await options.restoreConnection();
+          continue;
+        }
         if (!repeatable || socketResends >= SOCKET_ERROR_RESENDS || socketErrorCodeOf(error) === undefined) throw error;
         socketResends += 1;
         continue;
