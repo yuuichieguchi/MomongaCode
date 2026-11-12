@@ -13,11 +13,12 @@ const map = (payload: EventPayload, options: { phase?: Phase; features?: ClientF
 const call = { type: 'tool.call', callId: 'call-1', providerCallId: 'call-1', name: 'Edit', kind: 'edit', title: 'Edit a.txt', rawInput: { file_path: '/a.txt' } } as const;
 
 describe('messages', () => {
-  it('maps agent text and thought deltas to chunks of a message keyed by run and item', () => {
-    expect(map({ type: 'agent.message.delta', step: 1, attempt: 0, itemId: 'm1', text: 'Hi' })).toEqual([
+  it('maps agent text and thought deltas to one chunk of a message keyed by run and item, sent when the model response completes the item', () => {
+    const state = createMapperState();
+    expect(map({ type: 'agent.message.delta', step: 1, attempt: 0, itemId: 'm1', text: 'Hi' }, { state })).toEqual([]);
+    expect(map({ type: 'agent.thought.delta', step: 1, attempt: 0, itemId: 'm2', text: 'Hmm' }, { state })).toEqual([]);
+    expect(map({ type: 'model.responded', step: 1, attempt: 0, response: { status: 'completed', output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }, { state })).toEqual([
       { kind: 'update', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hi' }, messageId: 'run-1/m1' } },
-    ]);
-    expect(map({ type: 'agent.thought.delta', step: 1, attempt: 0, itemId: 'm2', text: 'Hmm' })).toEqual([
       { kind: 'update', update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Hmm' }, messageId: 'run-1/m2' } },
     ]);
   });
@@ -310,7 +311,7 @@ describe('events that are not part of the conversation', () => {
     { type: 'run.started', attempt: 1 },
     { type: 'run.status', from: 'QUEUED', to: 'RUNNING' },
     { type: 'model.requested', step: 1, attempt: 0, digest: 'd' },
-    { type: 'model.stream.restarted', step: 1, attempt: 0 },
+    { type: 'model.stream.restarted', step: 1, attempt: 0, itemIds: [] },
     { type: 'context.truncated', callId: 'call-1', handle: 'h', kind: 'truncated' },
     { type: 'instructions.loaded', path: '/w/AGENTS.md' },
     { type: 'skill.activated', name: 'pdf' },
