@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import { credentialNamesOf, stopValuesOfSettings } from '@momonga/config';
 import {
@@ -53,6 +52,7 @@ export const sandboxNetworkOf = (session: Pick<Session, 'sandboxNetwork'>, setti
 
 export type ToolRuntimeOptions = {
   mcpLaunch: StdioLaunch;
+  hostParallelism: number;
   lockCapability: LockCapabilityProbe;
   kernelLock: KernelLockMechanism;
   paths: MomongaPaths;
@@ -147,7 +147,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   });
   const executor = createToolExecutor({
     jobs,
-    hostParallelism: availableParallelism(),
+    hostParallelism: options.hostParallelism,
     outboundNetwork: async (signal) => (await options.network(signal)).outbound,
     fs: policyFilesystem,
     leaseMs: options.leaseMs,

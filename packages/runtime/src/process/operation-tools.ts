@@ -27,15 +27,36 @@ export const outboundForgeFetch =
   async (url, { boundMs, ...init }) => {
     const { outbound } = await networkOf(init.signal);
     const dispatcher = createOutboundDispatcher(outbound, { connectReplyTimeoutMs: boundMs });
+    let response: Response;
     try {
-      const response = await outboundFetch(dispatcher)(url, init);
-      const body = await response.arrayBuffer();
-      return new Response(body.byteLength === 0 ? null : body, { status: response.status, headers: [...response.headers] });
+      response = await outboundFetch(dispatcher)(url, init);
     } catch (error) {
-      throw findOutboundError(error) ?? error;
-    } finally {
       await dispatcher.destroy();
+      throw findOutboundError(error) ?? error;
     }
+    const answered = { status: response.status, headers: [...response.headers] };
+    if (response.body === null) {
+      await dispatcher.destroy();
+      return new Response(null, answered);
+    }
+    const source = response.body.getReader();
+    const body = new ReadableStream<Uint8Array>({
+      pull: async (controller) => {
+        const step = await source.read().catch(async (error: unknown) => {
+          await dispatcher.destroy();
+          throw findOutboundError(error) ?? error;
+        });
+        if (step.done) {
+          controller.close();
+          await dispatcher.destroy();
+        } else controller.enqueue(step.value);
+      },
+      cancel: async (reason) => {
+        await source.cancel(reason);
+        await dispatcher.destroy();
+      },
+    });
+    return new Response(body, answered);
   };
 
 export type ReconcileSandboxOptions = Pick<OperationToolsOptions, 'paths' | 'home' | 'sandboxes' | 'fs'>;

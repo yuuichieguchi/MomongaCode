@@ -178,6 +178,7 @@ export { createForgeAccess } from './forge/instances.ts';
 export { ISSUE_URL_FORM, hasFilter, issueLocationOf, listMatchingIssues, parseIssueUrl, readIssue } from './forge/issues.ts';
 export type { IssueAsk, IssueFilter, IssueLocation } from './forge/issues.ts';
 export type { ForgeAccess, ForgeAccessOptions, ForgeCredentialReference, ForgeInstance, ForgeRequest } from './forge/instances.ts';
+export { MAX_FORGE_RESPONSE_BYTES } from './forge/http.ts';
 export type { ForgeFetch } from './forge/http.ts';
 export { EMPTY_FOOTPRINT, blockedByHeldText, blockerOf, footprintOf, footprintsConflict } from './footprint.ts';
 export type { Footprint, HeldFootprint } from './footprint.ts';
