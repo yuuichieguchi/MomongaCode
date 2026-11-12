@@ -228,3 +228,22 @@ describe('waiting and subagent runs', () => {
     expect(state.runStatus).toBeUndefined();
   });
 });
+
+describe('the newest tool whose output has hidden lines (P-186)', () => {
+  const callOf = (callId: string) => ({ ...call, callId, providerCallId: `p-${callId}` });
+  const completed = (callId: string, output: string) => ({ type: 'tool.completed', callId, status: 'completed', output });
+  const long = Array.from({ length: 20 }, (_, index) => `line ${index}`).join('\n');
+
+  it('is an index the reducer keeps, the newest by position, not found by a scan', () => {
+    const store = storeOf([callOf('a'), callOf('b'), callOf('c'), completed('b', long), completed('a', long), completed('c', 'short')]);
+    expect(store.state().newestExpandableTool).toBe('call:b');
+    let reads = 0;
+    const at = store.at.bind(store);
+    store.at = (index) => {
+      reads += 1;
+      return at(index);
+    };
+    expect(store.byKey(store.state().newestExpandableTool ?? '')?.entry).toMatchObject({ kind: 'tool', callId: 'b' });
+    expect(reads).toBe(0);
+  });
+});

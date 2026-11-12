@@ -3,7 +3,8 @@ import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { DIFF_PREVIEW_ROWS } from '../../src/tui/screen/diff.ts';
 import { rowsOfEntry as rowsOfEntryWith } from '../../src/tui/screen/entry-rows.ts';
 import { OUTPUT_TAIL_MAX_BYTES, tailOf } from '../../src/tui/screen/output-tail.ts';
-import { createPager, entryViewLines, hasHiddenLines, VIEWER_UNIT_BYTES } from '../../src/tui/screen/tool-view.ts';
+import { createPager, entryViewLines, VIEWER_UNIT_BYTES } from '../../src/tui/screen/tool-view.ts';
+import { hasHiddenLines } from '../../src/tui/transcript.ts';
 import { displayWidth, logicalText } from '../../src/tui/screen/wrap.ts';
 import type { Row } from '../../src/tui/screen/wrap.ts';
 import { tickRunningTools } from '../../src/tui/transcript.ts';
@@ -152,6 +153,25 @@ describe('the output under a tool line (7.2)', () => {
       pager.fill(Number.POSITIVE_INFINITY);
       expect(logicalText(pager.rows).split('\n').map((line) => line.trimEnd())).toEqual((output === '' ? [''] : lines).map((line) => line.trimEnd()));
     }
+  });
+});
+
+describe('the byte bounds of the tool output (P-191)', () => {
+  const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
+
+  it('keeps a tail of at most 8 KiB in bytes of a multi-byte output, cut on a character boundary', () => {
+    const tail = tailOf('あ'.repeat(16 * 1024));
+    const kept = (tail?.lines ?? []).join('\n').replace(/^…/, '');
+    expect(bytesOf(kept)).toBeLessThanOrEqual(OUTPUT_TAIL_MAX_BYTES);
+    expect(bytesOf(kept)).toBeGreaterThan(OUTPUT_TAIL_MAX_BYTES - 4);
+    expect(kept).toMatch(/^あ+$/);
+  });
+
+  it('cuts a viewer unit of a multi-byte line at 16 KiB in bytes', () => {
+    const pager = createPager(entryViewLines({ kind: 'tool', callId: 'c', name: 'Bash', title: 'x', toolKind: 'execute', rawInput: undefined, status: 'completed', calledAt: 0, shownAt: 0, output: '😀'.repeat(20 * 1024) }), 100_000);
+    pager.fillUnit();
+    expect(bytesOf(pager.rows.map((row) => row.text).join(''))).toBeLessThanOrEqual(VIEWER_UNIT_BYTES);
+    expect(pager.rows.map((row) => row.text).join('')).toMatch(/^(😀)+$/u);
   });
 });
 

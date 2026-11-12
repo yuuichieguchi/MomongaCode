@@ -11,7 +11,7 @@ import { describeRetryWait } from '../retry-wait.ts';
 import { asChildEvent } from '../run/child-events.ts';
 import { isTerminalStatus } from '../run/follow.ts';
 import { isRecord } from '@momonga/foundation';
-import { appliedDiffOf } from './screen/diff.ts';
+import { appliedDiffOf, DIFF_PREVIEW_ROWS, diffRowCount } from './screen/diff.ts';
 import type { AppliedDiff, DiffFields } from './screen/diff.ts';
 import { EMPTY_USAGE } from './screen/store.ts';
 import { formatTokens } from '../format-tokens.ts';
@@ -117,8 +117,20 @@ export const setThoughtWindow = (store: TranscriptStore, window: number): void =
   if (state.openThought !== undefined) store.change(state.openThought, (entry) => (entry.kind === 'thought' ? { ...entry, window } : entry));
 };
 
+export const hasHiddenLines = (entry: ToolEntry): boolean => {
+  if (entry.denial !== undefined) return false;
+  if (entry.diff !== undefined) return entry.diff.hunks !== undefined && diffRowCount(entry.diff.hunks) > DIFF_PREVIEW_ROWS;
+  return entry.tail !== undefined && entry.tail.hidden > 0;
+};
+
 const updateTool = (store: TranscriptStore, callId: string, change: (tool: ToolEntry) => ToolEntry): void => {
-  store.change(callKey(callId), (entry) => (entry.kind === 'tool' ? change(entry) : entry));
+  const key = callKey(callId);
+  store.change(key, (entry) => (entry.kind === 'tool' ? change(entry) : entry));
+  const changed = store.byKey(key);
+  if (changed === undefined || changed.entry.kind !== 'tool' || !hasHiddenLines(changed.entry)) return;
+  const newest = store.state().newestExpandableTool;
+  const held = newest === undefined ? undefined : store.byKey(newest);
+  if (held === undefined || held.id < changed.id) store.update({ newestExpandableTool: key });
 };
 
 const withOutput = (tool: ToolEntry, output: string, shownAt: number): ToolEntry => {

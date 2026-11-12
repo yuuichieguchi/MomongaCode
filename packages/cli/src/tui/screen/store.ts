@@ -11,6 +11,7 @@ export type TranscriptState = {
   runningTools: readonly RunningTool[];
   openThought: string | undefined;
   newestThought: string | undefined;
+  newestExpandableTool: string | undefined;
   thoughtWindow: number;
   answeringTarget: string | undefined;
   lastFailure: AttemptFailed | undefined;
@@ -35,6 +36,7 @@ export const initialState: TranscriptState = {
   runningTools: [],
   openThought: undefined,
   newestThought: undefined,
+  newestExpandableTool: undefined,
   thoughtWindow: MIN_THOUGHT_WINDOW,
   answeringTarget: undefined,
   lastFailure: undefined,
