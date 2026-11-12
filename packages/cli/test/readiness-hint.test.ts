@@ -57,7 +57,7 @@ const headless = async (context: Parameters<typeof withTempDir>[0], capabilities
     stdout: { write: (text: string) => stdout.push(text) },
     stderr: { write: (text: string) => stderr.push(text) },
   } as unknown as CliPorts;
-  const options = { prompt: 'explain the module', format: 'text', verbose: false, interrupt: new AbortController().signal, capabilitiesOf: async () => capabilities, modelList: async () => ({ data: [], start: null }) } as HeadlessOptions;
+  const options = { prompt: async () => 'explain the module', format: 'text', verbose: false, interrupt: new AbortController().signal, capabilitiesOf: async () => capabilities, modelList: async () => ({ data: [], start: null }) } as HeadlessOptions;
   const code = await runHeadless(ports, paths, options);
   return { code, stderr: stderr.join(''), stdout: stdout.join(''), paths };
 };

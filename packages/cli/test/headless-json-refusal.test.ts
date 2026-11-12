@@ -25,7 +25,7 @@ const headless = async (context: Parameters<typeof withTempDir>[0], format: Head
   const stdout: string[] = [];
   const ports = { version: '1.0.0', env: { PATH: '/usr/bin' }, home, cwd: home, clock: virtualClock(), random: () => 0.5, stdout: { write: (text: string) => stdout.push(text) }, stderr: { write: () => undefined } } as unknown as CliPorts;
   const options = {
-    prompt: 'explain the module',
+    prompt: async () => 'explain the module',
     skill: 'no-such-skill',
     format,
     verbose: false,
