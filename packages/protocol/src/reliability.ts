@@ -3,6 +3,7 @@ import { boolean, closedRequiringAll, nonEmptyString, nonNegativeInteger, nullab
 import type { JsonSchema } from './schema-helpers.ts';
 import type { ApprovalBasis, PermissionDenialSource } from './permission-denial.ts';
 import type { PermissionMode, RunStatus, SideEffect, StopReason } from './run-types.ts';
+import type { RunTraceSpan } from './run-api.ts';
 
 export const RELIABILITY_FORMAT = 'momonga-reliability/6';
 
@@ -145,6 +146,10 @@ export type ReportRecomputePage = { rows: RunFactsView[]; refused: string[] };
 
 export const MAX_TRACE_CONTENT_PAGE = 50;
 
+export const MAX_RUN_SPANS_PAGE = 500;
+
+export type RunSpansPage = { spans: RunTraceSpan[]; next: number | null };
+
 export const TRACE_CONTENT_PAGE_OPTION = { flag: '--page-size', minimum: 1, maximum: MAX_TRACE_CONTENT_PAGE, default: MAX_TRACE_CONTENT_PAGE } as const;
 
 export const RELIABILITY_DERIVATIONS = {
@@ -168,6 +173,8 @@ export const RELIABILITY_DERIVATIONS = {
   COST_UNIT_DIGITS: 'Derived: the decimal places of one US dollar in units of the price table, log10(NANO_PER_USD x PRICE_UNITS_PER_NANO) = 9 + 6.',
   MAX_TRACE_CONTENT_PAGE:
     'The most stored message bodies one request for the content of a trace returns. A product choice with no formula: a body has no size bound of its own, so no byte budget fixes the count, and it bounds only the rows of one read. trace --content --page-size reads fewer bodies per request, from 1 to this value, and this value when omitted.',
+  MAX_RUN_SPANS_PAGE:
+    'Equal to MAX_BILLED_CALLS_PAGE: the most spans of a run one request for them returns. A span carries its attributes and no message body, so the bound of the billed calls page, which reads the same rows, bounds it as well.',
   'permissions review --sample needs --seed':
     'The sample is the first calls in an order fixed by the call and the seed, so the seed is what lets a person come back to a sample: the same seed lists the same calls again, and without one a second listing could not be matched to the labels already stored.',
   'trace --content --json':

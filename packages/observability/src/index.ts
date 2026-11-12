@@ -15,7 +15,7 @@ export type { CallPrice, LegacyPrecisionPrice, MoneyTally } from './money-line.t
 export { LOCAL_PRICE_VERSION, amountOfUnits, definePriceTable, findPriceEntry, priceCall, quoteChain, runCostsOf } from './cost.ts';
 export type { QuotedMember } from './cost.ts';
 export type { RunCostCall } from './cost.ts';
-export { MAX_TRACE_CONTENT_PAGE, pageRunBodies } from './trace-content.ts';
+export { MAX_TRACE_CONTENT_PAGE, pageRunBodies, pageRunSpans } from './trace-content.ts';
 export type { CallBilling, CostInput, CostUsage, PriceCallInput, PriceEntry, PriceTable, PricedCall, UnpricedPrice } from './cost.ts';
 export { buildCostReport, formatCostReport } from './cost-report.ts';
 export type { CostReport, CostReportOptions, CostTotals, CostedRun, RoleCost, RunCost, SessionCost } from './cost-report.ts';
@@ -49,7 +49,7 @@ export type {
   ToolContent,
   ToolSpanInput,
 } from './spans.ts';
-export { summarizeRun } from './summary.ts';
+export { summarizeRun, summarizeSpans } from './summary.ts';
 export type { ChatResult, RunSummary } from './summary.ts';
 export { closeTelemetry, contextOf, createTelemetry, traceparentOf } from './telemetry.ts';
 export type {
@@ -63,7 +63,7 @@ export { createTraceStoreExporter } from './trace-exporter.ts';
 export type { BodyCapture } from './trace-exporter.ts';
 export { OTLP_EXPORTS_PER_TEARDOWN, OTLP_EXPORT_TIMEOUT_MS, OTLP_TEARDOWN_SHARE, createOtlpTraceExporter, exportersFor, otlpTracesUrl } from './otlp.ts';
 export type { OtlpExporterOptions, OtlpExporterSettings } from './otlp.ts';
-export { BODY_KINDS, openTraceStore } from './trace-store.ts';
+export { BODY_KINDS, openTraceStore, spanRecordOfView } from './trace-store.ts';
 export type {
   BodyKind,
   BodyRecord,

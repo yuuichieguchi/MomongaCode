@@ -94,6 +94,7 @@ import {
   openTraceStore,
   pageBilledCalls,
   pageRunBodies,
+  pageRunSpans,
 } from '@momonga/observability';
 import type { PriceTable, Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, DialectId, HealthResult, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
@@ -1556,6 +1557,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       traceContent: async (runId, after, limit, requestSignal) => {
         await flushTelemetry(requestSignal);
         return pageRunBodies(traceStore, runId, after, limit);
+      },
+      traceSpans: async (runId, after, limit, requestSignal) => {
+        await flushTelemetry(requestSignal);
+        return pageRunSpans(traceStore, runId, after, limit);
       },
       retentionPurge: async (runIds, cutoffMs, requestSignal) => {
         await flushTelemetry(requestSignal);
