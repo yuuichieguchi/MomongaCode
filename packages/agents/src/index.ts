@@ -14,5 +14,7 @@ export type {
   ChildRunRequest,
   ChildRuns,
   ChildRunSpawner,
+  ProjectAgentApproved,
+  ProjectAgentFile,
 } from './types.ts';
 export { childResultOf, childToolResultOf } from './tool.ts';

@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { pendingProjectItems } from '@momonga/config';
 import type { PendingChange, PendingProjectItem, ProjectAgentsLister } from '@momonga/config';
 import { createAgentLoader } from '@momonga/agents';
+import type { ProjectAgentApproved } from '@momonga/agents';
 import { createNodeSkillFileSystem } from '@momonga/skills';
 import type { TrustItemChange, TrustItemsView } from '@momonga/protocol';
 import { diffOfContents } from '@momonga/tools';
@@ -42,7 +43,7 @@ const contentOf = (item: PendingProjectItem): unknown => {
   return item.config;
 };
 
-const NOTHING_APPROVED: ReadonlySet<string> = new Set();
+const NOTHING_APPROVED: ProjectAgentApproved = () => false;
 
 const shownChange = (change: PendingChange, now: unknown): TrustItemChange => (change.kind === 'changed' ? { kind: 'changed', diff: diffOfContents(shownContent(change.earlier), shownContent(now)) } : change);
 
@@ -50,7 +51,7 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
   const { store } = deps;
   const agentLoader = createAgentLoader({ home: deps.home, fileSystem: createNodeSkillFileSystem() });
   const projectAgents: ProjectAgentsLister = async (projectDir, signal) =>
-    (await settledOrAborted(agentLoader.load({ projectRoot: projectDir, trusted: true, approvedProjectAgents: NOTHING_APPROVED }), signal)).pendingApproval;
+    (await settledOrAborted(agentLoader.load({ projectRoot: projectDir, trusted: true, projectAgentApproved: NOTHING_APPROVED }), signal)).pendingApproval;
 
   const viewOf = async (canonical: string, signal: AbortSignal): Promise<Response> => json({ trust: { path: canonical, ...(await store.trust.decisionAsked(canonical, signal)) } }, 200);
 
