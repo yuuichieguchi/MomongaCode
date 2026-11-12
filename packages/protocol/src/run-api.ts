@@ -917,6 +917,7 @@ const trustItemsView = closed(
 
 const costTotalsProperties: Record<string, JsonSchema> = {
   calls: nonNegativeInteger,
+  retries: nonNegativeInteger,
   localCalls: nonNegativeInteger,
   unpricedCalls: nonNegativeInteger,
   unknownBillingCalls: nonNegativeInteger,
@@ -1335,6 +1336,7 @@ export type RoleCostView = {
   fallbackCalls?: number;
   fallbacks?: CostFallbackView[];
   calls: number;
+  retries: number;
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
