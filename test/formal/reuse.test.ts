@@ -7,11 +7,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
 import { cfgFor, holdsEntry, tinySpec, writeFile } from './fixtures.ts';
 import type { ManifestEntry } from './manifest.ts';
-import { canonicalJson, closureOf, createJavaIdentityReader, createResultStore, keyOf, keyPartsOf, refusalOf, reuseModeOf, sha256Hex } from './reuse.ts';
+import { HARNESS_FILES, canonicalJson, closureOf, createJavaIdentityReader, createResultStore, keyOf, keyPartsOf, refusalOf, reuseModeOf, sha256Hex } from './reuse.ts';
 import type { JavaIdentity, KeyParts, ResultRecord, StoreOps } from './reuse.ts';
 import { pollUntil } from '@momonga/testkit';
 
-const HARNESS_FILES = ['scripts/tlc.sh', 'test/formal/runner.ts', 'test/formal/verdict.ts', 'test/formal/manifest-reader.ts', 'test/formal/reuse.ts', 'test/formal/check-entry.ts', 'test/formal/tier.ts'] as const;
 
 const JAVA: JavaIdentity = { runtime: '22.0.1+8-16', vm: 'OpenJDK 64-Bit Server VM', os: 'Mac OS X', arch: 'aarch64' };
 
@@ -20,7 +19,7 @@ const digestOf = (seed: string): string => sha256Hex(seed);
 const flipFirstHex = (digest: string): string => `${digest[0] === '0' ? '1' : '0'}${digest.slice(1)}`;
 
 const baseParts = (): KeyParts => ({
-  format: 'momonga-tlc-key/1',
+  format: 'momonga-tlc-key/2',
   config: 'Tiny',
   harness: Object.fromEntries(HARNESS_FILES.map((file) => [file, digestOf(file)])),
   jar: digestOf('jar'),
@@ -29,6 +28,7 @@ const baseParts = (): KeyParts => ({
   args: ['-fp', '0'],
   cfg: digestOf('cfg'),
   modules: [['Tiny', digestOf('Tiny.tla')]],
+  inputs: [['Handover.actors.json', digestOf('Handover.actors.json')]],
 }) as unknown as KeyParts;
 
 const withField = (change: (parts: Record<string, unknown>) => void): KeyParts => {
@@ -122,10 +122,13 @@ describe('the key of a run', () => {
       withField((parts) => {
         parts['modules'] = [['Tiny', flipFirstHex(digestOf('Tiny.tla'))]];
       }),
+      withField((parts) => {
+        parts['inputs'] = [['Handover.actors.json', flipFirstHex(digestOf('Handover.actors.json'))]];
+      }),
     ];
-    expect(variants).toHaveLength(17);
+    expect(variants).toHaveLength(HARNESS_FILES.length + 11);
     const keys = new Set([keyOf(baseParts()), ...variants.map((parts) => keyOf(parts))]);
-    expect(keys.size).toBe(18);
+    expect(keys.size).toBe(HARNESS_FILES.length + 12);
   });
 });
 
@@ -143,6 +146,8 @@ describe('the parts of a key read from a repository', () => {
     writeFile(specFile('Tiny.cfg'), cfgFor('Small'));
     writeFile(specFile('Tiny.broken.cfg'), cfgFor('Small'));
     writeFile(specFile('Unrelated.tla'), '---- MODULE Unrelated ----\nEXTENDS Naturals\n====\n');
+    writeFile(specFile('Handover.actors.json'), '[]\n');
+    writeFile(specFile('manifest.json'), '{}\n');
   });
 
   afterEach(() => {
@@ -182,6 +187,30 @@ describe('the parts of a key read from a repository', () => {
     expect(await partsFor()).toEqual(before);
   });
 
+  it('gives another key when a JSON input of the specs changes, such as specs/tla/Handover.actors.json', async () => {
+    const before = await keyFor();
+    fs.appendFileSync(specFile('Handover.actors.json'), ' ');
+    expect(await keyFor()).not.toBe(before);
+  });
+
+  it('gives another key when a JSON input is added to specs/tla', async () => {
+    const before = await keyFor();
+    writeFile(specFile('Retention.stores.json'), '[]\n');
+    expect(await keyFor()).not.toBe(before);
+  });
+
+  it('gives the same parts when only the measurements of the manifest change', async () => {
+    const before = await partsFor();
+    fs.appendFileSync(specFile('manifest.json'), ' ');
+    expect(await partsFor()).toEqual(before);
+  });
+
+  it('gives another key when the one reader of a configuration changes', async () => {
+    const before = await keyFor();
+    fs.appendFileSync(path.join(root, 'test', 'formal', 'cfg-names.ts'), ' ');
+    expect(await keyFor()).not.toBe(before);
+  });
+
   it('gives another key when one byte of the manifest reader changes', async () => {
     const before = await keyFor();
     fs.appendFileSync(path.join(root, 'test', 'formal', 'manifest-reader.ts'), ' ');
@@ -191,6 +220,7 @@ describe('the parts of a key read from a repository', () => {
   it('holds the stated fields with repository-relative harness paths and the closure modules', async () => {
     const parts = (await partsFor()) as KeyParts;
     expect(Object.keys(parts.harness).sort()).toEqual([...HARNESS_FILES].sort());
+    expect(Object.keys(parts.harness)).toContain('test/formal/cfg-names.ts');
     expect(parts.modules).toEqual([['Tiny', sha256Hex(tinySpec)]]);
     expect(parts.cfg).toBe(sha256Hex(cfgFor('Small')));
     expect(parts.jar).toBe(sha256Hex('fake jar bytes'));
@@ -198,7 +228,8 @@ describe('the parts of a key read from a repository', () => {
     expect(parts.workers).toBe(5);
     expect(parts.java).toEqual(JAVA);
     expect(parts.config).toBe('Tiny');
-    expect(parts.format).toBe('momonga-tlc-key/1');
+    expect(parts.inputs).toEqual([['Handover.actors.json', sha256Hex('[]\n')]]);
+    expect(parts.format).toBe('momonga-tlc-key/2');
   });
 
   it.each([
@@ -688,11 +719,11 @@ describe('one definition of the record format', () => {
 });
 
 describe('the inputs TLC can load from the specification directory', () => {
-  it('are only modules, configurations and the manifest', () => {
+  it('are only modules, configurations, the manifest and JSON inputs, each of which the key covers', () => {
     const specDir = path.resolve(import.meta.dirname, '..', '..', 'specs', 'tla');
     const others = fs
       .readdirSync(specDir, { withFileTypes: true })
-      .filter((entry) => !(entry.isFile() && (entry.name.endsWith('.tla') || entry.name.endsWith('.cfg') || entry.name === 'manifest.json')))
+      .filter((entry) => !(entry.isFile() && (entry.name.endsWith('.tla') || entry.name.endsWith('.cfg') || entry.name.endsWith('.json'))))
       .map((entry) => entry.name);
     expect(others).toEqual([]);
   });

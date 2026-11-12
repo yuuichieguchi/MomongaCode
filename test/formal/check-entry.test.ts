@@ -9,11 +9,10 @@ import type { CheckOutcome, CheckRequest } from './check-entry.ts';
 import { cfgFor, completedOutput, holdsEntry, invariantEntry, invariantViolationOutput, temporalEntry, temporalViolationOutput, tinySpec, writeFile } from './fixtures.ts';
 import type { ManifestEntry } from './manifest.ts';
 import { TLC_WORKERS } from './runner.ts';
-import { RAN_REASONS, createJavaIdentityReader, createResultStore } from './reuse.ts';
+import { HARNESS_FILES, RAN_REASONS, createJavaIdentityReader, createResultStore } from './reuse.ts';
 import type { JavaIdentity, ResultStore } from './reuse.ts';
 
 const realRoot = path.resolve(import.meta.dirname, '..', '..');
-const HARNESS_FILES = ['scripts/tlc.sh', 'test/formal/runner.ts', 'test/formal/verdict.ts', 'test/formal/manifest-reader.ts', 'test/formal/reuse.ts', 'test/formal/check-entry.ts', 'test/formal/tier.ts'] as const;
 const NOW = '2026-11-10T04:05:06.000Z';
 const JAVA: JavaIdentity = { runtime: '22.0.1+8-16', vm: 'OpenJDK 64-Bit Server VM', os: 'Mac OS X', arch: 'aarch64' };
 const NESTED_RUN_TIMEOUT_MS = 180000;
