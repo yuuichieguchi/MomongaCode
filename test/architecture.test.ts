@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { buildContext, createFsInstructionReader, createTokenMeter } from '@momonga/context';
 import type { Capabilities } from '@momonga/protocol';
 import { createBuiltinTools, createMemoryTools, createToolRegistry } from '@momonga/tools';
-import { TEST_FENCE } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, TEST_FENCE } from '@momonga/testkit';
 
 const root = path.resolve(import.meta.dirname, '..');
 const packagesDir = path.join(root, 'packages');
@@ -509,7 +509,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
       },
     };
     const registry = createToolRegistry();
-    const registered = [...createBuiltinTools(), ...createMemoryTools({ port: unusedPort, trusted: true })];
+    const registered = [...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER), ...createMemoryTools({ port: unusedPort, trusted: true })];
     for (const tool of registered) registry.register(tool);
     const visible = (await registry.snapshot()).forModel({ mode: 'manual', rules: [] });
     const meter = createTokenMeter({

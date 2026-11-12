@@ -1,7 +1,7 @@
 import net from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { bashTool } from '../src/builtins/bash.ts';
+import { TEST_BUILTIN_TOOL_OFFER, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { bashToolFor } from '../src/builtins/bash.ts';
 import { approvalOf, makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import type { Builtins } from './builtins/fixtures.ts';
 import { makeLayout } from './helpers.ts';
@@ -39,7 +39,7 @@ const reach = (port: number): string => `/usr/bin/nc -z -w 2 127.0.0.1 ${port}`;
 
 describe('the Bash tool tells the model how to ask for the network', () => {
   it('says the sandbox has no network and names the field, in both descriptions', () => {
-    for (const text of [bashTool.description, bashTool.conciseDescription]) {
+    for (const text of [bashToolFor(TEST_BUILTIN_TOOL_OFFER).description, bashToolFor(TEST_BUILTIN_TOOL_OFFER).conciseDescription]) {
       expect(text).toContain('no network');
       expect(text).toContain('network');
       expect(text).toContain('"open"');

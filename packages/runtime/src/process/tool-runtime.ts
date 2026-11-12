@@ -24,10 +24,11 @@ import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory, systemResolver }
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts, StdioLaunch } from '@momonga/mcp';
 import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { createBuiltinTools, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { BundledRipgrepResolver, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
+import { holdSandbox } from '../worker/held-sandbox.ts';
+import { createBuiltinTools, offeredBashOf, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
+import type { BuiltinToolOffer, BundledRipgrepResolver, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
-import type { ToolRuntimePort } from '../ports.ts';
+import type { ToolEnv, ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { createBackgroundJobs } from './background-jobs.ts';
@@ -210,6 +211,13 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     ...(options.helperSelf === undefined ? {} : { helperSelf: options.helperSelf }),
   });
 
+  const builtinOfferOf = async (session: Session, env: ToolEnv, signal: AbortSignal): Promise<BuiltinToolOffer> => {
+    const held = await holdSandbox(sandboxes, signal);
+    const kind = held.sandbox.kind;
+    held.done();
+    return { sandbox: kind, sandboxNetwork: sandboxNetworkOf(session, settings.takeUserSnapshot().settings.sandboxNetwork), bash: await offeredBashOf(options.shellHost, env) };
+  };
+
   const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env, additionalTools, only }) => {
     const run = store.getRun(runId);
     if (run === undefined) throw new Error(`run ${runId} does not exist`);
@@ -263,7 +271,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       }
 
       const registry = createToolRegistry();
-      for (const tool of createBuiltinTools()) registry.register(tool);
+      for (const tool of createBuiltinTools(await builtinOfferOf(session, env, signal))) registry.register(tool);
       if (trust === 'trusted') for (const tool of operationTools(snapshot)) registry.register(tool);
       for (const tool of additionalTools ?? []) registry.register(tool);
       for (const source of sources) registry.addSource(source);
@@ -283,9 +291,9 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     }
   };
 
-  const recoveryToolSet: ToolRuntimePort['recoveryToolSet'] = async ({ signal, additionalTools }) => {
+  const recoveryToolSet: ToolRuntimePort['recoveryToolSet'] = async ({ signal, session, env, additionalTools }) => {
     const registry = createToolRegistry();
-    for (const tool of createBuiltinTools()) registry.register(tool);
+    for (const tool of createBuiltinTools(await builtinOfferOf(session, env, signal))) registry.register(tool);
     for (const tool of operationTools(await settings.userSnapshot(signal))) registry.register(tool);
     for (const tool of additionalTools ?? []) registry.register(tool);
     return registry.snapshot({ signal });

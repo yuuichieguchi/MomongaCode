@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { TEST_BUILTIN_TOOL_OFFER } from '@momonga/testkit';
 import path from 'node:path';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
@@ -23,7 +24,7 @@ const offeredTools = async (): Promise<readonly AnyTool[]> => {
   const offered: ToolSet[] = [];
   const toolSet = async (_runId: string, options: { additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet> => {
     const registry = createToolRegistry();
-    for (const tool of [...createBuiltinTools(), ...(options.additionalTools ?? [])]) registry.register(tool);
+    for (const tool of [...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER), ...(options.additionalTools ?? [])]) registry.register(tool);
     return registry.snapshot();
   };
   env.gateway.script.push(callsStep([{ callId: 'lint-1', name: 'UpdatePlan', args: { entries: [{ content: 'lint', status: 'pending', priority: 'low' }] } }]), textStep('Done.'));
@@ -60,7 +61,7 @@ describe('lint of every tool a claim offers', () => {
   it('compiles each input and output schema with Ajv strict mode and accepts it through the untrusted-schema boundary', async () => {
     const tools = await offeredTools();
     const names = tools.map((tool) => tool.name);
-    expect(names.length).toBeGreaterThan(createBuiltinTools().length);
+    expect(names.length).toBeGreaterThan(createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).length);
     expect(new Set(names).size).toBe(names.length);
     const problems: string[] = [];
     for (const tool of tools) {

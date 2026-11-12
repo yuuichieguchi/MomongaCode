@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TEST_BUILTIN_TOOL_OFFER } from '@momonga/testkit';
 import * as tools from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { makeTool } from './harness.ts';
@@ -10,7 +11,7 @@ const outputOriginOf = (tool: AnyTool): string => {
 };
 
 const builtin = (name: string): AnyTool => {
-  const found = tools.createBuiltinTools().find((tool) => tool.name === name);
+  const found = tools.createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).find((tool) => tool.name === name);
   if (found === undefined) throw new Error(`no builtin ${name}`);
   return found;
 };

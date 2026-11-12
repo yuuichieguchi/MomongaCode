@@ -394,7 +394,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
 
-    const set = await f.toolRuntime.port.recoveryToolSet({ signal: signalNever() });
+    const set = await f.toolRuntime.port.recoveryToolSet({ signal: signalNever(), session: createSession(f.store, f.temp.project), env: toolEnv() });
 
     expect(set.tools.length).toBeGreaterThan(0);
     expect(set.tools.some((tool) => tool.name.startsWith('mcp__'))).toBe(false);
