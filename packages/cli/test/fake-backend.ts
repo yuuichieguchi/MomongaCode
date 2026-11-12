@@ -78,6 +78,7 @@ export type FakeBackend = TuiBackend & {
   readonly calls: string[];
   called(call: string): Promise<void>;
   readonly started: { text: string; options?: StartRunOptions }[];
+  readonly followed: string[];
   readonly elicitationAnswers: { inputId: string; responses: Readonly<Record<string, ElicitationAnswerRecord>> }[];
   readonly openedUrls: string[];
   readonly openUrlCalls: { url: URL; watch: AbortSignal; onFailure(message: string): void }[];
@@ -241,6 +242,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   };
   const calls: string[] = [];
   const started: { text: string; options?: StartRunOptions }[] = [];
+  const followed: string[] = [];
   const elicitationAnswers: FakeBackend['elicitationAnswers'] = [];
   const openedUrls: string[] = [];
   const openUrlCalls: FakeBackend['openUrlCalls'] = [];
@@ -328,6 +330,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     listings,
     modelsFile,
     started,
+    followed,
     elicitationAnswers,
     openedUrls,
     openUrlCalls,
@@ -434,6 +437,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return runView({ status: 'QUEUED', sessionId: session.id });
     },
     follow: (runId, followHandlers) => {
+      followed.push(runId);
       const kept = startedHere ? undefined : conversationRun(runId);
       startedHere = false;
       const prompt = startedPrompt;
