@@ -1,9 +1,9 @@
-import { isProbeable, isProbedBy, loadUserSettings, recordKeyOf, registeredServer, upstreamEndpointOf } from '@momonga/config';
+import { isProbeable, isProbedBy, loadUserSettings, recordKeyOf, registeredServer, requireOfferedEndpointForm, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey, Probeable, ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
-import { createBinaryHashCache, managedInstancePaths, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
+import { createBinaryHashCache, endpointHostOf, managedInstanceIn, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { ManagedInstancePaths, MomongaPaths, OutboundNetwork } from '@momonga/foundation';
 import { displayMapOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
-import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
+import type { DialectDefinition, ManagedServerDescription, ProbeReportDialect } from '@momonga/protocol';
 import { withinCommandLimit } from '../command-limit.ts';
 import { restartGeneration } from '../daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../daemon/ensure-daemon.ts';
@@ -50,7 +50,15 @@ export const managedProbeTimersOf = (ports: CliPorts): { setTimeout: CliPorts['t
 
 const probePortsOf = (ports: CliPorts): { clock: CliPorts['clock']; timers: CliPorts['timers'] } => ({ clock: ports.clock, timers: ports.timers });
 
-export const cliProbeInstance = (paths: MomongaPaths, provider: string): ManagedInstancePaths => managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider });
+export const cliProbeInstance = async (
+  ports: Pick<CliPorts, 'platform' | 'endpointScope'>,
+  paths: MomongaPaths,
+  description: ManagedServerDescription,
+  provider: string,
+): Promise<ManagedInstancePaths> => {
+  const form = requireOfferedEndpointForm(description, endpointHostOf(ports.platform), paths.settingsFile);
+  return managedInstanceIn(paths, { owner: 'cli', purpose: 'probe', provider }, { form, scope: await ports.endpointScope(paths) });
+};
 
 export const RESTART_STARTED_TEXT = (version: string): string => `started a new daemon (v${version}) so that the gateway reads the record; work in the old one keeps running.`;
 
@@ -220,7 +228,7 @@ const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: Probe
     lock: locks.mechanism,
     inspector: layoutProcessInspector(locks.capability),
     platform: ports.platform,
-    instance: cliProbeInstance(paths, configured.provider),
+    instance: await cliProbeInstance(ports, paths, description, configured.provider),
     description,
     target: subject.canon,
     binary: configured.binary,

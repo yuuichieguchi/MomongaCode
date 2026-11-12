@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { SocketPathUnsupportedError, ensureMomongaDirs, generationLayout, momongaPaths, refuseUnfitGenerationSocketsBeforeCreation, setSocketBind } from '@momonga/foundation';
 import { createTempDir, removeTempDir } from '@momonga/testkit';
 
+const UNIX_ENDPOINTS = { form: 'unix' } as const;
+
 const REALISTIC_HOME = '/Users/alexandra-wilkinson';
 
 describe('generation-scoped sockets and locks', () => {
@@ -42,8 +44,9 @@ describe('generation-scoped sockets and locks', () => {
   });
 
   it('gives two generations distinct named pipes on win32', () => {
-    const first = generationLayout('C:\\Users\\alice', 1, 'win32');
-    const second = generationLayout('C:\\Users\\alice', 2, 'win32');
+    const scope = { form: 'pipe', token: '0123456789abcdef0123456789abcdef' } as const;
+    const first = generationLayout('C:\\Users\\alice', 1, 'win32', scope);
+    const second = generationLayout('C:\\Users\\alice', 2, 'win32', scope);
     for (const role of ['gateway', 'runtime', 'supervisor'] as const) {
       expect(first.sockets[role]).toMatch(/^\\\\\.\\pipe\\/);
       expect(first.sockets[role]).toContain('g1');
@@ -66,7 +69,7 @@ describe('refuseUnfitGenerationSocketsBeforeCreation', () => {
       setSocketBind(async (candidate) => {
         probed.push(candidate);
       });
-      await refuseUnfitGenerationSocketsBeforeCreation(paths, 3);
+      await refuseUnfitGenerationSocketsBeforeCreation(paths, 3, UNIX_ENDPOINTS);
       const dir = path.join(home, '.momonga', 'run', 'g3');
       expect(fs.existsSync(dir)).toBe(false);
       expect(probed.map((candidate) => path.dirname(candidate))).toEqual([paths.run]);
@@ -87,7 +90,7 @@ describe('refuseUnfitGenerationSocketsBeforeCreation', () => {
       setSocketBind(async () => {
         throw Object.assign(new Error('bind: ENAMETOOLONG'), { code: 'ENAMETOOLONG' });
       });
-      const error = await refuseUnfitGenerationSocketsBeforeCreation(paths, 1).catch((caught: unknown) => caught);
+      const error = await refuseUnfitGenerationSocketsBeforeCreation(paths, 1, UNIX_ENDPOINTS).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(SocketPathUnsupportedError);
       expect((error as Error).message).toContain(path.join(home, '.momonga', 'run', 'g1'));
       expect((error as Error).message).toMatch(/must be shorter than \d+ bytes/);

@@ -231,6 +231,8 @@ const CONNECT_MODEL_REMEDY: Readonly<Record<Surface, string>> = {
   gateway: SHELL_CONNECT_MODEL_REMEDY,
 };
 
+const billingChangeRemedy = (surface: Surface, from: string, to: string): string => (surface === 'tui' ? '/models billing' : `${WORDS.command} models billing allow ${from} ${to}`);
+
 const COUNT_WORDS: Readonly<Record<number, string>> = { 2: 'two', 3: 'three' };
 
 export const serverCountText = (count: number): string => COUNT_WORDS[count] ?? String(count);
@@ -284,6 +286,7 @@ export type MessageInputs = {
   accountWithoutModel: [given: { readonly provider: string; readonly account: string }];
   serverFormNotOffered: [given: { readonly server: string; readonly platform: string; readonly accepted: readonly string[]; readonly offered: readonly string[] }];
   daemonStarting: [];
+  billingChangeRefused: [given: { readonly model: string; readonly from: string; readonly to: string }];
 };
 
 export type MessageKey = keyof MessageInputs;
@@ -329,6 +332,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   accountWithoutModel: (surface, given) => `No ${WORDS.model} uses this account yet. ${ACCOUNT_MODEL_STEP[surface](given)}`,
   serverFormNotOffered: (_surface, given) =>
     `the ${WORDS.server} ${JSON.stringify(given.server)} cannot be used on ${given.platform}: it accepts only the socket forms [${given.accepted.join(', ')}], and ${given.platform} offers [${given.offered.join(', ')}]`,
+  billingChangeRefused: (surface, given) => `Did not fall back to ${given.model}: billing from ${given.from} to ${given.to} is not allowed. Run ${billingChangeRemedy(surface, given.from, given.to)}.`,
   daemonStarting: () => `The ${WORDS.daemon} is still starting and accepts no new work yet. The request was not run; send it again.`,
 };
 

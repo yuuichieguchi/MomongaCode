@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { PromptRequest, RequestError, SessionNotification } from '@agentclientprotocol/sdk';
-import { envelopeOf } from '@momonga/protocol';
+import { TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
 import { MCP_MODERN_SERVER_PATH, startMcpHttpFixture } from '@momonga/testkit';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
@@ -15,6 +15,7 @@ import { createRuntimeClient } from './support/runtime-client.ts';
 import { UPSTREAM_CONTEXT_WINDOW, baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { fenceBoundaryIn } from '@momonga/testkit';
 
 const ORIGINAL = 'greeting = "hello"\n';
 const EDITED = 'greeting = "hello, momonga"\n';
@@ -159,7 +160,7 @@ describe('acp: momonga acp', () => {
     expect(failed[0]).toMatchObject({ content: [{ type: 'content', content: { type: 'text', text: REJECTED_OUTPUT } }], rawOutput: REJECTED_OUTPUT });
     const lastCall = messagesOf(chatCompletions(fake).at(-1)).at(-1);
     expect(lastCall?.role).toBe('tool');
-    expect(lastCall?.content).toBe(envelopeOf({ content: REJECTED_OUTPUT, callId: String(lastCall?.tool_call_id), tool: 'Edit' }));
+    expect(lastCall?.content).toBe(fenceUntrusted(TOOL_OUTPUT_TAG, { call: String(lastCall?.tool_call_id), tool: 'Edit' }, REJECTED_OUTPUT, fenceBoundaryIn(String(lastCall?.content))));
     expect(await acp.finish()).toEqual({ code: 0, signal: null });
   });
 

@@ -11,6 +11,8 @@ import {
   createJsonLogger,
   daemonStopBoundMs,
   generationLayout,
+  endpointScopeOf,
+  nodeFileSystem,
   hostPaths,
   listGenerations,
   momongaPaths,
@@ -186,7 +188,8 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   log(secretStoreChosen({ backend: secretStoreEnv[SECRET_BACKEND_ENV] ?? null, program: secretStoreEnv[SECRET_PROGRAM_ENV] ?? null, refusal: secretStoreEnv[SECRET_REFUSAL_ENV] ?? null }));
   const sleep = (ms: number): Promise<void> => new Promise<void>((resolve) => timers.setTimeout(resolve, ms));
 
-  const own = generationLayout(canonicalHome, options.generation);
+  const endpointScope = await endpointScopeOf(homePaths, process.platform, { files: nodeFileSystem, random: systemRandom, lock: lockMechanism });
+  const own = generationLayout(canonicalHome, options.generation, process.platform, endpointScope);
 
   const claimOwn = async (): Promise<OwnClaim> => {
     const acquire = options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, lockOptions));
@@ -299,6 +302,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       version: options.version,
       foldVersion: FIDELITY_FOLD_VERSION,
       lock: lockMechanism,
+      scope: endpointScope,
       launcher: options.successorLauncher,
       timers,
       pollMs: intervals.generationPollMs,

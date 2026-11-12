@@ -1,5 +1,5 @@
 import { beginGenerationStart, generationLayout, lockReadsHeld, orderVersions } from '@momonga/foundation';
-import type { HeldStart, JsonLogger, KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
+import type { HeldStart, JsonLogger, KernelLockMechanism, MomongaPaths, EndpointScope } from '@momonga/foundation';
 import type { SupervisorTimers } from './constants.ts';
 import { generationSuccessor, writeEvent } from './log-events.ts';
 
@@ -16,6 +16,7 @@ export type SuccessorOptions = {
   version: string;
   foldVersion: number;
   lock: KernelLockMechanism;
+  scope: EndpointScope;
   launcher: SuccessorLauncher | undefined;
   timers: SupervisorTimers;
   pollMs: number;
@@ -69,7 +70,7 @@ export const createSuccessor = (options: SuccessorOptions): Successor => {
 
   const begin = async (installedVersion: string): Promise<Awaited<ReturnType<typeof beginGenerationStart>>> => {
     for (let waited = 0; ; waited += options.pollMs) {
-      const outcome = await beginGenerationStart(paths, { version: installedVersion, foldVersion: options.foldVersion, lock: options.lock, trigger: 'childMismatch' });
+      const outcome = await beginGenerationStart(paths, { version: installedVersion, foldVersion: options.foldVersion, lock: options.lock, scope: options.scope, trigger: 'childMismatch' });
       if (outcome.kind !== 'busy' || waited >= options.boundMs || stopped) return outcome;
       await sleep(options.pollMs);
     }

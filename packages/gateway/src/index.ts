@@ -28,8 +28,6 @@ export type { ExecFn, ExecOptions, ExecResult } from './managed/preconditions.ts
 export { targetCounterOf } from './target-counter.ts';
 export type { TargetCounterInput } from './target-counter.ts';
 export { createGateway } from './server/gateway.ts';
-export { createReplayAdapter } from './adapters/replay-adapter.ts';
-export type { ReplayAdapterOptions } from './adapters/replay-adapter.ts';
 export type { DebugTcpOptions, DerivedModelsOptions, FixedModelsOptions, Gateway, GatewayConfig, GatewayLimits, GatewayOptions, GatewayTargetConfig, GatewayTimers } from './types.ts';
 export type {
   AdapterCompactRequest,
@@ -65,7 +63,7 @@ export { PROBE_METHOD_VERSION } from './probe/run-probe.ts';
 export { IDENTITY_READ_TIMEOUT_MS } from './probe/endpoint-target.ts';
 export { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from './defaults.ts';
 export { lazyRefreshMarginMs } from './plan/refresh.ts';
-export { GATEWAY_STATE_IN_MODEL, gatewayConfigOf, instanceSocketOf, runtimeHealthOver, startGatewayProcess } from './process.ts';
+export { GATEWAY_STATE_IN_MODEL, gatewayConfigOf, runtimeHealthOver, startGatewayProcess } from './process.ts';
 export { systemProcessFiles } from './process-ports.ts';
 export type { GatewayCloseResult, GatewayProcess, RuntimeHealthProbe, RuntimeStanding, StartGatewayProcessOptions } from './process.ts';
 export { GATEWAY_ENTRY_FLAGS, runGatewayEntry } from './entry.ts';

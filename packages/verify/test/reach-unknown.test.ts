@@ -13,7 +13,7 @@ describe('rule-consistency when the last probe of a rule cannot be decided', () 
     const layout = makeLayout();
     const roots = [layout.project];
     const fileSystem = caseSensitiveFs();
-    const context = await buildQueryContext(z3.engine().api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
+    const context = await buildQueryContext(z3.engine().api, { unixSockets: { kind: 'limited', allowed: [] }, deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
       rules: rulesOf(layout, [['allow', 'Read(./a/**)']]),
       roots,
       mode: 'manual',

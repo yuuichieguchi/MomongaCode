@@ -1,12 +1,12 @@
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { NO_MODEL_TARGET, agentReadiness, readinessRemedy } from '@momonga/protocol';
+import { agentReadiness, messageOf, readinessRemedy } from '@momonga/protocol';
 import type { MomongaModelEntry } from '@momonga/protocol';
 import { withTempDir } from '@momonga/testkit';
 import { describe, expect, it, vi } from 'vitest';
 import { RunApiError } from '../src/client/runtime-client.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { noTargetLines, readinessNoticeOf } from '../src/readiness.ts';
+import { readinessNoticeOf } from '../src/readiness.ts';
 import { EXIT_FAILURE } from '@momonga/foundation';
 import { runHeadless } from '../src/run/headless.ts';
 import type { HeadlessOptions } from '../src/run/headless.ts';
@@ -33,8 +33,6 @@ vi.mock('../src/run/open-session.ts', () => ({
     return { client: fakeClient, created: { session: SESSION, strippedEnvKeys: [] }, close: async () => undefined };
   },
 }));
-
-const HINT = (settingsFile: string): string => `  declare a server in ${settingsFile} under models.connections (see README, Models), or run \`momonga models detect\` to find a local model server`;
 
 const UNAVAILABLE_MESSAGE = 'the model plan-model cannot be used yet';
 
@@ -65,18 +63,14 @@ const headless = async (context: Parameters<typeof withTempDir>[0], capabilities
 };
 
 describe('what a shell surface says when no model can answer', () => {
-  it('the hint names models.connections and momonga models detect', () => {
-    expect(noTargetLines('no model target is set up', { settingsFile: '/home/u/.momonga/settings.json' })).toEqual(['no model target is set up', HINT('/home/u/.momonga/settings.json')]);
-  });
-
-  it('headless prints the hint and exits with failure when the runtime refuses the session for want of a model', async (context) => {
-    const { message } = agentReadiness({ unavailable: NO_MODEL_TARGET });
+  it('headless prints the shell text of no model connected and exits with failure when the runtime refuses the session for want of a model', async (context) => {
+    const message = messageOf('noModelConnected', 'cli');
     opening.refusal = new RunApiError('POST /v1/sessions', 409, JSON.stringify({ error: { type: 'conflict', code: 'target_not_ready', message } }));
     try {
       const result = await headless(context, capabilitiesOf());
 
       expect(result.code).toBe(EXIT_FAILURE);
-      expect(result.stderr).toBe(`momonga: ${message}\n${HINT(result.paths.settingsFile)}\n`);
+      expect(result.stderr).toBe(`momonga: ${message}\n`);
     } finally {
       opening.refusal = undefined;
     }
@@ -108,7 +102,7 @@ describe('what a shell surface says when no model can answer', () => {
     const result = await headless(context, UNAVAILABLE);
 
     expect(result.code).toBe(EXIT_FAILURE);
-    expect(result.stderr).toBe(`momonga: target_not_ready: ${UNAVAILABLE_MESSAGE}\nChoose a model with momonga --model <model>, or set one up with momonga models add.\n`);
+    expect(result.stderr).toBe(`momonga: ${UNAVAILABLE_MESSAGE}\nChoose a model with momonga --model <model>, or set one up with momonga models add.\n`);
   });
 
   it('the notice of the terminal UI ends with the remedy that names slash commands', () => {

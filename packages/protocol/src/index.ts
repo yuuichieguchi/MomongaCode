@@ -143,7 +143,6 @@ export {
   MODEL_NOT_LISTED_CODE,
   REMEDY_SURFACES,
   TARGET_HEALTH_REASONS,
-  NO_MODEL_TARGET,
   startModelOf,
   TARGET_NOT_READY,
   JSON_MODES,
@@ -342,6 +341,7 @@ export { DEFAULT_PROBE_STEP_SECONDS, JSON_MODE_PROBE_STATES, PROBE_KEYWORDS, pro
 export type { EndpointProbeReport, JsonModeProbeState, OllamaProbeReport, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReport, ProbeReportDialect } from './probe.ts';
 export {
   DIALECT_DEFINITION_SCHEMA,
+  strictPerToolOf,
   DIALECT_ID_PATTERN,
   DIALECT_FILL_TYPES,
   DIALECT_KINDS,
@@ -354,6 +354,7 @@ export type {
   ConstructSupport,
   DialectClause,
   DialectDefinition,
+  BuiltinDialectDefinition,
   DialectDescent,
   DialectFillType,
   DialectId,
@@ -387,10 +388,16 @@ export {
   REPORT_SCHEMAS,
   TRACE_CONTENT_PAGE_OPTION,
   REVIEW_LABELS,
+  unreportedOutsideRuns,
+  FACTS_SKIPPED_CANCELLED_BEFORE_START,
 } from './reliability.ts';
 export type {
   PermissionReviewView,
   ReportCostPage,
+  PageCostAnswer,
+  RunFactsSkipped,
+  RunFactsAnswer,
+  CostTotals,
   ReportCostRequest,
   ReportRecomputePage,
   ReportRecomputeRequest,
@@ -553,7 +560,7 @@ export type {
 } from './governance.ts';
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
-export { attachedFileText, attachmentText, imageDataUrl, includedShellTexts, userMessageContent, userShellText } from './user-content.ts';
+export { ATTACHED_FILE_TAG, TOOL_OUTPUT_TAG, USER_SHELL_TAG, attachedFileText, attachmentText, fenceUntrusted, imageDataUrl, includedShellTexts, sessionFenceOf, userMessageContent, userShellText } from './user-content.ts';
 export type { UserMessageExtras } from './user-content.ts';
 export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
@@ -568,12 +575,11 @@ export {
 export type { ClassifierVerdict } from './auto-mode.ts';
 export { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS, AUTO_MODE_CAVEAT, AUTO_MODE_CHECK_COMMANDS, autoModeNotice } from './auto-mode-gate.ts';
 export type { AutoClassifierFacts, AutoClassifierKey, AutoClassifierRefusal, AutoClassifierView, AutoModeSurface } from './auto-mode-gate.ts';
-export { TOOL_OUTPUT_TAG, boundaryOf, envelopeOf } from './tool-envelope.ts';
-export type { ToolOutputEnvelope } from './tool-envelope.ts';
 export {
   HOOK_BLOCKING_EXIT_CODE,
   HOOK_COMMAND_TYPE,
   HOOK_DEFAULT_TIMEOUT_SECONDS,
+  hookTimeoutSecondsOf,
   HOOK_EVENTS,
   HOOK_OUTCOMES,
   HOOK_PRE_TOOL_DECISIONS,
@@ -582,13 +588,12 @@ export {
   USER_PROMPT_BLOCKED_CODE,
   STOP_HOOK_FEEDBACK_PREFIX,
   STOP_HOOK_MAX_CONTINUATIONS,
-  USER_PROMPT_HOOK_DEFAULT_TIMEOUT_SECONDS,
   hookMatcherError,
   hookMatcherMatches,
   hookTimeoutMs,
 } from './hooks.ts';
 export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
-export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_FINGERPRINT_PATTERN, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from './rule-verdict.ts';
+export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_FINGERPRINT_PATTERN, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations, rulePropertyInWords } from './rule-verdict.ts';
 export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind, RuleVerdictPhase } from './rule-verdict.ts';
 export {
   CONDITION_SOURCES,

@@ -6,6 +6,7 @@ import { initialRunState } from '@momonga/store';
 import type { ClaimContext } from '../../src/worker/claim-context.ts';
 import { buildNext } from '../../src/worker/context-step.ts';
 import { capabilitiesFor } from './harness.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const SYSTEM_PROMPT = 'You are the claim test agent.';
 const TASK_TEXT = 'Do the work.';
@@ -15,7 +16,7 @@ const tokensOf = (value: unknown): number => Math.ceil(canonicalJson(value).leng
 
 const stateWithHistory = (): RunState =>
   ({
-    ...initialRunState({ runId: 'run_claim', sessionId: 'session_claim' }),
+    ...initialRunState({ runId: 'run_claim', sessionId: 'session_claim', fence: TEST_FENCE }),
     step: 1,
     taskSeq: 1,
     history: [

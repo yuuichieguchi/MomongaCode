@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { momongaLayout, sha256Hex } from '@momonga/foundation';
+import os from 'node:os';
+import { momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
+import { testKernelLock } from '@momonga/testkit';
 import { ensureBundledZ3 } from '@momonga/verify';
 import { brotliCompressSync } from 'node:zlib';
 
@@ -32,25 +34,16 @@ describe('every executable the product extracts lives under <cacheBase>/executab
       'z3-built.js': runtime,
       'z3-built.wasm.br': brotliCompressSync(wasm),
     };
-    const written: string[] = [];
-    const store = new Map<string, Uint8Array>();
-    const area = momongaLayout('/home/user', 'linux', {}).executables;
+    const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-single-area-')));
+    const area = momongaLayout(home, 'linux', {}).executables;
     const result = await ensureBundledZ3({
       asset: (name) => assets[name] as Uint8Array,
       executablesRoot: area,
       random: () => 0.5,
-      files: {
-        exists: async (target) => store.has(target) || written.includes(target),
-        mkdir: async () => undefined,
-        writeBytes: async (file, bytes) => void store.set(file, bytes),
-        readFile: async (file) => store.get(file) as Uint8Array,
-        rename: async (from, to) => {
-          for (const [key, value] of [...store]) if (key.startsWith(from)) store.set(key.replace(from, to), value);
-          written.push(to);
-        },
-        rm: async () => undefined,
-      },
+      files: nodeFileSystem,
+      lock: testKernelLock(),
     });
+    fs.rmSync(home, { recursive: true, force: true });
     expect(path.dirname(path.dirname(result.entry))).toBe(area);
     expect(path.basename(path.dirname(result.entry))).toMatch(/^z3-[0-9a-f]{16}$/);
   });

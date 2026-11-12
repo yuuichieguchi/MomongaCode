@@ -6,6 +6,7 @@ import { buildSystemPrompt } from '@momonga/runtime';
 import { createBuiltinTools, createToolRegistry } from '@momonga/tools';
 import { createFakeClock } from '@momonga/testkit';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const CAPABILITIES: Capabilities = {
   contextWindow: 4096,
@@ -33,7 +34,7 @@ const fullToolSet = async (): Promise<FunctionTool[]> => {
 const firstRequest = async (): Promise<AdapterRequest> => ({
   model: 'system',
   input: [
-    { type: 'message', role: 'system', content: buildSystemPrompt({ cwd: '/private/tmp/momonga-e2e-xxxxxxxx/project', platform: 'darwin' }) },
+    { type: 'message', role: 'system', content: buildSystemPrompt({ cwd: '/private/tmp/momonga-e2e-xxxxxxxx/project', platform: 'darwin', fence: TEST_FENCE }) },
     { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Search the haystack' }] },
   ],
   tools: await fullToolSet(),

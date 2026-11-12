@@ -12,9 +12,9 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 
-import { createStoredDataChecks } from '../core/validation.ts';
-import { RENDERS_EVERY_SAMPLING_FIELD } from './shared/sampling.ts';
-import { parseUpstreamJson } from './shared/upstream-json.ts';
+import { createStoredDataChecks } from '../../src/core/validation.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../../src/adapters/shared/sampling.ts';
+import { parseUpstreamJson } from '../../src/adapters/shared/upstream-json.ts';
 
 const RECORD_FILE_MODE = 0o600;
 const RECORD_DIRECTORY_MODE = 0o700;

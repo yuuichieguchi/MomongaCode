@@ -6,6 +6,7 @@ import { fixtureCompactionItem } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
 import { encodedRunState, foldedRunState, roundTripped } from './run-state-codec.ts';
 import { foldOf, inheritedEvent, responded, task, taskItem } from './inherit-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
 
@@ -29,7 +30,7 @@ const batch = (step: number, calls: { callId: string; value: string; output?: st
 
 describe('loop groups folded into run state', () => {
   it('start empty', () => {
-    const state = initialRunState({ runId: 'run-loop', sessionId: 'sess-loop' });
+    const state = initialRunState({ runId: 'run-loop', sessionId: 'sess-loop', fence: TEST_FENCE });
     expect(state.loopGroups).toEqual([]);
     expect(state.loopOpen).toBeUndefined();
   });
@@ -136,10 +137,10 @@ describe('loop groups through a snapshot', () => {
     const claim = mustClaim(store, 'w1');
     expect(store.append(claim, payloads.slice(0, split)).kind).toBe('ok');
     const head: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
-    const headState = head.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+    const headState = head.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }));
     expect(store.append(claim, payloads.slice(split)).kind).toBe('ok');
     const all: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
-    const full = all.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+    const full = all.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }));
     return { store, run, full, headState, tail: all.slice(head.length) };
   };
 

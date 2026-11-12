@@ -4,6 +4,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, SocketPathUnmeasuredError, assertUnixSocketPathFits, createSocketPathProbe, generationLayout, momongaPaths, refuseUnfitGenerationSocketsBeforeCreation, setSocketBind } from '@momonga/foundation';
 
+const UNIX_ENDPOINTS = { form: 'unix' } as const;
+
 const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`bind failed: ${code}`), { code });
 
 const recordingBind = (failure: (attempt: number) => NodeJS.ErrnoException | undefined = () => undefined) => {
@@ -85,7 +87,7 @@ describe('a socket path is used only when its bind measurement succeeded (20.19,
       setSocketBind(async () => {
         throw errno('EACCES');
       });
-      const error = await refuseUnfitGenerationSocketsBeforeCreation(paths, FIRST_GENERATION).catch((caught: unknown) => caught);
+      const error = await refuseUnfitGenerationSocketsBeforeCreation(paths, FIRST_GENERATION, UNIX_ENDPOINTS).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(Error);
       expect(error).toBeInstanceOf(SocketPathUnmeasuredError);
       const longest = generationLayout(home, FIRST_GENERATION).sockets.supervisor;

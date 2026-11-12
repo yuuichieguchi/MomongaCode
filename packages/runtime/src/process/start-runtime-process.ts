@@ -13,6 +13,7 @@ import {
   fixedSocket,
   generationIsLive,
   generationLayout,
+  endpointScopeOf,
   generationOfDirectoryName,
   inspectProcessLock,
   listGenerations,
@@ -381,7 +382,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       await nodeFileSystem.mkdir(scoped.tmp.spawn, SPAWN_DIRECTORY_MODE);
       return scoped;
     });
-    const own = generationLayout(canonicalHome, options.generation);
+    const own = generationLayout(canonicalHome, options.generation, platform, await endpointScopeOf(sharedPaths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock }));
     const rolePort = options.role ?? createRolePort({ paths: sharedPaths, generation: options.generation, logger });
     await step('role', () => rolePort.refresh());
     const ignorableMarkerDirectories = async (signal: AbortSignal): Promise<string[]> => {
@@ -752,7 +753,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         cancelUpstream: tracker.cancel,
         releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
         runTrace: async (runId, requestSignal) => {
-          await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
+          await settledOrAborted(telemetries.current().telemetry.flushLocal(), requestSignal);
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined
             ? undefined
@@ -777,7 +778,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         recomputeFacts: (runIds, signal) => recomputeFactsOf(journalThread, runIds, signal),
         reportCost: async (runIds) => reportCostOf(store, runIds),
         runTraceContent: async (runId, after, limit, requestSignal) => {
-          await settledOrAborted(telemetries.current().telemetry.forceFlush(), requestSignal);
+          await settledOrAborted(telemetries.current().telemetry.flushLocal(), requestSignal);
           return pageRunBodies(traceStore, runId, after, limit);
         },
         mcp: toolRuntime.mcpAdmin,
@@ -794,7 +795,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     service = runService;
     cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
-    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, timers, shellHost, env: process.env, clock });
+    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, locks: options.locks, timers, shellHost, env: process.env, clock });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
         const id = `runtime-${process.pid}-${startedAtMs}-${index}`;

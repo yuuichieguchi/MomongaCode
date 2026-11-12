@@ -20,6 +20,7 @@ import {
   toolCall,
   toolDone,
 } from './inherit-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const INHERITED = inheritedEvent({
   fromRunId: 'run-prev',
@@ -81,7 +82,7 @@ describe('fold of context.inherited', () => {
   });
 
   it('starts every run with taskSeq 1', () => {
-    expect(initialRunState({ runId: 'r', sessionId: 's' }).taskSeq).toBe(1);
+    expect(initialRunState({ runId: 'r', sessionId: 's', fence: TEST_FENCE }).taskSeq).toBe(1);
     expect(nextRun([task('alone')]).taskSeq).toBe(1);
   });
 
@@ -216,7 +217,7 @@ describe('snapshot plus tail equals the full fold for an inheriting run', () => 
     ];
     expect(store.append(claim, journal).kind).toBe('ok');
     const events: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
-    const initial = initialRunState({ runId: run.id, sessionId: run.sessionId });
+    const initial = initialRunState({ runId: run.id, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' });
     const full = events.reduce(foldRunState, initial);
     expect(full.taskSeq).toBe(7);
     expect(full.inherited?.digest).toBe(INHERITED.digest);

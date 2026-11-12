@@ -3,6 +3,7 @@ import type { MessageInputItem, RunEventPayload } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const PLAIN: MessageInputItem = { type: 'message', role: 'user', content: '<conversation_summary>\nfirst part\n</conversation_summary>' };
 
@@ -18,7 +19,7 @@ const foldStored = async (tail: RunEventPayload) => {
   const claim = mustClaim(store, 'w1');
   expect(store.append(claim, [...prefix, tail]).kind).toBe('ok');
   const events = store.readRunEvents(run.id, 0, 1000);
-  const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+  const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: TEST_FENCE }));
   return { events, state };
 };
 

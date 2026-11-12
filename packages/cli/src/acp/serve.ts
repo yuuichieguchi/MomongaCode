@@ -24,7 +24,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
   const stdio = ports.acpStdio();
   const onNewer = newerListenerOf(ports);
   const runtime = connectSessionRuntime(ports, paths, onNewer);
-  const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'gateway') });
+  const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(ports, paths, 'gateway') });
   const reconnectBoundMs = await daemonReadyBoundMs();
   const bridge = createAcpBridge({
     version: ports.version,

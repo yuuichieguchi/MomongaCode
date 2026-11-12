@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
 import type { TokenCounter, TokenMeter } from '@momonga/context';
 import { createChatCompletionsAdapter, unauthenticatedSource } from '@momonga/gateway';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf, envelopeOf } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf, TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterTarget, Capabilities, InputItem, ToolCallingMode } from '@momonga/protocol';
 import { UNDICI_DEFAULT_LIVENESS, createFakeClock } from '@momonga/testkit';
 import { meteredOutputFit } from '../../src/worker/output-fit.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const TARGET: AdapterTarget = { name: 'apple/system', display: 'system', model: 'system' };
-const ITEM_CAP = 120;
+const ITEM_CAP = 160;
 const CALL = { callId: 'call_grep_1', tool: 'Grep' } as const;
 const HARNESS_CALL = { callId: 'call_plan_1', tool: 'UpdatePlan' } as const;
 const HANDLE = 'a'.repeat(64);
@@ -64,7 +65,7 @@ const longOutput = Array.from({ length: 200 }, (_, line) => `haystack.txt:${line
 
 describe('the completion fit counts the output as the model sees it', () => {
   it.for(['native', 'constrained'] as const)('fits and cuts the output of a named call on a %s target', async (toolCalling) => {
-    const fit = meteredOutputFit({ meter: renderingMeter(toolCalling), itemCap: async () => ITEM_CAP, harnessTools: new Set(['UpdatePlan']) });
+    const fit = meteredOutputFit({ meter: renderingMeter(toolCalling), itemCap: async () => ITEM_CAP, harnessTools: new Set(['UpdatePlan']), fence: TEST_FENCE });
 
     await expect(fit.fits('short', CALL)).resolves.toBe(true);
     await expect(fit.fit(longOutput, HANDLE, CALL)).resolves.toContain(HANDLE);
@@ -72,16 +73,16 @@ describe('the completion fit counts the output as the model sees it', () => {
 
   it.for(['native', 'constrained'] as const)('leaves an external output that the render does not cut again on a %s target', async (toolCalling) => {
     const meter = renderingMeter(toolCalling);
-    const fit = meteredOutputFit({ meter, itemCap: async () => ITEM_CAP, harnessTools: new Set(['UpdatePlan']) });
+    const fit = meteredOutputFit({ meter, itemCap: async () => ITEM_CAP, harnessTools: new Set(['UpdatePlan']), fence: TEST_FENCE });
 
     const fitted = await fit.fit(longOutput, HANDLE, CALL);
 
-    expect(await seenTokens(meter, CALL, envelopeOf({ content: fitted, callId: CALL.callId, tool: CALL.tool }))).toBeLessThanOrEqual(ITEM_CAP);
+    expect(await seenTokens(meter, CALL, fenceUntrusted(TOOL_OUTPUT_TAG, { call: CALL.callId, tool: CALL.tool }, fitted, TEST_FENCE))).toBeLessThanOrEqual(ITEM_CAP);
   });
 
   it('counts a harness output bare, as the render shows it', async () => {
     const meter = renderingMeter('native');
-    const fit = meteredOutputFit({ meter, itemCap: async () => ITEM_CAP, harnessTools: new Set(['UpdatePlan']) });
+    const fit = meteredOutputFit({ meter, itemCap: async () => ITEM_CAP, harnessTools: new Set(['UpdatePlan']), fence: TEST_FENCE });
 
     const fitted = await fit.fit(longOutput, HANDLE, HARNESS_CALL);
 

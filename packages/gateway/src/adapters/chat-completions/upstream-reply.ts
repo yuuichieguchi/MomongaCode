@@ -1,4 +1,4 @@
-import { decodeSse, isRecord } from '@momonga/foundation';
+import { SSE_EVENT_MAX_BYTES, decodeSse, isRecord } from '@momonga/foundation';
 import { usableUpstreamJson } from '../shared/upstream-json.ts';
 import type { SseEvent } from '@momonga/foundation';
 import { CONTEXT_WINDOW_EXCEEDED, GUARDRAIL_VIOLATION, StreamFailure, UNSUPPORTED_REQUEST } from '../shared/failures.ts';
@@ -83,7 +83,7 @@ export const decodeUpstreamReply = async (status: number, text: string): Promise
   const json = parseJson(text);
   if (json !== undefined) return { kind: 'completion', usage: usageOf(json), body: json };
   const assembly: StreamAssembly = { content: '', reasoningContent: '', reasoning: '', calls: new Map(), usage: undefined };
-  for await (const event of decodeSse(textSource(text))) {
+  for await (const event of decodeSse(textSource(text), { maxEventBytes: SSE_EVENT_MAX_BYTES })) {
     const failure = upstreamErrorEventBody(event);
     if (failure !== undefined) return { kind: 'error', status, body: failure.body };
     if (event.data === DONE_MARKER) break;

@@ -7,6 +7,7 @@ import type { Capabilities, InputItem } from '@momonga/protocol';
 import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user } from './helpers.ts';
 import { weightMeter, weightOf, weightOfAll } from './weight-meter.ts';
 import type { UnderRule } from './weight-meter.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 type CapacityFor = (capabilities: Capabilities, underAt: UnderRule) => number;
 
@@ -25,6 +26,7 @@ const observed = (input: BuildContextInput, forms?: ReadonlyMap<string, number>)
 
 const baseInput = (capabilities: Capabilities, history: HistoryItem[], extra: Partial<BuildContextInput> = {}): BuildContextInput => ({
   capabilities,
+  fence: TEST_FENCE,
   model: MODEL,
   sources: sourcesWith({ history }),
   evicted: new Set<string>(),

@@ -554,7 +554,7 @@ const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, 
     const text = outputTextOf(original.output);
     const handle = 'handle' in entry ? entry.handle : ports.blobs.handleFor(text);
     const kept = forms?.get(callId);
-    const render = outputRenderOf(original, callNames.get(callId), harnessTools, entry.pointer);
+    const render = outputRenderOf(original, callNames.get(callId), harnessTools, entry.pointer, input.fence);
     if (evicted.has(callId)) {
       const tokens = entry.omittedTokens ?? (await ports.meter.countItem(render.full, countContextFor(callId)));
       slots.push({ item: withOutput(original, omittedMarker(tokens, handle, reader)), output: { callId, text, full: false, original } });
@@ -789,7 +789,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     if (entry.item.type === 'function_call_output') {
       const original = entry.item;
       const text = outputTextOf(original.output);
-      const render = outputRenderOf(original, callNames.get(original.call_id), harnessTools, entry.pointer);
+      const render = outputRenderOf(original, callNames.get(original.call_id), harnessTools, entry.pointer, input.fence);
       slot.item = render.full;
       const tokens = entry.omittedTokens ?? (await meter.countItem(render.full, countContextFor(original.call_id)));
       const state: OutputState = {

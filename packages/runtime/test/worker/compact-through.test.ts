@@ -10,6 +10,7 @@ import { GatewayRequestError } from '../../src/gateway-client.ts';
 import { compactThrough } from '../../src/worker/context-step.ts';
 import { capabilitiesFor } from './harness.ts';
 import { unlimitedBudget } from './unlimited-budget.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const TASK: InputItem = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Do the work.' }] };
 
@@ -126,7 +127,7 @@ const contextFor = (options: ContextOptions = {}) => {
     systemPrompt: 'You are the compact-through test agent.',
     journal: {
       state: {
-        ...initialRunState({ runId: 'run_compact', sessionId: 'session_compact' }),
+        ...initialRunState({ runId: 'run_compact', sessionId: 'session_compact', fence: TEST_FENCE }),
         taskSeq: 1,
         ...(options.step === undefined ? {} : { step: options.step }),
         ...(options.notes === undefined ? {} : { notes: options.notes }),

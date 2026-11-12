@@ -3,7 +3,7 @@ import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import type { ProviderAdapter } from '@momonga/protocol';
 import { createTelemetry } from '@momonga/observability';
 import { createFakeClock, createScriptedAdapter, waitFor } from '@momonga/testkit';
-import { decodeSse } from '@momonga/foundation';
+import { SSE_EVENT_MAX_BYTES, decodeSse } from '@momonga/foundation';
 import { START_MS, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { bigTextEvents } from './gateway-support.ts';
 
@@ -57,7 +57,7 @@ describe('a client that disconnects while a response streams', () => {
       body: JSON.stringify({ model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }),
       signal: controller.signal,
     });
-    const frames = decodeSse(response.body);
+    const frames = decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES });
     await frames.next();
     await waitFor(() => (scripted.calls[0]?.emitted ?? 0) >= 3, { description: 'relay suspended at a yield' });
     controller.abort();

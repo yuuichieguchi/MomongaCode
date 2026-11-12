@@ -7,7 +7,6 @@ import { writeTuiSetting } from '@momonga/config';
 import { TARGET_NOT_READY, reopenSessionCommand } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
-import { noTargetLines } from '../readiness.ts';
 import { createHistoryStore } from '../history-store.ts';
 import type { CliPorts, Terminal } from '../ports.ts';
 import type { RunBounds, SessionOptions } from '../run/open-session.ts';
@@ -222,7 +221,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   if (moveFailure !== undefined) throw moveFailure;
   await tasks.settle();
   await backend.close();
-  const exitCode = exitCodeOf(ports, refusalOf(outcome, paths));
+  const exitCode = exitCodeOf(ports, refusalOf(outcome));
   writeReopenLine(ports, outcome);
   return exitCode;
 };
@@ -272,8 +271,8 @@ const launchOnTerminal = (argv: readonly string[]): Promise<void> =>
     child.once('exit', () => resolve());
   });
 
-const refusalOf = (outcome: TuiOutcome, paths: MomongaPaths): TuiOutcome =>
-  outcome.error instanceof RunApiError && outcome.error.code === TARGET_NOT_READY ? { ...outcome, error: new Error(noTargetLines(outcome.error.reason, paths).join('\n')) } : outcome;
+const refusalOf = (outcome: TuiOutcome): TuiOutcome =>
+  outcome.error instanceof RunApiError && outcome.error.code === TARGET_NOT_READY ? { ...outcome, error: new Error(outcome.error.reason) } : outcome;
 
 export const exitCodeOf = (ports: Pick<CliPorts, 'stderr'>, outcome: TuiOutcome): number => {
   if (outcome.error === undefined) return 0;

@@ -3,6 +3,7 @@ import type { InputItem } from '@momonga/protocol';
 import { buildContext, createTokenMeter } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, BuiltContext, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
 import { HOME, MODEL, PROJECT, assistant, call, capabilitiesFor, fakeBlobs, fakeCounter, fakeReader, output, sourcesWith, touchedFile } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const capabilities = capabilitiesFor(200_000);
 const NESTED = '/proj/sub/AGENTS.md';
@@ -11,6 +12,7 @@ const arrivalItem = (seq: number): HistoryItem => ({ seq, item: { type: 'message
 
 const inputWith = (history: HistoryItem[], extra: Partial<BuildContextInput> = {}): BuildContextInput => ({
   capabilities,
+  fence: TEST_FENCE,
   model: MODEL,
   sources: sourcesWith({ history }),
   evicted: new Set<string>(),

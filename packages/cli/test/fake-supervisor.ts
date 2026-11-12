@@ -6,7 +6,7 @@ import type { HostExec, HostExecAnswer, MomongaPaths, ProcessLock } from '@momon
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { SupervisorChildHealth, SupervisorHealth } from '@momonga/protocol';
 import type { CliClock, DetachedExit, SpawnDetached } from '../src/ports.ts';
-import { testKernelLock, afterMicrotasks } from '@momonga/testkit';
+import { testKernelLock, afterMicrotasks, testEndpointScope } from '@momonga/testkit';
 
 export type FakeSupervisorOptions = {
   paths: MomongaPaths;
@@ -175,7 +175,7 @@ export const virtualClock = (work: FakeWork = untracked): CliClock => {
   };
 };
 
-export type InstalledProgram = { ports: { exec: HostExec; timers: typeof systemTiming }; asked: Array<{ file: string; args: readonly string[] }> };
+export type InstalledProgram = { ports: { exec: HostExec; timers: typeof systemTiming; endpointScope: typeof testEndpointScope }; asked: Array<{ file: string; args: readonly string[] }> };
 
 export const installedProgram = (answer: string | (() => HostExecAnswer | Promise<HostExecAnswer>)): InstalledProgram => {
   const asked: InstalledProgram['asked'] = [];
@@ -183,6 +183,7 @@ export const installedProgram = (answer: string | (() => HostExecAnswer | Promis
     asked,
     ports: {
       timers: systemTiming,
+      endpointScope: testEndpointScope,
       exec: async (file, args) => {
         asked.push({ file, args });
         return typeof answer === 'string' ? { exitCode: 0, stdout: `${answer}\n`, stderr: '' } : answer();

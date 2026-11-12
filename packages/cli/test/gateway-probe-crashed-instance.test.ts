@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createManagedServer } from '@momonga/gateway';
 import { ensureMomongaDirs, momongaLayout, systemTiming } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, spawnTracked, testKernelLock, testProcessInspector, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, spawnTracked, testEndpointScope, testKernelLock, testProcessInspector, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { cliProbeInstance } from '../src/commands/gateway.ts';
 
@@ -42,7 +42,7 @@ const prepared = async (context: CleanupContext) => {
   const dumpFile = path.join(home, 'env.jsonl');
   fm.configure({ envDumpFile: dumpFile });
   registerCleanup(context, () => killGroupsForCleanup(servePidsOf(dumpFile)));
-  return { home, instance: cliProbeInstance(paths, 'apple'), binary: fm.binaryPath, dumpFile };
+  return { home, instance: await cliProbeInstance({ platform: process.platform, endpointScope: testEndpointScope }, paths, FM_SERVER, 'apple'), binary: fm.binaryPath, dumpFile };
 };
 
 const startHolder = (context: CleanupContext, home: string, binary: string) =>

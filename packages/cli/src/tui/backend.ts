@@ -151,7 +151,7 @@ export const createTuiBackend = (
   };
 
   const withGateway = async <T>(use: (gateway: GatewayClient) => Promise<T>): Promise<T> => {
-    const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'gateway') });
+    const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(ports, paths, 'gateway') });
     try {
       return await use(gateway);
     } finally {

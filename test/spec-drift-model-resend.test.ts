@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { modelKey } from '../packages/runtime/src/model-key.ts';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const root = path.resolve(import.meta.dirname, '..');
 const specs = path.join(root, 'specs', 'tla');
@@ -23,7 +24,7 @@ const foldAll = (payloads: readonly RunEventPayload[]): RunState =>
   payloads.reduce<RunState>((state, payload, index) => {
     const step = 'step' in payload && typeof payload.step === 'number' ? payload.step : 0;
     return foldRunState(state, { ...payload, id: index + 1, ...IDS, seq: index + 1, step, leaseToken: 1, createdAt: 0 } as RunEvent);
-  }, initialRunState(IDS));
+  }, initialRunState({ ...IDS, fence: TEST_FENCE }));
 
 const requested = (attempt: number): RunEventPayload => ({ type: 'model.requested', step: 1, attempt, digest: 'd', body: { model: 'fm', input: [], stream: true } });
 
@@ -41,13 +42,13 @@ const charge = (totalTokens: number): RunEventPayload => ({
 
 describe('ModelResend.tla matches the code', () => {
   const CITATIONS: readonly (readonly [string, number, string])[] = [
-    ['packages/runtime/src/worker/model-step.ts', 315, 'modelKey(ctx.run.id, position.step, position.attempt)'],
-    ['packages/runtime/src/worker/model-step.ts', 329, 'export const resumeInFlight'],
-    ['packages/runtime/src/worker/model-step.ts', 333, 'attempt: inFlight.attempt'],
+    ['packages/runtime/src/worker/model-step.ts', 316, 'modelKey(ctx.run.id, position.step, position.attempt)'],
+    ['packages/runtime/src/worker/model-step.ts', 330, 'export const resumeInFlight'],
+    ['packages/runtime/src/worker/model-step.ts', 334, 'attempt: inFlight.attempt'],
     ['packages/runtime/src/worker/model-step.ts', 176, 'const reject = '],
-    ['packages/store/src/fold.ts', 421, "case 'model.requested'"],
-    ['packages/store/src/fold.ts', 444, "case 'model.rejected'"],
-    ['packages/store/src/fold.ts', 447, 'attempt: event.attempt + 1'],
+    ['packages/store/src/fold.ts', 444, "case 'model.requested'"],
+    ['packages/store/src/fold.ts', 467, "case 'model.rejected'"],
+    ['packages/store/src/fold.ts', 470, 'attempt: event.attempt + 1'],
     ['packages/gateway/src/core/idempotency.ts', 43, "kind: 'inflight'"],
     ['packages/gateway/src/core/idempotency.ts', 52, "kind: 'stored'"],
     ['packages/gateway/src/core/store.ts', 246, 'putIdempotency.run(key, digest'],

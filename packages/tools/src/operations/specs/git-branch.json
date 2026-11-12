@@ -15,7 +15,6 @@
     "required": ["name"],
     "additionalProperties": false
   },
-  "timeoutMs": 30000,
   "observe": [{ "id": "branch", "via": { "argv": ["git", "symbolic-ref", "--short", "HEAD"], "extract": "trim" } }],
   "effect": { "argv": ["git", "switch", "-q", { "if": "input.create", "then": ["-c"] }, "{input.name}"] },
   "applied": [["after.branch", "input.name"]],

@@ -2,11 +2,11 @@ import { createManagedServer } from '@momonga/gateway';
 import { kernelLockNamed, momongaLayout, systemTiming } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
-import { fakeExec, testProcessInspector } from '@momonga/testkit';
+import { fakeExec, testEndpointScope, testProcessInspector } from '@momonga/testkit';
 import { cliProbeInstance } from '../src/commands/gateway.ts';
 
 const [home, binary, mechanism] = process.argv.slice(2) as [string, string, KernelLockMechanism['name']];
-const instance = cliProbeInstance(momongaLayout(home, process.platform, {}), 'apple');
+const instance = await cliProbeInstance({ platform: process.platform, endpointScope: testEndpointScope }, momongaLayout(home, process.platform, {}), FM_SERVER, 'apple');
 const server = createManagedServer({
   inspector: testProcessInspector(),
   lock: kernelLockNamed(mechanism),

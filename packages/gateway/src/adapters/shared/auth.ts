@@ -17,6 +17,7 @@ export const keyAuthSource =
     read: async (signal) => ({ bearer: await readKey(target, signal), generation: KEY_GENERATION }),
     rejected: async () => 'unchanged',
     pause: async () => {},
+    expire: async () => {},
     resume: async () => {},
     status: () => ({ state: 'active' }),
     health: () => ({ ok: true }),
@@ -27,6 +28,7 @@ export const unauthenticatedSource: AdapterAuth = () => ({
   read: async () => ({ bearer: undefined, generation: KEY_GENERATION }),
   rejected: async () => 'unchanged',
   pause: async () => {},
+  expire: async () => {},
   resume: async () => {},
   status: () => ({ state: 'active' }),
   health: () => ({ ok: true }),
@@ -48,9 +50,13 @@ export const sendAuthorized = async <Answer extends CompletionResponse>(
 };
 
 export const applyCredentialEffect = async (auth: AuthSource, classified: ClassifiedError, clock: Clock, signal: AbortSignal): Promise<void> => {
-  if (classified.credential !== 'pause') return;
+  if (classified.credential !== 'pause' && classified.credential !== 'rejected') return;
   const { code } = classified.error;
-  if (code === null) throw new Error('a classification that pauses the credential carries no code');
+  if (code === null) throw new Error(`a classification whose credential effect is ${classified.credential} carries no code`);
+  if (classified.credential === 'rejected') {
+    await auth.expire(code, signal);
+    return;
+  }
   const untilMs = pauseEndOf(clock.now(), classified.retryAfterMs);
   await auth.pause({ code, ...(untilMs === undefined ? {} : { untilMs }) }, signal);
 };

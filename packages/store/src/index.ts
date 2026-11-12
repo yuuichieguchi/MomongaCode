@@ -93,6 +93,8 @@ export type {
   GoverningAdmission,
   GoverningAdmissionResult,
   GoverningFactStore,
+  IssueStart,
+  IssueWatchStore,
   Guideline,
   GuidelineStore,
   ContextCharge,

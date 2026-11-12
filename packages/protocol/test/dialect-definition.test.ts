@@ -103,7 +103,7 @@ describe('the four built-in dialects', () => {
   });
 
   it.each(Object.entries(EXPECTED_BUILTINS))('ships %s as the data of the design', (id, definition) => {
-    expect(BUILTIN_DIALECTS[id as keyof typeof BUILTIN_DIALECTS]).toEqual(definition);
+    expect(BUILTIN_DIALECTS[id as keyof typeof BUILTIN_DIALECTS]).toEqual({ ...definition, strictPerTool: id === 'strict-closed' });
   });
 
   it.each(Object.keys(EXPECTED_BUILTINS))('validates %s against the definition schema', (id) => {
