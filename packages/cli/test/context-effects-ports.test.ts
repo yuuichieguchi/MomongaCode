@@ -1,3 +1,4 @@
+import os from 'node:os';
 import type fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MomongaPaths, ProcessPort } from '@momonga/foundation';
@@ -69,7 +70,7 @@ describe('the host effects of an eval reach the process only through the process
 
     const roots = await nodeContextEffects(portsOf({ files, process: fakeProcess(new Set(), 777).port }), testKernelLock()).listRoots();
 
-    expect(listed).toEqual([shortTempBase('linux')]);
+    expect(listed).toEqual([shortTempBase('linux', '/unused-on-linux')]);
     expect(roots.map((root) => root.slice(root.lastIndexOf(ROOT_PREFIX)))).toEqual([`${ROOT_PREFIX}mine`]);
   });
 

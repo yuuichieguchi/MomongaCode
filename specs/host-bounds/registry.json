@@ -35,6 +35,7 @@
     {"name":"KEY_NAME_BYTES","file":"packages/foundation/src/encrypted-credential-store.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"NONCE_BYTES","file":"packages/foundation/src/encrypted-credential-store.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"TAG_BYTES","file":"packages/foundation/src/encrypted-credential-store.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
+    {"name":"GENERATION_YIELD_MS","file":"packages/foundation/src/generation-reaper.ts","kind":"C","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"GENERATION_COUNTER_READ_BYTES","file":"packages/foundation/src/generation-start.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"GIT_CONFIG_FINGERPRINT_BYTES","file":"packages/foundation/src/git-config-files.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"EXTENDED_FLAGS_BYTES","file":"packages/foundation/src/git-index.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},

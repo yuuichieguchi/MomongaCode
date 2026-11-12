@@ -93,7 +93,7 @@ const removeDirectoryTree = (dir: string): void => {
 
 export type TempDirOptions = { asHome?: boolean };
 
-const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform) : os.tmpdir());
+const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform, os.tmpdir()) : os.tmpdir());
 
 export const testTempBases = (): string[] => [...new Set([tempDirBase(true), tempDirBase(false)].map((base) => fs.realpathSync(base)))];
 

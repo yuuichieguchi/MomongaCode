@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { testKernelLock } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +17,7 @@ import { NO_HELPER } from './no-helper.ts';
 const SUPERVISOR_SOCKET_SUFFIX = Buffer.byteLength(path.join('.momonga', 'run', `g${FIRST_GENERATION}`, 'supervisor.sock')) + 1;
 
 const homeWhoseFirstSupervisorSocketIsRefused = async (): Promise<string> => {
-  const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(shortTempBase(process.platform), 'mm-fit-')));
+  const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(shortTempBase(process.platform, os.tmpdir()), 'mm-fit-')));
   const byteLength = await firstRefusedSocketPathBytes(parent);
   const home = path.join(parent, 'h'.repeat(byteLength - SUPERVISOR_SOCKET_SUFFIX - Buffer.byteLength(parent) - 1));
   fs.mkdirSync(home);
