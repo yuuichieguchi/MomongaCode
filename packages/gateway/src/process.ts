@@ -108,9 +108,10 @@ import type { DeclaredCapabilities } from './probe/decide.ts';
 import { withImageDefault } from './probe/decide.ts';
 import type { ProbeHostPorts, ProbePorts } from './probe/client.ts';
 import { isMeteredTarget, meteredPrecondition } from './probe/consent.ts';
-import { createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
+import { IDENTITY_READ_TIMEOUT_MS, createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { answersAsOllama, readOllamaDigest, readOllamaReported } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
+import { DeclaredWindowAboveReportedError, reportedWindowAt } from './probe/declared-window.ts';
 import { keyReadLimitOf } from './key-read-limit.ts';
 import type { KeyReadLimit } from './key-read-limit.ts';
 import { createSecretResolver } from './secrets.ts';
@@ -710,6 +711,19 @@ const createProbedOllamaAdapter = async (
     liveness,
   }), probes.gates.of(endpoint));
   return { adapter, upstreamIdentity: loaded?.identity };
+};
+
+const refuseDeclaredWindowAboveReported = async (display: string, target: RemoteTarget, network: OutboundNetwork, timers: GatewayTimers, signal: AbortSignal): Promise<void> => {
+  const endpoint = upstreamEndpointOf(target);
+  const declared = target.capabilities?.contextWindow;
+  if (endpoint.kind !== 'tcp' || declared === undefined || isMeteredTarget(target)) return;
+  const dispatcher = createOutboundDispatcher(network, { connectReplyTimeoutMs: IDENTITY_READ_TIMEOUT_MS });
+  try {
+    const reported = await reportedWindowAt({ address: endpoint.baseUrl, model: target.model, fetch: outboundFetch(dispatcher), signal: AbortSignal.any([signal, timers.timeoutSignal(IDENTITY_READ_TIMEOUT_MS)]) });
+    if (reported !== undefined && declared > reported) throw new DeclaredWindowAboveReportedError(display, declared, reported, endpoint.baseUrl);
+  } finally {
+    await dispatcher.close();
+  }
 };
 
 type Identification = (signal: AbortSignal) => Promise<void>;
@@ -1341,6 +1355,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           closables: [adapterClosable(adapter), core.closable],
         };
       }
+      await refuseDeclaredWindowAboveReported(display, target, outbound, timers, keySignal);
       if (isMeasuredBy(target, 'ollama-wire')) {
         const probed = await createProbedOllamaAdapter(display, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
