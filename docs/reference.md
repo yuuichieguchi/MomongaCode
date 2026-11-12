@@ -642,7 +642,7 @@ The layer column names the settings files that may set the key: the user file `~
 | Key | Value | Default | Unit | Layer |
 | --- | --- | --- | --- | --- |
 | `permissions` | object |  |  | user, project, local |
-| `permissions.defaultMode` | `"manual"` or `"acceptEdits"` or `"plan"` or `"auto"` or `"bypassPermissions"` |  |  | user, project, local (`bypassPermissions` and `auto`: user only) |
+| `permissions.defaultMode` | `"manual"` or `"acceptEdits"` or `"plan"` or `"auto"` or `"bypassPermissions"` | `"manual"` |  | user, project, local (`bypassPermissions` and `auto`: user only) |
 | `permissions.allow` | array of string |  |  | user, project, local |
 | `permissions.ask` | array of string |  |  | user, project, local |
 | `permissions.deny` | array of string |  |  | user, project, local |
@@ -652,7 +652,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `credentials.env` | array of string (not empty) |  |  | user |
 | `credentials.keep` | array of string (not empty) |  |  | user |
 | `credentials.valuePatterns` | array of string (not empty) |  |  | user |
-| `credentials.plaintextTokenFiles` | boolean |  |  | user |
+| `credentials.plaintextTokenFiles` | boolean | `false` |  | user |
 | `hooks` | map of array of object |  |  | user, project, local |
 | `hooks.<name>[].matcher` | string |  |  | user, project, local |
 | `hooks.<name>[].hooks` | array of object (at least 1 entry) |  |  | user, project, local |
@@ -663,7 +663,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `autoMode.classifier` | string (not empty) |  |  | user |
 | `enabledMcpjsonServers` | array of string or object |  |  | user, project, local |
 | `disabledMcpjsonServers` | array of string |  |  | user, project, local |
-| `enableAllProjectMcpServers` | boolean |  |  | user, project, local |
+| `enableAllProjectMcpServers` | boolean | `false` |  | user, project, local |
 | `mcpServers` | map of object or object |  |  | user |
 | `mcp` | object |  |  | user |
 | `mcp.toolIdleTimeoutNetworkMs` | integer (at least 0) | `300000` | milliseconds | user |
@@ -728,7 +728,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `tools.search.timeoutMs` | integer (at least 1) | `60000` | milliseconds | user, project, local |
 | `tools.operations` | object |  |  | user, project, local |
 | `tools.operations.timeoutMs` | integer (at least 1) | `120000` | milliseconds | user, project, local |
-| `autoUpdates` | boolean |  |  | user |
+| `autoUpdates` | boolean | `true` |  | user |
 | `update` | object |  |  | user, project, local |
 | `update.stallTimeoutMs` | integer (at least 1) | `30000` | milliseconds | user, project, local |
 | `tui` | object |  |  | user, project, local |
@@ -750,7 +750,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `network.httpsProxy` | string (not empty) |  |  | user |
 | `network.noProxy` | string (not empty) |  |  | user |
 | `network.extraCaFiles` | array of string (not empty) |  |  | user |
-| `network.environment` | boolean |  |  | user |
+| `network.environment` | boolean | `true` |  | user |
 | `pricing` | array of object |  |  | user |
 | `pricing[].provider` | string |  |  | user |
 | `pricing[].model` | string (not empty) |  |  | user |
@@ -805,7 +805,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `telemetry.otlp` | object |  |  | user |
 | `telemetry.otlp.endpoint` | string |  |  | user |
 | `telemetry.otlp.headers` | map of string |  |  | user |
-| `telemetry.captureMessageContent` | boolean |  |  | user |
+| `telemetry.captureMessageContent` | boolean | `false` |  | user |
 | `projectApprovals` | map of object |  |  | user |
 | `projectApprovals.<name>.hooks` | array of string or object |  |  | user |
 | `projectApprovals.<name>.mandate` | string or object |  |  | user |

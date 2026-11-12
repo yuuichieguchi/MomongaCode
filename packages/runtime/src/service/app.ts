@@ -6,7 +6,7 @@ import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf } from '@momonga/protocol';
+import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf } from '@momonga/protocol';
 import { ISSUE_PIN } from './issues.ts';
 import type { IssuePort, IssueRead } from './issues.ts';
 import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
@@ -392,7 +392,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       seen.add(key);
       additionalDirectories.push(entry);
     }
-    const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'manual';
+    const permissionMode = body.permissionMode ?? settings.defaultMode ?? DEFAULT_PERMISSION_MODE;
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
     checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, views);

@@ -10,7 +10,7 @@ import { PLAN_PROFILES } from './plan-profiles.ts';
 import { connectionAddressProblem } from './probe-record-key.ts';
 import { describeSchemaErrors, invalidSettingsMessage, schemaProblemOf } from './schema-errors.ts';
 import { BASH_ON_TIMEOUT, ISSUE_AUTHOR_ASSOCIATIONS, MCP_SERVERS_FILE_SCHEMA, apiKeyChoiceProblem, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
-import { DEFAULT_RETENTION_DAYS } from './setting-defaults.ts';
+import { DEFAULT_CAPTURE_MESSAGE_CONTENT, DEFAULT_RETENTION_DAYS } from './setting-defaults.ts';
 
 export type PermissionsSettings = {
   defaultMode?: PermissionMode;
@@ -324,7 +324,7 @@ export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: b
 export type ResolvedTelemetrySettings = { captureMessageContent: boolean };
 
 export const resolveTelemetrySettings = (settings: TelemetrySettings | undefined): ResolvedTelemetrySettings => ({
-  captureMessageContent: settings?.captureMessageContent === true,
+  captureMessageContent: settings?.captureMessageContent ?? DEFAULT_CAPTURE_MESSAGE_CONTENT,
 });
 
 export type RetentionSettings = { days?: number };
