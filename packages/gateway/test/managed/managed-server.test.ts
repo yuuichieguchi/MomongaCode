@@ -2,7 +2,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
-import { FAKE_SERVER, FAKE_SERVER_MODEL, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeManagedServer } from '@momonga/testkit';
+import { FAKE_SERVER, FAKE_SERVER_MODEL, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_UNPROTECTED_LAUNCH, createFakeManagedServer } from '@momonga/testkit';
 import { HEALTH_POLL_INTERVAL_MS } from '../../src/managed/server.ts';
 import { FakeChild, SERVER_KINDS, createManagedServer, createManualTimers, makeShortDir } from './managed-support.ts';
 import type { ExecPort, FakeChildOptions, ManagedServerHandle, ServerKind } from './managed-support.ts';
@@ -76,7 +76,7 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
     const { server, spawn, socket } = setup({ kind });
     expect(await server.start(asking())).toEqual({ kind: 'unix', path: socket });
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(spawn).toHaveBeenCalledWith('/opt/managed/bin/server', kind.argvOf(socket));
+    expect(spawn).toHaveBeenCalledWith('/opt/managed/bin/server', kind.argvOf(socket), TEST_UNPROTECTED_LAUNCH.protection);
   });
 
   it('runs the description preconditions with the asking signal and refuses with the description text and remedy, before any launch', async () => {

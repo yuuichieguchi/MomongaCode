@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createManagedServer } from '@momonga/gateway';
 import { ensureMomongaDirs, momongaLayout, systemTiming } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, spawnTracked, testEndpointScope, testKernelLock, testProcessInspector, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, spawnTracked, testEndpointScope, testKernelLock, testProcessInspector, withTempDir, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { cliProbeInstance } from '../src/commands/gateway.ts';
 
@@ -60,6 +60,7 @@ const nextProbe = (context: CleanupContext, at: Awaited<ReturnType<typeof prepar
   const warnings: string[] = [];
   const server = createManagedServer({
     inspector: testProcessInspector(),
+    launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: { ...FM_SERVER, restart: { ...FM_SERVER.restart, maxRestarts: 0 } },
     target: 'apple',

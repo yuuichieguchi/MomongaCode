@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from 'undici';
 import { createManagedServer, type ExecOptions, type ExecResult, type ManagedServer, type ManagedServerTimers } from '@momonga/gateway';
 import { KILL_CONFIRM_MS } from '@momonga/foundation';
-import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, testKernelLock, testProcessInspector, type FakeChatCompletionsServer } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, testKernelLock, testProcessInspector, type FakeChatCompletionsServer, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { FM_SERVER } from '@momonga/protocol';
 import type { GenerationRole } from '@momonga/foundation';
 
@@ -207,6 +207,7 @@ const setup = (config: SetupConfig = {}) => {
   const warnings: string[] = [];
   const server: ManagedServer = createManagedServer({
     inspector: testProcessInspector(),
+    launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: { ...FM_SERVER, restart: { backoffMs: BACKOFF_MS, maxRestarts: config.maxRestarts ?? 3, windowMs: RESET_MS } },
     target: 'fm',
@@ -337,7 +338,7 @@ describe('createManagedServer start', () => {
     expect(resolved).toBe(false);
     await children[0]?.serveNow();
     expect(await starting).toEqual({ kind: 'unix', path: socketPath });
-    expect(spawn).toHaveBeenCalledWith('/usr/bin/fm', ['serve', '--socket', socketPath]);
+    expect(spawn).toHaveBeenCalledWith('/usr/bin/fm', ['serve', '--socket', socketPath], TEST_UNPROTECTED_LAUNCH.protection);
     expect(events).toEqual(['spawn:1000', 'serving:1000', 'resolved']);
     expect(await server.health(asking())).toEqual({ ok: true });
   });

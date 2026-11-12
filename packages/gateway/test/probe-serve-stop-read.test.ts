@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FM_SERVER } from '@momonga/protocol';
-import { withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { withTempDir, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { measureManagedServer } from '../src/probe/probe-fm.ts';
 import { systemTiming } from '@momonga/foundation';
 
@@ -20,6 +20,7 @@ describe('the probe server stop reads the stop grace at its begin (design 3.2)',
       timers: systemTiming,
       gate: PERSON_TRAFFIC,
       inspector: testProcessInspector(),
+      launch: TEST_UNPROTECTED_LAUNCH,
       lock: testKernelLock(),
       description: FM_SERVER,
       target: 'apple',

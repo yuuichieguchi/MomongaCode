@@ -1,4 +1,4 @@
-import { TEST_FENCE } from '@momonga/testkit';
+import { TEST_FENCE, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { contextOf } from './own-reasoning.ts';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { EventEmitter } from 'node:events';
@@ -121,6 +121,7 @@ const setup = async (config: Setup = {}) => {
   const warnings: string[] = [];
   const fmServe: ManagedServer = createManagedServer({
     inspector: testProcessInspector(),
+    launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: FM_SERVER,
     target: 'scripted/system',

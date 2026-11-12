@@ -1,6 +1,6 @@
 import type { EventEmitter } from 'node:events';
 import type { Readable } from 'node:stream';
-import type { ChildProtection, MarkerMode } from '@momonga/foundation';
+import type { MarkerMode } from '@momonga/foundation';
 import type { JobView } from '@momonga/protocol';
 import type { SandboxedProcess } from '@momonga/sandbox';
 
@@ -21,7 +21,7 @@ export type ChildPorts = {
 
 export type ToolTimers = Pick<ChildPorts, 'setTimeout' | 'clearTimeout'>;
 
-export type ChildLaunch = { protection: ChildProtection; commandOf(argv: readonly string[], scratch: readonly string[]): { file: string; args: string[] } };
+export type { ChildLaunch } from '@momonga/foundation';
 
 export type ToolIdempotencyRecord = {
   key: string;

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { withTempDir, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { withTempDir, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import { FM_SERVER, messageOf } from '@momonga/protocol';
 import { createManagedServer, managedModelName } from '../../src/index.ts';
@@ -22,6 +22,7 @@ describe('the instance of a managed server is named by its server name (design-m
     const instance = managedInstancePaths(momongaPaths(withTempDir(context, { asHome: true }), process.platform, {}), { owner: 'gateway', generation: 1, purpose: 'serve', provider, incarnation: 1 });
     const server = createManagedServer({
       inspector: testProcessInspector(),
+      launch: TEST_UNPROTECTED_LAUNCH,
       lock: testKernelLock(),
       description: FM_SERVER,
       target: managedModelName(provider, { declared: 'system' }),
