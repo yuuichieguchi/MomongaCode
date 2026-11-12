@@ -1,0 +1,294 @@
+[
+  {
+    "actor": "terminal layer start: enters the alternate screen (fullscreen only), pushes the kitty flags, enables bracketed paste; restores at stop; suspend and continue re-enter the saved set",
+    "model": [
+      "Init"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/terminal/layer.ts",
+        "export": "createTerminalLayer"
+      }
+    ]
+  },
+  {
+    "actor": "mode table: one table of data, each row with its enter and its leave sequence, used by the enable code, the restore at exit, the refuse path and the lost-value leave",
+    "model": [
+      "LeaveAll"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/terminal/modes.ts",
+        "export": "TERMINAL_MODES"
+      },
+      {
+        "file": "packages/cli/src/tui/terminal/modes.ts",
+        "export": "LEAVE_EVERY_MODE"
+      }
+    ]
+  },
+  {
+    "actor": "mouse reporting turned on after the 1006 reply",
+    "model": [
+      "EnableMouse"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/terminal/negotiation.ts",
+        "export": "mouseReported"
+      }
+    ]
+  },
+  {
+    "actor": "negotiation state and newline hint, carried by the record; the new process asks the terminal nothing at adoption",
+    "model": [
+      "Adopt"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/terminal/negotiation.ts",
+        "export": "negotiationFrom"
+      }
+    ]
+  },
+  {
+    "actor": "a newer generation is installed and announced to the session client",
+    "model": [
+      "NewerArrives"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/handover/stream.ts",
+        "export": "newerListenerOf"
+      },
+      {
+        "file": "packages/cli/src/daemon/ensure-daemon.ts",
+        "export": "ensureCurrentDaemon"
+      }
+    ]
+  },
+  {
+    "actor": "the prompt event: written at run creation and by injected hook context, replayed by the daemon session stream and the ACP load, folded once into the TUI transcript",
+    "model": [
+      "Prompt"
+    ],
+    "code": [
+      {
+        "file": "packages/store/src/runtime-store.ts",
+        "export": "openRuntimeStore"
+      },
+      {
+        "file": "packages/runtime/src/worker/hook-step.ts",
+        "export": "runStartHooks"
+      },
+      {
+        "file": "packages/runtime/src/service/app.ts",
+        "export": "createRunApp"
+      },
+      {
+        "file": "packages/cli/src/acp/agent.ts",
+        "export": "createAcpBridge"
+      },
+      {
+        "file": "packages/cli/src/acp/events.ts",
+        "export": "mapRunEvent"
+      },
+      {
+        "file": "packages/cli/src/tui/transcript.ts",
+        "export": "foldEvent"
+      }
+    ]
+  },
+  {
+    "actor": "scrollback output: each settled row printed once; the screen switch writes in chunks of SWITCH_CHUNK_ROWS rows per turn while the session lives",
+    "model": [
+      "Flush",
+      "StartSwitch",
+      "EndSwitch"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/screen/history-feed.ts",
+        "export": "createHistoryFeed"
+      }
+    ]
+  },
+  {
+    "actor": "an open dialog (an approval, an elicitation, a headless wait for approval) blocks a move",
+    "model": [
+      "ToggleDialog"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/screen/use-prompts.tsx",
+        "export": "usePrompts"
+      },
+      {
+        "file": "packages/cli/src/run/headless.ts",
+        "export": "runHeadless"
+      }
+    ]
+  },
+  {
+    "actor": "the input box text and the local task runner of the TUI",
+    "model": [
+      "ToggleInput"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/app.tsx",
+        "export": "App"
+      }
+    ]
+  },
+  {
+    "actor": "viewport: owns the scroll anchor and the flag following; moved by wheel, keys, selection and new output",
+    "model": [
+      "ScrollView"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/screen/viewport.ts",
+        "export": "viewportMoveOf"
+      },
+      {
+        "file": "packages/cli/src/tui/handover.ts",
+        "export": "viewOf"
+      },
+      {
+        "file": "packages/cli/src/tui/handover.ts",
+        "export": "positionOf"
+      }
+    ]
+  },
+  {
+    "actor": "thought entries: expanded flag toggled by ctrl+o and a click; carried by the record",
+    "model": [
+      "ToggleThought"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/transcript.ts",
+        "export": "toggleThought"
+      },
+      {
+        "file": "packages/cli/src/tui/handover.ts",
+        "export": "togglesOf"
+      },
+      {
+        "file": "packages/cli/src/tui/handover.ts",
+        "export": "restoreToggles"
+      }
+    ]
+  },
+  {
+    "actor": "the mover: begins a move at a quiet point, once per newer generation",
+    "model": [
+      "Begin"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/handover/mover.ts",
+        "export": "createMover"
+      }
+    ]
+  },
+  {
+    "actor": "writes the handover record",
+    "model": [
+      "WriteRecord"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/handover/record.ts",
+        "export": "encodeRecord"
+      }
+    ]
+  },
+  {
+    "actor": "writes MOMONGA_HANDOVER_TERMINAL (version, screen mode, mode set) into the environment of the exec or relay spawn",
+    "model": [
+      "WriteOk"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/tui/terminal/handover.ts",
+        "export": "handoverTerminalValue"
+      }
+    ]
+  },
+  {
+    "actor": "replaces the process (exec), or relays when exec fails",
+    "model": [
+      "ExecOk",
+      "ExecFail"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/handover/replace-process.ts",
+        "export": "replaceProcess"
+      }
+    ]
+  },
+  {
+    "actor": "the new process reads the value with --handover, adopts the record, or refuses and leaves every mode",
+    "model": [
+      "Adopt",
+      "Refuse"
+    ],
+    "code": [
+      {
+        "file": "packages/cli/src/handover/start.ts",
+        "export": "adoptionOf"
+      },
+      {
+        "file": "packages/cli/src/handover/start.ts",
+        "export": "refuseStart"
+      },
+      {
+        "file": "packages/cli/src/tui/terminal/handover.ts",
+        "export": "takeHandoverTerminal"
+      },
+      {
+        "file": "packages/cli/src/tui/terminal/handover.ts",
+        "export": "startFromHandover"
+      }
+    ]
+  },
+  {
+    "actor": "a leftover record of a crashed or refused move is swept",
+    "model": [
+      "Sweep"
+    ],
+    "code": [
+      {
+        "file": "packages/foundation/src/handover-leftovers.ts",
+        "export": "handoverLeftovers"
+      }
+    ]
+  },
+  {
+    "actor": "the process dies during a move",
+    "model": [
+      "Crash"
+    ],
+    "environment": "a crash is not code: the operating system ends the process"
+  },
+  {
+    "actor": "the old process restores the terminal before exec",
+    "model": [
+      "RestoreOld"
+    ],
+    "evidenceOnly": "the wrong order the model refutes (variant restoreBeforeExec); the code must not do it"
+  },
+  {
+    "actor": "resize: marks the wrap cache stale and rewraps visible rows",
+    "model": [],
+    "arguedAway": "no modelled variable reads the terminal size; ViewKept checks key and following only"
+  },
+  {
+    "actor": "/clear opens a new session",
+    "model": [],
+    "arguedAway": "no record holds a clear mark, and a session client moves one session at a time"
+  }
+]

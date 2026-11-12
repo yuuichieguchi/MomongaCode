@@ -5,6 +5,7 @@ import { EVENT_TYPES, REFUSING_PROPERTIES, RUN_STATUSES, STOP_REASONS, TERMINAL_
 import type { PinnedRuleVerdict, RuleVerdict } from '@momonga/protocol';
 import { unknownGateDecision } from '../packages/runtime/src/worker/unknown-gate.ts';
 import { policyRefusal } from '../packages/runtime/src/worker/rule-verdict.ts';
+import { cfgNames } from './formal/cfg-names.ts';
 import { moduleOf, readManifest } from './formal/manifest.ts';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from '@momonga/store';
 import { resolveKernelLock } from '../packages/foundation/src/platform/kernel-lock.ts';
@@ -194,11 +195,7 @@ describe('STOP_REASONS against RunRecovery.tla and the store', () => {
 
 const configDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
 
-const constantsOf = (name: string): Record<string, string> => {
-  const text = fs.readFileSync(path.join(configDir, `${name}.cfg`), 'utf8');
-  const block = text.slice(text.indexOf('CONSTANTS'), text.search(/^(SYMMETRY|INVARIANTS|PROPERTIES)/m));
-  return Object.fromEntries([...block.matchAll(/^\s+(\w+)\s*=\s*(.+)$/gm)].map((match) => [match[1] as string, (match[2] as string).trim()]));
-};
+const constantsOf = (name: string): Readonly<Record<string, string>> => cfgNames(configDir, name).constants;
 
 const manifest = readManifest(path.join(configDir, 'manifest.json'));
 const recoveryEntries = manifest.entries.filter((entry) => entry.config.split('.')[0] === 'RunRecovery');
@@ -207,8 +204,11 @@ const evidenceNames = recoveryEntries
   .filter((entry) => entry.role === 'evidence' && !entry.config.startsWith('RunRecovery.uniformCancel') && !entry.config.startsWith('RunRecovery.liveTimeout'))
   .map((entry) => entry.config);
 const configText = (name: string): string => fs.readFileSync(path.join(configDir, `${name}.cfg`), 'utf8');
-const hasInvariantSection = (name: string): boolean => /^INVARIANTS$/m.test(configText(name));
-const lists = (name: string, invariant: string): boolean => new RegExp(`^\\s+${invariant}$`, 'm').test(configText(name));
+const hasInvariantSection = (name: string): boolean => cfgNames(configDir, name).invariants.length > 0;
+const lists = (name: string, checked: string): boolean => {
+  const names = cfgNames(configDir, name);
+  return [...names.invariants, ...names.properties].includes(checked);
+};
 
 describe('the checked configurations against the repaired recovery design', () => {
   const repairs = (name: string): [string, string, string] => {
@@ -261,8 +261,8 @@ describe('the checked configurations against the repaired recovery design', () =
     const configs = fs.readdirSync(configDir).filter((file) => file.endsWith('.cfg'));
     expect(configs.length).toBeGreaterThan(0);
     for (const file of configs) {
-      const text = fs.readFileSync(path.join(configDir, file), 'utf8');
-      const listed = text.slice(text.search(/^(INVARIANTS|PROPERTIES)/m)).split('\n').map((line) => line.trim()).filter((line) => /^[A-Z][A-Za-z]+$/.test(line) && line !== 'INVARIANTS' && line !== 'PROPERTIES');
+      const names = cfgNames(configDir, file.slice(0, -'.cfg'.length));
+      const listed = [...names.invariants, ...names.properties];
       const moduleText = fs.readFileSync(path.join(configDir, `${moduleOf(file.slice(0, -'.cfg'.length))}.tla`), 'utf8');
       for (const name of listed) expect(moduleText, `${file} names ${name}`).toMatch(new RegExp(`^${name} ==`, 'm'));
     }

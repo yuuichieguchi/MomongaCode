@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CONDITION_WHENS, EVENT_TYPES, STOP_REASONS, completionMutates, conditionOwed, reconciliationMutates } from '@momonga/protocol';
 import { WORKER_TRANSITIONS } from '@momonga/store';
+import { cfgNames } from './formal/cfg-names.ts';
 import { readManifest } from './formal/manifest.ts';
 
 const tlaDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
@@ -19,25 +20,9 @@ const definitionIn = (spec: string, name: string): string => {
 
 const stringsIn = (text: string): string[] => [...text.matchAll(/"([^"]+)"/g)].map((match) => match[1] as string);
 
-const configText = (name: string): string => fs.readFileSync(path.join(tlaDir, `${name}.cfg`), 'utf8');
+const constantsOf = (name: string): Readonly<Record<string, string>> => cfgNames(tlaDir, name).constants;
 
-const constantsOf = (name: string): Record<string, string> => {
-  const text = configText(name);
-  const block = text.slice(text.indexOf('CONSTANTS'), text.search(/^(SYMMETRY|INVARIANTS|PROPERTIES)/m));
-  return Object.fromEntries([...block.matchAll(/^\s+(\w+)\s*=\s*(.+)$/gm)].map((match) => [match[1] as string, (match[2] as string).trim()]));
-};
-
-const listedIn = (name: string, section: 'INVARIANTS' | 'PROPERTIES'): string[] => {
-  const lines = configText(name).split('\n');
-  const start = lines.findIndex((line) => line === section);
-  if (start === -1) return [];
-  const names: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^\S/.test(line)) break;
-    if (line.trim() !== '') names.push(line.trim());
-  }
-  return names;
-};
+const listedIn = (name: string, section: 'INVARIANTS' | 'PROPERTIES'): readonly string[] => (section === 'INVARIANTS' ? cfgNames(tlaDir, name).invariants : cfgNames(tlaDir, name).properties);
 
 const gateEntries = manifest.entries.filter((entry) => entry.config.split('.')[0] === 'CompletionGate');
 
