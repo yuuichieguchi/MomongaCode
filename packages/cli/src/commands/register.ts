@@ -28,6 +28,7 @@ import { reviewPermissions } from './review.ts';
 import type { ReviewOptions } from './review.ts';
 import { showStatus } from './runs.ts';
 import { secretSet } from './secret.ts';
+import { TRUST_DECISIONS, trustFolder } from './trust.ts';
 import { exitOfMeasurement } from '../measurement-exit.ts';
 
 export type CommandGroup = (program: Command, deps: ProgramDeps) => void;
@@ -679,6 +680,17 @@ const registerModels: CommandGroup = (program, deps) => {
   formOf(dialects.command('set').description('replace the declared schema dialects with the object of a JSON file').option('--file <path>', 'the JSON file').option(YES_FLAG, YES_HELP), deps, 'dialects set');
 };
 
+const registerTrust: CommandGroup = (program, deps) => {
+  program
+    .command('trust [folder]')
+    .description('show whether a folder is trusted, with the settings of it waiting for approval, or decide it; the current folder when none is given')
+    .addOption(new Option('--set <decision>', 'decide the folder').choices(TRUST_DECISIONS))
+    .option('--clear', 'return the folder to not decided')
+    .action(async (folder: string | undefined, options: { set?: string; clear?: true }) => {
+      deps.complete(await trustFolder(deps.ports, await pathsOf(deps.ports), { ...(folder === undefined ? {} : { folder }), ...(options.set === undefined ? {} : { set: options.set }), clear: options.clear === true }));
+    });
+};
+
 const registerPolicy: CommandGroup = (program, deps) => {
   const policy = program.command('policy').description('check the permission rules of this folder');
   policy
@@ -717,7 +729,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerAuth, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerPermissions, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerAuth, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerPermissions, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy, registerTrust];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);
