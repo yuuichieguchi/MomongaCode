@@ -6,7 +6,11 @@ import type { FamilyShape } from './yield-fixtures.ts';
 
 const SEED = 7;
 
-const CHEAPER: FamilyShape = { without: { calls: [{ cost: 0.01, cached: 400 }] }, with: { calls: [{ cost: 0.004, cached: 400 }] } };
+const RECALLED_FRESH = [loadedMemories([{ id: 'other', status: 'verified' }])];
+
+const CHEAPER: FamilyShape = { without: { calls: [{ cost: 0.01, cached: 400 }] }, with: { calls: [{ cost: 0.004, cached: 400 }], extra: RECALLED_FRESH } };
+
+const CHEAPER_RECALLING_NOTHING: FamilyShape = { without: { calls: [{ cost: 0.01, cached: 400 }] }, with: { calls: [{ cost: 0.004, cached: 400 }] } };
 
 const judged = (runs: YieldFamilyRun[]) => {
   const report = buildYieldReport({ dataset: fourFamilies(), runs, seed: SEED });
@@ -86,6 +90,15 @@ describe('the yield gate', () => {
     expect(checkOf(judged(stale).gate, 'memoryStaleRate').passed).toBe(false);
     const fresh = uniformRuns({ ...CHEAPER, with: { calls: [{ cost: 0.004, cached: 400 }], extra: [loadedMemories([{ id: 'other', status: 'verified' }])] } });
     expect(checkOf(judged(fresh).gate, 'memoryStaleRate').passed).toBe(true);
+  });
+
+  it('measures memoryStaleRate in the with arm only, and fails it with no measure when that arm recalls no memory', () => {
+    const { report, gate } = judged(uniformRuns(CHEAPER_RECALLING_NOTHING));
+    for (const entry of report.families) expect(entry.reuse.without).not.toHaveProperty('memoryStaleRate');
+    expect(report.metrics.without).not.toHaveProperty('memoryStaleRate');
+    const check = checkOf(gate, 'memoryStaleRate');
+    expect(check.passed).toBe(false);
+    expect(check.detail).toContain('no measure');
   });
 });
 

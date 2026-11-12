@@ -128,7 +128,7 @@ describe('readiness is decided before a resume is resolved', () => {
 
   it('a headless --resume with no model connected reports that no model is ready, in both formats, and ends with a failure', async () => {
     const runtime = await started();
-    const options = { prompt: 'go on', format: 'json', verbose: false, interrupt: new AbortController().signal, reopen: { kind: 'id', id: 'ffffffff-no-such-session' }, capabilitiesOf: async () => { throw new Error('the capabilities of no model are read'); }, modelList: async () => NOT_CONNECTED } as unknown as HeadlessOptions;
+    const options = { prompt: async () => 'go on', format: 'json', verbose: false, interrupt: new AbortController().signal, reopen: { kind: 'id', id: 'ffffffff-no-such-session' }, capabilitiesOf: async () => { throw new Error('the capabilities of no model are read'); }, modelList: async () => NOT_CONNECTED } as unknown as HeadlessOptions;
 
     expect(await runHeadless(runtime.ports, runtime.paths, options)).toBe(EXIT_FAILURE);
 

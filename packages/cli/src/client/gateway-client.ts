@@ -119,7 +119,7 @@ const isChainCapabilities = (value: unknown): value is Record<string, unknown> =
   oneOf(value['tokenCounting'], ['exact', 'calibrated', 'estimated']) &&
   typeof value['usageReported'] === 'boolean' &&
   typeof value['maxConcurrency'] === 'number' &&
-  oneOf(value['source'], ['declared', 'probed', 'config', 'unprobed']) &&
+  oneOf(value['source'], ['declared', 'reported', 'probed', 'config', 'unprobed']) &&
   (value['tokenErrorRatio'] === undefined || typeof value['tokenErrorRatio'] === 'number') &&
   (value['probedAt'] === undefined || typeof value['probedAt'] === 'string');
 

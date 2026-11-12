@@ -12,8 +12,8 @@ const seen = vi.hoisted(() => ({ headless: [] as Record<string, unknown>[] }));
 
 vi.mock('../src/run/headless.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/run/headless.ts')>()),
-  runHeadless: async (_ports: unknown, _paths: unknown, options: Record<string, unknown>) => {
-    seen.headless.push(options);
+  runHeadless: async (_ports: unknown, _paths: unknown, options: Record<string, unknown> & { prompt: () => Promise<string> }) => {
+    seen.headless.push({ ...options, prompt: await options.prompt() });
     return 0;
   },
 }));

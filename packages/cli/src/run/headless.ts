@@ -35,7 +35,7 @@ export { OUTPUT_FORMATS };
 export type { OutputFormat };
 
 export type HeadlessOptions = {
-  prompt: string;
+  prompt: () => Promise<string>;
   format: OutputFormat;
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
@@ -597,6 +597,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   const adoption = adoptionOf(ports.handover?.started, ['headless']);
   if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr }, adoption);
   if (adoption.kind === 'record') return resumeStream(ports, paths, adoption, options.interrupt);
+  const prompt = await options.prompt();
   const move = streamMoveOf(ports, paths, 'headless');
   if (!(await modelsAnnounced(ports, options.interrupt))) return EXIT_INTERRUPTED;
   let session: CliSession | undefined;
@@ -615,7 +616,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   if (session === undefined) return EXIT_INTERRUPTED;
   const opened = session;
   try {
-    const started = await startedRun(ports, opened, options).catch((error: unknown) => {
+    const started = await startedRun(ports, opened, options, prompt).catch((error: unknown) => {
       refusedBeforeRun(ports, options.format, error);
       throw error;
     });
@@ -629,7 +630,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
 
 type RunStart = { kind: 'started'; id: string } | { kind: 'refused' } | { kind: 'interrupted' };
 
-const startedRun = async (ports: CliPorts, session: CliSession, options: HeadlessOptions): Promise<RunStart> => {
+const startedRun = async (ports: CliPorts, session: CliSession, options: HeadlessOptions, prompt: string): Promise<RunStart> => {
   if (session.created.trustNotice !== undefined) ports.stderr.write(noteText([`momonga: ${session.created.trustNotice}`]));
   const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
   if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {
@@ -640,7 +641,7 @@ const startedRun = async (ports: CliPorts, session: CliSession, options: Headles
   }
   if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessShownText(readiness, 'shell').split('\n')))}\n`);
   const sessionId = session.created.session.id;
-  const invocation = await resolveSkillInvocation(session.client, sessionId, options.prompt, options.skill);
+  const invocation = await resolveSkillInvocation(session.client, sessionId, prompt, options.skill);
   const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));
   if (options.interrupt.aborted) return { kind: 'interrupted' };
   const { run: started } = await session.client.createRun(sessionId, invocation.input, {
