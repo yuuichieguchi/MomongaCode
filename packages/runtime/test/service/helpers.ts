@@ -477,8 +477,20 @@ export type ServiceOverrides = {
   mcp?: McpAdminPort;
   userInput?: runtime.UserInputPort;
   evidenceRun?: (project: string) => EvidenceRun;
+  issues?: IssuePort;
   delegation?: DelegationPort;
   modelListing?: (signal: AbortSignal) => Promise<{ views: ModelViews; start: string | null }>;
+};
+
+export type IssuePort = Parameters<typeof runtime.createRunService>[0]['issues'];
+
+const unusedIssues: IssuePort = {
+  locate: () => {
+    throw new Error('this test locates no issue');
+  },
+  read: async () => {
+    throw new Error('this test reads no issue');
+  },
 };
 
 export type DelegationPort = NonNullable<Parameters<typeof runtime.createRunService>[0]['delegation']>;
@@ -487,6 +499,7 @@ export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }
 
 export type RunService = {
   socketPath: string;
+  askAsPerson(method: string, path: string, body: unknown, signal: AbortSignal): Promise<{ status: number; body: unknown }>;
   beginDraining(): void;
   applyRole(): void;
   openRequests(): number;
@@ -579,6 +592,7 @@ export const serviceOptions = (
   mandateVerification: overrides.mandateVerification ?? provedMandateVerification,
   gatewayStanding: overrides.gatewayStanding ?? unaskedGatewayStanding,
   evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,
+  issues: overrides.issues ?? unusedIssues,
   skillFiles: nodeFileSystem,
   mcp: overrides.mcp ?? unusedMcpAdmin,
   userInput: overrides.userInput ?? unusedUserInput,

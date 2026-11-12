@@ -18,7 +18,7 @@ export const OPERATION_CRASH_POINTS = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'] as co
 export const APPROVAL_CLASSES = ['rule', 'always'] as const;
 export type ApprovalClass = (typeof APPROVAL_CLASSES)[number];
 
-export const FORGE_VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'getBranch', 'listChecks', 'listComments', 'listReviewComments', 'createComment'] as const;
+export const FORGE_VOCABULARY = ['listPullRequests', 'getPullRequest', 'createPullRequest', 'mergePullRequest', 'getBranch', 'listChecks', 'listComments', 'listReviewComments', 'createComment', 'getIssue', 'listIssues', 'listIssueComments', 'createIssueComment'] as const;
 export type ForgeOperationName = (typeof FORGE_VOCABULARY)[number];
 
 export type Operand = string | { readonly literal: string };
@@ -36,11 +36,13 @@ export const REMOTE_DIRECTIONS = ['push', 'fetch'] as const;
 export type RemoteDirection = (typeof REMOTE_DIRECTIONS)[number];
 
 export type ArgvCall = { readonly argv: readonly ArgvItem[]; readonly network?: Network };
-export type ForgeCall = { readonly forge: ForgeOperationName; readonly args: Readonly<Record<string, string>> };
+export type ForgeArgument = string | { readonly ifObserved: string; readonly then: string; readonly else: string };
+export type ForgeCall = { readonly forge: ForgeOperationName; readonly args: Readonly<Record<string, ForgeArgument>> };
+export type ProbeForgeCall = { readonly forge: ForgeOperationName; readonly args: Readonly<Record<string, string>> };
 
 export type ProbeSource =
   | (ArgvCall & { readonly extract?: 'trim' | 'firstField'; readonly emptyOnFailure?: true; readonly each?: 'destinations' })
-  | (ForgeCall & ({ readonly shape: 'one' | 'list' | 'count'; readonly contains?: { readonly field: string; readonly value: string } } | { readonly shape: 'lines'; readonly lines: readonly string[] }));
+  | (ProbeForgeCall & ({ readonly shape: 'one' | 'list' | 'count'; readonly contains?: { readonly field: string; readonly value: string } } | { readonly shape: 'lines'; readonly lines: readonly string[] } | { readonly shape: 'shown'; readonly lines: readonly string[] }));
 
 export type Probe = { readonly id: string; readonly via: ProbeSource };
 
@@ -107,7 +109,13 @@ const NETWORK = { enum: [...NETWORK_TARGETS] } as const;
 const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } as const;
 const FORGE_NAME = { enum: [...FORGE_VOCABULARY] } as const;
 const ARGV_CALL = { type: 'object', properties: { argv: ARGV, network: NETWORK }, required: ['argv'], additionalProperties: false } as const;
-const FORGE_CALL = { type: 'object', properties: { forge: FORGE_NAME, args: STRING_MAP }, required: ['forge', 'args'], additionalProperties: false } as const;
+const FORGE_ARGUMENT = {
+  oneOf: [
+    { type: 'string' },
+    { type: 'object', properties: { ifObserved: REFERENCE, then: { type: 'string' }, else: { type: 'string' } }, required: ['ifObserved', 'then', 'else'], additionalProperties: false },
+  ],
+} as const;
+const FORGE_CALL = { type: 'object', properties: { forge: FORGE_NAME, args: { type: 'object', additionalProperties: FORGE_ARGUMENT } }, required: ['forge', 'args'], additionalProperties: false } as const;
 
 const PRE_PUSH = {
   type: 'object',
@@ -162,7 +170,7 @@ const SPEC_SCHEMA = {
                 properties: {
                   forge: FORGE_NAME,
                   args: STRING_MAP,
-                  shape: { enum: ['one', 'list', 'count', 'lines'] },
+                  shape: { enum: ['one', 'list', 'count', 'lines', 'shown'] },
                   lines: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
                   contains: { type: 'object', properties: { field: { type: 'string' }, value: { type: 'string' } }, required: ['field', 'value'], additionalProperties: false },
                 },
@@ -210,6 +218,8 @@ const subjectInputs = (subject: SubjectSpec): string[] => {
   return [...inputsIn(subject.pr ?? ''), ...inputsIn(subject.headSha ?? '')];
 };
 
+export const forgeArgumentTexts = (argument: ForgeArgument): string[] => (typeof argument === 'string' ? [argument] : [argument.then, argument.else]);
+
 const isComparison = (clause: Clause): clause is Comparison => Array.isArray(clause);
 
 const isClause = (item: ClauseItem): item is Clause => Array.isArray(item) || 'observed' in item;
@@ -222,7 +232,7 @@ const boundInputs = (effect: ArgvCall | ForgeCall, require: readonly ClauseItem[
     if ('each' in item) return [item.each];
     return [item.if, ...item.then.flatMap(inputsIn), ...(item.else ?? []).flatMap(inputsIn)];
   };
-  const fromEffect = 'argv' in effect ? effect.argv.flatMap(inputsOfItem) : Object.values(effect.args).flatMap(inputsIn);
+  const fromEffect = 'argv' in effect ? effect.argv.flatMap(inputsOfItem) : Object.values(effect.args).flatMap(forgeArgumentTexts).flatMap(inputsIn);
   const clauses = require.flatMap((item): Clause[] => (isClause(item) ? [item] : [...item.then, ...item.else]));
   return new Set([...fromEffect, ...clauses.flatMap((clause) => (isComparison(clause) ? clause.filter(isInputOperand) : []))]);
 };
@@ -247,8 +257,9 @@ const checkForgeProbe = (name: string, probe: Probe, earlier: readonly Probe[]):
   const via = probe.via;
   if (!('forge' in via)) return;
   const givesLines = 'lines' in via;
-  if (via.shape === 'lines' && !givesLines) throw new OperationSpecError(`${name}: the probe ${probe.id} lists every item and must give the forms of a line in lines`);
-  if (via.shape !== 'lines' && givesLines) throw new OperationSpecError(`${name}: the probe ${probe.id} gives the forms of a line but does not list every item (shape lines)`);
+  const showsLines = via.shape === 'lines' || via.shape === 'shown';
+  if (showsLines && !givesLines) throw new OperationSpecError(`${name}: the probe ${probe.id} shows what the forge gave and must give the forms of a line in lines`);
+  if (!showsLines && givesLines) throw new OperationSpecError(`${name}: the probe ${probe.id} gives the forms of a line but shows nothing (shape lines or shown)`);
   for (const reference of Object.values(via.args).flatMap(referencesIn)) {
     const [root, source] = reference.split('.');
     if (root === SEEN && !earlier.some((candidate) => candidate.id === source)) {

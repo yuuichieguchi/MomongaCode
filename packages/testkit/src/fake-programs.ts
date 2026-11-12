@@ -98,6 +98,10 @@ const itemsOf = (bin: string): string => path.join(path.dirname(bin), 'items');
 
 export const fakeOpenerRecordOf = (bin: string): string => openerRecordIn(itemsOf(bin));
 
+export const writeFakeSecretItem = (bin: string, name: string, value: string): void => {
+  fs.writeFileSync(path.join(itemsOf(bin), name), value, { mode: 0o600 });
+};
+
 const textOrUndefined = (file: string): string | undefined => {
   try {
     return fs.readFileSync(file, 'utf8');

@@ -9,6 +9,7 @@ export const REQUEUE_MAX_MS = 60_000;
 export { SANDBOX_KILL_GRACE_MS } from '@momonga/sandbox';
 export const MARKER_REAP_KILL_GRACE_MS = 2000;
 export const STORE_IDENTITY_CHECK_MS = 5000;
+export const ISSUE_WATCH_POLL_MS = 300_000;
 export const SESSION_STATE_SWEEP_MS = 300_000;
 export const GATEWAY_CANCEL_TIMEOUT_MS = 1000;
 export const CANCEL_UPSTREAM_SETTLE_MS = 1000;

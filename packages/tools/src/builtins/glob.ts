@@ -49,6 +49,7 @@ export const globTool = defineTool<GlobInput>({
     access: 'read',
   }),
   execute: async (input, ctx) => {
+    if (path.isAbsolute(input.pattern)) throw new ToolExecutionError(`The pattern ${input.pattern} is absolute; use a pattern relative to the search root, and name the root with path.`);
     const root = await canonicalPathOf(ctx, 'path', input.path ?? '.');
     const shown = await shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
     const stat = await statIfExists(ctx.files, root);

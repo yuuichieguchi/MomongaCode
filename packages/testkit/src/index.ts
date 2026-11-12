@@ -26,6 +26,8 @@ export type {
   FakeScenario,
   FakeResponseHold,
   FakeScriptedReply,
+  FakeDeferredReply,
+  FakeScriptEntry,
   FakeStreamChunk,
   RecordedRequest,
 } from './fake-chat-completions.ts';
@@ -257,7 +259,7 @@ export type { LoopbackHandler, LoopbackServer } from './loopback-http.ts';
 export { FAKE_FORGE_DEFAULT_PAGE, FAKE_FORGE_LARGEST_PAGE, LAB_DESCRIPTOR, REPOSITORY_PATH, startFakeForge } from './fake-forge.ts';
 export { GITHUB_CONTRACT, GITHUB_REFUSALS } from './forge-contract.ts';
 export type { ForgeContractCase } from './forge-contract.ts';
-export type { FakeCheck, FakeForge, FakeForgeRequest, FakePullRequest, FakeReviewComment, Fault, ForgeShape } from './fake-forge.ts';
+export type { FakeCheck, FakeForge, FakeForgeRequest, FakeIssue, FakePullRequest, FakeReviewComment, Fault, ForgeShape } from './fake-forge.ts';
 export { startFakeGitHttp } from './fake-git-http.ts';
 export type { FakeGitHttp, FakeGitHttpOptions } from './fake-git-http.ts';
 export { startMcpOauthFixture } from './mcp-oauth-fixture.ts';
@@ -282,6 +284,7 @@ export {
   createFakePrograms,
   fakeBrowserOf,
   fakeOpenerRecordOf,
+  writeFakeSecretItem,
   fakeSecretProgramsBin,
   getFakeSecretEnded,
   getFakeSecretHanging,

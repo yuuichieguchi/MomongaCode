@@ -61,6 +61,7 @@ export type {
   Conflict,
   CreateChildRunResult,
   CreateRunInput,
+  CreateIssueRunResult,
   CreateRunResult,
   CreateSessionInput,
   HeartbeatResult,

@@ -85,6 +85,8 @@ describe('messageOf: one builder per message, which names the command of the sur
       optionNeedsInteractive: (surface) => messageOf('optionNeedsInteractive', surface, { option: '--screen-reader' }),
       promptGivenTwice: (surface) => messageOf('promptGivenTwice', surface, { prompt: 'two' }),
       resumeNeedsIdToPrint: (surface) => messageOf('resumeNeedsIdToPrint', surface),
+      issueNeedsMandate: (surface) => messageOf('issueNeedsMandate', surface),
+      issueBesidePrompt: (surface) => messageOf('issueBesidePrompt', surface),
       storedBypassNeedsOptIn: (surface) => messageOf('storedBypassNeedsOptIn', surface, { id: 'i' }),
       bypassNotStarted: (surface) => messageOf('bypassNotStarted', surface, { id: 'i' }),
       handoverFailed: (surface) => messageOf('handoverFailed', surface, { toVersion: '2', fromVersion: '1', reason: 'r', kept: { kind: 'run', runId: 'r1' } }),

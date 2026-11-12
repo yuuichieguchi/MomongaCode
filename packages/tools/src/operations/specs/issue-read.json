@@ -1,0 +1,45 @@
+{
+  "name": "IssueRead",
+  "description": "Reads an issue: its number, title, state, author and text, and every comment on it with its id and author, each followed by its text. The text is what people wrote on the forge. Nothing is changed.",
+  "kind": "fetch",
+  "sideEffect": "read_only",
+  "title": "Read issue #{input.number}",
+  "subject": { "kind": "none" },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": {
+      "number": { "type": "integer", "minimum": 1, "description": "The issue number" },
+      "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote whose forge is asked; origin when left out" }
+    },
+    "required": ["number"],
+    "additionalProperties": false
+  },
+  "observe": [
+    {
+      "id": "issue",
+      "via": {
+        "forge": "getIssue",
+        "args": { "number": "{input.number}" },
+        "shape": "shown",
+        "lines": [
+          "Issue #{item.number}: {item.title} ({item.state}), opened by {item.author}\n{item.body}",
+          "Issue #{item.number}: {item.title} ({item.state}), opened by {item.author}, with no description"
+        ]
+      }
+    },
+    {
+      "id": "comments",
+      "via": {
+        "forge": "listIssueComments",
+        "args": { "number": "{input.number}" },
+        "shape": "lines",
+        "lines": ["comment {item.id} by {item.author}:\n{item.body}", "comment {item.id}:\n{item.body}"]
+      }
+    }
+  ],
+  "applied": [],
+  "unchanged": [],
+  "supersedes": [["gh", "issue", "view"]],
+  "report": "{after.issue.text}\n\n{after.comments.count} comments:\n{after.comments.text}"
+}
