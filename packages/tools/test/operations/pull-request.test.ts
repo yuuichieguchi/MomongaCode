@@ -154,7 +154,10 @@ describe.each(['hub', 'lab'] as const)('pull request operations against the %s f
       const parts = partsOf(tool('PullRequestCreate'), CREATE, contextFor(world.work, world.env));
       const outcome = await settle(async () => parts.execute(await parts.prepare()));
       expect(outcome.status).not.toBe('completed');
-      expect(outcome.output).toContain(`no forge configured for host ${forge.host}`);
+      expect(outcome.output).toContain(`no forge is configured for host ${forge.host}`);
+      expect(outcome.output).toContain('add an entry to forges in the user settings');
+      expect(outcome.output).toContain('credential');
+      expect(outcome.output).toContain('/config');
       expect(forge.requests).toEqual([]);
     });
   });

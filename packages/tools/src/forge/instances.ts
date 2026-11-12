@@ -79,7 +79,9 @@ export const createForgeAccess = (options: ForgeAccessOptions): ForgeAccess => {
       const location = parseRemoteUrl(remoteUrl);
       const host = canonicalHostOf(location.host);
       const instance = options.instances.find((candidate) => candidate.hosts.map(canonicalHostOf).includes(host));
-      if (instance === undefined) throw new ToolExecutionError(`no forge configured for host ${location.host}`);
+      if (instance === undefined) throw new ToolExecutionError(
+          `no forge is configured for host ${location.host}: add an entry to forges in the user settings ({ id, descriptor, hosts: ["${location.host}"], apiBaseUrl, credential: { env } or { secret } }), for example with /config in the terminal UI (Git and pull requests)`,
+        );
       const descriptor = descriptorOf(instance);
       const credential = await options.readCredential(instance.credential, signal);
       const { owner, name } = splitRepository(location.repo);
