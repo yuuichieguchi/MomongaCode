@@ -13,6 +13,7 @@ import type { TrustOracle, UserLayer } from './layers.ts';
 import { assertMcpServer, assertMcpServersFile } from './settings.ts';
 import type { McpServerConfig, McpServersFile, Settings } from './settings.ts';
 import { mcpServerNameProblem } from './mcp-server-rules.ts';
+import { DEFAULT_ENABLE_ALL_PROJECT_MCP_SERVERS } from './setting-defaults.ts';
 import { environmentValueOf, expandVariables } from './expansion.ts';
 
 export const projectMcpServersFile = (projectDir: string): string => path.join(projectDir, '.mcp.json');
@@ -233,7 +234,7 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, referenceEn
   const approvals = approvingSettings.flatMap((settings) => settings.enabledMcpjsonServers ?? []).map((approval) => (typeof approval === 'string' ? { name: approval, digest: undefined } : approval));
   const approvedNames = new Set(approvals.map((approval) => approval.name));
   const disabled = new Set(approvingSettings.flatMap((settings) => settings.disabledMcpjsonServers ?? []));
-  const approveAll = approvingSettings.some((settings) => settings.enableAllProjectMcpServers === true);
+  const approveAll = approvingSettings.some((settings) => settings.enableAllProjectMcpServers ?? DEFAULT_ENABLE_ALL_PROJECT_MCP_SERVERS);
 
   const enabled: McpServerEntry[] = [];
   const pendingApproval: PendingMcpServer[] = [];

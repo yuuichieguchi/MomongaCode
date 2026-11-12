@@ -1,8 +1,8 @@
 import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
-import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, HOOK_DEFAULT_TIMEOUT_SECONDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
+import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, HOOK_DEFAULT_TIMEOUT_SECONDS, DEFAULT_PERMISSION_MODE, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
 import { APPROVAL_DIGEST_PATTERN } from './approval-digest.ts';
 import { DEFAULT_UPDATE_STALL_TIMEOUT_MS, defaultContextSettings, defaultMemorySettings, defaultToolsSettings, defaultVerificationSettings } from './context-settings.ts';
-import { DEFAULT_RETENTION_DAYS, FIVE_MINUTES_MS, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
+import { DEFAULT_AUTO_UPDATES, DEFAULT_CAPTURE_MESSAGE_CONTENT, DEFAULT_ENABLE_ALL_PROJECT_MCP_SERVERS, DEFAULT_NETWORK_ENVIRONMENT, DEFAULT_PLAINTEXT_TOKEN_FILES, DEFAULT_RETENTION_DAYS, FIVE_MINUTES_MS, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -448,7 +448,7 @@ export const SETTINGS_SCHEMA = {
     permissions: {
       type: 'object',
       properties: {
-        defaultMode: { type: 'string', enum: [...PERMISSION_MODES] },
+        defaultMode: { type: 'string', enum: [...PERMISSION_MODES], default: DEFAULT_PERMISSION_MODE },
         allow: STRING_ARRAY,
         ask: STRING_ARRAY,
         deny: STRING_ARRAY,
@@ -459,7 +459,7 @@ export const SETTINGS_SCHEMA = {
     env: STRING_MAP,
     credentials: {
       type: 'object',
-      properties: { env: NON_EMPTY_STRING_ARRAY, keep: NON_EMPTY_STRING_ARRAY, valuePatterns: NON_EMPTY_STRING_ARRAY, plaintextTokenFiles: { type: 'boolean' } },
+      properties: { env: NON_EMPTY_STRING_ARRAY, keep: NON_EMPTY_STRING_ARRAY, valuePatterns: NON_EMPTY_STRING_ARRAY, plaintextTokenFiles: { type: 'boolean', default: DEFAULT_PLAINTEXT_TOKEN_FILES } },
       additionalProperties: false,
     },
     hooks: { type: 'object', additionalProperties: { type: 'array', items: HOOK_MATCHER_GROUP_SCHEMA } },
@@ -478,7 +478,7 @@ export const SETTINGS_SCHEMA = {
       },
     },
     disabledMcpjsonServers: STRING_ARRAY,
-    enableAllProjectMcpServers: { type: 'boolean' },
+    enableAllProjectMcpServers: { type: 'boolean', default: DEFAULT_ENABLE_ALL_PROJECT_MCP_SERVERS },
     mcpServers: { type: 'object', additionalProperties: MCP_SERVER_SCHEMA },
     mcp: {
       type: 'object',
@@ -584,7 +584,7 @@ export const SETTINGS_SCHEMA = {
       },
       additionalProperties: false,
     },
-    autoUpdates: { type: 'boolean' },
+    autoUpdates: { type: 'boolean', default: DEFAULT_AUTO_UPDATES },
     update: { type: 'object', properties: { stallTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, DEFAULT_UPDATE_STALL_TIMEOUT_MS)) }, additionalProperties: false },
     tui: {
       type: 'object',
@@ -622,7 +622,7 @@ export const SETTINGS_SCHEMA = {
         httpsProxy: { type: 'string', minLength: 1 },
         noProxy: { type: 'string', minLength: 1 },
         extraCaFiles: { type: 'array', items: { type: 'string', minLength: 1 } },
-        environment: { type: 'boolean' },
+        environment: { type: 'boolean', default: DEFAULT_NETWORK_ENVIRONMENT },
       },
       additionalProperties: false,
     },
@@ -744,7 +744,7 @@ export const SETTINGS_SCHEMA = {
           required: ['endpoint'],
           additionalProperties: false,
         },
-        captureMessageContent: { type: 'boolean' },
+        captureMessageContent: { type: 'boolean', default: DEFAULT_CAPTURE_MESSAGE_CONTENT },
       },
       additionalProperties: false,
     },

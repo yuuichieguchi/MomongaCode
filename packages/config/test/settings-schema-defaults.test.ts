@@ -12,6 +12,7 @@ import {
   DEFAULT_UPDATE_STALL_TIMEOUT_MS,
   FIVE_MINUTES_MS,
   defaultTuiSettings,
+  resolveTelemetrySettings,
 } from '@momonga/config';
 
 type Node = Readonly<Record<string, unknown>>;
@@ -50,6 +51,12 @@ const DEFAULTS: readonly [string, unknown][] = [
   ['tools.search.timeoutMs', tools.search.timeoutMs],
   ['tools.operations.timeoutMs', tools.operations.timeoutMs],
   ['sandboxNetwork', DEFAULT_SANDBOX_NETWORK],
+  ['permissions.defaultMode', 'manual'],
+  ['autoUpdates', true],
+  ['credentials.plaintextTokenFiles', false],
+  ['enableAllProjectMcpServers', false],
+  ['network.environment', true],
+  ['telemetry.captureMessageContent', resolveTelemetrySettings(undefined).captureMessageContent],
   ['retention.days', DEFAULT_RETENTION_DAYS],
   ...Object.entries(defaultTuiSettings()).map(([key, value]): [string, unknown] => [`tui.${key}`, value]),
   ['update.stallTimeoutMs', DEFAULT_UPDATE_STALL_TIMEOUT_MS],
