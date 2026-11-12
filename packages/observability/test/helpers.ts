@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
@@ -9,7 +8,7 @@ import { GENAI_CONTENT_SEMCONV, buildCostReport, createTelemetry, describeMoney,
 import type { BilledCall, BodyRecord, CallPrice, CostReport, CostedRun, PriceTable, SpanRecord, Telemetry, TraceStore } from '@momonga/observability';
 import { billedCallOf, isBilledChat } from '../src/billed-calls.ts';
 import { MOMONGA_ATTRIBUTES } from '../src/semconv.ts';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, createTempDir } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
@@ -29,7 +28,7 @@ export const registerCleanup = (cleanup: () => void | Promise<void>): void => {
 };
 
 export const makeDir = (mode = 0o700): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, mode);
   registerCleanup(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
@@ -96,7 +95,7 @@ export const CONTENT_KEYS = Object.values(GENAI_CONTENT_SEMCONV) as string[];
 
 const EVERY_BODY = Number.MAX_SAFE_INTEGER;
 
-export type BilledCallAtCallTime = BilledCall & { price: CallPrice };
+export type BilledCallAtCallTime = BilledCall & { price: CallPrice; retried: boolean };
 
 const priceAtCallTime = (span: SpanRecord, call: BilledCall, table: PriceTable): CallPrice => {
   const usageSource = span.attributes[MOMONGA_ATTRIBUTES.usageSource];
@@ -111,7 +110,7 @@ const recordedAtCallTime = (runId: string, spans: readonly SpanRecord[], table: 
     .toSorted((left, right) => left.startMs - right.startMs || (left.spanId < right.spanId ? -1 : 1))
     .map((span) => {
       const call = billedCallOf(runId, span);
-      return { ...call, price: priceAtCallTime(span, call, table) };
+      return { ...call, retried: false, price: priceAtCallTime(span, call, table) };
     });
 
 export const billedCallsOfRun = (store: TraceStore, runId: string, table: PriceTable): BilledCallAtCallTime[] => recordedAtCallTime(runId, store.spansForRun(runId), table);

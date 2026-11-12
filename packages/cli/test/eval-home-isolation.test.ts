@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeWorkspaceFiles, parseDataset, treeDigest } from '@momonga/eval';
 import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, launchGroupLeader } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
-import { createFakeKernelLock } from '@momonga/testkit';
+import { createFakeKernelLock, createTempDir } from '@momonga/testkit';
 import { runBenchLive } from '../src/commands/bench.ts';
 import type { BenchHostEffects } from '../src/commands/bench.ts';
 import { runGoldenLive } from '../src/commands/evaluate.ts';
@@ -34,7 +33,7 @@ afterEach(() => {
   for (const dir of created.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 const tempDir = (prefix: string): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  const dir = createTempDir();
   created.push(dir);
   return dir;
 };
@@ -132,7 +131,7 @@ const harness = () => {
     },
     runReflection: async () => ({ job: null, charges: [], queuedAhead: 0 }),
     runAnsweredBy: async () => ({ answeredBy: [{ target: 'scripted', adapter: 'chat-completions', upstreamModel: 'fake-model', answers: 'script' }] }),
-    reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+    reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
     resolveApproval: async () => ({}),
     cancel: async () => ({ status: 200, run: {} }),
     addRule: async () => ({}),

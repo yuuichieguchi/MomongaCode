@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EVENT_TYPES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, UNKNOWN_VALUE } from '@momonga/protocol';
 import { moduleOf, readManifest } from './formal/manifest.ts';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from '@momonga/store';
 import { resolveKernelLock } from '../packages/foundation/src/platform/kernel-lock.ts';
-import { fixedLockCapability } from '@momonga/testkit';
+import { fixedLockCapability, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const specPath = path.resolve(import.meta.dirname, '..', 'specs', 'tla', 'RunRecovery.tla');
 const spec = fs.readFileSync(specPath, 'utf8');
@@ -42,6 +44,7 @@ const UNMODELLED_EVENT_TYPES = [
   'context.contribution',
   'context.governing_loaded',
   'context.inherited',
+  'context.inherited_compacted',
   'context.memories_loaded',
   'context.truncated',
   'hook.completed',
@@ -78,6 +81,7 @@ const UNMODELLED_EVENT_TYPES = [
   'tool.updated',
   'usage.charged',
   'usage.updated',
+  'user.compact',
 ];
 
 describe('RunRecovery.tla against the implementation', () => {

@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listenUnix } from '@momonga/foundation';
-import { realProcessTestSignal, testKernelLock } from '@momonga/testkit';
+import { createTempDir, realProcessTestSignal, testKernelLock } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -14,7 +13,7 @@ afterEach(async () => {
 });
 
 const makeRoot = (): string => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const root = createTempDir();
   fs.chmodSync(root, 0o700);
   cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;

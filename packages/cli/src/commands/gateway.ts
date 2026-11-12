@@ -1,9 +1,9 @@
-import { isProbeable, isProbedBy, loadUserSettings, recordKeyOf, registeredServer, upstreamEndpointOf } from '@momonga/config';
+import { isProbeable, isProbedBy, loadUserSettings, recordKeyOf, registeredServer, requireOfferedEndpointForm, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey, Probeable, ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
-import { createBinaryHashCache, managedInstancePaths, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
+import { createBinaryHashCache, endpointHostOf, managedInstanceIn, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { ManagedInstancePaths, MomongaPaths, OutboundNetwork } from '@momonga/foundation';
 import { displayMapOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
-import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
+import type { DialectDefinition, ManagedServerDescription, ProbeReportDialect } from '@momonga/protocol';
 import { withinCommandLimit } from '../command-limit.ts';
 import { restartGeneration } from '../daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../daemon/ensure-daemon.ts';
@@ -50,7 +50,15 @@ export const managedProbeTimersOf = (ports: CliPorts): { setTimeout: CliPorts['t
 
 const probePortsOf = (ports: CliPorts): { clock: CliPorts['clock']; timers: CliPorts['timers'] } => ({ clock: ports.clock, timers: ports.timers });
 
-export const cliProbeInstance = (paths: MomongaPaths, provider: string): ManagedInstancePaths => managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider });
+export const cliProbeInstance = async (
+  ports: Pick<CliPorts, 'platform' | 'endpointScope'>,
+  paths: MomongaPaths,
+  description: ManagedServerDescription,
+  provider: string,
+): Promise<ManagedInstancePaths> => {
+  const form = requireOfferedEndpointForm(description, endpointHostOf(ports.platform), paths.settingsFile);
+  return managedInstanceIn(paths, { owner: 'cli', purpose: 'probe', provider }, { form, scope: await ports.endpointScope(paths) });
+};
 
 export const RESTART_STARTED_TEXT = (version: string): string => `started a new daemon (v${version}) so that the gateway reads the record; work in the old one keeps running.`;
 
@@ -94,14 +102,22 @@ const dialectText = (dialect: ProbeReportDialect): string => {
   return `none accepted${tried === '' ? '' : ` (${tried})`}`;
 };
 
-export const probeEndpointText = (name: string, endpoint: string, recordPath: string, report: EndpointProbe['report'], toolCalling: EndpointProbe['toolCalling'], declaredOutputBound?: string): string => {
+export const probeEndpointText = (
+  name: string,
+  endpoint: string,
+  recordPath: string,
+  report: EndpointProbe['report'],
+  toolCalling: EndpointProbe['toolCalling'],
+  parallelToolCalls: boolean | undefined,
+  declaredOutputBound?: string,
+): string => {
   const reasoning = report.reasoning;
   const parallel = report.parallelToolCalls;
   return `${escapedLines([
     `probed ${name}: model ${report.modelId} at ${endpoint}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
     `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
     `  structured output: ${report.constrained.accepted ? 'json_schema' : 'none'}, stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report, declaredOutputBound)}`,
-    `  parallel tool calls: ${parallel === undefined ? 'not measured' : `${parallel.accepted && parallel.multiCallRate >= 0.9} (${parallel.multiCallRate} of replies carried several calls)`}`,
+    `  parallel tool calls: ${parallel === undefined || parallelToolCalls === undefined ? 'not measured' : `${parallelToolCalls} (${parallel.multiCallRate} of replies carried several calls)`}`,
     `  reasoning: ${reasoning === undefined ? 'not measured' : reasoning.control === 'reasoning_effort' ? `reasoning_effort, lowest ${reasoning.lowest}` : `cannot be controlled${reasoning.headroomTokens === undefined ? '' : `, leaves room for ${reasoning.headroomTokens} tokens`}`}`,
     `  max concurrency: ${concurrencyText(report.maxConcurrency)}`,
     `  schema dialect: ${dialectText(report.schemaDialect)}`,
@@ -155,7 +171,7 @@ const probeChatCompletions = async (
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
 ): Promise<number> => {
-  const { DEFAULT_SAMPLES, isMeteredTarget, measurementBoundOf, probeEndpointTarget, reachableEndpoint, saveMeasurementConsent } = await import('@momonga/gateway');
+  const { DEFAULT_SAMPLES, capabilitiesFromProbe, decideToolCalling, isMeteredTarget, measurementBoundOf, probeEndpointTarget, reachableEndpoint, saveMeasurementConsent } = await import('@momonga/gateway');
   const key = endpointRecordKeyOf(subject, target);
   const metered = isMeteredTarget(target) ? { display: subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   if (metered !== undefined && options.consented) {
@@ -176,7 +192,7 @@ const probeChatCompletions = async (
     stepTimeoutMs: options.stepTimeoutMs,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
-  ports.stdout.write(probeEndpointText(subject.display, key.endpoint, paths.probe, report, toolCalling, target.capabilities.outputBoundField));
+  ports.stdout.write(probeEndpointText(subject.display, key.endpoint, paths.probe, report, toolCalling, capabilitiesFromProbe(report, decideToolCalling(report)).parallelToolCalls, target.capabilities.outputBoundField));
   await restartDaemon(ports, paths);
   return 0;
 };
@@ -220,7 +236,7 @@ const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: Probe
     lock: locks.mechanism,
     inspector: layoutProcessInspector(locks.capability),
     platform: ports.platform,
-    instance: cliProbeInstance(paths, configured.provider),
+    instance: await cliProbeInstance(ports, paths, description, configured.provider),
     description,
     target: subject.canon,
     binary: configured.binary,

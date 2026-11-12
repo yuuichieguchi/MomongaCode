@@ -747,6 +747,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           files: nodeFileSystem,
         }),
         evidenceRun: evidenceRunFor,
+        skillFiles: nodeFileSystem,
         platform,
         defaults: RUNTIME_DEFAULTS,
         timers,
@@ -883,6 +884,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const upkeepSchedule = createMemoryUpkeepSchedule({
         store,
         clock,
+        fileSystem: nodeFileSystem,
         views: memoryViews,
         batchSize: MEMORY_UPKEEP_BATCH_MARKS,
         pageRows: MEMORY_PAGE_ROWS,

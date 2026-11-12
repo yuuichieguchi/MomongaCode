@@ -367,6 +367,7 @@ export const fakeRuntime = (): FakeRuntime => {
     costBreakdownText: unexpected('costBreakdownText'),
     trust: unexpected('trust'),
     setTrust: unexpected('setTrust'),
+    clearTrust: unexpected('clearTrust'),
     streamEvents: unexpected('streamEvents'),
     streamSessionEvents: unexpected('streamSessionEvents'),
     close: async () => undefined,

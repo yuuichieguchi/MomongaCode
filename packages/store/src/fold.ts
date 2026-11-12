@@ -292,13 +292,23 @@ const withDelta = (state: RunState, event: { step: number; attempt: number; item
   const record =
     current !== undefined && current.step === event.step && current.attempt === event.attempt
       ? current
-      : { step: event.step, attempt: event.attempt, seen: false, items: [] };
+      : { step: event.step, attempt: event.attempt, seen: false, items: [], thoughtIds: [] };
   const items = !collectText
     ? record.items
     : record.items.some((item) => item.itemId === event.itemId)
       ? record.items.map((item) => (item.itemId === event.itemId ? { itemId: item.itemId, text: item.text + event.text } : item))
       : [...record.items, { itemId: event.itemId, text: event.text }];
-  return { ...state, streaming: { step: record.step, attempt: record.attempt, seen: true, items } };
+  const thoughtIds = collectText || record.thoughtIds.includes(event.itemId) ? record.thoughtIds : [...record.thoughtIds, event.itemId];
+  return { ...state, streaming: { step: record.step, attempt: record.attempt, seen: true, items, thoughtIds } };
+};
+
+const withoutWithdrawn = (state: RunState, itemIds: readonly string[]): RunState => {
+  const current = state.streaming;
+  if (current === undefined) return state;
+  const withdrawn = new Set(itemIds);
+  const items = current.items.filter((item) => !withdrawn.has(item.itemId));
+  const thoughtIds = current.thoughtIds.filter((itemId) => !withdrawn.has(itemId));
+  return items.length === 0 && thoughtIds.length === 0 ? withoutStreaming(state) : { ...state, streaming: { ...current, items, thoughtIds } };
 };
 
 const rejectCompaction = (state: RunState, event: Extract<RunEvent, { type: 'context.compaction_rejected' }>): RunState => {
@@ -606,7 +616,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'agent.thought.delta':
       return withDelta(state, event, false);
     case 'model.stream.restarted':
-      return state.streaming?.step === event.step && state.streaming.attempt === event.attempt ? withoutStreaming(state) : state;
+      return withoutWithdrawn(state, event.itemIds);
     case 'tool.waiting':
       return withCall(state, event.callId, event.type, (call) => ({ ...call, awaiting: event.awaits }));
     case 'plan.updated':

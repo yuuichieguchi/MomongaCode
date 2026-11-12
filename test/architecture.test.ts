@@ -1,10 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildContext, createFsInstructionReader, createTokenMeter } from '@momonga/context';
+import { BUILTIN_DIALECTS, BUILTIN_DIALECT_IDS } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import { createBuiltinTools, createMemoryTools, createToolRegistry } from '@momonga/tools';
-import { TEST_BUILTIN_TOOL_OFFER, TEST_FENCE } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, TEST_FENCE, inlinedSubsetRefusalOf, strictClosedRefusalOf, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createBuiltinTools, createGovernanceTools, createHistoryTools, createMemoryTools, createToolRegistry } from '@momonga/tools';
+import type { AnyTool } from '@momonga/tools';
+import { createAgentTool } from '../packages/agents/src/tool.ts';
+import { SchemaRenderError } from '../packages/gateway/src/dialect/render.ts';
+import { renderToolParameters } from '../packages/gateway/src/dialect/tool-render.ts';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const root = path.resolve(import.meta.dirname, '..');
 const packagesDir = path.join(root, 'packages');
@@ -554,5 +561,102 @@ describe('architecture: a large-window target gets the whole tool set', () => {
     for (const tool of registered) expect(built.tools.find((entry) => entry.name === tool.name)?.description).toBe(tool.description);
     expect(built.tools.find((tool) => tool.name === 'Bash')?.description).toContain('a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops');
     expect(built.notices.map((notice) => notice.code)).not.toContain('tools_dropped');
+  });
+});
+
+const unusedPort = <Port extends object>(): Port =>
+  new Proxy<Port>(Object.create(null), {
+    get: (_target, key) => {
+      throw new Error(`the port is not used while rendering tool schemas (read ${String(key)})`);
+    },
+  });
+
+const registryTools = (): AnyTool[] => [
+  ...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER),
+  ...createMemoryTools({ port: unusedPort(), trusted: true }),
+  ...createHistoryTools({ port: unusedPort(), trusted: true, project: '/project' }),
+  ...createGovernanceTools({ port: unusedPort(), trusted: true }),
+  createAgentTool([], unusedPort()),
+];
+
+const CHECKED_DIALECTS = { 'strict-closed': strictClosedRefusalOf, 'inlined-subset': inlinedSubsetRefusalOf } as const;
+
+const dialectRefusalOf = (tool: Pick<AnyTool, 'name' | 'inputSchema'>, id: keyof typeof CHECKED_DIALECTS): string | undefined => {
+  try {
+    const rendered = renderToolParameters({ name: tool.name, parameters: tool.inputSchema }, { id, definition: BUILTIN_DIALECTS[id] });
+    const refusal = CHECKED_DIALECTS[id](rendered.schema);
+    return refusal === undefined ? undefined : `${tool.name} in ${id}: ${refusal}`;
+  } catch (error) {
+    if (error instanceof SchemaRenderError) return `${tool.name} in ${id}: ${error.message}`;
+    throw error;
+  }
+};
+
+const gatewaySources = (): Array<{ file: string; source: string }> =>
+  sourceFilesUnder(path.join(packagesDir, 'gateway', 'src')).map((file) => ({ file: path.relative(path.join(packagesDir, 'gateway', 'src'), file).split(path.sep).join('/'), source: fs.readFileSync(file, 'utf8') }));
+
+const sourceFilesUnder = (directory: string): string[] =>
+  fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) return sourceFilesUnder(full);
+    return /\.tsx?$/.test(entry.name) ? [full] : [];
+  });
+
+const WRAP_INVERSE_READERS: Readonly<Record<string, string>> = {
+  'adapters/shared/response-emitter.ts': 'the reply stage, the one inverse the design names',
+  'probe/run-probe.ts': 'the probe inverts a candidate reply to judge it; it never changes the arguments the runtime receives',
+  'probe/select-dialect.ts': 'the dialect selection inverts a candidate reply to judge it; it never changes the arguments the runtime receives',
+};
+
+const wrapInverseReadersOutside = (sources: ReadonlyArray<{ file: string; source: string }>): string[] =>
+  sources.filter(({ file, source }) => !file.startsWith('dialect/') && WRAP_INVERSE_READERS[file] === undefined && /\binvertReply\b|dialect\/unwrap(\.ts)?['"]/.test(source)).map(({ file }) => file);
+
+const RAW_SCHEMA_COPY = /\b(response_format|input_schema|parameters|format|json_schema)\s*:\s*[\w?]+(?:\.[\w?]+)*\.(parameters|inputSchema|input_schema)\b(?!\s*\()/;
+
+const RAW_SCHEMA_HOLDERS: Readonly<Record<string, string>> = {
+  'adapters/chat-completions/constrained-request.ts': 'the prose listing of the envelope, the one allowance the design names',
+  'core/chat-content.ts': 'the gen_ai trace record of the offered tools, never sent to a model',
+  'core/resource.ts': 'the response resource echoes the client request back to the client',
+  'managed/target.ts': 'the canonical key of a request, hashed and never sent',
+};
+
+const rawSchemaCopiesOutsideRenderer = (sources: ReadonlyArray<{ file: string; source: string }>): string[] =>
+  sources.filter(({ file, source }) => !file.startsWith('dialect/') && RAW_SCHEMA_HOLDERS[file] === undefined && RAW_SCHEMA_COPY.test(source)).map(({ file }) => file);
+
+const builtinDialectIdHolders = (sources: ReadonlyArray<{ file: string; source: string }>): string[] =>
+  sources.filter(({ file, source }) => file !== 'protocol/src/dialect-builtins.ts' && BUILTIN_DIALECT_IDS.some((id) => source.includes(`'${id}'`) || source.includes(`"${id}"`))).map(({ file }) => file);
+
+const productSourcesOutsideTestSupport = (): Array<{ file: string; source: string }> =>
+  fs
+    .readdirSync(packagesDir)
+    .filter((name) => name !== 'testkit' && fs.existsSync(path.join(packagesDir, name, 'src')))
+    .flatMap((name) =>
+      sourceFilesUnder(path.join(packagesDir, name, 'src')).map((file) => ({ file: path.relative(packagesDir, file).split(path.sep).join('/'), source: fs.readFileSync(file, 'utf8') })),
+    );
+
+describe('architecture: the invariants of the schema dialects (design-schema-dialect, "Invariants and how each is verified")', () => {
+  it.each(Object.keys(CHECKED_DIALECTS) as Array<keyof typeof CHECKED_DIALECTS>)('server acceptance: every registry tool renders in %s and passes its checker', (id) => {
+    expect(registryTools().flatMap((tool) => dialectRefusalOf(tool, id) ?? [])).toEqual([]);
+  });
+
+  it('server acceptance: a planted tool with an optional property below a union is refused in strict-closed', () => {
+    const planted = { name: 'Planted', inputSchema: { type: 'object', properties: { choice: { anyOf: [{ type: 'object', properties: { a: { type: 'string' } } }, { type: 'string' }] } }, required: ['choice'] } };
+    expect(dialectRefusalOf(planted, 'strict-closed')).toMatch(/^Planted in strict-closed: /);
+  });
+
+  it('one inverse: no gateway source outside the dialect folder and the named readers inverts a wrap record', () => {
+    expect(wrapInverseReadersOutside(gatewaySources())).toEqual([]);
+    expect(wrapInverseReadersOutside([{ file: 'adapters/ollama/stream.ts', source: "import { invertReply } from '../../dialect/unwrap.ts';" }])).toEqual(['adapters/ollama/stream.ts']);
+  });
+
+  it('one renderer: no gateway source copies a raw schema into a wire property outside the renderer and the named holders', () => {
+    expect(rawSchemaCopiesOutsideRenderer(gatewaySources())).toEqual([]);
+    expect(Object.keys(RAW_SCHEMA_HOLDERS).filter((file) => !gatewaySources().some((entry) => entry.file === file && RAW_SCHEMA_COPY.test(entry.source)))).toEqual([]);
+    expect(rawSchemaCopiesOutsideRenderer([{ file: 'adapters/planted.ts', source: 'const body = { input_schema: tool.inputSchema };' }])).toEqual(['adapters/planted.ts']);
+  });
+
+  it('no selection by name: the built-in dialect ids are written only in protocol/src/dialect-builtins.ts', () => {
+    expect(builtinDialectIdHolders(productSourcesOutsideTestSupport())).toEqual([]);
+    expect(builtinDialectIdHolders([{ file: 'gateway/src/planted.ts', source: "if (target.name === 'fm') return 'explicit-keys';" }])).toEqual(['gateway/src/planted.ts']);
   });
 });

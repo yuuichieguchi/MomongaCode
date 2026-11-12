@@ -34,7 +34,7 @@ describe('the rule verifier of the runtime process', () => {
       host: provedRuleSolver(),
       fs: createPolicyFilesystem(),
       paths,
-      timers: { setTimeout: (callback, ms) => (waits.push(ms), timers.setTimeout(callback, ms)), clearTimeout: timers.clearTimeout },
+      timers: { setTimeout: (callback, ms) => (waits.push(ms), timers.setTimeout(callback, ms)), clearTimeout: timers.clearTimeout, monotonicMs: timers.monotonicMs },
       bashPath: () => '/bin/bash',
       clock: createFakeClock(0),
     });

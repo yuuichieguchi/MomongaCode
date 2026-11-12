@@ -2,14 +2,15 @@ import path from 'node:path';
 import type { UserModels } from '@momonga/config';
 import { caseSettingsFor, failedWithCleanup, refuseExistingOutput, runBenchmark, validateBenchmark } from '@momonga/eval';
 import type { BenchProblem, BenchRunApi, BenchRunResult, TaskValidation, WorkspaceFiles, WorkspaceProbe } from '@momonga/eval';
-import { EXIT_FAILURE, EXIT_OK, codeDigestOfRunningProcess, currentSocketResolver, minimalChildEnv, resolveLayoutLocks } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_OK, codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
-import { MAIN_AGENT, isOpaqueEvent } from '@momonga/protocol';
+import { MAIN_AGENT } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { encodeReliabilityReport, formatReliabilityReport } from '@momonga/reliability';
 import type { GroupKey } from '@momonga/reliability';
 import { recordedCostsOf } from '../client/recorded-costs.ts';
-import { DaemonMoved } from '../client/runtime-client.ts';
+import { followedRunEvents } from '../client/golden-run-api.ts';
+import type { EventFollow } from '../client/golden-run-api.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { createHomes, liveSettingsFor, needsPlanRelay, pinnedModelOf, readCredentials, readPlanRelay, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
@@ -31,6 +32,9 @@ const PROBLEM_TEXT: Record<BenchProblem, string> = {
   unsolvable: 'the oracle does not pass with the reference solution',
 };
 
+const definedEnvOf = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
+  Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+
 const tasksText = (count: number): string => `${count} ${count === 1 ? 'task' : 'tasks'}`;
 
 const countText = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
@@ -42,7 +46,7 @@ const validationLine = (task: TaskValidation): string => {
 };
 
 const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tmpdir' | 'env'>, paths: MomongaPaths, benchmarkFile: string): Promise<number> => {
-  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe(minimalChildEnv(ports.env)), files: ports.files, tmpdir: ports.tmpdir, lock: resolveLayoutLocks(paths).mechanism });
+  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe(definedEnvOf(ports.env)), files: ports.files, tmpdir: ports.tmpdir, lock: resolveLayoutLocks(paths).mechanism });
   for (const task of tasks) ports.stdout.write(validationLine(task));
   const wrong = tasks.filter((task) => task.problems.length > 0).length;
   if (wrong === 0) {
@@ -55,22 +59,8 @@ const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tm
 
 type BenchClient = Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'getSession' | 'runAnsweredBy' | 'reportCost' | 'resolveApproval' | 'cancel'>;
 
-export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, string>>): BenchRunApi => {
-  async function* events(runId: string): AsyncGenerator<PublicRunEvent> {
-    let cursor: number | undefined;
-    for (;;) {
-      try {
-        for await (const frame of client.streamEvents(runId, cursor === undefined ? {} : { lastEventId: cursor })) {
-          cursor = frame.id;
-          if (isOpaqueEvent(frame.data)) continue;
-          yield frame.data;
-        }
-        return;
-      } catch (error) {
-        if (!(error instanceof DaemonMoved)) throw error;
-      }
-    }
-  }
+export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, string>>, follow: EventFollow): BenchRunApi => {
+  const events = (runId: string): AsyncGenerator<PublicRunEvent> => followedRunEvents(client, runId, follow);
   return {
     createSession: async (input) => ({ id: (await client.createSession({ cwd: input.cwd, env, permissionMode: input.permissionMode, model: input.model })).session.id }),
     createRun: async (sessionId, input) => ({
@@ -153,7 +143,7 @@ export const runBenchLive = async (effects: BenchHostEffects, input: BenchLiveIn
     result = await runBenchmark(input.benchmarkFile, {
       open: async (task, trial) => {
         const home = await homes.open({ label: `task ${task.id} trial ${trial}`, settings: caseSettingsFor(base, {}) });
-        return { cwd: home.cwd, api: benchRunApi(home.runtime, home.env), close: home.close };
+        return { cwd: home.cwd, api: benchRunApi(home.runtime, home.env, home.follow), close: home.close };
       },
       probe: input.probe,
       files: input.files,
@@ -185,7 +175,7 @@ const run = async (
     benchmarkFile,
     model: pinnedModelOf(models, options.model),
     models,
-    probe: ports.probe(minimalChildEnv(ports.env)),
+    probe: ports.probe(definedEnvOf(ports.env)),
     files: ports.files,
     codeDigest: await codeDigestOfRunningProcess(),
     groupBy: options.groupBy,

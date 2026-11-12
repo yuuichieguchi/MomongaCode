@@ -175,7 +175,7 @@ describe('run event payloads', () => {
         input_tokens_details?: { cached_tokens: number };
         output_tokens_details?: { reasoning_tokens: number };
       };
-      momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: RecordedModelCost; unpriced?: UnpricedOutcome };
+      momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: RecordedModelCost; unpriced?: UnpricedOutcome; retryOf?: number };
       timing?: CallTiming;
     }>();
     expectTypeOf<Payload<'model.requested'>>().toEqualTypeOf<{
@@ -516,7 +516,7 @@ describe('RunState', () => {
       loadedTools: string[];
       offeredTools?: string[];
       loopWarned?: { signature: string };
-      streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
+      streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[]; thoughtIds: string[] };
       mode?: PermissionMode;
       loopGroups: { signature: string; outputSignature?: string }[];
       loopOpen?: { calls: [string, unknown][]; callIds: string[]; outputs: Record<string, string> };

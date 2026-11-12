@@ -1,7 +1,6 @@
 import { nodeFileSystem } from '@momonga/foundation';
-import os from 'node:os';
 import { createStdioTransport } from '@momonga/mcp';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { killGroupsForCleanup, REAL_PROCESS_TEST_TIMEOUT_MS, systemTempRoot, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -17,7 +16,7 @@ const sleeper = async (terminate: NonNullable<Parameters<typeof createStdioTrans
   const transport = createStdioTransport({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
     name: 'sleeper',
     config: { command: '/bin/sleep', args: ['300'] },
-    projectDir: os.tmpdir(),
+    projectDir: systemTempRoot(),
     baseEnv: { PATH: '/usr/bin:/bin' },
     closeGraceMs: 0,
     terminate,

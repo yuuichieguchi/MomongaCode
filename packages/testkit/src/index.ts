@@ -37,7 +37,7 @@ export { CLAIM_HOLDER_MAIN, LOCK_HOLDER_MAIN, startClaimHolder, startLockHolder 
 export { LSOF_PATH } from './lsof.ts';
 export { EMPTY_SYMLINK_SUPPORTED } from './empty-symlink.ts';
 export { createFakeKernelLock } from './fake-kernel-lock.ts';
-export { LOCK_PROOF_ENV, LOCK_PROOF_PREFIX, expectedKernelLockOn, fixedLockCapability, testKernelLock, testLocks, testProcessInspector, watchedKernelLock } from './test-locks.ts';
+export { LOCK_PROOF_ENV, expectedKernelLockOn, fixedLockCapability, testKernelLock, testLocks, testProcessInspector, watchedKernelLock } from './test-locks.ts';
 export type { WatchedKernelLock } from './test-locks.ts';
 export type { FakeKernelLock, FakeKernelLockOptions } from './fake-kernel-lock.ts';
 export { createFakeClock } from './fake-clock.ts';
@@ -129,6 +129,7 @@ export { FAKE_SERVER, FAKE_SERVER_ID, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_
 export type { FakeManagedServer, FakeManagedServerConfig } from './fake-managed-server.ts';
 export {
   REAL_PROCESS_TEST_TIMEOUT_MS,
+  SOURCE_SCAN_TEST_TIMEOUT_MS,
   SOLVER_ENCODING_SWEEP_TEST_TIMEOUT_MS,
   SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS,
   SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
@@ -143,6 +144,7 @@ export {
   createTempDir,
   registerOwned,
   removeTempDir,
+  systemTempRoot,
   testTempBases,
   tempDirPrefixFor,
   testRunToken,

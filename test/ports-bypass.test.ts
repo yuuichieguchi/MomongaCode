@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { countCliUses, countHostUses, countSynchronousFileCalls } from './support/host-uses.ts';
 import { ROOT, packageSources, parseSource, perFile, productSources, relativeOf } from './support/source-scan.ts';
 import type { Counts, ParsedSource } from './support/source-scan.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const counted = (text: string, count: (source: ParsedSource) => Counts = countHostUses): Counts => count(parseSource('sample.ts', text));
 
@@ -55,7 +58,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/platform/sqlite-lock.ts': { 'node:fs': 6, 'node:os': 1 },
   'packages/foundation/src/platform/windows-keeper-host.ts': { 'node:child_process': 1, 'node:net': 1 },
   'packages/foundation/src/process-contract.ts': { 'AbortSignal.timeout': 1 },
-  'packages/foundation/src/rotating-log.ts': { 'node:fs': 8 },
+  'packages/foundation/src/rotating-log.ts': { 'node:fs': 7 },
   'packages/foundation/src/short-temp-base.ts': { 'node:os': 1 },
   'packages/foundation/src/socket-path.ts': { 'node:net': 1 },
   'packages/foundation/src/uds.ts': { 'node:fs': 4, 'node:net': 1 },
@@ -68,18 +71,13 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/mcp/src/timers.ts': { 'setTimeout': 1 },
   'packages/policy/src/glob-expansion.ts': { 'performance.now': 1 },
   'packages/policy/src/host-filesystem.ts': { 'node:child_process': 1, 'setTimeout': 1 },
-  'packages/runtime/src/memory/deadline-signal.ts': { 'AbortSignal.timeout': 1 },
   'packages/runtime/src/memory/evidence.ts': { 'node:fs': 3 },
   'packages/runtime/src/memory/journal-thread-client.ts': { 'node:worker_threads': 4, 'setTimeout': 1 },
   'packages/runtime/src/memory/journal-thread.ts': { 'node:fs': 1, 'node:worker_threads': 8, 'performance.now': 2, 'setImmediate': 1 },
-  'packages/runtime/src/memory/skill-promotion.ts': { 'node:fs': 4 },
-  'packages/runtime/src/memory/upkeep.ts': { 'node:fs': 1 },
   'packages/runtime/src/process/rule-verifier-thread-client.ts': { 'node:worker_threads': 1 },
   'packages/runtime/src/process/rule-verifier-thread.ts': { 'node:worker_threads': 5 },
   'packages/runtime/src/process/tool-runtime.ts': { 'randomBytes': 1 },
   'packages/runtime/src/service/timers.ts': { 'setTimeout': 1 },
-  'packages/runtime/src/worker/model-stream.ts': { 'setTimeout': 1 },
-  'packages/runtime/src/worker/touched-paths.ts': { 'setImmediate': 1 },
   'packages/sandbox/src/bubblewrap.ts': { 'node:child_process': 1, 'node:fs': 7 },
   'packages/sandbox/src/placeholder-journal.ts': { 'node:fs': 16 },
   'packages/sandbox/src/relay.ts': { 'node:child_process': 1, 'node:net': 3 },
@@ -111,11 +109,10 @@ const SYNCHRONOUS_FILE_CALLS: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/platform/group-members.ts': { 'readFileSync': 1, 'readdirSync': 1 },
   'packages/foundation/src/platform/holder-file.ts': { 'closeSync': 2, 'ftruncateSync': 1, 'openSync': 2, 'readSync': 2, 'rmSync': 1, 'writeSync': 2 },
   'packages/foundation/src/platform/sqlite-lock.ts': { 'closeSync': 2, 'openSync': 2, 'rmSync': 1, 'unlinkSync': 1 },
-  'packages/foundation/src/rotating-log.ts': { 'closeSync': 1, 'fstatSync': 1, 'mkdirSync': 1, 'openSync': 1, 'renameSync': 2, 'statSync': 1, 'writeSync': 1 },
+  'packages/foundation/src/rotating-log.ts': { 'closeSync': 1, 'fstatSync': 1, 'openSync': 1, 'renameSync': 2, 'statSync': 1, 'writeSync': 1 },
   'packages/gateway/src/managed/fm-processes.ts': { 'closeSync': 1, 'openSync': 1, 'rmSync': 2 },
   'packages/gateway/src/process-ports.ts': { 'existsSync': 1, 'readFileSync': 1, 'statSync': 1 },
   'packages/runtime/src/memory/journal-thread.ts': { 'statSync': 1 },
-  'packages/runtime/src/memory/upkeep.ts': { 'statSync': 1 },
   'packages/sandbox/src/scratch.ts': { 'statSync': 1 },
   'packages/sandbox/src/seatbelt.ts': { 'accessSync': 1 },
   'packages/supervisor/src/orphans.ts': { 'closeSync': 1, 'openSync': 2, 'rmSync': 1 },

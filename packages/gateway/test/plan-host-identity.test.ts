@@ -1,13 +1,12 @@
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeFileSystem } from '@momonga/foundation';
 import { ensureHostIdentity, hostIdOf, jwkThumbprint, resetHostIdentity } from '../src/plan/host-identity.ts';
 import { PROFILE_ID, planError, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 
 const RFC7638_RSA_EXAMPLE = {
   kty: 'RSA',
@@ -29,7 +28,7 @@ afterEach(async () => {
 });
 
 const hostFile = async (): Promise<string> => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-host-'));
+  const directory = createTempDir();
   directories.push(directory);
   return path.join(directory, 'state', 'plan-host.json');
 };

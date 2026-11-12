@@ -1,7 +1,6 @@
-import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { createTempDir, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -32,7 +31,7 @@ const posixPort = (): ProcessGroupPort => createPosixGroupPort({ kill: () => und
 const roots: string[] = [];
 
 const markerIn = (): string => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'group-launch-'));
+  const root = createTempDir();
   roots.push(root);
   const marker = path.join(root, 'marker');
   fs.writeFileSync(marker, '');

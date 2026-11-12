@@ -1,10 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { momongaLayout } from '@momonga/foundation';
 import { SCRIPTED_MODEL, modelSettings } from '@momonga/testkit';
+import { createTempDir } from '../src/test-support.ts';
 
 type LoadedModels = { models: ReadonlyMap<string, unknown>; start: string | undefined; chains: ReadonlyMap<string, readonly string[]> };
 
@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 const loaded = async (settings: unknown): Promise<LoadedModels> => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-model-settings-')));
+  const home = createTempDir();
   homes.push(home);
   const file = momongaLayout(home, process.platform, process.env).settingsFile;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });

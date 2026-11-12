@@ -1,11 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createStdioTransport } from '@momonga/mcp';
 import { SHUTDOWN_SETTING_LIMITS, groupTerminationBoundMs, systemTiming, nodeFileSystem } from '@momonga/foundation';
 import type { TerminateOutcome, Timing } from '@momonga/foundation';
-import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, killGroupsForCleanup, waitFor, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir, killGroupsForCleanup, MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_STDIO_LAUNCH, waitFor } from '@momonga/testkit';
 import { closeGraceOf } from '../src/stdio-transport.ts';
 import { makeRemoteConnection, startHttpFixture } from './remote-harness.ts';
 
@@ -21,7 +19,7 @@ afterEach(async () => {
 
 describe('the stop of an MCP stdio server has the one bound of a process group stop', () => {
   it('the transport bounds its stop by groupTerminationBoundMs of its grace', async () => {
-    const projectDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-stop-bound-')));
+    const projectDir = createTempDir();
     dirs.push(projectDir);
     const graceMs = 200;
     const delays: number[] = [];

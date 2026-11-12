@@ -6,4 +6,6 @@ const INVISIBLE_CHARACTERS = /[​-‏‪-‮⁠-⁤⁦-⁩﻿]/g;
 export const sanitizeServerText = (text: string): string =>
   text.toWellFormed().replace(TERMINAL_ESCAPES, '').replace(CONTROL_CHARACTERS, '').replace(INVISIBLE_CHARACTERS, '');
 
+export const SERVER_TEXT_EXCERPT_CHARS = 200;
+
 export const capText = (text: string, limit: number): string => (text.length > limit ? `${text.slice(0, limit - 1)}…` : text);

@@ -67,7 +67,7 @@ const fixture = async (): Promise<{ text: string; benchmark: unknown }> => {
 
 const buildBenchmarkReport = (input: BenchmarkInput): ReliabilityReport => exported<(input: BenchmarkInput) => ReliabilityReport>('buildBenchmarkReport')(input);
 
-const unpricedRecord = (runId: string) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] });
+const unpricedRecord = (runId: string) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] });
 
 const trialsWith = (third: Partial<RunFactsView>): Trial[] => [
   { taskId: 'fix-add', trial: 1, facts: factsOf('t1'), children: [], costs: [unpricedRecord('t1')] },

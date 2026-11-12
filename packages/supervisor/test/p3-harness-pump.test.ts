@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir } from '@momonga/testkit';
 import { createRealWorkScope, pump, pumpUntil } from './fixtures/p3-harness.ts';
 
 const realIoRoundTrips = async (count: number): Promise<void> => {
-  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'drive-contract-'));
+  const dir = createTempDir();
   try {
     for (let index = 0; index < count; index += 1) {
       const file = path.join(dir, `f${String(index)}`);
@@ -71,7 +70,7 @@ describe('pumpUntil', () => {
     realWork.run(() => {
       void (async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
-        const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'drive-pre-timer-'));
+        const dir = createTempDir();
         await fs.promises.rm(dir, { recursive: true, force: true });
         ioDone = true;
       })();

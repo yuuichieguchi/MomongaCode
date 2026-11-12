@@ -1,8 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { TEST_RUN_ENV, tempDirPrefixFor, testTempBases } from '@momonga/testkit';
+import { systemTempRoot, tempDirPrefixFor, TEST_RUN_ENV, testTempBases } from '@momonga/testkit';
 import { TEMP_LEDGER_ENV, readTempLedger } from './temp-ledger.ts';
 
 export const leakedTempDirs = (tmpRoot: string, token: string): string[] => {
@@ -50,7 +49,7 @@ export const claimRunToken = (ledgerDir: string, candidate: () => string): { tok
 };
 
 export default function setup(): () => void {
-  const { token, ledger } = claimRunToken(fs.realpathSync(os.tmpdir()), newRunToken);
+  const { token, ledger } = claimRunToken(systemTempRoot(), newRunToken);
   process.env[TEST_RUN_ENV] = token;
   process.env[TEMP_LEDGER_ENV] = ledger;
   const tmpRoots = testTempBases();

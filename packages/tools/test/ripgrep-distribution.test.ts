@@ -148,6 +148,13 @@ const text = (entry: Entry | undefined): string => (entry?.kind === 'file' ? new
 const stagedNames = (fixture: Fixture): string[] => [...fixture.entries.keys()].filter((key) => path.basename(key).startsWith('rg.partial-'));
 
 describe('parseRipgrepManifest', () => {
+  it('refuses a manifest that is not valid JSON or nests beyond the bound, naming the file and the way forward', () => {
+    for (const text of ['{ not json', `${'['.repeat(10000)}${']'.repeat(10000)}`]) {
+      expect(() => parseRipgrepManifest(text)).toThrow(RipgrepDistributionError);
+      expect(() => parseRipgrepManifest(text)).toThrow(/ripgrep-manifest\.json .*reinstall momonga/);
+    }
+  });
+
   it('reads the version, target, binary and notices entries', () => {
     expect(parseRipgrepManifest(JSON.stringify(manifestFor()))).toEqual(manifestFor());
   });

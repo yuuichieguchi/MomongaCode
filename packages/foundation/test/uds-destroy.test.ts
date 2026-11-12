@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUdsClient, listenUnix, fixedSocket } from '@momonga/foundation';
-import { waitFor, realProcessTestSignal, testKernelLock } from '@momonga/testkit';
+import { createTempDir, realProcessTestSignal, testKernelLock, waitFor } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -13,7 +12,7 @@ afterEach(async () => {
 });
 
 const socketPathInTempDir = (): string => {
-  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   return path.join(dir, 's.sock');

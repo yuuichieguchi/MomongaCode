@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sha256Hex } from '@momonga/foundation';
+import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { MemoryEvidence } from '@momonga/protocol';
 import { afterMicrotasks, createFakeClock, createFakeTimers, NEVER_CANCELLED } from '@momonga/testkit';
 import { START_MS, callEvent, enqueue, harness, makeStoreDir, mustClaim, newSession, recalled } from '../../../store/test/helpers.ts';
@@ -30,7 +30,7 @@ const setup = async (calls = 12) => {
   const save = (text: string, evidence: MemoryEvidence[] = [], origin: 'trusted' | 'untrusted' = 'trusted') => saveAt(project, text, evidence, origin);
   const views = createRecordViews({ store, evidenceRun: () => async () => ({ exitCode: null }) });
   const upkeep = (batchSize = 100): Promise<{ duplicates: number; archived: number }> =>
-    exported<(options: unknown) => Promise<{ duplicates: number; archived: number }>>('runMemoryUpkeep')({ store, clock, views, forgetAfterDays: async () => 90, batchSize, signal: SIGNAL });
+    exported<(options: unknown) => Promise<{ duplicates: number; archived: number }>>('runMemoryUpkeep')({ store, clock, fileSystem: nodeFileSystem, views, forgetAfterDays: async () => 90, batchSize, signal: SIGNAL });
   const fileEvidence = (name: string, recordedText: string): MemoryEvidence[] => {
     fs.writeFileSync(path.join(project, name), 'current');
     return [{ kind: 'file', project, path: name, sha256: sha256Hex(recordedText) }];
@@ -160,7 +160,7 @@ describe('a pass over pages', () => {
     const pass = beginUpkeepPass(env.store);
     const results: Awaited<ReturnType<typeof runMemoryUpkeep>>[] = [];
     do {
-      results.push(await runMemoryUpkeep({ store: env.store, clock: env.clock, views: env.views, forgetAfterDays, batchSize: 100, signal: SIGNAL, pass, pageRows }));
+      results.push(await runMemoryUpkeep({ store: env.store, clock: env.clock, fileSystem: nodeFileSystem, views: env.views, forgetAfterDays, batchSize: 100, signal: SIGNAL, pass, pageRows }));
     } while (!results.at(-1)?.done);
     return results;
   };
@@ -189,7 +189,7 @@ describe('a pass over pages', () => {
     const env = await setup();
     for (const text of ['x', 'x', 'y', 'y', 'z', 'z']) await env.save(text);
     const pass = beginUpkeepPass(env.store);
-    const call = () => runMemoryUpkeep({ store: env.store, clock: env.clock, views: env.views, forgetAfterDays: async () => 90, batchSize: 2, signal: SIGNAL, pass, pageRows: 10 });
+    const call = () => runMemoryUpkeep({ store: env.store, clock: env.clock, fileSystem: nodeFileSystem, views: env.views, forgetAfterDays: async () => 90, batchSize: 2, signal: SIGNAL, pass, pageRows: 10 });
     expect(await call()).toMatchObject({ duplicates: 2, done: false });
     expect(await call()).toMatchObject({ duplicates: 1, done: true });
     expect(env.store.memories.list().filter((memory) => memory.state === 'duplicate')).toHaveLength(3);
@@ -219,6 +219,7 @@ describe('the upkeep schedule', () => {
   const schedule = (env: Awaited<ReturnType<typeof setup>>, passIntervalMs = 1000) => {
     const skipped: string[] = [];
     const created = createMemoryUpkeepSchedule({
+      fileSystem: nodeFileSystem,
       store: env.store,
       clock: env.clock,
       views: env.views,
@@ -258,6 +259,7 @@ describe('the upkeep schedule', () => {
     const env = await setup();
     for (const text of ['a', 'b', 'c']) await env.save(text);
     const created = createMemoryUpkeepSchedule({
+      fileSystem: nodeFileSystem,
       store: env.store,
       clock: env.clock,
       views: env.views,

@@ -28,15 +28,23 @@ export const editProjectMandate = async (projectDir: string, edit: ProjectMandat
     { lock, mechanism, random, signal, confine: { to: projectDir, paths } },
   );
   if (written === undefined) return;
-  const digest = written;
-  const folder = await paths.canonicalPath(projectDir);
-  await editUserSettings(layoutOf(home).settingsFile, (settings) => recordMandateApproval(settings, folder, digest), { lock, mechanism, random, signal });
+  await approveProjectItems(home, projectDir, { mandate: written }, { lock, mechanism, random, signal });
 };
 
-const recordMandateApproval = (settings: Record<string, unknown>, folder: string, digest: string): boolean => {
+export type ProjectItemsApproval = { hooks?: readonly string[]; mandate?: string };
+
+export const approveProjectItems = async (home: string, projectDir: string, approval: ProjectItemsApproval, ports: SettingsWriterPorts): Promise<void> => {
+  const folder = await hostPaths(ports.signal).canonicalPath(projectDir);
+  await editUserSettings(layoutOf(home).settingsFile, (settings) => recordApproval(settings, folder, approval), ports);
+};
+
+const recordApproval = (settings: Record<string, unknown>, folder: string, approval: ProjectItemsApproval): boolean => {
   const approvals = isRecord(settings['projectApprovals']) ? settings['projectApprovals'] : {};
   const current = isRecord(approvals[folder]) ? approvals[folder] : {};
-  if (current['mandate'] === digest) return false;
-  settings['projectApprovals'] = { ...approvals, [folder]: { ...current, mandate: digest } };
+  const held = Array.isArray(current['hooks']) ? current['hooks'].filter((digest): digest is string => typeof digest === 'string') : [];
+  const hooks = [...held, ...(approval.hooks ?? []).filter((digest, index, all) => !held.includes(digest) && all.indexOf(digest) === index)];
+  const next = { ...current, ...(hooks.length === 0 ? {} : { hooks }), ...(approval.mandate === undefined ? {} : { mandate: approval.mandate }) };
+  if (JSON.stringify(next) === JSON.stringify(current)) return false;
+  settings['projectApprovals'] = { ...approvals, [folder]: next };
   return true;
 };

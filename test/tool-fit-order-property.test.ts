@@ -70,7 +70,7 @@ describe('the tools kept, their order and the digest', () => {
 describe('the tools_dropped notice', () => {
   const HUGE = 'x'.repeat(20_000);
   const droppedByTier = (message: string): Record<string, string[]> => {
-    const list = /^Tools (.*) were left out because the declared context window leaves no room for them$/.exec(message)?.[1];
+    const list = /^Tools (.*) were left out because the declared context window of \S+ \(\d+ tokens\) leaves no room for them; /.exec(message)?.[1];
     expect(list, message).toBeDefined();
     return Object.fromEntries(
       list!.split('; ').map((group) => {

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, createHeldHostReadings, readProbeKeyComponents } from '@momonga/foundation';
 import type { HostExec, HostExecAnswer } from '@momonga/foundation';
+import { createTempDir } from '@momonga/testkit';
 
 const directories: string[] = [];
 
@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 const binaryFile = (): string => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-shared-hash-'));
+  const directory = createTempDir();
   directories.push(directory);
   const file = path.join(directory, 'binary');
   fs.writeFileSync(file, 'on disk');

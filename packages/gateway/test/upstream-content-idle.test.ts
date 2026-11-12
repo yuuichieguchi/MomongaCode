@@ -1,13 +1,12 @@
 import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createChatCompletionsAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
 import type { UpstreamLiveness } from '@momonga/gateway';
 import type { AdapterContext, AdapterRequest, Capabilities, ProviderAdapter, StreamEvent } from '@momonga/protocol';
-import { anthropicMessageStart, createFakeClock, hostTimers, openingEvents } from '@momonga/testkit';
+import { anthropicMessageStart, createFakeClock, createTempDir, hostTimers, openingEvents } from '@momonga/testkit';
 import { START_MS, registerCleanup } from './gateway-helpers.ts';
 import { CC_CAPABILITIES } from './cc-support.ts';
 import { contextOf } from './own-reasoning.ts';
@@ -26,7 +25,7 @@ type Script = { steps: Step[]; end: 'hang' | 'close' };
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const startTimedUpstream = async (script: Script): Promise<{ socketPath: string; bodies: unknown[] }> => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-idle-'));
+  const dir = createTempDir();
   const socketPath = path.join(dir, 'upstream.sock');
   const bodies: unknown[] = [];
   const open = new Set<http.ServerResponse>();

@@ -86,7 +86,10 @@ const idField = (responseId: string | undefined): { responseId?: string } => (re
 
 const journalCostsOf = (store: CostRecordStore, runId: string): RecordedCost[] =>
   store.readRunEventsOfTypes(runId, COST_RECORD_EVENT_TYPES).flatMap((event): RecordedCost[] => {
-    if (event.type === 'model.responded') return [{ runId, ...idField(event.response.id), step: event.step, price: recordedPriceOf(event.response.momonga) }];
+    if (event.type === 'model.responded') {
+      const retryOf = event.response.momonga?.retryOf;
+      return [{ runId, ...idField(event.response.id), step: event.step, price: recordedPriceOf(event.response.momonga), ...(retryOf === undefined ? {} : { retryOf }) }];
+    }
     if (event.type === 'usage.charged') return [{ runId, ...idField(event.responseId), step: event.step, price: recordedPriceOf(event) }];
     return [];
   });
@@ -105,6 +108,7 @@ export const readRecordedCosts = (store: CostRecordStore, runIds: readonly strin
 
 const runCostCallOf = (recorded: RecordedCost): RunCostCall => ({
   runId: recorded.runId,
+  retried: recorded.retryOf !== undefined,
   price: recorded.price.kind === 'priced' ? { kind: 'priced', units: unitsOfCost(recorded.price.cost).toString(), priceVersion: recorded.price.cost.priceVersion, legacyPrecision: isLegacyPrecisionCost(recorded.price.cost) } : { kind: recorded.price.kind },
 });
 
@@ -116,6 +120,11 @@ const NOT_RECORDED: RecordedPrice = { kind: 'not_recorded' };
 
 const pricesByResponse = (recorded: readonly RecordedCost[]): RecordedPrices =>
   new Map(recorded.flatMap((entry): [string, RecordedPrice][] => (entry.responseId === undefined ? [] : [[entry.responseId, entry.price]])));
+
+const retriedResponses = (recorded: readonly RecordedCost[]): ReadonlySet<string> =>
+  new Set(recorded.flatMap((entry) => (entry.responseId === undefined || entry.retryOf === undefined ? [] : [entry.responseId])));
+
+const retriedIn = (retried: ReadonlySet<string>, call: BilledCallView): boolean => call.responseId !== undefined && retried.has(call.responseId);
 
 const callPriceIn = (prices: RecordedPrices, call: BilledCallView): CallPrice =>
   callPriceOf((call.responseId === undefined ? undefined : prices.get(call.responseId)) ?? NOT_RECORDED);
@@ -236,8 +245,10 @@ export type CostReportSources = Pick<CostBreakdownSources, 'fetchPage' | 'record
 
 export const costReportOf = async (sources: CostReportSources): Promise<{ report: CostReport; text: string }> => {
   const billed = await billedCallsOf({ runIds: sources.runs.map((run) => run.runId), fetchPage: sources.fetchPage, ...(sources.pageSize === undefined ? {} : { pageSize: sources.pageSize }) });
-  const prices = pricesByResponse(sources.recordedCosts());
-  const report = buildCostReport(billed.map((call) => ({ ...call, price: callPriceIn(prices, call) })), sources.runs, { includeRunless: sources.includeRunless });
+  const recorded = sources.recordedCosts();
+  const prices = pricesByResponse(recorded);
+  const retried = retriedResponses(recorded);
+  const report = buildCostReport(billed.map((call) => ({ ...call, price: callPriceIn(prices, call), retried: retriedIn(retried, call) })), sources.runs, { includeRunless: sources.includeRunless });
   return { report, text: formatCostReport(report) };
 };
 

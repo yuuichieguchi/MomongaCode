@@ -11,7 +11,7 @@ import { operationSignal } from './platform/probe-timing.ts';
 import type { ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
 import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
 import type { UninspectableRegistry } from './uninspectable-registry.ts';
-import { KILL_CONFIRM_MS, markerReapClockBoundMs } from './process-contract.ts';
+import { KILL_CONFIRM_MS, REAP_KILL_GRACE_MS, markerReapClockBoundMs } from './process-contract.ts';
 import { systemWaitTiming } from './system-timing.ts';
 import { sleep } from './timing.ts';
 import type { Timing } from './timing.ts';
@@ -337,7 +337,7 @@ const unknownGroupResult = (pgid: number): MarkerReconcileResult =>
 
 export const reconcileProcessGroup = async (
   recorded: { pgid: number; marker: string },
-  { killGraceMs = 2000, kill, groupPort, timing = systemWaitTiming, signal, inspector, unsettled, markerMode }: ReconcileProcessGroupOptions,
+  { killGraceMs = REAP_KILL_GRACE_MS, kill, groupPort, timing = systemWaitTiming, signal, inspector, unsettled, markerMode }: ReconcileProcessGroupOptions,
 ): Promise<MarkerReconcileResult> => {
   const operation = operationSignal(signal);
   try {

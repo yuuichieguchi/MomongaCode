@@ -1,6 +1,5 @@
-import { sleepDrivenTiming } from '@momonga/testkit';
+import { createTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { reapMarkerDirectory } from '@momonga/foundation';
@@ -17,7 +16,7 @@ afterEach(() => {
 });
 
 const markerDirectoryWith = (record: string): { dir: string; marker: string } => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-occasion-')));
+  const root = createTempDir();
   dirs.push(root);
   const dir = path.join(root, 'targets', 'apple');
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });

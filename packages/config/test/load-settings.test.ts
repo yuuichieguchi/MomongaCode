@@ -44,6 +44,7 @@ describe('SETTINGS_SCHEMA', () => {
         'telemetry',
         'tools',
         'tui',
+        'update',
         'verification',
       ].sort(),
     );

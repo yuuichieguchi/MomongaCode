@@ -6,7 +6,7 @@ import type { ProductSchema } from '@momonga/foundation';
 
 export const repositoryRoot = path.resolve(import.meta.dirname, '..', '..');
 const packagesDir = path.join(repositoryRoot, 'packages');
-export const PRODUCT_SCHEMA_DEFINITION = /\bdefineProductSchema\s*\(/;
+export const PRODUCT_SCHEMA_DEFINITION = /\bdefineProductSchema\s*(?:<[^>()]*>)?\s*\(/;
 
 const sourceFilesUnder = (directory: string): string[] => {
   if (!fs.existsSync(directory)) return [];

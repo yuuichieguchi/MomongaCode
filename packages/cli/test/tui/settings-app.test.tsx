@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
-import { ADD_ROW, APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
+import { MANDATE_ROW, OPEN_FILE_TITLE, ADD_ROW, APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import type { ExternalEditorPort } from '../../src/tui/external-editor.ts';
 import { KEYS, untilOutput } from '../ink-helpers.ts';
@@ -364,15 +364,54 @@ describe('/config, the settings screen', () => {
     started.app.unmount();
   });
 
-  it('prints the path of every settings file from the row Open the settings file', async () => {
+  it('opens the settings file chosen among every file in $EDITOR from the row Open the settings file', async () => {
     const place = freshPlace();
+    const openedFiles: string[] = [];
+    const started = await startAt(place, {}, undefined, { externalEditor: { edit: () => Promise.reject(new Error('not edited')), open: async (file) => { openedFiles.push(file); return { kind: 'opened' }; } } });
+    await open(started);
+    const files = await press(started, KEYS.enter, OPEN_FILE_TITLE);
+    expect(files).toContain('1. user');
+    expect(files).toContain('2. project');
+    expect(files).toContain('3. local');
+    expect(files).toContain('4. .mcp.json');
+    expect(unwrapped(files)).toContain(`local: ${localFileOf(place)}`);
+    await press(started, KEYS.enter, SETTINGS_TITLE);
+    expect(openedFiles).toEqual([place.userFile]);
+    started.app.unmount();
+  });
+
+  it('says how to set $EDITOR when no editor is set, naming the file', async () => {
+    const place = freshPlace();
+    const started = await startAt(place, {}, undefined, { externalEditor: { edit: () => Promise.reject(new Error('not edited')), open: async () => ({ kind: 'unset' }) } });
+    await open(started);
+    await press(started, KEYS.enter, OPEN_FILE_TITLE);
+    await press(started, KEYS.enter, `Set $VISUAL or $EDITOR to open ${place.userFile}`);
+    started.app.unmount();
+  });
+
+  it('edits the mandate file of a trusted folder through the one writer, shows the loader refusal and writes nothing refused', async () => {
+    const place = freshPlace();
+    const mandateFile = path.join(place.project, '.momonga', 'mandate.json');
     const started = await startAt(place);
     await open(started);
-    await press(started, KEYS.enter, (frame) => !frame.includes(OPEN_SETTINGS_FILE_ROW));
-    await outputHolds(started, `Settings file: ${place.userFile}`);
-    await outputHolds(started, `project: ${place.projectFile}`);
-    await outputHolds(started, `local: ${localFileOf(place)}`);
-    await outputHolds(started, `.mcp.json: ${path.join(place.project, '.mcp.json')}`);
+    const editor = await openRow(started, MANDATE_ROW, STRUCTURED_LINES[0]);
+    expect(editor).toContain('> {}');
+    await press(started, `${CLEAR}{"allow":["Bash"]}`, '> {"allow":["Bash"]}');
+    const refused = await press(started, SUBMIT, 'can only be declared in the user settings');
+    expect(unwrapped(refused)).toContain(`${mandateFile}: allow can only be declared in the user settings`);
+    expect(fs.existsSync(mandateFile)).toBe(false);
+    await press(started, `${CLEAR}{"steps":5}`, '> {"steps":5}');
+    await press(started, SUBMIT, `${MANDATE_ROW}  steps 5`);
+    expect(stored(mandateFile)).toEqual({ steps: 5 });
+    started.app.unmount();
+  });
+
+  it('has no folder mandate row in a folder that is not trusted', async () => {
+    const started = await startAt(freshPlace(), { trust: { path: '/work', decision: 'untrusted' } });
+    const frame = await open(started);
+    expect(frame).not.toContain(MANDATE_ROW);
+    await press(started, 'mandate', 'filter: mandate');
+    expect(started.app.lastFrame() ?? '').not.toContain(MANDATE_ROW);
     started.app.unmount();
   });
 

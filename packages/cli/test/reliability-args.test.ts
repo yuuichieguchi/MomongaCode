@@ -1,6 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { rmSync } from 'node:fs';
 import type { EntryIo } from '@momonga/foundation';
 import { INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
 import type { ReportPage, RunCostView, RunFactsView } from '@momonga/protocol';
@@ -12,6 +10,7 @@ import type { ProgramDeps } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { NO_HELPER } from './no-helper.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const T0 = 1_800_000_000_000;
 const DAY = 86_400_000;
@@ -19,7 +18,7 @@ const DAY = 86_400_000;
 let home: string;
 
 beforeEach(() => {
-  home = mkdtempSync(path.join(os.tmpdir(), 'momonga-reliability-args-'));
+  home = createTempDir();
 });
 
 afterEach(() => {
@@ -97,7 +96,7 @@ const row = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView
 
 const clientOf = (rows: readonly RunFactsView[]) => ({
   reportFacts: async (): Promise<ReportPage> => ({ rows: [...rows], unavailable: [], nextCursor: null }),
-  reportCost: async (runIds: readonly string[]): Promise<RunCostView[]> => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+  reportCost: async (runIds: readonly string[]): Promise<RunCostView[]> => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
 });
 
 describe('momonga reliability --days is bounded where it is parsed', () => {

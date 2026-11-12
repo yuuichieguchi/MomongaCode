@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildContext } from '@momonga/context';
 import { capabilitiesFor, developerTexts, harness, inputFor } from './helpers.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-ictx-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

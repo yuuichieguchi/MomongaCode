@@ -1,10 +1,10 @@
 import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createGitConfigDiscovery, nodeCommandRunner } from '@momonga/foundation';
 import type { CommandRunner } from '@momonga/foundation';
+import { createTempDir } from '@momonga/testkit';
 
 const made: string[] = [];
 
@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 const repository = (): { work: string; env: Record<string, string> } => {
-  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'git-config-fingerprint-')));
+  const base = createTempDir();
   made.push(base);
   const home = path.join(base, 'home');
   const work = path.join(base, 'work');

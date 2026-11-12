@@ -9,7 +9,7 @@ import { nodeCommandRunner, verifyReleaseSignature } from '@momonga/foundation';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
-import { testHostPath } from '@momonga/testkit';
+import { createTempDir, testHostPath } from '@momonga/testkit';
 
 const INSTALL_SCRIPT = `${repoRoot}scripts/install.sh`;
 const ASSET = 'momonga-darwin-arm64';
@@ -70,7 +70,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
 
   const target = (): string => path.join(prefix, 'bin', 'momonga');
   const unameStub = (os: string, machine: string): string => {
-    const stubs = fs.mkdtempSync(path.join(root, 'uname-'));
+    const stubs = createTempDir({ parent: root });
     fs.writeFileSync(path.join(stubs, 'uname'), `#!/bin/sh\nif [ "$1" = "-m" ]; then echo ${machine}; else echo ${os}; fi\n`, { mode: 0o755 });
     return stubs;
   };
@@ -103,7 +103,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
   });
 
   beforeEach(() => {
-    prefix = fs.mkdtempSync(path.join(root, 'prefix-'));
+    prefix = createTempDir({ parent: root });
     served = {};
   });
 
@@ -138,10 +138,18 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(outcome.code).toBe(1);
     expect(outcome.stdout).toBe('');
     expect(outcome.stderr).toBe(
-      `install.sh: sha256 mismatch for ${ASSET}: expected ${sha256(GOOD_BINARY)}, got ${sha256(TAMPERED_BINARY)}; nothing was installed\n`,
+      `install.sh: the downloaded ${ASSET} does not match the SHA-256 that SHA256SUMS records (expected ${sha256(GOOD_BINARY)}, got ${sha256(TAMPERED_BINARY)}); nothing was installed\n`,
     );
     expect(fs.existsSync(target())).toBe(false);
     expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual([]);
+  });
+
+  it('refuses a release key that is not one ssh-ed25519 public key line before it downloads anything', async () => {
+    serveRelease(GOOD_BINARY, GOOD_BINARY);
+    const outcome = await runInstall({ ...baseEnv(), MOMONGA_RELEASE_PUBLIC_KEY: 'not a key' });
+    expect(outcome.code).toBe(1);
+    expect(outcome.stderr).toBe('install.sh: the release signing key is not one ssh-ed25519 public key line (ssh-ed25519 AAAA...), so it cannot verify the release; nothing was installed\n');
+    expect(fs.existsSync(target())).toBe(false);
   });
 
   it('keeps the existing install when the artifact is tampered', async () => {
@@ -264,7 +272,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
   const installerWithRepo = (repo: string): string => {
     const source = fs.readFileSync(INSTALL_SCRIPT, 'utf8');
     expect(source).toContain(EMBEDDED_REPO_DECLARATION);
-    const directory = fs.mkdtempSync(path.join(root, 'embedded-'));
+    const directory = createTempDir({ parent: root });
     const script = path.join(directory, 'install.sh');
     fs.writeFileSync(script, source.replace(EMBEDDED_REPO_DECLARATION, `readonly EMBEDDED_RELEASE_REPO="${repo}"`));
     return script;
@@ -409,7 +417,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     const pathLine = (): string => `export PATH="${binDir()}:$PATH"`;
 
     const freshHome = (seeded: boolean): string => {
-      const home = fs.mkdtempSync(path.join(root, 'home-'));
+      const home = createTempDir({ parent: root });
       if (seeded) for (const name of SHELL_FILES) fs.writeFileSync(path.join(home, name), `original ${name}\n`);
       return home;
     };

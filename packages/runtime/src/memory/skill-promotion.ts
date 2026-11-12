@@ -1,5 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import type { FileSystem } from '@momonga/foundation';
 import { DESCRIPTION_MAX_LENGTH, SKILL_DIRECTORY_SEGMENTS, SKILL_FILE_NAME } from '@momonga/skills';
 
 export type SkillWrite =
@@ -18,10 +18,12 @@ export const skillDescriptionOf = (text: string): string => {
 export const skillFileText = (name: string, text: string): string =>
   ['---', `name: ${name}`, `description: ${JSON.stringify(skillDescriptionOf(text))}`, '---', text, ''].join('\n');
 
-export const writeSkillFile = async (options: { root: string; name: string; text: string }): Promise<SkillWrite> => {
+export type SkillFileSystem = Pick<FileSystem, 'lstat' | 'mkdir' | 'open'>;
+
+export const writeSkillFile = async (fileSystem: SkillFileSystem, options: { root: string; name: string; text: string }): Promise<SkillWrite> => {
   const { root, name, text } = options;
   try {
-    if (!(await fs.promises.lstat(root)).isDirectory()) return { kind: 'root_missing', path: root };
+    if (!(await fileSystem.lstat(root)).isDirectory()) return { kind: 'root_missing', path: root };
   } catch (error) {
     if (hasCode(error, 'ENOENT')) return { kind: 'root_missing', path: root };
     throw error;
@@ -31,20 +33,26 @@ export const writeSkillFile = async (options: { root: string; name: string; text
   for (const segment of segments) {
     current = path.join(current, segment);
     try {
-      if ((await fs.promises.lstat(current)).isSymbolicLink()) return { kind: 'symlink', path: current };
+      if ((await fileSystem.lstat(current)).isSymbolicLink()) return { kind: 'symlink', path: current };
     } catch (error) {
       if (hasCode(error, 'ENOENT')) break;
       throw error;
     }
   }
   const directory = path.join(root, ...segments);
-  await fs.promises.mkdir(directory, { recursive: true });
+  await fileSystem.mkdir(directory);
   const file = path.join(directory, SKILL_FILE_NAME);
+  let handle: Awaited<ReturnType<SkillFileSystem['open']>>;
   try {
-    await fs.promises.writeFile(file, skillFileText(name, text), { flag: 'wx' });
+    handle = await fileSystem.open(file, 'wx');
   } catch (error) {
     if (hasCode(error, 'EEXIST')) return { kind: 'exists', path: file };
     throw error;
+  }
+  try {
+    await handle.writeFile(skillFileText(name, text));
+  } finally {
+    await handle.close();
   }
   return { kind: 'written', path: file };
 };

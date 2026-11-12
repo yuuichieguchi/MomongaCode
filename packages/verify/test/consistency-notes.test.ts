@@ -90,3 +90,12 @@ describe('rule consistency gives notes and never a refutation', () => {
     expect(verdict.refuted.map((refutation) => refutation.property)).toContain('secret-reach');
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
+
+describe('a mandate allow list with Edit(*) and Write(*)', () => {
+  it('notes Write(*) as covered by Edit(*) and refutes nothing', async () => {
+    const report = await run([['allow', 'Edit(*)'], ['allow', 'Write(*)']]);
+
+    expect(verdictOfReport(report, 'z3 1').refuted).toEqual([]);
+    expect(notesOf(report)).toContainEqual(expect.objectContaining({ kind: 'no-effect', rules: [expect.objectContaining({ text: 'Write(*)' }), expect.objectContaining({ text: 'Edit(*)' })] }));
+  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
+});

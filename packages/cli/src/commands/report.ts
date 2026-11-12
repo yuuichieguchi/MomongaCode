@@ -1,7 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, RunBudgetReport, RunDelegationReport, RunFailedCallReport, RunOperationReport, RunReport, RunReportAnomaly } from '@momonga/protocol';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { CONDITION_STATE_WORDS, RESIDUAL_RISK_WORDS } from '../policy-messages.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
@@ -99,7 +99,7 @@ export const renderReport = (report: RunReport): string => {
 };
 
 export const showReport = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(ports, paths);
   try {
     const run = await client.getRun(runId ?? (await latestRunIdOf(client, ports.cwd)));

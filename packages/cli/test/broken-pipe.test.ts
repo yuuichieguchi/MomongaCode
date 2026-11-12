@@ -1,9 +1,8 @@
 import { EventEmitter } from 'node:events';
-import os from 'node:os';
 import path from 'node:path';
 import { spawn } from '@momonga/testkit/child-process';
 import { EXIT_OK, HELPER_COMMAND, guardStandardStreams } from '@momonga/foundation';
-import { createTempDir, removeTempDir } from '@momonga/testkit';
+import { createTempDir, removeTempDir, systemTempRoot } from '@momonga/testkit';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const PRODUCT_ENTRY = path.resolve(import.meta.dirname, '..', 'src', 'main.ts');
@@ -24,7 +23,7 @@ type Ended = { code: number | null; signal: NodeJS.Signals | null; stderr: strin
 
 const endedWithoutReader = (args: readonly string[], closeAfterFirstBytes: boolean): Promise<Ended> =>
   new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, { env: { PATH: process.env['PATH'] ?? '', HOME: home, TMPDIR: os.tmpdir() }, timeout: CHILD_TIMEOUT_MS });
+    const child = spawn(process.execPath, args, { env: { PATH: process.env['PATH'] ?? '', HOME: home, TMPDIR: systemTempRoot() }, timeout: CHILD_TIMEOUT_MS });
     const stderr: Buffer[] = [];
     if (closeAfterFirstBytes) child.stdout.once('data', () => child.stdout.destroy());
     else child.stdout.destroy();

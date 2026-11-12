@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, launchGroupLeader, systemTiming } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createWorkspaceProbe, gradeChecks, nodeWorkspaceFiles } from '../src/index.ts';
 import type { CommandSandbox } from '../src/index.ts';
 
@@ -15,7 +14,7 @@ const EVIDENCE = 'acceptance';
 let root = '';
 
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-oracle-')));
+  root = createTempDir();
   fs.mkdirSync(path.join(root, 'work'));
   fs.mkdirSync(path.join(root, 'base'));
   fs.mkdirSync(path.join(root, 'outside'));

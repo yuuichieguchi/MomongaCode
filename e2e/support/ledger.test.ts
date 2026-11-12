@@ -414,13 +414,7 @@ describe('process ledger: current persisted file', () => {
   });
 });
 
-describe('tolerant readers', () => {
-  it('readDb returns no rows for a database that does not exist', (context) => {
-    const dir = withTempDir(context);
-    expect(readDb(path.join(dir, 'missing.db'), TOOL_GROUPS_SQL)).toEqual([]);
-    expect(fs.existsSync(path.join(dir, 'missing.db'))).toBe(false);
-  });
-
+describe('the database reader', () => {
   it('readDb reads rows read-only', (context) => {
     const file = path.join(withTempDir(context), 'runs.db');
     const db = new DatabaseSync(file);

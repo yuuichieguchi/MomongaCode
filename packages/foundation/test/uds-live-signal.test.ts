@@ -1,11 +1,10 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { isUnixSocketLive, listenUnix } from '@momonga/foundation';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 import type { KernelLockMechanism } from '@momonga/foundation';
 
 type LiveCheck = (socketPath: string, signal: AbortSignal) => Promise<boolean>;
@@ -15,7 +14,7 @@ type Listen = (server: net.Server, socketPath: string, lockOptions?: { mechanism
 const listenAt = listenUnix as unknown as Listen;
 
 const privateDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-uds-')));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   cleanups.push(async () => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
@@ -46,7 +45,7 @@ afterEach(async () => {
 });
 
 const listening = async (): Promise<string> => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-uds-'));
+  const dir = createTempDir();
   const socketPath = path.join(dir, 'live.sock');
   const server = net.createServer((socket) => socket.on('error', () => undefined));
   await new Promise<void>((resolve) => server.listen(socketPath, () => resolve()));

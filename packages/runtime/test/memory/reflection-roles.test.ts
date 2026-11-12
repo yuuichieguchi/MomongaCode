@@ -78,7 +78,7 @@ describe('the reflection role', () => {
     expect(env.gateway.streams.map((stream) => stream.role)).toEqual(['reflection']);
     expect(env.gateway.streams.map((stream) => stream.body.momonga?.exact_model)).toEqual([true]);
     expect(env.gateway.capabilityRequests).toEqual(['cheap']);
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: (await run).id, model: 'cheap', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toMatchObject([{ purpose: 'reflection', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
   });
 
   it('guards a cap taken from the wrong model: the output cap follows the capabilities of the role model', async () => {
@@ -114,7 +114,7 @@ describe('the reflection role', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.capabilityRequests).toEqual(['plain']);
     expect(env.gateway.streams).toEqual([]);
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toEqual([]);
     const job = env.api.reflection.get((await run).id);
     expect(job?.state).toBe('done');
     expect(job?.lastError).toContain('models.roles.reflection');
@@ -129,7 +129,7 @@ describe('the reflection role', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['strict']);
     expect(env.api.reflection.get((await run).id)?.state).toBe('done');
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', model: 'strict', inputTokens: 100, outputTokens: 20 }]);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toMatchObject([{ purpose: 'reflection', inputTokens: 100, outputTokens: 20 }]);
   });
 });
 
@@ -144,7 +144,7 @@ describe('the reflection call is admitted by the budget of its run', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
 
     expect(env.gateway.streams).toEqual([]);
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(env.store.readRunEventsOfTypes(created.run.id, ['usage.charged'])).toEqual([]);
     const job = env.api.reflection.get(created.run.id);
     expect(job?.state).toBe('done');
     expect(job?.lastError).toContain('budget');

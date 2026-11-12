@@ -1,4 +1,4 @@
-export { computeBackoff, parseRetryAfter } from './backoff.ts';
+export { MAX_DATE_MS, computeBackoff, parseRetryAfter } from './backoff.ts';
 export { TRANSIENT_REQUEST_STATUSES, isRetryableHttp, parseShouldRetry } from './http-retry.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
 export { sessionRootsOf, verdictKey, verdictSubjectOf } from './rule-fingerprint.ts';
@@ -10,7 +10,7 @@ export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
-export { isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
+export { isRecord, parseBoundedJson, parseShippedManifest, spanValueOfJsonText } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
 export type { JsonReplyInput } from './json-reply.ts';
@@ -94,7 +94,7 @@ export type {
   ProcessLockInspection,
 } from './process-lock.ts';
 export { bsdFileLock, createFileLock, kernelLockNamed, nodeFileLockOps } from './platform/kernel-lock.ts';
-export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, claimNewEntry, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf } from './platform/lock-form.ts';
+export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf } from './platform/lock-form.ts';
 export type { LockForm } from './platform/lock-form.ts';
 export { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverLeftovers, handoverRecordFields, handoverRecordOwner } from './handover-leftovers.ts';
 export type { HandoverRecordParties } from './handover-leftovers.ts';
@@ -141,6 +141,7 @@ export {
   generationSpawnScratch,
   leftoverDirectories,
   managedInstancePaths,
+  managedInstanceIn,
   layoutEnvOf,
   homeLayout,
   momongaLayout,
@@ -286,8 +287,7 @@ export {
   CONTROL_REQUEST_TIMEOUT_MS,
   LOCAL_REQUEST_HEADERS_TIMEOUT_MS,
   SUPERVISOR_RESPONSE_BOUND_MS,
-  STDIO_EXIT_FLUSH_MS,
-  CHILD_STDIO_FLUSH_MS,
+  STDIO_FLUSH_MS,
   KILL_CONFIRM_MS,
   DAEMON_MARKER_KILL_GRACE_MS,
   ABANDON_KILL_GRACE_MS,
@@ -410,6 +410,7 @@ export { readStopRecord, writeStopRecord } from './stop-record.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
 export { BUNDLED_EXECUTABLE_STAGED_INFIX, BUNDLED_EXECUTABLE_STAGED_NAME_BYTES } from './platform/bundled-executable.ts';
+export { replaceExecutable } from './platform/replace-executable.ts';
 export type { BundledExecutableManifest } from './platform/bundled-executable.ts';
 export {
   LINUX_SOCKET_GUARD_BINARY_ASSET,
@@ -436,3 +437,4 @@ export { CONTROL_PLANE_LAUNCH } from './child-protection.ts';
 export type { ChildProtection, LaunchProtection } from './child-protection.ts';
 export { unixSocketPolicyOf } from './unix-socket-policy.ts';
 export type { UnixSocketPolicy } from './unix-socket-policy.ts';
+export { signalsOf } from './platform/signals.ts';

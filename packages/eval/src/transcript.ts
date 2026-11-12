@@ -7,7 +7,7 @@ import type { CheckResult, TrialGrade } from './oracle-grade.ts';
 import { RETIRED_POLICY_REASON, NEW_PAIR_COMMANDS } from './retired-formats.ts';
 import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, ReportCostPage, RunCostView, RunStatus, StopReason, Stored } from '@momonga/protocol';
 
-export const TRANSCRIPT_FORMAT = 'momonga-transcript/9';
+export const TRANSCRIPT_FORMAT = 'momonga-transcript/10';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-transcript/1': 'subagent runs',
   'momonga-transcript/2': 'the side effect of a tool call',
@@ -17,6 +17,7 @@ const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-transcript/6': 'whether the upstream reported the cache reads of each call',
   'momonga-transcript/7': 'the model each session used (it was recorded as an alias name)',
   'momonga-transcript/8': 'the cost record of their runs',
+  'momonga-transcript/9': 'the retries in the cost record of their runs',
 };
 
 export type TranscriptRun = {

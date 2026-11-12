@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { onTestFinished } from 'vitest';
 import { FIVE_MINUTES_MS } from '@momonga/config';
 import { GATEWAY_CONFIG_DEFAULTS, createChatCompletionsAdapter, createGateway, unauthenticatedSource } from '@momonga/gateway';
 import type { FakeClock, FakeScriptedReply } from '@momonga/testkit';
-import { hostTimers, startFakeChatCompletions, testKernelLock } from '@momonga/testkit';
+import { createTempDir, hostTimers, startFakeChatCompletions, testKernelLock } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import type { GatewayClient } from '../../src/gateway-client.ts';
@@ -31,7 +30,7 @@ const TARGET = MODEL_ID;
 export const BREAKER_STAYS_CLOSED_SO_EVERY_REQUEUED_ATTEMPT_REACHES_THE_ONE_TARGET = Number.MAX_SAFE_INTEGER;
 
 export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutMs: number; script: FakeScriptedReply[] }): Promise<RealGateway> => {
-  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ka-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   fs.mkdirSync(path.join(dir, 'state'), { mode: 0o700 });
   const upstream = await startFakeChatCompletions({ scenario: 'tools-ok', script: options.script });

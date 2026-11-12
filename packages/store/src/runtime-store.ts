@@ -20,7 +20,7 @@ import { createIssueWatchStore } from './issue-watch.ts';
 import { decodeJob, prepareJobStatements } from './jobs.ts';
 import { createGoverningFactStore } from './governing.ts';
 import { createGuidelineStore } from './guidelines.ts';
-import { createContextChargeStore } from './context-charges.ts';
+import { DuplicateChargeError, createContextChargeStore } from './context-charges.ts';
 import { createMemoryStore } from './memories.ts';
 import { createReflectionStore } from './reflection.ts';
 import { referencePayload } from './inherit.ts';
@@ -489,7 +489,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const approvalOps = createApprovalStore(db, clock, decodeContext);
   const memories = createMemoryStore(db, clock, decodeContext);
   const contextCharges = createContextChargeStore(db, clock, decodeContext);
-  const reflection = createReflectionStore(db, clock, { memories, contextCharges }, decodeContext);
+  const reflection = createReflectionStore(db, clock, { memories, endedRun: { append: (runId, payloads) => appendToEndedRun(runId, payloads) } }, decodeContext);
   const governing = createGoverningFactStore(db, clock, decodeContext);
   const issueWatch = createIssueWatchStore(db, clock);
   const runFacts = createRunFactsStore(db, decodeContext);
@@ -661,10 +661,33 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       const seq = current.lastSeq + 1;
       insertEvent({ runId: run.id, sessionId: run.sessionId, seq, step, leaseToken: run.leaseToken, createdAt, payload });
       const spend = spendOf(payload);
+      if (spend !== undefined) sql.reserveBudget.run({ id: run.id, tokens: 0, nano: 0 });
       const usage = spend === undefined ? current.usage : addUsage(current.usage, spend);
       current = { ...current, step, lastSeq: seq, usage };
     }
     return current;
+  };
+
+  const billedFieldsOfCharge = (charged: Extract<RunEventPayload, { type: 'usage.charged' }>): string => {
+    const { timing: _timing, ...fields } = charged;
+    return canonicalJson(fields);
+  };
+
+  const chargedBefore = (runId: string, payload: RunEventPayload): boolean => {
+    if (payload.type !== 'usage.charged' || payload.responseId === undefined) return false;
+    const stored = journalReader.eventsOfTypes(runId, ['usage.charged']).find((event) => event.type === 'usage.charged' && event.responseId === payload.responseId);
+    if (stored?.type !== 'usage.charged') return false;
+    const { id: _id, runId: _run, sessionId: _session, seq: _seq, step: _step, leaseToken: _lease, createdAt: _created, ...charged } = stored;
+    if (billedFieldsOfCharge(charged) !== billedFieldsOfCharge(payload)) throw new DuplicateChargeError(payload.responseId);
+    return true;
+  };
+
+  const appendToEndedRun = (runId: string, payloads: readonly RunEventPayload[]): void => {
+    if (payloads.length === 0) return;
+    const run = requireRun(runId);
+    if (!isTerminal(run.status)) throw new Error(`run ${runId} is ${run.status}: only its worker writes to the journal of a run that has not ended`);
+    const fresh = payloads.filter((payload) => !chargedBefore(runId, payload));
+    if (fresh.length > 0) writeRun(appendPayloads(run, fresh));
   };
 
   const withdrawPendingApprovals = (runId: string): RunEventPayload[] =>
@@ -1491,9 +1514,16 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return verdict;
       }),
 
-    releaseBudget: (runId) => {
-      sql.reserveBudget.run({ id: runId, tokens: 0, nano: 0 });
+    chargeEndedRun: (charge) => {
+      transaction(() => appendToEndedRun(charge.runId, [charge.charged]));
     },
+
+    reserveRecorded: (claim, recorded) =>
+      transaction<{ kind: 'ok' } | LeaseLost>(() => {
+        if (fenced(claim) === undefined) return leaseLost;
+        sql.reserveBudget.run({ id: claim.runId, tokens: recorded.reservedTokens, nano: recorded.reservedNano ?? 0 });
+        return { kind: 'ok' };
+      }),
 
     rootSessionId: rootSessionIdOf,
 

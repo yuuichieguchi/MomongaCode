@@ -86,7 +86,7 @@ export type { ValidationResult } from './validate.ts';
 export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
 export type { BuiltinToolOffer, OfferedBash } from './builtins/index.ts';
 export { offeredBashOf } from './builtins/shell.ts';
-export { runUserCommand, shellCommandSubject } from './builtins/bash.ts';
+export { bashEnvOf, runUserCommand, shellCommandSubject } from './builtins/bash.ts';
 export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
 export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
 export { gitEnvironment, gitProxyEnvironment, readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';

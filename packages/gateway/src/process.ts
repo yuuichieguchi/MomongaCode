@@ -51,7 +51,7 @@ import {
   codeDigestOfRunningProcess,
   createBinaryHashCache,
   createHeldHostReadings,
-  managedInstancePaths,
+  managedInstanceIn,
   momongaPaths,
   createSecretKeyFile,
   sweepLeftovers,
@@ -62,7 +62,6 @@ import {
   generationLayout,
   createRolePort,
   endpointFormsOfSocket,
-  pipePathFor,
   endpointScopeOf,
   CONTROL_REQUEST_TIMEOUT_MS,
   EXIT_RETIRED,
@@ -78,7 +77,6 @@ import type {
   GenerationRole,
   JsonLogger,
   ListableCredentialStore,
-  ManagedInstancePaths,
   MomongaPaths,
   NetworkConfig,
   OutboundNetwork,
@@ -447,11 +445,6 @@ type ManagedAdapterWiring = {
   onWarning: (message: string) => void;
 };
 
-const INSTANCE_SOCKET_SUFFIX = '.sock';
-
-export const instanceSocketOf = (form: EndpointForm, unixSocketPath: string, scope: EndpointScope, generation: number): string =>
-  form === 'pipe' ? pipePathFor(scope, `g${generation}-managed-${path.basename(unixSocketPath, INSTANCE_SOCKET_SUFFIX)}`) : unixSocketPath;
-
 type ManagedCore = { managed: ManagedTarget; probeKey: string | undefined };
 
 const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedCore> => {
@@ -459,9 +452,9 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   const { provider } = target;
   const name = managedModelName(provider, { declared: target.model });
   const form = requireOfferedEndpointForm(description, { platform: wiring.platform, forms: wiring.hostForms }, wiring.connectionPlace);
-  const inForm = (instance: ManagedInstancePaths): ManagedInstancePaths => ({ ...instance, socketPath: instanceSocketOf(form, instance.socketPath, wiring.endpointScope, wiring.generation) });
-  const serving = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }));
-  const probing = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }));
+  const socket = { form, scope: wiring.endpointScope };
+  const serving = managedInstanceIn(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }, socket);
+  const probing = managedInstanceIn(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }, socket);
   const host = createHeldHostReadings();
   const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: wiring.platform, hashes: wiring.hashes, host });
   const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: wiring.platform, hashes: wiring.hashes });

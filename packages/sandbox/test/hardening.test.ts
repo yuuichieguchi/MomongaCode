@@ -192,7 +192,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
       await expect.poll(() => connections).toBe(1);
     });
 
-    it('denies connecting to unix sockets under readDenied but allows other unix sockets', async () => {
+    it('denies connecting to unix sockets under readDenied but allows a unix socket the policy names', async () => {
       const secrets = path.join(outside, 'secrets');
       const open = path.join(outside, 'open');
       fs.mkdirSync(secrets);
@@ -214,7 +214,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
       expect(hits).not.toContain('secret');
 
       const permitted = await run(
-        await sh(`/usr/bin/nc -U '${path.join(open, 'other.sock')}' </dev/null`, { network: 'allow', readDenied: [secrets] }),
+        await sh(`/usr/bin/nc -U '${path.join(open, 'other.sock')}' </dev/null`, { network: 'allow', readDenied: [secrets], unixSocketAllow: [path.join(open, 'other.sock')] }),
       );
       expect(permitted.code).toBe(0);
       await expect.poll(() => hits).toContain('open');
