@@ -70,6 +70,9 @@ import { createSlashRegistry, modeToastText, namesOf, parseSlash, NEEDS_SESSION_
 import type { AutoModePort, SelectedText, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
 import { extractSelection } from './screen/selection.ts';
 import { COPY_MAX_BYTES } from './screen/constants.ts';
+import { clipboardReadMessage } from './screen/clipboard.ts';
+
+const READING_CLIPBOARD = 'reading the clipboard';
 import { KEY_SETTLE_MS } from './terminal/constants.ts';
 import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
@@ -1236,8 +1239,9 @@ export function App(props: AppProps) {
   };
 
   const pasteFromClipboard = async (): Promise<void> => {
-    const content = await tasks.run((signal) => backend.userInput.readClipboard(signal));
+    const content = await waitFor(READING_CLIPBOARD, (signal) => backend.userInput.readClipboard(signal));
     if (content.kind === 'unsupported') setHint(NO_CLIPBOARD_PROGRAM_HINT);
+    else if (content.kind === 'failed') setHint(clipboardReadMessage(content));
     else if (content.kind === 'text') replaceEditor(insertPaste(editorRef.current, content.text));
     else if (content.kind === 'image' && !imageInput) setHint(NO_IMAGE_INPUT_HINT);
     else if (content.kind === 'image') {

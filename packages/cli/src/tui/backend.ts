@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { findProgramOnPathSync, nodeFileSystemSync, resolveLayoutLocks } from '@momonga/foundation';
+import { findProgramOnPath, nodeFileSystem, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { TrustItemsView } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
@@ -32,7 +32,7 @@ import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
 import type { ClipboardPrograms } from './screen/clipboard-host.ts';
-import { copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
+import { cachedProgramSearch, copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
 import type { ClipboardContent, CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
 import { autoModeConfigured, connectSessionRuntime, environmentSnapshot, reopenedAsTyped, runBoundsOf } from '../run/open-session.ts';
@@ -163,6 +163,8 @@ export const createTuiBackend = (
       await gateway.close();
     }
   };
+
+  const clipboardPrograms = cachedProgramSearch((name) => findProgramOnPath(name, ports.env, nodeFileSystem));
 
   const conversationRuns = (sessionId: string): Promise<RunView[]> => ownRunsOf(runtime(), sessionId);
 
@@ -298,7 +300,7 @@ export const createTuiBackend = (
       shell: (command, include, io) => runtime().userShell(current().id, command, include, io),
       stopShell: () => runtime().stopUserShell(current().id),
       pendingShell: () => runtime().pendingUserShell(current().id),
-      readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), capture: clipboard.capture }, signal),
+      readClipboard: (signal) => readClipboardThroughRoutes({ env: ports.env, findProgram: clipboardPrograms, capture: clipboard.capture }, ports.timers, signal),
     },
     resolveApproval: async (approvalId, optionId) => {
       await runtime().resolveApproval(approvalId, optionId);
@@ -310,7 +312,7 @@ export const createTuiBackend = (
     copyToClipboard: async (text) => {
       const terminal = ports.terminal;
       if (terminal === undefined) throw new Error('the clipboard request needs a terminal');
-      return copyThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
+      return copyThroughRoutes({ env: ports.env, findProgram: clipboardPrograms, pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
     },
     skills: () => runtime().skills(current().id),
     agents: () => runtime().agents(current().id),

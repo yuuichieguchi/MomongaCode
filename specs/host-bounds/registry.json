@@ -138,6 +138,7 @@
       {"name":"KEY_FILE_MAX_BYTES","file":"packages/cli/src/tui/keys/bindings.ts","lacks":["row"]},
       {"name":"KEY_FILE_STAT_MS","file":"packages/cli/src/tui/keys/store.ts","lacks":["kind","row"]},
       {"name":"MINUTE_MS","file":"packages/cli/src/tui/models/fields.ts","lacks":["kind","row"]},
+      {"name":"CLIPBOARD_READ_MS","file":"packages/cli/src/tui/screen/constants.ts","lacks":["kind","row"]},
       {"name":"COPY_MAX_BYTES","file":"packages/cli/src/tui/screen/constants.ts","lacks":["row"]},
       {"name":"DOUBLE_CLICK_MS","file":"packages/cli/src/tui/screen/constants.ts","lacks":["kind","row"]},
       {"name":"OSC52_MAX_RAW_BYTES","file":"packages/cli/src/tui/screen/constants.ts","lacks":["row"]},
