@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { brotliCompressSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { HeldKernelLock } from '@momonga/foundation';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 import { Z3DistributionError, Z3_API_FILE, Z3_MANIFEST_ASSET, Z3_RUNTIME_FILE, Z3_STAGED_PREFIX, Z3_WASM_ASSET, ensureBundledZ3, parseZ3Manifest } from '../src/index.ts';
 import type { DistributionPorts } from '../src/index.ts';
 
@@ -38,7 +37,7 @@ afterEach(() => {
 });
 
 const executablesRoot = (): string => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-z3-distribution-')));
+  const root = createTempDir();
   created.push(root);
   return root;
 };

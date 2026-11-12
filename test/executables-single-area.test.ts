@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import os from 'node:os';
 import { momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 import { ensureBundledZ3 } from '@momonga/verify';
 import { brotliCompressSync } from 'node:zlib';
 
@@ -34,7 +33,7 @@ describe('every executable the product extracts lives under <cacheBase>/executab
       'z3-built.js': runtime,
       'z3-built.wasm.br': brotliCompressSync(wasm),
     };
-    const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-single-area-')));
+    const home = createTempDir();
     const area = momongaLayout(home, 'linux', {}).executables;
     const result = await ensureBundledZ3({
       asset: (name) => assets[name] as Uint8Array,
