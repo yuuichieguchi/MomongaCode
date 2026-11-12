@@ -1,10 +1,9 @@
 import { execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTempDir, removeTempDir } from '@momonga/testkit';
+import { createTempDir, removeTempDir, systemTempRoot } from '@momonga/testkit';
 
 const run = promisify(execFile);
 const MAIN = path.resolve(import.meta.dirname, '..', 'src', 'main.ts');
@@ -25,7 +24,7 @@ afterAll(async () => {
 });
 
 const momonga = (args: readonly string[]): Promise<{ code: number; stdout: string; stderr: string }> =>
-  run(process.execPath, [MAIN, ...args], { env: { PATH: process.env['PATH'] ?? '', HOME: home, TMPDIR: os.tmpdir() }, timeout: CHILD_TIMEOUT_MS }).then(
+  run(process.execPath, [MAIN, ...args], { env: { PATH: process.env['PATH'] ?? '', HOME: home, TMPDIR: systemTempRoot() }, timeout: CHILD_TIMEOUT_MS }).then(
     ({ stdout, stderr }) => ({ code: 0, stdout, stderr }),
     (error: { code?: unknown; stdout?: string; stderr?: string }) => ({ code: typeof error.code === 'number' ? error.code : -1, stdout: error.stdout ?? '', stderr: error.stderr ?? '' }),
   );

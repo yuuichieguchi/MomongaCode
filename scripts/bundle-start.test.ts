@@ -1,16 +1,15 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { productTestEnv } from '@momonga/testkit';
+import { createTempDir, productTestEnv } from '@momonga/testkit';
 import { spawnSync } from '@momonga/testkit/child-process';
 import { createE2eHome } from '../e2e/support/home.ts';
 import { spawnPty } from '../e2e/support/pty.ts';
 import { bundle, defaultEntry } from './bundle.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-bundle-start-'));
+const scratch = createTempDir();
 const outfile = path.join(scratch, 'main.js');
 
 beforeAll(async () => {

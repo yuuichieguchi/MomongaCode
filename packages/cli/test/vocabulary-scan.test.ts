@@ -2,11 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { VOCABULARY } from '@momonga/protocol';
 import type { VocabularyRow } from '@momonga/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ROOT, parseSource, productSources, relativeOf } from '../../../test/support/source-scan.ts';
 import type { Counts } from '../../../test/support/source-scan.ts';
 import { SCANNED_DOCUMENTS, VOCABULARY_TABLE_FILE, bannedUsesOfDocument, bannedUsesOfProduct, bannedUsesOfSource, countedByFile } from '../../../test/support/vocabulary-uses.ts';
 import type { BannedUseSite } from '../../../test/support/vocabulary-uses.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const LEDGER = path.join(ROOT, 'specs/vocabulary/ledger.json');
 

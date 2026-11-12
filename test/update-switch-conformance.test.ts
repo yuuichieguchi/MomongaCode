@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, SWEEP_INTERVAL_MS, claimGeneration, decideGenerationStart, ensureMomongaDirs, generationIsLive, generationLayout, momongaPaths, publishCurrentGeneration, starterOutcome } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { createFakeKernelLock, withTempDir, testKernelLock } from '@momonga/testkit';
+import { createFakeKernelLock, withTempDir, testKernelLock, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { readManifest } from './formal/manifest.ts';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const specDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
 const spec = fs.readFileSync(path.join(specDir, 'UpdateSwitch.tla'), 'utf8');

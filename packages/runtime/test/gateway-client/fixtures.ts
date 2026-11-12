@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import type net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { GatewayRequestError, createGatewayClient } from '../../src/gateway-client.ts';
 import { fixedSocket } from '@momonga/foundation';
@@ -25,7 +24,7 @@ export const registerCleanup = (cleanup: () => void | Promise<void>): void => {
 };
 
 export const shortDir = (prefix: string): string => {
-  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), prefix));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   registerCleanup(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;

@@ -1,12 +1,12 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import * as evaluation from '@momonga/eval';
 import { nodeWorkspaceFiles } from '@momonga/eval';
 import type { WorkspaceFiles } from '@momonga/eval';
+import { createTempDir } from '@momonga/testkit';
 
 const cleanups: string[] = [];
 
@@ -71,7 +71,7 @@ export type FixtureTask = {
 };
 
 export const benchmarkDir = async (tasks: readonly FixtureTask[]): Promise<string> => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-bench-'));
+  const dir = createTempDir();
   cleanups.push(dir);
   const treeDigest = exported<(files: WorkspaceFiles, directory: string) => Promise<string>>('treeDigest');
   const repositories: Record<string, { directory: string; digest: string }> = {};

@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, startLockHolder, firstGeneration } from '@momonga/testkit';
+import { createTempDir, firstGeneration, registerCleanup, spawnTracked, startLockHolder } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { OVERLAP_MESSAGE, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
 import { parsePidsFile } from './ledger.ts';
@@ -69,7 +69,7 @@ describe('createE2eHome', () => {
   });
 
   it('rejects a temp dir that would push the longest socket over the budget, naming the budget', async (context) => {
-    const base = fs.mkdtempSync(path.join(realTmp(), 'mmx-'));
+    const base = createTempDir({ parent: realTmp() });
     registerCleanup(context, () => fs.rmSync(base, { recursive: true, force: true }));
     const long = path.join(base, 'x'.repeat(80 - Buffer.byteLength(base) - 1));
     fs.mkdirSync(long, { mode: 0o700 });

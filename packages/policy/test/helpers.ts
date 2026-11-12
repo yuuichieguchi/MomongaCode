@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { EMPTY_PROTECTED_SET, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
-import { TEST_SEARCH_PATH, fakePolicyFilesystem, isWritableFor, protectedSetWith, testProbes } from '@momonga/testkit';
+import { createTempDir, fakePolicyFilesystem, isWritableFor, protectedSetWith, TEST_SEARCH_PATH, testProbes } from '@momonga/testkit';
 import type { FakePolicyFilesystemLayout } from '@momonga/testkit';
 import type { PermissionRule, PolicyFilesystem, RuleEffect, RuleOrigin } from '@momonga/policy';
 
@@ -18,7 +17,7 @@ afterEach(() => {
 export type Layout = { root: string; home: string; project: string; outside: string; settingsRoot: string };
 
 export const makeLayout = (): Layout => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-pol-')));
+  const root = createTempDir();
   fs.chmodSync(root, 0o700);
   cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
   const layout = {

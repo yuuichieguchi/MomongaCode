@@ -4,14 +4,14 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { shortTempBase } from '@momonga/foundation';
 import * as testkit from '@momonga/testkit';
-import { TEST_RUN_ENV, createTempDir, registerOwned, registerCleanup, removeTempDir, tempDirPrefixFor, testRunToken, testTempBases, afterMicrotasks } from '@momonga/testkit';
+import { TEST_RUN_ENV, createTempDir, registerOwned, registerCleanup, removeTempDir, tempDirPrefixFor, systemTempRoot, testRunToken, testTempBases, afterMicrotasks } from '@momonga/testkit';
 
 describe('createTempDir and removeTempDir', () => {
   it('creates a resolved 0700 directory carrying the run token under the base of other directories', async () => {
     const dir = createTempDir();
     try {
       expect(dir).toBe(fs.realpathSync(dir));
-      expect(path.dirname(dir)).toBe(fs.realpathSync(os.tmpdir()));
+      expect(path.dirname(dir)).toBe(systemTempRoot());
       expect(path.basename(dir).startsWith(tempDirPrefixFor(testRunToken()))).toBe(true);
       expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
     } finally {
@@ -26,6 +26,23 @@ describe('createTempDir and removeTempDir', () => {
     } finally {
       await removeTempDir(home);
     }
+  });
+
+  it('creates a folder of its own inside a folder the test already holds, removed with that folder', async () => {
+    const parent = createTempDir();
+    try {
+      const first = createTempDir({ parent });
+      const second = createTempDir({ parent });
+      expect([path.dirname(first), path.dirname(second)]).toEqual([parent, parent]);
+      expect(first).not.toBe(second);
+      expect(path.basename(first).startsWith(tempDirPrefixFor(testRunToken()))).toBe(true);
+    } finally {
+      await removeTempDir(parent);
+    }
+  });
+
+  it('names the system temporary folder resolved, the base of folders that are not homes', () => {
+    expect(systemTempRoot()).toBe(fs.realpathSync(os.tmpdir()));
   });
 
   it('removes a directory whose subdirectories were made read-only', async () => {
@@ -49,7 +66,7 @@ describe('createTempDir and removeTempDir', () => {
   });
 
   it('names both bases once each for the sweep and keeps the base rule out of the index', () => {
-    expect(testTempBases()).toEqual([...new Set([shortTempBase(process.platform), os.tmpdir()].map((base) => fs.realpathSync(base)))]);
+    expect(testTempBases()).toEqual([...new Set([fs.realpathSync(shortTempBase(process.platform)), systemTempRoot()])]);
     expect(testkit).not.toHaveProperty('tempDirBase');
   });
 });

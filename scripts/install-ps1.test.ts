@@ -7,6 +7,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const SCRIPT = `${repoRoot}scripts/install.ps1`;
 
@@ -243,7 +244,7 @@ describe.runIf(pwshAvailable)('install.ps1 PATH behaviour under PowerShell', () 
     expect(text).toContain(READ_USER_PATH);
     expect(text).toContain(WRITE_USER_PATH);
     expect(text).toContain(CANDIDATE_CHECK);
-    const directory = fs.mkdtempSync(path.join(root, 'stubbed-'));
+    const directory = createTempDir({ parent: root });
     const script = path.join(directory, 'install.ps1');
     fs.writeFileSync(
       script,
@@ -274,7 +275,7 @@ describe.runIf(pwshAvailable)('install.ps1 PATH behaviour under PowerShell', () 
     });
 
   const setup = (initialUserPath: string): { prefix: string; userPathFile: string; script: string } => {
-    const prefix = fs.mkdtempSync(path.join(root, 'prefix-'));
+    const prefix = createTempDir({ parent: root });
     const userPathFile = path.join(root, `user-path-${path.basename(prefix)}`);
     fs.writeFileSync(userPathFile, initialUserPath);
     return { prefix, userPathFile, script: stubbedInstaller(userPathFile) };

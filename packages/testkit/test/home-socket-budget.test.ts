@@ -1,15 +1,15 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, generationLayout, isPipePath } from '@momonga/foundation';
 import { assertHomeSocketBudget, registerCleanup, withTempDir } from '@momonga/testkit';
+import { createTempDir, systemTempRoot } from '../src/test-support.ts';
 
 const LONG_TEMP_COMPONENT_BYTES = 150;
 const TEMP_ENV_NAMES = ['TMPDIR', 'TEMP', 'TMP'] as const;
 
 const pointTempAtLongDirectory = (context: Parameters<typeof withTempDir>[0]): string => {
-  const parent = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mmt-long-')));
+  const parent = createTempDir();
   const longDir = path.join(parent, 'l'.repeat(LONG_TEMP_COMPONENT_BYTES));
   fs.mkdirSync(longDir, { mode: 0o700 });
   const saved = TEMP_ENV_NAMES.map((name) => [name, process.env[name]] as const);
@@ -28,7 +28,7 @@ describe('withTempDir as a home does not depend on the length of the host tempor
   it('gives a home whose longest generation socket the host binds when TMPDIR is too long for one', async (context) => {
     const longDir = pointTempAtLongDirectory(context);
     if (process.platform !== 'win32') await expect(assertHomeSocketBudget(longDir)).rejects.toThrow(/leaves no socket-path budget/);
-    expect(os.tmpdir()).toBe(longDir);
+    expect(systemTempRoot()).toBe(fs.realpathSync(longDir));
 
     const home = withTempDir(context, { asHome: true });
 

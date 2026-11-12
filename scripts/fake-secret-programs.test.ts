@@ -1,10 +1,9 @@
 import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SECRET_STORE_SEARCHED_PROGRAMS, URL_OPENER_PROGRAMS } from '@momonga/foundation';
-import { TEST_SECRET_PROGRAMS_ENV } from '@momonga/testkit';
+import { createTempDir, TEST_SECRET_PROGRAMS_ENV } from '@momonga/testkit';
 import globalSetup from '../test/support/fake-secret-programs.ts';
 import { runFakeSecretPrograms } from './fake-secret-programs.ts';
 
@@ -44,7 +43,9 @@ describe('scripts/fake-secret-programs.ts', () => {
   });
 
   it('prints a PATH line that a POSIX shell evaluates correctly when the temp directory holds a space', () => {
-    const spaced = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'with space '));
+    const spacedParent = createTempDir();
+    const spaced = path.join(spacedParent, 'with space');
+    fs.mkdirSync(spaced);
     try {
       const env = { ...process.env, TMPDIR: spaced };
       const [directory, pathLine, token] = runScript(['install'], env).split('\n') as [string, string, string];
@@ -52,12 +53,12 @@ describe('scripts/fake-secret-programs.ts', () => {
       expect(resolvedThroughShell(pathLine, { PATH: '/usr/bin:/bin' })).toEqual(resolvedIn(directory));
       expect(runScript(['remove', directory, token], env)).toBe('');
     } finally {
-      fs.rmSync(spaced, { recursive: true, force: true });
+      fs.rmSync(spacedParent, { recursive: true, force: true });
     }
   });
 
   it('refuses to remove a directory it did not install', () => {
-    const other = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'not-fake-'));
+    const other = createTempDir();
     try {
       expect(refusalOf(['remove', other, 'f'.repeat(64)])).toMatch(/is not a fake programs directory this token created/);
       expect(fs.existsSync(other)).toBe(true);
@@ -67,7 +68,7 @@ describe('scripts/fake-secret-programs.ts', () => {
   });
 
   it('refuses a hand-made look-alike with a well-formed marker, whatever token is given, and leaves it intact', () => {
-    const lookAlike = fs.realpathSync(fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'momonga-secret-programs-')));
+    const lookAlike = createTempDir();
     const forged = 'a'.repeat(64);
     try {
       fs.mkdirSync(path.join(lookAlike, 'bin'));

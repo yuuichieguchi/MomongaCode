@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HOST_FLAVOUR, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSpec } from '@momonga/foundation';
-import { testPaths } from '@momonga/testkit';
+import { createTempDir, testPaths } from '@momonga/testkit';
 import { syncPaths } from '../src/index.ts';
 
 
@@ -16,7 +15,7 @@ afterEach(() => {
 });
 
 const fixture = async () => {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-warea-')));
+  const base = createTempDir();
   tempDirs.push(base);
   const root = path.join(base, 'root');
   const wide = path.join(base, 'wide');
@@ -68,7 +67,7 @@ describe('inWritableArea', () => {
   });
 
   it.each(['canonical', 'lexical'] as const)('in %s mode places an NFD spelling of a path under an NFC root or widening area inside the area', async (mode) => {
-    const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-warea-nfc-')));
+    const base = createTempDir();
     tempDirs.push(base);
     const root = path.join(base, 'caf\u00e9');
     const wide = path.join(base, 'wid\u00e9');
@@ -109,7 +108,7 @@ describe('lexical containment of a child whose first name starts with ..', () =>
 
 describe('writableCheckOf', () => {
   const area = () => {
-    const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-wcheck-')));
+    const base = createTempDir();
     tempDirs.push(base);
     const root = path.join(base, 'root');
     const outside = path.join(base, 'outside');

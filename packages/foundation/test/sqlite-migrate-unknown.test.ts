@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { highestAppliedMigration, migrate, openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { createTempDir } from '@momonga/testkit';
 
 const cleanups: Array<() => void> = [];
 
@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 const openFresh = (): DatabaseSync => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   const db = openDatabase(path.join(dir, 'x.db'), { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   cleanups.push(() => {

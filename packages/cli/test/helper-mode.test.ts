@@ -1,9 +1,8 @@
 import { spawn } from '@momonga/testkit/child-process';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EXIT_OK, EXIT_USAGE, HELPER_COMMAND, helperCommandLine } from '@momonga/foundation';
-import { createTempDir, removeTempDir } from '@momonga/testkit';
+import { createTempDir, removeTempDir, systemTempRoot } from '@momonga/testkit';
 
 const PRODUCT_ENTRY = path.resolve(import.meta.dirname, '..', 'src', 'main.ts');
 const ENTRY_WITH_TEST_HELPER = path.resolve(import.meta.dirname, 'helper-mode-entry.ts');
@@ -25,7 +24,7 @@ const started = (commandLine: readonly string[], input: string): Promise<Ended> 
   new Promise((resolve, reject) => {
     const [file, ...args] = commandLine;
     if (file === undefined) throw new Error('the command line is empty');
-    const child = spawn(file, args, { env: { PATH: process.env['PATH'] ?? '', HOME: home, TMPDIR: os.tmpdir(), HELPER_MODE_MARKER: 'from the caller' }, timeout: CHILD_TIMEOUT_MS });
+    const child = spawn(file, args, { env: { PATH: process.env['PATH'] ?? '', HOME: home, TMPDIR: systemTempRoot(), HELPER_MODE_MARKER: 'from the caller' }, timeout: CHILD_TIMEOUT_MS });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));

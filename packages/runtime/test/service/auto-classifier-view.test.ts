@@ -1,11 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { writeAutoFitRecord } from '@momonga/config';
 import { readAutoClassifierView } from '../../src/service/auto-classifier-view.ts';
 import { FIT_KEY, failingRecord, passingRecord } from '../auto-fit-fixtures.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 
 const directories: string[] = [];
 afterEach(() => {
@@ -13,7 +11,7 @@ afterEach(() => {
 });
 
 const recordDirectory = (): string => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-fit-'));
+  const directory = createTempDir();
   directories.push(directory);
   return directory;
 };

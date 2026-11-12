@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFsInstructionReader } from '@momonga/context';
+import { createTempDir } from '@momonga/testkit';
 
 const dirs: string[] = [];
 
@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 const fileIn = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-ctx-signal-')));
+  const dir = createTempDir();
   dirs.push(dir);
   const file = path.join(dir, 'AGENTS.md');
   fs.writeFileSync(file, 'rules');

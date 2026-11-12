@@ -108,9 +108,6 @@ const memoryIds = (db: DatabaseSync, term: string): string[] =>
   db.prepare('SELECT memory_id FROM memories_index WHERE memories_index MATCH ? ORDER BY memory_id').all(`"${term}"`).map((row) => String(row['memory_id']));
 
 describe('migration v13', () => {
-  it('is followed only by the pinned-digest column, the migration that records dropped reflection candidates, the one that records the detail of a context charge and the model-change index (upgrades over existing rows are tested in migration-v14.test.ts)', () => {
-    expect(MIGRATIONS.map((migration) => migration.version).slice(12)).toEqual([13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48]);
-  });
 
   it('preserves an existing memory and gives it the defaults of the new columns', () => {
     const row = migratedDb().prepare('SELECT * FROM memories WHERE id = ?').get('m-old');

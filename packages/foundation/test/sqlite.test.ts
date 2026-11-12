@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { immediateTx, migrate, openDatabase, readTx, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
-import { withTempDir } from '@momonga/testkit';
+import { createTempDir, withTempDir } from '@momonga/testkit';
 
 const cleanups: Array<() => void> = [];
 
@@ -14,7 +13,7 @@ afterEach(() => {
 });
 
 const makeDir = (mode = 0o700): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, mode);
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;

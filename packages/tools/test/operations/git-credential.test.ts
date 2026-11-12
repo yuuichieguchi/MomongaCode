@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { execFile } from '@momonga/testkit/child-process';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeGitHttp } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, startFakeGitHttp } from '@momonga/testkit';
 import type { FakeGitHttp } from '@momonga/testkit';
 import { HELPER_COMMAND, REDACTED_MARKER, nodeFileSystem, systemRandom } from '@momonga/foundation';
 import type { HelperSelf } from '@momonga/foundation';
@@ -198,7 +197,7 @@ const ask = (env: Readonly<Record<string, string>>, prompt: string): Promise<Ask
 const FORGE_CREDENTIAL: GitOriginCredential = { origin: 'https://forge.example', username: 'x-access-token', password: CREDENTIAL };
 
 const channelRoot = (): string => {
-  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cred-'));
+  const root = createTempDir();
   onCleanup(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
 };

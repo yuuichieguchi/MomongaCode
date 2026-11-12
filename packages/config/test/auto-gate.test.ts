@@ -1,12 +1,11 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import * as config from '@momonga/config';
 import * as autoFit from '../src/auto-fit.ts';
 import * as protocol from '@momonga/protocol';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 import type { KernelLockMechanism } from '@momonga/foundation';
 
 type AutoGateKey = { classifier: string; codeDigest: string; datasetDigest: string };
@@ -163,7 +162,7 @@ describe('the record file', () => {
   });
 
   const freshHome = (): string => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-fit-home-'));
+    const home = createTempDir();
     homes.push(home);
     return home;
   };

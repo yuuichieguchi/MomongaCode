@@ -1,14 +1,13 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, createExecWithStdin, givenCredentialSecretStore, secretStoreEnvFor } from '@momonga/foundation';
-import { assertFakeSecretStoreEnv, productTestEnv } from '@momonga/testkit';
+import { assertFakeSecretStoreEnv, productTestEnv, systemTempRoot } from '@momonga/testkit';
 import type { E2eHome } from '../e2e/support/home.ts';
 import { cliEnv } from '../e2e/support/cli.ts';
 import { supervisorEnv } from '../e2e/support/stack.ts';
 
-const TEST_TEMP_ROOT = fs.realpathSync(os.tmpdir());
+const TEST_TEMP_ROOT = systemTempRoot();
 
 const HOST = { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
 

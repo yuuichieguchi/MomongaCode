@@ -1,11 +1,11 @@
 import { execFileSync, spawn, spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, countFakeTokens, createFakeFm, fakeExec, killGroupsForCleanup, testHostPath, pollUntil } from '@momonga/testkit';
+import { createTempDir } from '../src/test-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ff-'));
+  const dir = createTempDir();
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 };

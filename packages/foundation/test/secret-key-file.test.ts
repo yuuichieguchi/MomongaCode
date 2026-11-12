@@ -1,11 +1,10 @@
 import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from '@momonga/testkit/child-process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { createSecretKeyFile, nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 
 const secretKeyFile = createSecretKeyFile(nodeFileSystemSync, systemRandom, testKernelLock());
@@ -21,7 +20,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-key-')));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   tempDirs.push(dir);
   return dir;

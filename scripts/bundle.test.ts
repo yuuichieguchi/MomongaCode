@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { bundle, defaultEntry } from './bundle.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
+import { createTempDir } from '@momonga/testkit';
 
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-bundle-'));
+const scratch = createTempDir();
 
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 

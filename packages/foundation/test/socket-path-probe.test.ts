@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, SocketPathUnmeasuredError, assertUnixSocketPathFits, createSocketPathProbe, generationLayout, momongaPaths, refuseUnfitGenerationSocketsBeforeCreation, setSocketBind } from '@momonga/foundation';
+import { createTempDir } from '@momonga/testkit';
 
 const UNIX_ENDPOINTS = { form: 'unix' } as const;
 
@@ -78,7 +78,7 @@ describe('socket path limit by measurement (B12)', () => {
 });
 
 describe('a socket path is used only when its bind measurement succeeded (20.19, 20.58)', () => {
-  const homeOf = (): string => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-socket-fit-')));
+  const homeOf = (): string => createTempDir();
 
   it('refuses a path the bind could not measure with the designed text, before any generation exists', async () => {
     const home = homeOf();

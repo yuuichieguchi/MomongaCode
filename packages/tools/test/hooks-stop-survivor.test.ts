@@ -1,7 +1,6 @@
-import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { createTempDir, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -26,7 +25,7 @@ const GROUP = 999_997;
 let dir = '';
 
 beforeEach(() => {
-  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-hook-survivor-')));
+  dir = createTempDir();
 });
 
 afterEach(() => {

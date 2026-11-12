@@ -6,6 +6,7 @@ import { SIGNATURE_REJECTED_EXIT_CODE } from '@momonga/foundation';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const STUB_SOURCES: Record<string, string> = {
   npm: `case " $* " in *" \${STUB_NPM_FAIL:-no-such-script} "*) exit 1 ;; esac
@@ -142,7 +143,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
   });
 
   beforeEach(() => {
-    const instance = fs.mkdtempSync(path.join(root, 'repo-'));
+    const instance = createTempDir({ parent: root });
     work = path.join(instance, 'work');
     origin = path.join(instance, 'origin.git');
     log = path.join(instance, 'stub.log');
@@ -422,7 +423,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
   });
 
   it('refuses to start when the release signing key is not at $HOME/.ssh/momonga-release', () => {
-    const emptyHome = fs.mkdtempSync(path.join(root, 'empty-home-'));
+    const emptyHome = createTempDir({ parent: root });
     const result = release({ HOME: emptyHome });
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain(`${emptyHome}/.ssh/momonga-release`);

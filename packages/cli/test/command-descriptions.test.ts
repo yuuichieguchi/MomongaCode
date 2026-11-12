@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -10,6 +9,7 @@ import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { NO_HELPER } from './no-helper.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const homes: string[] = [];
 
@@ -18,7 +18,7 @@ afterAll(() => {
 });
 
 const program = (): Command => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-descriptions-'));
+  const home = createTempDir();
   homes.push(home);
   const ports = { version: '9.9.9', home, platform: process.platform, interrupt: new AbortController().signal, cwd: '/c', terminal: undefined, env: {}, process: nodeProcess, stdout: { write: () => undefined }, stderr: { write: () => undefined } } as unknown as CliPorts;
   const entry = async (): Promise<number> => 0;

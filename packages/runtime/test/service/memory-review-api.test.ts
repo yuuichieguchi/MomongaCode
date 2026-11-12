@@ -7,7 +7,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { recalled } from '../../../store/test/helpers.ts';
 import { expectSchema, startService } from './helpers.ts';
 import type { ServiceEnv } from './helpers.ts';
-import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { createTempDir, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -167,7 +167,7 @@ describe('promoting to a skill', () => {
   it('refuses to write through a symbolic link the repository planted, and creates nothing', async () => {
     const env = await startService({ fakeTimers: true });
     const { accepted, session } = await seeded(env);
-    const elsewhere = fs.mkdtempSync(path.join(env.layout.root, 'elsewhere-'));
+    const elsewhere = createTempDir({ parent: env.layout.root });
     fs.symlinkSync(elsewhere, path.join(session.cwd, '.momonga'));
     expect((await promote(env, accepted('text').id, 'planted')).status).toBe(409);
     expect(fs.readdirSync(elsewhere)).toEqual([]);
