@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import type { UserSettingsCacheOptions } from '@momonga/config';
+import { createTempDir } from '@momonga/testkit';
 
 const NOT_ABORTED = new AbortController().signal;
 
@@ -21,7 +21,7 @@ const settingsWithModel = (model: string) => ({
 });
 
 const makeHome = () => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-applied-')));
+  const home = createTempDir();
   cleanups.push(() => fs.rmSync(home, { recursive: true, force: true }));
   const root = path.join(home, '.momonga');
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });

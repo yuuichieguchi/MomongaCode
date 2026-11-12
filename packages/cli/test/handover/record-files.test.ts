@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { handoverLeftovers, handoverRecordOwner, isProcessAlive, momongaPaths, nodeFileSystem, pidNamespaceOf, sweepLeftovers } from '@momonga/foundation';
@@ -11,7 +10,7 @@ import { replaceProcess } from '../../src/handover/replace-process.ts';
 import type { RelayChild } from '../../src/handover/replace-process.ts';
 import { HANDOVER_FORMAT, encodeRecord, parseRecord, recordFileOf } from '../../src/handover/record.ts';
 import type { StreamRecord } from '../../src/handover/record.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 
 const RECORD: StreamRecord = { format: HANDOVER_FORMAT, fromVersion: '1.2.3', toVersion: '1.2.4', session: 'session-1', lastSeq: { 'run-1': 4 }, kind: 'attach', runId: 'run-1', output: 'text', verbose: false };
 const PID_NO_PROCESS_HAS = 99_999_999;
@@ -21,7 +20,7 @@ const recordFiles = nodeRecordFiles(testKernelLock);
 const homes: string[] = [];
 
 const pathsOf = (): MomongaPaths => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-record-files-'));
+  const home = createTempDir();
   homes.push(home);
   return momongaPaths(home, process.platform, process.env);
 };

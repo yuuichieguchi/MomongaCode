@@ -1,9 +1,8 @@
 import http from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createFakeClock, createFakeTimers, hostTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir, hostTimers } from '@momonga/testkit';
 import { PROBE_REPLY_MAX_BYTES, ProbeReplyTooLargeError, ProbeTimeoutError, createProbeClient } from '../src/probe/client.ts';
 
 const closers: Array<() => Promise<void>> = [];
@@ -13,7 +12,7 @@ afterEach(async () => {
 });
 
 const serverAnswering = async (write: (response: http.ServerResponse) => void): Promise<string> => {
-  const directory = await mkdtemp(join(tmpdir(), 'probe-cap-'));
+  const directory = createTempDir();
   const socketPath = join(directory, 's.sock');
   const server = http.createServer((_request, response) => write(response));
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));

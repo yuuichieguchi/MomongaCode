@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { momongaLayout } from '@momonga/foundation';
-import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { createTempDir, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { canonOf, displayOf, parseCanon, resolveTypedModelRef, shortOf, typedModelText } from '../src/index.ts';
 import { seeded } from '../../context/test/helpers.ts';
 import { view } from './model-ref-fixtures.ts';
@@ -95,7 +94,7 @@ afterEach(() => {
 type LoadedModels = { models: ReadonlyMap<string, unknown>; chains: ReadonlyMap<string, readonly string[]> };
 
 const newHome = (): string => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-model-ref-')));
+  const home = createTempDir();
   homes.push(home);
   return home;
 };

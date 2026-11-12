@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import { compileFileRuleSet, EMPTY_PROTECTED_SET, groupAlive, HOST_FLAVOUR, nodeFileSystem, ruleEnforcementOf, syncPaths, systemRandom, momongaLayout } from '@momonga/foundation';
 
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 
@@ -17,7 +16,7 @@ import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/
 
 
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { TEST_TOOL_LIMITS, unconfiguredNetworkOf, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, pollUntil, testProcessInspector, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { TEST_TOOL_LIMITS, unconfiguredNetworkOf, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, pollUntil, testProcessInspector, TEST_STDIO_LAUNCH, createTempDir } from '@momonga/testkit';
 
 
 
@@ -51,7 +50,7 @@ export const pidAlive = (pid: number): boolean => {
 export const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 export const makeDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-src-')));
+  const dir = createTempDir();
   onCleanup(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 };
@@ -89,7 +88,7 @@ export const callRecords = (file: string, tool: string): ModernFixtureRecord[] =
 
 export const NEVER_ABORTED = new AbortController().signal;
 
-export const BASE_ENV: Record<string, string> = { PATH: '/usr/bin:/bin', HOME: os.tmpdir(), USER: 'fixture-user' };
+export const BASE_ENV: Record<string, string> = { PATH: '/usr/bin:/bin', HOME: '/home/fixture-user', USER: 'fixture-user' };
 
 export const modernConfig = (recordFile: string, env: Record<string, string> = {}): McpServerConfig => ({
   command: process.execPath,

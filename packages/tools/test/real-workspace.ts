@@ -1,13 +1,12 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, parseRule, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { Decision, GlobTable, PermissionRule, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
+import { createTempDir, isWritableFor, NEVER_CANCELLED, TEST_SEARCH_PATH, testProbes, testSecretLocations } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 
 export const REAL_BASH = '/bin/bash';
@@ -42,7 +41,7 @@ export type RealWorkspace = {
 };
 
 export const makeRealWorkspace = (): RealWorkspace => {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-real-')));
+  const base = createTempDir();
   cleanups.push(() => fs.rmSync(base, { recursive: true, force: true }));
   const project = path.join(base, 'project');
   const home = path.join(base, 'home');

@@ -1,10 +1,9 @@
 import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import { getEventListeners } from 'node:events';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, killGroupsForCleanup, killPidsForCleanup, pacedReapTiming, spawnTracked, waitFor, withTempDir, testProcessInspector, testLocks } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir, HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, killGroupsForCleanup, killPidsForCleanup, LSOF_PATH, pacedReapTiming, REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, testLocks, testProcessInspector, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeTimers, PacedReapTiming, TrackedChild } from '@momonga/testkit';
 import { KILL_CONFIRM_MS, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, sleep, POLL_INTERVAL_MS, systemWaitTiming, waitUntil as foundationWaitUntil } from '@momonga/foundation';
 import type { CommandRunner, ProcessInspector } from '@momonga/foundation';
@@ -54,7 +53,7 @@ const waitUntil = async (condition: () => boolean): Promise<boolean> =>
   (await foundationWaitUntil(systemWaitTiming, async () => (condition() ? true : undefined), { intervalMs: POLL_INTERVAL_MS, deadline: systemWaitTiming.monotonicMs() + CONDITION_BOUND_MS })).kind === 'found';
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-reap-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

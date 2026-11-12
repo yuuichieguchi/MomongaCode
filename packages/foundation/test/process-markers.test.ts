@@ -1,9 +1,8 @@
 import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, sleepDrivenTiming, testProcessInspector, afterMicrotasks } from '@momonga/testkit';
+import { afterMicrotasks, createTempDir, HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, killGroupsForCleanup, killPidsForCleanup, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, sleepDrivenTiming, testProcessInspector } from '@momonga/testkit';
 import { POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup, systemWaitTiming, waitUntil as foundationWaitUntil } from '@momonga/foundation';
 import type { ProbeResult, ProcessInspector, Timing } from '@momonga/foundation';
 
@@ -46,7 +45,7 @@ const waitUntil = async (condition: () => boolean, timeoutMs: number): Promise<b
   (await foundationWaitUntil(systemWaitTiming, async () => (condition() ? true : undefined), { intervalMs: POLL_INTERVAL_MS, deadline: systemWaitTiming.monotonicMs() + timeoutMs })).kind === 'found';
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-pgrp-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

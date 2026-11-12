@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserOpener, nodeFileSystem } from '@momonga/foundation';
 import type { LaunchProgram, ProgramEnd } from '@momonga/foundation';
-import { afterMicrotasks } from '@momonga/testkit';
+import { afterMicrotasks, createTempDir } from '@momonga/testkit';
 
 const URL_TO_OPEN = new URL('https://auth.example.com/authorize?client_id=a&state=b');
 
@@ -17,7 +16,7 @@ afterEach(() => {
 });
 
 const binDirWith = (...programs: string[]): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-open-url-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   for (const program of programs) fs.writeFileSync(path.join(dir, program), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   return dir;

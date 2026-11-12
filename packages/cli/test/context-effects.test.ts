@@ -1,10 +1,9 @@
 import { execFileSync } from '@momonga/testkit/child-process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock } from '@momonga/testkit';
 import { probeKeyOf } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
 import { nodeClock, nodeFiles, nodeProcess } from '../src/node-ports.ts';
@@ -21,7 +20,7 @@ const directories: string[] = [];
 const locked: string[] = [];
 
 const temporary = (): string => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-probe-test-'));
+  const directory = createTempDir();
   directories.push(directory);
   return directory;
 };

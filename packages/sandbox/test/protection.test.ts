@@ -1,9 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { canonicalHomeOf, launchGroupLeader, momongaLayout, protectedAreasOf } from '@momonga/foundation';
-import { testPaths } from '@momonga/testkit';
+import { createTempDir, testPaths } from '@momonga/testkit';
 import type { ChildProtection, LaunchProtection } from '@momonga/foundation';
 
 type GroupLaunchRequest = Parameters<typeof launchGroupLeader>[0];
@@ -100,7 +98,7 @@ describe('the spawn port', () => {
 
 describe('the canonical home', () => {
   it('is the real location of a home reached through a link, the one form the protection and the verdict key use', async () => {
-    const real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'home-')));
+    const real = createTempDir();
     const link = `${real}-link`;
     fs.symlinkSync(real, link);
     try {

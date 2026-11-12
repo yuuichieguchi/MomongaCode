@@ -2,7 +2,7 @@ import { testKernelLock } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
-import { FIRST_GENERATION, SocketPathUnsupportedError, generationLayout, momongaPaths, shortTempBase } from '@momonga/foundation';
+import { FIRST_GENERATION, SocketPathUnsupportedError, generationLayout, momongaPaths } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import { describeFailure } from '../src/failure.ts';
@@ -10,13 +10,13 @@ import { nodePorts } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
-import { firstRefusedSocketPathBytes, registerCleanup, testHostPath } from '@momonga/testkit';
+import { createTempDir, firstRefusedSocketPathBytes, registerCleanup, testHostPath } from '@momonga/testkit';
 import { NO_HELPER } from './no-helper.ts';
 
 const SUPERVISOR_SOCKET_SUFFIX = Buffer.byteLength(path.join('.momonga', 'run', `g${FIRST_GENERATION}`, 'supervisor.sock')) + 1;
 
 const homeWhoseFirstSupervisorSocketIsRefused = async (): Promise<string> => {
-  const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(shortTempBase(process.platform), 'mm-fit-')));
+  const parent = createTempDir({ asHome: true });
   const byteLength = await firstRefusedSocketPathBytes(parent);
   const home = path.join(parent, 'h'.repeat(byteLength - SUPERVISOR_SOCKET_SUFFIX - Buffer.byteLength(parent) - 1));
   fs.mkdirSync(home);

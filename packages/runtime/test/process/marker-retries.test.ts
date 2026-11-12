@@ -1,10 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ProcessInspector } from '@momonga/foundation';
 import { createMarkerOwners, unsettledKeys } from '@momonga/tools';
 import { reapToolMarkers } from '../../src/process/tool-markers.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', '..', '..');
 
@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 const markerDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-retries-')));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };

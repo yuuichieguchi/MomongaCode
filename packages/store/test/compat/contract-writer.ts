@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { ElicitationRequestView, PermissionOption, RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
 import type { Claim, Run, RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, createTempDir } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { UNASKED_COMMANDS } from '../support/unasked.ts';
 import { nodeFileSystem, resolveLayoutLocks, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
@@ -29,7 +28,7 @@ export const openContractStore = (dbPath: string, clock: FakeClock = createFakeC
 };
 
 export const copyTemplate = (template: string): { dbPath: string; remove(): void } => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-compat-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   const dbPath = path.join(dir, 'runtime.db');
   fs.copyFileSync(template, dbPath);

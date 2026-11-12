@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Readable } from 'node:stream';
 import { momongaPaths } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, startClaimHolder, testKernelLock, expectedKernelLockOn } from '@momonga/testkit';
+import { createTempDir, expectedKernelLockOn, REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, startClaimHolder, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import type { HeldKernelLock } from '@momonga/foundation';
 import { sweepSessionTmp, sweepSpawnTmp } from '../src/process/tmp-sweep.ts';
@@ -24,7 +23,7 @@ afterEach(() => {
 });
 
 const temporaryDirectory = (): string => {
-  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-runtime-leftover-')));
+  const directory = createTempDir();
   created.push(directory);
   return directory;
 };

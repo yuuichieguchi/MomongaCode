@@ -1,13 +1,12 @@
 import { execFile, spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import type { HelperSelf } from '@momonga/foundation';
 import { ToolExecutionError, createOperationTools, nodeShellHost, openGitCredentialChannel } from '@momonga/tools';
 import type { AnyTool, ArgvRunner, ForgeAccess, ForgeFetch, OperationSettings, ReconcileContext, ReconcileResult, ToolContext, ToolIdempotencyRecord, ToolResult } from '@momonga/tools';
-import { testPaths } from '@momonga/testkit';
+import { createTempDir, systemTempRoot, testPaths } from '@momonga/testkit';
 
 export const PRODUCT_ENTRY = path.resolve(import.meta.dirname, '..', '..', '..', 'cli', 'src', 'main.ts');
 
@@ -39,7 +38,7 @@ export type GitWorld = {
 const ZERO = '0'.repeat(40);
 
 export const makeGitWorld = (): GitWorld => {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-ops-')));
+  const base = createTempDir();
   onCleanup(() => fs.rmSync(base, { recursive: true, force: true }));
   const home = path.join(base, 'home');
   const work = path.join(base, 'work');
@@ -127,7 +126,7 @@ export const countingRunner = (): CountingRunner => {
       environments.push(options.env);
       return execArgv(argv, options.cwd, options.env, options.signal, options.stdin);
     }
-    const channel = await openGitCredentialChannel(credentials, { root: fs.realpathSync(os.tmpdir()), random: systemRandom, files: nodeFileSystem, helper: ENTRY_AS_SCRIPT });
+    const channel = await openGitCredentialChannel(credentials, { root: systemTempRoot(), random: systemRandom, files: nodeFileSystem, helper: ENTRY_AS_SCRIPT });
     try {
       const env = channel.environment(options.env);
       environments.push(env);

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { replaceProcess } from '../../src/handover/replace-process.ts';
 import type { RelayChild, ReplaceHost, ReplaceTarget } from '../../src/handover/replace-process.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const TARGET: ReplaceTarget = { file: '/opt/momonga', args: ['--resume', 'abc', '--handover', '/run/handover/s.json'], env: { PATH: '/usr/bin:/bin', MOMONGA_HANDOVER_TERMINAL: '{}' } };
 
@@ -139,7 +140,7 @@ afterEach(() => {
 });
 
 const realRelay = (code: number) => {
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-relay-'));
+  const folder = createTempDir();
   folders.push(folder);
   const released = path.join(folder, 'released');
   const exits: number[] = [];

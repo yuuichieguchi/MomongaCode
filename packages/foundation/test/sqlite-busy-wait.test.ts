@@ -1,10 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as sqlite from '../src/sqlite.ts';
 import { BUSY_WAIT_LIMIT_MS, busyTimeoutMs, openDatabase } from '../src/sqlite.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const HEARTBEATS_PER_LEASE = 3;
 const DEFAULT_LEASE_MS = 30_000;
@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 const databaseFile = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-busy-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   return path.join(dir, 'x.db');

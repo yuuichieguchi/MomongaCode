@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakePolicyFilesystem } from '@momonga/testkit';
+import { createTempDir } from '../src/test-support.ts';
 
 const dirs: string[] = [];
 
@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-fake-'));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };

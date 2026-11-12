@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DATASET_FORMAT, nodeWorkspaceFiles, runBenchmark, runDataset } from '@momonga/eval';
@@ -7,13 +6,14 @@ import type { BenchRunApi, EvalRunApi } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { benchmarkDir, nodeProbe, ADD_FIXED } from './bench-fixtures.ts';
 import { goldenCase } from './fixtures.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const scratches: string[] = [];
 afterEach(() => {
   for (const dir of scratches.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 const scratch = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-interrupt-'));
+  const dir = createTempDir();
   scratches.push(dir);
   return dir;
 };

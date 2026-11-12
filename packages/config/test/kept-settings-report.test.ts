@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, UnreadableKeptCopyError, createKeptSettings, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import { MAX_JSON_DEPTH, nodeFileSystem, sha256Hex, systemRandom } from '@momonga/foundation';
 import type { KeptRecords } from '@momonga/config';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 
 const NOT_ABORTED = new AbortController().signal;
 
@@ -40,7 +39,7 @@ describe('one report rule decides every kept-copy line, once per file and reason
 });
 
 const unusableLines = async (content: string): Promise<{ lines: string[]; record: string; first: unknown; second: unknown }> => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kept-unusable-'));
+  const home = createTempDir();
   const directory = keptSettingsDirectory(home);
   fs.mkdirSync(directory, { recursive: true });
   const record = path.join(directory, `${sha256Hex(FILE)}.json`);

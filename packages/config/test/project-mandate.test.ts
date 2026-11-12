@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ConfigError, PROJECT_MANDATE_FILE, approvalDigestOf, loadProjectMandate, parseProjectMandate } from '@momonga/config';
+import { createTempDir } from '@momonga/testkit';
 
 const roots: string[] = [];
 
@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 const projectWith = (content: unknown): string => {
-  const projectDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-project-mandate-')));
+  const projectDir = createTempDir();
   roots.push(projectDir);
   if (content !== undefined) {
     fs.mkdirSync(path.join(projectDir, '.momonga'));

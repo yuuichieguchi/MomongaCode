@@ -1,10 +1,9 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createGitWorkTreeObserver, observedToolFiles } from '@momonga/tools';
 import type { ObservedFile, WorkTreeObserver } from '@momonga/tools';
 
@@ -47,7 +46,7 @@ const observe = async (observer: WorkTreeObserver, act: () => void): Promise<Obs
 
 beforeEach(() => {
   if (!fs.existsSync(SYSTEM_GIT)) throw new Error(`system git required at ${SYSTEM_GIT}`);
-  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-observer-')));
+  root = createTempDir();
   const home = path.join(root, 'home');
   fs.mkdirSync(home);
   process.env['HOME'] = home;

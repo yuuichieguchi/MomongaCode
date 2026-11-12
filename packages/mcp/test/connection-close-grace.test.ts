@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import { KILL_CONFIRM_MS, isProcessAlive, nodeFileSystem } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killPidsForCleanup, waitFor, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers, createTempDir, killPidsForCleanup, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_STDIO_LAUNCH, waitFor } from '@momonga/testkit';
 
 const STUBBORN_SERVER = path.join(import.meta.dirname, 'fixtures', 'stubborn-stdio-server.ts');
 const poolCloseBoundMs = (graceMs: number): number => 6 * graceMs + 3 * 25 + 2 * KILL_CONFIRM_MS;
@@ -20,7 +19,7 @@ afterEach(() => {
 });
 
 const tempDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-conn-grace-')));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };

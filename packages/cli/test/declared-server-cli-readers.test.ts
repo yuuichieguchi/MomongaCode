@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { systemTiming, ensureMomongaDirs } from '@momonga/foundation';
@@ -10,6 +9,7 @@ import { copyProbeRecord } from '../src/eval/context-effects.ts';
 import { withOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const roots: string[] = [];
 
@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 const temporary = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cli-decl-')));
+  const dir = createTempDir();
   roots.push(dir);
   return dir;
 };

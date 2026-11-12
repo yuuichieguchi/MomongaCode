@@ -1,8 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as config from '@momonga/config';
 import { SETTINGS_SCHEMA } from '@momonga/config';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 type WriterRow = { path: string; operations: readonly string[]; inSession: readonly string[]; shell: readonly string[] };
 type Pending = { form: string; removedBy: 'N3a' | 'N3b' };

@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Command } from 'commander';
@@ -9,6 +8,7 @@ import { REPORT_PAGE_ROWS, REVIEW_SAMPLE_SIZE } from '@momonga/protocol';
 import type { RunCallView } from '@momonga/protocol';
 import { CONTROL_PLANE_LAUNCH, ensureMomongaDirs, hostProcessGroupPort, launchGroupLeader, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths, ProcessGroupPort } from '@momonga/foundation';
+import { createTempDir, systemTempRoot } from '@momonga/testkit';
 
 const passThroughSandbox: CommandSandbox = {
   start: async (command, cwd, env) => {
@@ -44,7 +44,7 @@ const load = async <T>(name: string): Promise<T> => (await import('../src/' + na
 
 const dirs: string[] = [];
 const layoutOfFreshHome = async (): Promise<MomongaPaths> => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cli-bench-home-')));
+  const home = createTempDir();
   benchHomes.push(home);
   const paths = momongaPaths(home, process.platform, {});
   await ensureMomongaDirs(paths);
@@ -61,7 +61,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 const tempDir = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cli-bench-'));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };
@@ -257,7 +257,7 @@ describe('momonga eval bench --validate', () => {
     const out: string[] = [];
     const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
     const probeOf = nodeWorkspaceProbeOf(passThroughSandbox, hostProcessGroupPort());
-    return { ports: { cwd, env, stdout: { write: (text: string) => out.push(text) }, probe: probeOf, files: nodeWorkspaceFiles, tmpdir: os.tmpdir() }, out, probe: probeOf(env) };
+    return { ports: { cwd, env, stdout: { write: (text: string) => out.push(text) }, probe: probeOf, files: nodeWorkspaceFiles, tmpdir: systemTempRoot() }, out, probe: probeOf(env) };
   };
 
   it('exits 0 and names every task as valid when each fails first and passes with its reference, without a model or a daemon', async () => {
