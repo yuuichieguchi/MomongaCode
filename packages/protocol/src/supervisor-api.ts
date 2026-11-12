@@ -57,6 +57,34 @@ export type SupervisorHealth = {
   steps?: number;
   jobs?: number;
   calls?: number;
+  interrupts?: InterruptedWorkItem[];
 };
 
 export type SupervisorShutdownResponse = { phase: 'draining' };
+
+export type InterruptedWorkItem = { kind: 'run'; id: string } | { kind: 'job'; id: string; command: string };
+
+export const INTERRUPTED_WORK_LISTED = 5;
+
+export const INTERRUPTED_COMMAND_SHOWN_CHARS = 40;
+
+export const interruptedWorkOf = (runs: readonly string[], jobs: readonly { id: string; command: string }[]): InterruptedWorkItem[] =>
+  [
+    ...runs.map((id): InterruptedWorkItem => ({ kind: 'run', id })),
+    ...jobs.map(({ id, command }): InterruptedWorkItem => ({ kind: 'job', id, command: command.slice(0, INTERRUPTED_COMMAND_SHOWN_CHARS) })),
+  ].slice(0, INTERRUPTED_WORK_LISTED);
+
+const interruptedItemOf = (value: unknown): InterruptedWorkItem | undefined => {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { kind, id, command } = value as Readonly<Record<string, unknown>>;
+  if (typeof id !== 'string') return undefined;
+  if (kind === 'run') return { kind, id };
+  if (kind === 'job' && typeof command === 'string') return { kind, id, command };
+  return undefined;
+};
+
+export const parseInterruptedWork = (value: unknown): InterruptedWorkItem[] | undefined => {
+  if (!Array.isArray(value) || value.length > INTERRUPTED_WORK_LISTED) return undefined;
+  const items = value.map(interruptedItemOf);
+  return items.every((item) => item !== undefined) ? items : undefined;
+};

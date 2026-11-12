@@ -90,6 +90,7 @@
     {"name":"DEFAULT_PROBE_STEP_SECONDS","file":"packages/protocol/src/probe.ts","kind":"P","owner":"gateway","row":"gateway-config.md"},
     {"name":"MAX_TOOL_NAME_CHARS","file":"packages/protocol/src/reference-kinds.ts","kind":"stated","owner":"protocol","row":"context.md"},
     {"name":"MIN_NON_ASCII_TERM_CHARS","file":"packages/protocol/src/search-terms.ts","kind":"stated","owner":"protocol","row":"context.md"},
+    {"name":"INTERRUPTED_COMMAND_SHOWN_CHARS","file":"packages/protocol/src/supervisor-api.ts","kind":"stated","owner":"protocol","row":"cli.md"},
     {"name":"FIDELITY_SCAN_PAGE_BYTES","file":"packages/runtime/src/memory/journal-thread-limits.ts","kind":"stated","owner":"runtime","row":"context.md"},
     {"name":"REFLECTION_POLL_MS","file":"packages/runtime/src/memory/reflection-bound.ts","kind":"C","owner":"runtime","row":"token.md"},
     {"name":"OMISSION_RESERVE_CHARS","file":"packages/runtime/src/memory/reflection-input.ts","kind":"stated","owner":"runtime","row":"context.md"},

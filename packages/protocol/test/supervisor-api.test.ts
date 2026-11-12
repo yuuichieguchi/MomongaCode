@@ -73,6 +73,7 @@ describe('supervisor control API wire types', () => {
       steps?: number;
       jobs?: number;
       calls?: number;
+      interrupts?: ({ kind: 'run'; id: string } | { kind: 'job'; id: string; command: string })[];
     }>();
     expectTypeOf<SupervisorHealth>().not.toHaveProperty('state');
   });

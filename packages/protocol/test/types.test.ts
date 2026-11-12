@@ -128,6 +128,7 @@ describe('run api types', () => {
       role: 'starting' | 'serving' | 'retiring';
       steps: number;
       jobs: number;
+      interrupts: ({ kind: 'run'; id: string } | { kind: 'job'; id: string; command: string })[];
       sandbox: 'seatbelt' | 'bubblewrap' | 'none';
     }>();
   });
