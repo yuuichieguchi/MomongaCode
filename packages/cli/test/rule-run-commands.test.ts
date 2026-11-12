@@ -4,7 +4,7 @@ import http from 'node:http';
 import { ensureMomongaDirs, momongaPaths, verdictKey } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { GoverningFactView, MemoryView, PolicyGovernanceResponse } from '@momonga/protocol';
-import { fakePolicyFilesystem, hostFilesystemOf, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
+import { fakePolicyFilesystem, hostFilesystemOf, registerCleanup, withTempDir, firstGeneration, testEndpointScope } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { memoryHistory } from '../src/commands/memory.ts';
@@ -88,6 +88,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     home,
     cwd: project,
     clock: virtualClock(),
+    endpointScope: testEndpointScope,
     self: { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' },
     spawnDetached: () => {
       throw new Error('the daemon is already running');
