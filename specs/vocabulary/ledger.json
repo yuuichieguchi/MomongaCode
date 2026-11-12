@@ -271,6 +271,9 @@
       "packages/eval/src/context-live.ts": {
         "cap": 1
       },
+      "packages/eval/src/figures.ts": {
+        "task": 3
+      },
       "packages/eval/src/guideline-prompts.ts": {
         "conversation": 2,
         "summaries": 1,
