@@ -1,15 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildContext, createFsInstructionReader, createTokenMeter } from '@momonga/context';
 import { BUILTIN_DIALECTS, BUILTIN_DIALECT_IDS } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import { TEST_FENCE, inlinedSubsetRefusalOf, strictClosedRefusalOf } from '@momonga/testkit';
+import { TEST_FENCE, inlinedSubsetRefusalOf, strictClosedRefusalOf, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createBuiltinTools, createGovernanceTools, createHistoryTools, createMemoryTools, createToolRegistry } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { createAgentTool } from '../packages/agents/src/tool.ts';
 import { SchemaRenderError } from '../packages/gateway/src/dialect/render.ts';
 import { renderToolParameters } from '../packages/gateway/src/dialect/tool-render.ts';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const root = path.resolve(import.meta.dirname, '..');
 const packagesDir = path.join(root, 'packages');

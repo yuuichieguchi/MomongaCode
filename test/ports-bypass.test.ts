@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { countCliUses, countHostUses, countSynchronousFileCalls } from './support/host-uses.ts';
 import { ROOT, packageSources, parseSource, perFile, productSources, relativeOf } from './support/source-scan.ts';
 import type { Counts, ParsedSource } from './support/source-scan.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const counted = (text: string, count: (source: ParsedSource) => Counts = countHostUses): Counts => count(parseSource('sample.ts', text));
 

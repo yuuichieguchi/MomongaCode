@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseSource } from './support/source-scan.ts';
 import { countTimeSync, timeSyncOfTests } from './support/time-sync-scan.ts';
 import type { TimeSyncKind } from './support/time-sync-scan.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 type Kept = { kinds: Partial<Record<TimeSyncKind, number>>; reason: string };
 

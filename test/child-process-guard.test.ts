@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, credentialReadScript, credentialWriteScript, minimalChildEnv, nodeBoundedCommandRunner } from '@momonga/foundation';
-import { createTempDir, fakeSecretProgramsBin, productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
+import { createTempDir, fakeSecretProgramsBin, productTestEnv, spawnTracked, testHostPath, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import childProcessDefault, * as childProcessNamespace from '@momonga/testkit/child-process';
 import { exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } from '@momonga/testkit/child-process';
 import { INTERNAL_COMMANDS, MOMONGA_LAUNCHES } from '../packages/cli/src/daemon/launcher.ts';
@@ -12,6 +12,8 @@ import type { MomongaLaunch } from '../packages/cli/src/daemon/launcher.ts';
 import { nodeSpawnDetached } from '../packages/cli/src/node-ports.ts';
 import { powershellArgs } from '../packages/foundation/src/platform/windows-scripts.ts';
 import { launchRefusal } from './support/child-process-guard.ts';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);

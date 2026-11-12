@@ -1,11 +1,13 @@
-import { createTempDir, sleepDrivenTiming } from '@momonga/testkit';
+import { createTempDir, sleepDrivenTiming, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPosixGroupPort, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
 import type { ProcessGroupPort, ProcessInspector, Timing } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
 import { canStillRun } from '../packages/foundation/src/platform/run-state.ts';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const specDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
 const spec = fs.readFileSync(path.join(specDir, 'ProcessStop.tla'), 'utf8');

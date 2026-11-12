@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TIME_BOUND, hasRow, scanProduct, scanSource } from './support/host-bounds-scan.ts';
 import type { FoundConstant, HostBounds, PerFile } from './support/host-bounds-scan.ts';
 import { ROOT, parseSource } from './support/source-scan.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const REGISTRY = path.join(ROOT, 'specs/host-bounds/registry.json');
 

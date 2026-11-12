@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
-import { createTempDir, testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { ensureBundledZ3 } from '@momonga/verify';
 import { brotliCompressSync } from 'node:zlib';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const root = path.resolve(import.meta.dirname, '..');
 

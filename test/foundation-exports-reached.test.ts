@@ -1,7 +1,10 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { exportedNames, namesTakenBy, productFilesOutside, testFiles } from './support/export-scan.ts';
 import { ROOT } from './support/source-scan.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const INDEX = path.join(ROOT, 'packages/foundation/src/index.ts');
 
