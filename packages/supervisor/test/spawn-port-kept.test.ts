@@ -6,7 +6,7 @@ import type { GroupLaunchRequest } from '@momonga/foundation';
 import { answeringMembers, fakeKeeperHost, settle } from '../../foundation/test/support/fake-keeper.ts';
 import type { FakeKeeper } from '../../foundation/test/support/fake-keeper.ts';
 import type { SpawnPortOptions } from '../src/child-manager.ts';
-import { createSpawnPort } from '../src/spawn-port.ts';
+import { spawnPortOverFakeHost } from './support/tracked-spawn-port.ts';
 
 const KEEPER_PID = 100;
 const COMMAND_PID = 200;
@@ -28,7 +28,7 @@ export const keptWorld = (script: (keeper: FakeKeeper) => void = (keeper) => kee
     lifelines.push(lifeline);
     return Object.assign(new EventEmitter(), { pid: KEEPER_PID, stdin: null, stdout: new PassThrough(), stderr: new PassThrough(), stdio: [null, null, null, withLifeline ? lifeline : null], kill: () => true });
   }) as unknown as SpawnProcess;
-  return { fake, port, lifelines, spawn: createSpawnPort({ port, spawnProcess }) };
+  return { fake, port, lifelines, spawn: spawnPortOverFakeHost({ port, spawnProcess }) };
 };
 
 describe('the spawn port through the keeper', () => {
