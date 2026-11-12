@@ -2,7 +2,7 @@ import { colourOffWhenAsked } from './tui/screen/theme.ts';
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
 import type { EntryIo, SandboxNetworkSetting } from '@momonga/foundation';
-import { DEFAULT_PROBE_STEP_SECONDS, PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION, issueRunInput, messageOf, probeStepBoundMs } from '@momonga/protocol';
+import { DEFAULT_PROBE_STEP_SECONDS, PERMISSION_MODES, PROMPT_TEXT_MAX_CHARS, TRACE_CONTENT_PAGE_OPTION, issueRunInput, messageOf, probeStepBoundMs } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
 import { serveAcp } from './acp/serve.ts';
 import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.ts';
@@ -25,15 +25,42 @@ import { UsageError } from './usage-error.ts';
 import type { ProgramDeps } from './program-deps.ts';
 import type { HeadlessReopen, Reopen } from './run/resolve-session.ts';
 import type { ShellPort } from './tui/slash.ts';
+import type { StandardInput } from './ports.ts';
 import { OUTPUT_FORMATS, runHeadless } from './run/headless.ts';
 import type { OutputFormat } from './run/headless.ts';
+
+const LONGEST_PROMPT = `the longest prompt is ${PROMPT_TEXT_MAX_CHARS.toLocaleString('en-US')} characters`;
+
+const pipedText = async (stdin: StandardInput, signal: AbortSignal): Promise<string> => {
+  if (stdin.isTerminal) return '';
+  const decoder = new TextDecoder();
+  let text = '';
+  for await (const chunk of stdin.bytes()) {
+    signal.throwIfAborted();
+    text += decoder.decode(chunk, { stream: true });
+    if (text.length > PROMPT_TEXT_MAX_CHARS) throw new UsageError(`the standard input piped to -p is longer than a prompt may be: ${LONGEST_PROMPT}`);
+  }
+  return text + decoder.decode();
+};
+
+const printedPrompt = async (given: string | true, stdin: StandardInput, signal: AbortSignal): Promise<string> => {
+  const piped = await pipedText(stdin, signal);
+  if (given === true) {
+    if (piped === '') throw new UsageError('-p needs a prompt: give it after -p, or pipe it on standard input');
+    return piped;
+  }
+  if (piped === '') return given;
+  const prompt = `${given}\n\n${piped}`;
+  if (prompt.length > PROMPT_TEXT_MAX_CHARS) throw new UsageError(`the prompt with the standard input piped to it is ${prompt.length.toLocaleString('en-US')} characters: ${LONGEST_PROMPT}`);
+  return prompt;
+};
 
 const startsInteractiveSession = (program: Command, action: Command): boolean => action === program && action.opts<RootOptions>().print === undefined;
 
 const isBackgroundCheckExempt = (commandName: string): boolean => commandName.startsWith('__') || commandName === 'update';
 
 type RootOptions = {
-  print?: string;
+  print?: string | true;
   outputFormat: OutputFormat;
   permissionMode?: PermissionMode;
   model?: string;
@@ -162,7 +189,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
 
   program
     .argument('[prompt]', 'initial prompt of the interactive session')
-    .option('-p, --print <prompt>', 'run the prompt without a terminal UI and print the result')
+    .option('-p, --print [prompt]', 'run the prompt without a terminal UI and print the result; text piped on standard input is given to the run after the prompt, and is the prompt when -p has none')
     .addOption(outputFormatOption())
     .addOption(new Option('--permission-mode <mode>', 'permission mode of the session').choices(PERMISSION_MODES))
     .option('--model <model>', 'the model of the session, for example devstral-small-2 (momonga models lists them; /model switches it in an interactive session)')
@@ -198,9 +225,10 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       };
       const bounds = { ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }) };
-      const headlessPrompt = options.issue === undefined ? options.print : issueRunInput(options.issue);
-      if (headlessPrompt !== undefined) {
+      const headlessInput = options.issue !== undefined ? { issue: options.issue } : options.print === undefined ? undefined : { print: options.print };
+      if (headlessInput !== undefined) {
         const resumed = headlessReopenOf(reopen);
+        const headlessPrompt = 'issue' in headlessInput ? issueRunInput(headlessInput.issue) : await printedPrompt(headlessInput.print, ports.stdin, deps.interrupt);
         const paths = await pathsOf(ports);
         const asked = async <T>(ask: (gateway: GatewayClient) => Promise<T>): Promise<T> => {
           const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(ports, paths, 'gateway') });

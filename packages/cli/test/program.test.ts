@@ -19,7 +19,7 @@ const harness = () => {
     return 7;
   };
   const entries: DaemonEntries = { supervise: entryFor('supervise'), gateway: entryFor('gateway'), runtime: entryFor('runtime') };
-  const ports = { version: '9.9.9', interrupt: new AbortController().signal, home: freshHome(), cwd: '/c', env: {}, platform: process.platform, terminal: undefined } as unknown as CliPorts;
+  const ports = { version: '9.9.9', interrupt: new AbortController().signal, home: freshHome(), cwd: '/c', env: {}, platform: process.platform, terminal: undefined, stdin: { isTerminal: true, bytes: async function* () {} } } as unknown as CliPorts;
   const program = buildProgram({
     ports,
     entries,

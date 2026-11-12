@@ -35,7 +35,7 @@ const ran = async (...args: string[]): Promise<{ code: number | undefined; writt
   const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
   const sink = { write: (text: string) => (written.push(text), true) };
   const interrupt = new AbortController().signal;
-  const ports = { version: '9.9.9', interrupt, home: freshHome(), cwd: '/c', env: {}, platform: process.platform, terminal: {}, stdout: sink, stderr: sink } as unknown as CliPorts;
+  const ports = { version: '9.9.9', interrupt, home: freshHome(), cwd: '/c', env: {}, platform: process.platform, terminal: {}, stdout: sink, stderr: sink, stdin: { isTerminal: true, bytes: async function* () {} } } as unknown as CliPorts;
   const program = buildProgram(
     {
       ports,
