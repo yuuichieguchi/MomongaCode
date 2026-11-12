@@ -761,7 +761,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing } from './gateway-api.ts';
+export { MODEL_ENTRY_STATES, MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,
@@ -771,6 +771,7 @@ export type {
   ModelList,
   ModelListEntry,
   ChainMemberEntry,
+  ModelEntryState,
   MomongaModelEntry,
   MomongaModelList,
   MomongaModelRoles,

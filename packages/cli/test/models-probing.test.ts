@@ -13,6 +13,7 @@ describe('the model list of a model the gateway is measuring', () => {
       ownName: 'system',
       billing: 'local',
       capabilities: measuring,
+      state: 'available',
       chain: [{ model: 'apple/system', counter: '1'.repeat(64), billing: 'local', adapter: 'managed', answers: 'model', upstream: 'system', capabilities: measuring }],
     };
     const listing: MomongaModelList = { object: 'list', data: [entry], start: 'apple/system', roles: {} };
