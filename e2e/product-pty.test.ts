@@ -67,16 +67,21 @@ describe('momonga secret set through a pty', () => {
 });
 
 describe('the startup screen through a pty', () => {
-  it('shows the squirrel, the version, the model with its target and the mode above the first prompt', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it('shows the squirrel, the version and the model by its own name on the start screen, and the mode only in the footer (design-screens 6.4)', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home } = await prepareProduct();
     const pty = await spawnWithFakes(home);
     await answerTrust(pty, 'trust');
-    await pty.waitFor('model: default → primary');
-    const screen = pty.screen();
-    console.log(screen.slice(screen.indexOf('╭')));
-    expect(screen).toContain('MomongaCode v0.0.0');
-    expect(screen).toContain('(•ᴥ•)');
-    expect(screen).toContain('mode: manual');
+    await pty.waitFor('mode: manual (shift+tab)');
+    const shown = pty.visible();
+    const banner = shown.filter((line) => line.startsWith('│'));
+    const screen = shown.join('\n');
+    expect(banner.some((line) => line.includes('(•ᴥ•)')), screen).toBe(true);
+    expect(banner.some((line) => line.includes('MomongaCode v0.0.0')), screen).toBe(true);
+    const modelLines = banner.filter((line) => /model: \S/.test(line));
+    expect(modelLines, screen).toHaveLength(1);
+    expect(modelLines[0], screen).not.toMatch(/model: default|→/);
+    expect(banner.some((line) => line.includes('mode:')), screen).toBe(false);
+    expect(shown.filter((line) => line.startsWith('mode: manual (shift+tab)')), screen).toHaveLength(1);
     await leave(pty);
   });
 });
