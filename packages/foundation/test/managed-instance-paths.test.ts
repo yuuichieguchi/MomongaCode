@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { managedInstancePaths, momongaPaths } from '@momonga/foundation';
+import { managedInstanceIn, managedInstancePaths, momongaPaths, pipePathFor } from '@momonga/foundation';
 
 const HOME = '/Users/someone';
 const paths = momongaPaths(HOME, 'darwin', {});
@@ -57,5 +57,23 @@ describe.skipIf(process.platform === 'win32')('the one rule for the place of an 
   it('recurs across starts: the same instance always gets the same place, so its start-time reap finds its orphans', () => {
     expect(gateway(4, 'probe', 'apple')).toEqual(gateway(4, 'probe', 'apple'));
     expect(cli('probe', 'apple')).toEqual(cli('probe', 'apple'));
+  });
+});
+
+describe('C23: an instance served in the pipe form is named by the one pipe rule, for every owner', () => {
+  const PIPES = { form: 'pipe', token: '0123456789abcdef0123456789abcdef' } as const;
+  const winPaths = momongaPaths('C:\\Users\\Alice', 'win32', {});
+
+  it('gives the command line probe instance a scoped pipe, and the gateway instances theirs', () => {
+    expect(managedInstanceIn(winPaths, { owner: 'cli', purpose: 'probe', provider: 'loom' }, { form: 'pipe', scope: PIPES }).socketPath).toBe(pipePathFor(PIPES, 'managed-_cli-probe-loom'));
+    expect(managedInstanceIn(winPaths, { owner: 'gateway', generation: 2, purpose: 'serve', provider: 'apple', incarnation: 1 }, { form: 'pipe', scope: PIPES }).socketPath).toBe(
+      pipePathFor(PIPES, 'g2-managed-apple-1'),
+    );
+  });
+
+  it('keeps the socket file of the unix form and refuses a pipe without the random part', () => {
+    const instance = { owner: 'cli', purpose: 'probe', provider: 'apple' } as const;
+    expect(managedInstanceIn(paths, instance, { form: 'unix', scope: { form: 'unix' } })).toEqual(managedInstancePaths(paths, instance));
+    expect(() => managedInstanceIn(winPaths, instance, { form: 'pipe', scope: { form: 'unix' } })).toThrow(/random part/);
   });
 });

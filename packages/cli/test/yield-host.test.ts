@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import { describe, expect, it, vi } from 'vitest';
 import type { UserModels } from '@momonga/config';
 import { YIELD_ACCEPTANCE, YIELD_DATASET_FORMAT, YIELD_REPORT_KIND, buildYieldReport, formatYieldReport, judgeYield, parseYieldDataset } from '@momonga/eval';
@@ -273,7 +274,7 @@ const program = () => {
   } as unknown as CliPorts;
   const built = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/w/cache/executables' }),
+    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/w/cache/executables' }, testKernelLock()),
     entries: {} as DaemonEntries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

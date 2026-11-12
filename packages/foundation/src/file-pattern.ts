@@ -42,7 +42,11 @@ export type FilePattern = {
   root: string | null;
 };
 
-export type Expression = { kind: 'subpath'; path: string } | { kind: 'regex'; source: string } | { kind: 'none' };
+export type RuleTail = 'own' | 'below' | 'closure';
+
+export type GlobRule = { directory: string; segments: readonly GlobSegment[]; form: MatcherForm; tail: RuleTail };
+
+export type Expression = { kind: 'subpath'; path: string } | { kind: 'regex'; source: string; rule: GlobRule } | { kind: 'none' };
 
 export type FileMatcher = { own: Expression; below: Expression; closure: Expression };
 
@@ -423,25 +427,194 @@ export const fileMatcherOf = (pattern: FilePattern, canonicalDirectory: string, 
   const body = bodySource(core, form);
   if (body === undefined) return { own: NONE, below: NONE, closure: NONE };
   const directory = canonicalDirectory === '/' ? '' : escapeLiteral(canonicalDirectory);
-  const closure: Expression = { kind: 'regex', source: `^${directory}/${body}(/.*)?$` };
+  const ruleOf = (tail: RuleTail): GlobRule => ({ directory: canonicalDirectory, segments: core, form, tail });
+  const closure: Expression = { kind: 'regex', source: `^${directory}/${body}(/.*)?$`, rule: ruleOf('closure') };
   return {
-    own: trailingGlobstar ? closure : { kind: 'regex', source: `^${directory}/${body}$` },
-    below: { kind: 'regex', source: `^${directory}/${body}/.+$` },
+    own: trailingGlobstar ? closure : { kind: 'regex', source: `^${directory}/${body}$`, rule: ruleOf('own') },
+    below: { kind: 'regex', source: `^${directory}/${body}/.+$`, rule: ruleOf('below') },
     closure,
   };
 };
 
-const regexCache = new Map<string, RegExp>();
+type Predicate = (code: number) => boolean;
 
-const regexFor = (source: string, ignoreCase: boolean): RegExp => {
-  const flags = ignoreCase ? 'isu' : 'su';
-  const key = `${flags}/${source}`;
-  let compiled = regexCache.get(key);
-  if (compiled === undefined) {
-    compiled = new RegExp(source, flags);
-    regexCache.set(key, compiled);
+type Token = { first: Predicate; negated: boolean; tail: 'none' | 'non-ascii-star' | 'non-ascii-plus' };
+
+type ElementMatch = { kind: 'star'; asciiFirst: boolean } | { kind: 'tokens'; tokens: readonly Token[] };
+
+const isAscii: Predicate = (code) => code >= ASCII_FIRST && code <= ASCII_LAST;
+const anyCode: Predicate = () => true;
+const isAsciiExceptSlash: Predicate = (code) => code >= ASCII_FIRST && code <= ASCII_LAST && code !== SLASH;
+const inRanges = (ranges: readonly CodePointRange[], code: number): boolean => ranges.some(([first, last]) => first <= code && code <= last);
+const inAsciiSet = (set: AsciiSet): Predicate => (code) => code <= ASCII_LAST && set[code] === true;
+const hasAny = (set: AsciiSet): boolean => set.some((member) => member);
+const nonAsciiSingleOf = (ranges: readonly CodePointRange[]): Predicate => (code) => code > ASCII_LAST && ranges.some(([first, last]) => first === last && first === code);
+
+const kernelClassTokens = (element: Extract<SegmentElement, { kind: 'class' }>, form: 'deny' | 'subset'): Token[] => {
+  const members = asciiMembersOf(element.ranges);
+  if (!element.negated) {
+    const tokens: Token[] = [];
+    if (hasAny(members)) tokens.push({ first: inAsciiSet(members), negated: false, tail: 'none' });
+    tokens.push({ first: nonAsciiSingleOf(element.ranges), negated: false, tail: 'none' });
+    if (form === 'deny' && classHasNonAsciiRange(element.ranges)) tokens.push({ first: anyCode, negated: false, tail: 'non-ascii-plus' });
+    return tokens;
   }
-  return compiled;
+  const allowed = complementOf(members);
+  if (form === 'subset') return [{ first: inAsciiSet(allowed), negated: false, tail: 'none' }];
+  const member = inAsciiSet(members);
+  if (!hasSpecialMember(members)) {
+    if (!hasAny(members)) return [{ first: anyCode, negated: false, tail: 'non-ascii-star' }];
+    return [
+      { first: member, negated: true, tail: 'non-ascii-star' },
+      { first: member, negated: false, tail: 'non-ascii-plus' },
+    ];
+  }
+  return [
+    { first: inAsciiSet(allowed), negated: false, tail: 'non-ascii-star' },
+    { first: isAscii, negated: true, tail: 'non-ascii-star' },
+    { first: member, negated: false, tail: 'non-ascii-plus' },
+  ];
+};
+
+const elementMatch = (element: SegmentElement, position: number, form: MatcherForm): ElementMatch => {
+  switch (element.kind) {
+    case 'literal': {
+      const code = element.character.codePointAt(0) as number;
+      return { kind: 'tokens', tokens: [{ first: (candidate) => candidate === code, negated: false, tail: 'none' }] };
+    }
+    case 'star':
+      return { kind: 'star', asciiFirst: form === 'subset' && position > 0 };
+    case 'any':
+      if (form === 'exact') return { kind: 'tokens', tokens: [{ first: anyCode, negated: false, tail: 'none' }] };
+      if (form === 'deny') return { kind: 'tokens', tokens: [{ first: anyCode, negated: false, tail: 'non-ascii-star' }] };
+      return { kind: 'tokens', tokens: [{ first: isAsciiExceptSlash, negated: false, tail: 'none' }] };
+    case 'class':
+      if (form === 'exact') {
+        const { negated, ranges } = element;
+        return { kind: 'tokens', tokens: [{ first: (code) => inRanges(ranges, code), negated, tail: 'none' }] };
+      }
+      return { kind: 'tokens', tokens: kernelClassTokens(element, form) };
+  }
+};
+
+const singleCodeOf = (text: string): number | undefined => {
+  const points = [...text];
+  return points.length === 1 ? (points[0] as string).codePointAt(0) : undefined;
+};
+
+const foldedCodesOf = (code: number): number[] => {
+  const character = String.fromCodePoint(code);
+  const codes = [code, singleCodeOf(character.toLowerCase()), singleCodeOf(character.toUpperCase())];
+  return [...new Set(codes.filter((value): value is number => value !== undefined))];
+};
+
+const inSet = (predicate: Predicate, code: number, ignoreCase: boolean): boolean => (ignoreCase ? foldedCodesOf(code).some((folded) => predicate(folded)) : predicate(code));
+
+const accepts = (token: Token, code: number, ignoreCase: boolean): boolean => inSet(token.first, code, ignoreCase) !== token.negated;
+
+const nonAsciiRunEnds = (codes: readonly number[], ignoreCase: boolean): number[] => {
+  const ends = new Array<number>(codes.length + 1).fill(codes.length);
+  for (let index = codes.length - 1; index >= 0; index -= 1) ends[index] = inSet(isAscii, codes[index] as number, ignoreCase) ? index : (ends[index + 1] as number);
+  return ends;
+};
+
+const markRange = (marks: Int32Array, from: number, to: number): void => {
+  if (from > to) return;
+  marks[from] = (marks[from] as number) + 1;
+  marks[to + 1] = (marks[to + 1] as number) - 1;
+};
+
+const stepElement = (match: ElementMatch, codes: readonly number[], runEnds: readonly number[], reach: Uint8Array, ignoreCase: boolean): Uint8Array => {
+  const length = codes.length;
+  const next = new Uint8Array(length + 1);
+  if (match.kind === 'star') {
+    const first = reach.indexOf(1);
+    if (first === -1) return next;
+    if (!match.asciiFirst) {
+      next.fill(1, first);
+      return next;
+    }
+    for (let index = 0; index <= length; index += 1) if (reach[index] === 1) next[index] = 1;
+    for (let index = 0; index < length; index += 1) {
+      if (reach[index] === 1 && inSet(isAsciiExceptSlash, codes[index] as number, ignoreCase)) {
+        next.fill(1, index + 1);
+        break;
+      }
+    }
+    return next;
+  }
+  const marks = new Int32Array(length + 2);
+  for (let index = 0; index < length; index += 1) {
+    if (reach[index] !== 1) continue;
+    const code = codes[index] as number;
+    for (const token of match.tokens) {
+      if (!accepts(token, code, ignoreCase)) continue;
+      if (token.tail === 'none') markRange(marks, index + 1, index + 1);
+      else if (token.tail === 'non-ascii-star') markRange(marks, index + 1, runEnds[index + 1] as number);
+      else markRange(marks, index + 2, runEnds[index + 1] as number);
+    }
+  }
+  let running = 0;
+  for (let index = 0; index <= length; index += 1) {
+    running += marks[index] as number;
+    if (running > 0) next[index] = 1;
+  }
+  return next;
+};
+
+const segmentMatches = (matches: readonly ElementMatch[], part: string, ignoreCase: boolean): boolean => {
+  const codes = [...part].map((character) => character.codePointAt(0) as number);
+  const runEnds = nonAsciiRunEnds(codes, ignoreCase);
+  let reach: Uint8Array = new Uint8Array(codes.length + 1);
+  reach[0] = 1;
+  for (const match of matches) {
+    reach = stepElement(match, codes, runEnds, reach, ignoreCase);
+    if (reach.indexOf(1) === -1) return false;
+  }
+  return reach[codes.length] === 1;
+};
+
+const sameCode = (left: number, right: number, ignoreCase: boolean): boolean => left === right || (ignoreCase && foldedCodesOf(left).some((code) => foldedCodesOf(right).includes(code)));
+
+const restAfterDirectory = (directory: string, candidate: string, ignoreCase: boolean): string | undefined => {
+  const prefix = [...(directory === '/' ? '/' : `${directory}/`)];
+  const points = [...candidate];
+  if (points.length < prefix.length) return undefined;
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (!sameCode((prefix[index] as string).codePointAt(0) as number, (points[index] as string).codePointAt(0) as number, ignoreCase)) return undefined;
+  }
+  return points.slice(prefix.length).join('');
+};
+
+const testRule = (rule: GlobRule, candidate: string, ignoreCase: boolean): boolean => {
+  const rest = restAfterDirectory(rule.directory, candidate, ignoreCase);
+  if (rest === undefined) return false;
+  const parts = rest.split('/');
+  let reach: Uint8Array = new Uint8Array(parts.length + 1);
+  reach[0] = 1;
+  for (const segment of rule.segments) {
+    const next = new Uint8Array(parts.length + 1);
+    if (segment.kind === 'globstar') {
+      const first = reach.indexOf(1);
+      if (first !== -1) next.fill(1, first);
+    } else {
+      const matches = segment.elements.map((element, position) => elementMatch(element, position, rule.form));
+      for (let index = 0; index < parts.length; index += 1) {
+        if (reach[index] === 1 && segmentMatches(matches, parts[index] as string, ignoreCase)) next[index + 1] = 1;
+      }
+    }
+    reach = next;
+  }
+  const last = parts.length;
+  switch (rule.tail) {
+    case 'own':
+      return reach[last] === 1;
+    case 'closure':
+      return reach.indexOf(1) !== -1;
+    case 'below':
+      for (let index = 0; index < last; index += 1) if (reach[index] === 1 && (index < last - 1 || parts[last - 1] !== '')) return true;
+      return false;
+  }
 };
 
 const withinSubpath = (directory: string, candidate: string, ignoreCase: boolean): boolean => {
@@ -458,7 +631,7 @@ export const testExpression = (expression: Expression, candidate: string, ignore
     case 'subpath':
       return withinSubpath(expression.path, candidate, ignoreCase);
     case 'regex':
-      return regexFor(expression.source, ignoreCase).test(candidate);
+      return testRule(expression.rule, candidate, ignoreCase);
   }
 };
 

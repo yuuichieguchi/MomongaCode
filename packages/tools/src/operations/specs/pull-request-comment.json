@@ -16,7 +16,6 @@
     "required": ["number", "body"],
     "additionalProperties": false
   },
-  "timeoutMs": 60000,
   "observe": [
     {
       "id": "markerCount",

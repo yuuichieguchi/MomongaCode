@@ -20,7 +20,7 @@ const { parentPort, workerData } = require('node:worker_threads');
 parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] }, report: 'policy verification of ' + workerData.input.rules.length + ' rule(s)' });
 `;
 
-export const provedRuleSolver: RuleSolverSource = () => ({
+export const provedRuleSolver = (): ReturnType<RuleSolverSource> => ({
   solverVersion: async () => FAKE_SOLVER_VERSION,
   loadVerifier: async () => provedVerifier,
   recipe: async () => ({ kind: 'installed', entry: '/nowhere/z3.js' }),

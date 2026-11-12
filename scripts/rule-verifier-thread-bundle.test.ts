@@ -3,9 +3,9 @@ import path from 'node:path';
 import type { BuildOptions, Metafile } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseRule } from '@momonga/config';
-import { momongaLayout, systemClock } from '@momonga/foundation';
+import { momongaLayout, nodeFileSystem, systemClock } from '@momonga/foundation';
 import { createPolicyFilesystem } from '@momonga/tools';
-import { NEVER_CANCELLED } from '@momonga/testkit';
+import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { Z3_MANIFEST_ASSET, parseZ3Manifest } from '@momonga/verify';
 import { createRuleVerifier } from '../packages/runtime/src/process/rule-verifier.ts';
 import type { RuleSolverHost } from '../packages/runtime/src/process/rule-verifier.ts';
@@ -72,14 +72,17 @@ describe('the bundle of the verification thread', () => {
       const host: RuleSolverHost = {
         loadVerifier: () => import('@momonga/verify'),
         solverVersion: async () => `z3 ${manifest.contentHash}`,
-        recipe: async () => ({ kind: 'bundled', executablesRoot: executables, assets }),
+        recipe: async (verifier) => {
+          const bundled = await verifier.ensureBundledZ3({ asset: (name) => assets[name] as Uint8Array, executablesRoot: executables, random: () => 0.5, lock: testKernelLock(), files: nodeFileSystem });
+          return { kind: 'bundled', entry: bundled.entry, wasmBinary: bundled.wasmBinary };
+        },
         threadCode: code,
       };
       const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths: momongaLayout(home, process.platform, {}), timers: systemTimers, bashPath: () => '/bin/bash', clock: systemClock });
       const rule = (text: string, effect: 'allow' | 'deny') => parseRule(text, { effect, origin: 'user', source: path.join(home, '.momonga', 'settings.json'), settingsRoot: home, home, cwd: work });
 
       const input = await verifier.inputOf(
-        { rules: [rule('Bash', 'allow'), rule('Bash(git push:*)', 'deny')], roots: [work], mode: 'manual', home, cwd: work, exemptDirectory: path.join(home, '.momonga', 'tmp', 'sessions', 's1'), enforcement: 'exact-paths' },
+        { unixSockets: { kind: 'limited', allowed: [] }, rules: [rule('Bash', 'allow'), rule('Bash(git push:*)', 'deny')], roots: [work], mode: 'manual', home, cwd: work, exemptDirectory: path.join(home, '.momonga', 'tmp', 'sessions', 's1'), enforcement: 'exact-paths' },
         NEVER_CANCELLED,
       );
       const verification = await verifier.report(input, new AbortController().signal);

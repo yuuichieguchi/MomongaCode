@@ -9,7 +9,7 @@ import { MCP_EXPANSION_PATTERN, mcpServerNameProblem, mcpServerUrlProblem } from
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { connectionAddressProblem } from './probe-record-key.ts';
 import { describeSchemaErrors, invalidSettingsMessage, schemaProblemOf } from './schema-errors.ts';
-import { ISSUE_AUTHOR_ASSOCIATIONS, MCP_SERVERS_FILE_SCHEMA, apiKeyChoiceProblem, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
+import { BASH_ON_TIMEOUT, ISSUE_AUTHOR_ASSOCIATIONS, MCP_SERVERS_FILE_SCHEMA, apiKeyChoiceProblem, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
 
 export type PermissionsSettings = {
   defaultMode?: PermissionMode;
@@ -376,7 +376,13 @@ export type ContextSettings = {
 
 export type RipgrepSetting = 'bundled' | 'system' | (string & {});
 
-export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean; ripgrep?: RipgrepSetting };
+export type BashOnTimeout = (typeof BASH_ON_TIMEOUT)[number];
+
+export type BashSettings = { defaultTimeoutMs?: number; maxTimeoutMs?: number; onTimeout?: BashOnTimeout; backgroundTimeoutMs?: number; maxBackgroundTimeoutMs?: number };
+
+export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean; ripgrep?: RipgrepSetting; bash?: BashSettings; search?: { timeoutMs?: number }; operations?: { timeoutMs?: number } };
+
+export type UpdateSettings = { stallTimeoutMs?: number };
 
 export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatterns?: string[]; plaintextTokenFiles?: boolean };
 
@@ -429,6 +435,7 @@ export type Settings = {
   mcp?: McpSettings;
   models?: ModelsSettings;
   autoUpdates?: boolean;
+  update?: UpdateSettings;
   tui?: TuiSettings;
   gateway?: GatewaySettings;
   runtime?: RuntimeSettings;

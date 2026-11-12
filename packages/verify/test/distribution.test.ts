@@ -1,14 +1,17 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { brotliCompressSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
-import { sha256Hex } from '@momonga/foundation';
-import { Z3DistributionError, Z3_API_FILE, Z3_MANIFEST_ASSET, Z3_RUNTIME_FILE, Z3_WASM_ASSET, ensureBundledZ3, parseZ3Manifest } from '../src/index.ts';
-import type { DistributionFiles, DistributionPorts } from '../src/index.ts';
+import { afterEach, describe, expect, it } from 'vitest';
+import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
+import type { HeldKernelLock } from '@momonga/foundation';
+import { testKernelLock } from '@momonga/testkit';
+import { Z3DistributionError, Z3_API_FILE, Z3_MANIFEST_ASSET, Z3_RUNTIME_FILE, Z3_STAGED_PREFIX, Z3_WASM_ASSET, ensureBundledZ3, parseZ3Manifest } from '../src/index.ts';
+import type { DistributionPorts } from '../src/index.ts';
 
 const API = new TextEncoder().encode('module.exports = { api: true };');
 const RUNTIME = new TextEncoder().encode('module.exports = { runtime: true };');
 const WASM = new Uint8Array(4096).map((_, index) => index % 251);
-const CACHE = '/cache/momonga';
 
 const manifestFor = (api: Uint8Array = API) => {
   const files = [
@@ -19,46 +22,6 @@ const manifestFor = (api: Uint8Array = API) => {
   return { contentHash: sha256Hex(JSON.stringify({ files, wasm: wasm.sha256 })), files, wasm };
 };
 
-type Memory = { files: Map<string, Uint8Array>; directories: Set<string>; renames: number; failRename?: () => Promise<void> };
-
-const memoryFiles = (memory: Memory): DistributionFiles => ({
-  exists: async (target) => memory.files.has(target) || memory.directories.has(target),
-  mkdir: async (directory) => void memory.directories.add(directory),
-  writeBytes: async (file, bytes) => void memory.files.set(file, bytes),
-  readFile: async (file) => {
-    const bytes = memory.files.get(file);
-    if (bytes === undefined) throw new Error(`no such file ${file}`);
-    return bytes;
-  },
-  rename: async (from, to) => {
-    memory.renames += 1;
-    await memory.failRename?.();
-    for (const [file, bytes] of [...memory.files]) {
-      if (file.startsWith(`${from}/`)) {
-        memory.files.delete(file);
-        memory.files.set(file.replace(from, to), bytes);
-      }
-    }
-    memory.directories.delete(from);
-    memory.directories.add(to);
-  },
-  rm: async (directory) => {
-    for (const file of [...memory.files.keys()]) if (file.startsWith(`${directory}/`)) memory.files.delete(file);
-    memory.directories.delete(directory);
-  },
-});
-
-const portsFor = (memory: Memory, assets: Record<string, Uint8Array>): DistributionPorts => ({
-  asset: (name) => {
-    const bytes = assets[name];
-    if (bytes === undefined) throw new Error(`no asset ${name}`);
-    return bytes;
-  },
-  files: memoryFiles(memory),
-  executablesRoot: CACHE,
-  random: () => 0.25,
-});
-
 const assetsFor = (manifest: object = manifestFor(), api: Uint8Array = API): Record<string, Uint8Array> => ({
   [Z3_MANIFEST_ASSET]: new TextEncoder().encode(JSON.stringify(manifest)),
   [Z3_API_FILE]: api,
@@ -66,65 +29,91 @@ const assetsFor = (manifest: object = manifestFor(), api: Uint8Array = API): Rec
   [Z3_WASM_ASSET]: brotliCompressSync(WASM),
 });
 
-const emptyMemory = (): Memory => ({ files: new Map(), directories: new Set(), renames: 0 });
+const created: string[] = [];
+const held: HeldKernelLock[] = [];
+
+afterEach(() => {
+  for (const lock of held.splice(0)) lock.release();
+  for (const directory of created.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
+});
+
+const executablesRoot = (): string => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-z3-distribution-')));
+  created.push(root);
+  return root;
+};
+
+const portsFor = (root: string, assets: Record<string, Uint8Array> = assetsFor()): DistributionPorts => {
+  let counter = 0;
+  return {
+    asset: (name) => {
+      const bytes = assets[name];
+      if (bytes === undefined) throw new Error(`no asset ${name}`);
+      return bytes;
+    },
+    files: nodeFileSystem,
+    executablesRoot: root,
+    random: () => {
+      counter += 1;
+      return counter / 1000;
+    },
+    lock: testKernelLock(),
+  };
+};
+
+const folderOf = (root: string): string => path.join(root, `z3-${manifestFor().contentHash.slice(0, 16)}`);
 
 describe('the embedded Z3 distribution', () => {
   it('is extracted once into a folder named by its content hash, and the solver binary stays in memory', async () => {
-    const memory = emptyMemory();
-
-    const first = await ensureBundledZ3(portsFor(memory, assetsFor()));
-
-    const directory = path.join(CACHE, `z3-${manifestFor().contentHash.slice(0, 16)}`);
+    const root = executablesRoot();
+    const first = await ensureBundledZ3(portsFor(root));
+    const directory = folderOf(root);
     expect(first.entry).toBe(path.join(directory, Z3_API_FILE));
     expect(Buffer.from(first.wasmBinary).equals(Buffer.from(WASM))).toBe(true);
-    expect([...memory.files.keys()].sort()).toEqual([path.join(directory, Z3_API_FILE), path.join(directory, Z3_RUNTIME_FILE)]);
-    expect(memory.renames).toBe(1);
-
-    const second = await ensureBundledZ3(portsFor(memory, assetsFor()));
+    expect(fs.readdirSync(directory).sort()).toEqual([Z3_API_FILE, Z3_RUNTIME_FILE].sort());
+    const identity = fs.statSync(first.entry).ino;
+    const second = await ensureBundledZ3(portsFor(root));
     expect(second.entry).toBe(first.entry);
-    expect(memory.renames).toBe(1);
+    expect(fs.statSync(second.entry).ino).toBe(identity);
   });
 
-  it('refuses an extracted file that no longer matches the embedded checksum and says how to repair it', async () => {
-    const memory = emptyMemory();
-    const { entry } = await ensureBundledZ3(portsFor(memory, assetsFor()));
-    memory.files.set(entry, new TextEncoder().encode('tampered'));
-
-    await expect(ensureBundledZ3(portsFor(memory, assetsFor()))).rejects.toThrow(/does not match the embedded Z3 distribution; delete .* so that it is extracted again/);
+  it('extracts again an extracted file that no longer matches the embedded checksum, instead of refusing it', async () => {
+    const root = executablesRoot();
+    const { entry } = await ensureBundledZ3(portsFor(root));
+    fs.writeFileSync(entry, 'tampered');
+    const repaired = await ensureBundledZ3(portsFor(root));
+    expect(Buffer.from(fs.readFileSync(repaired.entry)).equals(Buffer.from(API))).toBe(true);
   });
 
-  it('refuses an embedded asset whose bytes differ from its manifest, before anything is written to the final folder', async () => {
-    const memory = emptyMemory();
+  it('sweeps a staged file that a run which ended left behind, at the next extraction', async () => {
+    const root = executablesRoot();
+    const directory = folderOf(root);
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const leftover = path.join(directory, `${Z3_STAGED_PREFIX}dead-1-${Z3_API_FILE}`);
+    fs.writeFileSync(leftover, 'half written');
+    await ensureBundledZ3(portsFor(root));
+    expect(fs.existsSync(leftover)).toBe(false);
+    expect(fs.readdirSync(directory).filter((name) => name.startsWith(Z3_STAGED_PREFIX))).toEqual([]);
+  });
+
+  it('keeps a staged file whose writer still holds it', async () => {
+    const root = executablesRoot();
+    const directory = folderOf(root);
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const writing = path.join(directory, `${Z3_STAGED_PREFIX}live-1-${Z3_API_FILE}`);
+    const outcome = await testKernelLock().claim(writing);
+    if (outcome.kind !== 'claimed') throw new Error('the test could not hold the staged file');
+    held.push(outcome.lock);
+    fs.writeFileSync(writing, 'being written');
+    await ensureBundledZ3(portsFor(root));
+    expect(fs.existsSync(writing)).toBe(true);
+  });
+
+  it('refuses an embedded asset whose bytes differ from its manifest, before anything is placed in the folder', async () => {
+    const root = executablesRoot();
     const wrong = new TextEncoder().encode('module.exports = { api: false };');
-
-    await expect(ensureBundledZ3(portsFor(memory, assetsFor(manifestFor(), wrong)))).rejects.toBeInstanceOf(Z3DistributionError);
-    expect(memory.files.size).toBe(0);
-    expect(memory.directories.size).toBe(0);
-  });
-
-  it('accepts the folder a concurrent run extracted first when its own rename loses, and removes its partial folder', async () => {
-    const memory = emptyMemory();
-    const directory = path.join(CACHE, `z3-${manifestFor().contentHash.slice(0, 16)}`);
-    memory.failRename = async () => {
-      memory.files.set(path.join(directory, Z3_API_FILE), API);
-      memory.files.set(path.join(directory, Z3_RUNTIME_FILE), RUNTIME);
-      memory.directories.add(directory);
-      throw Object.assign(new Error('directory not empty'), { code: 'ENOTEMPTY' });
-    };
-
-    const bundled = await ensureBundledZ3(portsFor(memory, assetsFor()));
-
-    expect(bundled.entry).toBe(path.join(directory, Z3_API_FILE));
-    expect([...memory.directories].filter((entry) => entry.includes('.partial-'))).toEqual([]);
-  });
-
-  it('fails when the rename fails and no folder exists afterwards', async () => {
-    const memory = emptyMemory();
-    memory.failRename = async () => {
-      throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
-    };
-
-    await expect(ensureBundledZ3(portsFor(memory, assetsFor()))).rejects.toThrow('permission denied');
+    await expect(ensureBundledZ3(portsFor(root, assetsFor(manifestFor(), wrong)))).rejects.toBeInstanceOf(Z3DistributionError);
+    expect(fs.existsSync(path.join(folderOf(root), Z3_API_FILE))).toBe(false);
   });
 
   it('rejects a malformed manifest naming the field', () => {

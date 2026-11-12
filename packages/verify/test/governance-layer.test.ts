@@ -20,7 +20,7 @@ const predictionFor = async (mode: PermissionMode, effect: 'deny' | 'ask', ruleT
   const fileSystem = caseSensitiveFs();
   const roots = [layout.project];
   const rules: PermissionRule[] = rulesOf(layout, [[effect, ruleText]]).map((rule) => ({ ...rule, layer: 'governance' }));
-  const context = await buildQueryContext(z3.engine().api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
+  const context = await buildQueryContext(z3.engine().api, { unixSockets: { kind: 'limited', allowed: [] }, deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
     rules,
     roots,
     mode,
@@ -55,7 +55,7 @@ describe('the governance layer in the model', () => {
     const layout = makeLayout();
     const fileSystem = caseSensitiveFs();
     const roots = [layout.project];
-    const context = await buildQueryContext(z3.engine().api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
+    const context = await buildQueryContext(z3.engine().api, { unixSockets: { kind: 'limited', allowed: [] }, deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
       rules: rulesOf(layout, [['ask', 'Read(secrets/**)']]),
       roots,
       mode: 'bypassPermissions',

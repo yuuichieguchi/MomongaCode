@@ -25,13 +25,10 @@ const AUTHORIZATION_VALUE = /\b(Bearer|Basic)(\s{1,8})([A-Za-z0-9._~+/=-]{16,})/
 const CREDENTIAL_FIELD =
   /\b(api[_-]?key|x-api-key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?key|secret|token|password|passwd|key)\b((?:\\*["'])?\s{0,8}[:=]\s{0,8}(?:\\*["'])?)([A-Za-z0-9._~+/=-]{16,})/gi;
 
-const HAS_DIGIT = /\d/;
-const HAS_LETTER = /[A-Za-z]/;
-
 const variantsOf = (value: string): string[] => {
   const trimmed = value.trim();
   if (trimmed.length < MIN_CREDENTIAL_CHARS) return [];
-  return [value, trimmed].flatMap((base) => [base, JSON.stringify(base).slice(1, -1), encodeURIComponent(base)]);
+  return [value, trimmed].flatMap((base) => [base, JSON.stringify(base).slice(1, -1), encodeURIComponent(base), Buffer.from(base, 'utf8').toString('base64')]);
 };
 
 const exactValuesOf = (credentials: readonly string[]): string[] =>
@@ -69,12 +66,8 @@ export const createRedactor = (options: RedactorOptions): Redactor => {
     output = output.replace(SK_KEY, REDACTED_MARKER);
     output = output.replace(GOOGLE_KEY, REDACTED_MARKER);
     output = output.replace(PROVIDER_KEY, REDACTED_MARKER);
-    output = output.replace(AUTHORIZATION_VALUE, (match, scheme: string, _space: string, token: string) =>
-      HAS_DIGIT.test(token) ? `${scheme} ${REDACTED_MARKER}` : match,
-    );
-    output = output.replace(CREDENTIAL_FIELD, (match, name: string, separator: string, value: string) =>
-      HAS_DIGIT.test(value) && HAS_LETTER.test(value) ? `${name}${separator}${REDACTED_MARKER}` : match,
-    );
+    output = output.replace(AUTHORIZATION_VALUE, (_match, scheme: string) => `${scheme} ${REDACTED_MARKER}`);
+    output = output.replace(CREDENTIAL_FIELD, (_match, name: string, separator: string) => `${name}${separator}${REDACTED_MARKER}`);
     return output;
   };
   const text = (input: string): string => capped(whole(input));

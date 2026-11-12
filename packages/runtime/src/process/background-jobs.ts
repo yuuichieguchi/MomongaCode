@@ -75,6 +75,9 @@ type LiveJob = {
   finalized: Promise<void>;
 };
 
+const slotsTaken = (running: number): ToolExecutionError =>
+  new ToolExecutionError(`This session already has ${running} running background jobs; stop one with KillBash before starting another`);
+
 const jobKeyOf = (callKey: string): string => sha256Hex(canonicalJson([callKey, 'background']));
 
 const matching = async (text: string, keep: LineFilter): Promise<string> => (await keep(text.split('\n'))).join('\n');
@@ -192,7 +195,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
           if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
         }
       }
-      const inspected = ended !== undefined && ended.uninspectable.length === 0;
+      const inspected = ended !== undefined && ended.uninspectable.length === 0 && exit.stop === 'confirmed';
       await drain(pumps);
       const window = entry.output.window();
       const stored = window.bytes.length === 0 ? undefined : await store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
@@ -297,9 +300,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     if (existing !== undefined) return { jobId: existing.id };
     if (options.role.current() === 'retiring') throw new RetiringYield();
     const running = store.jobs.listForSession(run.sessionId).filter((job) => job.status === 'running').length;
-    if (running >= MAX_RUNNING_JOBS_PER_SESSION) {
-      throw new ToolExecutionError(`This session already has ${running} running background jobs; stop one with KillBash before starting another`);
-    }
+    if (running >= MAX_RUNNING_JOBS_PER_SESSION) throw slotsTaken(running);
     const jobId = `bash_${idemKey.slice(0, JOB_ID_HEX_CHARS)}`;
     const outputPath = jobOutputPathOf(options.jobsDir, jobId);
     let fileFailure: ((code: string) => void) | undefined;
@@ -367,6 +368,73 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     return { jobId: job.id };
   };
 
+  const adopt: BackgroundJobs['adopt'] = async (request) => {
+    const run = store.getRun(request.runId);
+    if (run === undefined) throw new Error(`run ${request.runId} does not exist`);
+    const idemKey = jobKeyOf(request.callKey);
+    if (store.jobs.byIdemKey(idemKey) !== undefined) throw new ToolExecutionError(`the call ${request.callId} already runs in the background`);
+    if (options.role.current() === 'retiring') throw new ToolExecutionError(new RetiringYield().message);
+    const running = store.jobs.listForSession(run.sessionId).filter((job) => job.status === 'running').length;
+    if (running >= MAX_RUNNING_JOBS_PER_SESSION) throw slotsTaken(running);
+    const jobId = `bash_${idemKey.slice(0, JOB_ID_HEX_CHARS)}`;
+    const outputPath = jobOutputPathOf(options.jobsDir, jobId);
+    let fileFailure: ((code: string) => void) | undefined;
+    let file: JobOutputFile;
+    try {
+      await removeLeftoverJobOutputFile(options.files, outputPath);
+      file = await openJobOutputFile(options.files, { path: outputPath, maxBytes: JOB_OUTPUT_FILE_MAX_BYTES, onFailure: (code) => fileFailure?.(code) });
+    } catch (error) {
+      throw new ToolExecutionError(`could not move the command to the background: its output file could not be created (${jobOutputFileErrorCode(error)})`);
+    }
+    const marker = path.join(markerDir, idemKey);
+    ownedKeys.add(idemKey);
+    owners.register(idemKey, { alive: () => ownedKeys.has(idemKey) });
+    owners.remember(idemKey, request.marker.mode);
+    try {
+      await options.files.link(request.marker.file, marker);
+      try {
+        await options.files.rm(request.marker.file);
+      } catch (error) {
+        await options.files.rm(marker);
+        throw error;
+      }
+    } catch (error) {
+      ownedKeys.delete(idemKey);
+      await discardOutputFile(file, jobId);
+      throw new ToolExecutionError(`could not move the command to the background: its process marker could not be moved (${asError(error).message})`);
+    }
+    store.idempotency.begin(idemKey, { expiresAt: clock.now() + JOB_IDEMPOTENCY_TTL_MS, meta: { tool: 'Bash', runId: request.runId, job: true } });
+    const { job } = store.jobs.start({ id: jobId, idemKey, sessionId: run.sessionId, runId: request.runId, callId: request.callId, command: request.command, ownerGeneration: options.generation, outputPath });
+    fileFailure = () => {
+      try {
+        store.jobs.clearOutputPath(jobId);
+      } catch (error) {
+        report(error);
+      }
+    };
+    const controller = new AbortController();
+    const { process } = request;
+    process.rebind(controller.signal);
+    store.jobs.attachProcess(job.id, process.pgid);
+    store.idempotency.attachProcess(idemKey, { pgid: process.pgid, startedAt: clock.now() });
+    const output = createJobOutput(JOB_OUTPUT_WINDOW_BYTES);
+    const seen = Buffer.from(request.output.seen);
+    if (seen.length > 0) {
+      output.push(seen);
+      file.append(seen);
+    }
+    const pumps = request.output.follow((chunk) => {
+      output.push(chunk);
+      file.append(chunk);
+    });
+    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve() };
+    const timer = timers.setTimeout(() => void stop(entry, 'timeout'), request.timeoutMs);
+    entry.finalized = finalize(entry, process, pumps, timer);
+    entry.finalized.catch(report);
+    live.set(job.id, entry);
+    return { jobId: job.id };
+  };
+
   const readWindow = async (job: Job, call: string): Promise<{ text: string; omitted: number; total: number }> => {
     const entry = live.get(job.id);
     const from = job.lastRead?.call === call ? job.lastRead.from : job.readOffset;
@@ -395,6 +463,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
 
   return {
     start,
+    adopt,
     byCall: (callKey) => {
       const job = store.jobs.byIdemKey(jobKeyOf(callKey));
       return job === undefined ? undefined : viewOf(job);

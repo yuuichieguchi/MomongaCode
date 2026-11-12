@@ -1,3 +1,4 @@
+import type { UnixSocketPolicy } from '@momonga/foundation';
 import { systemClock } from '@momonga/foundation';
 import type { Clock, ProtectedSet, RuleEnforcement, SecretLocation } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
@@ -33,6 +34,7 @@ export type VerifyRequest = {
   hostPhases?: readonly RuleVerdictPhase[];
   supersededForms?: readonly SupersededForm[];
   alwaysOperations?: readonly string[];
+  unixSockets: UnixSocketPolicy;
 };
 
 const STATIC_OUTSIDE_PROOF: readonly string[] = [
@@ -130,6 +132,7 @@ export const verifyPermissions = async (api: Z3Api, request: VerifyRequest): Pro
     mismatches,
     timings,
     outsideProof: [...STATIC_OUTSIDE_PROOF, ...unmodelledNotes(context, rules)],
+    unixSockets: request.unixSockets,
     exitCode: exitCodeOf(results, mismatches),
   };
 };

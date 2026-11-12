@@ -6,7 +6,8 @@ import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import type { DetachedSpawn, SelfExecutable } from '../src/ports.ts';
 import type { UpdateWiring } from '../src/update/background.ts';
-import { UPDATE_TRANSFER_OPTIONS, leasedUpdateHttp, nodeUpdateFs } from '../src/update/node-ports.ts';
+import { DEFAULT_UPDATE_STALL_TIMEOUT_MS } from '@momonga/config';
+import { leasedUpdateHttp, nodeUpdateFs, transferOptionsOf } from '../src/update/node-ports.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { startFakeReleaseServer } from './fake-release-server.ts';
 import type { FakeReleaseServer } from './fake-release-server.ts';
@@ -111,7 +112,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     self,
     env: { PATH: '/usr/bin' },
     clock: virtualClock(),
-    http: leasedUpdateHttp((_signal, use) => use({ config: { caFiles: [] }, trust: { sources: [], failures: [] } }), UPDATE_TRANSFER_OPTIONS, (error) => {
+    http: leasedUpdateHttp((_signal, use) => use({ config: { caFiles: [] }, trust: { sources: [], failures: [] } }), transferOptionsOf(DEFAULT_UPDATE_STALL_TIMEOUT_MS), (error) => {
       throw error;
     }),
     fs: nodeUpdateFs(testKernelLock()),
