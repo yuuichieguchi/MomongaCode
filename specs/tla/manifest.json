@@ -9,10 +9,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1114850,
-      "measuredSeconds": 28.01,
-      "measuredCpuSeconds": 139.93,
-      "budgetCpuSeconds": 283
+      "distinctStates": 1480910,
+      "measuredSeconds": 186.01,
+      "measuredCpuSeconds": 202.89,
+      "budgetCpuSeconds": 409,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.children",
@@ -31,10 +32,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 30452,
-      "measuredSeconds": 2.36,
-      "measuredCpuSeconds": 8.14,
-      "budgetCpuSeconds": 20
+      "distinctStates": 58214,
+      "measuredSeconds": 6.71,
+      "measuredCpuSeconds": 9.17,
+      "budgetCpuSeconds": 22,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.liveNone",
@@ -45,10 +47,11 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 4390,
-      "measuredSeconds": 4.61,
-      "measuredCpuSeconds": 19.18,
-      "budgetCpuSeconds": 42
+      "distinctStates": 11176,
+      "measuredSeconds": 33.17,
+      "measuredCpuSeconds": 36.23,
+      "budgetCpuSeconds": 76,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.liveSpawn",
@@ -73,10 +76,11 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 30260,
-      "measuredSeconds": 86.16,
-      "measuredCpuSeconds": 419.07,
-      "budgetCpuSeconds": 842
+      "distinctStates": 57226,
+      "measuredSeconds": 718.36,
+      "measuredCpuSeconds": 714.82,
+      "budgetCpuSeconds": 1433,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.lockOnly",
@@ -84,10 +88,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1116106,
-      "measuredSeconds": 23.34,
-      "measuredCpuSeconds": 117.73,
-      "budgetCpuSeconds": 239
+      "distinctStates": 1487126,
+      "measuredSeconds": 154.59,
+      "measuredCpuSeconds": 169.98,
+      "budgetCpuSeconds": 343,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.unfixed",
@@ -98,10 +103,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1159149,
-      "measuredSeconds": 23.49,
-      "measuredCpuSeconds": 118.59,
-      "budgetCpuSeconds": 241
+      "distinctStates": 1555414,
+      "measuredSeconds": 166.96,
+      "measuredCpuSeconds": 175.76,
+      "budgetCpuSeconds": 355,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.fenceOnly",
@@ -112,10 +118,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1064010,
-      "measuredSeconds": 21.69,
-      "measuredCpuSeconds": 109.11,
-      "budgetCpuSeconds": 222
+      "distinctStates": 1436890,
+      "measuredSeconds": 149.6,
+      "measuredCpuSeconds": 163.87,
+      "budgetCpuSeconds": 331,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.unlocked",
@@ -126,10 +133,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1064524,
-      "measuredSeconds": 21.5,
-      "measuredCpuSeconds": 109.11,
-      "budgetCpuSeconds": 222
+      "distinctStates": 1441094,
+      "measuredSeconds": 149.85,
+      "measuredCpuSeconds": 162,
+      "budgetCpuSeconds": 327,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.reapOnly",
@@ -140,10 +148,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1149161,
-      "measuredSeconds": 23.02,
-      "measuredCpuSeconds": 116.26,
-      "budgetCpuSeconds": 236
+      "distinctStates": 1588415,
+      "measuredSeconds": 159.61,
+      "measuredCpuSeconds": 176.82,
+      "budgetCpuSeconds": 357,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.noReap",
@@ -154,10 +163,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 991147,
-      "measuredSeconds": 20.41,
-      "measuredCpuSeconds": 102.66,
-      "budgetCpuSeconds": 209
+      "distinctStates": 1328628,
+      "measuredSeconds": 139.13,
+      "measuredCpuSeconds": 149.37,
+      "budgetCpuSeconds": 302,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.liveTimeout",
@@ -165,10 +175,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 20068,
-      "measuredSeconds": 2.49,
-      "measuredCpuSeconds": 9.1,
-      "budgetCpuSeconds": 22
+      "distinctStates": 26436,
+      "measuredSeconds": 5.02,
+      "measuredCpuSeconds": 7.9,
+      "budgetCpuSeconds": 19,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.liveTimeoutFailed",
@@ -179,10 +190,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 23725,
-      "measuredSeconds": 2.09,
-      "measuredCpuSeconds": 7.14,
-      "budgetCpuSeconds": 18
+      "distinctStates": 24815,
+      "measuredSeconds": 3.18,
+      "measuredCpuSeconds": 5.79,
+      "budgetCpuSeconds": 15,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RequestPrefix",
@@ -647,10 +659,11 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 30260,
-      "measuredSeconds": 3.61,
-      "measuredCpuSeconds": 12.24,
-      "budgetCpuSeconds": 28
+      "distinctStates": 57226,
+      "measuredSeconds": 14.14,
+      "measuredCpuSeconds": 17.18,
+      "budgetCpuSeconds": 38,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.uniformCancelNoSweeper",
@@ -664,10 +677,11 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 27952,
-      "measuredSeconds": 3.12,
-      "measuredCpuSeconds": 10.16,
-      "budgetCpuSeconds": 24
+      "distinctStates": 54402,
+      "measuredSeconds": 13.33,
+      "measuredCpuSeconds": 14.7,
+      "budgetCpuSeconds": 33,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "PlanCredential",
@@ -709,10 +723,11 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 322194,
-      "measuredSeconds": 20.1,
-      "measuredCpuSeconds": 27.17,
-      "budgetCpuSeconds": 58
+      "distinctStates": 329368,
+      "measuredSeconds": 24.01,
+      "measuredCpuSeconds": 26.26,
+      "budgetCpuSeconds": 56,
+      "note": "re-measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
     },
     {
       "config": "PlanCredential.twoAccounts",
@@ -788,7 +803,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 19,
+      "distinctStates": 18,
       "measuredSeconds": 3.39,
       "measuredCpuSeconds": 2.6,
       "budgetCpuSeconds": 9
@@ -809,6 +824,48 @@
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 3.48 at start)"
     },
     {
+      "config": "PlanCredential.twoGens",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 166400,
+      "measuredSeconds": 15.37,
+      "measuredCpuSeconds": 14.77,
+      "budgetCpuSeconds": 33,
+      "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
+    },
+    {
+      "config": "PlanCredential.twoGensNoReread",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoStaleSignOut",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 205,
+      "measuredSeconds": 3.3,
+      "measuredCpuSeconds": 2.87,
+      "budgetCpuSeconds": 9,
+      "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
+    },
+    {
+      "config": "PlanCredential.twoGensPointerStale",
+      "role": "evidence",
+      "expect": {
+        "violates": "ActivePointerNotLost",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 31,
+      "measuredSeconds": 3.4,
+      "measuredCpuSeconds": 2.44,
+      "budgetCpuSeconds": 8,
+      "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
+    },
+    {
       "config": "PlanCredential.forgetBeforePersist",
       "role": "evidence",
       "expect": {
@@ -817,7 +874,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 23,
+      "distinctStates": 22,
       "measuredSeconds": 3.21,
       "measuredCpuSeconds": 2.61,
       "budgetCpuSeconds": 9
@@ -831,7 +888,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 273,
+      "distinctStates": 201,
       "measuredSeconds": 3.48,
       "measuredCpuSeconds": 2.72,
       "budgetCpuSeconds": 9
@@ -857,7 +914,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 14431,
+      "distinctStates": 6889,
       "measuredSeconds": 4.33,
       "measuredCpuSeconds": 6.92,
       "budgetCpuSeconds": 17
@@ -871,7 +928,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 127,
+      "distinctStates": 89,
       "measuredSeconds": 3.2,
       "measuredCpuSeconds": 2.58,
       "budgetCpuSeconds": 9
@@ -885,7 +942,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 150,
+      "distinctStates": 71,
       "measuredSeconds": 3.1,
       "measuredCpuSeconds": 2.53,
       "budgetCpuSeconds": 9
@@ -921,7 +978,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 360,
+      "distinctStates": 323,
       "measuredSeconds": 5.89,
       "measuredCpuSeconds": 2.67,
       "budgetCpuSeconds": 9
@@ -935,7 +992,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 186,
+      "distinctStates": 158,
       "measuredSeconds": 3.61,
       "measuredCpuSeconds": 3.04,
       "budgetCpuSeconds": 10
@@ -949,7 +1006,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 19,
+      "distinctStates": 15,
       "measuredSeconds": 3.88,
       "measuredCpuSeconds": 2.48,
       "budgetCpuSeconds": 8
@@ -963,7 +1020,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 57,
+      "distinctStates": 46,
       "measuredSeconds": 4.67,
       "measuredCpuSeconds": 2.69,
       "budgetCpuSeconds": 9
@@ -1148,7 +1205,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 327,
+      "distinctStates": 308,
       "measuredSeconds": 3.51,
       "measuredCpuSeconds": 2.93,
       "budgetCpuSeconds": 9
@@ -1162,7 +1219,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 13,
+      "distinctStates": 4,
       "measuredSeconds": 3.7,
       "measuredCpuSeconds": 2.63,
       "budgetCpuSeconds": 9
@@ -1176,7 +1233,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 222,
+      "distinctStates": 167,
       "measuredSeconds": 5.15,
       "measuredCpuSeconds": 3.1,
       "budgetCpuSeconds": 10
@@ -1190,7 +1247,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 283,
+      "distinctStates": 273,
       "measuredSeconds": 3.36,
       "measuredCpuSeconds": 2.94,
       "budgetCpuSeconds": 9
@@ -1204,7 +1261,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 359,
+      "distinctStates": 321,
       "measuredSeconds": 4.26,
       "measuredCpuSeconds": 3.34,
       "budgetCpuSeconds": 10
@@ -1218,7 +1275,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 119,
+      "distinctStates": 94,
       "measuredSeconds": 3.81,
       "measuredCpuSeconds": 2.68,
       "budgetCpuSeconds": 9
@@ -1232,7 +1289,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 118,
+      "distinctStates": 94,
       "measuredSeconds": 3.56,
       "measuredCpuSeconds": 2.73,
       "budgetCpuSeconds": 9
@@ -1246,7 +1303,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 120,
+      "distinctStates": 94,
       "measuredSeconds": 4.05,
       "measuredCpuSeconds": 2.41,
       "budgetCpuSeconds": 8
@@ -1304,7 +1361,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 72,
+      "distinctStates": 57,
       "measuredSeconds": 3.42,
       "measuredCpuSeconds": 2.5,
       "budgetCpuSeconds": 8
@@ -1826,7 +1883,7 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 314421,
-      "measuredSeconds": 8.0,
+      "measuredSeconds": 8,
       "measuredCpuSeconds": 21.32,
       "budgetCpuSeconds": 46
     },
@@ -4212,10 +4269,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 2373850,
-      "measuredSeconds": 38.85,
-      "measuredCpuSeconds": 196.55,
-      "budgetCpuSeconds": 397
+      "distinctStates": 3109839,
+      "measuredSeconds": 262.07,
+      "measuredCpuSeconds": 284.98,
+      "budgetCpuSeconds": 573,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.genDies",
@@ -4223,10 +4281,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 911858,
-      "measuredSeconds": 20.3,
-      "measuredCpuSeconds": 102.27,
-      "budgetCpuSeconds": 208
+      "distinctStates": 1324122,
+      "measuredSeconds": 143.72,
+      "measuredCpuSeconds": 158.9,
+      "budgetCpuSeconds": 321,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "RunRecovery.generations",
@@ -4234,10 +4293,80 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 774496,
-      "measuredSeconds": 16.05,
-      "measuredCpuSeconds": 80.03,
-      "budgetCpuSeconds": 164
+      "distinctStates": 1120112,
+      "measuredSeconds": 122.07,
+      "measuredCpuSeconds": 127.96,
+      "budgetCpuSeconds": 259,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
+    },
+    {
+      "config": "RunRecovery.ruleRefuted",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 4062180,
+      "measuredSeconds": 549.92,
+      "measuredCpuSeconds": 574.08,
+      "budgetCpuSeconds": 1152,
+      "note": "measured by formal-models-W5; not re-run after the completion check of W6 (deep, carried to formal-models C20)"
+    },
+    {
+      "config": "RunRecovery.ruleRefutedSmall",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 594108,
+      "measuredSeconds": 47.27,
+      "measuredCpuSeconds": 54.15,
+      "budgetCpuSeconds": 112,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
+    },
+    {
+      "config": "RunRecovery.refusesNote",
+      "role": "evidence",
+      "expect": {
+        "violates": "NotesNeverRefuse",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 21,
+      "measuredSeconds": 1.45,
+      "measuredCpuSeconds": 2.49,
+      "budgetCpuSeconds": 8,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
+    },
+    {
+      "config": "RunRecovery.ungatedRules",
+      "role": "evidence",
+      "expect": {
+        "violates": "RefutedNeverRuns",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 21,
+      "measuredSeconds": 1.46,
+      "measuredCpuSeconds": 2.48,
+      "budgetCpuSeconds": 8,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
+    },
+    {
+      "config": "RunRecovery.unknownUngated",
+      "role": "evidence",
+      "expect": {
+        "violates": "UnknownNeedsHuman",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 60471,
+      "measuredSeconds": 5.48,
+      "measuredCpuSeconds": 8.08,
+      "budgetCpuSeconds": 20,
+      "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
     },
     {
       "config": "ProcessMarker.generations",
@@ -6553,6 +6682,171 @@
       "measuredSeconds": 1.98,
       "measuredCpuSeconds": 2.18,
       "budgetCpuSeconds": 8
+    },
+    {
+      "config": "BackgroundJob",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 629,
+      "measuredSeconds": 1.23,
+      "measuredCpuSeconds": 1.73,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
+    },
+    {
+      "config": "BackgroundJob.registerLate",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoOrphanWhileStarting",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 6,
+      "measuredSeconds": 1.95,
+      "measuredCpuSeconds": 1.47,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
+    },
+    {
+      "config": "BackgroundJob.deep",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 13167,
+      "measuredSeconds": 3.26,
+      "measuredCpuSeconds": 4.66,
+      "budgetCpuSeconds": 13,
+      "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
+    },
+    {
+      "config": "CompletionGate",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 483290,
+      "measuredSeconds": 78.41,
+      "measuredCpuSeconds": 73.12,
+      "budgetCpuSeconds": 150,
+      "note": "measured by formal-models-W6 (workers 1)"
+    },
+    {
+      "config": "CompletionGate.hooks",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 985905,
+      "measuredSeconds": 150.96,
+      "measuredCpuSeconds": 151.6,
+      "budgetCpuSeconds": 307,
+      "note": "measured by formal-models-W6 (workers 1)"
+    },
+    {
+      "config": "CompletionGate.undeclared",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 105,
+      "measuredSeconds": 1.21,
+      "measuredCpuSeconds": 1.49,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W6 (workers 1)"
+    },
+    {
+      "config": "CompletionGate.live",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 985905,
+      "measuredSeconds": 224.27,
+      "measuredCpuSeconds": 227.88,
+      "budgetCpuSeconds": 459,
+      "note": "measured by formal-models-W6 (workers 1)"
+    },
+    {
+      "config": "CompletionGate.modelEvidence",
+      "role": "evidence",
+      "expect": {
+        "violates": "CompletionNeedsCheck",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 137,
+      "measuredSeconds": 1.6,
+      "measuredCpuSeconds": 1.83,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W6 (workers 1)"
+    },
+    {
+      "config": "CompletionGate.staleKept",
+      "role": "evidence",
+      "expect": {
+        "violates": "StaleResultNotKept",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3277,
+      "measuredSeconds": 1.9,
+      "measuredCpuSeconds": 2.39,
+      "budgetCpuSeconds": 8,
+      "note": "measured by formal-models-W6 (workers 1)"
+    },
+    {
+      "config": "CompletionGate.startedCounts",
+      "role": "evidence",
+      "expect": {
+        "violates": "StartedNotCounted",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 41,
+      "measuredSeconds": 1.26,
+      "measuredCpuSeconds": 1.61,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W6 (workers 1)"
+    },
+    {
+      "config": "CompletionGate.rerunNoMutation",
+      "role": "evidence",
+      "expect": {
+        "violates": "RerunNeedsMutation",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2874,
+      "measuredSeconds": 1.36,
+      "measuredCpuSeconds": 2.1,
+      "budgetCpuSeconds": 8,
+      "note": "measured by formal-models-W6 (workers 1)"
+    },
+    {
+      "config": "CompletionGate.lateMutationUncounted",
+      "role": "evidence",
+      "expect": {
+        "violates": "CompletionNeedsCheck",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 545,
+      "measuredSeconds": 1.26,
+      "measuredCpuSeconds": 1.75,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W6 (workers 1)"
     }
   ]
 }
