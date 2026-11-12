@@ -41,7 +41,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
   'packages/cli/src/tui/run-interactive.tsx': { 'node:child_process': 1 },
   'packages/cli/src/tui/screen/clipboard-host.ts': { 'node:child_process': 2 },
-  'packages/cli/src/tui/screen/history-view.tsx': { 'setImmediate': 1 },
   'packages/config/src/auto-fit.ts': { 'node:fs': 2 },
   'packages/config/src/auto-mode-dataset.ts': { 'node:fs': 1 },
   'packages/context/src/fs-instruction-reader.ts': { 'node:fs/promises': 3 },

@@ -129,7 +129,7 @@ describe('foldEvent', () => {
     const plan = { type: 'plan.updated', entries: [{ content: 'step one', priority: 'high', status: 'completed' }] };
     const live = storeOf([plan]);
     expect(live.at(0).entry).toMatchObject({ kind: 'plan' });
-    expect(live.settledCount()).toBe(0);
+    expect(live.settledAt(0)).toBe(false);
     const ended = apply([plan, { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }]);
     expect(ended.entries).toEqual([{ kind: 'info', text: '[x] step one' }]);
   });
@@ -139,12 +139,12 @@ describe('foldEvent', () => {
   });
 });
 
-describe('settledCount', () => {
-  it('counts the leading entries that can no longer change', () => {
+describe('settledAt', () => {
+  it('says of each entry whether it can no longer change', () => {
     const state = storeOf([call, { type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'x' }]);
-    expect(state.settledCount()).toBe(0);
+    expect([state.settledAt(0), state.settledAt(1)]).toEqual([false, false]);
     const done = storeOf([call, { type: 'tool.completed', callId: 'c1', status: 'completed', output: '' }, { type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'x' }]);
-    expect(done.settledCount()).toBe(1);
+    expect([done.settledAt(0), done.settledAt(1)]).toEqual([true, false]);
   });
 });
 

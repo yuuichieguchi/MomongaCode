@@ -63,7 +63,7 @@ export type TranscriptStore = {
   setOpen(key: string | undefined): void;
   state(): TranscriptState;
   update(patch: Partial<TranscriptState>): void;
-  settledCount(): number;
+  settledAt(index: number): boolean;
   version(): number;
   epoch(): number;
   subscribe(listener: StoreListener): () => void;
@@ -95,7 +95,6 @@ export const createTranscriptStore = (): TranscriptStore => {
   let state = initialState;
   let storeVersion = 0;
   let epoch = 0;
-  let settledPrefix = 0;
   let openKey: string | undefined;
   const listeners = new Set<StoreListener>();
 
@@ -157,10 +156,7 @@ export const createTranscriptStore = (): TranscriptStore => {
       state = { ...state, ...patch };
       tell(undefined, storeVersion + 1);
     },
-    settledCount: () => {
-      while (settledPrefix < entries.length && settledAt(settledPrefix)) settledPrefix += 1;
-      return settledPrefix;
-    },
+    settledAt: (index) => settledAt(index),
     version: () => storeVersion,
     epoch: () => epoch,
     subscribe: (listener) => {
@@ -174,7 +170,6 @@ export const createTranscriptStore = (): TranscriptStore => {
       entries = [];
       positions = new Map();
       state = { ...initialState, thoughtWindow: state.thoughtWindow };
-      settledPrefix = 0;
       openKey = undefined;
       epoch += 1;
       tell(undefined, storeVersion + 1);
