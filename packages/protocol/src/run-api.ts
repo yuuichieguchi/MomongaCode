@@ -536,8 +536,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['step', 'attempt', 'itemId', 'text'],
   },
   'model.stream.restarted': {
-    properties: { step: nonNegativeInteger, attempt: integer },
-    required: ['step', 'attempt'],
+    properties: { step: nonNegativeInteger, attempt: integer, itemIds: { type: 'array', items: string } },
+    required: ['step', 'attempt', 'itemIds'],
   },
   'tool.call': {
     properties: {
@@ -668,7 +668,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
   'tool.offered': { properties: { names: { type: 'array', items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'loop.warned': { properties: { signature: string }, required: ['signature'] },
   'budget.exhausted': {
-    properties: { dimension: enumOf(BUDGET_DIMENSIONS), cause: enumOf(BUDGET_CAUSES), spent: nonNegativeInteger, limit: nonNegativeInteger },
+    properties: { dimension: enumOf(BUDGET_DIMENSIONS), cause: enumOf(BUDGET_CAUSES), spent: nonNegativeInteger, limit: nonNegativeInteger, admitsAt: nonNegativeInteger },
     required: ['dimension', 'cause', 'spent', 'limit'],
   },
   'tool.held': {

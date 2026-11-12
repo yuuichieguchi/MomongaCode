@@ -64,6 +64,8 @@ const countingReader = () => {
   };
 };
 
+const NEXT_TURN = async (): Promise<void> => undefined;
+
 describe('a build after one new path does the same main-thread work however many paths were touched', () => {
   it('reads the same rows and probes the same directories at 10, 100, 1000 and 10000 touched paths', async () => {
     const measured: { rows: number; reads: number; probes: number }[] = [];
@@ -72,8 +74,8 @@ describe('a build after one new path does the same main-thread work however many
       const governingSource = sourceOf(entries);
       const probeSource = sourceOf(entries);
       const counting = countingReader();
-      const governing = createGoverningActivation({ project: PROJECT, source: governingSource.source, pageRows: PAGE_ROWS });
-      const probes = createInstructionProbes({ reader: counting.reader, projectRoot: PROJECT, source: probeSource.source, pageRows: PAGE_ROWS });
+      const governing = createGoverningActivation({ project: PROJECT, source: governingSource.source, pageRows: PAGE_ROWS, nextTurn: NEXT_TURN });
+      const probes = createInstructionProbes({ reader: counting.reader, projectRoot: PROJECT, source: probeSource.source, pageRows: PAGE_ROWS, nextTurn: NEXT_TURN });
       const facts = [fact('f1', ['never/**'])];
       await governing.advance(facts, 1);
       await probes.advance();
@@ -93,7 +95,7 @@ describe('a build after one new path does the same main-thread work however many
   it('reads the whole record once, in pages, when a claim starts', async () => {
     const entries = entriesOf(1000);
     const governingSource = sourceOf(entries);
-    const governing = createGoverningActivation({ project: PROJECT, source: governingSource.source, pageRows: PAGE_ROWS });
+    const governing = createGoverningActivation({ project: PROJECT, source: governingSource.source, pageRows: PAGE_ROWS, nextTurn: NEXT_TURN });
     await governing.advance([fact('f1', ['dir-999/**'])], 1);
     expect(governingSource.rowsRead()).toBe(1000);
     expect(governingSource.reads()).toBe(1000 / PAGE_ROWS + 1);
@@ -105,7 +107,7 @@ describe('a directory is probed once per claim', () => {
   it('asks whether AGENTS.md exists once for each directory above the touched paths, however many builds follow', async () => {
     const entries = entriesOf(20);
     const counting = countingReader();
-    const probes = createInstructionProbes({ reader: counting.reader, projectRoot: PROJECT, source: sourceOf(entries).source, pageRows: PAGE_ROWS });
+    const probes = createInstructionProbes({ reader: counting.reader, projectRoot: PROJECT, source: sourceOf(entries).source, pageRows: PAGE_ROWS, nextTurn: NEXT_TURN });
     await probes.advance();
     const first = counting.probed.length;
     expect(first).toBeGreaterThan(0);
@@ -122,7 +124,7 @@ describe('no path is read when no live fact has paths', () => {
   it('reads nothing for facts without paths, retired facts and facts of another project', async () => {
     const entries = entriesOf(100);
     const counting = sourceOf(entries);
-    const governing = createGoverningActivation({ project: PROJECT, source: counting.source, pageRows: PAGE_ROWS });
+    const governing = createGoverningActivation({ project: PROJECT, source: counting.source, pageRows: PAGE_ROWS, nextTurn: NEXT_TURN });
     const everywhere: GoverningFactView = { ...fact('all', []), scope: { level: 'project', project: PROJECT, paths: [] } };
     const retired: GoverningFactView = { ...fact('retired', ['dir-1/**']), retiredAt: 1 };
     const elsewhere: GoverningFactView = { ...fact('elsewhere', ['dir-1/**']), scope: { level: 'project', project: '/work/b', paths: ['dir-1/**'] } };
@@ -134,7 +136,7 @@ describe('no path is read when no live fact has paths', () => {
   it('activates a fact added mid-session against the paths touched earlier, and keeps it active', async () => {
     const entries = entriesOf(100);
     const counting = sourceOf(entries);
-    const governing = createGoverningActivation({ project: PROJECT, source: counting.source, pageRows: PAGE_ROWS });
+    const governing = createGoverningActivation({ project: PROJECT, source: counting.source, pageRows: PAGE_ROWS, nextTurn: NEXT_TURN });
     await governing.advance([], 1);
     expect(counting.reads()).toBe(0);
     const later = fact('later', ['dir-7/**']);

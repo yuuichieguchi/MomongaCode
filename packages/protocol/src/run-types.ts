@@ -172,7 +172,7 @@ export const MODEL_REJECTION_REASONS = ['counter_mismatch', 'missing_counter', '
 
 export type ModelRejectionReason = (typeof MODEL_REJECTION_REASONS)[number];
 
-export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier', 'rejected_answer'] as const;
+export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier', 'rejected_answer', 'reflection'] as const;
 
 export type UsageChargePurpose = (typeof USAGE_CHARGE_PURPOSES)[number];
 
@@ -257,7 +257,7 @@ export type RunEventPayload =
   | { type: 'model.responded'; step: number; attempt: number; response: ModelResponse; target?: string }
   | { type: 'agent.message.delta'; step: number; attempt: number; itemId: string; text: string }
   | { type: 'agent.thought.delta'; step: number; attempt: number; itemId: string; text: string }
-  | { type: 'model.stream.restarted'; step: number; attempt: number }
+  | { type: 'model.stream.restarted'; step: number; attempt: number; itemIds: string[] }
   | {
       type: 'tool.call';
       callId: string;
@@ -570,7 +570,7 @@ export type RunState = {
   loadedTools: string[];
   offeredTools?: string[];
   loopWarned?: { signature: string };
-  streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
+  streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[]; thoughtIds: string[] };
   mode?: PermissionMode;
   taskSeq: number;
   loopGroups: { signature: string; outputSignature?: string }[];

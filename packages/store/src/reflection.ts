@@ -2,11 +2,11 @@ import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { MEMORY_ORIGINS, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES } from '@momonga/protocol';
-import type { ReflectionDrop } from '@momonga/protocol';
+import type { ReflectionDrop, RunEventPayload } from '@momonga/protocol';
 import { corrupt, expectOneOf, expectRecord, readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
 import type { Row } from './rows.ts';
-import type { ContextChargeStore, MemoryStore, ReflectionJob, ReflectionStore } from './types.ts';
+import type { MemoryStore, ReflectionJob, ReflectionStore } from './types.ts';
 
 const decodeDropped = (identity: string, value: unknown): ReflectionDrop[] => {
   if (value === null) return [];
@@ -38,7 +38,7 @@ const decodeJob = (row: Row, context: DecodeContext): ReflectionJob => {
 export const createReflectionStore = (
   db: DatabaseSync,
   clock: Clock,
-  writers: { memories: Pick<MemoryStore, 'saveCandidate'>; contextCharges: Pick<ContextChargeStore, 'record'> },
+  writers: { memories: Pick<MemoryStore, 'saveCandidate'>; endedRun: { append(runId: string, payloads: readonly RunEventPayload[]): void } },
   context: DecodeContext,
 ): ReflectionStore => {
   const insert = db.prepare("INSERT OR IGNORE INTO reflection_jobs (run_id, state, attempts, created_at, updated_at) VALUES (:runId, 'pending', 0, :now, :now)");
@@ -108,15 +108,15 @@ export const createReflectionStore = (
       return required(runId);
     },
     finish: (runId, reason) => finishJob(runId, reason),
-    complete: ({ runId, charge, candidates, dropped, reason }) =>
+    complete: ({ runId, charge, notice, candidates, dropped, reason }) =>
       immediateTx(db, () => {
-        if (charge !== null) writers.contextCharges.record(charge);
+        writers.endedRun.append(runId, [...(charge === null ? [] : [charge.charged]), ...(notice === undefined ? [] : [notice])]);
         for (const candidate of candidates) writers.memories.saveCandidate(candidate);
         return finishJob(runId, reason, dropped);
       }),
     fail: (runId, reason, charge, candidates = []) =>
       immediateTx(db, () => {
-        if (charge !== undefined) writers.contextCharges.record(charge);
+        if (charge !== undefined) writers.endedRun.append(charge.runId, [charge.charged]);
         for (const candidate of candidates) writers.memories.saveCandidate(candidate);
         if (Number(fail.run({ runId, reason, now: clock.now() }).changes) !== 1) throw new Error(`reflection job ${runId} cannot fail: it is not running`);
         return required(runId);

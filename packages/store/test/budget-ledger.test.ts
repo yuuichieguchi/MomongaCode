@@ -89,24 +89,51 @@ describe('admission of a model request is one transaction over the run tree', ()
     expect(h.store.admitModelRequest(parentClaim, ask({ limits }))).toMatchObject({ kind: 'admitted', reservedNano: 63_000 });
     const second = h.store.admitModelRequest(childClaim, ask({ limits }));
     expect(second).toMatchObject({ kind: 'admitted', maxOutputTokens: 2266, reservedNano: 36_990 });
-    expect(h.store.admitModelRequest(childClaim, ask({ limits: { costNano: 66_000 } }))).toEqual({ kind: 'refused', dimension: 'cost', cause: 'cap_too_small', spent: 63_000, limit: 66_000 });
+    expect(h.store.admitModelRequest(childClaim, ask({ limits: { costNano: 66_000 } }))).toEqual({ kind: 'refused', dimension: 'cost', cause: 'cap_too_small', spent: 63_000, limit: 66_000, admitsAt: 69_840 });
     const spend = h.store.treeSpend(parent.id);
     expect(spend.costNano + spend.reservedNano).toBeLessThanOrEqual(100_000);
     expect(spend.runsRead).toBe(2);
   });
 
-  it('releases the reservation when asked, and no longer counts the reservation of a run that ended', async () => {
+  it('clears the reservation in the one transaction that records the spend of the request, and no longer counts the reservation of a run that ended', async () => {
     const h = harness();
     const run = await enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     h.store.admitModelRequest(claim, ask());
-    h.store.releaseBudget(run.id);
-    expect(h.store.treeSpend(run.id)).toMatchObject({ reservedTokens: 0, reservedNano: 0 });
+    h.store.append(claim, [started, ...responded(1, 10).slice(0, 1)]);
+    expect(h.store.treeSpend(run.id)).toMatchObject({ reservedTokens: 5000, reservedNano: 63_000 });
+    h.store.append(claim, responded(1, 10).slice(1));
+    expect(h.store.treeSpend(run.id)).toMatchObject({ totalTokens: 10, reservedTokens: 0, reservedNano: 0 });
     h.store.admitModelRequest(claim, ask());
-    h.store.append(claim, [started]);
+    h.store.append(claim, [{ type: 'usage.charged', purpose: 'rejected_answer', inputTokens: 5, outputTokens: 1, totalTokens: 6 }]);
+    expect(h.store.treeSpend(run.id)).toMatchObject({ totalTokens: 16, reservedTokens: 0, reservedNano: 0 });
+    h.store.admitModelRequest(claim, ask());
     await h.store.transition(claim, ['RUNNING'], 'STOPPED', { stopReason: 'budget' });
     expect(mustRun(h.store, run.id).status).toBe('STOPPED');
     expect(h.store.treeSpend(run.id)).toMatchObject({ reservedTokens: 0, reservedNano: 0 });
+  });
+
+  it('keeps the reservation of a request whose run is requeued before its spend is recorded', async () => {
+    const h = harness();
+    const run = await enqueue(h.store, newSession(h.store).id);
+    const claim = mustClaim(h.store, 'w1');
+    h.store.admitModelRequest(claim, ask());
+    h.store.append(claim, [started]);
+    expect((await h.store.release(claim, 'QUEUED')).kind).toBe('ok');
+    expect(h.store.treeSpend(run.id)).toMatchObject({ reservedTokens: 5000, reservedNano: 63_000 });
+  });
+
+  it('re-takes the reservation recorded with a request that is sent again, under the lease of the claim', async () => {
+    const h = harness();
+    const run = await enqueue(h.store, newSession(h.store).id);
+    const stale = mustClaim(h.store, 'w1');
+    expect(h.store.reserveRecorded(stale, { reservedTokens: 700, reservedNano: 900 })).toEqual({ kind: 'ok' });
+    expect(h.store.treeSpend(run.id)).toMatchObject({ reservedTokens: 700, reservedNano: 900 });
+    h.clock.advance(LEASE_MS);
+    const current = mustClaim(h.store, 'w2');
+    expect(h.store.reserveRecorded(stale, { reservedTokens: 1, reservedNano: 1 })).toEqual({ kind: 'lease_lost' });
+    expect(h.store.reserveRecorded(current, { reservedTokens: 800 })).toEqual({ kind: 'ok' });
+    expect(h.store.treeSpend(run.id)).toMatchObject({ reservedTokens: 800, reservedNano: 0 });
   });
 
   it('answers lease_lost to a worker that no longer holds the run, and reserves nothing', async () => {

@@ -211,7 +211,7 @@ const handleResult = async (
   if (reusedCallId !== undefined) {
     const message = `The model response reuses the tool call id ${reusedCallId}, which the gateway must issue fresh for every call, so the run stops.`;
     journal.append([
-      { type: 'model.stream.restarted', step: position.step, attempt: position.attempt },
+      restartOf(journal.state, position),
       { type: 'notice', level: 'error', message, code: 'call_id_reused' },
     ]);
     return terminals.finish('FAILED', { error: { code: 'call_id_reused', message } });
@@ -291,6 +291,16 @@ const handleResult = async (
 const streamedBeforeRestart = (state: RunState, position: { step: number; attempt: number }): boolean =>
   state.streaming?.seen === true && state.streaming.step === position.step && state.streaming.attempt === position.attempt;
 
+const restartOf = (state: RunState, position: { step: number; attempt: number }): RunEventPayload => {
+  const streamed = state.streaming !== undefined && state.streaming.step === position.step && state.streaming.attempt === position.attempt ? state.streaming : undefined;
+  return {
+    type: 'model.stream.restarted',
+    step: position.step,
+    attempt: position.attempt,
+    itemIds: streamed === undefined ? [] : [...streamed.items.map((item) => item.itemId), ...streamed.thoughtIds],
+  };
+};
+
 const reusedCallIdOf = (state: RunState, output: ResponseResource['output']): string | undefined => {
   const known = new Set<string>([
     ...state.history.flatMap((entry) => (entry.item.type === 'function_call' ? [entry.item.call_id] : [])),
@@ -323,9 +333,14 @@ const streamRecovering = async (
     const recovery = await recoverRejectedCompaction(ctx, error, position);
     delete ctx.control.inFlight.modelKey;
     return { kind: 'flow', flow: recovery === 'done' ? 'done' : 'continue' };
-  } finally {
-    ctx.budget.release();
   }
+};
+
+const retakeRecorded = (ctx: ClaimContext, requestedSeq: number): 'held' | 'lease_lost' => {
+  const requested = ctx.options.store.readLatestRunEventBefore(ctx.run.id, 'model.requested', requestedSeq + 1);
+  if (requested === undefined || requested.seq !== requestedSeq) throw new Error(`run ${ctx.run.id} has no model request at seq ${requestedSeq} to send again`);
+  if (requested.budget === undefined) return 'held';
+  return ctx.options.store.reserveRecorded(ctx.claim, requested.budget).kind === 'ok' ? 'held' : 'lease_lost';
 };
 
 export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
@@ -334,7 +349,8 @@ export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
   if (!isRequestBody(inFlight.body)) throw new Error(`the recorded model request of step ${inFlight.step} is not a response body`);
   const position = { step: inFlight.step, attempt: inFlight.attempt };
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
-  if (streamedBeforeRestart(ctx.journal.state, position)) ctx.journal.append([{ type: 'model.stream.restarted', step: position.step, attempt: position.attempt }]);
+  if (retakeRecorded(ctx, inFlight.requestedSeq) === 'lease_lost') return ctx.terminals.yieldLease();
+  if (streamedBeforeRestart(ctx.journal.state, position)) ctx.journal.append([restartOf(ctx.journal.state, position)]);
   const outcome = await streamRecovering(ctx, inFlight.body, position, 'recorded');
   return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.streamed, position, observationOf(inFlight.body));
 };

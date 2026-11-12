@@ -115,8 +115,7 @@
     {"name":"OBSERVED_FILE_HASH_PAGE_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"}
   ],
   "signalTimeouts": {
-    "packages/foundation/src/process-contract.ts": ["STARTUP_TIMEOUT_MS"],
-    "packages/runtime/src/memory/deadline-signal.ts": ["Math.min(Math.max(deadlineAt - now, 0), TIMER_CEILING_MS)"]
+    "packages/foundation/src/process-contract.ts": ["STARTUP_TIMEOUT_MS"]
   },
   "burnDown": {
     "constants": [
