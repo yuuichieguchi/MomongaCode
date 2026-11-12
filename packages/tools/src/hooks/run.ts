@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { HOOK_BLOCKING_EXIT_CODE, hookMatcherMatches, hookTimeoutMs, HOOK_MATCHER_EVENTS } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookExecution, HookStart, HooksSettings, PermissionMode } from '@momonga/protocol';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { HOOK_FOLDER_ENV, canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { ShellHost } from '../builtins/shell.ts';
@@ -84,7 +84,7 @@ const executeHook = async (
     command: command.command,
     sandbox: ctx.sandbox,
     sandboxPolicy: ctx.sandboxPolicy,
-    env: { ...ctx.env, MOMONGA_PROJECT_DIR: ctx.projectDir },
+    env: { ...ctx.env, [HOOK_FOLDER_ENV]: ctx.projectDir },
     shellHost: ctx.shellHost,
     cwd: ctx.cwd,
     markerFile: path.join(ctx.markerDir, `hook-${sha256Hex(canonicalJson([ctx.runId, event, callId ?? null, command.command]))}`),

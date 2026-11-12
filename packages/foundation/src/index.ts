@@ -225,7 +225,9 @@ export {
 export type { SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export { isAcceptableAddress, isLoopbackAddress } from './global-address.ts';
 export { claimsLoopback, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
-export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
+export { matchesNoProxy, routeOf } from './network-route.ts';
+export { EDITOR_ENV_NAMES, ENVIRONMENT_VARIABLES, HOOK_FOLDER_ENV, NETWORK_ENV_NAMES, NO_COLOR_ENV, NO_MOTION_ENV, SCREEN_READER_ENV } from './environment-variables.ts';
+export type { EnvironmentVariableKind } from './environment-variables.ts';
 export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
 export { startSharedCall } from './shared-call.ts';
 export type { SharedCall } from './shared-call.ts';

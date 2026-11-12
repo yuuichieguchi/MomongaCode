@@ -103,6 +103,7 @@ export type { RipgrepSetting, HookApproval, MandateApproval } from './settings.t
 export { UnreadableKeptCopyError, createKeptSettings, diskKeptRecords, keptSettingsDirectory, noKeptRecords } from './kept-settings.ts';
 export type { KeptProblem, KeptRecords, KeptSettings } from './kept-settings.ts';
 export type { KeptLayers, TrustOracle, UserLayer } from './layers.ts';
+export { PROJECT_ENV_NAMES, USER_LAYER_ONLY_MODES, USER_LAYER_ONLY_PARTS, USER_LAYER_ONLY_SETTINGS } from './layers.ts';
 export type { SettingsUse } from './last-good.ts';
 export type {
   McpOAuthConfig,
