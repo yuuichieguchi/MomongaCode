@@ -48,7 +48,7 @@ const setup = async (options: { realSandbox: boolean; origin?: string }) => {
   const markerDir = path.join(world.base, 'markers');
   fs.mkdirSync(markerDir);
   const tools = createOperationTools({
-    runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir, credentialRoot: world.base }),
+    runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir, drainIdleMs: () => 1000, credentialRoot: world.base }),
     forge: NO_FORGE,
     settings: { protectedRefs: ['release/*'] },
   });
@@ -159,7 +159,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no 
     const markerDir = path.join(world.base, 'markers');
     fs.mkdirSync(markerDir);
     const tools = createOperationTools({
-      runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: reconcilePolicy, release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir, credentialRoot: world.base }),
+      runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: reconcilePolicy, release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir, drainIdleMs: () => 1000, credentialRoot: world.base }),
       forge: NO_FORGE,
       settings: {},
     });
@@ -189,6 +189,7 @@ describe('a process started without the executable that answers the prompt of gi
       shellHost: nodeShellHost(),
       outboundNetwork: unconfiguredNetworkOf,
       markerDir: world.base,
+      drainIdleMs: () => 1000,
       credentialRoot: world.base,
     });
     const ctx = contextFor(world.work, world.env);
@@ -222,7 +223,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the credential of a git child inside the rea
     fs.mkdirSync(markerDir);
     const credentialRoot = createTempDir();
     onCleanup(() => fs.rmSync(credentialRoot, { recursive: true, force: true }));
-    const runArgv = createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir, credentialRoot, credentialHelper: ENTRY_AS_SCRIPT });
+    const runArgv = createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir, drainIdleMs: () => 1000, credentialRoot, credentialHelper: ENTRY_AS_SCRIPT });
     const ctx = contextFor(world.work, world.env);
     const ask = `"$GIT_ASKPASS" "Password for 'https://x-access-token@forge.example': "`;
     const options = { cwd: world.work, env: world.env, signal: ctx.signal, network: 'none' as const, context: ctx, effect: false };

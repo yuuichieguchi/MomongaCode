@@ -202,6 +202,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   };
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
   const operationTools = createOperationToolSource({
+    drainIdleMs: () => settings.takeUserSnapshot().settings.tools.bash.drainIdleMs,
     paths,
     home,
     sandboxes,

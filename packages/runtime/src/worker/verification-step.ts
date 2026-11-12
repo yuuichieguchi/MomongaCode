@@ -117,6 +117,7 @@ const runHeldCheck = async (
     clock,
     signal: ctx.control.signal,
     timeoutMs: Math.min(condition.timeoutMs ?? bash.maxTimeoutMs, ctx.run.deadlineAt - clock.now()),
+    drainIdleMs: bash.drainIdleMs,
     tmpDir: commands.policy.tmpDir,
     inspector: tools.inspector,
     ...(tools.owners === undefined ? {} : { owners: tools.owners }),

@@ -20,6 +20,7 @@ export type OperationToolsOptions = {
   secretStore?: () => SecretStore;
   forgeFetch?: ForgeFetch;
   helperSelf?: HelperSelf;
+  drainIdleMs(): number;
 };
 
 export const outboundForgeFetch =
@@ -102,6 +103,7 @@ export const createOperationToolSource = (options: OperationToolsOptions): Opera
     shellHost: options.shellHost,
     outboundNetwork: async (signal) => (await options.network(signal)).outbound,
     markerDir: options.paths.markers.tools,
+    drainIdleMs: options.drainIdleMs,
     credentialRoot: options.paths.tmp.spawn,
     ...(options.helperSelf === undefined ? {} : { credentialHelper: options.helperSelf }),
     owners: options.owners,

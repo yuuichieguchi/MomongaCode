@@ -106,6 +106,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'tools.bash.onTimeout': { label: 'What happens to a shell command at its time', section: 'Tools', appliesNow: false },
   'tools.bash.backgroundTimeoutMs': { label: 'Time a background shell command may run when the model names none (ms)', section: 'Tools', appliesNow: false },
   'tools.bash.maxBackgroundTimeoutMs': { label: 'Longest time the model may give a background shell command (ms)', section: 'Tools', appliesNow: false },
+  'tools.bash.drainIdleMs': { label: 'Time without output after a shell command ended before its output is read no further (ms)', section: 'Tools', appliesNow: false },
   'tools.search.timeoutMs': { label: 'Time a file search may run (ms)', section: 'Tools', appliesNow: false },
   'tools.operations.timeoutMs': { label: 'Time a Git or forge operation may run (ms)', section: 'Tools', appliesNow: false },
   'memory.reflection.enabled': { label: 'Reflection', section: 'Memory', appliesNow: false },

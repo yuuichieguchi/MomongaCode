@@ -45,6 +45,7 @@ const stage = async () => {
     outboundNetwork: unconfiguredNetworkOf,
     markerDir,
     credentialRoot,
+    drainIdleMs: () => 1000,
     credentialHelper: ENTRY_AS_SCRIPT,
   });
   const remote = `${server.origin}/remote.git`;

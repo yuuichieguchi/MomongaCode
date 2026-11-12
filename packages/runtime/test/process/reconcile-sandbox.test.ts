@@ -69,6 +69,7 @@ describe.runIf(HAS_REAL_SANDBOX)('a Git probe of a reconcile in the real sandbox
       shellHost: nodeShellHost(),
       outboundNetwork: unconfiguredNetworkOf,
       markerDir,
+      drainIdleMs: () => 1000,
       credentialRoot: temp.paths.tmp.spawn,
       inspector: testProcessInspector(),
     });

@@ -27,9 +27,11 @@ export const hookRunContextFor = (
   hooks: HooksSettings,
   policy: ToolPolicy,
   sandbox: Sandbox,
+  drainIdleMs: number,
   report: (execution: HookExecution) => void,
 ): HookRunContext => ({
   hooks,
+  drainIdleMs,
   sandbox,
   sandboxPolicy: policy.sandboxPolicy,
   env: policy.env,
@@ -67,9 +69,10 @@ export const withSessionCommands = async <T>(ctx: ClaimContext, work: (commands:
 };
 
 const withLifecycleHooks = <T>(ctx: ClaimContext, hooks: HooksSettings, work: (lifecycle: LifecycleHooks) => Promise<T>): Promise<T> =>
-  withSessionCommands(ctx, ({ session, policy, sandbox }) => {
+  withSessionCommands(ctx, async ({ session, policy, sandbox }) => {
     const executions: HookExecution[] = [];
-    return work({ context: hookRunContextFor(ctx, session, hooks, policy, sandbox, (execution) => executions.push(execution)), executions, session });
+    const { bash } = await ctx.options.settings.tools(session, ctx.control.signal);
+    return work({ context: hookRunContextFor(ctx, session, hooks, policy, sandbox, bash.drainIdleMs, (execution) => executions.push(execution)), executions, session });
   });
 
 const alreadyRan = (ctx: ClaimContext, event: HookExecution['hookEvent']): boolean => (ctx.journal.state.hookCompletions[event] ?? 0) > 0;

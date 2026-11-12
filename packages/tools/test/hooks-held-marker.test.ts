@@ -52,6 +52,7 @@ const contextWith = (command: string, run: CommandRunner) => {
     clock: { now: () => Date.now() },
     signal: new AbortController().signal,
     deadlineAt: Date.now() + 60_000,
+    drainIdleMs: 1000,
     started: () => undefined,
     report: (execution: HookExecution) => void executions.push(execution),
     inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), run, capability: notProved } as never),

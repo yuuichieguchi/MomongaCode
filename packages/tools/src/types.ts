@@ -74,6 +74,7 @@ export type BashLimits = {
   onTimeout: 'background' | 'kill';
   backgroundTimeoutMs: number;
   maxBackgroundTimeoutMs: number;
+  drainIdleMs: number;
 };
 
 export type ToolLimits = { bash: BashLimits; search: { timeoutMs: number }; operations: { timeoutMs: number } };
