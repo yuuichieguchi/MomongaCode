@@ -33,6 +33,8 @@ type Observation = Record<string, unknown>;
 const DEFAULT_REMOTE = 'origin';
 const STDERR_LIMIT = 2000;
 
+const printedOf = (ran: { stdout: string; stderr: string }): string => [ran.stdout.trim(), ran.stderr.trim()].filter((text) => text !== '').join('\n').slice(0, STDERR_LIMIT);
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const DESTINATIONS = 'destinations';
@@ -355,7 +357,7 @@ const runEffect = async (runtime: Runtime, effect: ArgvCall | ForgeCall, ctx: To
       effect: true,
       credentials: await credentialsFor(runtime, network, ctx.signal),
     });
-    return result.exitCode === 0 ? undefined : `the command exited with ${result.exitCode}: ${result.stderr.trim().slice(0, STDERR_LIMIT)}`;
+    return result.exitCode === 0 ? undefined : `the command exited with ${result.exitCode}: ${printedOf(result)}`;
   }
   const answer = await runtime.deps.forge.request({
     remoteUrl: forgeRemoteOf(scope),
@@ -404,8 +406,8 @@ const runPrePushHook = async (runtime: Runtime, hook: PrePushHook, ctx: ToolCont
     if (remoteSha === undefined) return `the remote ${destination} could not be read before the ${PRE_PUSH} hook, so nothing was sent`;
     const ran = await runtime.deps.runArgv([program, renderTemplate(hook.remote, scope), destination], { ...step, stdin: prePushLine(hook, scope, remoteSha) });
     if (ran.exitCode !== 0) {
-      const printed = [ran.stdout.trim(), ran.stderr.trim()].filter((text) => text !== '').join('\n');
-      return `the ${PRE_PUSH} hook of the repository exited with ${ran.exitCode}, so nothing was sent to ${destination}${printed === '' ? '' : `:\n${printed.slice(0, STDERR_LIMIT)}`}`;
+      const printed = printedOf(ran);
+      return `the ${PRE_PUSH} hook of the repository exited with ${ran.exitCode}, so nothing was sent to ${destination}${printed === '' ? '' : `:\n${printed}`}`;
     }
   }
   return undefined;
