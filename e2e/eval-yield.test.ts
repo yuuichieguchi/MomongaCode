@@ -90,6 +90,7 @@ describe('momonga eval yield live', () => {
 
     const report = JSON.parse(fs.readFileSync(reportFile, 'utf8')) as YieldReport;
     expect(report).toMatchObject({ kind: YIELD_REPORT_KIND, acceptance: YIELD_ACCEPTANCE, model: 'fake', models: [STRUCTURED_MODEL_REF] });
+    expect(report.gate?.passed).toBe(false);
     expect(report.families).toHaveLength(MINIMUM_PAIRS);
     for (const family of report.families) {
       expect(family.learn).toMatchObject({ status: 'COMPLETED', candidates: 1, accepted: 1, rejected: 0, reflection: { state: 'done', calls: 1 } });
