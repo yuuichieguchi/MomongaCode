@@ -8,6 +8,7 @@ import type { OverlayPorts } from './picker.tsx';
 export const APPROVE_ROW = 'Approve: it runs from now on';
 export const NOT_NOW_ROW = 'Not now: it does not run';
 export const NOT_RECORDED_LINE = 'What you approved earlier is not recorded, so here is all of it as it is now:';
+export const CURRENT_CONTENT_LINE = 'All of it as it is now:';
 export const MANDATE_REFUSED_LINE = 'Until it is approved, new runs in this folder are refused.';
 
 const contentLines = (value: unknown): string[] => JSON.stringify(value, null, 2).split('\n');
@@ -24,7 +25,7 @@ const changeLines = (item: TrustItem, now: unknown): SelectLine[] => {
   if (item.change.kind === 'new') return contentLines(now);
   if (item.change.kind === 'not-recorded') return [NOT_RECORDED_LINE, ...contentLines(now)];
   const { diff } = item.change;
-  return [...(diff.diffOmitted === undefined ? [] : [`${CHANGE_NOT_SHOWN_LEAD}${diff.diffOmitted}`]), ...diffRows(diff.hunks ?? [])];
+  return [...(diff.diffOmitted === undefined ? [] : [`${CHANGE_NOT_SHOWN_LEAD}${diff.diffOmitted}`]), ...diffRows(diff.hunks ?? []), CURRENT_CONTENT_LINE, ...contentLines(now)];
 };
 
 export const itemQuestionTitle = (item: TrustItem): string => {

@@ -66,4 +66,21 @@ describe('a hook group or mandate file of a trusted folder that is new or change
     await backend.called(`approve:${JSON.stringify([{ kind: 'mcp', name: 'docs', config, digest: 'm2' }])}`);
     app.unmount();
   });
+
+  it('shows every line of the current content of a changed item whose diff is omitted, with the reason, before Approve', async () => {
+    const group = { matcher: 'Bash', hooks: Array.from({ length: 6 }, (_, index) => ({ type: 'command' as const, command: `./scripts/step-${index}.sh` })) };
+    const { app } = start({ trustItems: { items: [{ kind: 'hook', event: 'PreToolUse', group, digest: 'd3', source: '/work/.momonga/settings.json', change: { kind: 'changed', diff: { diffOmitted: 'diff larger than 64 KiB' } } }], refused: [] } });
+    const question = await untilFrame(app, APPROVE_ROW);
+    expect(question).toContain('diff larger than 64 KiB');
+    for (let index = 0; index < 6; index += 1) expect(question).toContain(`./scripts/step-${index}.sh`);
+    app.unmount();
+  });
+
+  it('shows the full current content under the diff of a changed item', async () => {
+    const { app } = start({ trustItems: { items: [{ kind: 'mandate', document: { steps: 50, deny: ['Bash(rm:*)'] }, digest: 'm4', source: '/work/.momonga/mandate.json', change: { kind: 'changed', diff: { hunks: [{ oldStart: 2, newStart: 2, lines: ['-  "steps": 5,', '+  "steps": 50,'] }], added: 1, removed: 1 } } }], refused: [] } });
+    const question = await untilFrame(app, APPROVE_ROW);
+    expect(question).toMatch(/2 \+  "steps": 50,/);
+    expect(question).toContain('"Bash(rm:*)"');
+    app.unmount();
+  });
 });
