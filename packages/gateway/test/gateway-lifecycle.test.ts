@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents, waitFor, testKernelLock } from '@momonga/testkit';
 import { makeDir, outputText, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 import { openGatewayStore } from '../src/core/store.ts';
-import { createStoredDataChecks } from '../src/core/validation.ts';
+import { STORE_WORKER_CODE } from '../src/core/store-worker-code.generated.ts';
 import { inspectProcessLock } from '@momonga/foundation';
 
 describe('gateway persistence and lifecycle', () => {
@@ -13,10 +13,10 @@ describe('gateway persistence and lifecycle', () => {
     expect(fs.statSync(dbPath).mode & 0o777).toBe(0o600);
   });
 
-  it('refuses a database directory that does not exist and does not create it', () => {
+  it('refuses a database directory that does not exist and does not create it', async () => {
     const missing = path.join(makeDir(), 'removed-home', 'state');
 
-    expect(() => openGatewayStore(path.join(missing, 'gateway.db'), createStoredDataChecks())).toThrow(`database directory ${missing} does not exist`);
+    await expect(openGatewayStore({ dbPath: path.join(missing, 'gateway.db'), code: STORE_WORKER_CODE, signal: new AbortController().signal })).rejects.toThrow(`database directory ${missing} does not exist`);
     expect(fs.existsSync(path.dirname(missing))).toBe(false);
   });
 

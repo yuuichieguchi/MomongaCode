@@ -49,7 +49,7 @@ const setup = async () => {
   const registry = createIdempotencyRegistry({
     clock,
     config: GATEWAY_CONFIG_DEFAULTS,
-    store: { getIdempotency: (key: string) => stored.get(key), deleteIdempotency: (key: string) => void stored.delete(key) },
+    store: { getIdempotency: async (key: string) => stored.get(key), deleteIdempotency: async (key: string) => void stored.delete(key) },
   } as unknown as Services);
   const refusals: string[] = [];
   const replays: string[] = [];
@@ -61,9 +61,9 @@ const setup = async () => {
       (async function* () {
         const key = options.idempotencyKey;
         const digest = digestOf(body);
-        let found: ReturnType<typeof registry.lookup>;
+        let found: Awaited<ReturnType<typeof registry.lookup>>;
         try {
-          found = registry.lookup(key, digest);
+          found = await registry.lookup(key, digest, options.signal);
         } catch (error) {
           refusals.push((error as { code?: string }).code ?? String(error));
           throw error;
