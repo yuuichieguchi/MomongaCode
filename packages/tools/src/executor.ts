@@ -29,7 +29,7 @@ import type { ToolSet } from './registry.ts';
 import { callStopOf } from './call-stop.ts';
 import type { CallStop } from './call-stop.ts';
 import { cancellableTimer } from './timers.ts';
-import { observedToolFiles } from './work-tree-observer.ts';
+import { OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, observedToolFiles } from './work-tree-observer.ts';
 import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 import { blockedByHeldText, blockerOf, footprintOf } from './footprint.ts';
 import type { Footprint, HeldFootprint } from './footprint.ts';
@@ -432,7 +432,20 @@ const subjectFactsOf = (subject: PermissionSubject): SubjectFacts => {
 
 type ObservationState = { ran: number; closed?: { mark: WorkTreeMark; ran: number } };
 
-type OpenWindow = { mark: WorkTreeMark; sharedAtStart: boolean };
+type OpenWindow = { kind: 'open'; mark: WorkTreeMark; sharedAtStart: boolean } | { kind: 'not_observed'; reason: string };
+
+type Observed<T> = { kind: 'observed'; value: T } | { kind: 'not_observed'; reason: string };
+
+type WindowEffects = Pick<ToolResult, 'files' | 'windowShared'> & { note?: string };
+
+const NOT_OBSERVED_LEAD = 'file effects were not observed';
+
+const notObservedNote = (reason: string): string => `${NOT_OBSERVED_LEAD}: ${reason}`;
+
+const oversizedNote = (files: readonly string[]): string =>
+  `${NOT_OBSERVED_LEAD} for files over ${OBSERVED_UNTRACKED_FILE_MAX_BYTES} bytes that the repository does not track: ${files.join(', ')}`;
+
+const withNote = (result: ToolResult, note: string | undefined): ToolResult => (note === undefined ? result : { ...result, output: `${result.output}\n${note}` });
 
 const recordedFactsOf = (record: ToolIdempotencyRecord): SubjectFacts => {
   const stored = record.meta['facts'];
@@ -1425,24 +1438,62 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return created;
   };
 
-  const openWindow = async (batch: ExecutionBatchInput, state: ObservationState): Promise<OpenWindow | undefined> => {
+  const observeWithin = async <T>(work: (signal: AbortSignal) => Promise<T>, boundMs: number, outer: AbortSignal): Promise<Observed<T>> => {
+    const controller = new AbortController();
+    let expired = false;
+    const stopWithOuter = (): void => controller.abort(outer.reason);
+    if (outer.aborted) stopWithOuter();
+    else outer.addEventListener('abort', stopWithOuter, { once: true });
+    const timer = timers.setTimeout(() => {
+      expired = true;
+      controller.abort();
+    }, boundMs);
+    const stopped = new Promise<Observed<T>>((resolve) => {
+      const settle = (): void => resolve({ kind: 'not_observed', reason: expired ? `the observation took longer than ${boundMs} ms` : 'the call was cancelled' });
+      if (controller.signal.aborted) settle();
+      else controller.signal.addEventListener('abort', settle, { once: true });
+    });
+    const observed = work(controller.signal).then(
+      (value): Observed<T> => ({ kind: 'observed', value }),
+      (error: unknown): Observed<T> => {
+        if (error instanceof WorkTreeObservationError) return { kind: 'not_observed', reason: error.message };
+        throw error;
+      },
+    );
+    try {
+      return await Promise.race([observed, stopped]);
+    } finally {
+      timers.clearTimeout(timer);
+      outer.removeEventListener('abort', stopWithOuter);
+    }
+  };
+
+  const openWindow = async (batch: ExecutionBatchInput, state: ObservationState, boundMs: number): Promise<OpenWindow | undefined> => {
     const { workTreeObserver } = batch;
     if (workTreeObserver === undefined) return undefined;
     const sharedAtStart = batch.windowShared?.() === true;
     const reusable = state.closed !== undefined && state.closed.ran === state.ran;
-    const mark = reusable ? (state.closed as { mark: WorkTreeMark }).mark : await workTreeObserver.mark(batch.signal);
+    const known = reusable ? (state.closed as { mark: WorkTreeMark }).mark : undefined;
     delete state.closed;
-    return mark === undefined ? undefined : { mark, sharedAtStart };
+    if (known !== undefined) return { kind: 'open', mark: known, sharedAtStart };
+    const marked = await observeWithin((signal) => workTreeObserver.mark(signal), boundMs, batch.signal);
+    if (marked.kind === 'not_observed') return marked;
+    return marked.value === undefined ? undefined : { kind: 'open', mark: marked.value, sharedAtStart };
   };
 
-  const closeWindow = async (batch: ExecutionBatchInput, state: ObservationState, window: OpenWindow | undefined): Promise<Pick<ToolResult, 'files' | 'windowShared'>> => {
+  const closeWindow = async (batch: ExecutionBatchInput, state: ObservationState, window: OpenWindow | undefined, boundMs: number): Promise<WindowEffects> => {
     const { workTreeObserver } = batch;
     if (workTreeObserver === undefined || window === undefined) return {};
-    const closed = await workTreeObserver.changedSince(window.mark, batch.signal);
+    if (window.kind === 'not_observed') return { note: notObservedNote(window.reason) };
+    const closed = await observeWithin((signal) => workTreeObserver.changedSince(window.mark, signal), boundMs, batch.signal);
     const sharedAtEnd = batch.windowShared?.() === true;
-    if (closed === undefined) return {};
-    state.closed = { mark: closed.mark, ran: state.ran };
-    return { files: await observedToolFiles(options.files, closed.files, batch.signal), ...(window.sharedAtStart || sharedAtEnd ? { windowShared: true as const } : {}) };
+    if (closed.kind === 'not_observed') return { note: notObservedNote(closed.reason) };
+    state.closed = { mark: closed.value.mark, ran: state.ran };
+    return {
+      files: await observedToolFiles(options.files, closed.value.files, batch.signal),
+      ...(window.sharedAtStart || sharedAtEnd ? { windowShared: true as const } : {}),
+      ...(closed.value.oversized.length === 0 ? {} : { note: oversizedNote(closed.value.oversized) }),
+    };
   };
 
   const performExecution = async (batch: ExecutionBatchInput, plan: ExecutionPlan): Promise<CallOutcome> => {
@@ -1580,9 +1631,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           if (scope.controller.signal.aborted) resolve();
           else scope.controller.signal.addEventListener('abort', () => resolve(), { once: true });
         });
-        scope.armTimer({ totalMs: requestedMs, idleMs: tool.idleTimeoutMs, detach: tool.expiry === 'detach' });
         const observation = observesCall(batch, tool) ? observationOf(batch) : undefined;
-        const window = observation === undefined ? undefined : await openWindow(batch, observation);
+        const window = observation === undefined ? undefined : await openWindow(batch, observation, requestedMs);
+        scope.armTimer({ totalMs: requestedMs, idleMs: tool.idleTimeoutMs, detach: tool.expiry === 'detach' });
         const running = runTool();
         scope.trackEffect(running);
         const result = await Promise.race([running, aborted.then(() => undefined)]);
@@ -1598,8 +1649,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           if (settled.detached === true) scope.relinquishMarker();
           if (validatorFailure !== undefined) announceValidatorFailure(batch, tool, validatorFailure);
           const hooked = await applyPostToolHooks(batch, call, tool, target.input, settled);
-          const effects = observation === undefined || settled.detached === true ? {} : await closeWindow(batch, observation, window);
-          const { detached, ...reported } = hooked;
+          const { note, ...effects } = observation === undefined || settled.detached === true ? {} : await closeWindow(batch, observation, window, requestedMs);
+          const { detached, ...reported } = withNote(hooked, note);
           return scope.complete(await finalizeResult({ ...reported, ...(detached === true ? {} : facts.command === undefined ? {} : { command: facts.command }), ...effects }, tool, fitOfCall(batch.outputFit, call), batch.runId, batch.formatOutput), reconciled);
         }
         await settleWithin(timers, running, ABORT_SETTLE_LIMIT_MS);

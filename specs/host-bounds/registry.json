@@ -118,7 +118,8 @@
     {"name":"HISTORY_QUERY_MAX_CHARS","file":"packages/tools/src/history/constants.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"MIN_BODY_CHARS","file":"packages/tools/src/history/render.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"OMISSION_RESERVE_CHARS","file":"packages/tools/src/history/render.ts","kind":"stated","owner":"tools","row":"context.md"},
-    {"name":"OBSERVED_FILE_HASH_PAGE_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"}
+    {"name":"OBSERVED_FILE_HASH_PAGE_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"},
+    {"name":"OBSERVED_UNTRACKED_FILE_MAX_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"}
   ],
   "signalTimeouts": {
     "packages/foundation/src/process-contract.ts": ["STARTUP_TIMEOUT_MS"]

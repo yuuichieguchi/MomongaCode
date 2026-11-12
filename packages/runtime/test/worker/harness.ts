@@ -326,7 +326,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
 
   const toolRuntime = (toolList: () => AnyTool[]): ToolRuntimePort => ({
     inspector: testProcessInspector(),
-    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(stateDir, 'observer'), workTree: target.cwd, trusted: false }),
+    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeRoot: path.join(stateDir, 'observer'), cwd: target.cwd, trusted: false }),
     envFor: (target: Session) => {
       const env: ToolEnv = { ...target.env };
       portCalls.envFor.push({ sessionId: target.id, env });
