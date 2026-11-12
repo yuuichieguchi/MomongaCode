@@ -1,7 +1,6 @@
-import { TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { createTempDir, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
@@ -99,7 +98,7 @@ describe('a group member that survives the stop after the leader exits is report
         return 'held';
       },
     };
-    const markerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sse-'));
+    const markerDir = createTempDir();
     const markerFile = path.join(markerDir, 'marker');
     fs.writeFileSync(markerFile, `${FAKE_PID}\n`, { mode: 0o600 });
     try {

@@ -1,7 +1,5 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { systemTiming } from '@momonga/foundation';
@@ -13,6 +11,7 @@ import type { ModelsShell } from '../src/commands/models.ts';
 import { withIdentityReadFetch, withOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const READS_PER_ADDRESS = 2;
 
@@ -23,7 +22,7 @@ afterEach(async () => {
 });
 
 const portsWith = (written: string[]): CliPorts => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-cli-net-'));
+  const home = createTempDir();
   cleanups.push(() => fs.rmSync(home, { recursive: true, force: true }));
   return {
     home,

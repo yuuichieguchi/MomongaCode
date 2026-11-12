@@ -407,6 +407,12 @@ describe('a later round', () => {
 });
 
 describe('the token cap', () => {
+  it('checks the cap before every outcome that ends the command: a baseline that spent the cap and found nothing to improve stops with the cap named', async () => {
+    const { outcome } = await improve({ input: { tokenCap: 1 }, byGuideline: () => measured() });
+    expect(outcome.status).toBe('stopped');
+    expect(outcome.reason).toBe(GUIDELINE_CAP_REASON);
+  });
+
   it('guards a runaway command: benchmarks and calls count together, and passing the cap stops with the named reason and no winner', async () => {
     const { outcome, benchmarked } = await improve({
       input: { tokenCap: 105 },

@@ -1,6 +1,5 @@
-import { sleepDrivenTiming } from '@momonga/testkit';
+import { createTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ProcessInspector } from '@momonga/foundation';
@@ -38,7 +37,7 @@ afterEach(() => {
 });
 
 const settleFor = (scene: ReturnType<typeof sceneOf>) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'settle-report-'));
+  const dir = createTempDir();
   dirs.push(dir);
   const marker = path.join(dir, 'marker');
   fs.writeFileSync(marker, '', { mode: 0o600 });

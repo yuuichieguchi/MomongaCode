@@ -1,5 +1,5 @@
-import { FAKE_SOLVER_VERSION } from './fake-rule-verifier.ts';
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { sha256Hex } from '@momonga/foundation';
 import { usageOf } from '@momonga/testkit';
 import { DEADLINE_MS, START_MS, bodyDigest, makeEnv, modelKey, testSystemPrompt, textOf, typesOf } from './harness.ts';
@@ -9,12 +9,14 @@ import { FAKE_ADAPTER } from './fake-gateway.ts';
 describe('worker final answer', () => {
   it('returns idle when nothing is queued', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     expect(await env.runOnce(env.worker())).toBe('idle');
     expect(env.gateway.streams).toEqual([]);
   });
 
   it('completes a run with a single answer and records events in order', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(textStep('Hello there, friend.', { chunks: ['Hello ', 'there, ', 'friend.'], usage: usageOf(120, 7), itemId: 'msg_final' }));
     const run = await env.enqueue('Say hello');
 
@@ -57,6 +59,7 @@ describe('worker final answer', () => {
 
   it('sends the documented request body under the step idempotency key', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(textStep('done'));
     const run = await env.enqueue('Say hello');
 
@@ -91,6 +94,7 @@ describe('worker final answer', () => {
 
   it('passes the capability parallelToolCalls flag and the model to the gateway', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.capabilitiesValue = { ...env.gateway.capabilitiesValue, parallelToolCalls: true };
     env.gateway.script.push(textStep('done'));
     await env.enqueue();
@@ -101,6 +105,7 @@ describe('worker final answer', () => {
 
   it('pins the model, prompt digest, tool set digest and capabilities on the first attempt', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(textStep('done'));
     const run = await env.enqueue();
     await env.runOnce(env.worker());
@@ -117,7 +122,7 @@ describe('worker final answer', () => {
         secondary: { adapter: FAKE_ADAPTER, model: 'secondary', answers: 'model' },
       },
       token: {},
-      policyVerdict: { fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/), verdict: 'not-needed', solver: FAKE_SOLVER_VERSION, refuted: [], unknown: [], notProved: [] },
+      policyVerdict: { fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/), verdict: 'not-needed', solver: expect.stringMatching(/^z3 [0-9a-f]{64}$/), refuted: [], unknown: [], notProved: [] },
     });
     expect(env.fold(run.id).pins).toEqual(started?.pins);
   });

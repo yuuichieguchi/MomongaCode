@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace';
 import { createTelemetry, openTraceStore } from '@momonga/observability';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, createTempDir } from '@momonga/testkit';
 import { GatewayRequestError } from '../../src/gateway-client.ts';
 import { createTracerPort } from '../../src/tracer.ts';
 import { LeaseLostError, ShutdownError } from '../../src/worker/errors.ts';
@@ -25,7 +24,7 @@ afterEach(async () => {
 
 const setup = (captureMessageContent?: boolean) => {
   const clock = createFakeClock(START_MS);
-  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'tr-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(dir, 'traces.db'), clock });

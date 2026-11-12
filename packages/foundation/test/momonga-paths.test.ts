@@ -5,7 +5,7 @@ import path from 'node:path';
 import util from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, MomongaDirectoryError, SocketPathUnsupportedError, ensureMomongaDirs, generationLayout, listenUnix, momongaPaths, refuseUnfitGenerationSocketsBeforeCreation, rotatedLogPath, setSocketBind } from '@momonga/foundation';
-import { realProcessTestSignal, testKernelLock } from '@momonga/testkit';
+import { realProcessTestSignal, testKernelLock, createTempDir } from '@momonga/testkit';
 
 const UNIX_ENDPOINTS = { form: 'unix' } as const;
 
@@ -106,7 +106,7 @@ describe('momongaPaths', () => {
   });
 
   it('refuses a too-long socket path when listenUnix binds it, with the bind probe evidence', async () => {
-    const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-home-')));
+    const home = createTempDir();
     try {
       const own = generationLayout(home, FIRST_GENERATION, 'darwin');
       fs.mkdirSync(own.dir, { recursive: true, mode: 0o700 });
@@ -136,7 +136,7 @@ describe('momongaPaths', () => {
 });
 
 describe('ensureMomongaDirs', () => {
-  const temporaryBase = (): string => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-dirs-')));
+  const temporaryBase = (): string => createTempDir();
 
   it('reports a socket path the host refuses to bind before it creates any directory', async () => {
     const base = temporaryBase();
@@ -164,7 +164,7 @@ describe('ensureMomongaDirs', () => {
   });
 
   it('reports a directory that cannot be created as a typed error naming the path and the reason', async () => {
-    const base = fs.realpathSync.native(fs.mkdtempSync('/tmp/mm-dirs-'));
+    const base = createTempDir({ asHome: true });
     try {
       const blocker = path.join(base, 'file');
       fs.writeFileSync(blocker, '');
@@ -178,7 +178,7 @@ describe('ensureMomongaDirs', () => {
     }
   });
   it('reports a home that exists and is not a directory as a typed error naming the path and the reason', async () => {
-    const base = fs.realpathSync.native(fs.mkdtempSync('/tmp/mm-dirs-'));
+    const base = createTempDir({ asHome: true });
     try {
       const home = path.join(base, 'file');
       fs.writeFileSync(home, '');

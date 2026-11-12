@@ -4,12 +4,21 @@ import { GIT_DIRECTORY_ENTRIES, WORKSPACE_CONTROL_NAMES } from '@momonga/foundat
 import { PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS } from '@momonga/protocol';
 import { APPLIES_NEXT_SESSION, APPLIES_NOW, REMOVE_ACTIONS, chooseSaveTarget, chosenAction, currentOf, removeQuestion, runCollection, writeSetting } from '../settings-screen.tsx';
 import type { Removal } from '../settings-screen.tsx';
+import type { TrustView } from '../../client/views.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
 export const PERMISSIONS_TITLE = 'Permissions';
 export const START_MODE_ROW = 'Start mode';
 export const DIRECTORIES_ROW = 'Additional directories';
 export const PROTECTED_HEADING = 'Always protected';
+export const TRUST_ROW = 'Folder trust';
+export const TRUST_TITLE = 'Do you trust the files of this folder? Its own settings, hooks, MCP servers and mandate are loaded only when it is trusted.';
+export const NOT_DECIDED = 'not decided';
+export const TRUST_ACTIONS = [
+  { label: 'Trust this folder', decision: 'trusted' },
+  { label: 'Do not trust this folder', decision: 'untrusted' },
+  { label: 'Clear the decision: the next start asks again', decision: null },
+] as const;
 export const RULE_KINDS = [
   { effect: 'allow', row: 'Allow rules', preview: 'Allowed' },
   { effect: 'ask', row: 'Ask rules', preview: 'Asks' },
@@ -24,6 +33,8 @@ export const PROTECTED_LINES: readonly string[] = [
   'a change to these is asked of a person in every mode',
   'adding a standing rule is asked of a person in every mode',
 ];
+
+const TRUST_ROW_INDEX = RULE_KINDS.length + 2;
 
 const START_MODE_PATH = ['permissions', 'defaultMode'] as const;
 
@@ -110,6 +121,25 @@ const editStartMode = async (context: SlashContext, snapshot: SettingsSnapshot):
   return refusal === undefined ? `${START_MODE_ROW}: ${mode}  ${APPLIES_NEXT_SESSION}` : refusal.refused;
 };
 
+const trustShown = (trust: TrustView): string => `${trust.decision ?? NOT_DECIDED}${trust.inheritedFrom === undefined ? '' : `  from ${trust.inheritedFrom}`}`;
+
+const editTrust = async (context: SlashContext, trust: TrustView): Promise<string | undefined> => {
+  const choice = await context.overlays.choose({
+    title: TRUST_TITLE,
+    lines: [`${trust.path}: ${trustShown(trust)}`],
+    rows: TRUST_ACTIONS.map((action) => ({ label: action.label })),
+    initial: Math.max(0, TRUST_ACTIONS.findIndex((action) => action.decision === trust.decision)),
+    decideOn: 'enter',
+    escape: 'back',
+    filter: false,
+  });
+  const action = choice === undefined ? undefined : TRUST_ACTIONS[choice.index];
+  if (action === undefined) return undefined;
+  if (action.decision === null) await context.backend.clearTrust();
+  else await context.backend.decideTrust(action.decision);
+  return `${TRUST_ROW}: ${action.decision ?? NOT_DECIDED}  ${APPLIES_NEXT_SESSION}`;
+};
+
 const startModeLabel = (snapshot: SettingsSnapshot): string => {
   const { value, source } = currentOf(snapshot, START_MODE_PATH);
   return `${START_MODE_ROW}  ${typeof value === 'string' ? value : PERMISSION_MODES[0]}  ${source}`;
@@ -117,13 +147,14 @@ const startModeLabel = (snapshot: SettingsSnapshot): string => {
 
 export const permissionsCommand: SlashCommand = {
   name: 'permissions',
-  description: 'show and change the start mode, the allow, ask and deny rules and the additional directories',
+  description: 'show and change the start mode, the allow, ask and deny rules, the additional directories and the trust of this folder',
   needsSession: false,
   run: async (_args, context) => {
     let at = 0;
     let line: string | undefined;
     for (;;) {
       const snapshot = await context.backend.settings();
+      const trust = await context.backend.trust();
       const choice = await context.overlays.choose({
         title: PERMISSIONS_TITLE,
         lines: line === undefined ? [] : [line],
@@ -131,6 +162,7 @@ export const permissionsCommand: SlashCommand = {
           { label: startModeLabel(snapshot) },
           ...RULE_KINDS.map((kind) => ({ label: `${kind.row}  ${heldAt(snapshot, kind.effect).length}` })),
           { label: `${DIRECTORIES_ROW}  ${heldAt(snapshot, 'additionalDirectories').length}` },
+          { label: `${TRUST_ROW}  ${trustShown(trust)}` },
           { label: PROTECTED_HEADING, separator: true },
           ...PROTECTED_LINES.map((label) => ({ label, separator: true })),
         ],
@@ -145,6 +177,7 @@ export const permissionsCommand: SlashCommand = {
       const kind = RULE_KINDS[choice.index - 1];
       if (choice.index === 0) line = await editStartMode(context, snapshot);
       else if (kind !== undefined) await editRules(context, kind);
+      else if (choice.index === TRUST_ROW_INDEX) line = await editTrust(context, trust);
       else await editDirectories(context);
     }
   },

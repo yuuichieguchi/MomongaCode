@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { displayToolPath, resolveToolPath } from '@momonga/foundation';
-import { testPaths } from '@momonga/testkit';
+import { createTempDir, testPaths } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -12,7 +11,7 @@ afterEach(() => {
 });
 
 const makeRoot = (): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-tool-path-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };
@@ -89,7 +88,7 @@ describe('displayToolPath', () => {
   });
 
   it('shows a path relative when the working directory is under the non-canonical temporary directory', async () => {
-    const viaTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-tool-path-raw-'));
+    const viaTmp = createTempDir();
     tempDirs.push(viaTmp);
     fs.writeFileSync(path.join(viaTmp, 'a.txt'), 'a\n');
     const canonical = fs.realpathSync.native(viaTmp);

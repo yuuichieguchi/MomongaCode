@@ -10,7 +10,7 @@ type ReliabilityCommand = { reliabilityText(client: FactsClient, options: { grou
 
 const DAY = 86_400_000;
 const NOW = T0 + DAY;
-const noCost = async (runIds: readonly string[]): Promise<RunCostView[]> => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] }));
+const noCost = async (runIds: readonly string[]): Promise<RunCostView[]> => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] }));
 type ReviewCall = RunCallView;
 type ReviewCommand = { reviewSample(calls: readonly ReviewCall[], options: { size: number; seed: string }): { allowedWithoutPerson: ReviewCall[]; asks: ReviewCall[] } };
 
@@ -134,7 +134,7 @@ describe('momonga reliability: the cost lines (X6)', () => {
       reportFacts: pagedClient(rows, REPORT_PAGE_ROWS).client.reportFacts,
       reportCost: async (runIds) => {
         asked.push([...runIds]);
-        return runIds.map((runId) => ({ runId, calls: 1, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD', priceVersion: '2026-01', units: '1000000000000000' }] }));
+        return runIds.map((runId) => ({ runId, calls: 1, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD', priceVersion: '2026-01', units: '1000000000000000' }] }));
       },
     };
     const text = await reliabilityText(client, { groupBy: 'model', explain: false, days: 30 }, NOW);

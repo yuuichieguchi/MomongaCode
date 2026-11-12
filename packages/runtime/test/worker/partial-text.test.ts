@@ -63,7 +63,7 @@ describe('partial assistant text on an interrupted stream', () => {
 
     expect(env.run(run.id).status).toBe('QUEUED');
     expect(journaledText(env, run.id)).toBe('Hello world');
-    expect(env.fold(run.id).streaming).toEqual({ step: 1, attempt: 1, seen: true, items: [{ itemId: ITEM_ID, text: 'Hello world' }] });
+    expect(env.fold(run.id).streaming).toEqual({ step: 1, attempt: 1, seen: true, items: [{ itemId: ITEM_ID, text: 'Hello world' }], thoughtIds: [] });
   });
 
   it('flushes the buffered deltas when the run is cancelled mid-stream', async () => {
@@ -158,6 +158,7 @@ describe('partial assistant text on an interrupted stream', () => {
       },
       options: {
         clock: env.clock,
+        timers: env.timers,
         gateway: {
           ...env.gateway,
           stream: () =>
@@ -195,7 +196,7 @@ describe('partial assistant text on an interrupted stream', () => {
     const initial = initialRunState({ runId: run.id, sessionId: run.sessionId, fence: TEST_FENCE });
     const beforeRestart = events.slice(0, restartIndex).reduce(foldRunState, initial);
     const atRestart = events.slice(0, restartIndex + 1).reduce(foldRunState, initial);
-    expect(beforeRestart.streaming).toEqual({ step: 1, attempt: 1, seen: true, items: [{ itemId: ITEM_ID, text: 'stale partial' }] });
+    expect(beforeRestart.streaming).toEqual({ step: 1, attempt: 1, seen: true, items: [{ itemId: ITEM_ID, text: 'stale partial' }], thoughtIds: [] });
     expect(atRestart.streaming).toBeUndefined();
     expect(env.fold(run.id).streaming).toBeUndefined();
   });

@@ -1,4 +1,3 @@
-import { testKernelLock } from '@momonga/testkit';
 import { describe, expect, it, vi } from 'vitest';
 import type { UserModels } from '@momonga/config';
 import { YIELD_ACCEPTANCE, YIELD_DATASET_FORMAT, YIELD_REPORT_KIND, buildYieldReport, formatYieldReport, judgeYield, parseYieldDataset } from '@momonga/eval';
@@ -13,7 +12,6 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { freshHome } from './fresh-home.ts';
 import { userModelsOf } from './user-models.ts';
 import { NO_HELPER } from './no-helper.ts';
@@ -96,7 +94,7 @@ const harness = (behaviour: Behaviour = {}) => {
       getRun: async (id: string) => ({ id, sessionId: `s-${root}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 1 } }),
       runReflection: async () => ({ job: { runId, state: 'done', attempts: 1, reason: null, dropped: [], updatedAt: 0 }, charges: [], queuedAhead: 0 }),
       runAnsweredBy: async () => ({ answeredBy: [{ target: 'scripted', adapter: 'chat-completions', upstreamModel: 'fake-model', answers: 'script' }] }),
-      reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+      reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
       resolveApproval: async () => ({}),
       cancel: async () => ({ status: 200, run: {} }),
       addRule: async () => ({ fact: { id: 'fact' }, size: [], warnings: [] }),
@@ -151,6 +149,7 @@ const harness = (behaviour: Behaviour = {}) => {
         signal.addEventListener('abort', () => reject(signal.reason), { once: true });
       }),
     now: () => 0,
+    random: () => 0,
     copyWorkspace: async (from, to) => {
       if (behaviour.failCopyTo === to) throw new Error('the workspace could not be copied');
       copies.push({ from, to });
@@ -274,7 +273,6 @@ const program = () => {
   } as unknown as CliPorts;
   const built = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/w/cache/executables' }, testKernelLock()),
     entries: {} as DaemonEntries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

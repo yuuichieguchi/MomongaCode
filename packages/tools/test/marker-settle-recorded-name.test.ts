@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { KEEPER_JOB_PREFIX, createKeptGroupControl, createProcessGroupPort, nodeCommandRunner } from '@momonga/foundation';
 import type { ProcessInspector } from '@momonga/foundation';
 import { createMarkerSettle } from '../src/marker-settle.ts';
 import { answeringMembers, fakeKeeperHost } from '../../foundation/test/support/fake-keeper.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const NAME = 'd7'.repeat(16);
 const PGID = 5150;
@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 const markerHolding = (text: string): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-settle-name-'));
+  const dir = createTempDir();
   dirs.push(dir);
   const marker = path.join(dir, 'marker');
   fs.writeFileSync(marker, text, { mode: 0o600 });

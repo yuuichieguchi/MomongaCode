@@ -1,6 +1,5 @@
 import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { JSONRPCMessage } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
@@ -8,7 +7,7 @@ import type { McpStdioServerConfig } from '@momonga/config';
 import { createStdioTransport, type StdioTransport } from '@momonga/mcp';
 import { groupAlive, holderGroups, nodeFileSystem } from '@momonga/foundation';
 import type { TerminateOutcome } from '@momonga/foundation';
-import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, testProcessInspector, pollUntil, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { createTempDir, killGroupsForCleanup, killPidsForCleanup, MCP_RAW_STDIO_SERVER_PATH, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_STDIO_LAUNCH, testProcessInspector } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -46,7 +45,7 @@ const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 const groupOfPid = async (pid: number): Promise<number | undefined> => (await holderGroups([pid], [], { inspector: testProcessInspector(), signal: new AbortController().signal }))[0];
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-')));
+  const dir = createTempDir();
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 };

@@ -343,6 +343,10 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
   };
 
+  const withdraw = (event: Extract<PublicRunEvent, { type: 'model.stream.restarted' }>): void => {
+    for (const itemId of event.itemIds) items.delete(itemId);
+  };
+
   const absorb = (frame: RunEventFrame): void => {
     const event = frame.data;
     if (isOpaqueEvent(event)) return;
@@ -350,6 +354,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     if (event.type === 'tool.call') titles.set(event.callId, event.title);
     if (event.type === 'tool.reconciled') found.set(event.callId, event.output);
     if (event.type === 'agent.message.delta') keep(event);
+    if (event.type === 'model.stream.restarted') withdraw(event);
   };
 
   const handle = (frame: RunEventFrame): void => {
@@ -358,6 +363,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     if (isOpaqueEvent(event)) return;
     track(event);
     if (event.type === 'agent.message.delta') keep(event);
+    else if (event.type === 'model.stream.restarted') withdraw(event);
     else present(event, undefined);
   };
 
@@ -562,12 +568,22 @@ export const resumeStream = async (ports: CliPorts, paths: MomongaPaths, adopted
 
 export type RefusedResult = { type: 'result'; subtype: 'error'; is_error: true; result: ''; error: { code: string; message: string } };
 
+const NOT_STARTED = 'run_not_started';
+
+const writeRefusedResult = (ports: Pick<CliPorts, 'stdout'>, format: OutputFormat, code: string, message: string): void => {
+  if (format === 'text') return;
+  const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code, message } };
+  ports.stdout.write(`${JSON.stringify(refused)}\n`);
+};
+
+const refusedBeforeRun = (ports: Pick<CliPorts, 'stdout'>, format: OutputFormat, error: unknown): void => {
+  if (error instanceof RunApiError) writeRefusedResult(ports, format, error.code === undefined ? NOT_STARTED : error.code, error.reason);
+  else writeRefusedResult(ports, format, NOT_STARTED, error instanceof Error ? error.message : String(error));
+};
+
 const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, error: { reason: string }): number => {
   ports.stderr.write(`${escapedLines(leadWith('momonga: ', error.reason.split('\n')))}\n`);
-  if (format !== 'text') {
-    const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message: error.reason } };
-    ports.stdout.write(`${JSON.stringify(refused)}\n`);
-  }
+  writeRefusedResult(ports, format, TARGET_NOT_READY, error.reason);
   return EXIT_FAILURE;
 };
 
@@ -588,42 +604,54 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
     if ((error instanceof RunApiError || error instanceof NoModelConnected) && error.code === TARGET_NOT_READY) return refuse(ports, paths, options.format, error);
     if (error instanceof RunApiError && isModelRefusal(error)) {
       ports.stderr.write(`${escapedLines([`momonga: ${error.reason}`])}\n`);
+      refusedBeforeRun(ports, options.format, error);
       return EXIT_FAILURE;
     }
+    refusedBeforeRun(ports, options.format, error);
     throw error;
   }
   if (session === undefined) return EXIT_INTERRUPTED;
+  const opened = session;
   try {
-    if (session.created.trustNotice !== undefined) ports.stderr.write(noteText([`momonga: ${session.created.trustNotice}`]));
-    const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
-    if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
-    if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {
-      const message = readinessShownText(readiness, 'shell');
-      ports.stderr.write(`${escapedLines(leadWith('momonga: ', message.split('\n')))}\n`);
-      if (options.format !== 'text') {
-        const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message } };
-        ports.stdout.write(`${JSON.stringify(refused)}\n`);
-      }
-      return EXIT_FAILURE;
-    }
-    if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessShownText(readiness, 'shell').split('\n')))}\n`);
-    const sessionId = session.created.session.id;
-    const invocation = await resolveSkillInvocation(session.client, sessionId, options.prompt, options.skill);
-    const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));
-    if (options.interrupt.aborted) return EXIT_INTERRUPTED;
-    const { run: started } = await session.client.createRun(sessionId, invocation.input, {
-      ...(invocation.skill === undefined ? {} : { skill: invocation.skill }),
-      ...(images.length === 0 ? {} : { images }),
-      ...(options.mandate === undefined ? {} : { mandate: options.mandate }),
-      ...(options.limits === undefined ? {} : { limits: options.limits }),
+    const started = await startedRun(ports, opened, options).catch((error: unknown) => {
+      refusedBeforeRun(ports, options.format, error);
+      throw error;
     });
-    if (options.format === 'stream-json') {
-      ports.stdout.write(
-        `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode, stripped_env_keys: session.created.strippedEnvKeys })}\n`,
-      );
-    }
-    return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, leaveWhenQuiescent: true, leaveWhenAsked: true, interrupt: options.interrupt, onInterrupt: 'cancel', ...(move === undefined ? {} : { move }) });
+    if (started.kind === 'refused') return EXIT_FAILURE;
+    if (started.kind === 'interrupted') return EXIT_INTERRUPTED;
+    return await watchRun(ports, paths, { client: opened.client, runId: started.id, format: options.format, verbose: options.verbose, leaveWhenQuiescent: true, leaveWhenAsked: true, interrupt: options.interrupt, onInterrupt: 'cancel', ...(move === undefined ? {} : { move }) });
   } finally {
-    await session.close();
+    await opened.close();
   }
+};
+
+type RunStart = { kind: 'started'; id: string } | { kind: 'refused' } | { kind: 'interrupted' };
+
+const startedRun = async (ports: CliPorts, session: CliSession, options: HeadlessOptions): Promise<RunStart> => {
+  if (session.created.trustNotice !== undefined) ports.stderr.write(noteText([`momonga: ${session.created.trustNotice}`]));
+  const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
+  if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
+  if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {
+    const message = readinessShownText(readiness, 'shell');
+    ports.stderr.write(`${escapedLines(leadWith('momonga: ', message.split('\n')))}\n`);
+    writeRefusedResult(ports, options.format, TARGET_NOT_READY, message);
+    return { kind: 'refused' };
+  }
+  if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessShownText(readiness, 'shell').split('\n')))}\n`);
+  const sessionId = session.created.session.id;
+  const invocation = await resolveSkillInvocation(session.client, sessionId, options.prompt, options.skill);
+  const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));
+  if (options.interrupt.aborted) return { kind: 'interrupted' };
+  const { run: started } = await session.client.createRun(sessionId, invocation.input, {
+    ...(invocation.skill === undefined ? {} : { skill: invocation.skill }),
+    ...(images.length === 0 ? {} : { images }),
+    ...(options.mandate === undefined ? {} : { mandate: options.mandate }),
+    ...(options.limits === undefined ? {} : { limits: options.limits }),
+  });
+  if (options.format === 'stream-json') {
+    ports.stdout.write(
+      `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode, stripped_env_keys: session.created.strippedEnvKeys })}\n`,
+    );
+  }
+  return { kind: 'started', id: started.id };
 };

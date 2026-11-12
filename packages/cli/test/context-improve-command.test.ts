@@ -1,17 +1,15 @@
-import { testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { CommanderError } from 'commander';
 import { encodeOutcomeFile, formatImproveOutcome, outcomeFileOf, parseGuidelineCandidate } from '@momonga/eval';
 import type { ImproveOutcome } from '@momonga/eval';
 import type { EntryIo } from '@momonga/foundation';
-import { adoptOutcome, formatGuidelines } from '../src/commands/context.ts';
+import { adoptOutcome, exitOfImproveOutcome, formatGuidelines } from '../src/commands/context.ts';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { terminalPorts } from '../src/terminal-writer.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { NO_HELPER } from './no-helper.ts';
 
 const program = () => {
@@ -31,7 +29,6 @@ const program = () => {
   } as unknown as CliPorts;
   const built = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/w/cache/executables' }, testKernelLock()),
     entries: {} as DaemonEntries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,
@@ -234,5 +231,17 @@ describe('listing guidelines', () => {
 describe('momonga context guideline rollback', () => {
   it('guards a typo: the version must be an integer of at least 1', async () => {
     await assertRejected(['context', 'guideline', 'rollback', 'latest'], /integer/);
+  });
+});
+
+describe('the exit of context improve', () => {
+  it.for([
+    ['winner', 0],
+    ['empty', 1],
+    ['no_analysis', 1],
+    ['no_winner', 1],
+    ['stopped', 1],
+  ] as const)('exits %s with %i: only a winner is a measured improvement', ([status, exit]) => {
+    expect(exitOfImproveOutcome({ status })).toBe(exit);
   });
 });

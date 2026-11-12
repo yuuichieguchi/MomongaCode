@@ -1,12 +1,12 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { connectionOf, modelOf } from './helpers.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const loadWith = async (target: Record<string, unknown>) => {
-  const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'fm-caps-'));
+  const home = createTempDir();
   fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { connections: [connectionOf('local', target)] } }), { mode: 0o600 });
   try {

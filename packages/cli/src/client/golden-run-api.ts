@@ -2,8 +2,62 @@ import { isOpaqueEvent } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { EvalRunApi } from '@momonga/eval';
 import { recordedCostsOf } from './recorded-costs.ts';
-import { DaemonMoved } from './runtime-client.ts';
-import type { RuntimeClient } from './runtime-client.ts';
+import { ReconnectBoundExceeded, followEvents, isTerminalStatus } from '../run/follow.ts';
+import type { ReconnectPolicy } from '../run/follow.ts';
+import type { RunEventFrame, RuntimeClient } from './runtime-client.ts';
+
+export type EventFollow = Pick<ReconnectPolicy, 'clock' | 'random' | 'reconnectBoundMs' | 'restoreConnection'>;
+
+type Ended = { failed: false } | { failed: true; error: unknown };
+
+export async function* followedRunEvents(client: Pick<RuntimeClient, 'streamEvents' | 'getRun'>, runId: string, follow: EventFollow): AsyncGenerator<PublicRunEvent> {
+  const stop = new AbortController();
+  const queue: RunEventFrame[] = [];
+  let ended: Ended | undefined;
+  let wake: (() => void) | undefined;
+  const woken = (): void => {
+    const waiting = wake;
+    wake = undefined;
+    waiting?.();
+  };
+  const following = followEvents<true>({
+    ...follow,
+    boundExceeded: (boundMs, cause) => new ReconnectBoundExceeded(runId, boundMs, cause),
+    signal: stop.signal,
+    open: (options) => client.streamEvents(runId, options),
+    finished: async () => (isTerminalStatus((await client.getRun(runId)).status) ? true : undefined),
+    onEvent: (frame) => {
+      queue.push(frame);
+      woken();
+    },
+  }).then(
+    () => {
+      ended = { failed: false };
+      woken();
+    },
+    (error: unknown) => {
+      ended = { failed: true, error };
+      woken();
+    },
+  );
+  try {
+    for (;;) {
+      for (let frame = queue.shift(); frame !== undefined; frame = queue.shift()) {
+        if (!isOpaqueEvent(frame.data)) yield frame.data;
+      }
+      if (ended !== undefined) {
+        if (ended.failed) throw ended.error;
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+    }
+  } finally {
+    stop.abort();
+    await following;
+  }
+}
 
 export type ReflectionSettle = {
   pendingBoundMs: number;
@@ -33,22 +87,9 @@ export const goldenRunApi = (
   client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'runAnsweredBy' | 'reportCost' | 'resolveApproval' | 'cancel'>,
   sessionEnv: Readonly<Record<string, string>> | undefined,
   settle: ReflectionSettle,
+  follow: EventFollow,
 ): EvalRunApi => {
-  async function* events(runId: string): AsyncGenerator<PublicRunEvent> {
-    let cursor: number | undefined;
-    for (;;) {
-      try {
-        for await (const frame of client.streamEvents(runId, cursor === undefined ? {} : { lastEventId: cursor })) {
-          cursor = frame.id;
-          if (isOpaqueEvent(frame.data)) continue;
-          yield frame.data;
-        }
-        return;
-      } catch (error) {
-        if (!(error instanceof DaemonMoved)) throw error;
-      }
-    }
-  }
+  const events = (runId: string): AsyncGenerator<PublicRunEvent> => followedRunEvents(client, runId, follow);
   const pinnedModels = new Map<string, string>();
   const envOf = (given: Readonly<Record<string, string>> | undefined): Readonly<Record<string, string>> => {
     const env = given ?? sessionEnv;
@@ -62,6 +103,7 @@ export const goldenRunApi = (
         env: envOf(input.env),
         permissionMode: input.permissionMode,
         ...(input.model === undefined ? {} : { model: input.model }),
+        ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
       });
       pinnedModels.set(session.id, session.model);
       return { id: session.id };

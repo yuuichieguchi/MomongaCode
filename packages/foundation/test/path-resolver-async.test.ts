@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPathResolver, hostPaths, nodeFileSystem, setCaseSensitivityProbe } from '../src/index.ts';
 import type { PathFileSystem } from '../src/path-compare.ts';
+import { createTempDir, systemTempRoot } from '@momonga/testkit';
 
 type FakeStats = { dev: number; ino: number; isDirectory: () => boolean; isSymbolicLink: () => boolean; isFile: () => boolean };
 
@@ -107,13 +107,13 @@ describe('a resolution that does not answer ends with the signal of the operatio
 
   it('rejects at once when the signal is already aborted', async () => {
     const reason = new Error('already cancelled');
-    await expect(hostPaths(AbortSignal.abort(reason)).canonicalPath(os.tmpdir())).rejects.toBe(reason);
+    await expect(hostPaths(AbortSignal.abort(reason)).canonicalPath(systemTempRoot())).rejects.toBe(reason);
   });
 });
 
 describe('the host resolver answers as the synchronous one did', () => {
   it('resolves a symlink chain and keeps a missing tail', async () => {
-    const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-async-paths-')));
+    const root = createTempDir();
     try {
       fs.mkdirSync(path.join(root, 'real'));
       fs.symlinkSync(path.join(root, 'real'), path.join(root, 'link'));

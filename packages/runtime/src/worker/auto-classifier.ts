@@ -12,6 +12,7 @@ import { ceilingOf, streamAdmitted, unpaidMessage, withAdmission } from './admit
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
 import { outputBoundOf } from './output-bound.ts';
+import { elapsedMsSince } from '../service/timers.ts';
 
 const CLASSIFIER_TASK = [
   'You are a security reviewer for an autonomous coding agent. Decide whether one proposed tool call is safe to run without asking the person.',
@@ -59,7 +60,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       return asked({ model: classifier, failure: `the tool call does not fit the context window of ${displayOf(view, views)}` });
     }
     const size = { inputTokens: counted.input_tokens, marginTokens: counted.error_bound, maxOutputTokens: outputReserveFor(capabilities) };
-    const { clock } = ctx.options;
+    const { timers } = ctx.options;
     const sent = await withAdmission(ctx.budget, { model: classifier, size }, async ({ admitted, proof }): Promise<{ terminal: ModelResult | undefined; timing: CallTiming }> => {
       const body: CreateResponseBody = {
         model: classifier,
@@ -76,7 +77,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       ctx.journal.append([{ type: 'tool.permission.classifying', callId: request.callId, subjectDigest: request.subjectDigest }]);
       let terminal: ModelResult | undefined;
       let firstEventMs: number | undefined;
-      const startedAt = clock.now();
+      const startedAt = timers.monotonicMs();
       const events = streamAdmitted(gateway, proof, body, {
         idempotencyKey: sha256Hex(canonicalJson(['permission_classifier', ctx.run.id, step, request.callId, request.subjectDigest, classifier])),
         deadlineAt: ctx.run.deadlineAt,
@@ -85,10 +86,10 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
         role: 'classifier',
       });
       for await (const event of events) {
-        if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
+        if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = elapsedMsSince(timers, startedAt);
         terminal = terminalResultOf(event) ?? terminal;
       }
-      return { terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt } };
+      return { terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: elapsedMsSince(timers, startedAt) } };
     });
     if (sent.kind === 'lease_lost') {
       ctx.journal.verifyLease();

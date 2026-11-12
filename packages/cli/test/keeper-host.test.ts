@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, checkedWindowsKeeper, sha256Hex } from '@momonga/foundation';
 import { provideEmbeddedWindowsKeeper } from '../src/keeper/host.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const dirs: string[] = [];
 
@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 const homeOf = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-keeper-host-')));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };

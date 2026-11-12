@@ -85,3 +85,19 @@ export const loadProjectMandate = async ({ projectDir, trusted, approvals, signa
   }
   return mandate;
 };
+
+export type ProjectMandateState =
+  | { file: string; found: false }
+  | { file: string; found: true; document: unknown; digest: string; approval: 'approved' | 'new' | 'changed' };
+
+export type ProjectMandateStateInput = { projectDir: string; approvals: ProjectApprovalsSettings | undefined; signal: AbortSignal };
+
+export const projectMandateState = async ({ projectDir, approvals, signal }: ProjectMandateStateInput): Promise<ProjectMandateState> => {
+  const file = path.join(projectDir, PROJECT_MANDATE_FILE);
+  const asker = askerOf(signal);
+  const read = await readJsonFile(file, asker, { confine: { to: projectDir, paths: asker.paths } });
+  if (!read.found) return { file, found: false };
+  const digest = approvalDigestOf(read.value);
+  const approved = approvals?.[await asker.paths.canonicalPath(projectDir)]?.mandate;
+  return { file, found: true, document: read.value, digest, approval: approved === digest ? 'approved' : approved === undefined ? 'new' : 'changed' };
+};

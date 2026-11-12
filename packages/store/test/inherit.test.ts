@@ -281,7 +281,7 @@ describe('projectInheritance: the partial assistant message', () => {
 
   it('projects no partial message for a thought-only stream, and marks the unanswered task', () => {
     const state = foldOf([task('Explain'), ...claimed('manual'), requested(1), { type: 'agent.thought.delta', step: 1, attempt: 1, itemId: 'r1', text: 'thinking' }, ended('CANCELLED')]);
-    expect(state.streaming).toEqual({ step: 1, attempt: 1, seen: true, items: [] });
+    expect(state.streaming).toEqual({ step: 1, attempt: 1, seen: true, items: [], thoughtIds: ['r1'] });
     const payload = project(state, CANCELLED);
     expect(payload.partial).toBeUndefined();
     expect(payload.history).toEqual([{ seq: 1, item: taskItem('Explain') }, markerEntry(2, MARKER_TEXT.userInterrupted)]);
@@ -294,7 +294,7 @@ describe('projectInheritance: the partial assistant message', () => {
       ...claimed('manual'),
       requested(1),
       { type: 'agent.message.delta', step: 1, attempt: 1, itemId: 'm1', text: 'stale' },
-      { type: 'model.stream.restarted', step: 1, attempt: 1 },
+      { type: 'model.stream.restarted', step: 1, attempt: 1, itemIds: ['m1'] },
       ended('FAILED', 'call_id_reused'),
     ]);
     const payload = project(state, { status: 'FAILED', errorCode: 'call_id_reused' });

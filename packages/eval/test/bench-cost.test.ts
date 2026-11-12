@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TRANSCRIPT_FORMAT, decodeTranscript, encodeTranscript, nodeWorkspaceFiles, parseDataset, runBenchmark, runFiguresOf } from '@momonga/eval';
@@ -7,6 +6,7 @@ import type { BenchRunApi, BenchRunView, RecordedRun } from '@momonga/eval';
 import { formatReliabilityReport } from '@momonga/reliability';
 import type { PublicRunEvent, RunCostView } from '@momonga/protocol';
 import { ADD_FIXED, benchmarkDir, nodeProbe } from './bench-fixtures.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const T0 = 1_800_000_000_000;
 const ONE_DOLLAR_UNITS = '1000000000000000';
@@ -17,7 +17,7 @@ afterEach(() => {
   for (const dir of scratches.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-const recordedCost = (runId: string, units: string): RunCostView => ({ runId, calls: 1, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD', priceVersion: 'v1', units }] });
+const recordedCost = (runId: string, units: string): RunCostView => ({ runId, calls: 1, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD', priceVersion: 'v1', units }] });
 
 const pricedApi = (asked: string[][]): BenchRunApi => {
   const runs = new Map<string, { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } }>();
@@ -37,7 +37,7 @@ const pricedApi = (asked: string[][]): BenchRunApi => {
     },
     runOf: async (runId): Promise<BenchRunView> => {
       const run = runs.get(runId) as { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } };
-      return { sessionId: run.sessionId, status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + run.timeoutMs, limits: run.limits, step: 1, tokensTotal: 10, origin: 'trusted', agent: 'main', mode: 'acceptEdits', model: 'fake/system', declared: true };
+      return { sessionId: run.sessionId, status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + run.timeoutMs, limits: run.limits, step: 1, tokensTotal: 10, origin: 'trusted', agent: 'main', mode: 'acceptEdits', model: 'fake/system'};
     },
     costs: async (runIds) => {
       asked.push([...runIds]);
@@ -58,7 +58,7 @@ describe('one cost record: a report prints the cost of its population', () => {
     const benchmark = JSON.parse(fs.readFileSync(file, 'utf8')) as { tasks: { runs: number }[] };
     for (const task of benchmark.tasks) task.runs = 2;
     fs.writeFileSync(file, JSON.stringify(benchmark));
-    const at = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-bench-cost-'));
+    const at = createTempDir();
     scratches.push(at);
     const asked: string[][] = [];
     const api = pricedApi(asked);
@@ -95,7 +95,7 @@ describe('one cost record: a report prints the cost of its population', () => {
       run: { id: 'r', status: 'COMPLETED', step: 1, usage: { inputTokens: 3, outputTokens: 4, totalTokens: 7 } },
       events: [charged],
       children: [{ runId: 'child', agent: 'explore', events: [] }],
-      costs: [recordedCost('r', HALF_DOLLAR_UNITS), { ...recordedCost('child', HALF_DOLLAR_UNITS), calls: 2, notPriced: 1 }],
+      costs: [recordedCost('r', HALF_DOLLAR_UNITS), { ...recordedCost('child', HALF_DOLLAR_UNITS), calls: 2, retries: 0, notPriced: 1 }],
     };
     const { budget } = runFiguresOf(golden, transcript);
     expect(budget.spent).toEqual({ tokens: 7, costNano: 1_000_000_000, unpricedCalls: 1 });

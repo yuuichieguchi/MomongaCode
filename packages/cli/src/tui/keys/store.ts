@@ -18,6 +18,7 @@ export type KeyEdit = (document: KeyDocument) => KeyDocument;
 
 export type KeyBindings = {
   readonly shownFile: string;
+  readonly file: string | undefined;
   table(): KeyTable;
   report(): BindingReport;
   subscribe(listener: () => void): () => void;
@@ -39,6 +40,7 @@ export const KEY_FILE_UNAVAILABLE = 'the key-binding file is not available in th
 
 export const fixedKeyBindings = (table: KeyTable): KeyBindings => ({
   shownFile: '',
+  file: undefined,
   table: () => table,
   report: () => ({ rows: table.rows(), entries: [] }),
   subscribe: () => () => undefined,
@@ -134,6 +136,7 @@ export const createKeyBindings = ({ file, shownFile, files }: KeyBindingsOptions
 
   return {
     shownFile,
+    file,
     table: () => table,
     report: () => report,
     subscribe: (listener) => {

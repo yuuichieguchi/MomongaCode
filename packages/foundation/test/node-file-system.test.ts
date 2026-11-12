@@ -1,13 +1,13 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { nodeFileSystem, nodeFileSystemSync } from '../src/node-file-system.ts';
+import { createTempDir } from '@momonga/testkit';
 
 let root: string;
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-node-fs-'));
+  root = createTempDir();
 });
 
 afterEach(() => {

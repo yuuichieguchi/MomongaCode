@@ -1244,6 +1244,10 @@ ALTER TABLE run_inbox ADD COLUMN run_terms_json TEXT;
 ALTER TABLE run_inbox ADD COLUMN origin TEXT;
 `;
 
+const INHERITED_COMPACTED_RECORDED = `
+SELECT 'event type: context.inherited_compacted';
+`;
+
 const STORED_SETS_RECORDED = `
 SELECT 'event type: user_shell; inbox delivery: steer, queue; inbox state: pending, delivered, withdrawn';
 `;
@@ -1512,5 +1516,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 48,
     name: 'record for every folder the issues the issue watch has started, one row per issue reference written before its run starts, so a restart never starts an issue twice; and mark the build that writes the run event of a request for a compaction, which a compaction run writes first, so that a build without this migration reads it with tolerance',
     sql: ISSUE_WATCH,
+  },
+  {
+    version: 49,
+    name: 'record that this build writes the run event type context.inherited_compacted, which a run writes once before its first model request when it inherits the summary of a compaction it did not do itself, so that a build without this migration reads it with tolerance: no table changes',
+    sql: INHERITED_COMPACTED_RECORDED,
   },
 ];

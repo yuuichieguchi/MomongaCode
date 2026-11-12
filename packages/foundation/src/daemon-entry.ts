@@ -5,7 +5,7 @@ import { EntryUsageError, parseFlags } from './entry-flags.ts';
 import type { FlagSpec, ParsedFlags } from './entry-flags.ts';
 import { watchLifeline } from './lifeline.ts';
 import type { LifelineHandlers, LifelineWatch } from './lifeline.ts';
-import { ENTRY_HARD_EXIT_MARGIN_MS, EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, EXIT_OK, STDIO_EXIT_FLUSH_MS, STOP_MESSAGE_OVERLONG_REASON, createJsonLogger, parseStopMessage } from './process-contract.ts';
+import { ENTRY_HARD_EXIT_MARGIN_MS, EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, EXIT_OK, STDIO_FLUSH_MS, STOP_MESSAGE_OVERLONG_REASON, createJsonLogger, parseStopMessage } from './process-contract.ts';
 import type { JsonLogger, StopValues, TextStream } from './process-contract.ts';
 import { guardStandardStreams } from './standard-streams.ts';
 import type { GuardedStandardStreams, StandardStream } from './standard-streams.ts';
@@ -14,7 +14,7 @@ import type { DescribeHolder, ProcessLock } from './process-lock.ts';
 import { resolveLayoutLocks } from './platform/lock-capability.ts';
 import type { LayoutLocks } from './platform/lock-capability.ts';
 import { momongaLayout } from './momonga-paths.ts';
-import { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
+import { LOG_KEEP, LOG_MAX_BYTES, LogDirectoryMissingError, createRotatingLogFile } from './rotating-log.ts';
 import type { RotatingLogFile } from './rotating-log.ts';
 import { answeredLater, askedPaths } from './path-asking.ts';
 import { hostPaths } from './path-compare.ts';
@@ -191,6 +191,7 @@ const openLogSink = (io: EntryIo, service: string, logPath: string, requested: L
     try {
       file = io.logFile(logPath);
     } catch (error) {
+      if (error instanceof LogDirectoryMissingError) throw error;
       diagnostics.error('entry.log_sink_failed', { err: toError(error) });
       effectiveTarget = 'stderr';
     }
@@ -223,7 +224,16 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
     return reportUsageError(io, definition.service, error);
   }
   const { flags, home, ownLockPath, logTarget, lifelineFd } = resolved;
-  const sink = openLogSink(io, definition.service, resolved.logPath, logTarget);
+  let sink: LogSink;
+  try {
+    sink = openLogSink(io, definition.service, resolved.logPath, logTarget);
+  } catch (error) {
+    if (!(error instanceof LogDirectoryMissingError)) throw error;
+    releaseHold();
+    createJsonLogger({ service: definition.service, clock: io.clock, stream: io.stderr }).error('entry.log_directory_missing', { err: error, data: { directory: error.directory } });
+    io.exit(EXIT_FAILURE);
+    return EXIT_FAILURE;
+  }
   const { logger } = sink;
   const outcome = Promise.withResolvers<number>();
 
@@ -558,7 +568,7 @@ export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStan
     exit: (code) => {
       host.exitCode = code;
       const timeout = Promise.withResolvers<void>();
-      const timer = setTimeout(timeout.resolve, STDIO_EXIT_FLUSH_MS);
+      const timer = setTimeout(timeout.resolve, STDIO_FLUSH_MS);
       void Promise.race([Promise.all([flushed(host.stdout), flushed(host.stderr)]), timeout.promise]).then(() => {
         clearTimeout(timer);
         host.exit(code);

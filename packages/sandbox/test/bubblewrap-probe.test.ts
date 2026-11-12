@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_BWRAP_PATH, bwrapProbeArguments, probeBubblewrap } from '@momonga/sandbox';
 import type { ProbeRunner } from '@momonga/sandbox';
+import { createTempDir } from '@momonga/testkit';
 
 const HAS_BWRAP = process.platform === 'linux' && fs.existsSync(DEFAULT_BWRAP_PATH);
 const BLOCKED = process.env['MOMONGA_BWRAP_BLOCKED'] === '1';
@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 const scriptThatHangs = (): string => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-probe-'));
+  const directory = createTempDir();
   directories.push(directory);
   const file = path.join(directory, 'hang');
   fs.writeFileSync(file, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 });

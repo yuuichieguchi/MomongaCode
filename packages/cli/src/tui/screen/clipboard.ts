@@ -1,4 +1,4 @@
-import { imageMediaTypeOf } from '@momonga/protocol';
+import { PROMPT_IMAGE_MAX_BYTES, imageMediaTypeOf } from '@momonga/protocol';
 import type { ImageAttachment } from '@momonga/protocol';
 import { COPY_MAX_BYTES, OSC52_MAX_RAW_BYTES } from './constants.ts';
 
@@ -49,8 +49,6 @@ export const chooseClipboardRoute = (host: ClipboardHost): ChosenRoute => {
   throw new Error('the clipboard routes end with one that is always usable');
 };
 
-export const PASTE_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
-
 export type ClipboardReadHost = {
   env: Readonly<Record<string, string | undefined>>;
   findProgram(name: string): string | undefined;
@@ -85,11 +83,11 @@ export const readClipboardThroughRoutes = async (host: ClipboardReadHost, signal
     const imageProgram = host.findProgram(route.image.program);
     const textProgram = host.findProgram(route.text.program);
     if (imageProgram === undefined || textProgram === undefined) continue;
-    const captured = await host.capture(imageProgram, route.image.args, PASTE_IMAGE_MAX_BYTES * (route.image.decoding === 'raw' ? 1 : 2) + 64, signal);
+    const captured = await host.capture(imageProgram, route.image.args, PROMPT_IMAGE_MAX_BYTES * (route.image.decoding === 'raw' ? 1 : 2) + 64, signal);
     const bytes = captured === undefined ? new Uint8Array() : decodedImage(captured, route.image.decoding);
     const mediaType = imageMediaTypeOf(bytes);
     if (mediaType !== undefined) return { kind: 'image', image: { mediaType, data: Buffer.from(bytes).toString('base64') } };
-    const text = await host.capture(textProgram, route.text.args, PASTE_IMAGE_MAX_BYTES, signal);
+    const text = await host.capture(textProgram, route.text.args, PROMPT_IMAGE_MAX_BYTES, signal);
     return text === undefined || text.byteLength === 0 ? { kind: 'empty' } : { kind: 'text', text: Buffer.from(text).toString('utf8') };
   }
   return { kind: 'unsupported' };

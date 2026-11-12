@@ -1,4 +1,3 @@
-import { testKernelLock } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, removeTempDir } from '@momonga/testkit';
 import { nodeProcess } from '../src/node-ports.ts';
@@ -10,7 +9,6 @@ import { createSlashRegistry } from '../src/tui/slash.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { fakeBackend } from './fake-backend.ts';
 import { createFoundServers } from '../src/tui/models/context.ts';
 import { NO_HELPER } from './no-helper.ts';
@@ -27,6 +25,8 @@ vi.mock('../src/commands/auto-mode.ts', async (importOriginal) => {
 
 const homes: string[] = [];
 
+const completed: number[] = [];
+
 const freshHome = (): string => {
   const home = createTempDir({ asHome: true });
   homes.push(home);
@@ -42,13 +42,12 @@ const programWith = (interrupt: AbortSignal) => {
   const entry = async (): Promise<number> => 0;
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
     entries: { supervise: entry, gateway: entry, runtime: entry },
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt,
     helper: NO_HELPER,
     entryIo: (args) => ({ argv: [...args] }) as unknown as EntryIo,
-    complete: () => undefined,
+    complete: (code: number) => void completed.push(code),
   });
   program.exitOverride();
   return program;
@@ -161,5 +160,18 @@ describe('/auto-mode in the TUI', () => {
     expect(checks[0]?.['classifier']).toBeUndefined();
     release.resolve({ measurement: 'did_not_pass' });
     await Promise.all(pending);
+  });
+});
+
+describe('auto-mode check exits by its measurement, like the other measuring commands (cli-commands-C42)', () => {
+  it.each([
+    ['passed', 0],
+    ['did_not_pass', 1],
+    ['unmeasurable', 1],
+  ] as const)('a measurement that %s ends the command with %s', async (measurement, code) => {
+    completed.length = 0;
+    spies.check.mockImplementationOnce(async () => ({ measurement }) as never);
+    await programWith(new AbortController().signal).parseAsync(['auto-mode', 'check', 'guard'], { from: 'user' });
+    expect(completed).toEqual([code]);
   });
 });

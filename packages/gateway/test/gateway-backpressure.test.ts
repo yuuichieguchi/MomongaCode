@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { SSE_EVENT_MAX_BYTES } from '@momonga/foundation';
 import { createScriptedAdapter, waitFor } from '@momonga/testkit';
 import { postJson, readJson, readSse, sseIterator, startGateway, userInput } from './gateway-helpers.ts';
 import { bigTextEvents } from './gateway-support.ts';
+
+const SLOW_READER_CHUNKS = 200;
+const SLOW_READER_CHUNK_BYTES = Math.floor(SSE_EVENT_MAX_BYTES / 4 / SLOW_READER_CHUNKS);
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('streaming backpressure', () => {
   it('does not pull the adapter far ahead of a slow reader on a non-idempotent stream', async () => {
-    const primary = createScriptedAdapter({ calls: [{ events: bigTextEvents(200, 100_000) }] });
+    const primary = createScriptedAdapter({ calls: [{ events: bigTextEvents(SLOW_READER_CHUNKS, SLOW_READER_CHUNK_BYTES) }] });
     const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
     const frames = sseIterator(response);
@@ -16,7 +20,7 @@ describe('streaming backpressure', () => {
     expect(primary.calls[0]?.emitted).toBeLessThan(60);
     let count = 1;
     for (let step = await frames.next(); step.done !== true; step = await frames.next()) count += 1;
-    expect(count).toBeGreaterThan(200);
+    expect(count).toBeGreaterThan(SLOW_READER_CHUNKS);
   });
 });
 

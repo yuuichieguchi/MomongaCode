@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { canonicalJson } from '@momonga/foundation';
 import type { InputItem, RunEventPayload } from '@momonga/protocol';
 import { capabilitiesFor, compactKey, makeEnv } from './harness.ts';
@@ -30,6 +31,7 @@ const BUDGET_NOTICE =
 describe('in-turn eviction', () => {
   it('journals context.truncated(omitted) for older outputs of the current turn only, before the request that omits them', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const letters = [...'abcdefgh'];
     env.gateway.script.push(...letters.map((letter, index) => bigStep(`k${index}`, { letter, size: 1800, pad: '' })), textStep('done'));
     const run = await env.enqueue('Fill the context');
@@ -62,6 +64,7 @@ describe('in-turn compaction', () => {
 
   it('compacts the rendered steps before the protected ones with the summary cap and retains_user_request, and rebuilds summary, task, retained', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(...sixPaddedSteps(), textStep('done'));
     env.gateway.compactSummaries.push('S1');
     const run = await env.enqueue('Fill the context');
@@ -94,6 +97,7 @@ describe('in-turn compaction', () => {
 
   it('states a recorded compaction in the budget stop notice and makes no model call when the wrap-up also overflows', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(...sixPaddedSteps(), bigStep('huge', { letter: 'a', size: 0, pad: 'p'.repeat(12000) }), textStep('never sent'));
     const run = await env.enqueue('Fill the context');
 
@@ -114,6 +118,7 @@ describe('in-turn compaction', () => {
 describe('budget stop after in-turn evictions', () => {
   it('journals the final attempt\'s evictions before the notice and counts exactly the journaled ones', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(
       ...[...'abcdef'].map((letter, index) => bigStep(`k${index}`, { letter, size: 1800, pad: '' })),
       bigStep('huge', { letter: 'a', size: 0, pad: 'p'.repeat(12000) }),
@@ -135,6 +140,7 @@ describe('budget stop after in-turn evictions', () => {
 describe('budget stop with nothing compacted', () => {
   it('never says "after compaction" when no compaction was recorded or ran', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(bigStep('huge', { letter: 'a', size: 0, pad: 'p'.repeat(12000) }), textStep('never sent'));
     const run = await env.enqueue('Fill the context');
 
@@ -158,6 +164,7 @@ describe('budget stop counts of the final attempt', () => {
 
   it('says the compaction did not free enough room after a successful compaction at the last level', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(
       ...[4378, 4378, 100, 3500].map((size, index) => bigStep(`s${index}`, { letter: 'a', size: 0, pad: 'pqrs'[index]?.repeat(size) ?? '' })),
       textStep('never sent'),
@@ -193,6 +200,7 @@ describe('budget stop counts of the final attempt', () => {
 
   it('does not count the rejected attempt of an invalid_compaction recovery as a compaction that ran', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(...sixPaddedSteps(), bigStep('x', { letter: 'a', size: 0, pad: 'p'.repeat(5000) }), textStep('never sent'));
     env.gateway.compactSummaries.push('S1', 'T'.repeat(12000));
     env.gateway.compactHook = async (request) => {
@@ -218,6 +226,7 @@ describe('forced compaction failure decided by code', () => {
 
   const runForced = async (error: unknown) => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(...forcedScript());
     const attemptedAt: number[] = [];
     env.gateway.compactHook = async () => {
@@ -281,6 +290,7 @@ describe('forced compaction failure decided by code', () => {
 
   it('completes on a deterministic summary when the forced compaction fails at the last level', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(
       bigStep('k0', { letter: 'a', size: 0, pad: padOf(0, 2200) }),
       bigStep('k1', { letter: 'a', size: 0, pad: padOf(1, 9000) }),
@@ -303,6 +313,7 @@ describe('forced compaction failure decided by code', () => {
 describe('proactive compaction failure', () => {
   it('composes the deterministic summary at the step that asked for the compaction and records no warning', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(...Array.from({ length: 16 }, (_unused, index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 520) })), textStep('done'));
     const requestedAt: number[] = [];
     let failures = 0;
@@ -330,6 +341,7 @@ describe('proactive compaction failure', () => {
 describe('compaction after a rejected model summary', () => {
   it.for([0, 1])('keeps the protected zone when the context overflows %i quiet steps after the first compaction fell back to the deterministic summary', async (quietSteps) => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(
       ...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })),
       ...Array.from({ length: quietSteps }, (_unused, index) => bigStep(`q${index}`, { letter: 'a', size: 0, pad: padOf(index, 40) })),
@@ -357,6 +369,7 @@ describe('compaction after a rejected model summary', () => {
 describe('minimum room at claim', () => {
   it('fails pinned_overflow with the minimum-room message when the prefix leaves fewer than 317 tokens', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(10372));
     const run = await env.enqueue('Fill the context');
 
@@ -381,6 +394,7 @@ describe('inherited history and loop detection across compaction', () => {
 
   it('compacts across the task seq of an inheriting run and keeps the task once', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     await completeSeeded(env, 'question one', [
       { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { model: 'fm', input: 'seed' } },
       {
@@ -415,6 +429,7 @@ describe('inherited history and loop detection across compaction', () => {
 
   it('detects a loop whose earlier groups were compacted away at the last level', async () => {
     const env = await makeEnv({ capabilities: W4000 });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const same = { letter: 'x', size: 1, pad: 'p'.repeat(5720) };
     env.gateway.script.push(bigStep('k0', same), bigStep('k1', same), bigStep('k2', same), textStep('never sent'));
     const run = await env.enqueue('Fill the context');

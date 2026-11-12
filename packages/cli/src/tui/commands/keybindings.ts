@@ -1,6 +1,8 @@
+import { openInEditor } from '../external-editor.ts';
 import { REASONS, TEXT_CONTEXTS, withAllDefaults, withBinding, withDefaultsOf, withoutKeysOf } from '../keys/bindings.ts';
 import type { BindingEntry, BindingReport } from '../keys/bindings.ts';
 import { captureTitle } from '../keys/capture.ts';
+import { KEY_FILE_UNAVAILABLE } from '../keys/store.ts';
 import type { KeyBindings, KeyEdit } from '../keys/store.ts';
 import { isPlainKey, KEYS, KEY_CONTEXTS, keyReported, needsReport, shownKey } from '../keys/table.ts';
 import type { ActionRow, KeySpec } from '../keys/table.ts';
@@ -128,8 +130,13 @@ export const keybindingsCommand: SlashCommand = {
       at = choice.index;
       if (chosen.kind === 'open') {
         if (choice.alt) continue;
-        context.info(store.shownFile);
-        return;
+        if (store.file === undefined) {
+          context.info(KEY_FILE_UNAVAILABLE);
+          return;
+        }
+        await openInEditor(context.externalEditor, store.file, (text) => context.info(text));
+        await store.load();
+        continue;
       }
       if (chosen.kind === 'reset-all') {
         if (!choice.alt) await save(context, withAllDefaults);

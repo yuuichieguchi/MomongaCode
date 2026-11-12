@@ -1,4 +1,3 @@
-import os from 'node:os';
 import { ProbeFailedError, failureOfError, isErrno, probeFailed } from './inspector-types.ts';
 import { withListedState } from './marker-state.ts';
 import type { ProbeFailure, ProbeResult, ProcessInspector, UninspectableProcess } from './inspector-types.ts';
@@ -10,7 +9,9 @@ import type { GroupStatesReader } from './run-state.ts';
 
 export type LinuxInspectorPorts = { procfs: ProcFs; uid: number; layout?: AuxvLayout };
 
-const hostLayout = (): AuxvLayout => auxvLayoutOf(process.arch, os.endianness());
+const hostEndianness = (): 'BE' | 'LE' => (new Uint8Array(new Uint16Array([1]).buffer)[0] === 1 ? 'LE' : 'BE');
+
+const hostLayout = (): AuxvLayout => auxvLayoutOf(process.arch, hostEndianness());
 
 const GONE_CODES = ['ENOENT', 'ESRCH'];
 const DENIED_CODES = ['EACCES', 'EPERM'];

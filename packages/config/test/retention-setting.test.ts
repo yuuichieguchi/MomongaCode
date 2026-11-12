@@ -44,6 +44,6 @@ describe('retention.days', () => {
   it('refuses the retired telemetry.contentRetentionDays and names retention.days', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: { contentRetentionDays: 7 } });
-    await expect(loadUserSettings({ home: tree.home, signal })).rejects.toThrow(/telemetry\.contentRetentionDays.*retention\.days/);
+    await expect(loadUserSettings({ home: tree.home, signal })).rejects.toThrow(/invalid settings at \/telemetry\/contentRetentionDays: is not a setting any more; .*retention\.days/);
   });
 });

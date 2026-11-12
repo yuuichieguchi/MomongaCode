@@ -51,7 +51,6 @@ const shellPort = () => {
   const entry = async (): Promise<number> => 0;
   return createShellPort({
     ports,
-    policyVerify: () => ({}) as never,
     entries: { supervise: entry, gateway: entry, runtime: entry },
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,
@@ -116,7 +115,7 @@ const CASES: readonly Case[] = [
   { line: '/rule add Bash no pushing --kind constraint --deny Bash(git:*)', spy: 'ruleAdd', args: ['Bash', 'no pushing', expect.objectContaining({ enforcement: { behavior: 'deny', rule: 'Bash(git:*)' } })], background: true },
   { line: '/context improve --dataset d.json --model a --token-cap 5 --outcome o.json', spy: 'contextImprove', args: [expect.objectContaining({ dataset: 'd.json', model: 'a', tokenCap: 5, outcome: 'o.json' })], background: true },
   { line: '/context guideline list', spy: 'guidelineList', args: [], background: true },
-  { line: '/policy verify --json', spy: 'policyVerify', args: [expect.anything(), expect.objectContaining({ json: true })], background: true },
+  { line: '/policy verify --json', spy: 'policyVerify', args: [expect.objectContaining({ json: true })], background: true },
   { line: '/models --json', spy: 'listModels', from: 1, args: [{ json: true }], background: true },
   { line: '/gateway probe fm --samples 2', spy: 'probeModel', args: ['fm', expect.objectContaining({ samples: 2 })], background: true },
 ];

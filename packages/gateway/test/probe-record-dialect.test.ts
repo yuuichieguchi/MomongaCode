@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { endpointRecordFileName, loadEndpointRecord, loadProbeRecord, saveEndpointRecord, saveProbeRecord } from '@momonga/gateway';
@@ -8,7 +7,7 @@ import { PROBE_METHOD_VERSION } from '../src/probe/run-probe.ts';
 import { makeReport } from './report-fixture.ts';
 import type { KnownProbeKey } from '@momonga/config';
 import { FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -16,7 +15,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   dirs.push(dir);
   return dir;

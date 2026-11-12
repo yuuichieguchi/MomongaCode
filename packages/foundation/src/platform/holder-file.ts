@@ -1,20 +1,22 @@
-import fs from 'node:fs';
-import { noFollowFlag } from './privacy.ts';
+import { OPEN_FLAGS, nodeFileSystem, nodeFileSystemSync } from '../node-file-system.ts';
 
 export const HOLDER_READ_MAX_BYTES = 64;
 
+const textOf = (page: Uint8Array, length: number): string => Buffer.from(page.buffer, page.byteOffset, length).toString('utf8');
+
+const missing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
+
 export const readHolderFile = async (lockPath: string): Promise<string | undefined> => {
-  let handle: fs.promises.FileHandle;
+  let handle: Awaited<ReturnType<typeof nodeFileSystem.openRead>>;
   try {
-    handle = await fs.promises.open(lockPath, fs.constants.O_RDONLY | noFollowFlag());
+    handle = await nodeFileSystem.openRead(lockPath, OPEN_FLAGS.readOnly | OPEN_FLAGS.noFollow);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    if (missing(error)) return undefined;
     throw error;
   }
   try {
-    const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
-    const { bytesRead } = await handle.read(buffer, 0, HOLDER_READ_MAX_BYTES, 0);
-    return buffer.toString('utf8', 0, bytesRead);
+    const page = new Uint8Array(HOLDER_READ_MAX_BYTES);
+    return textOf(page, await handle.readAt(page, 0));
   } finally {
     await handle.close();
   }
@@ -23,44 +25,41 @@ export const readHolderFile = async (lockPath: string): Promise<string | undefin
 export const readHolderFileSync = (lockPath: string): string | undefined => {
   let descriptor: number;
   try {
-    descriptor = fs.openSync(lockPath, fs.constants.O_RDONLY | noFollowFlag());
+    descriptor = nodeFileSystemSync.openReadNoFollowSync(lockPath);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    if (missing(error)) return undefined;
     throw error;
   }
   try {
-    const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
-    const bytesRead = fs.readSync(descriptor, buffer, 0, HOLDER_READ_MAX_BYTES, 0);
-    return buffer.toString('utf8', 0, bytesRead);
+    return readHolderFromDescriptor(descriptor);
   } finally {
-    fs.closeSync(descriptor);
+    nodeFileSystemSync.closeSync(descriptor);
   }
 };
 
 export const writeHolderFile = (holderFile: string, text: string): void => {
-  const descriptor = fs.openSync(holderFile, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | noFollowFlag(), 0o600);
+  const descriptor = nodeFileSystemSync.openDescriptorSync(holderFile, OPEN_FLAGS.writeOnly | OPEN_FLAGS.create | OPEN_FLAGS.truncate | OPEN_FLAGS.noFollow, 0o600);
   try {
-    fs.writeSync(descriptor, text);
+    nodeFileSystemSync.writeTextSync(descriptor, text);
   } finally {
-    fs.closeSync(descriptor);
+    nodeFileSystemSync.closeSync(descriptor);
   }
 };
 
 export const removeFilesThenRelease = (files: readonly string[], release: () => void): void => {
   try {
-    for (const file of files) fs.rmSync(file, { force: true });
+    for (const file of files) nodeFileSystemSync.rmSync(file);
   } finally {
     release();
   }
 };
 
 export const readHolderFromDescriptor = (descriptor: number): string => {
-  const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
-  const bytesRead = fs.readSync(descriptor, buffer, 0, HOLDER_READ_MAX_BYTES, 0);
-  return buffer.toString('utf8', 0, bytesRead);
+  const page = new Uint8Array(HOLDER_READ_MAX_BYTES);
+  return textOf(page, nodeFileSystemSync.readAtSync(descriptor, page, 0));
 };
 
 export const rewriteHolderThroughDescriptor = (descriptor: number, text: string): void => {
-  fs.ftruncateSync(descriptor, 0);
-  fs.writeSync(descriptor, text, 0);
+  nodeFileSystemSync.truncateSync(descriptor, 0);
+  nodeFileSystemSync.writeTextAtSync(descriptor, text, 0);
 };

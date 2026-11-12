@@ -29,7 +29,7 @@ export const createFakeRuleVerifier = (): FakeRuleVerifier => {
       return answer;
     },
     needsVerdict: async (input) => needsVerdict({ rules: input.rules as never }),
-    report: async (input, signal) => ({ verdict: await fake.verify(input, signal), report: 'the report of the fake verifier' }),
+    report: async (input, signal) => ({ verdict: await fake.verify(input, signal), report: 'the report of the fake verifier', findings: { exitCode: 0 } }),
   };
   return fake;
 };

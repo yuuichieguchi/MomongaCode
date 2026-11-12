@@ -10,6 +10,7 @@ import { shellModelsOf } from '../plain-http.ts';
 import type { CliPorts } from '../ports.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { pathsOf } from '../paths.ts';
+import { exitOfMeasurement } from '../measurement-exit.ts';
 
 export type EvaluateYieldOptions = { model: string; report: string; interrupt: AbortSignal };
 
@@ -39,5 +40,5 @@ export const evaluateYield = async (
   const gate = judgeYield(report, { seed: CONTEXT_BOOTSTRAP_SEED });
   ports.stdout.write(`${formatYieldReport(report, gate)}\n`);
   await saveYieldReport(ports.files, reportFile, report);
-  return gate.passed ? 0 : 1;
+  return exitOfMeasurement(gate.passed);
 };

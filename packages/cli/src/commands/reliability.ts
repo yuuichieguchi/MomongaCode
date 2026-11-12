@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { MomongaPaths } from '@momonga/foundation';
-import { EXIT_FAILURE, EXIT_OK } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_OK, MAX_DATE_MS } from '@momonga/foundation';
 import { REPORT_PAGE_ROWS, escapeTerminalLine } from '@momonga/protocol';
 import type { ReportPage, ReportRecomputePage, RunCostView, RunFactsView } from '@momonga/protocol';
 import { aggregate, buildReliabilityReport, costOf, countedRunIdsOf, encodeReliabilityReport, explainOf, formatReliabilityReport, merge, mergeVerifications, verifyFacts, withinPeriod } from '@momonga/reliability';
@@ -16,9 +16,8 @@ export const DEFAULT_REPORT_DAYS = 30;
 
 const DAY_MS = 86_400_000;
 
-const LATEST_DATE_VALUE = 8.64e15;
 
-export const MAX_REPORT_DAYS = Math.floor(LATEST_DATE_VALUE / DAY_MS);
+export const MAX_REPORT_DAYS = Math.floor(MAX_DATE_MS / DAY_MS);
 
 export type FactsPages = { reportFacts(request: { cursor: string | null; limit: number }): Promise<ReportPage> };
 

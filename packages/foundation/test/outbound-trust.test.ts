@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import tls from 'node:tls';
 import { X509Certificate } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { installTrust } from '@momonga/foundation';
 import type { NetworkConfig } from '@momonga/foundation';
+import { createTempDir } from '@momonga/testkit';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures', 'test-ca.pem');
 
@@ -18,7 +18,7 @@ let scratch = '';
 
 beforeAll(() => {
   original = tls.getCACertificates('default');
-  scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-trust-'));
+  scratch = createTempDir();
 });
 
 afterAll(() => {

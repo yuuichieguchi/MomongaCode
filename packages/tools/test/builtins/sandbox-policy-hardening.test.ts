@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout, protectedSetFor, standardSecretLocations, syncPaths } from '@momonga/foundation';
-import { fakePolicyFilesystem, NEVER_CANCELLED } from '@momonga/testkit';
+import { fakePolicyFilesystem, NEVER_CANCELLED, systemTempRoot } from '@momonga/testkit';
 
 import { buildSandboxPolicy } from '@momonga/tools';
 import { makeLayout } from '../helpers.ts';
@@ -142,7 +141,7 @@ describe('buildSandboxPolicy readAllowed validation', () => {
   });
 });
 
-describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('buildSandboxPolicy readAllowed validation on a case-insensitive volume', () => {
+describe.runIf(syncPaths.volumeIsCaseInsensitive(systemTempRoot()))('buildSandboxPolicy readAllowed validation on a case-insensitive volume', () => {
   it('throws for an entry inside Keychains spelled in another case', async () => {
     const { layout, sessions, tmpDir } = fixture();
     const library = path.join(layout.home, 'Library');

@@ -2,6 +2,7 @@ import path from 'node:path';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { claimNewEntry, claimNewEntrySync, lockFormOf } from './platform/lock-form.ts';
 import type { LockForm } from './platform/lock-form.ts';
+import { NAME_SUFFIX_BYTES } from './random.ts';
 import type { Random } from './random.ts';
 
 export type FileContent = string | Uint8Array;
@@ -99,7 +100,6 @@ export type AtomicWriteOptionsSync = WriterLock & {
 
 export type CreateOutcome = { created: boolean };
 
-const TEMPORARY_SUFFIX_BYTES = 6;
 const READ_ONLY = 'r';
 const EXCLUSIVE_CREATE = 'wx';
 const TEMPORARY_PATTERN = /^\..+\.[0-9a-f]+\.tmp$/;
@@ -107,7 +107,7 @@ const TEMPORARY_PATTERN = /^\..+\.[0-9a-f]+\.tmp$/;
 export const isAtomicWriteTemporary = (name: string): boolean => TEMPORARY_PATTERN.test(name);
 
 const temporaryOf = (random: Random, file: string): string =>
-  path.join(path.dirname(file), `.${path.basename(file)}.${random.hex(TEMPORARY_SUFFIX_BYTES)}.tmp`);
+  path.join(path.dirname(file), `.${path.basename(file)}.${random.hex(NAME_SUFFIX_BYTES)}.tmp`);
 
 const isAlreadyExists = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'EEXIST';
 

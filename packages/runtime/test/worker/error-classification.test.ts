@@ -1,16 +1,14 @@
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { SandboxPolicyError, buildSeatbeltProfile } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { EarlierAttemptNotStoppedError } from '@momonga/tools';
 import { dispositionOf } from '../../src/worker/gateway-policy.ts';
-import { testPaths } from '@momonga/testkit';
+import { createTempDir, testPaths } from '@momonga/testkit';
 
 const policyErrorFromProfile = async (): Promise<unknown> => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cls-')));
+  const dir = createTempDir();
   try {
     await buildSeatbeltProfile({ writableRoots: [dir], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], readDenied: [], readAllowed: [dir], network: 'deny', fileRules: EMPTY_FILE_RULES } as SandboxPolicy, {}, testPaths());
   } catch (error) {

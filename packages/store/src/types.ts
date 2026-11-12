@@ -53,6 +53,7 @@ import type {
   RunUsage,
   Admission,
   AdmissionAsk,
+  RequestBudget,
   TreeSpend,
 } from '@momonga/protocol';
 
@@ -578,9 +579,12 @@ export type ContextChargeInput = {
   detail?: BilledDetail;
 };
 
+export type RunCharge = { runId: string; charged: Extract<RunEventPayload, { type: 'usage.charged' }> };
+
 export type ReflectionCompletion = {
   runId: string;
-  charge: ContextChargeInput | null;
+  charge: RunCharge | null;
+  notice?: Extract<RunEventPayload, { type: 'notice' }>;
   candidates: readonly SaveCandidateInput[];
   dropped?: readonly ReflectionDrop[];
   reason?: string;
@@ -597,7 +601,7 @@ export type ReflectionStore = {
   release(runId: string): ReflectionJob;
   finish(runId: string, reason?: string): ReflectionJob;
   complete(completion: ReflectionCompletion): ReflectionJob;
-  fail(runId: string, reason: string, charge?: ContextChargeInput, candidates?: readonly SaveCandidateInput[]): ReflectionJob;
+  fail(runId: string, reason: string, charge?: RunCharge, candidates?: readonly SaveCandidateInput[]): ReflectionJob;
 };
 
 export type ContextCharge = Omit<ContextChargeInput, 'purpose'> & { purpose: Stored<ContextChargePurpose>; id: number; createdAt: number };
@@ -709,7 +713,8 @@ export type RuntimeStore = {
   listChildRuns(runId: string): Run[];
   treeSpend(runId: string): TreeSpend & { runsRead: number };
   admitModelRequest(holder: LeaseFence | SettledRun, ask: AdmissionAsk): Admission | LeaseLost;
-  releaseBudget(runId: string): void;
+  chargeEndedRun(charge: RunCharge): void;
+  reserveRecorded(claim: LeaseFence, recorded: Pick<RequestBudget, 'reservedTokens' | 'reservedNano'>): { kind: 'ok' } | LeaseLost;
   rootSessionId(sessionId: string): string;
   jobs: JobStore;
   idempotency: IdempotencyStore;

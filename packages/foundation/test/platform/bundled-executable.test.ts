@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { claimNewEntry, lockFormOf, nodeFileSystem, sha256Hex } from '@momonga/foundation';
+import { lockFormOf, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { HeldKernelLock, KernelLockMechanism } from '@momonga/foundation';
 import { expectedKernelLockOn } from '@momonga/testkit';
 import { BUNDLED_EXECUTABLE_STAGED_INFIX, ensureBundledExecutable } from '../../src/platform/bundled-executable.ts';
+import { claimNewEntry } from '../../src/platform/lock-form.ts';
 import type { BundledExecutableKind } from '../../src/platform/bundled-executable.ts';
 import { makeTemporaryDirectory } from '../support/temporary-directory.ts';
 

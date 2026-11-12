@@ -1,10 +1,12 @@
 import path from 'node:path';
 import { sha256Hex } from '../canonical-json.ts';
+import { parseShippedManifest } from '../json.ts';
 import { sweepLeftovers } from '../leftover-sweep.ts';
 import { createLockedEntry } from '../locked-entry.ts';
 import type { FileSystem } from '../node-file-system.ts';
 import type { Random } from '../random.ts';
 import type { KernelLockMechanism } from './kernel-lock.ts';
+import { replaceExecutable } from './replace-executable.ts';
 
 export type BundledExecutableManifest = {
   target: string;
@@ -38,7 +40,7 @@ const textField = (kind: BundledExecutableKind, record: Record<string, unknown>,
 };
 
 export const parseBundledExecutableManifest = (kind: BundledExecutableKind, text: string): BundledExecutableManifest => {
-  const parsed: unknown = JSON.parse(text);
+  const parsed = parseShippedManifest(text, kind.manifestAsset, kind.failure);
   if (!isRecord(parsed)) throw kind.failure(`the ${kind.what} manifest is malformed`);
   const binary = parsed['binary'];
   if (!isRecord(binary)) throw kind.failure(`the ${kind.what} manifest has no binary entry`);
@@ -74,8 +76,10 @@ const sweepStaged = async ({ files, lock }: BundledExecutablePorts, directory: s
   });
 };
 
-const placeStaged = async (kind: BundledExecutableKind, { files, lock, random }: BundledExecutablePorts, final: string, binary: Uint8Array): Promise<void> => {
-  const file = path.join(path.dirname(final), `${stagedPrefixOf(path.basename(final))}${random.hex(BUNDLED_EXECUTABLE_STAGED_NAME_BYTES)}`);
+const stagedNameBeside = (final: string, random: BundledExecutablePorts['random']): string => path.join(path.dirname(final), `${stagedPrefixOf(path.basename(final))}${random.hex(BUNDLED_EXECUTABLE_STAGED_NAME_BYTES)}`);
+
+const placeStaged = async ({ files, lock, random }: BundledExecutablePorts, final: string, binary: Uint8Array): Promise<void> => {
+  const file = stagedNameBeside(final, random);
   const staged = await createLockedEntry(files, lock, file, BUNDLED_EXECUTABLE_MODE);
   try {
     try {
@@ -84,7 +88,7 @@ const placeStaged = async (kind: BundledExecutableKind, { files, lock, random }:
       await staged.handle.close();
     }
     staged.assertStillNamed();
-    await files.rename(staged.path, final);
+    await replaceExecutable((from, to) => files.rename(from, to), lock, staged.path, final, stagedNameBeside(final, random));
   } catch (error) {
     await staged.remove();
     throw error;
@@ -103,7 +107,7 @@ export const ensureBundledExecutable = async (kind: BundledExecutableKind, ports
   if (await matches(files, final, sha256)) return final;
   const binary = asset(manifest.binary.asset);
   if (binary.length !== size || sha256Hex(binary) !== sha256) throw kind.failure(`the embedded ${kind.what} ${manifest.binary.asset} does not match the checksum in its manifest`);
-  await placeStaged(kind, ports, final, binary);
+  await placeStaged(ports, final, binary);
   if (!(await matches(files, final, sha256))) throw kind.failure(`${final} changed after it was extracted and does not match the embedded ${kind.what}`);
   return final;
 };

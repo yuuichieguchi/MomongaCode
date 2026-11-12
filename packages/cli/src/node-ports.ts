@@ -9,7 +9,7 @@ import { Writable } from 'node:stream';
 import type { Readable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { loadSettings } from '@momonga/config';
-import type { SandboxSetting } from '@momonga/config';
+import type { CredentialRules, ResolvedModels, ResolvedSettings, SandboxSetting } from '@momonga/config';
 import { createWorkspaceProbe, nodeEvalFiles, nodeWorkspaceFiles } from '@momonga/eval';
 import type { CommandSandbox, WorkspaceProbe } from '@momonga/eval';
 import {
@@ -66,6 +66,7 @@ export type WorkspaceSandboxInput = {
   sandbox: SandboxSetting;
   network: SandboxNetworkSetting;
   warn(text: string): void;
+  credentialNaming: { models: Pick<ResolvedModels, 'connections'>; forges?: ResolvedSettings['forges']; credentials: CredentialRules };
 };
 
 export const nodeWorkspaceSandbox = (input: WorkspaceSandboxInput | (() => Promise<WorkspaceSandboxInput>)): CommandSandbox => {
@@ -80,7 +81,7 @@ export const nodeWorkspaceSandbox = (input: WorkspaceSandboxInput | (() => Promi
 
 const settingsWorkspaceSandbox = (home: string, cwd: string, signal: AbortSignal, warn: (text: string) => void) => async (): Promise<WorkspaceSandboxInput> => {
   const { settings } = await loadSettings({ home, projectDir: cwd, cli: {}, trust: { isTrusted: () => false }, signal });
-  return { home, platform: process.platform, env: process.env, signal, sandbox: settings.sandbox, network: settings.sandboxNetwork, warn };
+  return { home, platform: process.platform, env: process.env, signal, sandbox: settings.sandbox, network: settings.sandboxNetwork, warn, credentialNaming: { models: settings.models, forges: settings.forges, credentials: settings.credentials } };
 };
 
 export const nodeWorkspaceProbeOf =
@@ -334,9 +335,10 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
   };
 };
 
-export const nodePorts = (version: string, interrupt: AbortSignal, streams: GuardedStandardStreams = guardStandardStreams(process)): CliPorts => {
+export const processHome = (): string => process.env['HOME'] ?? os.homedir();
+
+export const nodePorts = (version: string, interrupt: AbortSignal, home: string, streams: GuardedStandardStreams = guardStandardStreams(process)): CliPorts => {
   const self = nodeSelf(process.argv, isSea);
-  const home = process.env['HOME'] ?? os.homedir();
   const lock = layoutLockOf(home, process.platform, process.env);
   const endpointScopes = new Map<string, Promise<EndpointScope>>();
   return {

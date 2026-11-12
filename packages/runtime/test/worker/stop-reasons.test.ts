@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { usageOf } from '@momonga/testkit';
 import { START_MS, finalSummaryInstruction, makeEnv, modelKey } from './harness.ts';
 import { assistantMessage, callsStep, failedStep, functionCallItem, incompleteStep, refusalStep, textStep } from './scripts.ts';
@@ -9,6 +10,7 @@ const lastInputItem = (input: unknown): unknown => (Array.isArray(input) ? input
 describe('worker stop reasons', () => {
   it('stops at max_steps from run.limits after a final summary call with tool_choice none', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(callsStep([{ callId: 'call_s_1', name: 'Echo', args: { value: 'x' } }]), textStep('Summary of progress.'));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
 
@@ -29,6 +31,7 @@ describe('worker stop reasons', () => {
 
   it('does not execute calls returned by the final summary call', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(
       callsStep([{ callId: 'call_s_1', name: 'Echo', args: { value: 'x' } }]),
       callsStep([{ callId: 'call_s_2', name: 'Echo', args: { value: 'y' } }]),
@@ -45,6 +48,7 @@ describe('worker stop reasons', () => {
   it('stops at the budget from run.limits after a final summary call', async () => {
     const budget = await summaryOnlyBudget();
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], budget.usageUpTo()), textStep('Budget summary.'));
     const run = await env.enqueue('Work', { limits: budget.limits });
 
@@ -62,6 +66,7 @@ describe('worker stop reasons', () => {
   it('keeps going while what is left of the default budget of 1_000_000 tokens holds the next request whole', async () => {
     const first = await firstRequestOf();
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 1_000_000 - 100 - 2 * first.inputUpper - 4096)), textStep('Done.'));
     const run = await env.enqueue('Work');
 
@@ -75,6 +80,7 @@ describe('worker stop reasons', () => {
 
   it('stops at the default budget once total usage reaches 1_000_000 tokens, without a model call the budget does not hold', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 999_900)), textStep('never sent'));
     const run = await env.enqueue('Work');
 
@@ -88,6 +94,7 @@ describe('worker stop reasons', () => {
 
   it('stops at timeout without an extra model call once the deadline passes', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Work', { deadlineAt: START_MS + 20_000 });
     env.toolbox.hooks['Echo'] = () => {
       env.clock.advance(20_000);
@@ -103,6 +110,7 @@ describe('worker stop reasons', () => {
 
   it('stops at timeout before the first model call when the deadline already passed', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Work', { deadlineAt: START_MS });
 
     await env.runOnce(env.worker());
@@ -113,6 +121,7 @@ describe('worker stop reasons', () => {
 
   it('stops at max_tokens when an incomplete response has no function call', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(incompleteStep([assistantMessage('msg_cut', 'This answer was cut')]));
     const run = await env.enqueue('Write a long essay');
 
@@ -126,6 +135,7 @@ describe('worker stop reasons', () => {
 
   it('executes function calls that completed inside an incomplete response and continues', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(
       incompleteStep([functionCallItem({ callId: 'call_i_1', name: 'Echo', args: { value: 'kept' } })]),
       textStep('Finished.'),
@@ -141,6 +151,7 @@ describe('worker stop reasons', () => {
 
   it('stops at refusal on a guardrail_violation failure without retrying', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(failedStep('guardrail_violation', 'model_error'), textStep('never sent'));
     const run = await env.enqueue('Do something unsafe');
 
@@ -154,6 +165,7 @@ describe('worker stop reasons', () => {
 
   it('stops at refusal when the response carries a refusal part, recording the response', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(refusalStep('I cannot help with that.'));
     const run = await env.enqueue('Do something unsafe');
 

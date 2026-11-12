@@ -1,8 +1,7 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
-import { waitFor } from '@momonga/testkit';
+import { createTempDir, waitFor } from '@momonga/testkit';
 
 export const LIMIT_TIMERS = ['setTimeout', 'clearTimeout'] as const;
 
@@ -15,7 +14,7 @@ export const outcomeOf = (promise: Promise<unknown>): Promise<{ value: unknown }
   );
 
 export const homeWithAManagedModel = (): { home: string; binary: string; models: unknown } => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-key-bound-')));
+  const home = createTempDir();
   const binary = path.join(home, 'fm');
   fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   const models = { connections: [{ adapter: 'managed', server: 'fm', binary, models: [{ id: 'system', toolCalling: 'native' }] }] };

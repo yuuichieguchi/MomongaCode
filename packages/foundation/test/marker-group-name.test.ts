@@ -1,6 +1,5 @@
-import { sleepDrivenTiming } from '@momonga/testkit';
+import { createTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { claimRetry, markIgnored, readAttemptRecord, readMarkerGroup, reapMarkedProcesses, reconcileProcessGroup, recordMarkerGroup } from '../src/index.ts';
@@ -18,7 +17,7 @@ afterEach(() => {
 });
 
 const emptyMarker = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-marker-name-'));
+  const dir = createTempDir();
   dirs.push(dir);
   const marker = path.join(dir, 'marker');
   fs.writeFileSync(marker, '', { mode: 0o600 });

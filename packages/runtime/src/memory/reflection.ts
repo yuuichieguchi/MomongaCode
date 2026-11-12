@@ -1,13 +1,14 @@
 import { computeBackoff, readJsonReply } from '@momonga/foundation';
 import type { Clock, RolePort } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
-import { LOWEST_REASONING_EFFORT, jsonReplyOf, jsonReplyPathFor, summaryTokenCapFor } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { NewBilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, TextFormat, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
-import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
+import type { RunCharge, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { requestKey } from '../model-key.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
+import { elapsedMsSince } from '../service/timers.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { retireDecisionOf } from '../worker/gateway-policy.ts';
 import { readPins } from '../worker/pins.ts';
@@ -26,7 +27,7 @@ import type { WorkerDefaults } from '../worker/types.ts';
 
 export type ReflectorOptions = {
   platform: NodeJS.Platform;
-  store: Pick<RuntimeStore, 'reflection' | 'memories' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes' | 'journalFacts' | 'treeSpend' | 'admitModelRequest'>;
+  store: Pick<RuntimeStore, 'reflection' | 'memories' | 'chargeEndedRun' | 'getRun' | 'getSession' | 'readRunEventsOfTypes' | 'journalFacts' | 'treeSpend' | 'admitModelRequest'>;
   gateway: Pick<GatewayPort, 'stream' | 'capabilities' | 'countTokens' | 'quote'>;
   defaults?: WorkerDefaults;
   settings: Pick<SettingsPort, 'trusted' | 'verification' | 'memory'>;
@@ -40,6 +41,11 @@ export type ReflectorOptions = {
   random: () => number;
 };
 
+export const reflectionModelOf = (pins: Record<string, unknown>): string => {
+  const read = readPins(pins);
+  return read.roles.reflection ?? read.model;
+};
+
 export type ReflectorTurn = 'idle' | 'busy' | 'ran';
 
 export type Reflector = { runOne(signal: AbortSignal): Promise<ReflectorTurn> };
@@ -50,7 +56,7 @@ const NO_CANDIDATES_REASON = 'the model proposed no candidates';
 const ALL_DROPPED_REASON = 'every candidate the model proposed was dropped';
 const DUPLICATE_REASON = 'the same text is already a live memory, a candidate waiting for review, or a candidate a person rejected';
 
-type ChargeLedger = { unrecorded?: ContextChargeInput; facts?: readonly SaveCandidateInput[] };
+type ChargeLedger = { unrecorded?: RunCharge; facts?: readonly SaveCandidateInput[] };
 
 export const createReflector = (options: ReflectorOptions): Reflector => {
   const { store, gateway, settings, clock } = options;
@@ -68,7 +74,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     let extension: MomongaResponseExtension | undefined;
     let responseId: string | undefined;
     let firstEventMs: number | undefined;
-    const startedAt = clock.now();
+    const startedAt = options.timers.monotonicMs();
     const events = streamAdmitted(gateway, proof, body, {
       idempotencyKey: requestKey(runId, 'reflect', body),
       deadlineAt: clock.now() + options.attemptTimeoutMs,
@@ -76,7 +82,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       role: 'reflection',
     });
     for await (const event of events) {
-      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
+      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = elapsedMsSince(options.timers, startedAt);
       terminal = terminalResultOf(event) ?? terminal;
       if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
         usage = event.response.usage;
@@ -85,7 +91,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       }
     }
     if (terminal === undefined) throw new Error(`the reflection call of run ${runId} ended without a terminal event`);
-    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt };
+    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: elapsedMsSince(options.timers, startedAt) };
     if (responseId === undefined) throw new Error(`the reflection call of run ${runId} ended without a response`);
     return { terminal, usage, detail: billedDetailOf(usage, extension, timing, responseId) };
   };
@@ -184,14 +190,9 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     }
     const started = store.readRunEventsOfTypes(runId, ['run.started'])[0];
     if (started?.type !== 'run.started') throw new Error(`run ${runId} has no run.started event`);
-    const pins = readPins(started.pins);
-    const model = pins.roles.reflection ?? pins.model;
+    const model = reflectionModelOf(started.pins);
     const capabilities = await gateway.capabilities(model, { signal });
     const format: TextFormat = { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true };
-    if (jsonReplyPathFor(format, capabilities) !== 'enforced') {
-      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: `models.roles.reflection model ${model} reports no structured output` });
-      return;
-    }
     const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
     const input: CreateResponseBody['input'] = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: recordedRun }] }];
     const counted = await gateway.countTokens({ model, input, instructions: REFLECTION_INSTRUCTIONS, momonga: { ...EXACT_MODEL } }, { signal });
@@ -201,7 +202,6 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       quote: (quoted) => gateway.quote(quoted, { signal }),
       spend: () => store.treeSpend(runId),
       ledger: { admitModelRequest: (ask) => store.admitModelRequest({ runId, settled: true }, ask) },
-      release: () => undefined,
       tail: Promise.resolve(),
     };
     const outputWanted = Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities));
@@ -227,20 +227,22 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     );
     if (sent.kind === 'lease_lost') throw new Error(`the store asked for a lease to admit the reflection call of the ended run ${runId}`);
     if (sent.kind === 'exhausted') {
-      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: unpaidMessage('reflection', sent.exhausted) });
+      const reason = unpaidMessage('reflection', sent.exhausted);
+      store.reflection.complete({
+        runId,
+        charge: null,
+        notice: { type: 'notice', level: 'warning', message: `The run was not reflected on, so nothing was learned from it: ${reason}`, code: 'budget_auxiliary_skipped' },
+        candidates: keptFacts,
+        dropped,
+        reason,
+      });
       return;
     }
     const { terminal, usage, detail } = sent.value;
     if (usage !== null) {
       ledger.unrecorded = {
-        detail,
-        purpose: 'reflection',
         runId,
-        project,
-        model,
-        inputTokens: usage.input_tokens,
-        outputTokens: usage.output_tokens,
-        totalTokens: usage.total_tokens,
+        charged: { type: 'usage.charged', purpose: 'reflection', inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, totalTokens: usage.total_tokens, ...detail },
       };
     }
     if (terminal.kind === 'failed') throw new Error(`the reflection call of run ${runId} failed: ${terminal.code}: ${terminal.message}`);
@@ -270,7 +272,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
   const recordUnrecorded = (ledger: ChargeLedger, cause: unknown): void => {
     if (ledger.unrecorded === undefined) return;
     try {
-      store.contextCharges.record(ledger.unrecorded);
+      store.chargeEndedRun(ledger.unrecorded);
     } catch (chargeError) {
       throw new AggregateError([cause, chargeError], 'the reflection failed and the charge of its call could not be recorded');
     }

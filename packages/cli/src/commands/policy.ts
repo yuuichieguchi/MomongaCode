@@ -1,23 +1,12 @@
 import path from 'node:path';
-import { loadSettings, parseGovernanceRule, parseRule } from '@momonga/config';
-import { hostPaths, mapAsync, ruleEnforcementOf, sessionRootsOf, unixSocketPolicyOf, verdictKey } from '@momonga/foundation';
-import type { MomongaPaths, PathResolver } from '@momonga/foundation';
-import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
-import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
+import type { MomongaPaths } from '@momonga/foundation';
+import type { PermissionMode } from '@momonga/protocol';
 import { formatGovernanceVerification } from '../rule/format.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
-import { escapedLines } from '../terminal-writer.ts';
-import type { PolicyVerifyHost } from '../verify/host.ts';
-
-export const policyWarningsText = (warnings: readonly string[]): string => `${escapedLines(warnings.map((warning) => `warning: ${warning}`))}\n`;
-
-export const VERIFY_BUDGET_MS = RULE_VERIFY_BUDGET_MS;
 
 export type PolicyVerifyOptions = { json: boolean; mode?: PermissionMode; secrets: readonly string[]; mandate?: string };
-
-const MANDATE_EFFECTS = ['deny', 'ask', 'allow'] as const;
 
 export class PolicyVerifyInputError extends Error {
   constructor(message: string) {
@@ -32,87 +21,26 @@ const secretPathOf = (home: string, text: string): string => {
   return text;
 };
 
-export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: PolicyVerifyHost, options: PolicyVerifyOptions): Promise<number> => {
+export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, options: PolicyVerifyOptions): Promise<number> => {
+  const secrets = options.secrets.map((text) => secretPathOf(ports.home, text));
   await ensureCurrentDaemon(ports, paths);
   const runtime = connectRuntime(ports, paths);
-  let trusted: boolean;
-  let governance: PolicyGovernanceResponse;
   try {
-    trusted = (await runtime.trust(ports.cwd)).decision === 'trusted';
-    governance = await runtime.policyGovernance(ports.cwd);
+    const governance = await runtime.policyGovernance(ports.cwd);
+    const verified = await runtime.policyVerify({
+      project: ports.cwd,
+      secrets,
+      ...(options.mode === undefined ? {} : { mode: options.mode }),
+      ...(options.mandate === undefined ? {} : { mandate: options.mandate }),
+    });
+    const hasGovernance = governance.rules.length > 0 || governance.textOnly.length > 0;
+    ports.stdout.write(
+      options.json
+        ? `${JSON.stringify(hasGovernance ? { ...verified.findings, governance } : verified.findings)}\n`
+        : `${verified.text}\n${hasGovernance ? `${formatGovernanceVerification(governance, verified.exitCode === 0)}\n` : ''}`,
+    );
+    return verified.exitCode;
   } finally {
     await runtime.close();
   }
-  const signal = ports.interrupt;
-  const resolver = hostPaths(signal);
-  const home = await resolver.canonicalPath(ports.home);
-  const folder = await resolver.canonicalDirectory(ports.cwd);
-  if (!folder.ok) throw new PolicyVerifyInputError(`the folder ${ports.cwd} ${folder.reason}`);
-  const cwd = folder.path;
-  const loaded = await loadSettings({ home, projectDir: cwd, cli: {}, trust: { isTrusted: () => trusted }, signal });
-  const governanceRules = governance.rules.map((entry) => parseGovernanceRule(entry, { home, project: cwd }));
-  const resolvedRoots = await sessionRootsOf(cwd, loaded.settings.permissions.additionalDirectories, resolver);
-  if (!resolvedRoots.ok) throw new PolicyVerifyInputError(`the folder ${resolvedRoots.root} ${resolvedRoots.reason}`);
-  const { roots } = resolvedRoots;
-  const mode = options.mode ?? loaded.settings.permissions.defaultMode ?? 'manual';
-  const verifier = await host.loadVerifier();
-  const fs = await host.loadPolicyFilesystem();
-  const secretLocations = verifier.secretLocationsOf(
-    paths,
-    options.secrets.map((text) => secretPathOf(home, text)),
-  );
-  const mandate = options.mandate === undefined ? undefined : loaded.settings.mandates?.[options.mandate];
-  if (options.mandate !== undefined && mandate === undefined) {
-    throw new PolicyVerifyInputError(`no mandate named ${JSON.stringify(options.mandate)} is declared in the user settings`);
-  }
-  const mandateRules =
-    mandate === undefined
-      ? []
-      : MANDATE_EFFECTS.flatMap((effect) =>
-          (mandate[effect] ?? []).map((text) => parseRule(text, { effect, origin: 'cli', source: `the mandate ${options.mandate ?? ''}`, settingsRoot: cwd, home, cwd })),
-        );
-  const catalogue = mandate === undefined ? undefined : await host.loadOperationCatalogue?.();
-  if (mandate !== undefined && catalogue === undefined) throw new PolicyVerifyInputError('this build cannot read the operation catalogue, so a mandate cannot be checked');
-  const request = {
-    rules: [...loaded.rules, ...governanceRules, ...mandateRules],
-    roots,
-    mode,
-    home,
-    cwd,
-    protectedSet: await verifier.protectedSetOf(roots, fs, signal),
-    secretLocations,
-    deniedLocations: verifier.secretLocationsOf(paths, []),
-    exemptDirectory: null,
-    enforcement: ruleEnforcementOf(loaded.settings.sandbox),
-  };
-  const engine = await host.openSolver(verifier);
-  let report: Awaited<ReturnType<typeof verifier.verifyPermissions>>;
-  try {
-    report = await verifier.verifyPermissions(engine.api, {
-      ...request,
-      fs,
-      budgetMs: VERIFY_BUDGET_MS,
-      signal,
-      unixSockets: unixSocketPolicyOf(loaded.settings.sandbox, loaded.settings.sandboxUnixSockets.allow),
-      ...(catalogue === undefined ? {} : { supersededForms: catalogue.supersededForms, alwaysOperations: catalogue.alwaysOperations }),
-    });
-  } finally {
-    await engine.close();
-  }
-  const hasGovernance = governance.rules.length > 0 || governance.textOnly.length > 0;
-  ports.stdout.write(
-    options.json
-      ? `${JSON.stringify(hasGovernance ? { ...report, governance } : report)}\n`
-      : `${verifier.formatReport(report)}\n${hasGovernance ? `${formatGovernanceVerification(governance, report.exitCode === 0)}\n` : ''}`,
-  );
-  if (loaded.warnings.length > 0) ports.stderr.write(policyWarningsText(loaded.warnings));
-  if (mandate !== undefined) return report.exitCode;
-  const solverVersion = await host.solverVersion(verifier);
-  const verdicts = connectRuntime(ports, paths);
-  try {
-    await verdicts.putRuleVerdict(verdictKey(verifier.ruleVerifyInputOf(request), solverVersion), verifier.verdictOfReport(report, solverVersion));
-  } finally {
-    await verdicts.close();
-  }
-  return report.exitCode;
 };

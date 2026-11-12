@@ -139,7 +139,7 @@ const harness = (behaviour: Behaviour = {}) => {
       getRun: async (id: string) => ({ id, sessionId: `s${counter}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 1 } }),
       runReflection: async () => ({ job: null, charges: [], queuedAhead: 0 }),
       runAnsweredBy: async () => ({ answeredBy: [SCRIPTED_ANSWER] }),
-      reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+      reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
       resolveApproval: async () => ({}),
       cancel: async () => ({ status: 200, run: {} }),
       addRule: async (request: unknown) => {
@@ -230,6 +230,7 @@ const harness = (behaviour: Behaviour = {}) => {
         signal.addEventListener('abort', () => reject(signal.reason), { once: true });
       }),
     now: () => 0,
+    random: () => 0,
   };
   for (const stale of behaviour.staleRoots ?? []) {
     files.set(`${stale.root}/.momonga-eval-owner`, JSON.stringify({ pid: stale.owner, home: stale.home ?? OWNER_HOME }));

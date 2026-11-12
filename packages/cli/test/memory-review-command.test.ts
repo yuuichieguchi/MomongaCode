@@ -1,4 +1,4 @@
-import { testKernelLock } from '@momonga/testkit';
+import { testEndpointScope } from '@momonga/testkit';
 import fs from 'node:fs';
 import http from 'node:http';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
@@ -15,7 +15,6 @@ import * as notices from '../src/tui/notices.ts';
 import type { NoticeSource } from '../src/tui/notices.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { fakeRuntime } from './acp-harness.ts';
 import { startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import { NO_HELPER } from './no-helper.ts';
@@ -77,12 +76,14 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     home,
     cwd: project,
     clock: virtualClock(),
+    endpointScope: testEndpointScope,
     self: { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' },
     spawnDetached: () => {
       throw new Error('the daemon is already running');
     },
     stdout: { write: (text: string) => void out.push(text) },
     stderr: { write: () => undefined },
+    personCapability: async () => 'f'.repeat(32),
   } as unknown as CliPorts;
   return { paths, ports: terminalPorts(ports), project, seen, out };
 };
@@ -258,7 +259,6 @@ describe('command registration', () => {
     const entry = async (): Promise<number> => 0;
     return buildProgram({
       ports,
-      policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
       entries: { supervise: entry, gateway: entry, runtime: entry },
       update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
       interrupt: new AbortController().signal,

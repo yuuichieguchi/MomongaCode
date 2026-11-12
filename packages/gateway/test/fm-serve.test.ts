@@ -2,13 +2,12 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from 'undici';
 import { createManagedServer, type ExecOptions, type ExecResult, type ManagedServer, type ManagedServerTimers } from '@momonga/gateway';
 import { KILL_CONFIRM_MS } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, type FakeChatCompletionsServer, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, testKernelLock, testProcessInspector, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { FM_SERVER } from '@momonga/protocol';
 import type { GenerationRole } from '@momonga/foundation';
 
@@ -166,7 +165,7 @@ afterEach(async () => {
 });
 
 const makeSocketPath = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   dirs.push(dir);
   return path.join(dir, 'fm.sock');
@@ -1020,7 +1019,7 @@ describe('createManagedServer stops begun outside a close read the stop grace at
   });
 
   it('reads the grace when the start-up reap of stale groups begins', async () => {
-    const markerDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-markers-'));
+    const markerDirectory = createTempDir();
     dirs.push(markerDirectory);
     let reads = 0;
     const { server } = setup({

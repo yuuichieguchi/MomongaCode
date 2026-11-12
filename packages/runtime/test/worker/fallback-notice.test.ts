@@ -32,7 +32,7 @@ describe('a model call answered by a target other than the first of its model', 
       expect.objectContaining({
         level: 'warning',
         code: 'fallback_target',
-        message: 'The model call was answered by the fallback target secondary because primary failed (provider_unavailable: the chat-completions upstream is unreachable).',
+        message: 'The model call was answered by the fallback model secondary because primary failed (provider_unavailable: the chat-completions upstream is unreachable).',
       }),
     );
   });

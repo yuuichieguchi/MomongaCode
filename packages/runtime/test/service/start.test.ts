@@ -1,14 +1,13 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, fixedSocket, syncPaths } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, systemTempRoot } from '@momonga/testkit';
 import { START_MS, createFakePorts, createNotifier, launchService, makeLayout, onCleanup, openStore, sendJson, serviceOptions } from './helpers.ts';
 import type { Layout, RunService } from './helpers.ts';
 
-const CASE_INSENSITIVE = syncPaths.volumeIsCaseInsensitive(fs.realpathSync(os.tmpdir()));
+const CASE_INSENSITIVE = syncPaths.volumeIsCaseInsensitive(systemTempRoot());
 
 type Attempt = { socketPath?: string; home?: string; protectedRootAreas?: readonly string[]; wrapStore?: (store: RuntimeStore) => RuntimeStore };
 

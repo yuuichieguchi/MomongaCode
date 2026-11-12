@@ -3,7 +3,6 @@ import { mapAsync, nodeFileSystem, protectedSetFor, sha256Hex } from '@momonga/f
 import type { Awaitable, Clock, LayoutLocks, MomongaPaths, UnixSocketPolicy, VerdictSubject } from '@momonga/foundation';
 import { ShellNotFoundError, askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
-import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import { createPolicyFilesystem, resolveBashPath } from '@momonga/tools';
 import type { ShellHost } from '@momonga/tools';
 import type { RuleVerification, RuleVerifierPort } from '../ports.ts';
@@ -51,9 +50,11 @@ export type RuleVerifierDeps = {
   timers: ServiceTimers;
   bashPath: () => Awaitable<string>;
   clock: Clock;
+  budgetMs: number;
+  startBoundMs: number;
 };
 
-export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, bashPath, clock }: RuleVerifierDeps): RuleVerifierPort => {
+export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, bashPath, clock, budgetMs, startBoundMs }: RuleVerifierDeps): RuleVerifierPort => {
   const foundBashPath = async (): Promise<string | undefined> => {
     try {
       return await bashPath();
@@ -77,21 +78,22 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers, 
     signal.throwIfAborted();
     const verifier = await host.loadVerifier();
     return verifyInThread(
-      { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers, loadAllowanceMs: RULE_VERIFY_LOAD_ALLOWANCE_MS },
-      { input: request, unixSockets: socketsOf(input), solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS, askedAtMs: clock.now(), platform: policyFilesystem.platform, bashPath: await foundBashPath() },
+      { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers, startBoundMs },
+      { input: request, unixSockets: socketsOf(input), solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs, askedAtMs: clock.now(), platform: policyFilesystem.platform, bashPath: await foundBashPath() },
       signal,
     );
   };
   return {
     solverVersion: host.solverVersion,
-    inputOf: async (request, signal) => {
+    inputOf: async ({ secrets, mandateChecks, ...request }, signal) => {
       const verifier = await host.loadVerifier();
-      const input = verifier.ruleVerifyInputOf({
+      const subject = verifier.ruleVerifyInputOf({
         ...request,
         protectedSet: await protectedSetFor(request.roots, askedBy(policyFilesystem, signal)),
-        secretLocations: verifier.secretLocationsOf(paths, []),
+        secretLocations: verifier.secretLocationsOf(paths, secrets),
         deniedLocations: verifier.secretLocationsOf(paths, []),
       });
+      const input = mandateChecks === undefined ? subject : { ...subject, ...mandateChecks };
       prepared.set(input, request.unixSockets);
       return input;
     },
@@ -109,9 +111,10 @@ export type ProductRuleVerifierDeps = {
   shellHost: Pick<ShellHost, 'platform' | 'isExecutable'>;
   env: NodeJS.ProcessEnv;
   clock: Clock;
+  budgetMs: number;
 };
 
-export const productRuleVerifier = ({ solver, paths, locks, timers, shellHost, env, clock }: ProductRuleVerifierDeps): RuleVerifierPort =>
+export const productRuleVerifier = ({ solver, paths, locks, timers, shellHost, env, clock, budgetMs }: ProductRuleVerifierDeps): RuleVerifierPort =>
   createRuleVerifier({
     host: solver === undefined ? installedRuleSolver(import.meta.url) : solver(paths, locks),
     fs: createPolicyFilesystem(),
@@ -119,4 +122,6 @@ export const productRuleVerifier = ({ solver, paths, locks, timers, shellHost, e
     timers,
     bashPath: () => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env }),
     clock,
+    budgetMs,
+    startBoundMs: RULE_VERIFY_LOAD_ALLOWANCE_MS,
   });

@@ -1,11 +1,11 @@
 import type { SecretHost } from '@momonga/foundation/secret-store';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
 import { programOwnerProblemSync } from '@momonga/foundation/program-search';
 import type { ProgramOwnerFiles } from '@momonga/foundation/program-search';
+import { createTempDir } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 const binDirWith = (...programs: string[]): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-secret-trust-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   for (const program of programs) fs.writeFileSync(path.join(dir, program), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   return dir;

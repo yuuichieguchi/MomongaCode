@@ -1,6 +1,6 @@
 import { assertsFormat } from './untrusted-engine.ts';
 import type { Engine, EngineValidator, RawError } from './untrusted-engine.ts';
-import { capText, sanitizeServerText } from './untrusted-text.ts';
+import { SERVER_TEXT_EXCERPT_CHARS, capText, sanitizeServerText } from './untrusted-text.ts';
 
 export type UntrustedError = {
   readonly instancePath: string;
@@ -15,7 +15,6 @@ type Located = { readonly uri: string; readonly pointer: string; readonly node: 
 
 type Context = { readonly base: Located; readonly prefix: string; readonly instance: unknown };
 
-const MAX_MESSAGE_CHARS = 200;
 const PROBE_ID = 'urn:momonga:error-probe';
 const VARIANT_KEYWORDS: ReadonlySet<string> = new Set(['anyOf', 'oneOf']);
 const KEY_ALIASES: Readonly<Record<string, string>> = { prefixItems: 'items', $defs: 'definitions' };
@@ -56,7 +55,7 @@ const sanitizeParam = (value: unknown): unknown => {
 const sanitized = (error: RawError, instancePath: string): UntrustedError => ({
   instancePath: sanitizeServerText(instancePath),
   keyword: error.keyword,
-  message: capText(sanitizeServerText(error.message), MAX_MESSAGE_CHARS),
+  message: capText(sanitizeServerText(error.message), SERVER_TEXT_EXCERPT_CHARS),
   params: Object.fromEntries(Object.entries(error.params).map(([name, value]) => [name, sanitizeParam(value)])),
 });
 

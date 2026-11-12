@@ -1,16 +1,15 @@
-import { HELPER_COMMAND, guardStandardStreams, nodeEntryIo, resolveLayoutLocks } from '@momonga/foundation';
+import { HELPER_COMMAND, guardStandardStreams, nodeEntryIo } from '@momonga/foundation';
 import type { ExecutableHelpers } from '@momonga/foundation';
 import { daemonEntries } from './daemon/entries.ts';
 import { helperCallOf } from './helper-mode.ts';
 import { provideEmbeddedWindowsKeeper } from './keeper/host.ts';
-import { nodeHelperHost, nodePorts } from './node-ports.ts';
+import { nodeHelperHost, nodePorts, processHome } from './node-ports.ts';
 import type { CliPorts } from './ports.ts';
 import { pathsOf } from './paths.ts';
 import { buildProgram, exitOfFailure } from './program.ts';
 import { terminalSink } from './terminal-writer.ts';
 import type { UpdateWiring } from './update/background.ts';
 import { nodeUpdateWiring } from './update/wiring.ts';
-import { nodePolicyVerifyHost } from './verify/host.ts';
 
 const registeredHelpers = async (): Promise<ExecutableHelpers> => (await import('@momonga/tools/executable-helpers')).executableHelpers;
 
@@ -21,16 +20,12 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
   const entryIo = (args: readonly string[]): ReturnType<typeof nodeEntryIo> => ({ ...nodeEntryIo(process, streams), argv: [...args] });
 
   try {
-    const ports: CliPorts = { ...nodePorts(version, interrupt.signal, streams), ...overrides };
+    const ports: CliPorts = { ...nodePorts(version, interrupt.signal, overrides.home ?? processHome(), streams), ...overrides };
     const given = ports.handover === undefined ? process.argv.slice(2) : [...ports.handover.args];
     const helperCall = helperCallOf(given);
     let update: UpdateWiring | undefined;
     const program = buildProgram({
       ports,
-      policyVerify: async () => {
-        const paths = await pathsOf(ports);
-        return nodePolicyVerifyHost(ports, paths, resolveLayoutLocks(paths).mechanism);
-      },
       entries: daemonEntries(ports.self, ports.version, ports.spawnDetached),
       helper: { helpers, call: helperCall, host: nodeHelperHost() },
       update: async () => (update ??= nodeUpdateWiring(ports, await pathsOf(ports))),

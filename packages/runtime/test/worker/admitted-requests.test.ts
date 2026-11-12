@@ -7,7 +7,9 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { compactInputOf, compactPinOf } from '../../src/worker/compact-pin.ts';
 import { FAKE_ADAPTER, FAKE_PROVIDER, PRIMARY_TARGET } from './fake-gateway.ts';
 import { capabilitiesFor, createdRun, makeEnv } from './harness.ts';
-import { assistantMessage, callsStep, textStep } from './scripts.ts';
+import { GatewayRequestError } from '../../src/gateway-client.ts';
+import { assistantMessage, callsStep, gated, textStep } from './scripts.ts';
+import type { ScriptStep } from './fake-gateway.ts';
 
 const SOURCE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src');
 const THE_SENDER = 'worker/admitted-request.ts';
@@ -154,5 +156,72 @@ describe('every model request of the runtime is admitted by the one budget', () 
     expect(classifierBody?.momonga?.max_cost_nano).toBeGreaterThan(0);
     expect(classifierBody?.momonga?.max_input_tokens).toBeGreaterThan(0);
     expect(env.store.treeSpend(run.id)).toMatchObject({ reservedNano: 0, reservedTokens: 0 });
+  });
+});
+
+describe('a model request in flight holds its reservation until its spend is recorded', () => {
+  const interrupted = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the gateway stream was interrupted' }) });
+
+  const reservationOf = (env: Env, runId: string) => {
+    const spend = env.store.treeSpend(runId);
+    return { reservedTokens: spend.reservedTokens, reservedNano: spend.reservedNano };
+  };
+
+  const recordedBudget = (env: Env, runId: string) => {
+    const requested = env.ofType(runId, 'model.requested').at(-1);
+    return { reservedTokens: requested?.budget?.reservedTokens, reservedNano: requested?.budget?.reservedNano };
+  };
+
+  it('shows the reservation of a stream to the tree while the stream runs, and clears it with the response', async () => {
+    const env = await makeEnv();
+    metered(env);
+    const blocked = gated(textStep('Done.'), 1);
+    env.gateway.script.push(blocked);
+    const run = await env.enqueue('Work', { limits: { maxCostUsd: 5 } });
+    const running = env.runOnce(env.worker());
+    await env.settled(blocked.gate.reached.promise, 'the stream to start');
+
+    expect(reservationOf(env, run.id)).toEqual(recordedBudget(env, run.id));
+    expect(reservationOf(env, run.id).reservedNano).toBeGreaterThan(0);
+
+    blocked.gate.release.resolve();
+    await env.settled(running, 'the worker');
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(reservationOf(env, run.id)).toEqual({ reservedTokens: 0, reservedNano: 0 });
+  });
+
+  it('keeps the reservation of a request whose stream failed and whose run is requeued', async () => {
+    const env = await makeEnv({ maxAttempts: 5, maxTotalAttempts: 5 });
+    metered(env);
+    env.gateway.script.push(interrupted());
+    const run = await env.enqueue('Work', { limits: { maxCostUsd: 5 } });
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('QUEUED');
+    expect(reservationOf(env, run.id)).toEqual(recordedBudget(env, run.id));
+    expect(reservationOf(env, run.id).reservedNano).toBeGreaterThan(0);
+  });
+
+  it('re-takes the reservation recorded with a request that is sent again', async () => {
+    const env = await makeEnv({ maxAttempts: 5, maxTotalAttempts: 5 });
+    metered(env);
+    env.gateway.script.push(interrupted());
+    const run = await env.enqueue('Work', { limits: { maxCostUsd: 5 } });
+    await env.runOnce(env.worker());
+    expect(env.run(run.id).status).toBe('QUEUED');
+    env.raw().prepare('UPDATE runs SET reserved_tokens = 0, reserved_nano = 0 WHERE id = ?').run(run.id);
+    env.clock.set(env.run(run.id).availableAt);
+    const blocked = gated(textStep('Done.'), 1);
+    env.gateway.script.push(blocked);
+
+    const running = env.runOnce(env.worker('worker-2'));
+    await env.settled(blocked.gate.reached.promise, 'the stream sent again');
+
+    expect(env.ofType(run.id, 'model.requested')).toHaveLength(1);
+    expect(reservationOf(env, run.id)).toEqual(recordedBudget(env, run.id));
+    blocked.gate.release.resolve();
+    await env.settled(running, 'the worker');
+    expect(env.run(run.id).status).toBe('COMPLETED');
   });
 });

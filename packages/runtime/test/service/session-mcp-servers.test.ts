@@ -26,6 +26,8 @@ describe('session MCP servers', () => {
     expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, mcpServers: { editor: { nonsense: true } } } }), 400, 'invalid_request');
     expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, mcpServers: { '@/.': STDIO } } }), 400, 'invalid_request');
     expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, mcpServers: { editor: { type: 'sse', url: 'https://example.com/sse' } } } }), 400, 'invalid_request');
+    expect((await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, mcpServers: { '@/.': STDIO } } })).json.error.message).toContain('"@/."');
+    expect((await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, mcpServers: { editor: { nonsense: true } } } })).json.error.message).toContain('"editor"');
     expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });
 

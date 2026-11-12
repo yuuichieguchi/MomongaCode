@@ -31,6 +31,7 @@
 
   if ($env:MOMONGA_RELEASE_PUBLIC_KEY) { $publicKey = $env:MOMONGA_RELEASE_PUBLIC_KEY } else { $publicKey = $embeddedReleasePublicKey }
   if (-not $publicKey) { Fail 'this installer pins no release signing key, so it cannot verify the release: install from a release whose installer pins the key, or set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish (ssh-ed25519 AAAA...)' }
+  if ($publicKey -notmatch '^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$') { Fail 'the release signing key is not one ssh-ed25519 public key line (ssh-ed25519 AAAA...), so it cannot verify the release; nothing was installed' }
   $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
   if (-not $sshKeygen) { Fail 'ssh-keygen is required to verify the release signature: enable the Windows OpenSSH Client optional feature' }
   if ($baseUrl -notmatch '^https://' -and $baseUrl -notmatch '^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(/|$)') {
@@ -57,7 +58,7 @@
     if (-not $expected -or $expected -notmatch '^[0-9a-f]{64}$') { Fail "$checksumsName has no valid entry for $assetName" }
 
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $staging $assetName)).Hash.ToLowerInvariant()
-    if ($actual -ne $expected) { Fail "sha256 mismatch for ${assetName}: expected $expected, got $actual; nothing was installed" }
+    if ($actual -ne $expected) { Fail "the downloaded $assetName does not match the SHA-256 that $checksumsName records (expected $expected, got $actual); nothing was installed" }
 
     $candidate = Join-Path $staging $assetName
     $reported = & $candidate --version
@@ -66,7 +67,22 @@
     if ($env:MOMONGA_VERSION -and $reported -ne $env:MOMONGA_VERSION) { Fail "version $($env:MOMONGA_VERSION) was asked for, but the downloaded executable reports version $reported; nothing was installed" }
 
     $target = Join-Path $prefix 'momonga.exe'
-    Move-Item -Force -LiteralPath $candidate -Destination $target
+    $aside = $null
+    if (Test-Path -LiteralPath $target) {
+      $aside = Join-Path $prefix ('.momonga-update.' + [System.Guid]::NewGuid().ToString('N'))
+      try {
+        Move-Item -LiteralPath $target -Destination $aside
+      } catch {
+        Fail "$target is in use and could not be moved aside ($($_.Exception.Message)): stop the daemon, then run the command again"
+      }
+      New-Item -ItemType File -Path ($aside + '.sqlite') | Out-Null
+    }
+    try {
+      Move-Item -LiteralPath $candidate -Destination $target
+    } catch {
+      if ($aside) { Move-Item -LiteralPath $aside -Destination $target }
+      throw
+    }
     Write-Output "installed momonga to $target"
 
     $openShellLine = @"

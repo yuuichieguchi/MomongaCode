@@ -37,6 +37,7 @@ import type { CliPorts } from '../ports.ts';
 import { shellModelsOf } from '../plain-http.ts';
 import { UsageError } from '../usage-error.ts';
 import { pathsOf } from '../paths.ts';
+import { exitOfMeasurement } from '../measurement-exit.ts';
 
 export class EvaluateUsageError extends UsageError {
   constructor(message: string) {
@@ -255,7 +256,7 @@ const compareReliabilityFiles = async (ports: CliPorts, baselineFile: string, ca
   const [baseline, candidate] = await Promise.all([loadReliabilityReport(ports, baselineFile), loadReliabilityReport(ports, candidateFile)]);
   const comparison = compareReliability(baseline, candidate, { seed: CONTEXT_BOOTSTRAP_SEED });
   ports.stdout.write(`${formatReliabilityComparison(comparison)}\n`);
-  return comparison.gate.passed ? 0 : 1;
+  return exitOfMeasurement(comparison.gate.passed);
 };
 
 export const compareContext = async (ports: CliPorts, baselineFile: string, candidateFile: string, gate: string): Promise<number> => {
@@ -267,7 +268,7 @@ export const compareContext = async (ports: CliPorts, baselineFile: string, cand
   ]);
   const comparison = compareContextReports(baseline, candidate, { seed: CONTEXT_BOOTSTRAP_SEED, gate: gateName });
   ports.stdout.write(`${formatContextComparison(comparison)}\n`);
-  return comparison.gate.passed ? 0 : 1;
+  return exitOfMeasurement(comparison.gate.passed);
 };
 
 export const evaluate = async (

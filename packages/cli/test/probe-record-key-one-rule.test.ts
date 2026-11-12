@@ -1,4 +1,3 @@
-import { testKernelLock } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +16,6 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../gateway/test/ollama-support.ts';
 import { testHostPath } from '@momonga/testkit';
 import { NO_HELPER } from './no-helper.ts';
@@ -52,7 +50,7 @@ const runCli = async (home: string, args: readonly string[]): Promise<{ codes: n
   const stderr: string[] = [];
   const codes: number[] = [];
   const ports: CliPorts = {
-    ...nodePorts('9.9.9', new AbortController().signal),
+    ...nodePorts('9.9.9', new AbortController().signal, home),
     home,
     cwd: home,
     env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home },
@@ -64,7 +62,6 @@ const runCli = async (home: string, args: readonly string[]): Promise<{ codes: n
   const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: path.join(home, 'cache', 'executables') }, testKernelLock()),
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

@@ -1,12 +1,12 @@
 import { spawnSync } from '@momonga/testkit/child-process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS } from '@momonga/foundation';
 import { MINIMUM_PAIRS, bindingRuleIds } from '@momonga/eval';
 import type { ContextRule } from '@momonga/eval';
+import { createTempDir } from '@momonga/testkit';
 
 const DATASETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../datasets');
 
@@ -102,7 +102,7 @@ describe('the shipped context dataset measures every quality metric', () => {
 
 describe('the shipped economy dataset can expose omission and the single cut', () => {
   const cases = casesOf('economy.json');
-  const scratch = mkdtempSync(path.join(tmpdir(), 'momonga-economy-'));
+  const scratch = createTempDir();
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
   it.each(['failing-build-log', 'failing-test-log-nonenglish', 'passing-long-log-needle', 'large-output-small-window', 'large-output-cjk'])(

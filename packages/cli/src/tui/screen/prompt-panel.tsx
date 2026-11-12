@@ -1,9 +1,8 @@
 import { Box, Text } from 'ink';
-import { CHANGE_NOT_SHOWN_LEAD, MODEL_CLAIM_LEAD, hunkHeaderOf, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
-import type { ApprovalShown, DiffHunk } from '@momonga/protocol';
+import { approvalShownParts, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import type { ApprovalShown } from '@momonga/protocol';
 import { currentField, currentRequest } from '../../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../../elicit/flow.ts';
-import type { DiffLine } from '../diff.ts';
 import type { EditorState } from '../editor.ts';
 import type { KeyTable } from '../keys/table.ts';
 import { joinHint } from '../select.tsx';
@@ -11,9 +10,9 @@ import type { SelectLine, SelectSpec } from '../select.tsx';
 import { HELD_PANEL_LINE } from '../transcript.ts';
 import type { PendingApproval, PendingElicitation, ToolEntry } from '../transcript.ts';
 import { currentA11y } from './a11y.ts';
+import { diffLines } from './diff.ts';
 import { EditorView } from './input-box.tsx';
 import { styleOf } from './theme.ts';
-import type { StyleToken } from './theme.ts';
 import { inertText } from './wrap.ts';
 
 export const TRUST_CHOICES = [
@@ -36,26 +35,10 @@ export const trustSpec = (path: string): SelectSpec => ({
   filter: false,
 });
 
-const DIFF_STYLE = {
-  added: { token: 'diff.added', first: '+ ' },
-  removed: { token: 'diff.removed', first: '- ' },
-  header: { token: 'accent', first: '' },
-  context: { first: '  ' },
-} as const satisfies Record<DiffLine['kind'], { token?: StyleToken; first: string }>;
-
-const HUNK_LINE_KINDS: Readonly<Record<string, DiffLine['kind']>> = { '-': 'removed', '+': 'added', ' ': 'context' };
-
-const hunkLines = (hunk: DiffHunk): DiffLine[] => [
-  { kind: 'header', text: hunkHeaderOf(hunk) },
-  ...hunk.lines.map((line): DiffLine => ({ kind: HUNK_LINE_KINDS[line.charAt(0)] ?? 'context', text: line.slice(1) })),
-];
-
-const shownLines = (shown: ApprovalShown): SelectLine[] => [
-  ...(shown.effect === undefined ? [] : [shown.effect]),
-  ...(shown.claim === undefined ? [] : [`${MODEL_CLAIM_LEAD}${shown.claim}`]),
-  ...(shown.diff?.diffOmitted === undefined ? [] : [`${CHANGE_NOT_SHOWN_LEAD}${shown.diff.diffOmitted}`]),
-  ...(shown.diff?.hunks ?? []).flatMap(hunkLines).map((line): SelectLine => ({ text: line.text, ...DIFF_STYLE[line.kind] })),
-];
+const shownLines = (shown: ApprovalShown): SelectLine[] =>
+  approvalShownParts(shown).flatMap((part): SelectLine[] =>
+    part.kind === 'text' ? part.lines : [...diffLines(part.hunks)].map((line): SelectLine => ({ text: line.text, ...(line.token === undefined ? {} : { token: line.token }), first: line.prefix })),
+  );
 
 export const approvalLines = (approval: PendingApproval): SelectLine[] => [
   approval.reason,

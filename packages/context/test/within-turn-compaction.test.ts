@@ -44,7 +44,7 @@ describe('proactive compaction inside one turn', () => {
     const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(built.inputTokens).toBe(2378);
-    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2378, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } });
+    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2378, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } , rebuilt: { before: expect.any(Array), after: expect.any(Array), tools: expect.any(Array) } });
   });
 
   it('gives no hint when the region is below twice the summary item', async () => {
@@ -115,7 +115,7 @@ describe('forced compaction inside one turn', () => {
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(error.inputTokens).toBe(2946);
-    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2946, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } });
+    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2946, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } , rebuilt: { before: expect.any(Array), after: expect.any(Array), tools: expect.any(Array) } });
   });
 
   it('takes the latest cut before the last step at the last level', async () => {

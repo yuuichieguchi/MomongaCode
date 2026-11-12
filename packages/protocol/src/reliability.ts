@@ -124,7 +124,7 @@ export type StoreReviewResponse = { review: PermissionReviewView };
 export const COST_CURRENCY = 'USD';
 export const COST_UNIT_DIGITS = 15;
 
-export type RunCostView = { runId: string; calls: number; notPriced: number; legacyPrecisionCalls: number; priced: { currency: typeof COST_CURRENCY; priceVersion: string; units: string }[] };
+export type RunCostView = { runId: string; calls: number; retries: number; notPriced: number; legacyPrecisionCalls: number; priced: { currency: typeof COST_CURRENCY; priceVersion: string; units: string }[] };
 
 export type CostTotals = { calls: number; notPriced: number; priced: { currency: typeof COST_CURRENCY; units: string }[] };
 
@@ -160,6 +160,8 @@ export const RELIABILITY_DERIVATIONS = {
     'Equal to SEARCH_INDEX_BATCH_RUNS: the bounded background folds of the daemon share one cadence, and each run of a tick costs one journal thread request.',
   INDICATOR_DEFINITIONS_VERSION:
     'A counter, not a measure: a change to any indicator formula raises it by one, and stored run facts of an older version are folded again. 2 is the set of formulas that has the money limit in the Budget Overrun Rate and the figures of mandate runs; 4 folds a root run again when a member of its tree ends after it; 5 adds the facts of the verification rounds, the answers to asks, the denials by source and the holds of a run.',
+  FACTS_SKIPPED_CANCELLED_BEFORE_START:
+    'The reason a facts request answers with no facts for a run: the run was cancelled before its start was recorded, so it did no work and a report does not count it as a run. A product word, not a measure.',
   MAIN_AGENT: 'The name under which a report groups the work a root run did itself, beside the names of its subagents. A product word, not a measure.',
   COST_CURRENCY:
     'The one currency of the product: every price of the price table is stated in US dollars, so a cost is never converted and a report never adds amounts of two currencies.',
@@ -181,6 +183,7 @@ const UNITS = { type: 'string', pattern: '^[0-9]+$' } as const;
 const runCost = closedRequiringAll({
   runId: nonEmptyString,
   calls: nonNegativeInteger,
+  retries: nonNegativeInteger,
   notPriced: nonNegativeInteger,
   legacyPrecisionCalls: nonNegativeInteger,
   priced: { type: 'array', items: closedRequiringAll({ currency: { const: COST_CURRENCY }, priceVersion: nonEmptyString, units: UNITS }) },

@@ -28,6 +28,7 @@ import { reviewPermissions } from './review.ts';
 import type { ReviewOptions } from './review.ts';
 import { showStatus } from './runs.ts';
 import { secretSet } from './secret.ts';
+import { exitOfMeasurement } from '../measurement-exit.ts';
 
 export type CommandGroup = (program: Command, deps: ProgramDeps) => void;
 
@@ -378,7 +379,7 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     .option('--model <model>', 'the model every session of a live run uses')
     .option('--seed <n>', 'the seed of the noise turns of a live run; 0 when omitted', seedArgument)
     .option('--report <file>', 'store the report as JSON for eval compare')
-    .option('--settings <file>', 'a token policy overlay over the defaults, every core key on unless the file turns it off (context.adaptiveBudget, context.cachePrefix, context.outputFormatters, context.loopGuidance, context.observedCapacity, context.unboundedOutputReserve, tools.deferral, tools.conciseDescriptions, memory.repositoryFacts, memory.reflection.enabled), merged into the settings of every case of a live run; the report records the resolved policy')
+    .option('--settings <file>', 'a token policy overlay over the defaults, every core key on unless the file turns it off (context.adaptiveBudget, context.cachePrefix, context.outputFormatters, context.loopGuidance, context.observedCapacity, context.unboundedOutputReserve, tools.deferral, tools.conciseDescriptions, memory.repositoryFacts, memory.reflection.enabled; context.autoCompact is set by the compaction field of each case and an overlay that sets it is refused), merged into the settings of every case of a live run; the report records the resolved policy')
     .action(async (dataset: string, options: { replay?: string; record?: string; model?: string; seed?: number; report?: string; settings?: string }) => {
       deps.complete(
         await evaluateContext(deps.ports, dataset, {
@@ -476,7 +477,7 @@ const registerAutoMode: CommandGroup = (program, deps) => {
         ...(options.agent === undefined ? {} : { agent: options.agent }),
         ...(model === undefined ? {} : { classifier: model }),
       });
-      deps.complete(outcome.measurement === 'unmeasurable' ? 1 : 0);
+      deps.complete(exitOfMeasurement(outcome.measurement === 'passed'));
     });
   group
     .command('status [model]')
@@ -603,7 +604,7 @@ const registerModels: CommandGroup = (program, deps) => {
       .description('add a model of a model server found on this computer, of a server at an address, or of a signed-in subscription account')
       .option('--address <url>', 'the address of the model server; without it this computer is searched')
       .option('--model <own name>', 'the model, as the server calls it')
-      .option('--window <tokens>', 'the context window of the model, when the server reports none')
+      .option('--window <tokens>', 'the context window of the model; it wins over the window the server reports')
       .option('--api <api>', 'the API of a server that is not recognised: ollama, openai, anthropic or responses')
       .option('--api-key-env <NAME>', 'the environment variable that holds the key of the server')
       .option('--api-key-secret <name>', 'the secret of momonga secret set that holds the key of the server')
@@ -688,7 +689,7 @@ const registerPolicy: CommandGroup = (program, deps) => {
     .option('--mandate <name>', 'check the rules as a run under this mandate of the user settings would have them, and report an allow rule that admits a Bash form a dedicated operation replaces or names an operation that always needs a person')
     .action(async (options: { json?: true; mode?: PermissionMode; secret: string[]; mandate?: string }) => {
       deps.complete(
-        await policyVerify(deps.ports, await pathsOf(deps.ports), await deps.policyVerify(), {
+        await policyVerify(deps.ports, await pathsOf(deps.ports), {
           json: options.json === true,
           secrets: options.secret,
           ...(options.mode === undefined ? {} : { mode: options.mode }),

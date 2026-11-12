@@ -9,7 +9,6 @@ import { renderTrace } from '../src/commands/trace.ts';
 import { announceUpdate, startBackgroundCheck } from '../src/update/background.ts';
 import { setupUpdate } from './update-harness.ts';
 import { formatMemory } from '../src/memory/format.ts';
-import { policyWarningsText } from '../src/commands/policy.ts';
 import { probeEndpointText, probeFmText } from '../src/commands/gateway.ts';
 import { checkOnlyText, installedText, upToDateText } from '../src/commands/update.ts';
 import { reportUnremoved } from '../src/update/install.ts';
@@ -124,10 +123,6 @@ describe('a value a person did not write stays on its own line in command output
     expect(body).toEqual(['  note\\u0009one', '  status: forged', '  x', '    momonga approve ap1 allow_once']);
   });
 
-  it('shows policy settings warnings with a newline on their own warning line', () => {
-    expect(policyWarningsText([FORGED, 'second'])).toBe(`warning: ${SHOWN}\nwarning: second\n`);
-  });
-
   const probeReport = {
     modelId: `m ${FORGED}`,
     contextWindow: { value: 8, method: 'listed' },
@@ -140,7 +135,7 @@ describe('a value a person did not write stays on its own line in command output
   } as unknown as Parameters<typeof probeEndpointText>[3];
 
   it('shows a probed endpoint target name, model id, endpoint and record path with a newline on their line', () => {
-    const lines = probeEndpointText(`t ${FORGED}`, `http://e ${FORGED}`, `/r ${FORGED}`, probeReport, 'native').split('\n');
+    const lines = probeEndpointText(`t ${FORGED}`, `http://e ${FORGED}`, `/r ${FORGED}`, probeReport, 'native', undefined).split('\n');
     expect(lines[0]).toBe(`probed t ${SHOWN}: model m ${SHOWN} at http://e ${SHOWN}, context window 8 (listed)`);
     expect(lines.at(-2)).toBe(`  recorded in /r ${SHOWN}`);
     expect(lines).toHaveLength(9);
