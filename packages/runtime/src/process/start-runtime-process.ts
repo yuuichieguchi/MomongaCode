@@ -783,7 +783,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
         runTrace: async (runId, requestSignal) => {
           await settledOrAborted(telemetries.current().telemetry.flushLocal(), requestSignal);
-          const trace = runTraceOf(traceStore, runId);
+          const trace = await runTraceOf({ local: traceStore, gateway: gatewayClient }, runId, requestSignal);
           return trace === undefined
             ? undefined
             : { ...trace, calls: traceCallsOf(await store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };

@@ -230,7 +230,7 @@ const probeOllama = async (
 };
 
 const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: ProbeSubject, configured: ManagedModel, settings: ResolvedSettings, options: ProbeOptions): Promise<number> => {
-  const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
+  const { managedLaunchOf, probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
   const description = registeredServer(settings.models.servers, configured.server);
   if (description === undefined) throw new Error(`the model ${subject.display} names the managed server ${configured.server}, which is not registered`);
   const locks = resolveLayoutLocks(paths);
@@ -251,6 +251,7 @@ const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: Probe
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
     timers: managedProbeTimersOf(ports),
+    launch: await managedLaunchOf({ home: ports.home, platform: ports.platform, env: ports.env, isUsableBinary: systemProcessFiles.isUsableBinary }),
     stepTimeoutMs: options.stepTimeoutMs,
     model: configured.model,
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),

@@ -6,7 +6,7 @@ import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, POLL_INTERVAL_MS, gatewayMaxClose
 import type { ProcessInspector } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createManagedServer } from '@momonga/gateway';
 import type { ManagedChild, ManagedServerTimers } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, drivenReapTiming, startFakeChatCompletions, waitFor, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, drivenReapTiming, startFakeChatCompletions, waitFor, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock, FakeTimers } from '@momonga/testkit';
 import { makeDir, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { advanceToNextWait, bigTextEvents, createHangingAdapter, openUnreadStream } from './gateway-support.ts';
@@ -88,6 +88,7 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
     const fmTimers = switchableTimers(harness.timers);
     const serve = createManagedServer({
       inspector: testProcessInspector(),
+      launch: TEST_UNPROTECTED_LAUNCH,
       lock: testKernelLock(),
       description: FM_SERVER,
       target: 'fm',

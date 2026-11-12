@@ -2,13 +2,11 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHostExec, groupRecordOutcome, launchGroupLeader, recordMarkerGroup, reapMarkedProcesses, reapMarkerDirectory, signalGroup } from '@momonga/foundation';
-import type { GroupLaunch, LaunchProtection, ProcessInspector } from '@momonga/foundation';
+import type { GroupLaunch, ProcessInspector } from '@momonga/foundation';
 import type { ExecFn } from './preconditions.ts';
 import type { ManagedChild, SpawnFn } from './server.ts';
 
 export type ChildEnv = Readonly<Record<string, string>>;
-
-const MANAGED_SERVER_LAUNCH: LaunchProtection = { kind: 'unprotected', reason: 'a managed model server is started without the protection of the home' };
 
 export const MANAGED_SERVER_LABEL = 'managed server';
 
@@ -58,12 +56,12 @@ export type GroupSpawnOptions = { env: ChildEnv | undefined; markerDirectory: st
 
 export const createGroupSpawn =
   ({ env, markerDirectory, onWarning, inspector }: GroupSpawnOptions): SpawnFn =>
-  async (file, args) => {
+  async (file, args, protection) => {
     const marker = path.join(markerDirectory, randomUUID());
     fs.closeSync(fs.openSync(marker, 'w', 0o600));
     let launched: GroupLaunch;
     try {
-      launched = await launchGroupLeader({ file, args, ...envOption(env), stdio: ['ignore', 'ignore', 'ignore'], protection: MANAGED_SERVER_LAUNCH, marker: { slot: MARKER_FD_INDEX, file: marker } });
+      launched = await launchGroupLeader({ file, args, ...envOption(env), stdio: ['ignore', 'ignore', 'ignore'], protection, marker: { slot: MARKER_FD_INDEX, file: marker } });
     } catch (error) {
       fs.rmSync(marker, { force: true });
       throw error;

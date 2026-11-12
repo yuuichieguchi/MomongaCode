@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { managedInstancePaths, momongaPaths, systemTiming } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { listManagedModel } from '../src/probe/probe-fm.ts';
 import type { ManagedKeyReaderOptions, MeasureManagedServerOptions, ProbeManagedOptions } from '../src/probe/probe-fm.ts';
 import { makeHome } from './gateway-process-helpers.ts';
@@ -25,6 +25,7 @@ describe('the managed probe measures the model it is given', () => {
       paths,
       lock: testKernelLock(),
       inspector: testProcessInspector(),
+      launch: TEST_UNPROTECTED_LAUNCH,
       instance: managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'apple' }),
       description: FM_SERVER,
       target: 'apple',

@@ -4,6 +4,7 @@ import {
   COMPACTION_RESULT_EVENT,
   DEFERRED_HEADER,
   ERROR_TYPES,
+  MAX_RUN_SPANS_PAGE,
   QUOTE_ROUTE,
   ROLE_HEADER,
   RUN_ID_HEADER,
@@ -39,6 +40,8 @@ import type {
   StreamEvent,
   TargetAnswers,
 } from '@momonga/protocol';
+import { spanRecordOfView } from '@momonga/observability';
+import type { SpanRecord } from '@momonga/observability';
 import type { Clock, GatewayCallOptions, GatewayPort, TargetFacts } from './ports.ts';
 import { systemTimers } from './service/timers.ts';
 import type { ServiceTimers } from './service/timers.ts';
@@ -134,6 +137,7 @@ export type GatewayClient = GatewayPort & {
   health(): Promise<GatewayHealth>;
   billedCalls(runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal): Promise<BilledCallsPageView>;
   retentionPurge(runIds: readonly string[], cutoffMs: number, signal: AbortSignal): Promise<void>;
+  runSpans(runId: string, signal: AbortSignal): Promise<SpanRecord[]>;
   destroy(): Promise<void>;
 };
 
@@ -655,6 +659,21 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     retentionPurge: async (runIds, cutoffMs, signal) => {
       const parsed = await unary({ method: 'POST', path: '/v1/momonga/retention/purge', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runIds, cutoffMs }) }, signal, unaryBound());
       if (!isRecord(parsed) || typeof parsed['purged'] !== 'number') throw invalidResponse('the retention purge reply has no number "purged"');
+    },
+
+    runSpans: async (runId, signal) => {
+      const spans: SpanRecord[] = [];
+      let after = 0;
+      for (;;) {
+        const query = new URLSearchParams({ run_id: runId, after: String(after), limit: String(MAX_RUN_SPANS_PAGE) });
+        const parsed = await unary({ method: 'GET', path: `/v1/momonga/spans?${query.toString()}`, headers: {} }, signal, unaryBound());
+        if (!isRecord(parsed) || !Array.isArray(parsed['spans'])) throw invalidResponse('the spans answer has no spans list');
+        const next = parsed['next'];
+        if (next !== null && (typeof next !== 'number' || !Number.isSafeInteger(next) || next <= after)) throw invalidResponse('the spans answer has a cursor that does not move forward');
+        for (const view of parsed['spans']) spans.push(spanRecordOfView(view, runId));
+        if (next === null) return spans;
+        after = next;
+      }
     },
 
     health: async (): Promise<GatewayHealth> => {

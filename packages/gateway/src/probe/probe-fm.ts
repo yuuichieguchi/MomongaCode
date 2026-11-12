@@ -1,5 +1,5 @@
 import { declaredChildEnv, minimalChildEnv, probeKeyComponentLabel, readProbeKeyComponents } from '@momonga/foundation';
-import type { BinaryHashCache, HeldHostReadings, ManagedInstancePaths, MomongaPaths, KernelLockMechanism, ProcessInspector } from '@momonga/foundation';
+import type { BinaryHashCache, ChildLaunch, HeldHostReadings, ManagedInstancePaths, MomongaPaths, KernelLockMechanism, ProcessInspector } from '@momonga/foundation';
 import { knownKeyOf, managedServerDigest, probeKeyOf } from '@momonga/config';
 import type { ProbeKey } from '@momonga/config';
 import { WORDS } from '@momonga/protocol';
@@ -77,6 +77,7 @@ export type MeasureManagedServerOptions = {
   userDialects?: UserDialects;
   declaredDialect?: DialectId;
   servers?: Set<ManagedServer>;
+  launch: ChildLaunch;
   spawn?: SpawnFn;
   timers: ManagedServerTimers;
   stepTimeoutMs?: number;
@@ -86,7 +87,7 @@ export type MeasureManagedServerOptions = {
 
 type ManagedServerRunOptions = Pick<
   MeasureManagedServerOptions,
-  'description' | 'target' | 'binary' | 'instance' | 'lock' | 'inspector' | 'readyTimeoutMs' | 'env' | 'exec' | 'readStopGraceMs' | 'onWarning' | 'spawn' | 'timers' | 'servers'
+  'description' | 'target' | 'binary' | 'instance' | 'lock' | 'inspector' | 'readyTimeoutMs' | 'env' | 'exec' | 'readStopGraceMs' | 'onWarning' | 'launch' | 'spawn' | 'timers' | 'servers'
 >;
 
 const onManagedServer = async <T>(options: ManagedServerRunOptions, signal: AbortSignal, use: (socketPath: string) => Promise<T>): Promise<T> => {
@@ -105,6 +106,7 @@ const onManagedServer = async <T>(options: ManagedServerRunOptions, signal: Abor
     exec: options.exec,
     readStopGraceMs: options.readStopGraceMs,
     onWarning: options.onWarning,
+    launch: options.launch,
     ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
     timers: options.timers,
   });
@@ -198,6 +200,7 @@ export type ProbeManagedOptions = {
   isUsableBinary: (binary: string) => Promise<boolean>;
   readStopGraceMs: () => number;
   timers: ManagedServerTimers;
+  launch: ChildLaunch;
   stepTimeoutMs?: number;
   onWarning(message: string): void;
 };
@@ -259,6 +262,7 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
       execWithStdin: createExecWithStdin(childEnv),
       readStopGraceMs: options.readStopGraceMs,
       timers: options.timers,
+      launch: options.launch,
       gate: PERSON_TRAFFIC,
       ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
       onWarning: options.onWarning,
