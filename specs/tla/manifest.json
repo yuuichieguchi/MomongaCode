@@ -3612,10 +3612,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 111414,
-      "measuredSeconds": 13.17,
-      "measuredCpuSeconds": 9.59,
-      "budgetCpuSeconds": 23
+      "distinctStates": 91419,
+      "measuredSeconds": 5.4,
+      "measuredCpuSeconds": 7.77,
+      "budgetCpuSeconds": 19,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.97 at start)"
     },
     {
       "config": "UpdateSwitch.today",
@@ -3626,10 +3627,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 8153,
-      "measuredSeconds": 1.31,
-      "measuredCpuSeconds": 2.71,
-      "budgetCpuSeconds": 9
+      "distinctStates": 5539,
+      "measuredSeconds": 1.42,
+      "measuredCpuSeconds": 2.6,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 16.67 at start)"
     },
     {
       "config": "UpdateSwitch.pausePending",
@@ -3640,10 +3642,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 374,
-      "measuredSeconds": 1.13,
-      "measuredCpuSeconds": 1.59,
-      "budgetCpuSeconds": 7
+      "distinctStates": 311,
+      "measuredSeconds": 1.15,
+      "measuredCpuSeconds": 1.9,
+      "budgetCpuSeconds": 7,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 16.06 at start)"
     },
     {
       "config": "UpdateSwitch.defer",
@@ -3654,10 +3657,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 7301,
-      "measuredSeconds": 1.28,
-      "measuredCpuSeconds": 2.41,
-      "budgetCpuSeconds": 8
+      "distinctStates": 5342,
+      "measuredSeconds": 1.74,
+      "measuredCpuSeconds": 2.97,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 16.06 at start)"
     },
     {
       "config": "UpdateSwitch.claimRetiring",
@@ -3668,10 +3672,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 54777,
-      "measuredSeconds": 1.29,
-      "measuredCpuSeconds": 2.35,
-      "budgetCpuSeconds": 8
+      "distinctStates": 81531,
+      "measuredSeconds": 3.6,
+      "measuredCpuSeconds": 5.87,
+      "budgetCpuSeconds": 15,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 14.44 at start)"
     },
     {
       "config": "UpdateSwitch.killJobs",
@@ -3682,10 +3687,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 56279,
-      "measuredSeconds": 1.47,
-      "measuredCpuSeconds": 3.63,
-      "budgetCpuSeconds": 11
+      "distinctStates": 37543,
+      "measuredSeconds": 2.18,
+      "measuredCpuSeconds": 3.74,
+      "budgetCpuSeconds": 11,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 14.44 at start)"
     },
     {
       "config": "UpdateSwitch.noNotice",
@@ -3696,10 +3702,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 355,
-      "measuredSeconds": 1.13,
-      "measuredCpuSeconds": 1.58,
-      "budgetCpuSeconds": 7
+      "distinctStates": 287,
+      "measuredSeconds": 1.01,
+      "measuredCpuSeconds": 1.63,
+      "budgetCpuSeconds": 7,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 13.92 at start)"
     },
     {
       "config": "UpdateSwitch.noRecord",
@@ -3710,10 +3717,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3331,
-      "measuredSeconds": 1.2,
-      "measuredCpuSeconds": 1.93,
-      "budgetCpuSeconds": 7
+      "distinctStates": 2634,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 2.24,
+      "budgetCpuSeconds": 8,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 13.92 at start)"
     },
     {
       "config": "UpdateSwitch.refuseOld",
@@ -3724,10 +3732,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 39182,
-      "measuredSeconds": 4.57,
-      "measuredCpuSeconds": 16.24,
-      "budgetCpuSeconds": 36
+      "distinctStates": 15380,
+      "measuredSeconds": 3.94,
+      "measuredCpuSeconds": 5.95,
+      "budgetCpuSeconds": 15,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.29 at start)"
     },
     {
       "config": "UpdateSwitch.noReqWait",
@@ -3738,10 +3747,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1148,
-      "measuredSeconds": 1.22,
-      "measuredCpuSeconds": 1.97,
-      "budgetCpuSeconds": 7
+      "distinctStates": 822,
+      "measuredSeconds": 1.27,
+      "measuredCpuSeconds": 2.01,
+      "budgetCpuSeconds": 8,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 13.21 at start)"
     },
     {
       "config": "UpdateSwitch.pinPath",
@@ -3752,10 +3762,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 66949,
-      "measuredSeconds": 1.34,
-      "measuredCpuSeconds": 2.92,
-      "budgetCpuSeconds": 9
+      "distinctStates": 101493,
+      "measuredSeconds": 4.44,
+      "measuredCpuSeconds": 6.79,
+      "budgetCpuSeconds": 17,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 13.21 at start)"
     },
     {
       "config": "DerivedRepair",
@@ -5498,11 +5509,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 22159,
-      "measuredSeconds": 4.72,
-      "measuredCpuSeconds": 18.22,
-      "budgetCpuSeconds": 40,
-      "note": "measured with five workers, 1-minute load 9.02 at start"
+      "distinctStates": 20877,
+      "measuredSeconds": 3.99,
+      "measuredCpuSeconds": 5.66,
+      "budgetCpuSeconds": 15,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.29 at start)"
     },
     {
       "config": "UpdateSwitch.noTakeover",
@@ -5513,11 +5524,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 22036,
-      "measuredSeconds": 4.69,
-      "measuredCpuSeconds": 17.99,
-      "budgetCpuSeconds": 39,
-      "note": "measured with five workers, 1-minute load 8.70 at start"
+      "distinctStates": 20512,
+      "measuredSeconds": 3.98,
+      "measuredCpuSeconds": 5.91,
+      "budgetCpuSeconds": 15,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.02 at start)"
     },
     {
       "config": "UpdateSwitch.every",
@@ -5525,10 +5536,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 230159,
-      "measuredSeconds": 74.81,
-      "measuredCpuSeconds": 128.52,
-      "budgetCpuSeconds": 261
+      "distinctStates": 183842,
+      "measuredSeconds": 114.15,
+      "measuredCpuSeconds": 120.09,
+      "budgetCpuSeconds": 244,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 14.73 at start)"
     },
     {
       "config": "UpdateSwitch.crash",
@@ -5536,10 +5548,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 306695,
-      "measuredSeconds": 15.11,
-      "measuredCpuSeconds": 18.52,
-      "budgetCpuSeconds": 41
+      "distinctStates": 205995,
+      "measuredSeconds": 10.86,
+      "measuredCpuSeconds": 14.38,
+      "budgetCpuSeconds": 32,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.91 at start)"
     },
     {
       "config": "UpdateSwitch.sessionsDeep",
@@ -5561,11 +5574,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1629,
-      "measuredSeconds": 1.09,
-      "measuredCpuSeconds": 1.89,
+      "distinctStates": 3017,
+      "measuredSeconds": 1.14,
+      "measuredCpuSeconds": 1.92,
       "budgetCpuSeconds": 7,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.34 at start)"
     },
     {
       "config": "UpdateSwitch.scanAlloc",
@@ -5576,11 +5589,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 229,
-      "measuredSeconds": 0.94,
-      "measuredCpuSeconds": 1.34,
-      "budgetCpuSeconds": 6,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "distinctStates": 4066,
+      "measuredSeconds": 1.28,
+      "measuredCpuSeconds": 2.45,
+      "budgetCpuSeconds": 8,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.07 at start)"
     },
     {
       "config": "UpdateSwitch.noJoin",
@@ -5591,11 +5604,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 44,
-      "measuredSeconds": 0.91,
-      "measuredCpuSeconds": 1.14,
+      "distinctStates": 42,
+      "measuredSeconds": 0.92,
+      "measuredCpuSeconds": 1.28,
       "budgetCpuSeconds": 6,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.07 at start)"
     },
     {
       "config": "UpdateSwitch.releaseEarly",
@@ -5606,11 +5619,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 30,
-      "measuredSeconds": 0.89,
-      "measuredCpuSeconds": 1.12,
-      "budgetCpuSeconds": 6,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "distinctStates": 658,
+      "measuredSeconds": 1.02,
+      "measuredCpuSeconds": 1.82,
+      "budgetCpuSeconds": 7,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.07 at start)"
     },
     {
       "config": "UpdateSwitch.publishNoCheck",
@@ -5621,11 +5634,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1872,
-      "measuredSeconds": 1.07,
-      "measuredCpuSeconds": 1.83,
-      "budgetCpuSeconds": 7,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "distinctStates": 1529,
+      "measuredSeconds": 1.14,
+      "measuredCpuSeconds": 2.15,
+      "budgetCpuSeconds": 8,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.07 at start)"
     },
     {
       "config": "UpdateSwitch.staleStarter",
@@ -5636,11 +5649,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 405,
-      "measuredSeconds": 0.95,
-      "measuredCpuSeconds": 1.41,
-      "budgetCpuSeconds": 6,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "distinctStates": 320,
+      "measuredSeconds": 1.01,
+      "measuredCpuSeconds": 1.73,
+      "budgetCpuSeconds": 7,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.75 at start)"
     },
     {
       "config": "UpdateSwitch.claimUnchecked",
@@ -5651,11 +5664,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 157,
-      "measuredSeconds": 0.91,
-      "measuredCpuSeconds": 1.23,
-      "budgetCpuSeconds": 6,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "distinctStates": 2920,
+      "measuredSeconds": 1.18,
+      "measuredCpuSeconds": 2.19,
+      "budgetCpuSeconds": 8,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.75 at start)"
     },
     {
       "config": "LeftoverCleanup.instanceNoClaim",
@@ -5677,12 +5690,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 514043,
-      "measuredSeconds": 1643.45,
-      "measuredCpuSeconds": 1232.24,
-      "budgetCpuSeconds": 2468,
-      "note": "holds on the 2026-11-10 head; CPU measured with one worker alone at 1-minute load 3.4 (1127.05 CPU s, 1104.51 s wall); the wall field is the earlier two-worker value",
-      "measuredNote": "re-measured after the gateway exit guard (1-minute load 7 to 15 during the run)"
+      "distinctStates": 494247,
+      "measuredSeconds": 1279.67,
+      "measuredCpuSeconds": 1312.07,
+      "budgetCpuSeconds": 2628,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 16.06 at start)"
     },
     {
       "config": "UpdateSwitch.gwExitWithStep",
@@ -5693,10 +5705,83 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 39427,
-      "measuredSeconds": 33.12,
-      "measuredCpuSeconds": 36.17,
-      "budgetCpuSeconds": 76
+      "distinctStates": 34938,
+      "measuredSeconds": 27.64,
+      "measuredCpuSeconds": 30.54,
+      "budgetCpuSeconds": 65,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.75 at start)"
+    },
+    {
+      "config": "UpdateSwitch.restart",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 587621,
+      "measuredSeconds": 33.51,
+      "measuredCpuSeconds": 37,
+      "budgetCpuSeconds": 77,
+      "note": "measured with one worker, 1-minute load 10.63 at start"
+    },
+    {
+      "config": "UpdateSwitch.refuseDuringRestart",
+      "role": "evidence",
+      "expect": {
+        "violates": "RunAcceptedWhileRestarting",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 778,
+      "measuredSeconds": 1.06,
+      "measuredCpuSeconds": 1.82,
+      "budgetCpuSeconds": 7,
+      "note": "measured with one worker, 1-minute load 10.10 at start"
+    },
+    {
+      "config": "UpdateSwitch.successorRepeat",
+      "role": "evidence",
+      "expect": {
+        "violates": "SuccessorOncePerVersion",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 800,
+      "measuredSeconds": 1.15,
+      "measuredCpuSeconds": 2.16,
+      "budgetCpuSeconds": 8,
+      "note": "measured with one worker, 1-minute load 10.10 at start"
+    },
+    {
+      "config": "UpdateSwitch.reapUnserved",
+      "role": "evidence",
+      "expect": {
+        "violates": "ReapUnderServing",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 12,
+      "measuredSeconds": 0.96,
+      "measuredCpuSeconds": 1.26,
+      "budgetCpuSeconds": 6,
+      "note": "measured with one worker, 1-minute load 10.10 at start"
+    },
+    {
+      "config": "UpdateSwitch.restartRetired",
+      "role": "evidence",
+      "expect": {
+        "violates": "RetiredNeverRestarted",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 618,
+      "measuredSeconds": 1.09,
+      "measuredCpuSeconds": 1.86,
+      "budgetCpuSeconds": 7,
+      "note": "measured with one worker, 1-minute load 10.10 at start"
     },
     {
       "config": "UpdateSwitch.upkeep",
@@ -5704,10 +5789,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 2178467,
-      "measuredSeconds": 67.11,
-      "measuredCpuSeconds": 137.35,
-      "budgetCpuSeconds": 278
+      "distinctStates": 1872407,
+      "measuredSeconds": 101.91,
+      "measuredCpuSeconds": 113.84,
+      "budgetCpuSeconds": 231,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.66 at start)"
     },
     {
       "config": "UpdateSwitch.killWithoutRequest",
@@ -5718,11 +5804,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 9779,
-      "measuredSeconds": 1.79,
-      "measuredCpuSeconds": 3.78,
-      "budgetCpuSeconds": 11,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "distinctStates": 7882,
+      "measuredSeconds": 1.47,
+      "measuredCpuSeconds": 2.6,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.77 at start)"
     },
     {
       "config": "UpdateSwitch.readOwnGenOnly",
@@ -5733,10 +5819,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 9541,
-      "measuredSeconds": 1.74,
-      "measuredCpuSeconds": 3.24,
-      "budgetCpuSeconds": 10
+      "distinctStates": 7878,
+      "measuredSeconds": 1.36,
+      "measuredCpuSeconds": 2.39,
+      "budgetCpuSeconds": 8,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.77 at start)"
     },
     {
       "config": "UpdateSwitch.reconcileLive",
@@ -5747,10 +5834,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 10891,
-      "measuredSeconds": 1.76,
-      "measuredCpuSeconds": 3.46,
-      "budgetCpuSeconds": 10
+      "distinctStates": 7882,
+      "measuredSeconds": 1.49,
+      "measuredCpuSeconds": 2.62,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.77 at start)"
     },
     {
       "config": "UpdateSwitch.jobRetiring",
@@ -5761,10 +5849,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 326353,
-      "measuredSeconds": 6.98,
-      "measuredCpuSeconds": 22.14,
-      "budgetCpuSeconds": 48
+      "distinctStates": 407421,
+      "measuredSeconds": 14.71,
+      "measuredCpuSeconds": 18.08,
+      "budgetCpuSeconds": 40,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.94 at start)"
     },
     {
       "config": "UpdateSwitch.sweepRetiring",
@@ -5775,11 +5864,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 10637,
-      "measuredSeconds": 1.75,
-      "measuredCpuSeconds": 3.66,
-      "budgetCpuSeconds": 11,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "distinctStates": 15650,
+      "measuredSeconds": 1.7,
+      "measuredCpuSeconds": 3.06,
+      "budgetCpuSeconds": 10,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.43 at start)"
     },
     {
       "config": "UpdateSwitch.pruneAll",
@@ -5790,11 +5879,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 203,
-      "measuredSeconds": 1.45,
-      "measuredCpuSeconds": 2.5,
-      "budgetCpuSeconds": 8,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "distinctStates": 137,
+      "measuredSeconds": 0.97,
+      "measuredCpuSeconds": 1.36,
+      "budgetCpuSeconds": 6,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.43 at start)"
     },
     {
       "config": "UpdateSwitch.gwAcceptsWhileRetiring",
@@ -5805,11 +5894,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 822343,
-      "measuredSeconds": 15.29,
-      "measuredCpuSeconds": 33.55,
-      "budgetCpuSeconds": 71,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "distinctStates": 951141,
+      "measuredSeconds": 33.02,
+      "measuredCpuSeconds": 37.96,
+      "budgetCpuSeconds": 79,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.43 at start)"
     },
     {
       "config": "UpdateSwitch.gwExitEarly",
@@ -5820,11 +5909,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 2376950,
-      "measuredSeconds": 39.99,
-      "measuredCpuSeconds": 86.07,
-      "budgetCpuSeconds": 176,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "distinctStates": 2854857,
+      "measuredSeconds": 22.95,
+      "measuredCpuSeconds": 115.48,
+      "budgetCpuSeconds": 234,
+      "note": "re-measured by formal-models-W2 (workers 5, 1-minute load 8 at start)"
     },
     {
       "config": "UpdateSwitch.gwGraceAbort",
@@ -5835,11 +5924,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 2610404,
-      "measuredSeconds": 44.46,
-      "measuredCpuSeconds": 95.37,
-      "budgetCpuSeconds": 194,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "distinctStates": 2388813,
+      "measuredSeconds": 21.88,
+      "measuredCpuSeconds": 101.84,
+      "budgetCpuSeconds": 207,
+      "note": "re-measured by formal-models-W2 (workers 5, 1-minute load 8.18 at start)"
     },
     {
       "config": "UpdateSwitch.gwSilentRefuse",
@@ -5850,11 +5939,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 882026,
-      "measuredSeconds": 15.3,
-      "measuredCpuSeconds": 33.4,
-      "budgetCpuSeconds": 70,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "distinctStates": 951145,
+      "measuredSeconds": 32.2,
+      "measuredCpuSeconds": 36.48,
+      "budgetCpuSeconds": 76,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.24 at start)"
     },
     {
       "config": "Handover",
@@ -6051,11 +6140,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 73054,
-      "measuredSeconds": 5.09,
-      "measuredCpuSeconds": 7.92,
-      "budgetCpuSeconds": 19,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 18.7 at start (above the gate 15): re-measure in the quiet window"
+      "distinctStates": 61653,
+      "measuredSeconds": 2.96,
+      "measuredCpuSeconds": 4.7,
+      "budgetCpuSeconds": 13,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 3.69 at start)"
     },
     {
       "config": "UpdateSwitch.killDropped",
@@ -6069,11 +6158,11 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 456,
-      "measuredSeconds": 13.27,
-      "measuredCpuSeconds": 7.82,
-      "budgetCpuSeconds": 19,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 43.5 at start (above the gate 15): re-measure in the quiet window"
+      "distinctStates": 9393,
+      "measuredSeconds": 3.12,
+      "measuredCpuSeconds": 4.74,
+      "budgetCpuSeconds": 13,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.7 at start)"
     },
     {
       "config": "UpdateSwitch.userStopNeverEnds",
@@ -6087,11 +6176,11 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 750,
-      "measuredSeconds": 144.87,
-      "measuredCpuSeconds": 79.01,
-      "budgetCpuSeconds": 162,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 22.3 at start (above the gate 15): re-measure in the quiet window"
+      "distinctStates": 10224,
+      "measuredSeconds": 3.93,
+      "measuredCpuSeconds": 5.54,
+      "budgetCpuSeconds": 15,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.97 at start)"
     },
     {
       "config": "ManagedServer.reapOtherGeneration",
