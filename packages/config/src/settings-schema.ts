@@ -724,8 +724,21 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: {
         type: 'object',
         properties: {
-          hooks: { type: 'array', items: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN } },
-          mandate: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN },
+          hooks: {
+            type: 'array',
+            items: {
+              oneOf: [
+                { type: 'string', pattern: APPROVAL_DIGEST_PATTERN },
+                { type: 'object', properties: { digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN }, event: { type: 'string', minLength: 1 }, group: {} }, required: ['digest', 'event', 'group'], additionalProperties: false },
+              ],
+            },
+          },
+          mandate: {
+            oneOf: [
+              { type: 'string', pattern: APPROVAL_DIGEST_PATTERN },
+              { type: 'object', properties: { digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN }, document: {} }, required: ['digest', 'document'], additionalProperties: false },
+            ],
+          },
         },
         additionalProperties: false,
       },

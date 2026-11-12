@@ -885,7 +885,7 @@ const trustView = closed(
   ['path', 'decision'],
 );
 
-const trustItemChange: JsonSchema = { anyOf: [closed({ kind: constant('new') }, ['kind']), closed({ kind: constant('changed') }, ['kind'])] };
+const trustItemChange: JsonSchema = { anyOf: [closed({ kind: constant('new') }, ['kind']), closed({ kind: constant('changed'), diff: closed(appliedDiffFields, []) }, ['kind', 'diff']), closed({ kind: constant('not-recorded') }, ['kind'])] };
 const trustItemsView = closed(
   {
     items: {

@@ -217,7 +217,7 @@ export const diffFieldsOf = ({ hunks, added, removed, diffOmitted }: AppliedDiff
   ...(diffOmitted === undefined ? {} : { diffOmitted }),
 });
 
-export type TrustItemChange = { kind: 'new' } | { kind: 'changed' };
+export type TrustItemChange = { kind: 'new' } | { kind: 'changed'; diff: AppliedDiffFields } | { kind: 'not-recorded' };
 
 export type TrustItem =
   | { kind: 'hook'; event: string; group: unknown; digest: string; source: string; change: TrustItemChange }

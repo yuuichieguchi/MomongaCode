@@ -1,6 +1,9 @@
 import path from 'node:path';
 import type { Context } from 'hono';
 import { pendingProjectItems } from '@momonga/config';
+import type { PendingChange } from '@momonga/config';
+import type { TrustItemChange, TrustItemsView } from '@momonga/protocol';
+import { diffOfContents } from '@momonga/tools';
 import { hostPaths } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { invalidRequest, notFound } from './errors.ts';
@@ -27,6 +30,10 @@ export const undecidedFolderNotice = async (
     trustNotice: `the folder ${folder} is not decided, so its own settings and everything they could make the product run are not loaded; decide it with momonga trust ${folder}`,
   };
 };
+
+const shownContent = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+const shownChange = (change: PendingChange, now: unknown): TrustItemChange => (change.kind === 'changed' ? { kind: 'changed', diff: diffOfContents(shownContent(change.earlier), shownContent(now)) } : change);
 
 export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<RuntimeStore, 'trust'>; maxBodyBytes: number; home: string }): void => {
   const { store } = deps;
@@ -70,7 +77,9 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
       throw invalidRequest(`path ${input} ${result.reason}`, 'path');
     }
     const trust = { isTrusted: async (folder: string, asked: AbortSignal): Promise<boolean> => (await store.trust.decisionAsked(folder, asked)).decision === 'trusted' };
-    return json(await pendingProjectItems({ home: deps.home, projectDir: result.path, trust, signal }), 200);
+    const pending = await pendingProjectItems({ home: deps.home, projectDir: result.path, trust, signal });
+    const view: TrustItemsView = { items: pending.items.map((item) => ({ ...item, change: shownChange(item.change, item.kind === 'hook' ? item.group : item.document) })), refused: pending.refused };
+    return json(view, 200);
   };
 
   route('/v1/trust', { GET: getTrust, PUT: putTrust, DELETE: deleteTrust }, { person: ['PUT', 'DELETE'] });

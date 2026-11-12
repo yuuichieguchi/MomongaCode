@@ -41,11 +41,14 @@ export const approveProjectItems = async (home: string, projectDir: string, appr
 const recordApproval = (settings: Record<string, unknown>, folder: string, approved: readonly ApprovedItem[]): boolean => {
   const approvals = isRecord(settings['projectApprovals']) ? settings['projectApprovals'] : {};
   const current = isRecord(approvals[folder]) ? approvals[folder] : {};
-  const held = Array.isArray(current['hooks']) ? current['hooks'].filter((digest): digest is string => typeof digest === 'string') : [];
-  const added = approved.flatMap((item) => (item.kind === 'hook' ? [item.digest] : [])).filter((digest, index, all) => !held.includes(digest) && all.indexOf(digest) === index);
-  const hooks = [...held, ...added];
+  const held: unknown[] = Array.isArray(current['hooks']) ? current['hooks'] : [];
+  const approvedHooks = approved.flatMap((item) => (item.kind === 'hook' ? [{ digest: item.digest, event: item.event, group: item.group }] : []));
+  const heldDigest = (entry: unknown): unknown => (isRecord(entry) ? entry['digest'] : entry);
+  const kept = held.map((entry) => approvedHooks.find((hook) => hook.digest === heldDigest(entry)) ?? entry);
+  const added = approvedHooks.filter((hook, index) => !held.some((entry) => heldDigest(entry) === hook.digest) && approvedHooks.findIndex((other) => other.digest === hook.digest) === index);
+  const hooks = [...kept, ...added];
   const mandate = approved.find((item) => item.kind === 'mandate');
-  const next = { ...current, ...(hooks.length === 0 ? {} : { hooks }), ...(mandate === undefined ? {} : { mandate: mandate.digest }) };
+  const next = { ...current, ...(hooks.length === 0 ? {} : { hooks }), ...(mandate === undefined ? {} : { mandate: { digest: mandate.digest, document: mandate.document } }) };
   if (JSON.stringify(next) === JSON.stringify(current)) return false;
   settings['projectApprovals'] = { ...approvals, [folder]: next };
   return true;
