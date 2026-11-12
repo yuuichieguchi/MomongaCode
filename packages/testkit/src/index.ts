@@ -26,6 +26,8 @@ export type {
   FakeScenario,
   FakeResponseHold,
   FakeScriptedReply,
+  FakeDeferredReply,
+  FakeScriptEntry,
   FakeStreamChunk,
   RecordedRequest,
 } from './fake-chat-completions.ts';
@@ -282,6 +284,7 @@ export {
   createFakePrograms,
   fakeBrowserOf,
   fakeOpenerRecordOf,
+  writeFakeSecretItem,
   fakeSecretProgramsBin,
   getFakeSecretEnded,
   getFakeSecretHanging,

@@ -10,7 +10,7 @@ import type { ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildState, SupervisorHealth, SupervisorPhase, TargetAnswers } from '@momonga/protocol';
 import type { ChildRole } from '@momonga/supervisor';
 import { firstGeneration, modelSettings, productTestEnv, startFakeChatCompletions } from '@momonga/testkit';
-import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
+import type { FakeChatCompletionsServer, FakeRoute, FakeScriptEntry } from '@momonga/testkit';
 import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
@@ -53,7 +53,7 @@ export type StartStackOptions = {
   settings?: Readonly<Record<string, unknown>>;
   settingsText?: string;
   deps?: E2eDeps;
-  script?: FakeScriptedReply[];
+  script?: FakeScriptEntry[];
   routes?: FakeRoute[];
   target?: StackTarget;
   upstream?: FakeChatCompletionsServer;
