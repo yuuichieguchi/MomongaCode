@@ -378,7 +378,7 @@
         "cap": 1,
         "gateway": 1
       },
-      "packages/gateway/src/core/store.ts": {
+      "packages/gateway/src/core/store-database.ts": {
         "gateway": 3,
         "target": 3
       },

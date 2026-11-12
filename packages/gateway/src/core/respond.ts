@@ -97,21 +97,9 @@ const TERMINAL_TYPES: ReadonlySet<string> = new Set(TERMINAL_STREAM_EVENT_TYPES)
 
 type TerminalEvent = Extract<StreamEvent, { response: ResponseResource }>;
 
-const cacheMarksFor = (job: ResponseJob, resolved: ResolvedInput): PromptCacheCounts | undefined => {
-  const marks = job.body.momonga?.cache;
-  if (marks === undefined) return undefined;
-  const offset = resolved.stored.length - job.clientInput.length;
-  return {
-    stable: marks.stable + offset,
-    fixed: marks.fixed + offset,
-    ...(marks.previousHistory === undefined ? {} : { previousHistory: marks.previousHistory + offset }),
-    history: marks.history + offset,
-  };
-};
-
 const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: TargetRuntime, visibleBound: number | undefined, fenceBoundary: FenceBoundary): AdapterRequest => {
   const { body } = job;
-  const cacheMarks = cacheMarksFor(job, resolved);
+  const cacheMarks: PromptCacheCounts | undefined = job.body.momonga?.cache;
   return {
     model: target.model,
     input: resolved.forAdapter,
@@ -222,7 +210,7 @@ const openAttempt = async (
   }
   let retryOfSeq: number | undefined;
   try {
-    retryOfSeq = services.store.recordSend({ callKey, target: target.name, runId: job.runId ?? null, step: job.step ?? null, sentAtMs: services.clock.now() }).retryOfSeq;
+    retryOfSeq = (await services.store.recordSend({ callKey, target: target.name, runId: job.runId ?? null, step: job.step ?? null, sentAtMs: services.clock.now() }, signal)).retryOfSeq;
   } catch (error) {
     failBeforeSend(error);
   }
@@ -581,9 +569,9 @@ async function* relaySteps(
       : { idempotency: { key: job.idempotency.key, digest: job.idempotency.digest, frames: [...priorFrames, terminal] } }),
   };
   let commitFailure: unknown;
-  if (commit.response !== undefined || commit.idempotency !== undefined) {
+  if (commit.idempotency !== undefined) {
     try {
-      services.store.commit(commit);
+      await services.store.commit(commit, services.forceCloseSignal);
     } catch (error) {
       commitFailure = error;
     }

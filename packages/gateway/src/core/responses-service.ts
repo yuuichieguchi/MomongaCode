@@ -101,7 +101,7 @@ export const createResponsesService = (services: GatewayServices, validator: Req
   const active = new Set<SharedRun>();
   const keyedRuns = new Set<SharedRun>();
 
-  const startSubmission = (
+  const startSubmission = async (
     pinned: Services,
     releaseEpoch: () => void,
     rawBody: unknown,
@@ -109,13 +109,13 @@ export const createResponsesService = (services: GatewayServices, validator: Req
     deadlineAt: number | undefined,
     headers: SubmitHeaders,
     signal: AbortSignal,
-  ): Submission => {
+  ): Promise<Submission> => {
     const stream = body.stream === true;
 
     const key = parseIdempotencyKey(headers.idempotencyKey);
     const digest = key === undefined ? undefined : sha256Hex(canonicalJson(withoutStreamFlag(rawBody)));
     if (key !== undefined && digest !== undefined) {
-      const found = registry.lookup(key, digest);
+      const found = await registry.lookup(key, digest, signal);
       if (found.kind === 'inflight') {
         releaseEpoch();
         return { stream, events: subscribeWithOwnDeadline(services, found.run, signal, deadlineAt) };
@@ -124,6 +124,7 @@ export const createResponsesService = (services: GatewayServices, validator: Req
         releaseEpoch();
         return { stream, events: replay(found.frames) };
       }
+      if (services.closeSignal.aborted) throw gatewayClosedError();
     }
     admitNewCall();
 
@@ -182,7 +183,7 @@ export const createResponsesService = (services: GatewayServices, validator: Req
       const deadlineAt = parseDeadlineHeader(headers.deadlineMs, services.clock.now());
       const lease = await services.epochs.acquire(signal);
       try {
-        return startSubmission(pinnedServices(services, lease.value), lease.release, rawBody, body, deadlineAt, headers, signal);
+        return await startSubmission(pinnedServices(services, lease.value), lease.release, rawBody, body, deadlineAt, headers, signal);
       } catch (error) {
         lease.release();
         throw error;

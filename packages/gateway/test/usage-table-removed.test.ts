@@ -4,13 +4,24 @@ import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents, usageOf } from '@momonga/testkit';
 import { BUSY_WAIT_LIMIT_MS, migrate, openDatabase } from '@momonga/foundation';
 import { MIGRATIONS, openGatewayStore } from '../src/core/store.ts';
-import { createStoredDataChecks } from '../src/core/validation.ts';
+import { STORE_WORKER_CODE } from '../src/core/store-worker-code.generated.ts';
 import { PRIMARY, getJson, makeDir, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+
+const OPEN = new AbortController().signal;
 
 const tablesOf = (dbPath: string): string[] => {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map((row) => row.name);
+  } finally {
+    db.close();
+  }
+};
+
+const responseIdsOf = (dbPath: string): string[] => {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    return (db.prepare('SELECT id FROM responses ORDER BY id').all() as { id: string }[]).map((row) => row.id);
   } finally {
     db.close();
   }
@@ -32,23 +43,21 @@ const writeDatabaseOfAnEarlierBuild = (dbPath: string): void => {
 };
 
 describe('the gateway keeps no usage table', () => {
-  it('opens a new database without a usage table', () => {
+  it('opens a new database without a usage table', async () => {
     const dbPath = path.join(makeDir(), 'gateway.db');
-    openGatewayStore(dbPath, createStoredDataChecks()).close();
+    await (await openGatewayStore({ dbPath, code: STORE_WORKER_CODE, signal: OPEN })).close(OPEN);
 
     expect(tablesOf(dbPath)).not.toContain('usage');
   });
 
-  it('opens the database of an earlier build, removes its usage table and keeps its stored responses', () => {
+  it('opens the database of an earlier build, removes its usage table and keeps its stored responses', async () => {
     const earlierPath = path.join(makeDir(), 'gateway.db');
     writeDatabaseOfAnEarlierBuild(earlierPath);
     expect(tablesOf(earlierPath)).toContain('usage');
 
-    const store = openGatewayStore(earlierPath, createStoredDataChecks());
-    const kept = store.getResponse('resp_old');
-    store.close();
+    await (await openGatewayStore({ dbPath: earlierPath, code: STORE_WORKER_CODE, signal: OPEN })).close(OPEN);
 
-    expect(kept).toEqual({ input: [], output: [] });
+    expect(responseIdsOf(earlierPath)).toEqual(['resp_old']);
     expect(tablesOf(earlierPath)).not.toContain('usage');
     expect(tablesOf(earlierPath)).toContain('sends');
   });

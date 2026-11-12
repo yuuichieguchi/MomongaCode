@@ -166,8 +166,6 @@ const itemIssue = (kit: SpecKit, item: unknown, index: number): Issue | undefine
 };
 
 export type StoredDataChecks = {
-  inputItems(value: unknown): string | undefined;
-  outputItems(value: unknown): string | undefined;
   streamEvents(value: unknown): string | undefined;
   compactResource(value: unknown): string | undefined;
 };
@@ -176,29 +174,8 @@ const describeIssue = (issue: Issue): string => `${joinParam(issue.segments) ?? 
 
 export const createStoredDataChecks = (): StoredDataChecks => {
   const kit = specKit();
-  const itemField = kit.compile('ItemField');
   const compactResource = kit.compile('CompactResource');
-  const outputIssue = (item: unknown, index: number): Issue | undefined => {
-    const verdict = itemField(item);
-    return verdict.valid ? undefined : issueOf(verdict.errors, ['output', String(index)]);
-  };
   return {
-    inputItems: (value) => {
-      if (!Array.isArray(value)) return 'is not an array';
-      for (const [index, item] of value.entries()) {
-        const asParam = itemIssue(kit, item, index);
-        if (asParam !== undefined && outputIssue(item, index) !== undefined) return describeIssue(asParam);
-      }
-      return undefined;
-    },
-    outputItems: (value) => {
-      if (!Array.isArray(value)) return 'is not an array';
-      for (const [index, item] of value.entries()) {
-        const issue = outputIssue(item, index);
-        if (issue !== undefined) return describeIssue(issue);
-      }
-      return undefined;
-    },
     compactResource: (value) => {
       const verdict = compactResource(value);
       return verdict.valid ? undefined : describeIssue(issueOf(verdict.errors, []));
