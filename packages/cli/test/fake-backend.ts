@@ -88,6 +88,8 @@ export type FakeBackend = TuiBackend & {
   finish(run: RunView): void;
   readonly inboxRows: InboxRowView[];
   deliverInbox(id: string): void;
+  addFromAnotherClient(text: string): void;
+  readonly inboxFollowers: { sessionId: string; after: number }[];
   succeed(runId: string, next: RunView): void;
 };
 
@@ -300,6 +302,19 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const waiters: { call: string; resolve: () => void }[] = [];
 
   const inboxRows: InboxRowView[] = [];
+  const inboxFollowers: { sessionId: string; after: number }[] = [];
+  const inboxListeners = new Set<() => void>();
+  const pendingRowOf = (delivery: InboxRowView['delivery'], text: string, images: readonly ImageAttachment[]): InboxRowView => ({
+    id: `row-${inboxRows.length + 1}`,
+    sessionId: session.id,
+    delivery,
+    text,
+    ...(images.length === 0 ? {} : { images: images.map((image) => ({ mediaType: image.mediaType, byteLength: image.data.length })) }),
+    seq: inboxRows.length + 1,
+    state: 'pending',
+    createdAt: 1,
+    settledAt: null,
+  });
   const successors = new Map<string, RunView>();
   const pendingInbox = (): InboxRowView[] => inboxRows.filter((row) => row.state === 'pending');
   const settleInbox = (id: string, state: 'delivered' | 'withdrawn'): InboxRowView => {
@@ -452,6 +467,11 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     inboxRows,
     deliverInbox: (id) => void settleInbox(id, 'delivered'),
+    inboxFollowers,
+    addFromAnotherClient: (text) => {
+      inboxRows.push(pendingRowOf('queue', text, []));
+      for (const listener of inboxListeners) listener();
+    },
     succeed: (runId, next) => void successors.set(runId, next),
     userInput: {
       fileCandidates: async () => ({ entries: [...(options.files ?? [])], truncated: false }),
@@ -474,17 +494,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       add: async (delivery, text, images = []) => {
         record(`inbox:${delivery}:${text}`);
         if (pendingInbox().length >= INBOX_MAX_PENDING) throw Object.assign(new Error(inboxFullMessage()), { code: INBOX_FULL_CODE });
-        const row: InboxRowView = {
-          id: `row-${inboxRows.length + 1}`,
-          sessionId: session.id,
-          delivery,
-          text,
-          ...(images.length === 0 ? {} : { images: images.map((image) => ({ mediaType: image.mediaType, byteLength: image.data.length })) }),
-          seq: inboxRows.length + 1,
-          state: 'pending',
-          createdAt: 1,
-          settledAt: null,
-        };
+        const row = pendingRowOf(delivery, text, images);
         inboxRows.push(row);
         return { row, pending: pendingInbox() };
       },
@@ -495,6 +505,16 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       },
       list: async () => pendingInbox(),
       successor: async (runId) => successors.get(runId),
+      follow: (sessionId, after, changed, signal) => {
+        inboxFollowers.push({ sessionId, after });
+        inboxListeners.add(changed);
+        return new Promise<never>((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            inboxListeners.delete(changed);
+            reject(signal.reason);
+          });
+        });
+      },
     },
     cancel: async (runId) => {
       record(`cancel:${runId}`);

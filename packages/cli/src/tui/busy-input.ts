@@ -11,6 +11,7 @@ export type BusyInbox = {
   withdraw(id: string): Promise<InboxWithdrawResponse>;
   list(): Promise<readonly InboxRowView[]>;
   successor(runId: string): Promise<RunView | undefined>;
+  follow(sessionId: string, after: number, changed: () => void, signal: AbortSignal): Promise<never>;
 };
 
 export const INBOX_ROWS_SHOWN = 5;

@@ -68,6 +68,15 @@ describe('typing while a run works (design 5.3)', () => {
     app.unmount();
   });
 
+  it('shows a message another client adds to the session at once, from the session event stream, without a refresh', async () => {
+    const { backend, app } = await working();
+    expect(backend.inboxFollowers).toEqual([{ sessionId: backend.inboxFollowers[0]?.sessionId, after: 0 }]);
+    backend.addFromAnotherClient('from the other window');
+    const shown = await untilFrame(app, 'queued  from the other window');
+    expect(shown).toContain(TAKE_BACK_HINT);
+    app.unmount();
+  });
+
   it('does nothing at Enter and at Tab on an empty draft', async () => {
     const { backend, app } = await working();
     app.stdin.write(KEYS.enter);

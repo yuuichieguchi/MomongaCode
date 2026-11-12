@@ -29,7 +29,7 @@ import type { NewerListener } from '../daemon/ensure-daemon.ts';
 import { newerListenerOf } from '../handover/stream.ts';
 import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
-import { followRun } from '../run/follow.ts';
+import { followRun, followSession } from '../run/follow.ts';
 import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
@@ -311,6 +311,20 @@ export const createTuiBackend = (
       withdraw: (id) => runtime().inboxWithdraw(id),
       list: () => runtime().inboxList(current().id),
       successor: (runId) => runtime().runSuccessor(runId),
+      follow: async (sessionId, after, changed, signal) =>
+        followSession({
+          client: runtime(),
+          clock: ports.clock,
+          random: ports.random,
+          sessionId,
+          after,
+          reconnectBoundMs: await daemonReadyBoundMs(),
+          restoreConnection: restoreDaemon(ports, paths, onNewer),
+          onEvent: (frame) => {
+            if (frame.data.type === 'inbox.changed') changed();
+          },
+          signal,
+        }),
     },
     userInput: {
       fileCandidates: async (signal) => {

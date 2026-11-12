@@ -249,7 +249,8 @@ export function App(props: AppProps) {
   const [reconnectingSince, setReconnectingSince] = useState<number | undefined>(undefined);
   const [measuring, setMeasuring] = useState<{ since: number; state: Measuring } | undefined>(undefined);
   const [commands, setCommands] = useState<readonly WaitingPhase[]>([]);
-  const stopMeasuring = useRef<(() => void) | undefined>(undefined);
+  const [probe, setProbe] = useState<{ sessionId: string | undefined; model: string; retryAfterSeconds: number } | undefined>(undefined);
+  const [followedSession, setFollowedSession] = useState<{ id: string; after: number } | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
   const [historyGeneration, setHistoryGeneration] = useState(0);
   const { adoption, move } = props;
@@ -461,8 +462,7 @@ export function App(props: AppProps) {
   };
 
   const endMeasuring = (): void => {
-    stopMeasuring.current?.();
-    stopMeasuring.current = undefined;
+    setProbe(undefined);
     setMeasuring(undefined);
   };
 
@@ -477,13 +477,7 @@ export function App(props: AppProps) {
     const readiness = agentReadiness(entry.capabilities);
     if (readiness.state === 'probing') {
       setMeasuring({ since: now(), state: readiness.measuring });
-      stopMeasuring.current = followMeasurement(
-        { read: () => backend.model(), timers },
-        readiness.retryAfterSeconds,
-        (measured) => showModel(measured),
-        (error) => modelUnread(error),
-        (state) => setMeasuring((before) => (before === undefined ? undefined : { since: before.since, state })),
-      );
+      setProbe({ sessionId: openedSession.current?.id, model: entry.id, retryAfterSeconds: readiness.retryAfterSeconds });
       return;
     }
     const text = readinessNoticeOf(readiness, 'tui');
@@ -492,6 +486,7 @@ export function App(props: AppProps) {
 
   const showSession = async (session: SessionView): Promise<void> => {
     openedSession.current = { id: session.id, hasRun: session.latestRunId !== null };
+    setFollowedSession((before) => (before?.id === session.id ? before : { id: session.id, after: session.lastEventId }));
     setModeState(session.permissionMode);
     sessionModelRef.current = session.model;
     setSessionModel(session.model);
@@ -1219,12 +1214,31 @@ export function App(props: AppProps) {
     syncBanner();
   }, [sessionModel, notices, unconnected, displays]);
 
-  useEffect(
-    () => () => {
-      stopMeasuring.current?.();
-    },
-    [],
-  );
+  const measured = useEffectEvent((entry: MomongaModelEntry): void => showModel(entry));
+  const measurementFailed = useEffectEvent((error: unknown): void => modelUnread(error));
+  useEffect(() => {
+    if (probe === undefined) return undefined;
+    return followMeasurement(
+      { read: () => backend.model(), timers },
+      probe.retryAfterSeconds,
+      (entry) => measured(entry),
+      (error) => measurementFailed(error),
+      (state) => setMeasuring((before) => (before === undefined ? undefined : { since: before.since, state })),
+    );
+  }, [probe, backend, timers]);
+
+  const inboxChanged = useEffectEvent((): void => {
+    refreshInbox().catch(reportError);
+  });
+  const inboxStreamLost = useEffectEvent((error: unknown): void => reportError(error));
+  useEffect(() => {
+    if (followedSession === undefined) return undefined;
+    const following = new AbortController();
+    backend.inbox.follow(followedSession.id, followedSession.after, () => inboxChanged(), following.signal).catch((error: unknown) => {
+      if (!following.signal.aborted) inboxStreamLost(error);
+    });
+    return () => following.abort();
+  }, [followedSession, backend]);
 
   useEffect(
     () =>
