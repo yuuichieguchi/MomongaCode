@@ -1,11 +1,13 @@
-import { encodeSse } from '@momonga/foundation';
-import { toPublicRunEvent } from '@momonga/protocol';
-import type { OpaqueEvent, RunEvent, SessionEvent } from '@momonga/protocol';
+import { encodeSse, isTransientErrno } from '@momonga/foundation';
+import { STREAM_FAILED_EVENT, toPublicRunEvent } from '@momonga/protocol';
+import type { OpaqueEvent, RunEvent, SessionEvent, StreamFailedFrame } from '@momonga/protocol';
 import type { Unsubscribe } from './notifier.ts';
 import type { ServiceTimers } from './timers.ts';
 
 export const MAX_PAGE_EVENTS = 200;
 export const MAX_PAGE_BYTES = 1024 * 1024;
+
+const STREAM_FAILED_CODE = 'stream_failed';
 
 const encoder = new TextEncoder();
 export const STREAM_HEADERS = { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' };
@@ -158,7 +160,13 @@ export const eventStreamResponse = (options: EventStreamOptions): Response => {
       } catch (error) {
         finish();
         options.onError(error);
-        controller.error(error);
+        if (isTransientErrno(error)) {
+          controller.error(error);
+          return;
+        }
+        const failed: StreamFailedFrame = { code: STREAM_FAILED_CODE, message: `the stream of events could not go on: ${error instanceof Error ? error.message : String(error)}` };
+        controller.enqueue(encoder.encode(encodeSse({ event: STREAM_FAILED_EVENT, data: JSON.stringify(failed) })));
+        controller.close();
       }
     },
     cancel: () => {
