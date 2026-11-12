@@ -154,7 +154,7 @@ const unavailableExternalEditor: ExternalEditorPort = {
 export const STILL_STARTING_HINT = 'Still starting. Your text is kept.';
 export const taskRunningHint = (keys: KeyTable): string => {
   const key = keys.keyHint('run.stop');
-  return key === '' ? 'A task is running.' : `A task is running. ${key.charAt(0).toUpperCase()}${key.slice(1)} stops it.`;
+  return key === '' ? 'A run is working.' : `A run is working. ${key.charAt(0).toUpperCase()}${key.slice(1)} stops it.`;
 };
 export const EXIT_ARM_MS = 3000;
 export const HISTORY_SEARCH_TITLE = 'History';
@@ -552,7 +552,7 @@ export function App(props: AppProps) {
     unconfiguredModel.current = false;
     await readDisplays();
     const name = shownModel(session.model);
-    note(busyRef.current ? `model: ${name}; the running task keeps ${previous === undefined ? previous : shownModel(previous)}, the next task uses ${name}` : `model: ${name}; applies from the next task`);
+    note(busyRef.current ? `model: ${name}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${name}; applies from the next run`);
     endMeasuring();
     void backend.model().then(showModel, modelUnread);
   };

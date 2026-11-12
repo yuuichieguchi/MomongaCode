@@ -14,7 +14,7 @@ import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { command, freshPlace, localFileOf, press, startAt, stored, typeInto, writeSettings } from './settings-harness.tsx';
 import type { Started } from './settings-harness.tsx';
 
-const TASK_RUNNING = 'A task is running. Esc stops it.';
+const TASK_RUNNING = 'A run is working. Esc stops it.';
 
 const toUser = async (started: Started, shown: string): Promise<string> => {
   const target = await untilFrame(started.app, SAVE_TO_TITLE);

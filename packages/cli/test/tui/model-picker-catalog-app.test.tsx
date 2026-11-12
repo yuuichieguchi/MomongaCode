@@ -12,7 +12,7 @@ describe('the model list opens without an account catalog (cli-tui-C49, gateway-
     const { app } = await startPlan({ accounts: [account({ label: 'work' })], catalogFailures: { work: new Error('connect ECONNREFUSED') } });
     await ready(app);
     await submitLine(app, '/model');
-    const picker = await untilFrame(app, 'a change applies from the next task');
+    const picker = await untilFrame(app, 'a change applies from the next run');
     expect(picker).toContain('scripted-model');
     expect(picker).toContain('the list of models of work is not current: connect ECONNREFUSED');
     app.unmount();

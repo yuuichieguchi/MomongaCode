@@ -5,7 +5,7 @@ import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
 
 const WIDE = { columns: 140, rows: 60 };
-const TASK_RUNNING = 'A task is running. Esc stops it.';
+const TASK_RUNNING = 'A run is working. Esc stops it.';
 
 const compacting = async (line: string, call: string) => {
   const started = await start({}, {}, WIDE);

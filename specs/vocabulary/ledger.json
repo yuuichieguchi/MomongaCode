@@ -136,12 +136,6 @@
       "packages/cli/src/run/skill-invocation.ts": {
         "task": 1
       },
-      "packages/cli/src/tui/app.tsx": {
-        "task": 5
-      },
-      "packages/cli/src/tui/commands/auth.ts": {
-        "task": 1
-      },
       "packages/cli/src/tui/commands/clear.ts": {
         "conversation": 1
       },
@@ -159,7 +153,6 @@
         "project": 1
       },
       "packages/cli/src/tui/commands/models.ts": {
-        "job": 1,
         "limit": 1
       },
       "packages/cli/src/tui/commands/permissions.ts": {
@@ -174,20 +167,13 @@
       "packages/cli/src/tui/commands/shell-commands.ts": {
         "cap": 1,
         "gateway": 1,
-        "job": 1,
-        "task": 1
-      },
-      "packages/cli/src/tui/models/hub.ts": {
-        "job": 1,
-        "limit": 1
-      },
-      "packages/cli/src/tui/models/order.ts": {
         "job": 1
       },
+      "packages/cli/src/tui/models/hub.ts": {
+        "limit": 1
+      },
       "packages/cli/src/tui/models/texts.ts": {
-        "job": 2,
-        "limit": 2,
-        "task": 1
+        "limit": 2
       },
       "packages/cli/src/tui/screen/prompt-panel.tsx": {
         "project": 2
@@ -200,9 +186,6 @@
         "directory": 1,
         "endpoint": 1,
         "limit": 2
-      },
-      "packages/cli/src/tui/slash.ts": {
-        "task": 1
       },
       "packages/cli/src/tui/transcript.ts": {
         "conversation": 1,

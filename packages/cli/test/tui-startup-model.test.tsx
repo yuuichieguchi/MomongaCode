@@ -35,7 +35,7 @@ describe('the model on the start screen', () => {
     app.stdin.write('hello');
     await untilFrame(app, '> hello');
     app.stdin.write(KEYS.enter);
-    const list = await untilFrame(app, 'a change applies from the next task');
+    const list = await untilFrame(app, 'a change applies from the next run');
     expect(list).toContain('Models');
     expect(list).toContain('qwen3.8:27b');
     expect(backend.started).toEqual([]);

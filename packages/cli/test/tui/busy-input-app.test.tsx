@@ -11,7 +11,7 @@ const WIDE = { columns: 140, rows: 40 };
 const BUSY_HINT = 'enter: steer after the next tool call · tab: queue for after this run · esc: stop';
 const TAKE_BACK_HINT = `${BUSY_HINT} · up: take back waiting messages`;
 const COMPLETION_HINT = 'tab: complete · esc: close the list';
-const TASK_RUNNING = 'A task is running. Esc stops it.';
+const TASK_RUNNING = 'A run is working. Esc stops it.';
 
 const inputLines = (shown: string): string[] =>
   shown

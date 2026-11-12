@@ -105,7 +105,7 @@ describe('row allocation', () => {
 describe('the footer row', () => {
   const NEWLINE = 'ctrl+j: new line';
   const facts = { mode: 'manual', tokens: 0, contextPercent: 0 as number | undefined, imageInput: false, answer: undefined as string | undefined, newline: NEWLINE as string | undefined };
-  const TASK_RUNNING = 'A task is running. Esc stops it.';
+  const TASK_RUNNING = 'A run is working. Esc stops it.';
 
   it('shows the mode, the tokens and the context share, and the newline hint at the right end', () => {
     const row = footerRow(facts, 80);
@@ -149,8 +149,8 @@ describe('the footer row', () => {
   it('shortens the mode to its id beside the answer and never cuts a word of it', () => {
     expect(footerRow({ ...facts, answer: 'Copied' }, 20)).toBe('mode: manual  Copied');
     expect(footerRow({ ...facts, answer: 'Copied 9 chars' }, 24)).toBe('manual    Copied 9 chars');
-    expect(footerRow({ ...facts, answer: TASK_RUNNING }, 40)).toBe(`manual  ${TASK_RUNNING}`);
-    expect(footerRow({ ...facts, answer: TASK_RUNNING }, 34)).toBe(TASK_RUNNING);
+    expect(footerRow({ ...facts, answer: TASK_RUNNING }, 39)).toBe(`manual  ${TASK_RUNNING}`);
+    expect(footerRow({ ...facts, answer: TASK_RUNNING }, 33)).toBe(TASK_RUNNING);
     expect(footerRow({ ...facts, answer: TASK_RUNNING }, 20)).toBe(TASK_RUNNING);
   });
 });
