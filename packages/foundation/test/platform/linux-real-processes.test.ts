@@ -1,10 +1,9 @@
 import { spawn } from '@momonga/testkit/child-process';
 import type { ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
+import { createTempDir, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { UninspectableProcess } from '../../src/platform/inspector-types.ts';
 import { BOOT_TIME_RESOLUTION_MS, createLinuxInspector } from '../../src/platform/linux-inspector.ts';
 import { nodeProcFs } from '../../src/platform/procfs.ts';
@@ -32,7 +31,7 @@ describe.runIf(ON_LINUX)('the Linux inspector against real processes', () => {
   const inspector = () => createLinuxInspector({ procfs: nodeProcFs, uid: process.getuid?.() as number });
 
   beforeEach(() => {
-    directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-inspect-')));
+    directory = createTempDir();
   });
 
   afterEach(() => {

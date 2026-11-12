@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -7,7 +6,7 @@ import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { HeldKernelLock, KernelLockMechanism } from '@momonga/foundation';
 import { RIPGREP_BINARY_ASSET, RIPGREP_MANIFEST_ASSET, RIPGREP_NOTICES_ASSET, RIPGREP_STAGED_PREFIX, ensureBundledRipgrep, ripgrepDirectoryName } from '../src/ripgrep-distribution.ts';
 import type { RipgrepDistributionPorts } from '../src/ripgrep-distribution.ts';
-import { expectedKernelLockOn, testKernelLock } from '@momonga/testkit';
+import { createTempDir, expectedKernelLockOn, testKernelLock } from '@momonga/testkit';
 
 const BINARY = new TextEncoder().encode('#!rg-binary-bytes');
 const NOTICES = new TextEncoder().encode('COPYING\n');
@@ -32,7 +31,7 @@ afterEach(() => {
 });
 
 const executablesRoot = (): string => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-ripgrep-leftover-')));
+  const root = createTempDir();
   created.push(root);
   return root;
 };

@@ -2,12 +2,11 @@ import { spawn, spawnSync } from '@momonga/testkit/child-process';
 import net from 'node:net';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, createUdsClient, inspectProcessLock, listenUnix, setSocketBind, fixedSocket } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, realProcessTestSignal, testKernelLock } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, realProcessTestSignal, registerCleanup, testKernelLock, withTempDir } from '@momonga/testkit';
 import { startHolder } from './support/lock-processes.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -28,7 +27,7 @@ afterEach(async () => {
 });
 
 const makeDir = (mode = 0o700): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, mode);
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;

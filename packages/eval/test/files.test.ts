@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadDataset, loadTranscripts, nodeEvalFiles, replayDataset, saveTranscript, transcriptFileName } from '@momonga/eval';
 import { finalAnswerTranscript, goldenCase } from './fixtures.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const directories: string[] = [];
 
@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 const tempDirectory = (): string => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-eval-'));
+  const directory = createTempDir();
   directories.push(directory);
   return directory;
 };

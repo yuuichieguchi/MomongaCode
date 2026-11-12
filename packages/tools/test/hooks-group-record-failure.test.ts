@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, createProcessInspector, hostInspectorPorts, POLL_INTERVAL_MS, systemWaitTiming, waitUntil as foundationWaitUntil } from '@momonga/foundation';
@@ -8,7 +7,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { createTempDir, killGroupsForCleanup, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED, testLocks } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -19,7 +18,7 @@ let dir = '';
 let spawnedGroups: number[] = [];
 
 beforeEach(() => {
-  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-hook-record-')));
+  dir = createTempDir();
 });
 
 afterEach(async () => {

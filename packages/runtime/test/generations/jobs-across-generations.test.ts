@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { canonicalJson, createUninspectableRegistry, fixedRolePort, markerReapClockBoundMs, sha256Hex, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
@@ -7,7 +6,7 @@ import type { GenerationRole } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, pacedReapTiming, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir, pacedReapTiming, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { FakeClock, PacedReapTiming } from '@momonga/testkit';
 import { RetiringYield, ToolExecutionError } from '@momonga/tools';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
@@ -79,7 +78,7 @@ afterEach(() => {
 type World = { root: string; clock: FakeClock; reapTiming: PacedReapTiming; store: RuntimeStore; runId: string; sessionId: string; liveOwners: Set<number> };
 
 const world = async (): Promise<World> => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-gen-')));
+  const root = createTempDir();
   roots.push(root);
   const clock = createFakeClock(START_MS);
   const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });

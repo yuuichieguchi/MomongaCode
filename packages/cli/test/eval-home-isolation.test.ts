@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeWorkspaceFiles, parseDataset, treeDigest } from '@momonga/eval';
 import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, launchGroupLeader } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
-import { createFakeKernelLock } from '@momonga/testkit';
+import { createFakeKernelLock, createTempDir } from '@momonga/testkit';
 import { runBenchLive } from '../src/commands/bench.ts';
 import type { BenchHostEffects } from '../src/commands/bench.ts';
 import { runGoldenLive } from '../src/commands/evaluate.ts';
@@ -34,7 +33,7 @@ afterEach(() => {
   for (const dir of created.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 const tempDir = (prefix: string): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  const dir = createTempDir();
   created.push(dir);
   return dir;
 };

@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { canonicalJson, createUninspectableRegistry, nodeFileSystem, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, sleepDrivenTiming, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir, sleepDrivenTiming, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import type { BackgroundJobRegistry } from '@momonga/runtime';
 import { JOB_END_PROBE_MS } from '../../src/process/constants.ts';
@@ -75,7 +74,7 @@ afterEach(() => {
 });
 
 const setup = async (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}, extra: Record<string, unknown> = {}) => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-')));
+  const root = createTempDir();
   roots.push(root);
   const markerDir = path.join(root, 'markers');
   fs.mkdirSync(markerDir);

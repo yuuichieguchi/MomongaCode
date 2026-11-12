@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDaemonMarker } from '../src/orphans.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const created: string[] = [];
 
@@ -12,7 +12,7 @@ afterEach(() => {
 
 describe('the daemon marker descriptor the supervisor hands to a child', () => {
   it('is read-only: a write through it fails with EBADF', () => {
-    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-daemon-ro-')));
+    const dir = createTempDir();
     created.push(dir);
     const marker = openDaemonMarker(dir, 'runtime');
     let code = 'written';

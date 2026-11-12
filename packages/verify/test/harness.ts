@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule, PolicyFilesystem, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, hostFilesystemOf, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
+import { createTempDir, fakePolicyFilesystem, hostFilesystemOf, NEVER_CANCELLED, REAL_PROCESS_TEST_TIMEOUT_MS, testSecretLocations } from '@momonga/testkit';
 import { openZ3, resolveInstalledZ3, verifyPermissions } from '../src/index.ts';
 import type { SecretLocation, VerificationReport, Z3Engine } from '../src/index.ts';
 
@@ -21,7 +20,7 @@ afterEach(() => {
 export type Layout = { root: string; home: string; project: string; outside: string };
 
 export const makeLayout = (): Layout => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-verify-')));
+  const root = createTempDir();
   fs.chmodSync(root, 0o700);
   cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
   const layout = { root, home: path.join(root, 'home'), project: path.join(root, 'project'), outside: path.join(root, 'outside') };

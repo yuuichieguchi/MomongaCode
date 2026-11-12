@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { momongaPaths } from '@momonga/foundation';
 import { protectedRootAreasOf } from '@momonga/runtime';
+import { createTempDir } from '@momonga/testkit';
 
 const homes: string[] = [];
 
@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 const tempHome = (): string => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-areas-')));
+  const home = createTempDir();
   homes.push(home);
   return home;
 };

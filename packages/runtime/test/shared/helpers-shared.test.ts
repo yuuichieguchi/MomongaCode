@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { momongaLayout, momongaPaths, sleep } from '@momonga/foundation';
 import { RUNTIME_DEFAULTS, asError, protectedRootAreasOf, reapTimingOf } from '@momonga/runtime';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir } from '@momonga/testkit';
 
 const START_MS = 1_800_000_000_000;
 const tempHomes: string[] = [];
@@ -14,7 +13,7 @@ afterEach(() => {
 });
 
 const tempHome = (): string => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mh-')));
+  const home = createTempDir();
   tempHomes.push(home);
   return home;
 };

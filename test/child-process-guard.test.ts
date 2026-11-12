@@ -1,11 +1,10 @@
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
-import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, credentialReadScript, credentialWriteScript, minimalChildEnv, nodeBoundedCommandRunner } from '@momonga/foundation';
-import { fakeSecretProgramsBin, productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
+import { createTempDir, fakeSecretProgramsBin, productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
 import childProcessDefault, * as childProcessNamespace from '@momonga/testkit/child-process';
 import { exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } from '@momonga/testkit/child-process';
 import { INTERNAL_COMMANDS, MOMONGA_LAUNCHES } from '../packages/cli/src/daemon/launcher.ts';
@@ -18,7 +17,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
 const nodeChildProcess = require('node:child_process') as typeof childProcessDefault;
 
-const tempDir = (): string => fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'guard-'));
+const tempDir = (): string => createTempDir();
 
 type Decoy = { dir: string; program: string; marker: string };
 
@@ -308,7 +307,7 @@ describe('the child_process facade puts the fake secret programs first on every 
     ['MINIMAL_CHILD_PATH', { PATH: MINIMAL_CHILD_PATH }],
     ['a literal', { PATH: '/usr/bin' }],
     ['minimalChildEnv(process.env)', { ...minimalChildEnv(process.env) }],
-    ['an env spread from an object', { ...{ PATH: '/usr/bin:/bin', HOME: os.tmpdir() } }],
+    ['an env spread from an object', { ...{ PATH: '/usr/bin:/bin', HOME: '/home/fixture-user' } }],
   ])('a node child started with %s resolves security to the fake', (_spelling, env) => {
     const printed = printedBy(execFileSync(process.execPath, ['--input-type=module', '-e', PRINT_SECRET_PROGRAM], { env }));
     expect(printed.security).toBe(path.join(fakeBin, 'security'));
@@ -328,7 +327,7 @@ describe('the child_process facade puts the fake secret programs first on every 
   });
 
   it('an env without PATH stays without one', () => {
-    expect(printedBy(execFileSync(process.execPath, ['--input-type=module', '-e', PRINT_SECRET_PROGRAM], { env: { HOME: os.tmpdir() } })).path).toBeNull();
+    expect(printedBy(execFileSync(process.execPath, ['--input-type=module', '-e', PRINT_SECRET_PROGRAM], { env: { HOME: '/home/fixture-user' } })).path).toBeNull();
   });
 });
 

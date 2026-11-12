@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { fileIdentityComponentOf, readProbeKeyComponents } from '@momonga/foundation';
@@ -10,6 +9,7 @@ import type { ManagedServerDescription } from '@momonga/protocol';
 import { probeKeyOf } from '../src/probe-key.ts';
 import type { ProbeKey } from '../src/probe-key.ts';
 import { requireOfferedEndpointForm, serverRegistryOf } from '../src/server-registry.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const registeredServers = (registry: ServerRegistry): readonly ManagedServerDescription[] => {
   const value = (config as Record<string, unknown>)['registeredServers'];
@@ -63,7 +63,7 @@ describe('config-C13: the record key of a declared server covers the file each p
     for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
   });
   const makeDirectory = (): string => {
-    const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mmt-registry-')));
+    const directory = createTempDir();
     directories.push(directory);
     return directory;
   };

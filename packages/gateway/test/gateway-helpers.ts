@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
 import { DEFAULT_STOP_VALUES, createUdsClient, gatewayMaxCloseMs, decodeSse, managedServerStopBoundMs, fixedRolePort, fixedSocket } from '@momonga/foundation';
@@ -10,7 +9,7 @@ import type { FixedModelsOptions, Gateway, GatewayConfig, GatewayOptions, Provid
 import type { Telemetry } from '@momonga/observability';
 import { parseCanon } from '@momonga/protocol';
 import type { MomongaModelRoles, StreamEvent, TargetAnswers, TargetBilling } from '@momonga/protocol';
-import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator, testKernelLock } from '@momonga/testkit';
+import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator, createTempDir, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
 export const START_MS = 1_800_000_000_000;
@@ -41,7 +40,7 @@ export const registerCleanup = (cleanup: () => void | Promise<void>): void => {
 };
 
 export const makeDir = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   registerCleanup(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;

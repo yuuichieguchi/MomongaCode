@@ -1,11 +1,8 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import type { SandboxedProcess } from '@momonga/sandbox';
-import { pollUntil } from '@momonga/testkit';
+import { createTempDir, pollUntil } from '@momonga/testkit';
 
 export function makeTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  return createTempDir();
 }
 
 export async function collect(stream: AsyncIterable<Uint8Array>): Promise<string> {

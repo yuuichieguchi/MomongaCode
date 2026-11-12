@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
-import { fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testPaths, testKernelLock, hostBuiltSocketGuard } from '@momonga/testkit';
+import { createTempDir, fakePolicyFilesystem, hostBuiltSocketGuard, NEVER_CANCELLED, testKernelLock, testPaths, testProbes } from '@momonga/testkit';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { LeaseFence, LeasedIdempotencyPort } from '@momonga/tools';
@@ -32,7 +31,7 @@ afterEach(() => {
 export type Layout = { root: string; home: string; project: string; outside: string };
 
 export const makeLayout = (): Layout => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-tools-')));
+  const root = createTempDir();
   cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
   const layout = { root, home: path.join(root, 'home'), project: path.join(root, 'project'), outside: path.join(root, 'outside') };
   for (const dir of [layout.home, layout.project, layout.outside]) fs.mkdirSync(dir, { recursive: true });

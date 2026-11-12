@@ -1,12 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { CredentialStoreError, createEncryptedCredentialStore, endedStoreCall, momongaLayout, nodeFileSystem, sleep, systemTiming } from '@momonga/foundation';
 import type { CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretBackend, SecretStore } from '@momonga/foundation';
-import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth, testKernelLock } from '@momonga/testkit';
+import { createFakeClock, createTempDir, SIWC_RESOURCE, siwcBrowse, startFakeSiwcAuth, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { openPlanSessions, planRecordKeyOfPlaintext } from '../src/plan/session.ts';
@@ -197,7 +196,7 @@ const isRefreshPost = (url: string, init: RequestInit, tokenUrl: string): boolea
 export const startHarness = async (
   options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore; wrapSleep?: (inner: PlanSleep) => PlanSleep; storeBackend?: SecretBackend } = {},
 ): Promise<Harness> => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-'));
+  const home = createTempDir();
   const layout = momongaLayout(home, process.platform, process.env);
   const paths = { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive };
   const clock = createFakeClock(START_MS);

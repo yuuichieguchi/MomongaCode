@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { isProcessAlive, setSocketBind } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, assertHomeSocketBudget, registerCleanup, spawnTracked, tempDirPrefixFor, testRunToken, withTempDir } from '@momonga/testkit';
+import { systemTempRoot } from '../src/test-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -34,7 +34,7 @@ describe('withTempDir', () => {
   it('creates a 0700 directory in the temp root carrying the run token prefix', (context) => {
     const dir = withTempDir(context);
     created.push(dir);
-    expect(path.dirname(dir)).toBe(fs.realpathSync(os.tmpdir()));
+    expect(path.dirname(dir)).toBe(systemTempRoot());
     expect(path.basename(dir)).toMatch(new RegExp(`^${tempDirPrefixFor(testRunToken())}[A-Za-z0-9]{6}$`));
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
     const locked = path.join(dir, 'locked');

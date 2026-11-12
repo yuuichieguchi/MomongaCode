@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, hostProcessGroupPort, momongaPaths, systemTiming } from '@momonga/foundation';
 import { createWorkspaceProbe, nodeWorkspaceFiles } from '@momonga/eval';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { nodeWorkspaceSandbox } from '../src/node-ports.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -16,7 +15,7 @@ let home = '';
 let workspace = '';
 
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-oracle-contract-')));
+  root = createTempDir();
   home = path.join(root, 'home');
   workspace = path.join(root, 'work');
   fs.mkdirSync(home);

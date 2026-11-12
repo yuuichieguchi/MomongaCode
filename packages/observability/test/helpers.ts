@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
@@ -9,7 +8,7 @@ import { GENAI_CONTENT_SEMCONV, buildCostReport, createTelemetry, describeMoney,
 import type { BilledCall, BodyRecord, CallPrice, CostReport, CostedRun, PriceTable, SpanRecord, Telemetry, TraceStore } from '@momonga/observability';
 import { billedCallOf, isBilledChat } from '../src/billed-calls.ts';
 import { MOMONGA_ATTRIBUTES } from '../src/semconv.ts';
-import { createFakeClock } from '@momonga/testkit';
+import { createFakeClock, createTempDir } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
@@ -29,7 +28,7 @@ export const registerCleanup = (cleanup: () => void | Promise<void>): void => {
 };
 
 export const makeDir = (mode = 0o700): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+  const dir = createTempDir();
   fs.chmodSync(dir, mode);
   registerCleanup(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;

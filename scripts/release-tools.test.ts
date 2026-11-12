@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const TOOLS_SCRIPT = `${repoRoot}scripts/release-tools.sh`;
 const RELEASE_SCRIPT = `${repoRoot}scripts/release.sh`;
@@ -14,7 +15,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('the tools a release needs', () => {
   let root = '';
 
   const stubbed = (names: readonly string[]): string => {
-    const directory = fs.mkdtempSync(path.join(root, 'tools-'));
+    const directory = createTempDir({ parent: root });
     for (const name of names) fs.writeFileSync(path.join(directory, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     return directory;
   };

@@ -1,10 +1,9 @@
 import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_LAUNCH, hostProcessGroupPort, launchGroupLeader, systemTiming } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
+import { createTempDir, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createWorkspaceProbe, nodeWorkspaceFiles } from '../src/index.ts';
 import type { CommandSandbox, WorkspaceProbe } from '../src/index.ts';
 
@@ -21,7 +20,7 @@ const seed = (target: string): void => {
 };
 
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-probe-')));
+  root = createTempDir();
   dir = path.join(root, 'work');
   base = path.join(root, 'base');
   seed(dir);

@@ -1,11 +1,10 @@
 import { spawn, spawnSync, type ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GroupMembersReader, ProcessGroupPort } from '@momonga/foundation';
 import { forceKillGroup, groupAlive, procGroupMembers, systemWaitTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createSteppingTiming, killGroupsForCleanup, pollUntil } from '@momonga/testkit';
+import { createFakeClock, createSteppingTiming, createTempDir, killGroupsForCleanup, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -26,7 +25,7 @@ const pidAlive = (pid: number): boolean => {
 };
 
 const makeDir = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-pg-'));
+  const dir = createTempDir();
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 };

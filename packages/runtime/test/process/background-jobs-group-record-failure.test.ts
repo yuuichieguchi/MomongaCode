@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -8,7 +7,7 @@ import { createUninspectableRegistry, systemRandom, nodeFileSystem, BUSY_WAIT_LI
 import type { MarkerState, ProcessGroupPort } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, sleepDrivenTiming, testKernelLock, testProcessInspector, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir, sleepDrivenTiming, TEST_CHILD_UNPROTECTED, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
@@ -30,7 +29,7 @@ afterEach(() => {
 });
 
 const runJob = async (survives: boolean) => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-survivor-')));
+  const root = createTempDir();
   roots.push(root);
   const markerDir = path.join(root, 'markers');
   fs.mkdirSync(markerDir);

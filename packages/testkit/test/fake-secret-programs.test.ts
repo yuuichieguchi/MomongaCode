@@ -1,6 +1,5 @@
 import { execFileSync, spawn, spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { SECRET_STORE_SEARCHED_PROGRAMS, createExecWithStdin, createSecretServiceStore, findProgramOnPathSync, nodeFileSystemSync } from '@momonga/foundation';
@@ -17,12 +16,13 @@ import {
   waitFor,
 } from '@momonga/testkit';
 import type { FakeControl, FakePrograms } from '@momonga/testkit';
+import { createTempDir } from '../src/test-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const roots: string[] = [];
 const freshRoot = (): string => {
-  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'fake-secret-programs-'));
+  const root = createTempDir();
   roots.push(root);
   return root;
 };

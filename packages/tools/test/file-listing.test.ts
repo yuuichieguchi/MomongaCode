@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync } from '@momonga/testkit/child-process';
-import { testHostPath } from '@momonga/testkit';
+import { createTempDir, testHostPath } from '@momonga/testkit';
 import { listDirectoryEntries, listFileCandidates } from '@momonga/tools';
 
 const made: string[] = [];
@@ -13,7 +12,7 @@ afterEach(() => {
 });
 
 const treeOf = (files: Readonly<Record<string, string>>): string => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-candidates-')));
+  const root = createTempDir();
   made.push(root);
   for (const [name, content] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });

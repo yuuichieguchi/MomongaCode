@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { stripCredentialEnv } from '@momonga/config';
 import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
-import { afterMicrotasks, waitFor } from '@momonga/testkit';
+import { afterMicrotasks, createTempDir, waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
 import { HELD_RETRY_MS } from '../src/constants.ts';
@@ -106,7 +105,7 @@ const referencingSecret = (): CredentialSettings =>
   }) as unknown as CredentialSettings;
 
 const binWith = (...programs: string[]): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sup-bin-')));
+  const dir = createTempDir();
   for (const program of programs) fs.writeFileSync(path.join(dir, program), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
   return dir;
 };
