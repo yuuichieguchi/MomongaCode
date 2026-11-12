@@ -72,6 +72,7 @@ export type GatewayCommonOptions = {
   lock: KernelLockMechanism;
   billedCalls?: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>;
   traceContent?: (runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>;
+  retentionPurge?: (runIds: readonly string[], cutoffMs: number, signal: AbortSignal) => Promise<void>;
   debugTcp?: DebugTcpOptions;
   random: () => number;
   pid: number;

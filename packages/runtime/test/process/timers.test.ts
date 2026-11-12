@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { ensureMomongaDirs, sidecarOf, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { ensureMomongaDirs, sidecarOf, systemRandom, nodeFileSystem, nodeFileSystemSync, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, testKernelLock } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
@@ -46,7 +46,7 @@ const advanceStepwise = async (timers: FakeTimers, totalMs: number, stepMs: numb
 const LATER_KEY = 'c'.repeat(64);
 
 const seedKey = async (temp: RunHome, key: string, expiresAt: number): Promise<void> => {
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: temp.paths.databases.runtime,
     home: temp.home,
     clock: createFakeClock(START_MS - 8 * DAY_MS),
@@ -63,7 +63,7 @@ const seedKey = async (temp: RunHome, key: string, expiresAt: number): Promise<v
 
 const seedIdempotency = async (temp: RunHome): Promise<void> => {
   await ensureMomongaDirs(temp.paths);
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: temp.paths.databases.runtime,
     home: temp.home,
     clock: createFakeClock(START_MS - 8 * DAY_MS),

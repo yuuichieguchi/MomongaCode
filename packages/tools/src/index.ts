@@ -49,8 +49,8 @@ export type {
   ToolIdempotencyLookup,
   ToolIdempotencyRecord,
 } from './ports.ts';
-export { OBSERVED_FILE_HASH_PAGE_BYTES, OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, observedToolFiles, observerStoreOf, workTreeObserverOn } from './work-tree-observer.ts';
-export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, WorkTreeMark, WorkTreeObserver, WorkTreeObserverPorts } from './work-tree-observer.ts';
+export { OBSERVED_FILE_HASH_PAGE_BYTES, OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, observedToolFiles, observerStoreOf, pruneObserverStores, workTreeObserverOn } from './work-tree-observer.ts';
+export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, ObserverStorePrune, WorkTreeMark, WorkTreeObserver, WorkTreeObserverPorts } from './work-tree-observer.ts';
 export { createToolRegistry, extendToolSet } from './registry.ts';
 export { pageToFit } from './paging.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
@@ -101,6 +101,7 @@ export type { ExecutableCheck, ShellHost, ShellPorts, ShellPortsNow } from './bu
 export { createGlobExpander, policyFilesystemOn } from './policy-filesystem.ts';
 export {
   createGitWorkTreeObserver,
+  pruneGitObserverStores,
   createHostRipgrepLocator,
   createPolicyFilesystem,
   listDirectoryEntries,

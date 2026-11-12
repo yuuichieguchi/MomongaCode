@@ -94,7 +94,6 @@ import {
   openTraceStore,
   pageBilledCalls,
   pageRunBodies,
-  startBodyPurge,
 } from '@momonga/observability';
 import type { PriceTable, Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, DialectId, HealthResult, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
@@ -1038,7 +1037,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
     });
-    const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock, busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
+    const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     cleanups.push(() => traceStore.close());
     const telemetryOf = (current: ResolvedSettings, outbound: OutboundNetwork): Telemetry => {
       const resolved = resolveTelemetrySettings(current.telemetry);
@@ -1066,13 +1065,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     cleanups.push(() => telemetries.retireAll());
     (await telemetries.admit(startSignal)).release();
     const contentRetentionMs = resolveRetentionSettings(settings.retention).days * DAY_MS;
-    const bodyPurge = startBodyPurge({
-      store: traceStore,
-      timers,
-      report: (error) => logger.error('trace body purge failed', { err: toError(error) }),
-      legacyRetentionMs: contentRetentionMs,
-    });
-    cleanups.push(() => bodyPurge.stop());
 
     signal?.throwIfAborted();
     const childEnv = minimalChildEnv(options.env);
@@ -1558,6 +1550,11 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       traceContent: async (runId, after, limit, requestSignal) => {
         await flushTelemetry(requestSignal);
         return pageRunBodies(traceStore, runId, after, limit);
+      },
+      retentionPurge: async (runIds, cutoffMs, requestSignal) => {
+        await flushTelemetry(requestSignal);
+        traceStore.purgeRuns(runIds, cutoffMs);
+        traceStore.moveLegacyContent({ retentionMs: contentRetentionMs });
       },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),

@@ -133,6 +133,7 @@ export type GatewayClient = GatewayPort & {
   models(): Promise<ListedGatewayModel[]>;
   health(): Promise<GatewayHealth>;
   billedCalls(runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal): Promise<BilledCallsPageView>;
+  retentionPurge(runIds: readonly string[], cutoffMs: number, signal: AbortSignal): Promise<void>;
   destroy(): Promise<void>;
 };
 
@@ -649,6 +650,11 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost/calls', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runIds, cursor, limit, includeRunless }) }, signal, unaryBound());
       if (!isRecord(parsed) || !Array.isArray(parsed['calls'])) throw invalidResponse('the billed calls answer has no calls list');
       return parsed as BilledCallsPageView;
+    },
+
+    retentionPurge: async (runIds, cutoffMs, signal) => {
+      const parsed = await unary({ method: 'POST', path: '/v1/momonga/retention/purge', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runIds, cutoffMs }) }, signal, unaryBound());
+      if (!isRecord(parsed) || typeof parsed['purged'] !== 'number') throw invalidResponse('the retention purge reply has no number "purged"');
     },
 
     health: async (): Promise<GatewayHealth> => {

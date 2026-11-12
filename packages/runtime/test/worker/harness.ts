@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, openDatabase, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS, momongaLayout } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, nodeFileSystemSync, openDatabase, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS, momongaLayout } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -169,7 +169,7 @@ const inProcessFidelity = (dbPath: string) => async (request: object): Promise<n
   try {
     const handler = fidelityHandler({
       reader: createJournalReader(db),
-      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), { lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom }),
+      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), { lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom }),
       current: { progress: undefined },
       gateFor: () => ({ unit: () => undefined }),
     });
@@ -234,7 +234,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const clock: FakeClock = createFakeClock(START_MS);
   const timers: FakeTimers = createFakeTimers(clock);
   const scriptedContributions = new Map<string, ContributionItems>();
-  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home,
     clock,

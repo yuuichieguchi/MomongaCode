@@ -1,7 +1,7 @@
 import type { DatabaseSync, SQLOutputValue, StatementSync } from 'node:sqlite';
 import type { AttributeValue } from '@opentelemetry/api';
 import { immediateTx, migrate, openDatabase, isRecord } from '@momonga/foundation';
-import type { Clock, Migration } from '@momonga/foundation';
+import type { Migration } from '@momonga/foundation';
 import { reportError } from './errors.ts';
 import { DEFAULT_MAX_QUEUED_BYTES } from './body-queue.ts';
 import { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
@@ -68,14 +68,13 @@ export type TraceStore = {
   spansWithoutRun(): SpanRecord[];
   billedChatSpansAfter(runId: string | null, afterSeq: number, limit: number): IngestedSpan[];
   bodiesOfRunAfter(runId: string, afterId: number, limit: number): StoredBody[];
-  purgeBodies(nowMs: number): number;
+  purgeRuns(runIds: readonly string[], cutoffMs: number): number;
   moveLegacyContent(options: { retentionMs: number }): number;
-  purgeExpired(): number;
   compact(): void;
   close(): void;
 };
 
-export type OpenTraceStoreOptions = { path: string; clock: Clock; busyTimeoutMs: number };
+export type OpenTraceStoreOptions = { path: string; busyTimeoutMs: number };
 
 const INITIAL_SCHEMA = `
 CREATE TABLE spans (
@@ -315,11 +314,15 @@ const prepareStatements = (db: DatabaseSync) => ({
   spansWithoutRun: db.prepare('SELECT * FROM spans WHERE run_id IS NULL ORDER BY start_ms, end_ms DESC, rowid'),
   bodiesOfRunAfter: db.prepare(
     `SELECT b.* FROM bodies b
-     WHERE b.id > ? AND b.expires_at_ms > ?
+     WHERE b.id > ?
        AND EXISTS (SELECT 1 FROM spans s WHERE s.trace_id = b.trace_id AND s.span_id = b.span_id AND s.run_id = ?)
      ORDER BY b.id LIMIT ?`,
   ),
-  purgeBodies: db.prepare('DELETE FROM bodies WHERE expires_at_ms <= ?'),
+  purgeBodiesOfRun: db.prepare('DELETE FROM bodies WHERE EXISTS (SELECT 1 FROM spans s WHERE s.trace_id = bodies.trace_id AND s.span_id = bodies.span_id AND s.run_id = ?)'),
+  purgeSpansOfRun: db.prepare('DELETE FROM spans WHERE run_id = ?'),
+  purgeRunlessBodies: db.prepare('DELETE FROM bodies WHERE EXISTS (SELECT 1 FROM spans s WHERE s.trace_id = bodies.trace_id AND s.span_id = bodies.span_id AND s.run_id IS NULL AND s.end_ms <= ?)'),
+  purgeRunlessSpans: db.prepare('DELETE FROM spans WHERE run_id IS NULL AND end_ms <= ?'),
+  purgeUnspannedBodies: db.prepare('DELETE FROM bodies WHERE created_at_ms <= ? AND NOT EXISTS (SELECT 1 FROM spans s WHERE s.trace_id = bodies.trace_id AND s.span_id = bodies.span_id)'),
   checkpointPassive: db.prepare('PRAGMA wal_checkpoint(PASSIVE)'),
   checkpointTruncate: db.prepare('PRAGMA wal_checkpoint(TRUNCATE)'),
 });
@@ -328,7 +331,7 @@ const all = (statement: StatementSync, ...parameters: Array<string | number>): R
 
 type Statements = ReturnType<typeof prepareStatements>;
 
-const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): TraceStore => {
+const createStore = (db: DatabaseSync, statements: Statements): TraceStore => {
   let closed = false;
 
   const checkpoint = (mode: 'PASSIVE' | 'TRUNCATE'): void => {
@@ -347,8 +350,18 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
     }
   };
 
-  const purgeBodies = (nowMs: number): number => {
-    const deleted = Number(statements.purgeBodies.run(nowMs).changes);
+  const purgeRuns = (runIds: readonly string[], cutoffMs: number): number => {
+    const deleted = immediateTx(db, () => {
+      let rows = 0;
+      for (const runId of runIds) {
+        rows += Number(statements.purgeBodiesOfRun.run(runId).changes);
+        rows += Number(statements.purgeSpansOfRun.run(runId).changes);
+      }
+      rows += Number(statements.purgeRunlessBodies.run(cutoffMs).changes);
+      rows += Number(statements.purgeRunlessSpans.run(cutoffMs).changes);
+      rows += Number(statements.purgeUnspannedBodies.run(cutoffMs).changes);
+      return rows;
+    });
     if (deleted > 0) checkpoint('PASSIVE');
     return deleted;
   };
@@ -428,10 +441,9 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
       return rows.map((row) => ({ seq: readInteger('spans', String(row['span_id']), row, 'ingest_seq'), span: decodeSpan(row) }));
     },
     bodiesOfRunAfter: (runId, afterId, limit) =>
-      all(statements.bodiesOfRunAfter, afterId, clock.now(), runId, limit).map((row) => ({ id: readInteger('bodies', String(row['id']), row, 'id'), body: decodeBody(row) })),
-    purgeBodies,
+      all(statements.bodiesOfRunAfter, afterId, runId, limit).map((row) => ({ id: readInteger('bodies', String(row['id']), row, 'id'), body: decodeBody(row) })),
+    purgeRuns,
     moveLegacyContent,
-    purgeExpired: () => purgeBodies(clock.now()),
     compact,
     close: () => {
       if (closed) return;
@@ -450,13 +462,7 @@ export const openTraceStore = (options: OpenTraceStoreOptions): TraceStore => {
   try {
     migrate(db, TRACE_STORE_MIGRATIONS);
     db.exec('PRAGMA secure_delete = ON');
-    const store = createStore(db, prepareStatements(db), options.clock);
-    try {
-      store.purgeExpired();
-    } catch (error) {
-      reportError(error);
-    }
-    return store;
+    return createStore(db, prepareStatements(db));
   } catch (error) {
     db.close();
     throw error;

@@ -26,6 +26,13 @@
       },
       "packages/runtime/src/service/delegation.ts": {
         "limit": 1
+      },
+      "packages/store/src/blobs.ts": {
+        "limit": 1
+      },
+      "packages/store/src/retention.ts": {
+        "job": 1,
+        "limit": 2
       }
     },
     "burnDown": {

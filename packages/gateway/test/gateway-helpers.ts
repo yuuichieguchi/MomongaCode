@@ -169,6 +169,7 @@ export type HarnessOptions = {
   debugTcp?: GatewayOptions['debugTcp'];
   onError?: GatewayOptions['onError'];
   billedCalls?: GatewayOptions['billedCalls'];
+  retentionPurge?: GatewayOptions['retentionPurge'];
   credentials?: readonly string[];
   credentialFeed?: GatewayOptions['credentialFeed'];
   priceTable?: FixedModelsOptions['priceTable'];
@@ -203,6 +204,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     version: TEST_VERSION,
     ...(options.onError === undefined ? {} : { onError: options.onError }),
     ...(options.billedCalls === undefined ? {} : { billedCalls: options.billedCalls }),
+    ...(options.retentionPurge === undefined ? {} : { retentionPurge: options.retentionPurge }),
     ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
     ...(options.debugTcp === undefined ? {} : { debugTcp: options.debugTcp }),
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),

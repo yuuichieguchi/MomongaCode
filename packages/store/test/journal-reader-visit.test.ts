@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { openDatabase, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { openDatabase, systemRandom, nodeFileSystem, nodeFileSystemSync, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { JOURNAL_SCAN_RANGE_ROWS, JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
@@ -110,7 +110,7 @@ describe('store.journalFacts: the main thread reaches the new kinds only through
     const calls: unknown[] = [];
     let decoded = 0;
     const answer = { lastSeq: 7, verified: true, facts: [] };
-    const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+    const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
       path: path.join(dir, 'runtime.db'),
       home: dir,
       clock: createFakeClock(START_MS),

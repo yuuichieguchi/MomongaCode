@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { afterEach } from 'vitest';
-import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { nodeFileSystem, nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import type { ClaimedToken, RunEvent } from '@momonga/protocol';
 import { blobDirectoryOf, createBlobStore, createJournalReader } from '@momonga/store';
 import { openJournalConnection, fidelityHandler } from '../../src/memory/journal-thread.ts';
@@ -58,7 +58,7 @@ export const directFidelity = async (h: ReferenceHarness, request: FidelityReque
         stepped += rows;
       },
     });
-    const handler = fidelityHandler({ reader, blobs: createBlobStore(db, NO_CLOCK, blobDirectoryOf(h.dbPath), { fileSystem: nodeFileSystem, random: systemRandom, lock: testKernelLock() }), current: { progress: undefined }, gateFor: () => ({ unit: () => undefined }) });
+    const handler = fidelityHandler({ reader, blobs: createBlobStore(db, NO_CLOCK, blobDirectoryOf(h.dbPath), { fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, lock: testKernelLock() }), current: { progress: undefined }, gateFor: () => ({ unit: () => undefined }) });
     const reply = (await handler(requestOf(h, request), () => undefined)) as unknown as FidelityReply;
     return { reply, stepped };
   } finally {

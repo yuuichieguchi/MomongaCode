@@ -254,8 +254,6 @@
       {"name":"DEFAULT_REQUEST_TIMEOUT_MS","file":"packages/mcp/src/tasks.ts","lacks":["kind"]},
       {"name":"CHUNK_CHARS","file":"packages/memory/src/contribution.ts","lacks":["row"]},
       {"name":"DAY_MS","file":"packages/memory/src/upkeep.ts","lacks":["kind"]},
-      {"name":"BODY_PURGE_INTERVAL_MS","file":"packages/observability/src/body-purge.ts","lacks":["row"]},
-      {"name":"LEGACY_MOVE_PAUSE_MS","file":"packages/observability/src/body-purge.ts","lacks":["kind","row"]},
       {"name":"DEFAULT_MAX_QUEUED_BYTES","file":"packages/observability/src/body-queue.ts","lacks":["row"]},
       {"name":"OTLP_EXPORT_TIMEOUT_MS","file":"packages/observability/src/otlp.ts","lacks":["kind"]},
       {"name":"MAX_APPROVABLE_COMMAND_CHARS","file":"packages/policy/src/approval.ts","lacks":["row"]},

@@ -13,14 +13,13 @@ import {
   createBodyQueue,
   createTelemetry,
   createTraceStoreExporter,
-  startBodyPurge,
   startChatSpan,
 } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { MOMONGA_ATTRIBUTES } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { createFakeClock, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
-import { QUIET_BATCH, RUN_ID, SENTINEL, START_MS, dumpAllRows, openStore, registerCleanup, bodiesOfSpan } from './helpers.ts';
+import { QUIET_BATCH, RUN_ID, SENTINEL, START_MS, openStore, registerCleanup, bodiesOfSpan } from './helpers.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -192,9 +191,6 @@ describe('the trace store keeps message content only in bodies (D-8)', () => {
       const bodies = bodyRows(file);
       expect(bodies, `seed ${seed}`).toHaveLength(expectedBodies);
       for (const body of bodies) expect(body.expires_at_ms - body.created_at_ms, `seed ${seed}`).toBe(RETENTION_MS);
-      clock.advance(RETENTION_MS);
-      store.purgeExpired();
-      expect(bodyRows(file), `seed ${seed}`).toEqual([]);
     }
   });
 });
@@ -242,32 +238,6 @@ describe('legacy spans that carry content (migration of D-8)', () => {
       contentValue(CONTENT_KEYS[0] as string, 'second'),
     ]);
     expect(store.moveLegacyContent({ retentionMs: RETENTION_MS })).toBe(0);
-  });
-});
-
-describe('the body purge runs on a timer, independent of export', () => {
-  it('purges expired bodies with no export at all, so turning capture off cannot leave old bodies behind', () => {
-    const clock = createFakeClock(START_MS);
-    const timers = createFakeTimers(clock);
-    const { store, file } = openStore(clock);
-    store.writeSpans(
-      [],
-      [{ traceId: 'f'.repeat(32), spanId: '1'.repeat(16), kind: CONTENT_KEYS[0] as (typeof BODY_KINDS)[number], content: 'old', createdAtMs: START_MS, expiresAtMs: START_MS + 1_000 }],
-    );
-    const reported: unknown[] = [];
-    const purge = startBodyPurge({ store, timers, report: (error) => void reported.push(error) });
-    registerCleanup(() => purge.stop());
-    expect(timers.pending()).toHaveLength(1);
-    expect(bodyRows(file)).toHaveLength(1);
-
-    clock.advance(2_000);
-    const due = timers.nextDueAt();
-    expect(due).toBeDefined();
-    timers.advance(Math.max(0, (due ?? 0) - clock.now()));
-    expect(bodyRows(file)).toEqual([]);
-    expect(reported).toEqual([]);
-    expect(timers.pending()).toHaveLength(1);
-    expect(dumpAllRows(file)).not.toContain('"old"');
   });
 });
 

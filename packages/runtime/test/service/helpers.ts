@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, nodeFileSystem, nodeFileSystemSync, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -519,7 +519,7 @@ export const openStore = (
   clock: FakeClock,
   extra: { notifier?: Notifier; maxAttempts?: number; preparer?: (dbPath: string, store: () => RuntimeStore) => ContributionPreparer; onDecode?: (rows: number, bytes: number) => void } = {},
 ): RuntimeStore => {
-  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,
