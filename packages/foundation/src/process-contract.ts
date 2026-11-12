@@ -120,6 +120,10 @@ export const RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS = DEFAULT_STOP_VALUES.drainTimeout
 
 export const MCP_CONNECT_TIMEOUT_LIMITS = { min: 1, max: 3_600_000, default: 30_000 } as const;
 
+export const MCP_TOOL_IDLE_TIMEOUT_MS: Readonly<Record<'stdio' | 'network', number>> = { network: 5 * 60 * 1000, stdio: 30 * 60 * 1000 };
+
+export const MCP_TOOL_TOTAL_TIMEOUT_MS = 100_000_000;
+
 export const mcpConnectTimeoutProblem = (value: unknown): string | undefined => {
   const { min, max } = MCP_CONNECT_TIMEOUT_LIMITS;
   if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) return undefined;

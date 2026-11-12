@@ -29,7 +29,7 @@ describe('an interrupt that arrives before the run is followed', () => {
     const interrupt = new AbortController();
     interrupt.abort();
 
-    const code = await runHeadless(ports, paths, { prompt: 'hello', format: 'text', verbose: false, interrupt: interrupt.signal, capabilitiesOf: async () => capabilitiesOf(), modelList: async () => ({ data: [], start: null }) });
+    const code = await runHeadless(ports, paths, { prompt: async () => 'hello', format: 'text', verbose: false, interrupt: interrupt.signal, capabilitiesOf: async () => capabilitiesOf(), modelList: async () => ({ data: [], start: null }) });
 
     expect(code).toBe(EXIT_INTERRUPTED);
     expect(spawned).toEqual([]);

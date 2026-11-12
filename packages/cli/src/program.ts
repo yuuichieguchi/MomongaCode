@@ -228,7 +228,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
       const headlessInput = options.issue !== undefined ? { issue: options.issue } : options.print === undefined ? undefined : { print: options.print };
       if (headlessInput !== undefined) {
         const resumed = headlessReopenOf(reopen);
-        const headlessPrompt = 'issue' in headlessInput ? issueRunInput(headlessInput.issue) : await printedPrompt(headlessInput.print, ports.stdin, deps.interrupt);
+        const headlessPrompt = async (): Promise<string> => ('issue' in headlessInput ? issueRunInput(headlessInput.issue) : printedPrompt(headlessInput.print, ports.stdin, deps.interrupt));
         const paths = await pathsOf(ports);
         const asked = async <T>(ask: (gateway: GatewayClient) => Promise<T>): Promise<T> => {
           const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(ports, paths, 'gateway') });

@@ -1,5 +1,6 @@
 import { redactedUrl } from '@momonga/foundation';
 import type { NetworkConfig, NetworkEnvName, SourcedValue } from '@momonga/foundation';
+import { DEFAULT_NETWORK_ENVIRONMENT } from './setting-defaults.ts';
 import type { NetworkSettings } from './settings.ts';
 
 export type NetworkEnvironment = Readonly<Record<string, string | undefined>>;
@@ -21,7 +22,7 @@ const firstOf = (...candidates: readonly (SourcedValue | undefined)[]): SourcedV
 const fromSetting = (value: string | undefined, source: SourcedValue['source']): SourcedValue | undefined => (value === undefined ? undefined : { value, source });
 
 export const resolveNetwork = (settings: NetworkSettings | undefined, env: NetworkEnvironment): NetworkConfig => {
-  const ambient: NetworkEnvironment = settings?.environment === false ? {} : env;
+  const ambient: NetworkEnvironment = (settings?.environment ?? DEFAULT_NETWORK_ENVIRONMENT) ? env : {};
   const httpSetting = fromSetting(settings?.httpProxy, 'network.httpProxy');
   const httpProxy = firstOf(httpSetting, firstSet(ambient, HTTP_PROXY_NAMES));
   const httpsProxy = firstOf(fromSetting(settings?.httpsProxy, 'network.httpsProxy'), httpSetting, firstSet(ambient, HTTPS_PROXY_NAMES));
