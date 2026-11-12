@@ -38,7 +38,7 @@ export const createFakeSpawnPort = (options: { firstPid?: number; role?: string;
   let nextPid = options.firstPid ?? 41_000;
   const children: FakeChild[] = [];
   const calls: FakeSpawnPort['calls'] = [];
-  const port = ((command: string, args: readonly string[], spawnOptions: SpawnPortOptions): ChildHandle => {
+  const port = (async (command: string, args: readonly string[], spawnOptions: SpawnPortOptions): Promise<ChildHandle> => {
     calls.push({ command, args, options: spawnOptions });
     port.hook?.(command, args, spawnOptions);
     const failure = port.nextFailure;
@@ -131,7 +131,7 @@ export const createFakeSpawnPort = (options: { firstPid?: number; role?: string;
       },
     };
     children.push(child);
-    if (failure?.kind === 'spawn-error') queueMicrotask(() => child.spawnError(failure.error));
+    if (failure?.kind === 'spawn-error') process.nextTick(() => child.spawnError(failure.error));
     return handle;
   }) as FakeSpawnPort;
   Object.assign(port, {

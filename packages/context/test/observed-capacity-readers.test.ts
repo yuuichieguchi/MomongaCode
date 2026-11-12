@@ -60,7 +60,6 @@ const inputWith = (capabilities: Capabilities, { task, tools, skills, observed }
     trusted: true,
     projectRoot: PROJECT,
     home: HOME,
-    keepRecentTurns: 1,
     ...(observed ? { observedCapacity: true as const } : {}),
   };
   return input;

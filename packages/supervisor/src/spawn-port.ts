@@ -7,11 +7,11 @@ const endedReadable = (): Readable => Readable.from([]);
 
 export type SpawnPortHost = { port?: ProcessGroupPort; spawnProcess?: GroupLaunchRequest['spawnProcess'] };
 
-export const createSpawnPort = ({ port: given, spawnProcess }: SpawnPortHost = {}): SpawnPort => (command, args, options) => {
+export const createSpawnPort = ({ port: given, spawnProcess }: SpawnPortHost = {}): SpawnPort => async (command, args, options) => {
   const port = given ?? hostProcessGroupPort();
   const descriptor = options.stdio[DAEMON_MARKER_FD];
   const marker: GroupLaunchMarker = options.markerFile === undefined ? { slot: DAEMON_MARKER_FD, descriptor } : { slot: DAEMON_MARKER_FD, file: options.markerFile, descriptor };
-  const launched = launchGroupLeader({
+  const launched = await launchGroupLeader({
     file: command,
     args,
     cwd: options.cwd,

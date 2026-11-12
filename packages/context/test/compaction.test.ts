@@ -16,6 +16,7 @@ import {
   sourcesWith,
   tokensOfItems,
   user,
+  withTurnsBeforeCurrent,
 } from './helpers.ts';
 
 const W = 4000;
@@ -25,20 +26,20 @@ describe('proactive compaction hint', () => {
   it('requests compaction through the end of the last non-recent turn when above the high-water mark', async () => {
     const capabilities = capabilitiesFor(W);
     const { ports } = harness(capabilities);
-    const history = [
+    const history = withTurnsBeforeCurrent([
       user(1, 'q1'),
       assistant(2, 'x'.repeat(4400)),
       user(3, 'q2'),
       call(4, 'c1'),
       output(5, 'c1', 'ok'),
-      assistant(6, 'y'.repeat(4400)),
+      assistant(6, 'y'.repeat(4000)),
       user(7, 'now'),
-    ];
+    ]);
     const result = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ history }) }),
       ports,
     );
-    expect(result.inputTokens).toBe(2345);
+    expect(result.inputTokens).toBe(2312);
     expect(result.compaction?.throughSeq).toBe(6);
   });
 
@@ -57,24 +58,6 @@ describe('proactive compaction hint', () => {
     ];
     const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }) }), ports);
     expect(result.compaction?.throughSeq).toBe(2);
-  });
-
-  it('honours a custom compactAt threshold', async () => {
-    const capabilities = capabilitiesFor(W);
-    const { ports } = harness(capabilities);
-    const history = [user(1, 'q1'), assistant(2, 'x'.repeat(4000)), user(3, 'now')];
-    const below = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1 }),
-      ports,
-    );
-    expect(below.inputTokens).toBeLessThan(0.7 * I);
-    expect(below.inputTokens).toBeGreaterThan(0.3 * I);
-    expect(below.compaction).toBeUndefined();
-    const above = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1, compactAt: 0.3 }),
-      harness(capabilities).ports,
-    );
-    expect(above.compaction?.throughSeq).toBe(2);
   });
 
   it('does not request compaction when only recent items remain', async () => {
@@ -207,7 +190,7 @@ describe('the one eviction pass that the build runs and that sizing reads', () =
   it('plans a proactive compaction over the region the batch pass leaves, with the product layout', async () => {
     const capabilities = capabilitiesFor(W);
     const { ports } = harness(capabilities);
-    const history = [
+    const history = withTurnsBeforeCurrent([
       user(1, 'q1'),
       call(2, 'c1'),
       output(3, 'c1', 'o'.repeat(3000)),
@@ -217,8 +200,8 @@ describe('the one eviction pass that the build runs and that sizing reads', () =
       output(7, 'c2', 'p'.repeat(3000)),
       assistant(8, 'y'.repeat(4400)),
       user(9, 'now'),
-    ];
-    const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1, layout: 'cachePrefix' }), ports);
+    ]);
+    const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), layout: 'cachePrefix' }), ports);
     expect(result.evictions.filter((eviction) => eviction.kind === 'omitted').map((eviction) => eviction.callId)).toEqual(['c1', 'c2']);
     expect(result.compaction).toBeDefined();
     const planned = JSON.stringify(result.compaction?.input);

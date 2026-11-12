@@ -88,15 +88,17 @@ const attachmentSummary: JsonSchema = {
   anyOf: [
     closed({ type: constant('attached_file'), path: string, lines: nonNegativeInteger }, ['type', 'path', 'lines']),
     closed({ type: constant('attachment_note'), path: string, shown: string }, ['type', 'path', 'shown']),
+    closed({ type: constant('forge_issue'), issue: string }, ['type', 'issue']),
   ],
 };
 
-export type AttachmentSummary = { type: 'attached_file'; path: string; lines: number } | { type: 'attachment_note'; path: string; shown: string };
+export type AttachmentSummary = { type: 'attached_file'; path: string; lines: number } | { type: 'attachment_note'; path: string; shown: string } | { type: 'forge_issue'; issue: string };
 
-export const attachmentSummaryOf = (part: MessageAttachment): AttachmentSummary =>
-  part.type === 'attached_file'
-    ? { type: 'attached_file', path: part.path, lines: part.content === '' ? 0 : part.content.split('\n').length }
-    : { type: 'attachment_note', path: part.path, shown: part.shown };
+export const attachmentSummaryOf = (part: MessageAttachment): AttachmentSummary => {
+  if (part.type === 'attached_file') return { type: 'attached_file', path: part.path, lines: part.content === '' ? 0 : part.content.split('\n').length };
+  if (part.type === 'forge_issue') return { type: 'forge_issue', issue: part.issue };
+  return { type: 'attachment_note', path: part.path, shown: part.shown };
+};
 
 const inboxRowView = closed(
   {
@@ -917,6 +919,7 @@ const trustItemsView = closed(
 
 const costTotalsProperties: Record<string, JsonSchema> = {
   calls: nonNegativeInteger,
+  retries: nonNegativeInteger,
   localCalls: nonNegativeInteger,
   unpricedCalls: nonNegativeInteger,
   unknownBillingCalls: nonNegativeInteger,
@@ -1335,6 +1338,7 @@ export type RoleCostView = {
   fallbackCalls?: number;
   fallbacks?: CostFallbackView[];
   calls: number;
+  retries: number;
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
@@ -1536,6 +1540,7 @@ export const RUN_API_SCHEMAS = {
         images: { type: 'array', items: imageAttachment },
         attachMentions: boolean,
         mandate,
+        issue: closed({ url: { type: 'string', minLength: 1, pattern: '^https://' }, once: boolean }, ['url']),
       },
       ['input'],
     ),

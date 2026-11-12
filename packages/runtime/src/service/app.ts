@@ -7,7 +7,9 @@ import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/confi
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf } from '@momonga/protocol';
-import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
+import { ISSUE_PIN } from './issues.ts';
+import type { IssuePort, IssueRead } from './issues.ts';
+import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
@@ -22,6 +24,7 @@ import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
   ApiError,
   conflict,
+  issueUnreadable,
   configError,
   contributionUnavailable,
   errorResponse,
@@ -119,6 +122,7 @@ export type RunAppDeps = {
   gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
+  issues: IssuePort;
   skillFiles: SkillFileSystem;
   platform: NodeJS.Platform;
   isDraining(): boolean;
@@ -498,6 +502,28 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (!(await capabilitiesOf(session, signal)).imageInput) throw imageInputUnsupported(displayIn((await gatewayListing(signal)).views, session.model));
   };
 
+  const locatedIssue = (url: string): IssueReference => {
+    try {
+      return deps.issues.locate(url);
+    } catch (error) {
+      throw invalidRequest(error instanceof Error ? error.message : String(error), 'issue');
+    }
+  };
+
+  const issueOf = async (session: Session, body: CreateRunBody, signal: AbortSignal): Promise<IssueRead | undefined> => {
+    if (body.issue === undefined) return undefined;
+    if (body.mandate?.profile === undefined) {
+      throw invalidRequest('a run from an issue runs under a named mandate: name one of the mandates declared under mandates in the user settings', 'mandate');
+    }
+    const reference = locatedIssue(body.issue.url);
+    try {
+      return { reference, content: await deps.issues.read(reference, signal) };
+    } catch (error) {
+      signal.throwIfAborted();
+      throw issueUnreadable(reference.url, error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const attachedTo = async (session: Session, body: CreateRunBody, signal: AbortSignal): Promise<AttachedMentions> => {
     if (body.attachMentions !== true || mentionsOf(body.input).length === 0) return { attachments: [], images: [] };
     const capabilities = await capabilitiesOf(session, signal);
@@ -599,23 +625,27 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill, context.req.raw.signal);
     await requireImageInput(session, body.images, context.req.raw.signal);
     const attached = await attachedTo(session, body, context.req.raw.signal);
+    const issue = await issueOf(session, body, context.req.raw.signal);
     const images = [...(body.images ?? []), ...attached.images];
+    const attachments = [...attached.attachments, ...(issue === undefined ? [] : [{ type: 'forge_issue' as const, issue: issue.reference.url, content: issue.content }])];
     const refusedDuringChecks = replayWhileRefusing();
     if (refusedDuringChecks !== undefined) return refusedDuringChecks;
-    const result = await store.createRunAndEnqueue(session.id, {
+    const runInput = {
       input: body.input,
       ...idempotency,
       timeoutMs: terms.timeoutMs,
       limits: terms.limits,
-      pins: {},
+      pins: issue === undefined ? {} : { [ISSUE_PIN]: issue.reference },
       history: body.history ?? 'inherit',
       ...(skill === undefined ? {} : { skill }),
       ...(images.length === 0 ? {} : { images }),
-      ...(attached.attachments.length === 0 ? {} : { attachments: attached.attachments }),
+      ...(attachments.length === 0 ? {} : { attachments }),
       ...(terms.mandate === undefined ? {} : { mandate: terms.mandate }),
-    });
+    };
+    const result = issue !== undefined && body.issue?.once === true ? await store.createIssueRunAndEnqueue(session.id, runInput, issue.reference.url) : await store.createRunAndEnqueue(session.id, runInput);
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();
+    if (result.kind === 'already_started') throw conflict('issue_already_started', `the issue ${body.issue?.url ?? ''} was started in this folder before, by run ${result.runId}, and starts once`);
     return json({ run: await reportedView(result.run.id, context.req.raw.signal) }, 202, {
       location: `/v1/runs/${result.run.id}`,
       ...(result.kind === 'existing' ? { 'idempotent-replayed': 'true' } : {}),

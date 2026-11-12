@@ -75,8 +75,8 @@ describe('the governing block', () => {
   it('never enters compaction input', async () => {
     const capabilities = capabilitiesFor(9000, { maxOutputTokens: 512 });
     const { ports } = harness(capabilities);
-    const history = stepsOf([9000, 9000, 9000, 9000, 9000, 9000]);
-    const overflowWith = (sources: Parameters<typeof sourcesWith>[0]) => rejection(buildContext(inputFor(capabilities, { sources: sourcesWith({ history, ...sources }), keepRecentTurns: 1, keepRecentSteps: 1 }), ports));
+    const history = stepsOf([9000, 9000, 9000, 9000, 9000, 9000, 100, 100, 100, 100]);
+    const overflowWith = (sources: Parameters<typeof sourcesWith>[0]) => rejection(buildContext(inputFor(capabilities, { sources: sourcesWith({ history, ...sources }) }), ports));
     const bare = (await overflowWith({})) as ContextOverflowError;
     const held = (await overflowWith({ governing: governing([fact('g1', RULE)]) })) as ContextOverflowError;
     expect(held.compaction).toBeDefined();

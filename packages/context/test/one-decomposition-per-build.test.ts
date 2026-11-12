@@ -65,7 +65,6 @@ const inputWith = (history: HistoryItem[], systemPrompt?: string): BuildContextI
   projectRoot: PROJECT,
   home: HOME,
   harnessOutputTools: [RAW_OUTPUT_TOOL],
-  keepRecentTurns: 1,
   observedCapacity: true,
   fence: TEST_FENCE,
 });

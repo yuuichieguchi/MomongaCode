@@ -21,7 +21,7 @@ describe('child manager with the real SpawnPort', () => {
     });
     const port = trackedSpawnPort(context);
     const harness = createManagerHarness(context, { port, launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE, '--p2-watch-lifeline'] }) });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await pollUntil(() => harness.events('child.stdout').some((line) => String(line['raw']).includes('started')), 5000, 'fixture started');
     const handle = port.spawned[0];
     const lifeline = handle?.lifeline;
@@ -40,8 +40,8 @@ describe('child manager with the real SpawnPort', () => {
   it('lifelines are not shared between children', async (context) => {
     const markerFd = readOnlyScratchFd(context);
     const port = trackedSpawnPort(context);
-    const a = watch(port(process.execPath, [CHILD_FIXTURE, '--p2-watch-lifeline'], portOptions(markerFd)));
-    const b = watch(port(process.execPath, [CHILD_FIXTURE, '--p2-watch-lifeline'], portOptions(markerFd)));
+    const a = watch(await port(process.execPath, [CHILD_FIXTURE, '--p2-watch-lifeline'], portOptions(markerFd)));
+    const b = watch(await port(process.execPath, [CHILD_FIXTURE, '--p2-watch-lifeline'], portOptions(markerFd)));
     await pollUntil(() => a.output().includes('started') && b.output().includes('started'), 5000, 'both watching');
     a.handle.lifeline?.destroy();
     await expect(a.exit).resolves.toEqual({ code: 0, signal: null });
@@ -54,9 +54,9 @@ describe('child manager with the real SpawnPort', () => {
   it('a process the supervisor spawns for other purposes holds no lifeline write end', async (context) => {
     const markerFd = readOnlyScratchFd(context);
     const port = trackedSpawnPort(context);
-    const watcher = watch(port(process.execPath, [CHILD_FIXTURE, '--p2-watch-lifeline'], portOptions(markerFd)));
+    const watcher = watch(await port(process.execPath, [CHILD_FIXTURE, '--p2-watch-lifeline'], portOptions(markerFd)));
     await pollUntil(() => watcher.output().includes('started'), 5000, 'watcher started');
-    const sleeper = watch(port('/bin/sleep', ['30'], portOptions(markerFd)));
+    const sleeper = watch(await port('/bin/sleep', ['30'], portOptions(markerFd)));
     expect(typeof sleeper.handle.pid).toBe('number');
     watcher.handle.lifeline?.destroy();
     await expect(watcher.exit).resolves.toEqual({ code: 0, signal: null });

@@ -32,9 +32,9 @@ const holdLifelineWrites = (child: FakeChild): HeldWrite => {
   };
 };
 
-const runtimeHarness = (context: Parameters<typeof createManagerHarness>[0]): { harness: ManagerHarness; child: FakeChild; write: HeldWrite } => {
+const runtimeHarness = async (context: Parameters<typeof createManagerHarness>[0]): Promise<{ harness: ManagerHarness; child: FakeChild; write: HeldWrite }> => {
   const harness = createManagerHarness(context, { role: 'runtime' });
-  harness.spawnInitial();
+  await harness.spawnInitial();
   const child = harness.port.last();
   return { harness, child, write: holdLifelineWrites(child) };
 };
@@ -59,7 +59,7 @@ describe('the stop budget of each child is derived from the four values of its s
 
 describe('the runtime stop carries its values on the lifeline', () => {
   it('writes one stop line with the four values and sends SIGTERM only when the write completes', async (context) => {
-    const { harness, child, write } = runtimeHarness(context);
+    const { harness, child, write } = await runtimeHarness(context);
     void harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     expect(write.chunks).toEqual([formatStopMessage(VALUES)]);
@@ -70,7 +70,7 @@ describe('the runtime stop carries its values on the lifeline', () => {
   });
 
   it('arms the runtime deadline at runtimeStopBudgetMs of the values when the stop begins: a write not done by then forces the kill with no SIGTERM', async (context) => {
-    const { harness, child } = runtimeHarness(context);
+    const { harness, child } = await runtimeHarness(context);
     void harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     harness.timers.advance(RUNTIME_TERM_BUDGET_MS - 1);
@@ -81,7 +81,7 @@ describe('the runtime stop carries its values on the lifeline', () => {
   });
 
   it('a signalled runtime is killed at runtimeStopBudgetMs of its values, counted from the begin of the stop', async (context) => {
-    const { harness, child, write } = runtimeHarness(context);
+    const { harness, child, write } = await runtimeHarness(context);
     void harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     harness.timers.advance(2000);
@@ -95,7 +95,7 @@ describe('the runtime stop carries its values on the lifeline', () => {
   });
 
   it('a failed write forces the kill at once, with no SIGTERM, confirmed within KILL_CONFIRM_MS', async (context) => {
-    const { harness, child, write } = runtimeHarness(context);
+    const { harness, child, write } = await runtimeHarness(context);
     const stopped = harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     write.complete(new Error('EPIPE'));
@@ -107,7 +107,7 @@ describe('the runtime stop carries its values on the lifeline', () => {
   });
 
   it('an aborting runtime gets the line, then SIGINT, and is killed at the derived abort budget', async (context) => {
-    const { harness, child, write } = runtimeHarness(context);
+    const { harness, child, write } = await runtimeHarness(context);
     void harness.manager.stop('shutdown', 'int', VALUES);
     await afterMicrotasks();
     expect(write.chunks).toEqual([formatStopMessage(VALUES)]);

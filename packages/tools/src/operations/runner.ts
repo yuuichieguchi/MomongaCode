@@ -20,8 +20,8 @@ import type { ArgvRunner, RenderedNetwork } from './argv.ts';
 import type { GitOriginCredential } from './git-credential.ts';
 import { OPERATION_SPECS } from './catalogue.ts';
 import { FORGE_REMOTE_INPUT, asksForge, describeClause, evaluateClauses, failedClauses } from './spec.ts';
-import type { ArgvCall, ArgvItem, ForgeCall, Network, OperationSpec, PrePushHook, Probe } from './spec.ts';
-import { isTruthy, lookup, lookupList, referencesIn, renderShown, renderTemplate } from './template.ts';
+import type { ArgvCall, ArgvItem, ForgeArgument, ForgeCall, Network, OperationSpec, PrePushHook, Probe } from './spec.ts';
+import { isTruthy, lookup, lookupList, referencesIn, renderShown, renderTemplate, shownLine } from './template.ts';
 import type { Scope } from './template.ts';
 
 export type OperationSettings = { readonly protectedRefs?: readonly string[]; readonly approval?: Readonly<Record<string, 'rule' | 'always'>> };
@@ -32,6 +32,8 @@ type Observation = Record<string, unknown>;
 
 const DEFAULT_REMOTE = 'origin';
 const STDERR_LIMIT = 2000;
+
+const printedOf = (ran: { stdout: string; stderr: string }): string => [ran.stdout.trim(), ran.stderr.trim()].filter((text) => text !== '').join('\n').slice(0, STDERR_LIMIT);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -86,8 +88,14 @@ const credentialsFor = async (runtime: Runtime, network: RenderedNetwork, signal
 
 const stringList = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((item): item is string => typeof item === 'string') ? value : undefined);
 
-const renderArgs = (args: Readonly<Record<string, string>>, scope: Scope): Record<string, string> =>
-  Object.fromEntries(Object.entries(args).map(([key, template]) => [key, renderTemplate(template, scope)]));
+const chosenArgument = (argument: ForgeArgument, scope: Scope): string => {
+  if (typeof argument === 'string') return argument;
+  const given = lookup(scope, argument.ifObserved);
+  return given === undefined || given === '' ? argument.else : argument.then;
+};
+
+const renderArgs = (args: Readonly<Record<string, ForgeArgument>>, scope: Scope): Record<string, string> =>
+  Object.fromEntries(Object.entries(args).map(([key, argument]) => [key, renderTemplate(chosenArgument(argument, scope), scope)]));
 
 const settingOf = (settings: OperationSettings, name: string): { approval?: 'rule' | 'always' } => {
   const approval = settings.approval?.[name];
@@ -187,13 +195,7 @@ const observeEach = async (runtime: Runtime, via: Extract<Probe['via'], { argv: 
   return new Set(values).size === 1 ? (values[0] as string) : AGREEMENT_LOST;
 };
 
-const lineOf = (runtime: Runtime, probe: string, forms: readonly string[], item: ForgeFields): string => {
-  const form = forms.find((candidate) => referencesIn(candidate).every((reference) => lookup({ item }, reference) !== undefined));
-  if (form === undefined) {
-    throw new ToolExecutionError(`${runtime.spec.name} could not show an entry of ${probe}: the forge gave only ${Object.keys(item).join(', ') || 'no field'}, which fits none of the forms ${forms.join(' | ')}`);
-  }
-  return renderTemplate(form, { item });
-};
+const lineOf = (runtime: Runtime, probe: string, forms: readonly string[], item: ForgeFields): string => shownLine(runtime.spec.name, probe, forms, item);
 
 const observeProbe = async (runtime: Runtime, probe: Probe, ctx: ReconcileContext, scope: Scope, repoRoot: string): Promise<unknown> => {
   const via = probe.via;
@@ -207,6 +209,7 @@ const observeProbe = async (runtime: Runtime, probe: Probe, ctx: ReconcileContex
   });
   if (via.shape === 'one') return { ...answer.fields };
   if (via.shape === 'list') return { count: String(answer.items.length), ...(answer.items[0] ?? {}) };
+  if (via.shape === 'shown') return { ...answer.fields, text: lineOf(runtime, probe.id, via.lines, answer.fields) };
   if (via.shape === 'lines') return { count: String(answer.items.length), text: answer.items.map((item) => lineOf(runtime, probe.id, via.lines, item)).join('\n') };
   const contains = via.contains;
   if (contains === undefined) throw new ToolExecutionError(`${runtime.spec.name} counts without a contains filter`);
@@ -354,7 +357,7 @@ const runEffect = async (runtime: Runtime, effect: ArgvCall | ForgeCall, ctx: To
       effect: true,
       credentials: await credentialsFor(runtime, network, ctx.signal),
     });
-    return result.exitCode === 0 ? undefined : `the command exited with ${result.exitCode}: ${result.stderr.trim().slice(0, STDERR_LIMIT)}`;
+    return result.exitCode === 0 ? undefined : `the command exited with ${result.exitCode}: ${printedOf(result)}`;
   }
   const answer = await runtime.deps.forge.request({
     remoteUrl: forgeRemoteOf(scope),
@@ -403,8 +406,8 @@ const runPrePushHook = async (runtime: Runtime, hook: PrePushHook, ctx: ToolCont
     if (remoteSha === undefined) return `the remote ${destination} could not be read before the ${PRE_PUSH} hook, so nothing was sent`;
     const ran = await runtime.deps.runArgv([program, renderTemplate(hook.remote, scope), destination], { ...step, stdin: prePushLine(hook, scope, remoteSha) });
     if (ran.exitCode !== 0) {
-      const printed = [ran.stdout.trim(), ran.stderr.trim()].filter((text) => text !== '').join('\n');
-      return `the ${PRE_PUSH} hook of the repository exited with ${ran.exitCode}, so nothing was sent to ${destination}${printed === '' ? '' : `:\n${printed.slice(0, STDERR_LIMIT)}`}`;
+      const printed = printedOf(ran);
+      return `the ${PRE_PUSH} hook of the repository exited with ${ran.exitCode}, so nothing was sent to ${destination}${printed === '' ? '' : `:\n${printed}`}`;
     }
   }
   return undefined;
@@ -504,7 +507,7 @@ const shownEffectOf = (spec: OperationSpec, input: Record<string, unknown>, gate
     const destinations = effect.network === undefined || effect.network === 'none' ? [] : (stringList(gateFacts?.[DESTINATIONS]) ?? []);
     return [command, ...destinations.map((destination) => `to ${destination}`)].join('\n');
   }
-  const args = Object.fromEntries(Object.entries(effect.args).map(([key, template]) => [key, renderShown(template, scope)]));
+  const args = Object.fromEntries(Object.entries(effect.args).map(([key, argument]) => [key, renderShown(chosenArgument(argument, scope), scope)]));
   const forgeRemote = gateFacts?.[FORGE_REMOTE];
   const location = typeof forgeRemote === 'string' ? parseRemoteUrl(forgeRemote) : undefined;
   const place = location === undefined ? '' : `\non ${location.host}/${location.repo}`;

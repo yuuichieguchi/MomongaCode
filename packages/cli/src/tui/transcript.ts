@@ -498,6 +498,7 @@ export type { PromptEvent };
 const appendAttachments = (store: TranscriptStore, event: PromptEvent): void => {
   for (const part of event.attachments ?? []) {
     if (part.type === 'attached_file') appendEntry(store, { kind: 'info', text: attachedRow(part) });
+    else if (part.type === 'forge_issue') appendEntry(store, { kind: 'info', text: `issue ${part.issue}` });
     else appendEntry(store, { kind: 'notice', level: 'warning', text: part.shown });
   }
 };

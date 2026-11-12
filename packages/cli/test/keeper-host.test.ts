@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, checkedWindowsKeeper, sha256Hex } from '@momonga/foundation';
+import type { KeeperPreparation } from '@momonga/foundation';
 import { provideEmbeddedWindowsKeeper } from '../src/keeper/host.ts';
 import { createTempDir } from '@momonga/testkit';
 
@@ -23,32 +24,35 @@ const MANIFEST = new TextEncoder().encode(JSON.stringify({ target: 'win-x64', bi
 
 const portsOf = (home: string) => ({ home, platform: process.platform, env: {}, interrupt: new AbortController().signal });
 
-describe('the composition root extracts the bundled keeper and provides it to the group port', () => {
-  it('provides no embedded keeper outside a single executable and in a single executable that carries no keeper', async () => {
-    const provided: string[] = [];
-    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), undefined, (file) => void provided.push(file), () => undefined, () => true);
-    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), { present: () => false, raw: () => new Uint8Array() }, (file) => void provided.push(file), () => undefined, () => true);
+describe('the composition root provides the bundled keeper to the group port, to be extracted at the first launch', () => {
+  it('provides no embedded keeper in a single executable that carries no keeper', () => {
+    const provided: KeeperPreparation[] = [];
+    provideEmbeddedWindowsKeeper(portsOf(homeOf()), { present: () => false, raw: () => new Uint8Array() }, (prepare) => void provided.push(prepare), () => true);
     expect(provided).toEqual([]);
   });
 
-  it('extracts the keeper under the executables area and provides its path with the checksum of the manifest', async () => {
-    const provided: Array<[string, string]> = [];
+  it('extracts nothing when it provides the keeper, and the preparation extracts it under the executables area and checks it by the checksum of the manifest', async () => {
+    const provided: KeeperPreparation[] = [];
+    const home = homeOf();
     const assets = { present: (name: string) => name === WINDOWS_KEEPER_MANIFEST_ASSET, raw: (name: string) => (name === WINDOWS_KEEPER_MANIFEST_ASSET ? MANIFEST : BINARY) };
-    await provideEmbeddedWindowsKeeper(portsOf(homeOf()), assets, (file, sha256) => void provided.push([file, sha256]), () => undefined, () => true);
-    const [file, sha256] = provided[0] as [string, string];
-    expect(sha256).toBe(SHA);
+    provideEmbeddedWindowsKeeper(portsOf(home), assets, (prepare) => void provided.push(prepare), () => true);
+    expect(fs.readdirSync(home)).toEqual([]);
+    const executable = await (provided[0] as KeeperPreparation)();
+    const file = executable();
     expect(path.basename(file)).toBe('momonga-keeper.exe');
     expect(sha256Hex(fs.readFileSync(file))).toBe(SHA);
+    fs.writeFileSync(file, 'MZ other bytes');
+    expect(() => executable()).toThrow(/does not match/);
   });
 
-  it('provides nothing and leaves the home untouched where commands are not launched through a keeper', async () => {
+  it('provides nothing and leaves the home untouched where commands are not launched through a keeper', () => {
     const provided: unknown[] = [];
     const blocker = path.join(homeOf(), 'not-a-directory');
     fs.writeFileSync(blocker, '');
     const assets = { present: (name: string) => name === WINDOWS_KEEPER_MANIFEST_ASSET, raw: (name: string) => (name === WINDOWS_KEEPER_MANIFEST_ASSET ? MANIFEST : BINARY) };
     const unreachable = portsOf(path.join(blocker, 'home'));
-    await provideEmbeddedWindowsKeeper(unreachable, assets, (file) => void provided.push(file), (executable) => void provided.push(executable), () => false);
-    await provideEmbeddedWindowsKeeper(unreachable, undefined, (file) => void provided.push(file), (executable) => void provided.push(executable), () => false);
+    provideEmbeddedWindowsKeeper(unreachable, assets, (prepare) => void provided.push(prepare), () => false);
+    provideEmbeddedWindowsKeeper(unreachable, undefined, (prepare) => void provided.push(prepare), () => false);
     expect(provided).toEqual([]);
     expect(fs.statSync(blocker).isFile()).toBe(true);
   });

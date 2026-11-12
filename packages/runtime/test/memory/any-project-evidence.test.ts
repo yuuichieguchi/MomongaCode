@@ -34,7 +34,7 @@ const saveThroughTool = async (store: RuntimeStore, folder: string, scope: Memor
   const port = createMemoryPort({
     platform,
     store: { memories: store.memories, trust: store.trust, journalFacts: journalRecordingEveryPath(store) },
-    settings: { trusted: () => true, verification: async () => ({ commands: [] }) } as never,
+    settings: { trusted: () => true, verification: async () => ({ commands: [], conditions: [] }) } as never,
     evidenceRun: () => gitAnsweringHead,
   });
   const session = newSession(store, folder);

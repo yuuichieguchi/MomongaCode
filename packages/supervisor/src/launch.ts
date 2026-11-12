@@ -44,8 +44,7 @@ export const runLaunchTask = async (options: LaunchTaskOptions): Promise<void> =
     gateway.failWithoutProcess('settings-read-failed');
     runtime.failWithoutProcess('settings-read-failed');
   } else {
-    gateway.spawnWith(read.snapshot, 'initial');
-    runtime.spawnWith(read.snapshot, 'initial');
+    await Promise.all([gateway.spawnWith(read.snapshot, 'initial'), runtime.spawnWith(read.snapshot, 'initial')]);
   }
   if (signal.aborted) return;
 

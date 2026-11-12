@@ -2,7 +2,7 @@ import { colourOffWhenAsked } from './tui/screen/theme.ts';
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
 import type { EntryIo, SandboxNetworkSetting } from '@momonga/foundation';
-import { DEFAULT_PROBE_STEP_SECONDS, PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION, messageOf, probeStepBoundMs } from '@momonga/protocol';
+import { DEFAULT_PROBE_STEP_SECONDS, PERMISSION_MODES, TRACE_CONTENT_PAGE_OPTION, issueRunInput, messageOf, probeStepBoundMs } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
 import { serveAcp } from './acp/serve.ts';
 import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.ts';
@@ -44,6 +44,7 @@ type RootOptions = {
   until: string[];
   require: string[];
   mandate?: string;
+  issue?: string;
   maxCostUsd?: number;
   verbose?: true;
   resume?: string | true;
@@ -172,13 +173,18 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .option('--until <command>', 'a shell command that must exit 0 before the run counts as complete; repeat for several. The runtime runs it after the model stops, never the model, so it must only check and change nothing', collectValues, [])
     .option('--require <text>', 'a completion requirement that has no mechanical check; the report lists it as not run; repeat for several', collectValues, [])
     .option('--mandate <name>', 'run under the mandate of this name from the user settings (mandates): only what it allows is run, what it asks for is held for your approval while other work goes on, and its budget bounds the run')
+    .option('--issue <address>', 'run without a terminal UI to resolve an issue on a declared forge, given by its address as the forge shows it (https://<host>/<owner>/<name>/issues/<number>); needs --mandate; the run ends with a pull request that closes the issue and a comment on it')
     .option('--max-cost-usd <usd>', 'the money limit of the run in US dollars; the run stops before a model request that would pass it', moneyArgument)
     .option('--verbose', 'print tool activity to stderr')
     .addOption(new Option('--resume [session-id]', 'reopen a conversation of this folder by its id or a unique prefix of at least 8 characters; without an id, choose from a list').conflicts('continue'))
     .option('--continue', 'reopen the newest conversation of this folder')
     .option('--screen-reader', 'draw the interactive session as plain appended lines for a screen reader')
     .action(async (prompt: string | undefined, options: RootOptions, command: Command) => {
-      const printing = options.print !== undefined;
+      if (options.issue !== undefined) {
+        if (options.print !== undefined || prompt !== undefined) throw new UsageError(messageOf('issueBesidePrompt', 'cli'));
+        if (options.mandate === undefined) throw new UsageError(messageOf('issueNeedsMandate', 'cli'));
+      }
+      const printing = options.print !== undefined || options.issue !== undefined;
       const typed = (name: keyof RootOptions): boolean => command.getOptionValueSource(name) === 'cli';
       const unapplied = (printing ? INTERACTIVE_ONLY_OPTIONS : PRINT_ONLY_OPTIONS).find((option) => typed(option.name));
       if (unapplied !== undefined) throw new UsageError(messageOf(printing ? 'optionNeedsInteractive' : 'optionNeedsPrint', 'cli', { option: unapplied.flag }));
@@ -192,7 +198,8 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       };
       const bounds = { ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }) };
-      if (options.print !== undefined) {
+      const headlessPrompt = options.issue === undefined ? options.print : issueRunInput(options.issue);
+      if (headlessPrompt !== undefined) {
         const resumed = headlessReopenOf(reopen);
         const paths = await pathsOf(ports);
         const asked = async <T>(ask: (gateway: GatewayClient) => Promise<T>): Promise<T> => {
@@ -205,7 +212,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         };
         const capabilitiesOf = (model: string) => asked((gateway) => gateway.capabilitiesOf(model));
         const modelList = () => asked((gateway) => gateway.modelList(deps.interrupt));
-        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, modelList, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...bounds, ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
+        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, modelList, prompt: headlessPrompt, ...(options.issue === undefined ? {} : { issue: options.issue }), format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...bounds, ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
         return;
       }
       if (ports.terminal === undefined) {

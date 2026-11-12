@@ -95,6 +95,7 @@
     {"name":"FIDELITY_SCAN_PAGE_BYTES","file":"packages/runtime/src/memory/journal-thread-limits.ts","kind":"stated","owner":"runtime","row":"context.md"},
     {"name":"REFLECTION_POLL_MS","file":"packages/runtime/src/memory/reflection-bound.ts","kind":"C","owner":"runtime","row":"token.md"},
     {"name":"OMISSION_RESERVE_CHARS","file":"packages/runtime/src/memory/reflection-input.ts","kind":"stated","owner":"runtime","row":"context.md"},
+    {"name":"ISSUE_WATCH_POLL_MS","file":"packages/runtime/src/process/constants.ts","kind":"C","owner":"runtime","row":"runtime-store.md"},
     {"name":"JOB_END_PROBE_MS","file":"packages/runtime/src/process/constants.ts","kind":"P","owner":"runtime","row":"runtime-store.md"},
     {"name":"JOB_IDEMPOTENCY_TTL_MS","file":"packages/runtime/src/process/constants.ts","kind":"C","owner":"runtime","row":"runtime-store.md"},
     {"name":"JOB_OUTPUT_WINDOW_BYTES","file":"packages/runtime/src/process/constants.ts","kind":"stated","owner":"runtime","row":"runtime-store.md"},

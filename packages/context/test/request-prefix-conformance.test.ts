@@ -5,7 +5,7 @@ import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, buildContex
 import type { BuiltContext, HistoryItem } from '@momonga/context';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { InputItem } from '@momonga/protocol';
-import { DEFAULT_KEEP_RECENT_STEPS, protectionRungsOf, shapeOf } from '../src/levels.ts';
+import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, protectionRungsOf, shapeOf } from '../src/levels.ts';
 import { MODEL, argsCall, assistant, capabilitiesFor, fakeBlobs, fakeReader, inputFor, output, seeded, shapeCounter, sourcesWith, user } from './helpers.ts';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
@@ -76,7 +76,7 @@ const renderingOf = (item: InputItem, original: string): Rendering => {
   return reference === null ? { kind: 'other' } : { kind: 'reference', to: reference[1] as string };
 };
 
-const observe = (history: HistoryItem[], built: BuiltContext, texts: ReadonlyMap<string, string>, keepRecentTurns: number, carried: ReadonlySet<string>): Observed => {
+const observe = (history: HistoryItem[], built: BuiltContext, texts: ReadonlyMap<string, string>, carried: ReadonlySet<string>): Observed => {
   const rendering = new Map<string, Rendering>();
   const order: string[] = [];
   for (const item of built.input) {
@@ -84,13 +84,13 @@ const observe = (history: HistoryItem[], built: BuiltContext, texts: ReadonlyMap
     rendering.set(item.call_id, renderingOf(item, texts.get(item.call_id) as string));
     order.push(item.call_id);
   }
-  const slots = protectionRungsOf(shapeOf(history, 0), keepRecentTurns, DEFAULT_KEEP_RECENT_STEPS)[0]?.protectedSlots as Set<number>;
+  const slots = protectionRungsOf(shapeOf(history, 0), DEFAULT_KEEP_RECENT_TURNS, DEFAULT_KEEP_RECENT_STEPS)[0]?.protectedSlots as Set<number>;
   const protectedIds = new Set(history.flatMap((entry, index) => (slots.has(index) && entry.item.type === 'function_call_output' ? [entry.item.call_id] : [])));
   return { history, built, texts, rendering, order, protectedIds, carried };
 };
 
 const violations: Record<string, (seen: Observed) => string[]> = {
-  NoProtectedEvicted: (seen) => [...seen.rendering].flatMap(([callId, shape]) => (shape.kind === 'omitted' && seen.protectedIds.has(callId) ? [`${callId} is protected and omitted`] : [])),
+  NoProtectedEvicted: (seen) => [...seen.rendering].flatMap(([callId, shape]) => (shape.kind === 'omitted' && !seen.carried.has(callId) && seen.protectedIds.has(callId) ? [`${callId} is protected and omitted`] : [])),
 
   RefNeverEvicted: (seen) =>
     seen.built.evictions.flatMap((eviction) =>
@@ -154,14 +154,14 @@ const runAll = async (): Promise<{ found: string[]; omittedBuilds: number; refer
     for (const { upTo, carry, systemPrompt } of [...sweep, ...carriedBuilds]) {
       const history = scenario.steps.slice(0, upTo).flat();
       const built = await buildContext(
-        inputFor(CAPABILITIES, { sources: sourcesWith({ systemPrompt, history }), level: 0, evicted: new Set(carry ? evicted : []), keepRecentTurns: 1, outputFormatters: ['identicalOutput'] }),
+        inputFor(CAPABILITIES, { sources: sourcesWith({ systemPrompt, history }), level: 0, evicted: new Set(carry ? evicted : []), outputFormatters: ['identicalOutput'] }),
         ports,
       ).catch((error: unknown) => {
         if (error instanceof ContextOverflowError || error instanceof PinnedOverflowError || error instanceof PinnedRoomError) return undefined;
         throw error;
       });
       if (built === undefined) continue;
-      const seen = observe(history, built, scenario.texts, 1, new Set(carry ? evicted : []));
+      const seen = observe(history, built, scenario.texts, new Set(carry ? evicted : []));
       const rendered = [...seen.rendering.values()];
       if (rendered.some((shape) => shape.kind === 'omitted')) omittedBuilds += 1;
       if (rendered.some((shape) => shape.kind === 'reference')) referenceBuilds += 1;

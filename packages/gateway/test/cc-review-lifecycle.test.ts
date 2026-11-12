@@ -81,7 +81,7 @@ const managedFm = async () => {
     binary: '/usr/bin/fm',
     socketPath,
     exec: okExec,
-    spawn: () => {
+    spawn: async () => {
       const child = new Child(socketPath);
       children.push(child);
       return child;

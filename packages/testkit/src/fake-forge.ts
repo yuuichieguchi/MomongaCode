@@ -9,6 +9,8 @@ export type FakeCheck = { name: string; status: string; conclusion?: string };
 
 export type FakeReviewComment = { path: string; line?: number; body: string };
 
+export type FakeIssue = { number: number; title: string; body: string | null; state: 'open' | 'closed'; labels: string[]; author: string; authorAssociation: string; pullRequest?: true };
+
 export type Fault = 'apply_then_drop' | 'drop_before_apply' | 'apply_then_hold' | 'hold_before_apply' | 'echo_authorization_500';
 
 export type FakeForgeRequest = { method: string; path: string; query: Record<string, string>; body: unknown; headers: http.IncomingHttpHeaders };
@@ -19,7 +21,9 @@ export type FakeForge = {
   shape: ForgeShape;
   requests: FakeForgeRequest[];
   pulls: FakePullRequest[];
+  issues: FakeIssue[];
   comments: Map<number, string[]>;
+  issueComments: Map<number, string[]>;
   reviewComments: Map<number, FakeReviewComment[]>;
   checks: Map<string, FakeCheck[]>;
   branchSha: Map<string, string>;
@@ -27,6 +31,7 @@ export type FakeForge = {
   creates(): number;
   merges(): number;
   commentPosts(): number;
+  issueCommentPosts(): number;
   openPullsFor(head: string, base: string): FakePullRequest[];
   urlOf(number: number): string;
   close(): Promise<void>;
@@ -37,7 +42,30 @@ const NAME = 'widgets';
 
 export const REPOSITORY_PATH = `${OWNER}/${NAME}`;
 
-type Route = { kind: 'list' | 'get' | 'create' | 'merge' | 'comments' | 'comment' | 'reviewComments' | 'checks' | 'branch'; number?: number; branch?: string; sha?: string };
+type Route = {
+  kind: 'list' | 'get' | 'create' | 'merge' | 'comments' | 'comment' | 'reviewComments' | 'checks' | 'branch' | 'issues' | 'issue' | 'issueComments' | 'issueComment';
+  number?: number;
+  branch?: string;
+  sha?: string;
+};
+
+const issueRouteOf = (method: string, rest: readonly string[], notes: string): Route | undefined => {
+  if (rest[0] !== 'issues') return undefined;
+  if (rest.length === 1 && method === 'GET') return { kind: 'issues' };
+  if (rest.length === 2 && method === 'GET') return { kind: 'issue', number: Number(rest[1]) };
+  if (rest.length === 3 && rest[2] === notes) return { kind: method === 'GET' ? 'issueComments' : 'issueComment', number: Number(rest[1]) };
+  return undefined;
+};
+
+type IssueNumbers = { isIssue(number: number): boolean };
+
+const routeWithIssues = (shape: ForgeShape, method: string, pathname: string, numbers: IssueNumbers): Route | undefined => {
+  const parts = pathname.split('/').filter((part) => part !== '').map(decodeURIComponent);
+  const rest = shape === 'hub' ? (parts[0] === 'repos' && parts[1] === OWNER && parts[2] === NAME ? parts.slice(3) : []) : parts[0] === 'api' && parts[1] === 'v4' && parts[2] === 'projects' && parts[3] === OWNER && parts[4] === NAME ? parts.slice(5) : [];
+  const issueRoute = issueRouteOf(method, rest, shape === 'hub' ? 'comments' : 'notes');
+  if (issueRoute !== undefined && (issueRoute.number === undefined || numbers.isIssue(issueRoute.number) || issueRoute.kind === 'issue')) return issueRoute;
+  return routeOf(shape, method, pathname);
+};
 
 const routeOf = (shape: ForgeShape, method: string, pathname: string): Route | undefined => {
   const parts = pathname.split('/').filter((part) => part !== '').map(decodeURIComponent);
@@ -97,7 +125,10 @@ const branchOf = (value: string | undefined): string => (value ?? '').replace(ne
 export const startFakeForge = async (shape: ForgeShape, credential: string): Promise<FakeForge> => {
   const requests: FakeForgeRequest[] = [];
   const pulls: FakePullRequest[] = [];
+  const issues: FakeIssue[] = [];
   const comments = new Map<number, string[]>();
+  const issueComments = new Map<number, string[]>();
+  const numbers: IssueNumbers = { isIssue: (number) => issues.some((issue) => issue.number === number) };
   const reviewComments = new Map<number, FakeReviewComment[]>();
   const checks = new Map<string, FakeCheck[]>();
   const branchSha = new Map<string, string>();
@@ -111,11 +142,28 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
       ? { number: pull.number, html_url: urlOf(pull.number), state: pull.state, merged: pull.merged, title: pull.title, head: { ref: pull.head, sha: pull.headSha }, base: { ref: pull.base } }
       : { iid: pull.number, web_url: urlOf(pull.number), state: pull.merged ? 'merged' : pull.state === 'open' ? 'opened' : 'closed', merged_flag: pull.merged, title: pull.title, source_branch: pull.head, target_branch: pull.base, sha: pull.headSha };
 
+  const issueUrlOf = (number: number): string => (shape === 'hub' ? `${origin}/${OWNER}/${NAME}/issues/${number}` : `${origin}/${OWNER}/${NAME}/-/issues/${number}`);
+
+  const issueView = (issue: FakeIssue): Record<string, unknown> =>
+    shape === 'hub'
+      ? {
+          number: issue.number,
+          html_url: issueUrlOf(issue.number),
+          title: issue.title,
+          body: issue.body,
+          state: issue.state,
+          labels: issue.labels.map((name) => ({ name })),
+          user: { login: issue.author },
+          author_association: issue.authorAssociation,
+          ...(issue.pullRequest === true ? { pull_request: { url: `${origin}/repos/${OWNER}/${NAME}/pulls/${issue.number}` } } : {}),
+        }
+      : { iid: issue.number, web_url: issueUrlOf(issue.number), title: issue.title, description: issue.body, state: issue.state === 'open' ? 'opened' : 'closed', labels: issue.labels, author: { username: issue.author } };
+
   const authorised = (req: http.IncomingMessage): boolean =>
     shape === 'hub' ? req.headers['authorization'] === `Bearer ${credential}` || req.headers['authorization'] === `token ${credential}` : req.headers['private-token'] === credential;
 
   const takeFault = (kind: Route['kind']): Fault | undefined => {
-    const effectKind = kind === 'create' ? 'create' : kind === 'merge' ? 'merge' : kind === 'comment' ? 'comment' : undefined;
+    const effectKind = kind === 'create' ? 'create' : kind === 'merge' ? 'merge' : kind === 'comment' || kind === 'issueComment' ? 'comment' : undefined;
     const index = faults.findIndex((entry) => entry.kind === 'any' || entry.kind === effectKind);
     if (index < 0) return undefined;
     if (faults[index]?.kind !== 'any' && effectKind === undefined) return undefined;
@@ -129,7 +177,7 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
     const method = req.method ?? 'GET';
     requests.push({ method, path: url.pathname, query: Object.fromEntries(url.searchParams), body, headers: req.headers });
     if (!authorised(req)) return sendJson(res, 401, { message: 'bad credentials' });
-    const route = routeOf(shape, method, url.pathname);
+    const route = routeWithIssues(shape, method, url.pathname, numbers);
     if (route === undefined) return sendJson(res, 404, { message: `no route ${method} ${url.pathname}` });
     const fault = takeFault(route.kind);
     if (fault === 'echo_authorization_500') return sendJson(res, 500, { message: 'internal error', echoed: req.headers['authorization'] ?? req.headers['private-token'] });
@@ -204,6 +252,31 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
         );
         return sendJson(res, 200, page.entries, page.link);
       }
+      case 'issues': {
+        const wanted = (url.searchParams.get('labels') ?? '').split(',').filter((label) => label !== '');
+        const wantOpen = url.searchParams.get('state') === (shape === 'hub' ? 'open' : 'opened');
+        const listed = issues.filter((issue) => (!wantOpen || issue.state === 'open') && wanted.every((label) => issue.labels.includes(label)) && (shape === 'hub' || issue.pullRequest !== true));
+        const page = pageOf(url, origin, listed.map(issueView));
+        return sendJson(res, 200, page.entries, page.link);
+      }
+      case 'issue': {
+        const issue = issues.find((candidate) => candidate.number === route.number && candidate.pullRequest !== true);
+        return issue === undefined ? sendJson(res, 404, { message: 'not found' }) : sendJson(res, 200, issueView(issue));
+      }
+      case 'issueComments': {
+        const page = pageOf(
+          url,
+          origin,
+          (issueComments.get(route.number ?? 0) ?? []).map((entry, index) => (shape === 'hub' ? { id: index + 1, body: entry, user: { login: 'commenter' } } : { id: index + 1, body: entry, author: { username: 'commenter' } })),
+        );
+        return sendJson(res, 200, page.entries, page.link);
+      }
+      case 'issueComment': {
+        const list = issueComments.get(route.number ?? 0) ?? [];
+        list.push(String(fields['body']));
+        issueComments.set(route.number ?? 0, list);
+        return reply(shape === 'hub' ? 201 : 200, { id: list.length, body: fields['body'] });
+      }
       case 'checks': {
         const found = checks.get(route.sha ?? '') ?? [];
         const page = pageOf(url, origin, found);
@@ -219,14 +292,16 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
     }
   });
   origin = server.origin;
-  const effectCount = (kind: Route['kind']): number => requests.filter((request) => routeOf(shape, request.method, request.path)?.kind === kind).length;
+  const effectCount = (kind: Route['kind']): number => requests.filter((request) => routeWithIssues(shape, request.method, request.path, numbers)?.kind === kind).length;
   return {
     origin,
     host: `127.0.0.1:${server.port}`,
     shape,
     requests,
     pulls,
+    issues,
     comments,
+    issueComments,
     reviewComments,
     checks,
     branchSha,
@@ -236,6 +311,7 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
     creates: () => effectCount('create'),
     merges: () => effectCount('merge'),
     commentPosts: () => effectCount('comment'),
+    issueCommentPosts: () => effectCount('issueComment'),
     openPullsFor: (head, base) => pulls.filter((pull) => pull.head === head && pull.base === base && pull.state === 'open'),
     urlOf,
     close: () => server.close(),
@@ -301,6 +377,37 @@ export const LAB_DESCRIPTOR = {
       items: '',
       paging: 'link',
       result: { id: 'id', body: 'body' },
+    },
+    getIssue: {
+      method: 'GET',
+      path: '/api/v4/projects/{owner}/{name}/issues/{number}',
+      success: [200],
+      result: { number: 'iid', url: 'web_url', title: 'title', body: 'description', state: 'state', author: 'author.username' },
+    },
+    listIssues: {
+      method: 'GET',
+      path: '/api/v4/projects/{owner}/{name}/issues',
+      query: { state: 'opened', labels: '{labels}', per_page: '100' },
+      success: [200],
+      items: '',
+      paging: 'link',
+      result: { number: 'iid', url: 'web_url', title: 'title', author: 'author.username' },
+    },
+    listIssueComments: {
+      method: 'GET',
+      path: '/api/v4/projects/{owner}/{name}/issues/{number}/notes',
+      query: { per_page: '100' },
+      success: [200],
+      items: '',
+      paging: 'link',
+      result: { id: 'id', body: 'body', author: 'author.username' },
+    },
+    createIssueComment: {
+      method: 'POST',
+      path: '/api/v4/projects/{owner}/{name}/issues/{number}/notes',
+      body: { body: '{body}' },
+      success: [200],
+      result: { id: 'id' },
     },
     listReviewComments: {
       method: 'GET',

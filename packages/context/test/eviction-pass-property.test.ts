@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ContextOverflowError, budgetFor, buildContext, createTokenMeter } from '@momonga/context';
 import type { BuiltContext, HistoryItem, MeterRequest, TokenMeter } from '@momonga/context';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
-import { DEFAULT_KEEP_RECENT_STEPS, protectionRungsOf, shapeOf } from '../src/levels.ts';
+import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, protectionRungsOf, shapeOf } from '../src/levels.ts';
 import { MODEL, argsCall, assistant, capabilitiesFor, fakeBlobs, fakeReader, inputFor, output, seeded, shapeCounter, sourcesWith, user } from './helpers.ts';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
@@ -22,7 +22,7 @@ type Random = ReturnType<typeof seeded>;
 
 type Sent = { tokens: number; bound: number; digest: string };
 
-type Case = { observes: boolean[]; steps: HistoryItem[][]; texts: Map<string, string>; gainful: string[]; keepRecentTurns: number; layout: 'cachePrefix' | undefined };
+type Case = { observes: boolean[]; steps: HistoryItem[][]; texts: Map<string, string>; gainful: string[]; layout: 'cachePrefix' | undefined };
 
 const caseOf = (random: Random): Case => {
   const steps: HistoryItem[][] = [];
@@ -44,9 +44,8 @@ const caseOf = (random: Random): Case => {
     steps.push([argsCall(seq, callId, sizes[random.int(0, sizes.length - 1)] as number), output(seq + 1, callId, text)]);
     seq += 2;
   }
-  const turns = steps.filter((step) => step[0]?.item.type === 'message').length + 1;
   const observes = steps.map(() => random.next() < OBSERVE_SHARE);
-  return { observes, steps, texts, gainful, keepRecentTurns: turns > 1 || random.next() < 0.5 ? 1 : 3, layout: random.next() < 0.25 ? 'cachePrefix' : undefined };
+  return { observes, steps, texts, gainful, layout: random.next() < 0.25 ? 'cachePrefix' : undefined };
 };
 
 const loadOf = (sent: Sent): number => sent.tokens + sent.bound;
@@ -80,7 +79,6 @@ const runCase = async (seed: number): Promise<Violation[]> => {
         sources: sourcesWith({ systemPrompt: SYSTEM_PROMPT, history }),
         level: 0,
         evicted: new Set(evicted),
-        keepRecentTurns: scenario.keepRecentTurns,
         outputFormatters: ['identicalOutput'],
         ...(scenario.layout === undefined ? {} : { layout: scenario.layout }),
       }),
@@ -124,9 +122,10 @@ const runCase = async (seed: number): Promise<Violation[]> => {
         if (fitsAt(lastCounted)) violation('FittingPassRefused', `pass ${lastCounted.tokens}+${lastCounted.bound} fits, built ${before.tokens}`);
       } else violation('BuiltIsPassOrUnevicted', `built digest matches neither`);
     } else BRANCHES.noPass += 1;
-    const protectedSlots = protectionRungsOf(shapeOf(history, 0), scenario.keepRecentTurns, DEFAULT_KEEP_RECENT_STEPS)[0]?.protectedSlots as Set<number>;
+    const protectedSlots = protectionRungsOf(shapeOf(history, 0), DEFAULT_KEEP_RECENT_TURNS, DEFAULT_KEEP_RECENT_STEPS)[0]?.protectedSlots as Set<number>;
     const protectedIds = new Set(history.flatMap((entry, index) => (protectedSlots.has(index) && entry.item.type === 'function_call_output' ? [entry.item.call_id] : [])));
-    for (const callId of omitted) if (protectedIds.has(callId)) violation('NoProtectedEvicted', `${callId} is protected`);
+    const newlyOmitted = omitted.filter((callId) => !evicted.has(callId));
+    for (const callId of newlyOmitted) if (protectedIds.has(callId)) violation('NoProtectedEvicted', `${callId} is protected`);
     for (const callId of omitted) evicted.add(callId);
     const referents = new Map<string, string>();
     for (const callId of scenario.gainful) {
@@ -134,10 +133,10 @@ const runCase = async (seed: number): Promise<Violation[]> => {
       if (!referents.has(text)) referents.set(text, callId);
     }
     const positionOf = (callId: string): number => scenario.gainful.indexOf(referents.get(scenario.texts.get(callId) as string) as string);
-    for (const callId of omitted) {
+    for (const callId of newlyOmitted) {
       const keepsProtectedCopy = (id: string): boolean =>
         scenario.gainful.some((other) => other !== id && scenario.texts.get(other) === scenario.texts.get(id) && !evicted.has(other));
-      const skipped = scenario.gainful.slice(0, positionOf(callId)).filter((id) => !evicted.has(id) && !keepsProtectedCopy(id));
+      const skipped = scenario.gainful.slice(0, positionOf(callId)).filter((id) => !evicted.has(id) && !protectedIds.has(id) && !keepsProtectedCopy(id));
       if (skipped.length > 0) violation('OldestFirst', `${callId} evicted while ${skipped.join(', ')} stayed`);
     }
     if (omitted.some((callId) => omitted.some((other) => other !== callId && scenario.texts.get(other) === scenario.texts.get(callId)))) BRANCHES.groupEvicted += 1;

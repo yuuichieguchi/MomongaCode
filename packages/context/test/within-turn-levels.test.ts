@@ -60,25 +60,6 @@ describe('protection levels inside the current turn', () => {
     expect(built.notices.map((notice) => notice.code)).toContain('recent_steps_shrunk');
   });
 
-  it('honours keepRecentSteps at level 0', async () => {
-    const built = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history: sixLargeOutputs() }), level: 0, keepRecentSteps: 2 }),
-      harness(capabilities).ports,
-    );
-
-    expect(evictedIds(built.evictions)).toEqual(['c0', 'c1', 'c2', 'c3']);
-    expect(outputTextOf(built.input, 'c4')).toBe('e'.repeat(2400));
-    expect(outputTextOf(built.input, 'c5')).toBe('f'.repeat(2400));
-  });
-
-  it.for([0, -1, 1.5])('rejects keepRecentSteps %s', async (keepRecentSteps) => {
-    const error = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history: sixLargeOutputs() }), keepRecentSteps }),
-      harness(capabilities).ports,
-    ).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(RangeError);
-  });
-
   it('keeps an appended step from evicting again after an eviction batch, with an identical prefix', async () => {
     const first = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history: sixLargeOutputs() }), level: 1 }), harness(capabilities).ports);
     const handles = new Map(first.evictions.map((eviction) => [eviction.callId, eviction.handle]));
@@ -152,13 +133,13 @@ describe('step labelling', () => {
     const history = [
       user(1, 'q0'),
       call(2, 't0'),
-      output(3, 't0', 'p'.repeat(2400)),
+      output(3, 't0', 'p'.repeat(14000)),
       assistant(4, 'a0'),
       user(5, 'q1'),
       call(6, 'c0'),
       output(7, 'c0', 'q'.repeat(2400)),
     ];
-    const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1, compactAt: 0.05 }), harness(capabilities).ports);
+    const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
 
     expect(evictedIds(built.evictions)).toEqual(['t0']);
     expect(outputTextOf(built.input, 'c0')).toBe('q'.repeat(2400));
@@ -258,7 +239,7 @@ describe('thresholds above the pinned floor', () => {
     const capabilities = capabilitiesFor(4096, { maxOutputTokens: 1024 });
     const history = [user(1, 'q'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(800)), user(4, 'now')];
     const built = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(8700), history }), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(8700), history }) }),
       harness(capabilities).ports,
     );
 

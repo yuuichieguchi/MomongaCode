@@ -22,7 +22,7 @@ describe('the marker descriptor the managed group spawn hands to its child, whos
     const markers = path.join(dir, 'markers');
     fs.mkdirSync(markers, { mode: 0o700 });
     const outcomeFile = path.join(dir, 'outcome');
-    createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: () => undefined })(process.execPath, ['-e', WRITE_THROUGH_MARKER, outcomeFile]);
+    await createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: () => undefined })(process.execPath, ['-e', WRITE_THROUGH_MARKER, outcomeFile]);
     const [marker] = fs.readdirSync(markers);
     const markerFile = path.join(markers, marker ?? '');
     await until(() => fs.readFileSync(markerFile, 'utf8').includes('\ng'), 'the group line of the attempt record');

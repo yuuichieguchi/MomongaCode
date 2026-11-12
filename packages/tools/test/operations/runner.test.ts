@@ -15,6 +15,7 @@ const INPUTS: Record<string, unknown> = {
   PullRequestCreate: { head: 'feature/x', base: 'main', title: 'Add x', body: 'Adds x', headSha: 'a'.repeat(40) },
   PullRequestMerge: { number: 1, headSha: 'a'.repeat(40) },
   PullRequestComment: { number: 1, body: 'Thanks' },
+  IssueComment: { number: 1, body: 'Thanks' },
 };
 
 const STORED_PREPARED = { before: { head: 'h', indexTree: 't', unstaged: 'a.txt', trackingRef: 'o', behind: '1', remoteRef: 'r', localSha: 'l', branch: 'main', existing: { count: '0' }, pr: { merged: 'false' }, markerCount: '0' }, observedAt: 1_000 };

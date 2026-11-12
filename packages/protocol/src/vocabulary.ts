@@ -272,6 +272,8 @@ export type MessageInputs = {
   optionNeedsPrint: [given: { readonly option: string }];
   optionNeedsInteractive: [given: { readonly option: string }];
   promptGivenTwice: [given: { readonly prompt: string }];
+  issueNeedsMandate: [];
+  issueBesidePrompt: [];
   resumeNeedsIdToPrint: [];
   bypassNotStarted: [given: { readonly id: string }];
   handoverFailed: [given: { readonly toVersion: string; readonly fromVersion: string; readonly reason: string; readonly kept: KeptWork }];
@@ -305,6 +307,9 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   optionNeedsPrint: (_surface, given) => `${given.option} applies only with ${PRINT_OPTION}; the interactive ${WORDS.session} cannot apply it.`,
   optionNeedsInteractive: (_surface, given) => `${given.option} applies only to the interactive ${WORDS.session}; it cannot be given with ${PRINT_OPTION}.`,
   promptGivenTwice: (_surface, given) => `${PRINT_OPTION} takes the prompt as its value, so ${JSON.stringify(given.prompt)} cannot be given as well.`,
+  issueNeedsMandate: () =>
+    `--issue starts a ${WORDS.run} that acts on the forge, so it runs only under a named mandate: add --mandate <name>, the name of a mandate under mandates in the user settings.`,
+  issueBesidePrompt: () => `--issue takes the words of the ${WORDS.run} from the issue, so it cannot be given with ${PRINT_OPTION} or a prompt of its own.`,
   resumeNeedsIdToPrint: () => `--resume needs a ${WORDS.session} id when ${PRINT_OPTION} is used.`,
   storedBypassNeedsOptIn: (_surface, given) =>
     `The ${WORDS.session} ${given.id} is stored in the bypassPermissions mode, and this command does not give ${BYPASS_OPT_IN_OPTION}. Reopen it with ${BYPASS_OPT_IN_OPTION} to stay in that mode, or with ${PERMISSION_MODE_OPTION} <mode> to leave it.`,

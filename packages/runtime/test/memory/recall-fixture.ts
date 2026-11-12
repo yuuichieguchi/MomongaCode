@@ -29,7 +29,7 @@ export const countingPorts = (counter: CheckCounter): EvidencePorts => ({
   isAncestor: async () => undefined,
 });
 
-export const SETTINGS = { trusted: () => true, verification: async () => ({ commands: [] }) } as never;
+export const SETTINGS = { trusted: () => true, verification: async () => ({ commands: [], conditions: [] }) } as never;
 
 export const portFor = (store: RuntimeStore, counter: CheckCounter) =>
   createMemoryPort({

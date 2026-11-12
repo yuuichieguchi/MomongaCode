@@ -13,7 +13,7 @@ const verified = async (f: Fixture, runId: string): Promise<boolean> => {
   const session = store.getSession(run.sessionId);
   if (session === undefined) throw new Error(`session ${run.sessionId} does not exist`);
   const verification = await f.composition.settings.verification(session, NEVER_CANCELLED);
-  return (await store.journalFacts.verdict({ runId, commands: verification.commands, manifests: verification.manifests })).verified;
+  return (await store.journalFacts.verdict({ runId, commands: verification.conditions, manifests: verification.manifests })).verified;
 };
 
 const projectCheckRun = async (f: Fixture) => {

@@ -64,7 +64,7 @@ describe.runIf(process.platform === 'darwin')('T3 (a) a real launch with a creat
     const handle = await createMarker(marker, { capability });
     expect(handle.mode).toBe('locked');
     const ready = path.join(root, 'ready');
-    const child = launchWith(root, handle.fd, `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 1' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.02; done; exit 0`);
+    const child = await launchWith(root, handle.fd, `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 1' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.02; done; exit 0`);
     try {
       expect(() => fs.fstatSync(handle.fd)).toThrow(expect.objectContaining({ code: 'EBADF' }));
       expect(await child.exited).toMatchObject({ code: 0 });
@@ -85,7 +85,7 @@ describe.runIf(process.platform === 'darwin')('T13 launch closes the parent copy
     const failingSpawn = (() => {
       throw new Error('spawn failed: injected');
     }) as unknown as NonNullable<LaunchOptions['spawnProcess']>;
-    expect(() => launchWith(root, handle.fd, 'exit 0', { spawnProcess: failingSpawn })).toThrow('spawn failed: injected');
+    await expect(launchWith(root, handle.fd, 'exit 0', { spawnProcess: failingSpawn })).rejects.toThrow('spawn failed: injected');
     expect(() => fs.fstatSync(handle.fd)).toThrow(expect.objectContaining({ code: 'EBADF' }));
     expect(await inspector.markerState(marker, live())).toBe('free');
     handle.close();

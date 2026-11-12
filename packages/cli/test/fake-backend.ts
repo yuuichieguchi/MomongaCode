@@ -11,6 +11,7 @@ import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } fr
 import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
 import type { UserShellRecord } from '@momonga/protocol';
 import { editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import type { CheckProposal } from '@momonga/runtime';
 import type { TrustItemsView } from '@momonga/protocol';
 import { momongaLayout } from '@momonga/foundation';
 import type { DetectRequest } from '../src/commands/models.ts';
@@ -82,6 +83,7 @@ export type FakeBackend = TuiBackend & {
 export type FakeBackendOptions = {
   trust?: TrustView;
   trustItems?: TrustItemsView;
+  checkProposal?: CheckProposal;
   session?: Partial<SessionView>;
   contextWindow?: number;
   imageInput?: boolean;
@@ -330,6 +332,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return options.trust ?? { path: session.cwd, decision: 'trusted' };
     },
     ...folderTrustFakes({ settingsPlace, trust: options.trust, trustItems: options.trustItems, cwd: () => session.cwd, record }),
+    checkProposal: async () => options.checkProposal ?? { ask: false },
+    answerCheck: async (answer) => {
+      record(`check:${JSON.stringify(answer)}`);
+    },
     openSession: async (model, permissionMode) => {
       record('openSession');
       opened.push({ model, permissionMode });

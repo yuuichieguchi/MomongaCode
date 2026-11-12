@@ -176,6 +176,17 @@ export const output = (seq: number, callId: string, text: string, handle?: strin
   ...(handle === undefined ? {} : { handle }),
 });
 
+export const PROTECTED_TURNS_AFTER_OLD = 2;
+
+export const withTurnsBeforeCurrent = (history: readonly HistoryItem[], turns: number = PROTECTED_TURNS_AFTER_OLD): HistoryItem[] => {
+  const current = history.findLastIndex((entry) => entry.item.type === 'message' && entry.item.role === 'user');
+  if (current < 1) throw new Error('a history needs an older turn before the current one');
+  const at = (history[current] as HistoryItem).seq;
+  const inserted = Array.from({ length: turns }, (_, index) => [user(at + 2 * index, `between ${index}`), assistant(at + 2 * index + 1, `answer ${index}`)]).flat();
+  const shifted = history.slice(current).map((entry) => ({ ...entry, seq: entry.seq + 2 * turns, item: { ...entry.item, id: `h${entry.seq + 2 * turns}` } }) as HistoryItem);
+  return [...history.slice(0, current), ...inserted, ...shifted];
+};
+
 export const argsCall = (seq: number, callId: string, chars: number): HistoryItem => ({
   seq,
   item: { type: 'function_call', id: `h${seq}`, call_id: callId, name: RAW_OUTPUT_TOOL, arguments: `{"p":"${'x'.repeat(chars)}"}` },

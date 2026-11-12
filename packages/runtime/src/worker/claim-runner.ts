@@ -615,7 +615,7 @@ const drive = async (
       conditions: pins.mandate?.completion.conditions ?? [],
       required: pins.verificationRequired === true,
     },
-    verificationCommands: (await options.settings.verification(session, control.signal)).commands,
+    verificationCommands: (await options.settings.verification(session, control.signal)).conditions,
     autoCompact: (await options.settings.context(session, control.signal)).autoCompact,
     token,
     policyFingerprint: pins.policyVerdict?.fingerprint,

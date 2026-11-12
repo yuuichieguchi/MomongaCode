@@ -7,7 +7,7 @@ import type { MarkerOwners } from '@momonga/tools';
 import type { MandateRunVerification, PolicyVerification } from '../process/folder-verification.ts';
 import type { GatewayStanding } from '../process/supervised-gateway.ts';
 import type { Clock, FileSystem, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
-import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
@@ -18,6 +18,7 @@ import type { EvidenceRun } from '../memory/evidence.ts';
 import type { SkillFileSystem } from '../memory/skill-promotion.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { createRunApp } from './app.ts';
+import type { IssuePort } from './issues.ts';
 import { createUserCommands } from './user-shell-routes.ts';
 import type { UserCommands } from './user-shell-routes.ts';
 import type { ModelListing, RunLimitDefaults, SessionCreateSettings } from './app.ts';
@@ -65,6 +66,7 @@ export type RunServiceOptions = {
   gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
+  issues: IssuePort;
   skillFiles: SkillFileSystem;
   platform: NodeJS.Platform;
   defaults: { runTimeoutMs?: number; limits: RunLimitDefaults };
@@ -93,6 +95,7 @@ export type RunServiceOptions = {
 
 export type RunService = {
   socketPath: string;
+  askAsPerson(method: string, path: string, body: unknown, signal: AbortSignal): Promise<{ status: number; body: unknown }>;
   beginDraining(): void;
   applyRole(): void;
   openRequests(): number;
@@ -101,6 +104,8 @@ export type RunService = {
   retire(current: DaemonCurrentFrame | undefined): Promise<void>;
   close(): Promise<void>;
 };
+
+const IN_PROCESS_ORIGIN = 'http://runtime.invalid';
 
 const STREAM_REQUEST = /^\/v1\/(?:runs|sessions)\/[^/?]+\/events(?:\?|$)/;
 
@@ -170,6 +175,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     gatewayStanding: options.gatewayStanding,
     userInput: options.userInput,
     evidenceRun: options.evidenceRun,
+    issues: options.issues,
     skillFiles: options.skillFiles,
     platform: options.platform,
     isDraining: () => draining,
@@ -321,6 +327,12 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
 
   return {
     socketPath: options.socketPath,
+    askAsPerson: async (method, requestPath, body, signal) => {
+      const response = await app.fetch(
+        new Request(new URL(requestPath, IN_PROCESS_ORIGIN), { method, headers: { 'content-type': 'application/json', [PERSON_CAPABILITY_HEADER]: personCapability }, body: JSON.stringify(body), signal }),
+      );
+      return { status: response.status, body: await response.json() };
+    },
     beginDraining: () => {
       draining = true;
     },

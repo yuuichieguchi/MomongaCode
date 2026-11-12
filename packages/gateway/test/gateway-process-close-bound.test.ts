@@ -31,7 +31,7 @@ type FakeServes = { managed: FakeChatCompletionsServer[]; probe: FakeChatComplet
 
 const unkillableFmSpawn = (dir: string, clock: FakeClock, timers: FakeTimers, probePhase: ProbePhase, serves: FakeServes) => {
   let nextPid = 5000;
-  return (_file: string, args: readonly string[]): ManagedChild => {
+  return async (_file: string, args: readonly string[]): Promise<ManagedChild> => {
     const socketPath = args[2] ?? '';
     const isProbe = path.basename(socketPath).startsWith('_probe-');
     const pid = nextPid++;

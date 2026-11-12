@@ -102,9 +102,9 @@ describe('stdio layout', () => {
     expect(stdio[DAEMON_MARKER_FD]).toBe(17);
   });
 
-  it('the manager hands spawn the lifeline pipe and the marker fd', (context) => {
+  it('the manager hands spawn the lifeline pipe and the marker fd', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const options = harness.port.last().options;
     expect(options.stdio[LIFELINE_FD]).toBe('pipe');
     expect(typeof options.stdio[DAEMON_MARKER_FD]).toBe('number');
@@ -113,9 +113,9 @@ describe('stdio layout', () => {
 });
 
 describe('spawn options', () => {
-  it('children are spawned in the home with the contract flags', (context) => {
+  it('children are spawned in the home with the contract flags', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const call = harness.port.calls[0];
     expect(call?.options.cwd).toBe(harness.home);
     expect(call?.command).toBe(process.execPath);
@@ -125,7 +125,7 @@ describe('spawn options', () => {
   it('children are spawned detached: the real child leads its own group', async (context) => {
     const port = trackedSpawnPort(context);
     const harness = createManagerHarness(context, { port, launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE] }) });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const pid = port.spawned[0]?.pid;
     expect(typeof pid).toBe('number');
     const childPid = pid as number;
@@ -135,19 +135,19 @@ describe('spawn options', () => {
 
   it('relative command is rejected and handled as a spawn failure', async (context) => {
     const harness = createManagerHarness(context, { launcher: () => ({ command: 'node', args: [] }) });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await waitFor(() => harness.manager.state() === 'backoff');
     expect(harness.spawnCount()).toBe(0);
     expect(harness.manager.health().lastExit).toMatchObject({ code: null, signal: null, reason: 'spawn-failed' });
     expect(harness.markers()).toEqual([]);
   });
 
-  it('launcher env cannot re-add a credential', (context) => {
+  it('launcher env cannot re-add a credential', async (context) => {
     const runtime = createManagerHarness(context, {
       role: 'runtime',
       launcher: () => ({ command: process.execPath, args: [], env: { OPENAI_API_KEY: 'x', LAUNCHER_EXTRA: 'kept' } }),
     });
-    runtime.spawnInitial();
+    await runtime.spawnInitial();
     const runtimeEnv = runtime.port.last().options.env;
     expect(runtimeEnv).not.toHaveProperty('OPENAI_API_KEY');
     expect(runtimeEnv['LAUNCHER_EXTRA']).toBe('kept');
@@ -156,7 +156,7 @@ describe('spawn options', () => {
       role: 'gateway',
       launcher: () => ({ command: process.execPath, args: [], env: { UNDECLARED_X: 'y', NODE_OPTIONS: '--inspect' } }),
     });
-    gateway.spawnInitial();
+    await gateway.spawnInitial();
     const gatewayEnv = gateway.port.last().options.env;
     expect(gatewayEnv).not.toHaveProperty('UNDECLARED_X');
     expect(gatewayEnv).not.toHaveProperty('NODE_OPTIONS');
@@ -223,7 +223,7 @@ describe('signals with real processes', () => {
       port,
       launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE, '--p2-ignore-term', '--p2-grandchild=group'] }),
     });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await pollUntil(() => harness.events('child.stdout').some((line) => String(line['raw']).includes('grandchild')), 5000, 'grandchild reported');
     const raw = harness.events('child.stdout').find((line) => String(line['raw']).includes('grandchild'))?.['raw'];
     const grandchild = (JSON.parse(String(raw)) as { grandchild: number }).grandchild;

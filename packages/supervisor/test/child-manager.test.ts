@@ -22,7 +22,7 @@ const spawnReasons = (harness: ManagerHarness): unknown[] => harness.events('chi
 describe('ready parsing', () => {
   it('ready line makes the child ready', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     expect(harness.manager.state()).toBe('starting');
     harness.clock.advance(1500);
     harness.port.last().ready();
@@ -35,7 +35,7 @@ describe('ready parsing', () => {
 
   it('ready line with another pid kills the child and backs off', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().ready({ pid: 999_999 });
     await waitFor(() => harness.manager.state() === 'stopping');
     await stopLineWritten();
@@ -56,7 +56,7 @@ describe('ready parsing', () => {
 
   it('through a keeper, the ready line is checked against the pid of the command, which the keeper reports after the start, and every report names it', async (context) => {
     const harness = createManagerHarness(context, { keptCommandPidOffset: 1000 });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
     expect(child.pid).toBe(41_000);
     child.started();
@@ -68,7 +68,7 @@ describe('ready parsing', () => {
 
   it('through a keeper, a ready line that names the keeper instead of the command is a mismatch', async (context) => {
     const harness = createManagerHarness(context, { keptCommandPidOffset: 1000 });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
     child.started();
     child.ready({ pid: 41_000 });
@@ -78,7 +78,7 @@ describe('ready parsing', () => {
 
   it('ready line of another version is not ready, is reported to the supervisor, and the child is stopped and held for its version (20.12)', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
     child.ready({ version: '9.9.9' });
     await waitFor(() => harness.versionMismatches.length === 1);
@@ -103,7 +103,7 @@ describe('ready parsing', () => {
 
   it('a child that exits with the retire code is final: it tells the supervisor and is never restarted (20.1)', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
     child.ready();
     await waitFor(() => harness.manager.state() === 'ready');
@@ -118,7 +118,7 @@ describe('ready parsing', () => {
 
   it('a child of a retiring generation that exits for any other reason is not restarted (U-I3-11)', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
     child.ready();
     await waitFor(() => harness.manager.state() === 'ready');
@@ -136,7 +136,7 @@ describe('ready parsing', () => {
 
   it('ready line of another service is a mismatch', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().ready({ service: 'gateway' });
     await waitFor(() => harness.manager.state() === 'stopping');
     expect(harness.events('child.ready.mismatch')).toHaveLength(1);
@@ -149,7 +149,7 @@ describe('ready parsing', () => {
     ];
     for (const stop of stops) {
       const harness = createManagerHarness(context);
-      harness.spawnInitial();
+      await harness.spawnInitial();
       stop(harness);
       expect(harness.manager.state()).toBe('stopping');
       harness.port.last().ready();
@@ -161,7 +161,7 @@ describe('ready parsing', () => {
 
   it('non-ready stdout is ignored', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
     child.stdoutLine('before ready');
     child.ready();
@@ -179,7 +179,7 @@ describe('ready parsing', () => {
 
   it('stderr is captured as child.stderr', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().stderrLine('{"level":"error","msg":"looks like a log"}');
     harness.port.last().stderrLine('TypeError: boom');
     await waitFor(() => harness.events('child.stderr').length === 2);
@@ -193,7 +193,7 @@ describe('ready parsing', () => {
 describe('startup timeout', () => {
   it('startup timeout ends in backoff, not stopped', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.timers.advance(STARTUP_TIMEOUT_MS - 1);
     expect(harness.port.last().signals).toEqual([]);
     harness.timers.advance(1);
@@ -208,7 +208,7 @@ describe('startup timeout', () => {
     expect(harness.manager.state()).toBe('starting');
 
     const stubborn = createManagerHarness(context);
-    stubborn.spawnInitial();
+    await stubborn.spawnInitial();
     stubborn.timers.advance(STARTUP_TIMEOUT_MS);
     await stopLineWritten();
     stubborn.timers.advance(STARTUP_KILL_GRACE_MS - 1);
@@ -224,7 +224,7 @@ describe('startup timeout', () => {
 describe('exit classification in the manager', () => {
   it('exit 1 restarts after backoff', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'backoff', 1);
     expect(harness.manager.health()).toMatchObject({ consecutiveFailures: 1, lastExit: { code: 1, signal: null, reason: 'failure', at: new Date(T0).toISOString() } });
     harness.timers.advance(249);
@@ -239,7 +239,7 @@ describe('exit classification in the manager', () => {
 
   it('shutdown stop that exits 1 ends stopped', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const stopped = harness.manager.stop('shutdown', 'term');
     await exitAndWait(harness, 'stopped', 1);
     await expect(stopped).resolves.toEqual({ killed: false, leaked: false });
@@ -249,7 +249,7 @@ describe('exit classification in the manager', () => {
 
   it.for(['superseded', 'unpromoted'] as const)('the stop of a %s start gives the child the startup kill grace, and its exit is a requested one', async (reason, context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().ready();
     await waitFor(() => harness.manager.state() === 'ready');
     void harness.manager.stop(reason, 'term', MAXIMUM_STOP_VALUES);
@@ -265,7 +265,7 @@ describe('exit classification in the manager', () => {
 
   it('shutdown supersedes startup-timeout', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.timers.advance(STARTUP_TIMEOUT_MS);
     await stopLineWritten();
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
@@ -281,7 +281,7 @@ describe('exit classification in the manager', () => {
   it('exit 77 does not respawn on a timer', async (context) => {
     const harness = createManagerHarness(context);
     harness.lock.holdExternally(firstGeneration(harness.paths).locks.runtime, process.pid);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'waiting-lock', 77);
     for (let step = 0; step < 120; step += 1) {
       harness.timers.advance(5000);
@@ -302,7 +302,7 @@ describe('exit classification in the manager', () => {
   it('with descriptor hand-off the claim is taken before the spawn and given to the child', async (context) => {
     const lock = createFakeKernelLock({ inheritable: true });
     const harness = createManagerHarness(context, { overrides: { lockMechanism: lock } });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const { options } = harness.port.last();
     expect(lock.claimsMade()).toEqual([firstGeneration(harness.paths).locks.runtime]);
     expect(options.stdio).toHaveLength(6);
@@ -316,7 +316,7 @@ describe('exit classification in the manager', () => {
     const lock = createFakeKernelLock({ inheritable: true });
     const harness = createManagerHarness(context, { overrides: { lockMechanism: lock } });
     lock.holdExternally(firstGeneration(harness.paths).locks.runtime, process.pid);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     expect(harness.manager.state()).toBe('waiting-lock');
     await afterMicrotasks();
     expect(harness.spawnCount()).toBe(0);
@@ -331,14 +331,14 @@ describe('exit classification in the manager', () => {
     const lock = createFakeKernelLock({ inheritable: true });
     const harness = createManagerHarness(context, { overrides: { lockMechanism: lock } });
     harness.port.nextFailure = { kind: 'throw', error: new Error('spawn boom') };
-    harness.spawnInitial();
+    await harness.spawnInitial();
     expect(harness.manager.state()).toBe('backoff');
     expect(lock.isHeldBy(firstGeneration(harness.paths).locks.runtime)).toBeUndefined();
   });
 
   it('escalating a stop to SIGINT never moves the kill deadline later', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const first = harness.port.last();
     void harness.manager.stop('shutdown', 'term');
     await stopLineWritten();
@@ -351,7 +351,7 @@ describe('exit classification in the manager', () => {
 
   it('exit 78 holds until a trigger', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'held-config', 78);
     expect(harness.manager.health().heldReason).toBe('child exited 78 (see runtime.log)');
     expect(harness.events('child.held')).toEqual([expect.objectContaining({ source: 'child-exit', heldReason: 'child exited 78 (see runtime.log)' })]);
@@ -371,7 +371,7 @@ describe('exit classification in the manager', () => {
 
   it('heldReason keeps at most 200 characters of the stderr line', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().stderrLine('e'.repeat(500));
     await waitFor(() => harness.events('child.stderr').length === 1);
     await exitAndWait(harness, 'held-config', 78);
@@ -380,7 +380,7 @@ describe('exit classification in the manager', () => {
 
   it('held-config retries on the slow timer', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'held-config', 78);
     for (let retry = 1; retry <= 12; retry += 1) {
       harness.timers.advance(HELD_RETRY_MS - 1);
@@ -400,7 +400,7 @@ describe('exit classification in the manager', () => {
 
   it('held-config retry that succeeds recovers', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'held-config', 78);
     harness.timers.advance(HELD_RETRY_MS);
     await afterMicrotasks();
@@ -417,7 +417,7 @@ describe('exit classification in the manager', () => {
 
   it('a settings change re-arms the held timer', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'held-config', 78);
     harness.timers.advance(HELD_RETRY_MS / 2);
     harness.manager.retryHeld();
@@ -434,7 +434,7 @@ describe('exit classification in the manager', () => {
 
   it('stable period resets the counter', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'backoff', 1);
     harness.timers.advance(250);
     await waitFor(() => harness.spawnCount() === 2, { description: 'the second spawn' });
@@ -463,7 +463,7 @@ describe('exit classification in the manager', () => {
 
   it('signal death restarts', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'backoff', null, 'SIGKILL');
     expect(harness.manager.health().lastExit).toMatchObject({ code: null, signal: 'SIGKILL', reason: 'signal' });
     harness.timers.advance(250);
@@ -473,7 +473,7 @@ describe('exit classification in the manager', () => {
 
   it('unexpected 0 restarts with backoff', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'backoff', 0);
     expect(harness.manager.health()).toMatchObject({ consecutiveFailures: 1, lastExit: { reason: 'unexpected-clean' } });
     harness.timers.advance(250);
@@ -483,7 +483,7 @@ describe('exit classification in the manager', () => {
 
   it('shutdown stop does not respawn', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().ready();
     await waitFor(() => harness.manager.state() === 'ready');
     void harness.manager.stop('shutdown', 'term');
@@ -496,7 +496,7 @@ describe('exit classification in the manager', () => {
 
   it('a child without a process stops at once on shutdown', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'backoff', 1);
     await expect(harness.manager.stop('shutdown', 'term')).resolves.toEqual({ killed: false, leaked: false });
     expect(harness.manager.state()).toBe('stopped');
@@ -516,7 +516,7 @@ describe('spawn failures', () => {
       markerFds.push(options.stdio[4]);
     };
     harness.port.nextFailure = { kind: 'throw', error: errnoError('ENOENT', 'spawn ENOENT') };
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await waitFor(() => harness.manager.state() === 'backoff');
     expect(harness.manager.health().lastExit).toMatchObject({ code: null, signal: null, reason: 'spawn-failed' });
     expect(harness.manager.health().consecutiveFailures).toBe(1);
@@ -536,7 +536,7 @@ describe('spawn failures', () => {
       markerFds.push(options.stdio[4]);
     };
     harness.port.nextFailure = { kind: 'spawn-error', error: errnoError('ENOENT', 'spawn ENOENT') };
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await waitFor(() => harness.manager.state() === 'backoff');
     expect(harness.clock.now()).toBe(T0);
     expect(harness.manager.health().lastExit).toMatchObject({ code: null, signal: null, reason: 'spawn-failed' });
@@ -551,7 +551,7 @@ describe('spawn failures', () => {
         throw new TypeError('launcher exploded');
       },
     });
-    launcherThrows.spawnInitial();
+    await launcherThrows.spawnInitial();
     await waitFor(() => launcherThrows.manager.state() === 'backoff');
     await afterMicrotasks();
     expect(launcherThrows.spawnCount()).toBe(0);
@@ -560,7 +560,7 @@ describe('spawn failures', () => {
 
     const markerFails = createManagerHarness(context);
     fs.chmodSync(markerFails.paths.markers.daemons, 0o500);
-    markerFails.spawnInitial();
+    await markerFails.spawnInitial();
     await waitFor(() => markerFails.manager.state() === 'backoff');
     await afterMicrotasks();
     expect(markerFails.spawnCount()).toBe(0);
@@ -570,7 +570,7 @@ describe('spawn failures', () => {
 
     const spawnThrows = createManagerHarness(context);
     spawnThrows.port.nextFailure = { kind: 'throw', error: new TypeError('The argument stdio is invalid') };
-    spawnThrows.spawnInitial();
+    await spawnThrows.spawnInitial();
     await waitFor(() => spawnThrows.manager.state() === 'backoff');
     await afterMicrotasks();
     expect(spawnThrows.spawnCount()).toBe(1);
@@ -582,7 +582,7 @@ describe('spawn failures', () => {
 describe('stop', () => {
   it('stop is idempotent', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const first = harness.manager.stop('shutdown', 'term');
     const second = harness.manager.stop('shutdown', 'term');
     expect(second).toBe(first);
@@ -590,7 +590,7 @@ describe('stop', () => {
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
 
     const upgraded = createManagerHarness(context);
-    upgraded.spawnInitial();
+    await upgraded.spawnInitial();
     upgraded.timers.advance(STARTUP_TIMEOUT_MS);
     await stopLineWritten();
     expect(upgraded.port.last().signals).toEqual(['SIGTERM']);
@@ -604,7 +604,7 @@ describe('stop', () => {
 
   it('a lower-ranked stop does not replace the recorded reason', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term');
     void harness.manager.stop('startup-timeout', 'term');
     await exitAndWait(harness, 'stopped', 0);
@@ -613,7 +613,7 @@ describe('stop', () => {
 
   it('stop escalation sends SIGINT once', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term');
     await stopLineWritten();
     void harness.manager.stop('shutdown', 'int');
@@ -625,9 +625,9 @@ describe('stop', () => {
     expect(harness.port.last().groupKills).toBe(1);
   });
 
-  it('the shutdown budget of the runtime ends in SIGKILL of the group', (context) => {
+  it('the shutdown budget of the runtime ends in SIGKILL of the group', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term');
     harness.timers.advance(RUNTIME_SHUTDOWN_BUDGET_MS - 1);
     expect(harness.port.last().groupKills).toBe(0);
@@ -637,14 +637,14 @@ describe('stop', () => {
 
   it('the gateway budgets are the stop and abort budgets of the stop values, counted from the stop begin, with the signal sent once the stop line is written', async (context) => {
     const harness = createManagerHarness(context, { role: 'gateway' });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term', DEFAULT_STOP_VALUES);
     harness.timers.advance(gatewayStopBudgetMs(DEFAULT_STOP_VALUES) - 1);
     expect(harness.port.last().groupKills).toBe(0);
     harness.timers.advance(1);
     expect(harness.port.last().groupKills).toBe(1);
     const aborted = createManagerHarness(context, { role: 'gateway' });
-    aborted.spawnInitial();
+    await aborted.spawnInitial();
     void aborted.manager.stop('shutdown', 'int', DEFAULT_STOP_VALUES);
     expect(aborted.port.last().signals).toEqual([]);
     await stopLineWritten();
@@ -657,7 +657,7 @@ describe('stop', () => {
 
   it('SIGKILL that never exits is bounded', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const stopped = harness.manager.stop('shutdown', 'term');
     harness.timers.advance(RUNTIME_SHUTDOWN_BUDGET_MS);
     expect(harness.port.last().groupKills).toBe(1);
@@ -676,7 +676,7 @@ describe('stop', () => {
 
   it('stop signals the pid and kills the group', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const stopped = harness.manager.stop('shutdown', 'term');
     await stopLineWritten();
     void harness.manager.stop('shutdown', 'int');
@@ -693,7 +693,7 @@ describe('stop', () => {
 describe('exit handling mechanics', () => {
   it('an exit while draining does not reap in line', async (context) => {
     const draining = createManagerHarness(context);
-    draining.spawnInitial();
+    await draining.spawnInitial();
     const marker = draining.markers()[0];
     draining.draining.value = true;
     draining.manager.enterDraining();
@@ -704,7 +704,7 @@ describe('exit handling mechanics', () => {
     expect(draining.timers.pending()).toEqual([]);
 
     const running = createManagerHarness(context);
-    running.spawnInitial();
+    await running.spawnInitial();
     const runningMarker = running.markers()[0];
     await exitAndWait(running, 'backoff', 1);
     expect(running.reapCalls).toEqual([{ marker: `${running.paths.markers.daemons}/${runningMarker}`, killGraceMs: 2000, label: 'daemon' }]);
@@ -713,7 +713,7 @@ describe('exit handling mechanics', () => {
 
   it('lifeline socket is destroyed after the exit', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
     expect(child.lifeline.destroyed).toBe(false);
     await exitAndWait(harness, 'backoff', 1);
@@ -722,7 +722,7 @@ describe('exit handling mechanics', () => {
 
   it('stdio flush bound', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
     child.exit(1, null, { endPipes: false });
     await afterMicrotasks();
@@ -737,7 +737,7 @@ describe('exit handling mechanics', () => {
 
   it('partial last stderr line is flushed before the exit is recorded', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
     child.stderr.write('no trailing newline');
     await exitAndWait(harness, 'backoff', 1);
@@ -765,7 +765,7 @@ describe('draining is enforced by the manager', () => {
     it('a direct spawnWith spawns nothing', async (context) => {
       const harness = createManagerHarness(context);
       drain(harness);
-      harness.manager.spawnWith(harness.settings.snapshot(), 'initial');
+      await harness.manager.spawnWith(harness.settings.snapshot(), 'initial');
       harness.timers.advance(HELD_RETRY_MS);
       await afterMicrotasks();
       expect(harness.spawnCount()).toBe(0);
@@ -787,7 +787,7 @@ describe('draining is enforced by the manager', () => {
 
     it('retryHeld of a held child spawns nothing', async (context) => {
       const harness = createManagerHarness(context);
-      harness.spawnInitial();
+      await harness.spawnInitial();
       await exitAndWait(harness, 'held-config', 78);
       drain(harness);
       harness.manager.retryHeld();
@@ -818,7 +818,7 @@ describe('a life without a process', () => {
     harness.port.onSignal = (child, signal) => {
       if (signal === 'group' && child.pid === undefined) throw errnoError('ESRCH', 'kill ESRCH');
     };
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const stopping = harness.manager.stop('shutdown', 'term');
     expect(harness.port.last().signals).toEqual([]);
     const outcome = await settledWithin(stopping);
@@ -837,7 +837,7 @@ describe('a life without a process', () => {
   it('a startup timeout before the spawn error sends no signal, backs off and respawns', async (context) => {
     const harness = createManagerHarness(context);
     harness.port.nextFailure = { kind: 'spawn-error', error: errnoError('ENOENT', 'spawn ENOENT') };
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.timers.advance(STARTUP_TIMEOUT_MS);
     await afterMicrotasks();
     expect(harness.port.last().signals).toEqual([]);
@@ -865,7 +865,7 @@ describe('a life without a process', () => {
   it('a spawn error that arrives while draining goes to stopped and arms nothing', async (context) => {
     const harness = createManagerHarness(context);
     harness.port.nextFailure = { kind: 'spawn-error', error: errnoError('ENOENT', 'spawn ENOENT') };
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.draining.value = true;
     await afterMicrotasks();
     expect(harness.manager.state()).toBe('stopped');
@@ -877,12 +877,12 @@ describe('a life without a process', () => {
 describe('stops of a life whose exit is still being handled', () => {
   it('a stop of an exited life settles even when a newer life started before its handler finished', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const first = harness.port.last();
     first.exit(1, null, { endPipes: false });
     await afterMicrotasks();
     const stopping = harness.manager.stop('shutdown', 'term');
-    harness.manager.spawnWith(harness.settings.snapshot(), 'initial');
+    await harness.manager.spawnWith(harness.settings.snapshot(), 'initial');
     await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     harness.timers.advance(STDIO_FLUSH_MS);
@@ -894,7 +894,7 @@ describe('stops of a life whose exit is still being handled', () => {
   it('a stop of an exited life whose reap never settles returns at once', async (context) => {
     const harness = createManagerHarness(context);
     harness.reapResult = neverSettles;
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().exit(1);
     await waitFor(() => harness.reapCalls.length === 1, { description: 'exit-handler reap started' });
     const outcome = await settledWithin(harness.manager.stop('shutdown', 'term'));
@@ -904,7 +904,7 @@ describe('stops of a life whose exit is still being handled', () => {
   it('the marker of an in-flight exit-handler reap is visible as unreaped while the reap runs', async (context) => {
     const harness = createManagerHarness(context);
     harness.reapResult = neverSettles;
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().exit(1);
     await waitFor(() => harness.reapCalls.length === 1, { description: 'exit-handler reap started' });
     expect(harness.manager.unreapedMarkers()).toEqual([harness.reapCalls[0]?.marker]);
@@ -917,7 +917,7 @@ describe('stops of a life whose exit is still being handled', () => {
       new Promise((resolve) => {
         finishReap = resolve;
       });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().exit(1);
     await waitFor(() => harness.reapCalls.length === 1, { description: 'exit-handler reap started' });
     expect(harness.manager.unreapedMarkers()).toEqual([harness.reapCalls[0]?.marker]);
@@ -930,7 +930,7 @@ describe('stops of a life whose exit is still being handled', () => {
 describe('consecutiveFailures across held-config retries', () => {
   it('a settings-change retry resets the counter and a timer retry leaves it unchanged', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await exitAndWait(harness, 'backoff', 1);
     harness.timers.advance(STABLE_AFTER_MS);
     await waitFor(() => harness.spawnCount() === 2, { description: 'second spawn' });
@@ -962,7 +962,7 @@ const hookTimers = (harness: ManagerHarness): number => harness.timers.pending()
 describe('awaitLeave', () => {
   it('resolves with ready on a ready line', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const leaving = harness.manager.awaitLeave('starting', { timeoutMs: HOOK_TIMEOUT_MS, signal: new AbortController().signal });
     expect(hookTimers(harness)).toBe(1);
     harness.port.last().ready();
@@ -972,7 +972,7 @@ describe('awaitLeave', () => {
 
   it('resolves with the resulting state on an exit', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const leaving = harness.manager.awaitLeave('starting', { timeoutMs: HOOK_TIMEOUT_MS, signal: new AbortController().signal });
     harness.port.last().exit(1);
     await expect(leaving).resolves.toBe('backoff');
@@ -982,7 +982,7 @@ describe('awaitLeave', () => {
   it('resolves with backoff on the no-process failure path', async (context) => {
     const harness = createManagerHarness(context);
     harness.port.nextFailure = { kind: 'spawn-error', error: errnoError('ENOENT', 'spawn ENOENT') };
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const leaving = harness.manager.awaitLeave('starting', { timeoutMs: HOOK_TIMEOUT_MS, signal: new AbortController().signal });
     await expect(leaving).resolves.toBe('backoff');
     expect(hookTimers(harness)).toBe(0);
@@ -990,7 +990,7 @@ describe('awaitLeave', () => {
 
   it('resolves with stopped on unkillable', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term');
     const leaving = harness.manager.awaitLeave('stopping', { timeoutMs: HOOK_TIMEOUT_MS * 10, signal: new AbortController().signal });
     await harness.timers.advanceAsync(RUNTIME_SHUTDOWN_BUDGET_MS + KILL_CONFIRM_MS);
@@ -1001,7 +1001,7 @@ describe('awaitLeave', () => {
 
   it('resolves with starting at timeoutMs', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const leaving = harness.manager.awaitLeave('starting', { timeoutMs: HOOK_TIMEOUT_MS, signal: new AbortController().signal });
     harness.timers.advance(HOOK_TIMEOUT_MS - 1);
     expect((await settledWithin(leaving)).settled).toBe(false);
@@ -1012,7 +1012,7 @@ describe('awaitLeave', () => {
 
   it('resolves with starting when the signal aborts', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const controller = new AbortController();
     const leaving = harness.manager.awaitLeave('starting', { timeoutMs: HOOK_TIMEOUT_MS, signal: controller.signal });
     controller.abort();

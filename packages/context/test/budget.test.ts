@@ -17,6 +17,7 @@ import {
   tokensOfTools,
   user,
   READ_TOOL,
+  withTurnsBeforeCurrent,
 } from './helpers.ts';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { HistoryItem } from '@momonga/context';
@@ -126,10 +127,9 @@ describe('budget property', () => {
       expect(itemCapFor(expected.I)).toBeGreaterThanOrEqual(64);
       const { ports } = harness(capabilities);
       const history = randomHistory(random, expected.I);
-      const keepRecentTurns = random.int(1, 3);
       try {
         const { built: result } = await buildThroughLevels(
-          inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns }),
+          inputFor(capabilities, { sources: sourcesWith({ history }) }),
           ports,
         );
         built += 1;
@@ -177,14 +177,14 @@ describe('tool definitions in the budget', () => {
 
   it('leaves less room for history when tools are large, measured above the floor that includes them', async () => {
     const capabilities = capabilitiesFor(4000);
-    const history = [user(1, 'old'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(2400)), call(4, 'c2'), output(5, 'c2', 'p'.repeat(2400)), user(6, 'now')];
+    const history = withTurnsBeforeCurrent([user(1, 'old'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(2400)), call(4, 'c2'), output(5, 'c2', 'p'.repeat(2400)), user(6, 'now')]);
     const tools = [{ ...bigTool, description: 'd'.repeat(5000) }];
     const without = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ history }) }),
       harness(capabilities).ports,
     );
     const withTools = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history, tools }), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ history, tools }) }),
       harness(capabilities).ports,
     );
     const floor = 32 + tokensOfTools(tools);

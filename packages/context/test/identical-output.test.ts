@@ -15,6 +15,7 @@ import {
   tokensOfItem,
   tokensOfItems,
   user,
+  withTurnsBeforeCurrent,
 } from './helpers.ts';
 
 const WINDOW = 64000;
@@ -86,8 +87,8 @@ describe('identicalOutput at build time', () => {
   });
 
   it('does not refer to an output that was truncated rather than rendered in full', async () => {
-    const big = 'line of build output\n'.repeat(400);
-    const { result } = await build(historyOf([['c1', big], ['c2', big]]), { itemCap: 64 });
+    const big = 'line of build output\n'.repeat(4000);
+    const { result } = await build(historyOf([['c1', big], ['c2', big]]));
     const first = outputTextOf(result.input, 'c1') as string;
     const second = outputTextOf(result.input, 'c2') as string;
     expect(first).not.toBe(big);
@@ -125,28 +126,30 @@ describe('identicalOutput at build time', () => {
 const PRESSURE_WINDOW = 4000;
 const BIG = 'a'.repeat(2400);
 const FILLER = (letter: string): string => letter.repeat(2400);
+const ABOVE_ITEM_CAP = 'a'.repeat(3600);
+const LAST_FILLER = 'd'.repeat(2000);
 
-const pressuredHistory = (referrerProtected: boolean, copy = 'c2'): HistoryItem[] => [
+const pressuredHistory = (referrerProtected: boolean, copy = 'c2', shared = BIG): HistoryItem[] => withTurnsBeforeCurrent([
   user(1, 'old question'),
   call(2, 'c1'),
-  output(3, 'c1', BIG),
-  ...(referrerProtected ? [] : [call(4, copy), output(5, copy, BIG)]),
+  output(3, 'c1', shared),
+  ...(referrerProtected ? [] : [call(4, copy), output(5, copy, shared)]),
   call(6, 'f1'),
   output(7, 'f1', FILLER('b')),
   call(8, 'f2'),
   output(9, 'f2', FILLER('c')),
   call(10, 'f3'),
-  output(11, 'f3', FILLER('d')),
+  output(11, 'f3', LAST_FILLER),
   assistant(12, 'old answer'),
   user(13, 'current question'),
-  ...(referrerProtected ? [call(14, 'c2'), output(15, 'c2', BIG)] : [call(14, 'q1'), output(15, 'q1', 'ok')]),
-];
+  ...(referrerProtected ? [call(14, 'c2'), output(15, 'c2', shared)] : [call(14, 'q1'), output(15, 'q1', 'ok')]),
+]);
 
 const buildPressured = async (history: HistoryItem[], overrides: Parameters<typeof inputFor>[1] = {}) => {
   const capabilities = capabilitiesFor(PRESSURE_WINDOW);
   const { ports } = harness(capabilities);
   return buildContext(
-    inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1, outputFormatters: ['identicalOutput'], ...overrides }),
+    inputFor(capabilities, { sources: sourcesWith({ history }), outputFormatters: ['identicalOutput'], ...overrides }),
     ports,
   );
 };
@@ -164,13 +167,13 @@ describe('identicalOutput under eviction pressure', () => {
   });
 
   it('evicts a referent when its referrer re-rendered by the ordinary rules is smaller, and re-renders the referrer in the same build', async () => {
-    const result = await buildPressured(pressuredHistory(true), { itemCap: 64, renderedFull: new Set(['c1', 'f1', 'f2', 'f3']) });
+    const result = await buildPressured(pressuredHistory(true, 'c2', ABOVE_ITEM_CAP), { renderedFull: new Set(['c1', 'f1', 'f2', 'f3']) });
     expect(omittedIds(result.evictions)[0]).toBe('c1');
     expect(outputTextOf(result.input, 'c1')?.startsWith('[tool output omitted:')).toBe(true);
     const referrer = outputTextOf(result.input, 'c2') as string;
     expect(referrer.startsWith('[identical to the output of call')).toBe(false);
-    expect(referrer).not.toBe(BIG);
-    expect(referrer).toContain(`full output stored as ${handleOf(BIG)}`);
+    expect(referrer).not.toBe(ABOVE_ITEM_CAP);
+    expect(referrer).toContain(`full output stored as ${handleOf(ABOVE_ITEM_CAP)}`);
     expect(result.inputTokens).toBe(tokensOfItems(result.input));
   });
 
@@ -196,13 +199,13 @@ describe('identicalOutput under eviction pressure', () => {
     ]);
     expect(outputTextOf(result.input, 'c1')).toBe(omittedMarkerOf('c1'));
     expect(outputTextOf(result.input, copy)).toBe(omittedMarkerOf(copy));
-    expect(outputTextOf(result.input, 'f3')).toBe(FILLER('d'));
+    expect(outputTextOf(result.input, 'f3')).toBe(LAST_FILLER);
     expect(result.inputTokens).toBe(tokensOfItems(result.input));
   });
 
   it('never evicts a protected copy: the group leaves without it, and the earliest protected copy becomes the full referent of the later ones', async () => {
     const referent = 'read-the-first-copy-of-the-shared-file';
-    const history: HistoryItem[] = [
+    const history: HistoryItem[] = withTurnsBeforeCurrent([
       user(1, 'old question'),
       call(2, referent),
       output(3, referent, BIG),
@@ -218,7 +221,7 @@ describe('identicalOutput under eviction pressure', () => {
       output(13, 'p1', BIG),
       call(14, 'p2'),
       output(15, 'p2', BIG),
-    ];
+    ]);
     const outputEntry = (callId: string): FunctionCallOutputInputItem =>
       (history.find((entry) => entry.item.type === 'function_call_output' && entry.item.call_id === callId) as HistoryItem).item as FunctionCallOutputInputItem;
     const omittedText = (callId: string): string => `[tool output omitted: ${tokensOfItem(outputEntry(callId))} tokens; stored as ${handleOf(BIG)}; read it with ReadOutput]`;

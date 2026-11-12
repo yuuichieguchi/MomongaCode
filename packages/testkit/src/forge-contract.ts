@@ -16,6 +16,24 @@ const PULL = {
 
 const PULL_FIELDS = { number: '1347', url: 'https://github.com/octocat/Hello-World/pull/1347', headSha: '6dcb09b5b57875f334f61aebed695e2e4193db5e', state: 'open', merged: 'false' };
 
+const ISSUE = {
+  id: 1,
+  node_id: 'MDU6SXNzdWUx',
+  url: 'https://api.github.com/repos/octocat/Hello-World/issues/1347',
+  html_url: 'https://github.com/octocat/Hello-World/issues/1347',
+  number: 1347,
+  state: 'open',
+  title: 'Found a bug',
+  body: "I'm having a problem with this.",
+  user: { login: 'octocat', id: 1 },
+  labels: [{ id: 208045946, name: 'bug', color: 'f29513' }],
+  author_association: 'COLLABORATOR',
+  locked: true,
+  comments: 0,
+};
+
+const ISSUE_FIELDS = { number: '1347', url: 'https://github.com/octocat/Hello-World/issues/1347', title: 'Found a bug', author: 'octocat', authorAssociation: 'COLLABORATOR' };
+
 export const GITHUB_CONTRACT: Readonly<Record<string, ForgeContractCase>> = {
   listPullRequests: { status: 200, body: [PULL], expected: [PULL_FIELDS] },
   getPullRequest: { status: 200, body: PULL, expected: PULL_FIELDS },
@@ -41,6 +59,14 @@ export const GITHUB_CONTRACT: Readonly<Record<string, ForgeContractCase>> = {
     body: [{ id: 10, path: 'file1.txt', line: 2, original_line: 2, side: 'RIGHT', commit_id: '6dcb09b5b57875f334f61aebed695e2e4193db5e', body: 'Great stuff!', user: { login: 'octocat' } }],
     expected: [{ id: '10', path: 'file1.txt', line: '2', body: 'Great stuff!' }],
   },
+  getIssue: { status: 200, body: ISSUE, expected: { ...ISSUE_FIELDS, body: "I'm having a problem with this.", state: 'open' } },
+  listIssues: { status: 200, body: [ISSUE], expected: [ISSUE_FIELDS] },
+  listIssueComments: {
+    status: 200,
+    body: [{ id: 1, node_id: 'MDEyOklzc3VlQ29tbWVudDE=', html_url: 'https://github.com/octocat/Hello-World/issues/1347#issuecomment-1', body: 'Me too', user: { login: 'octocat' }, author_association: 'COLLABORATOR' }],
+    expected: [{ id: '1', body: 'Me too', author: 'octocat' }],
+  },
+  createIssueComment: { status: 201, body: { id: 1, body: 'Me too', html_url: 'https://github.com/octocat/Hello-World/issues/1347#issuecomment-1' }, expected: { id: '1' } },
   createComment: { status: 201, body: { id: 1, body: 'Me too', html_url: 'https://github.com/octocat/Hello-World/issues/1347#issuecomment-1' }, expected: { id: '1' } },
 };
 

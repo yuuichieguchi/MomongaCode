@@ -14,7 +14,7 @@ import { HEAD, SHA, factsStore, seqOf } from './run-facts-fixture.ts';
 vi.setConfig({ testTimeout: 120_000 });
 
 const SIGNAL = new AbortController().signal;
-const VERIFICATION = { commands: ['npm test'], manifests: ['package.json'] };
+const VERIFICATION = { commands: ['npm test'], conditions: ['npm test'], manifests: ['package.json'] };
 
 const checkedRun = (project: string, steps: number): RunEventPayload[] => [
   ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }),

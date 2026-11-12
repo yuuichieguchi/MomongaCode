@@ -43,9 +43,9 @@ afterEach(() => {
 });
 
 describe('on a port whose groups are process groups the launch is a detached spawn', () => {
-  it('starts the command itself as the leader of a new group, and the group is its pid', () => {
+  it('starts the command itself as the leader of a new group, and the group is its pid', async () => {
     const seen: Spawned[] = [];
-    const launched = launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: ['a'], cwd: '/work', env: { A: '1' }, stdio: ['ignore', 'pipe', 'pipe'], port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
+    const launched = await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: ['a'], cwd: '/work', env: { A: '1' }, stdio: ['ignore', 'pipe', 'pipe'], port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
     expect(seen).toHaveLength(1);
     expect(seen[0]?.file).toBe('/bin/echo');
     expect(seen[0]?.args).toEqual(['a']);
@@ -54,27 +54,27 @@ describe('on a port whose groups are process groups the launch is a detached spa
     expect(launched.child).toBe(seen[0]?.child);
   });
 
-  it('leaves the working directory and the environment to the host when none is given', () => {
+  it('leaves the working directory and the environment to the host when none is given', async () => {
     const seen: Spawned[] = [];
-    launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'ignore', 'ignore'], port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
+    await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'ignore', 'ignore'], port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
     expect(seen[0]?.options).toEqual({ detached: true, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'] });
   });
 
-  it('opens the marker read-only for the command at its slot and closes its own descriptor after the start', () => {
+  it('opens the marker read-only for the command at its slot and closes its own descriptor after the start', async () => {
     const marker = markerIn();
     const seen: Spawned[] = [];
-    launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'pipe', 'pipe'], marker: { slot: 3, file: marker }, port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
+    await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'pipe', 'pipe'], marker: { slot: 3, file: marker }, port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
     const fd = seen[0]?.options.stdio?.[3];
     expect(typeof fd).toBe('number');
     expect(() => fs.fstatSync(fd as number)).toThrow(/EBADF/);
   });
 
-  it('passes a descriptor the caller opened at the slot and leaves it open', () => {
+  it('passes a descriptor the caller opened at the slot and leaves it open', async () => {
     const marker = markerIn();
     const given = fs.openSync(marker, 'r');
     try {
       const seen: Spawned[] = [];
-      launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'pipe', 'pipe', 'pipe'], marker: { slot: 4, file: marker, descriptor: given }, port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
+      await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'pipe', 'pipe', 'pipe'], marker: { slot: 4, file: marker, descriptor: given }, port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
       expect(seen[0]?.options.stdio).toEqual(['ignore', 'pipe', 'pipe', 'pipe', given]);
       expect(fs.fstatSync(given).isFile()).toBe(true);
     } finally {
@@ -82,20 +82,20 @@ describe('on a port whose groups are process groups the launch is a detached spa
     }
   });
 
-  it('closes the descriptor it opened when the start throws', () => {
+  it('closes the descriptor it opened when the start throws', async () => {
     const marker = markerIn();
     let fd: unknown;
     const failing = ((_file: string, _args: readonly string[], options: Options) => {
       fd = options.stdio?.[3];
       throw new Error('spawn failed: injected');
     }) as unknown as SpawnProcess;
-    expect(() => launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'pipe', 'pipe'], marker: { slot: 3, file: marker }, port: posixPort(), spawnProcess: failing })).toThrow('spawn failed: injected');
+    await expect(launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'pipe', 'pipe'], marker: { slot: 3, file: marker }, port: posixPort(), spawnProcess: failing })).rejects.toThrow('spawn failed: injected');
     expect(() => fs.fstatSync(fd as number)).toThrow(/EBADF/);
   });
 
-  it('tells the exit of the leader with its code and signal', () => {
+  it('tells the exit of the leader with its code and signal', async () => {
     const seen: Spawned[] = [];
-    const launched = launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'pipe', 'pipe'], port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
+    const launched = await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/bin/echo', args: [], stdio: ['ignore', 'pipe', 'pipe'], port: posixPort(), spawnProcess: recordingSpawn(LEADER_PID, seen) });
     const exits: unknown[] = [];
     launched.onExit((exit) => exits.push(exit), () => exits.push('failed'));
     seen[0]?.child.emit('exit', null, 'SIGTERM');
@@ -103,10 +103,23 @@ describe('on a port whose groups are process groups the launch is a detached spa
   });
 
   it('starts a real command in a group of its own', async () => {
-    const launched = launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: process.execPath, args: ['-e', 'process.exit(7)'], stdio: ['ignore', 'ignore', 'ignore'] });
+    const launched = await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: process.execPath, args: ['-e', 'process.exit(7)'], stdio: ['ignore', 'ignore', 'ignore'] });
     const exit = await new Promise((resolve, reject) => launched.onExit(resolve, reject));
     expect(launched.pgid).toBe(launched.child.pid);
     expect(exit).toEqual({ code: 7, signal: null });
+  });
+});
+
+describe('a launch begun outside any promise', () => {
+  it('delivers the spawn error of a missing program to a listener attached after the launch is awaited', async () => {
+    const error = await new Promise<unknown>((resolve) => {
+      setImmediate(() => {
+        void launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/nonexistent/momonga-missing-program', args: [], stdio: ['ignore', 'ignore', 'ignore'], port: posixPort() }).then((launched) => {
+          launched.child.once('error', resolve);
+        });
+      });
+    });
+    expect(error).toMatchObject({ code: 'ENOENT' });
   });
 });
 
@@ -123,9 +136,9 @@ describe('on a port whose identity is a job the launch goes through the keeper',
     keeper.say(`started ${COMMAND_PID}\n`);
   };
 
-  it('starts the keeper with the command after --, the marker by its path, and the marker slot of the caller ignored', () => {
+  it('starts the keeper with the command after --, the marker by its path, and the marker slot of the caller ignored', async () => {
     const { port, seen, spawnProcess } = world(running);
-    const launched = launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED,
+    const launched = await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED,
       file: 'C:\\node.exe',
       args: ['server.js'],
       cwd: 'C:\\work',
@@ -150,7 +163,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
       answeringMembers(() => [COMMAND_PID])(keeper);
       keeper.say(`started ${COMMAND_PID} 3 5\n`);
     });
-    const launched = launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe', 'pipe', 17, 21], marker: { slot: 4, file: 'C:\\m\\marker', descriptor: 17 }, port, spawnProcess });
+    const launched = await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe', 'pipe', 17, 21], marker: { slot: 4, file: 'C:\\m\\marker', descriptor: 17 }, port, spawnProcess });
     expect(seen[0]?.args.slice(5, 7)).toEqual(['3,5', '--']);
     expect(seen[0]?.options.stdio).toEqual(['ignore', 'pipe', 'pipe', 'pipe', 'ignore', 21]);
     const exits: unknown[] = [];
@@ -161,15 +174,15 @@ describe('on a port whose identity is a job the launch goes through the keeper',
     expect(exits).toEqual([{ code: 0, signal: null }]);
   });
 
-  it('names no descriptor when the command gets only the standard three', () => {
+  it('names no descriptor when the command gets only the standard three', async () => {
     const { port, seen, spawnProcess } = world(running);
-    launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe', 'ignore'], port, spawnProcess });
+    await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe', 'ignore'], port, spawnProcess });
     expect(seen[0]?.args.slice(5, 7)).toEqual(['-', '--']);
   });
 
   it('tells a launch whose keeper dropped a named descriptor as a failure, never as a started command', async () => {
     const { fake, port, spawnProcess } = world((keeper) => keeper.say(`started ${COMMAND_PID} 5\n`));
-    const launched = launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe', 'pipe', 17, 21], marker: { slot: 4, file: 'C:\\m\\marker', descriptor: 17 }, port, spawnProcess });
+    const launched = await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe', 'pipe', 17, 21], marker: { slot: 4, file: 'C:\\m\\marker', descriptor: 17 }, port, spawnProcess });
     const outcomes: unknown[] = [];
     launched.onExit(() => outcomes.push('exit'), (error) => outcomes.push(error));
     await settle();
@@ -178,22 +191,22 @@ describe('on a port whose identity is a job the launch goes through the keeper',
     expect(fake.keepers[0]?.closedByClient()).toBe(true);
   });
 
-  it('opens no descriptor of the marker and adds no slot for it', () => {
+  it('opens no descriptor of the marker and adds no slot for it', async () => {
     const { port, seen, spawnProcess } = world(running);
-    launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], marker: { slot: 3, file: 'C:\\absent\\marker' }, port, spawnProcess });
+    await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], marker: { slot: 3, file: 'C:\\absent\\marker' }, port, spawnProcess });
     expect(seen[0]?.options.stdio).toEqual(['ignore', 'pipe', 'pipe']);
   });
 
-  it('refuses a marker given only as a descriptor', () => {
+  it('refuses a marker given only as a descriptor', async () => {
     const { port, spawnProcess } = world(running);
-    expect(() => launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], marker: { slot: 3, descriptor: 9 }, port, spawnProcess })).toThrow(
+    await expect(launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], marker: { slot: 3, descriptor: 9 }, port, spawnProcess })).rejects.toThrow(
       'the marker of C:\\node.exe reaches a kept command by its path, and only a descriptor was given',
     );
   });
 
   it('tells the exit code the keeper reports for the command, not the exit of the keeper', async () => {
     const { fake, port, seen, spawnProcess } = world(running);
-    const launched = launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], port, spawnProcess });
+    const launched = await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], port, spawnProcess });
     const exits: unknown[] = [];
     launched.onExit((exit) => exits.push(exit), () => exits.push('failed'));
     await settle();
@@ -210,7 +223,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
       if (index === 0) running(keeper);
       else keeper.say('failed job-absent 2\n');
     });
-    const launched = launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], port, spawnProcess });
+    const launched = await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], port, spawnProcess });
     const exits: unknown[] = [];
     launched.onExit((exit) => exits.push(exit), () => exits.push('failed'));
     await settle();
@@ -221,7 +234,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
 
   it('tells a refused containment as a failure, never as an exit', async () => {
     const { port, spawnProcess } = world((keeper) => keeper.say('failed containment-unavailable 5\n'));
-    const launched = launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], port, spawnProcess });
+    const launched = await launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: 'C:\\node.exe', args: [], stdio: ['ignore', 'pipe', 'pipe'], port, spawnProcess });
     const failures: unknown[] = [];
     launched.onExit(() => failures.push('exit'), (error) => failures.push(error));
     await settle();
@@ -231,7 +244,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
 });
 
 describe('a program that outlives the product is started apart, in no group of the port', () => {
-  it('is a detached spawn with the options of the caller', () => {
+  it('is a detached spawn with the options of the caller', async () => {
     const seen: Spawned[] = [];
     const child = launchApart('/usr/bin/open', ['https://example.test'], { stdio: 'ignore', windowsHide: true }, recordingSpawn(LEADER_PID, seen));
     expect(child).toBe(seen[0]?.child);

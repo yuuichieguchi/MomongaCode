@@ -47,6 +47,8 @@ import type {
   ContributionPreparer,
   CreateChildRunResult,
   CreateRunInput,
+  CreateIssueRunResult,
+  NotFound,
   CreateRunResult,
   InboxAddResult,
   InboxDeliverResult,
@@ -1138,6 +1140,34 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return { run: decodeRun(row, decodeContext), requestDigest: readerFor('runs', String(row['id']), row).nullableString('request_digest') };
   };
 
+  type RootRunAnswer<T> = T | NotFound | { kind: 'key_reused' } | { kind: 'existing'; run: Run };
+
+  const createRootRun = async <T>(sessionId: string, input: CreateRunInput, insert: (sessionRow: Row, origin: Stored<MemoryOrigin>) => T): Promise<RootRunAnswer<T>> => {
+    const asked = sql.selectSession.get({ id: sessionId });
+    if (asked === undefined) return { kind: 'not_found' };
+    const origin = await originOf(decodeSession(asked, decodeContext).cwd);
+    return transaction<RootRunAnswer<T>>(() => {
+      const sessionRow = sql.selectSession.get({ id: sessionId });
+      if (sessionRow === undefined) return { kind: 'not_found' };
+      if (input.idempotencyKey !== undefined) {
+        const existing = findRunByIdempotencyKey(sessionId, input.idempotencyKey);
+        if (existing !== undefined) {
+          return sameRunRequest(existing, input.requestDigest) ? { kind: 'existing', run: existing.run } : { kind: 'key_reused' };
+        }
+      }
+      return insert(sessionRow, origin);
+    });
+  };
+
+  const insertIssueRun = (sessionRow: Row, input: CreateRunInput, origin: Stored<MemoryOrigin>, issue: string): CreateIssueRunResult => {
+    const project = decodeSession(sessionRow, decodeContext).cwd;
+    const earlier = issueWatch.issueStartsOf(project).find((start) => start.reference === issue);
+    if (earlier !== undefined) return { kind: 'already_started', runId: earlier.startedRunId };
+    const run = insertRootRun(sessionRow, input, origin);
+    issueWatch.recordIssueStart(project, issue, run.id);
+    return { kind: 'created', run };
+  };
+
   const hasInheritedEvent = (runId: string): boolean => sql.inheritedEvent.get({ runId }) !== undefined;
 
   const writeInheritance = (claim: Claim, plan: Extract<InheritPlanReply, { kind: 'ready' }>): InheritContextResult =>
@@ -1423,22 +1453,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', session: { ...decodeSession(row, decodeContext), mcpServers: servers } };
       }),
 
-    createRunAndEnqueue: async (sessionId, input) => {
-      const asked = sql.selectSession.get({ id: sessionId });
-      if (asked === undefined) return { kind: 'not_found' };
-      const origin = await originOf(decodeSession(asked, decodeContext).cwd);
-      return transaction<CreateRunResult>(() => {
-        const sessionRow = sql.selectSession.get({ id: sessionId });
-        if (sessionRow === undefined) return { kind: 'not_found' };
-        if (input.idempotencyKey !== undefined) {
-          const existing = findRunByIdempotencyKey(sessionId, input.idempotencyKey);
-          if (existing !== undefined) {
-            return sameRunRequest(existing, input.requestDigest) ? { kind: 'existing', run: existing.run } : { kind: 'key_reused' };
-          }
-        }
-        return { kind: 'created', run: insertRootRun(sessionRow, input, origin) };
-      });
-    },
+    createRunAndEnqueue: (sessionId, input) => createRootRun(sessionId, input, (sessionRow, origin) => ({ kind: 'created' as const, run: insertRootRun(sessionRow, input, origin) })),
+
+    createIssueRunAndEnqueue: (sessionId, input, issue) => createRootRun(sessionId, input, (sessionRow, origin) => insertIssueRun(sessionRow, input, origin, issue)),
 
     createChildRun: async (input) => {
       const askedParent = sql.selectRun.get({ id: input.parentRunId });

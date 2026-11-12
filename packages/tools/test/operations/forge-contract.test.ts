@@ -6,7 +6,7 @@ import { TEST_FETCH, onCleanup } from './support.ts';
 
 const CREDENTIAL = 'fake-forge-credential-for-tests';
 const HEAD_SHA = 'a'.repeat(40);
-const ARGS = { head: 'feature/x', base: 'main', title: 't', body: 'b', number: '1', headSha: HEAD_SHA, branch: 'feature/x' };
+const ARGS = { head: 'feature/x', base: 'main', title: 't', body: 'b', number: '1', headSha: HEAD_SHA, branch: 'feature/x', labels: 'bug' };
 
 const github = (): ForgeDescriptor => {
   const shipped = loadForgeDescriptors().find((descriptor) => descriptor.id === 'github');
@@ -66,6 +66,10 @@ describe('the fake forge against the documented answers of GitHub', () => {
     forge.branchSha.set('main', 'b'.repeat(40));
     if (operation !== 'createPullRequest') forge.pulls.push({ number: 1, head: 'feature/x', base: 'main', headSha: HEAD_SHA, title: 't', state: 'open', merged: false });
     forge.comments.set(1, ['Me too']);
+    if (operation.includes('Issue')) {
+      forge.issues.push({ number: 1, title: 'Found a bug', body: 'It breaks', state: 'open', labels: ['bug'], author: 'octocat', authorAssociation: 'COLLABORATOR' });
+      forge.issueComments.set(1, ['Me too']);
+    }
     forge.reviewComments.set(1, [{ path: 'file1.txt', line: 2, body: 'Great stuff!' }]);
     forge.checks.set(HEAD_SHA, [{ name: 'mighty_readme', status: 'completed', conclusion: 'neutral' }]);
     const contract = GITHUB_CONTRACT[operation];
