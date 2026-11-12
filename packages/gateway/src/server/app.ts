@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { MAX_TRACE_CONTENT_PAGE, QUOTE_ROUTE, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { MAX_RUN_SPANS_PAGE, MAX_TRACE_CONTENT_PAGE, QUOTE_ROUTE, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
-import type { BilledCallsCursorView, BilledCallsPageView, GatewayHealth, ModelList, MomongaModelList, TraceContentPage } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, GatewayHealth, ModelList, MomongaModelList, RunSpansPage, TraceContentPage } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, gatewayClosedError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import { withinPlanOperation } from '../plan/api.ts';
@@ -32,6 +32,7 @@ export type AppDependencies = {
   version: string;
   billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>) | undefined;
   traceContent: ((runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>) | undefined;
+  traceSpans: ((runId: string, after: number, limit: number, signal: AbortSignal) => Promise<RunSpansPage>) | undefined;
   retentionPurge: (runIds: readonly string[], cutoffMs: number, signal: AbortSignal) => Promise<number>;
   errors: ErrorExit;
   plan: PlanApi | undefined;
@@ -219,6 +220,17 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     const limit = Number(context.req.query('limit') ?? String(MAX_TRACE_CONTENT_PAGE));
     if (!isCount(limit) || limit < 1 || limit > MAX_TRACE_CONTENT_PAGE) throw invalidRequest('invalid_query', `limit must be an integer from 1 to ${MAX_TRACE_CONTENT_PAGE}`, 'limit');
     return context.json(await dependencies.traceContent(runId, after, limit, readSignalOf(context)));
+  });
+
+  app.get('/v1/momonga/spans', async (context) => {
+    if (dependencies.traceSpans === undefined) throw notFound('spans_unavailable', 'no trace store is kept here to read spans from');
+    const runId = context.req.query('run_id');
+    if (runId === undefined || runId === '') throw invalidRequest('invalid_query', 'the run_id query parameter is required', 'run_id');
+    const after = Number(context.req.query('after') ?? '0');
+    if (!isCount(after)) throw invalidRequest('invalid_query', 'after must be a non-negative integer', 'after');
+    const pageSize = Number(context.req.query('limit') ?? String(MAX_RUN_SPANS_PAGE));
+    if (!isCount(pageSize) || pageSize < 1 || pageSize > MAX_RUN_SPANS_PAGE) throw invalidRequest('invalid_query', `the page size must be an integer from 1 to ${MAX_RUN_SPANS_PAGE}`, 'limit');
+    return context.json(await dependencies.traceSpans(runId, after, pageSize, readSignalOf(context)));
   });
 
   const planRoute = (route: string): string => `${PLAN_API_PREFIX}${route}`;

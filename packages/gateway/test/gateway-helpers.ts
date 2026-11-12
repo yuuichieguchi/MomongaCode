@@ -170,6 +170,7 @@ export type HarnessOptions = {
   onError?: GatewayOptions['onError'];
   billedCalls?: GatewayOptions['billedCalls'];
   retentionPurge?: GatewayOptions['retentionPurge'];
+  traceSpans?: GatewayOptions['traceSpans'];
   credentials?: readonly string[];
   credentialFeed?: GatewayOptions['credentialFeed'];
   priceTable?: FixedModelsOptions['priceTable'];
@@ -205,6 +206,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     ...(options.onError === undefined ? {} : { onError: options.onError }),
     ...(options.billedCalls === undefined ? {} : { billedCalls: options.billedCalls }),
     ...(options.retentionPurge === undefined ? {} : { retentionPurge: options.retentionPurge }),
+    ...(options.traceSpans === undefined ? {} : { traceSpans: options.traceSpans }),
     ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
     ...(options.debugTcp === undefined ? {} : { debugTcp: options.debugTcp }),
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),

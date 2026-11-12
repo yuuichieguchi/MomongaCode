@@ -6,6 +6,9 @@ import { createFakeClock, registerCleanup, withTempDir } from '@momonga/testkit'
 import { runTraceOf } from '../../src/service/trace-view.ts';
 import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
+const NO_GATEWAY_SPANS = { runSpans: async (): Promise<SpanRecord[]> => [] };
+const OPEN = new AbortController().signal;
+
 const span = (overrides: Partial<SpanRecord>): SpanRecord => ({
   traceId: 't1',
   spanId: 's1',
@@ -22,7 +25,7 @@ const span = (overrides: Partial<SpanRecord>): SpanRecord => ({
 });
 
 describe('runTraceOf', () => {
-  it('summarises the spans recorded for the run and lists them without their events', (context) => {
+  it('summarises the spans recorded for the run and lists them without their events', async (context) => {
     const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(withTempDir(context), 'traces.db') });
     registerCleanup(context, () => store.close());
     store.writeSpans([
@@ -31,7 +34,7 @@ describe('runTraceOf', () => {
       span({ spanId: 's3', runId: 'other-run' }),
     ]);
 
-    const trace = runTraceOf(store, 'run-1');
+    const trace = await runTraceOf({ local: store, gateway: NO_GATEWAY_SPANS }, 'run-1', OPEN);
 
     expect(trace?.runId).toBe('run-1');
     expect(trace?.summary).toMatchObject({ steps: 1, toolCalls: 1, chatCalls: 0, durationMs: 60 });
@@ -49,10 +52,10 @@ describe('runTraceOf', () => {
     });
   });
 
-  it('has no trace for a run without spans', (context) => {
+  it('has no trace for a run without spans', async (context) => {
     const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(withTempDir(context), 'traces.db') });
     registerCleanup(context, () => store.close());
 
-    expect(runTraceOf(store, 'run-1')).toBeUndefined();
+    expect(await runTraceOf({ local: store, gateway: NO_GATEWAY_SPANS }, 'run-1', OPEN)).toBeUndefined();
   });
 });

@@ -45,8 +45,9 @@ const finishReasonsOf = (span: SpanRecord): string[] => {
   return value.filter((reason): reason is string => typeof reason === 'string');
 };
 
-export const summarizeRun = (store: TraceStore, runId: string): RunSummary => {
-  const spans = store.spansForRun(runId);
+export const summarizeRun = (store: TraceStore, runId: string): RunSummary => summarizeSpans(store.spansForRun(runId));
+
+export const summarizeSpans = (spans: readonly SpanRecord[]): RunSummary => {
   const chats = spans.filter((span) => span.attributes[A.ATTR_GEN_AI_OPERATION_NAME] === OPERATIONS.chat);
   const tools = spans.filter((span) => span.attributes[A.ATTR_GEN_AI_OPERATION_NAME] === OPERATIONS.tool);
   const steps = new Set(

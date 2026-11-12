@@ -68,6 +68,7 @@ export type TraceStore = {
   spansWithoutRun(): SpanRecord[];
   billedChatSpansAfter(runId: string | null, afterSeq: number, limit: number): IngestedSpan[];
   bodiesOfRunAfter(runId: string, afterId: number, limit: number): StoredBody[];
+  spansOfRunAfter(runId: string, afterSeq: number, count: number): IngestedSpan[];
   purgeRuns(runIds: readonly string[], cutoffMs: number): number;
   moveLegacyContent(options: { retentionMs: number }): number;
   compact(): void;
@@ -311,6 +312,7 @@ const prepareStatements = (db: DatabaseSync) => ({
     `INSERT INTO bodies (trace_id, span_id, kind, content, created_at_ms, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?)`,
   ),
   spansForRun: db.prepare('SELECT * FROM spans WHERE run_id = ? ORDER BY start_ms, end_ms DESC, rowid'),
+  spansOfRunAfter: db.prepare('SELECT * FROM spans WHERE run_id = ? AND ingest_seq > ? ORDER BY ingest_seq'),
   spansWithoutRun: db.prepare('SELECT * FROM spans WHERE run_id IS NULL ORDER BY start_ms, end_ms DESC, rowid'),
   bodiesOfRunAfter: db.prepare(
     `SELECT b.* FROM bodies b
@@ -432,6 +434,14 @@ const createStore = (db: DatabaseSync, statements: Statements): TraceStore => {
     },
     spansForRun: (runId) => all(statements.spansForRun, runId).map(decodeSpan),
     spansWithoutRun: () => all(statements.spansWithoutRun).map(decodeSpan),
+    spansOfRunAfter: (runId, afterSeq, count) => {
+      const found: IngestedSpan[] = [];
+      for (const row of statements.spansOfRunAfter.iterate(runId, afterSeq)) {
+        if (found.length === count) break;
+        found.push({ seq: readInteger('spans', String(row['span_id']), row, 'ingest_seq'), span: decodeSpan(row) });
+      }
+      return found;
+    },
     billedChatSpansAfter: (runId, afterSeq, limit) => {
       const filter = [jsonPath(A.ATTR_GEN_AI_OPERATION_NAME), OPERATIONS.chat, jsonPath(A.ATTR_GEN_AI_USAGE_INPUT_TOKENS), limit] as const;
       const rows =
@@ -467,4 +477,48 @@ export const openTraceStore = (options: OpenTraceStoreOptions): TraceStore => {
     db.close();
     throw error;
   }
+};
+
+const wireText = (view: Record<string, unknown>, key: string): string => {
+  const value = view[key];
+  if (typeof value !== 'string') throw new TypeError(`a span on the wire has no text ${key}`);
+  return value;
+};
+
+const wireTime = (view: Record<string, unknown>, key: string): number => {
+  const value = view[key];
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) throw new TypeError(`a span on the wire has no integer ${key}`);
+  return value;
+};
+
+const wireOneOf = <T extends string>(view: Record<string, unknown>, key: string, allowed: readonly T[]): T => {
+  const match = allowed.find((candidate) => candidate === view[key]);
+  if (match === undefined) throw new TypeError(`a span on the wire has ${key} ${JSON.stringify(view[key])}, not one of ${allowed.join(', ')}`);
+  return match;
+};
+
+export const spanRecordOfView = (view: unknown, runId: string): SpanRecord => {
+  if (!isRecord(view)) throw new TypeError('a span on the wire is not an object');
+  const parentSpanId = view['parentSpanId'];
+  if (parentSpanId !== null && typeof parentSpanId !== 'string') throw new TypeError('a span on the wire has a parentSpanId that is neither text nor null');
+  const written = view['attributes'];
+  if (!isRecord(written)) throw new TypeError('a span on the wire has no attributes object');
+  const attributes: Record<string, AttributeValue> = {};
+  for (const [key, entry] of Object.entries(written)) {
+    if (!isAttributeValue(entry)) throw new TypeError(`a span on the wire has attribute ${key} that is not a span attribute value`);
+    attributes[key] = entry;
+  }
+  return {
+    traceId: wireText(view, 'traceId'),
+    spanId: wireText(view, 'spanId'),
+    parentSpanId,
+    name: wireText(view, 'name'),
+    kind: wireOneOf(view, 'kind', SPAN_KINDS),
+    startMs: wireTime(view, 'startMs'),
+    endMs: wireTime(view, 'endMs'),
+    status: wireOneOf(view, 'status', SPAN_STATUSES),
+    attributes,
+    events: [],
+    runId,
+  };
 };

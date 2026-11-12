@@ -8,7 +8,7 @@ import type { Probing } from '@momonga/protocol';
 import type { KnownProbeKey } from '@momonga/config';
 import * as gatewayModule from '@momonga/gateway';
 import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector, waitFor, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import type { FakeClock, FakeFmConfig } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
@@ -202,6 +202,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
       const outcome = await probeManagedFm({
         timers: systemTiming,
         inspector: testProcessInspector(),
+        launch: TEST_UNPROTECTED_LAUNCH,
         lock: testKernelLock(),
         platform: process.platform,
         paths,

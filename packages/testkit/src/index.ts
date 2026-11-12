@@ -305,3 +305,4 @@ export { testSecretLocations } from './secret-locations.ts';
 export { TEST_CHILD_UNPROTECTED, TEST_STDIO_LAUNCH } from './child-protection.ts';
 export { testEndpointScope } from './endpoint-scope.ts';
 export { TEST_BUILTIN_TOOL_OFFER, TEST_TOOL_LIMITS } from './tool-limits.ts';
+export { TEST_UNPROTECTED_LAUNCH } from './test-launch.ts';
