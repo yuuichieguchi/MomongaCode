@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, DescriptorWriter, DescriptorWriterSync, FileContent } from './atomic-file.ts';
 import { PRIVATE_MODE, assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
@@ -76,6 +77,7 @@ export interface FileSystemSync extends AtomicWriteFileSystemSync<number> {
   readTextFileSync(file: string): string;
   makeDirectorySync(directory: string, mode: number): void;
   removeTreeSync(directory: string): void;
+  temporaryDirectorySync(): string;
 }
 
 const ACCESS_MODES: Readonly<Record<AccessCheck, number>> = { exists: fs.constants.F_OK, execute: fs.constants.X_OK, list: fs.constants.R_OK | fs.constants.X_OK };
@@ -270,6 +272,7 @@ export const nodeFileSystemSync: FileSystemSync = {
   readTextFileSync: (file) => fs.readFileSync(file, 'utf8'),
   makeDirectorySync: (directory, mode) => void fs.mkdirSync(directory, { mode }),
   removeTreeSync: (directory) => fs.rmSync(directory, { recursive: true, force: true }),
+  temporaryDirectorySync: () => os.tmpdir(),
 };
 
 export const readFileBytesSync = (file: string): Uint8Array => fs.readFileSync(file);

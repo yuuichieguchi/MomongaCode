@@ -13,6 +13,11 @@ const ADAPTERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/node-file-system.ts': 'the one production FileSystem adapter over node:fs',
   'packages/foundation/src/platform/command-runner.ts': 'the one production adapter that runs a host command',
   'packages/tools/src/node-ports.ts': 'the one production adapter module of tools: the child-and-timer port, the shell host and the host-bound factories',
+  'packages/foundation/src/platform/group-launch.ts': 'the one production adapter of the group launch: it spawns the leader of a process group',
+  'packages/foundation/src/platform/group-port.ts': 'the one production ProcessGroupPort adapter: it signals a process group through process.kill and reads its members',
+  'packages/foundation/src/platform/windows-keeper-host.ts': 'the one production KeeperHost adapter: it starts the Windows keeper and listens on its pipe',
+  'packages/foundation/src/pattern-check.ts': 'the one production adapter that runs untrusted schema patterns off the event loop, in a worker thread',
+  'packages/foundation/src/lifeline.ts': 'the one production adapter of the lifeline: it watches the inherited descriptor as a socket and yields a turn between its lines',
   'packages/foundation/src/daemon-entry.ts': 'the composition root of every daemon process: host streams, signals and timers',
   'packages/cli/src/node-ports.ts': 'the composition root of the CLI ports',
   'packages/cli/src/update/node-ports.ts': 'the composition root of the update ports',
@@ -39,13 +44,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/context/src/fs-instruction-reader.ts': { 'node:fs/promises': 3 },
   'packages/eval/src/files.ts': { 'node:fs/promises': 4 },
   'packages/foundation/src/host-identity.ts': { 'node:fs': 2 },
-  'packages/foundation/src/lifeline.ts': { 'node:fs': 1, 'node:net': 1, 'setImmediate': 1 },
   'packages/foundation/src/outbound.ts': { 'node:net': 1, 'node:worker_threads': 1 },
-  'packages/foundation/src/pattern-check.ts': { 'node:worker_threads': 1 },
-  'packages/foundation/src/platform/group-launch.ts': { 'node:child_process': 2 },
-  'packages/foundation/src/platform/group-port.ts': { 'process.kill': 3 },
-  'packages/foundation/src/platform/sqlite-lock.ts': { 'node:os': 1 },
-  'packages/foundation/src/platform/windows-keeper-host.ts': { 'node:child_process': 1, 'node:net': 1 },
   'packages/foundation/src/process-contract.ts': { 'AbortSignal.timeout': 1 },
   'packages/foundation/src/rotating-log.ts': { 'node:fs': 7 },
   'packages/foundation/src/socket-path.ts': { 'node:net': 1 },
@@ -91,7 +90,6 @@ const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
 };
 
 const SYNCHRONOUS_FILE_CALLS: Readonly<Record<string, Counts>> = {
-  'packages/foundation/src/lifeline.ts': { 'fstatSync': 1 },
   'packages/foundation/src/rotating-log.ts': { 'closeSync': 1, 'fstatSync': 1, 'openSync': 1, 'renameSync': 2, 'statSync': 1, 'writeSync': 1 },
   'packages/gateway/src/managed/fm-processes.ts': { 'closeSync': 1, 'openSync': 1, 'rmSync': 2 },
   'packages/gateway/src/process-ports.ts': { 'existsSync': 1, 'readFileSync': 1, 'statSync': 1 },

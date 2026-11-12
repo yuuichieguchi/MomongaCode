@@ -1,4 +1,3 @@
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './kernel-lock.ts';
@@ -75,7 +74,7 @@ const removesOpenFilesIn = createCapabilityProbe<string, boolean>(
 );
 
 const removesOpenFilesOnThisHost = (): boolean => {
-  const result = removesOpenFilesIn(os.tmpdir());
+  const result = removesOpenFilesIn(nodeFileSystemSync.temporaryDirectorySync());
   if (result.kind === 'unmeasured') throw new Error(`whether this host unlinks open files could not be measured: ${result.evidence}`);
   return result.kind === 'supported';
 };
