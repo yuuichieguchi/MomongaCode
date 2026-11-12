@@ -749,7 +749,12 @@ export function App(props: AppProps) {
       onChildEvent: (frame, agent) =>
         deliver(() => {
           setReconnectingSince(undefined);
-          if (!isOpaqueEvent(frame.data)) foldChildEvent(store, frame.data, agent);
+          const event = frame.data;
+          if (isOpaqueEvent(event)) return;
+          const key = 'seq' in event ? { runId: event.runId, seq: event.seq } : undefined;
+          if (key !== undefined) origins.at(key);
+          foldChildEvent(store, event, agent);
+          if (key !== undefined) replay?.notes?.after(key);
         }),
       onChildStarted: (agent, childRunId) => deliver(() => subagentStarted(store, agent, childRunId, now())),
       onChildEnded: (_agent, childRunId) => deliver(() => subagentEnded(store, childRunId)),
