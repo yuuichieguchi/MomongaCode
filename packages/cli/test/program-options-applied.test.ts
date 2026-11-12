@@ -39,9 +39,6 @@ const ran = async (...args: string[]): Promise<{ code: number | undefined; writt
   const program = buildProgram(
     {
       ports,
-      policyVerify: () => {
-        throw new Error('policy verify is not part of this test');
-      },
       entries,
       update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
       interrupt,

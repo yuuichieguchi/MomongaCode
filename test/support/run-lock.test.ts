@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawn } from '@momonga/testkit/child-process';
 import type { ChildProcess } from '@momonga/testkit/child-process';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, pollUntil } from '@momonga/testkit';
+import { createTempDir, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RUN_LOCK_DEFAULT_WAIT_SECONDS } from '../../scripts/support/run-lock.ts';
 import config from '../../vitest.config.ts';
@@ -42,7 +41,7 @@ const fixtureTest = (importLine: string): string =>
   ].join('\n');
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mm-run-lock-setup-'));
+  root = createTempDir();
   fixture = path.join(root, 'fixture');
   out = path.join(root, 'out');
   state = path.join(root, 'state');

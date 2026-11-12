@@ -1,11 +1,11 @@
 import http from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runProbe } from '@momonga/gateway';
 import { MALFORMED_JSON } from '../src/adapters/shared/json.ts';
 import { hostProbePorts } from './probe-ports-support.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const closers: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -15,7 +15,7 @@ afterEach(async () => {
 const DEPTH = 10_000;
 
 const serverListing = async (listing: string): Promise<string> => {
-  const directory = await mkdtemp(join(tmpdir(), 'probe-deep-'));
+  const directory = createTempDir();
   const socketPath = join(directory, 's.sock');
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' });

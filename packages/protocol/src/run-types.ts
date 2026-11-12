@@ -172,7 +172,7 @@ export const MODEL_REJECTION_REASONS = ['counter_mismatch', 'missing_counter', '
 
 export type ModelRejectionReason = (typeof MODEL_REJECTION_REASONS)[number];
 
-export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier', 'rejected_answer'] as const;
+export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier', 'rejected_answer', 'reflection'] as const;
 
 export type UsageChargePurpose = (typeof USAGE_CHARGE_PURPOSES)[number];
 
@@ -192,12 +192,17 @@ export const CHANGE_NOT_SHOWN_LEAD = 'The change is not shown: ';
 
 export const hunkHeaderOf = (hunk: DiffHunk): string => `@@ -${hunk.oldStart} +${hunk.newStart} @@`;
 
-export const approvalShownLines = (shown: ApprovalShown): string[] => [
-  ...(shown.effect === undefined ? [] : shown.effect.split('\n')),
-  ...(shown.claim === undefined ? [] : [`${MODEL_CLAIM_LEAD}${shown.claim}`]),
-  ...(shown.diff?.diffOmitted === undefined ? [] : [`${CHANGE_NOT_SHOWN_LEAD}${shown.diff.diffOmitted}`]),
-  ...(shown.diff?.hunks ?? []).flatMap((hunk) => [hunkHeaderOf(hunk), ...hunk.lines]),
+export type ApprovalShownPart = { kind: 'text'; lines: string[] } | { kind: 'hunks'; hunks: DiffHunk[] };
+
+export const approvalShownParts = (shown: ApprovalShown): ApprovalShownPart[] => [
+  ...(shown.effect === undefined ? [] : [{ kind: 'text' as const, lines: shown.effect.split('\n') }]),
+  ...(shown.claim === undefined ? [] : [{ kind: 'text' as const, lines: [`${MODEL_CLAIM_LEAD}${shown.claim}`] }]),
+  ...(shown.diff?.diffOmitted === undefined ? [] : [{ kind: 'text' as const, lines: [`${CHANGE_NOT_SHOWN_LEAD}${shown.diff.diffOmitted}`] }]),
+  ...(shown.diff?.hunks === undefined || shown.diff.hunks.length === 0 ? [] : [{ kind: 'hunks' as const, hunks: shown.diff.hunks }]),
 ];
+
+export const approvalShownLines = (shown: ApprovalShown): string[] =>
+  approvalShownParts(shown).flatMap((part) => (part.kind === 'text' ? part.lines : part.hunks.flatMap((hunk) => [hunkHeaderOf(hunk), ...hunk.lines])));
 
 export const isApprovalShown = (value: unknown): value is ApprovalShown => {
   if (typeof value !== 'object' || value === null || !('input' in value)) return false;
@@ -257,7 +262,7 @@ export type RunEventPayload =
   | { type: 'model.responded'; step: number; attempt: number; response: ModelResponse; target?: string }
   | { type: 'agent.message.delta'; step: number; attempt: number; itemId: string; text: string }
   | { type: 'agent.thought.delta'; step: number; attempt: number; itemId: string; text: string }
-  | { type: 'model.stream.restarted'; step: number; attempt: number }
+  | { type: 'model.stream.restarted'; step: number; attempt: number; itemIds: string[] }
   | {
       type: 'tool.call';
       callId: string;
@@ -570,7 +575,7 @@ export type RunState = {
   loadedTools: string[];
   offeredTools?: string[];
   loopWarned?: { signature: string };
-  streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
+  streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[]; thoughtIds: string[] };
   mode?: PermissionMode;
   taskSeq: number;
   loopGroups: { signature: string; outputSignature?: string }[];

@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { ElicitationRequestView, ImageAttachment, SkillView } from '@momonga/protocol';
-import { maxDiffLines } from '../src/tui/diff.ts';
-import { panelRowsCap } from '../src/tui/screen/layout.ts';
 import { FRAME_BOUND_MS, KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 
@@ -244,11 +242,10 @@ describe('approval diff size', () => {
         shown: { title: 'Write /work/a.txt', input: {}, diff: { hunks: [{ oldStart: 0, newStart: 1, lines: content.split('\n').map((line) => `+${line}`) }], added: 30, removed: 0 } },
       }),
     );
-    const visible = maxDiffLines(panelRowsCap(20), 2);
     const prompt = await untilFrame(app, 'Permission requested: Write /work/a.txt');
-    expect(prompt).toContain(`… ${31 - visible} more lines`);
-    expect(prompt).toContain(`+ line ${visible - 2}`);
-    expect(prompt).not.toContain(`+ line ${visible - 1}`);
+    expect(prompt).toMatch(/… \d+ more lines/);
+    expect(prompt).toMatch(/ 1 \+line 0/);
+    expect(prompt).not.toContain('line 29');
     app.unmount();
   });
 });

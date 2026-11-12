@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { syncPaths } from '../src/index.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 const lockedDirs: string[] = [];
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cdir-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

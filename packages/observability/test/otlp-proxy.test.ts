@@ -1,7 +1,6 @@
 import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import tls from 'node:tls';
 import type { AddressInfo } from 'node:net';
@@ -12,7 +11,7 @@ import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace';
 import { createOtlpTraceExporter, exportersFor, installOtelErrorHandler, startAgentSpan, startToolSpan } from '@momonga/observability';
 import { findOutboundError, installTrust } from '@momonga/foundation';
 import type { NetworkConfig, OutboundNetwork, TrustReport } from '@momonga/foundation';
-import { decodeOtlpSpans, startOtlpCollector, waitFor } from '@momonga/testkit';
+import { createTempDir, decodeOtlpSpans, startOtlpCollector, waitFor } from '@momonga/testkit';
 import type { OtlpCollector } from '@momonga/testkit';
 import { RUN_ID, harness, registerCleanup } from './helpers.ts';
 
@@ -42,7 +41,7 @@ const openssl = (args: string[], cwd: string): void => {
 };
 
 const makePki = (): Pki => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-otlp-pki-'));
+  const dir = createTempDir();
   openssl(['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', 'ca.key', '-out', 'ca.pem', '-days', '2', '-subj', '/CN=momonga-test-ca', '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign'], dir);
   openssl(['req', '-newkey', 'rsa:2048', '-nodes', '-keyout', 'leaf.key', '-out', 'leaf.csr', '-subj', `/CN=${COLLECTOR_HOST}`], dir);
   fs.writeFileSync(path.join(dir, 'leaf.ext'), `subjectAltName=DNS:${COLLECTOR_HOST}\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n`);

@@ -1,5 +1,4 @@
-import { testSecretLocations } from '@momonga/testkit';
-import os from 'node:os';
+import { systemTempRoot, testSecretLocations } from '@momonga/testkit';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
@@ -9,7 +8,7 @@ import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout } fro
 
 const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 
-describe.runIf(syncPaths.volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensitively on a case-insensitive volume', () => {
+describe.runIf(syncPaths.volumeIsCaseInsensitive(systemTempRoot()))('roots compare case-insensitively on a case-insensitive volume', () => {
   it('allows a differently cased target under a root that does not exist yet in acceptEdits', async () => {
     const layout = makeLayout();
     const root = path.join(layout.project, 'newdir');

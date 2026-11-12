@@ -1,6 +1,5 @@
 import { execFile, spawn } from '@momonga/testkit/child-process';
 import type { StdioOptions } from '@momonga/testkit/child-process';
-import os from 'node:os';
 
 const PROBE = 'for fd in 3 4; do if (: <&$fd) 2>/dev/null; then echo fd$fd; fi; done';
 
@@ -28,7 +27,7 @@ const viaInherit = async (): Promise<string> => {
 const results: Record<string, string> = {};
 results['execFile'] = await viaExecFile();
 results['spawn'] = await viaSpawn(undefined);
-results['spawnDetached'] = await viaSpawn(undefined, { detached: true, cwd: os.tmpdir(), env: { PATH: '/usr/bin:/bin' } });
+results['spawnDetached'] = await viaSpawn(undefined, { detached: true, cwd: '/', env: { PATH: '/usr/bin:/bin' } });
 results['explicit'] = await viaSpawn(['ignore', 'pipe', 'pipe', 3, 4]);
 await viaInherit();
 process.stdout.write(`${JSON.stringify(results)}\n`);

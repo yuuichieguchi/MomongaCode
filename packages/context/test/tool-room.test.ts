@@ -87,13 +87,13 @@ describe('the tools a target is offered', () => {
       ]);
     });
 
-    it('stay offered when the declared window leaves no room for the tool they serve and something keeps them', async () => {
+    it('are not offered past the first tool by rank that does not fit, even when something keeps them', async () => {
       const built = await builtFor(1_536, SERVING, true);
       expect(namesOf(built.tools)).not.toContain('F');
-      expect(namesOf(built.tools)).toContain('G');
+      expect(namesOf(built.tools)).not.toContain('G');
     });
 
-    it('follow the tool they serve by the fit rank, not by the order the candidates come in', async () => {
+    it('follow the fit rank, not the order the candidates come in: a companion ranked past the first tool that does not fit is not offered though it came first', async () => {
       const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
       const { ports } = harness(capabilities);
       const companionFirst = [ranked(toolNamed('G', 1), 6), ...TOOLS.map((tool, index) => ranked(tool, index))];
@@ -102,7 +102,7 @@ describe('the tools a target is offered', () => {
         ports,
       );
       expect(namesOf(built.tools)).toContain('A');
-      expect(namesOf(built.tools)).toContain('G');
+      expect(namesOf(built.tools)).not.toContain('G');
     });
 
     it('keep the order the candidates came in when all fit, because the offered order is the cached prefix', async () => {

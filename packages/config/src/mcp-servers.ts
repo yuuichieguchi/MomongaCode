@@ -14,6 +14,8 @@ import { assertMcpServer, assertMcpServersFile } from './settings.ts';
 import type { McpServerConfig, McpServersFile, Settings } from './settings.ts';
 import { mcpServerNameProblem } from './mcp-server-rules.ts';
 import { environmentValueOf, expandVariables } from './expansion.ts';
+
+export const projectMcpServersFile = (projectDir: string): string => path.join(projectDir, '.mcp.json');
 import type { McpServerScope } from './mcp-server-rules.ts';
 
 export type { McpServerScope };
@@ -273,7 +275,7 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, referenceEn
     }
   }
 
-  const mcpJson = path.join(projectDir, '.mcp.json');
+  const mcpJson = projectMcpServersFile(projectDir);
   if (!(await trust.isTrusted(projectDir, signal))) {
     if (await exists(mcpJson, asker)) warnings.push(`project ${projectDir} is not trusted; ${mcpJson} was not read`);
     return { enabled, pendingApproval, failed, warnings };

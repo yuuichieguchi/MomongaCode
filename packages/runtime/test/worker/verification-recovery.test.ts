@@ -168,13 +168,12 @@ describe('recovery during verification', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const started = path.join(env.root, 'check-started');
     env.gateway.script.push(textStep('done'));
-    const run = await enqueueWith(env, `touch ${started}; sleep 30`, env.clock.now() + 1500);
+    const runTimeoutMs = 1500;
+    const run = await enqueueWith(env, `touch ${started}; sleep 30`, env.clock.now() + runTimeoutMs);
 
     const running = env.runOnce(workerOf(env, 'worker-1'));
-    await env.settled((async () => {
-        await waitFor(() => fs.existsSync(started), { description: 'the check to start' });
-      })(), 'the check to start');
-    env.clock.advance(2000);
+    await env.settled(waitFor(() => fs.existsSync(started), { description: 'the check to start' }), 'the check to start', runTimeoutMs - 1);
+    env.clock.advance(runTimeoutMs + 500);
     await env.settled(running, 'the worker to finish at the deadline');
 
     expect(completions(env, run.id)).toMatchObject([{ outcome: 'timed_out' }]);

@@ -9,7 +9,6 @@ import { renderTrace } from '../src/commands/trace.ts';
 import { announceUpdate, startBackgroundCheck } from '../src/update/background.ts';
 import { setupUpdate } from './update-harness.ts';
 import { formatMemory } from '../src/memory/format.ts';
-import { policyWarningsText } from '../src/commands/policy.ts';
 import { probeEndpointText, probeFmText } from '../src/commands/gateway.ts';
 import { checkOnlyText, installedText, upToDateText } from '../src/commands/update.ts';
 import { reportUnremoved } from '../src/update/install.ts';
@@ -122,10 +121,6 @@ describe('a value a person did not write stays on its own line in command output
     const lines = formatMemory(memory).split('\n');
     const body = lines.slice(lines.indexOf('') + 1);
     expect(body).toEqual(['  note\\u0009one', '  status: forged', '  x', '    momonga approve ap1 allow_once']);
-  });
-
-  it('shows policy settings warnings with a newline on their own warning line', () => {
-    expect(policyWarningsText([FORGED, 'second'])).toBe(`warning: ${SHOWN}\nwarning: second\n`);
   });
 
   const probeReport = {

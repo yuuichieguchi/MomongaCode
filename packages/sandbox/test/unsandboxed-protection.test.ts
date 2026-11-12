@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, childProtectionFor, createUnsandboxed } from '@momonga/sandbox';
 import type { SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { createTempDir, killGroupsForCleanup, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -77,7 +77,7 @@ describe.runIf(PROTECTED_HOST)('a sandbox none child under the protection of the
   });
 
   it.runIf(process.platform === 'darwin')('cannot connect to a socket under the home', async () => {
-    const socketHome = fs.realpathSync(fs.mkdtempSync('/tmp/w6-'));
+    const socketHome = createTempDir({ asHome: true });
     created.push(socketHome);
     home = socketHome;
     const root = momongaLayout(home, process.platform, {}).root;

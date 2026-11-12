@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { claimNewEntrySync, EntryLockHeldError, momongaPaths } from '@momonga/foundation';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 import { nodeRecordFiles } from '../../src/node-ports.ts';
 import { HANDOVER_FORMAT, encodeRecord, recordFileOf } from '../../src/handover/record.ts';
 
@@ -14,7 +13,7 @@ afterEach(() => {
 });
 
 const fileOfFreshHome = (): string => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-node-ports-'));
+  const home = createTempDir();
   homes.push(home);
   return recordFileOf(momongaPaths(home, process.platform, process.env), 'tui', 'session-1');
 };

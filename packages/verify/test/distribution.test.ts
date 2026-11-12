@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { brotliCompressSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { HeldKernelLock } from '@momonga/foundation';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 import { Z3DistributionError, Z3_API_FILE, Z3_MANIFEST_ASSET, Z3_RUNTIME_FILE, Z3_STAGED_PREFIX, Z3_WASM_ASSET, ensureBundledZ3, parseZ3Manifest } from '../src/index.ts';
 import type { DistributionPorts } from '../src/index.ts';
 
@@ -38,7 +37,7 @@ afterEach(() => {
 });
 
 const executablesRoot = (): string => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-z3-distribution-')));
+  const root = createTempDir();
   created.push(root);
   return root;
 };
@@ -123,5 +122,14 @@ describe('the embedded Z3 distribution', () => {
     expect(() => parseZ3Manifest('{}')).toThrow(Z3DistributionError);
     expect(() => parseZ3Manifest(JSON.stringify({ ...manifestFor(), contentHash: 'abc' }))).toThrow('content hash');
     expect(() => parseZ3Manifest(JSON.stringify({ ...manifestFor(), wasm: { asset: 1 } }))).toThrow('solver binary');
+  });
+});
+
+describe('the Z3 manifest is read through the one bounded JSON parser', () => {
+  it('refuses a manifest that is not valid JSON or nests beyond the bound, naming the file and the way forward', () => {
+    for (const text of ['{ not json', `${'['.repeat(10000)}${']'.repeat(10000)}`]) {
+      expect(() => parseZ3Manifest(text)).toThrow(Z3DistributionError);
+      expect(() => parseZ3Manifest(text)).toThrow(/z3-manifest\.json .*reinstall momonga/);
+    }
   });
 });

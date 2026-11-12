@@ -50,7 +50,7 @@ type RequestSchemaName =
   | 'PutTrustRequest'
   | 'McpFolderRequest'
   | 'AddRuleRequest'
-  | 'PutRuleVerdictRequest'
+  | 'PolicyVerifyRequest'
   | 'PromoteMemoryRequest'
   | 'AddMemoryRequest'
   | 'AdoptGuidelineRequest'
@@ -70,7 +70,7 @@ const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
   PutTrustRequest: requestValidator(RUN_API_SCHEMAS.PutTrustRequest),
   McpFolderRequest: requestValidator(RUN_API_SCHEMAS.McpFolderRequest),
   AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),
-  PutRuleVerdictRequest: requestValidator(RUN_API_SCHEMAS.PutRuleVerdictRequest),
+  PolicyVerifyRequest: requestValidator(RUN_API_SCHEMAS.PolicyVerifyRequest),
   PromoteMemoryRequest: requestValidator(RUN_API_SCHEMAS.PromoteMemoryRequest),
   AddMemoryRequest: requestValidator(RUN_API_SCHEMAS.AddMemoryRequest),
   AdoptGuidelineRequest: requestValidator(RUN_API_SCHEMAS.AdoptGuidelineRequest),
@@ -120,13 +120,6 @@ export const readJson = async (request: Request, accepted: readonly string[], ma
   }
 };
 
-const fieldOf = (instancePath: string): string =>
-  instancePath
-    .split('/')
-    .slice(1)
-    .map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'))
-    .reduce((field, token) => (/^(0|[1-9]\d*)$/.test(token) ? `${field}[${token}]` : field === '' ? token : `${field}.${token}`), '');
-
 const ruleOf = (error: UntrustedError): string => {
   const pattern = error.params['pattern'];
   const rule = error.keyword === 'pattern' && typeof pattern === 'string' ? PATTERN_RULES.get(pattern) : undefined;
@@ -134,7 +127,7 @@ const ruleOf = (error: UntrustedError): string => {
 };
 
 const refusalText = (errors: readonly UntrustedError[]): string =>
-  errors.map((error) => (error.instancePath === '' ? `the request body ${error.message}` : `${fieldOf(error.instancePath)} ${ruleOf(error)}`)).join(', ');
+  errors.map((error) => (error.instancePath === '' ? `the request body ${error.message}` : `${error.instancePath} ${ruleOf(error)}`)).join(', ');
 
 export const validateBody = <T>(name: RequestSchemaName, value: unknown): T => {
   const verdict = validators[name](value);

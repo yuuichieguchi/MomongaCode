@@ -1,12 +1,10 @@
-import fs from 'node:fs';
 import http from 'node:http';
 import type net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createOpenResponsesAdapter, unauthenticatedSource } from '@momonga/gateway';
 import type { UpstreamEndpoint, UpstreamLiveness } from '@momonga/gateway';
-import { createFakeClock, createFakeTimers, driveFakeTime, openResponsesTextReply } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createTempDir, driveFakeTime, openResponsesTextReply } from '@momonga/testkit';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
@@ -99,7 +97,7 @@ const startUpstream = async (transport: Transport, steps: readonly UpstreamStep[
       }),
   );
   if (transport === 'unix') {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+    const dir = createTempDir();
     const socketPath = path.join(dir, 'upstream.sock');
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     return { endpoint: { kind: 'unix', socketPath }, requests: () => received };

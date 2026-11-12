@@ -1,13 +1,11 @@
 import { execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { afterEach } from 'vitest';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { groupAlive, groupTerminationBoundMs } from '@momonga/foundation';
+import { groupAlive, groupTerminationBoundMs, nodeFileSystem } from '@momonga/foundation';
 import { createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
-import { LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup, testProcessInspector, pollUntil } from '@momonga/testkit';
+import { createTempDir, killGroupsForCleanup, killPidsForCleanup, LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, pollUntil, TEST_STDIO_LAUNCH, testProcessInspector } from '@momonga/testkit';
 import { closeGraceOf } from '../src/stdio-transport.ts';
 
 export const transportCloseBoundMs = (closeGraceMs: number): number => closeGraceMs + groupTerminationBoundMs(closeGraceMs) + closeGraceMs + 2 * closeGraceMs;
@@ -42,7 +40,7 @@ export const pidAlive = (pid: number): boolean => {
 export const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 export const makeDir = (prefix = 'mm-mcp-mk-'): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  const dir = createTempDir();
   onCleanup(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 };
@@ -98,10 +96,12 @@ export const createTransport = (options: {
     config: options.config,
     projectDir: options.projectDir ?? makeDir(),
     baseEnv: options.baseEnv ?? BASE_ENV,
+    files: nodeFileSystem,
+    launch: TEST_STDIO_LAUNCH,
     ...(options.closeGraceMs === undefined ? {} : { closeGraceMs: options.closeGraceMs }),
     ...(options.markers === undefined ? {} : { markers: { inspector: testProcessInspector(), ...options.markers } }),
     ...(options.terminate === undefined ? {} : { terminate: options.terminate }),
-  } as StdioTransportOptions);
+  });
   onCleanup(async () => {
     const pgid = transport.pgid;
     await transport.close().catch(() => undefined);

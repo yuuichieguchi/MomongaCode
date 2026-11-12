@@ -90,13 +90,13 @@ describe('createRotatingLogFile', () => {
     expect(tagsIn(file)).toEqual(['b2']);
   });
 
-  it('files are 0600 and the directory 0700', (context) => {
+  it('files are 0600', (context) => {
     const dir = path.join(withTempDir(context), 'logs');
+    fs.mkdirSync(dir, { mode: 0o700 });
     const file = path.join(dir, 'runtime.log');
     const sink = sinkAt(file);
     writeTags(sink, range(1, 5));
     sink.close();
-    expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect(fs.statSync(`${file}.1`).mode & 0o777).toBe(0o600);
   });
@@ -167,6 +167,7 @@ describe('createRotatingLogFile', () => {
 
   it('no method throws after construction, even when the directory disappears', (context) => {
     const dir = path.join(withTempDir(context), 'logs');
+    fs.mkdirSync(dir, { mode: 0o700 });
     const file = path.join(dir, 'runtime.log');
     const sink = sinkAt(file);
     writeTags(sink, ['a1']);

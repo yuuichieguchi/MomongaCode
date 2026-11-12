@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ProbeFailedError, reapMarkedProcesses, reapMarkedProcessesWithReport, reconcileProcessGroup } from '@momonga/foundation';
 import type { MarkerReconcileResult, ProbeResult, ProcessGroupPort, ProcessInspector, Timing } from '@momonga/foundation';
-import { createFakeClock, sleepDrivenTiming } from '@momonga/testkit';
+import { createFakeClock, createTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import { reapHolders } from '../src/process-markers.ts';
 
 const markerDirs: string[] = [];
@@ -14,7 +13,7 @@ afterEach(() => {
 });
 
 const realMarker = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-stop-id-')));
+  const dir = createTempDir();
   markerDirs.push(dir);
   const marker = path.join(dir, 'call-7f2a');
   fs.writeFileSync(marker, '', { mode: 0o600 });

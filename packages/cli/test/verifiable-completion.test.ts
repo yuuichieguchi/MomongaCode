@@ -1,4 +1,3 @@
-import { testKernelLock } from '@momonga/testkit';
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { EntryIo } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
@@ -11,7 +10,6 @@ import { buildProgram } from '../src/program.ts';
 import { describeEnd, resultOf } from '../src/run/headless.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { NO_HELPER } from './no-helper.ts';
 
 const seen = vi.hoisted(() => ({ headless: [] as Record<string, unknown>[] }));
@@ -34,7 +32,6 @@ const harness = () => {
   const ports = { version: '9.9.9', interrupt: new AbortController().signal, home: freshHome(), cwd: '/c', env: {}, platform: process.platform, terminal: {} } as unknown as CliPorts;
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { Client, type ListChangedHandlers } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
@@ -20,6 +19,7 @@ import {
 } from '@momonga/testkit';
 
 import { pollUntil } from '@momonga/testkit';
+import { createTempDir } from '../src/test-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -39,7 +39,7 @@ const pidAlive = (pid: number): boolean => {
 };
 
 const makeRecordFile = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-fixture-'));
+  const dir = createTempDir();
   const file = path.join(dir, 'record.jsonl');
   cleanups.push(() => {
     for (const entry of readRecords(file)) {

@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -9,9 +8,8 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { NO_HELPER } from './no-helper.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir } from '@momonga/testkit';
 
 const homes: string[] = [];
 
@@ -20,13 +18,12 @@ afterAll(() => {
 });
 
 const program = (): Command => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-descriptions-'));
+  const home = createTempDir();
   homes.push(home);
   const ports = { version: '9.9.9', home, platform: process.platform, interrupt: new AbortController().signal, cwd: '/c', terminal: undefined, env: {}, process: nodeProcess, stdout: { write: () => undefined }, stderr: { write: () => undefined } } as unknown as CliPorts;
   const entry = async (): Promise<number> => 0;
   return buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
     entries: { supervise: entry, gateway: entry, runtime: entry },
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

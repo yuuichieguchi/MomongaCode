@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { countDeadlineLoops, countRenames } from './support/single-mechanism-scan.ts';
 import { parseSource, perFile, productSources, relativeOf } from './support/source-scan.ts';
 import type { Counts, ParsedSource } from './support/source-scan.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const counted = (text: string, count: (source: ParsedSource) => Counts): Counts => count(parseSource('sample.ts', text));
 
@@ -30,8 +33,8 @@ const PRESENT_RENAMES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/history-store.ts': { 'rename': 1 },
   'packages/cli/src/keeper/source.ts': { 'rename': 1 },
   'packages/cli/src/node-ports.ts': { 'renameSync': 1 },
-  'packages/cli/src/update/node-ports.ts': { 'rename': 4 },
   'packages/foundation/src/platform/bundled-executable.ts': { 'rename': 1 },
+  'packages/foundation/src/platform/replace-executable.ts': { 'rename': 4 },
   'packages/sandbox/src/placeholder-journal.ts': { 'rename': 1 },
   'packages/tools/src/ripgrep-distribution.ts': { 'rename': 2 },
   'packages/verify/src/z3-distribution.ts': { 'rename': 1 },

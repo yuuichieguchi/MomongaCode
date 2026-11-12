@@ -48,6 +48,7 @@ const streamRecords = (file: string): Record[] => records(file).filter((record) 
 
 const openLog = (context: Parameters<typeof withTempDir>[0]) => {
   const file = path.join(withTempDir(context), 'logs', 'runtime.log');
+  fs.mkdirSync(path.dirname(file), { mode: 0o700 });
   const host = fakeHost();
   const io = nodeEntryIo(host.asProcess);
   const log = io.logFile(file);

@@ -6,6 +6,7 @@ import type { MemoryUpkeepOptions, MemoryUpkeepResult, UpkeepPass } from './upke
 export type MemoryUpkeepScheduleOptions = {
   store: Pick<RuntimeStore, 'memories'>;
   clock: Clock;
+  fileSystem: MemoryUpkeepOptions['fileSystem'];
   views: MemoryUpkeepOptions['views'];
   forgetAfterDays: MemoryUpkeepOptions['forgetAfterDays'];
   batchSize: number;
@@ -38,7 +39,7 @@ export const createMemoryUpkeepSchedule = (options: MemoryUpkeepScheduleOptions)
       }
       let result: MemoryUpkeepResult;
       try {
-        result = await runMemoryUpkeep({ store, clock, views: options.views, forgetAfterDays: options.forgetAfterDays, batchSize: options.batchSize, pageRows: options.pageRows, pass, signal });
+        result = await runMemoryUpkeep({ store, clock, fileSystem: options.fileSystem, views: options.views, forgetAfterDays: options.forgetAfterDays, batchSize: options.batchSize, pageRows: options.pageRows, pass, signal });
       } catch (error) {
         dirty = true;
         expected = store.memories.revision();

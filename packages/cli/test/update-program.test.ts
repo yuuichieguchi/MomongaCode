@@ -1,4 +1,4 @@
-import { testKernelLock } from '@momonga/testkit';
+import { testEndpointScope } from '@momonga/testkit';
 import type { EntryIo } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
@@ -7,7 +7,6 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { UPDATE_CHECK_COMMAND } from '../src/update/background.ts';
 import { assetNameFor } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { NEW_BINARY, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions } from './update-harness.ts';
 import { NO_HELPER } from './no-helper.ts';
@@ -25,6 +24,7 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
     stdout: { write: (text: string) => void stdout.push(text) },
     stderr: harness.ports.stderr,
     clock: harness.ports.clock,
+    endpointScope: testEndpointScope,
     env: harness.ports.env,
     self: harness.ports.self,
     spawnDetached: harness.ports.spawnDetached,
@@ -33,7 +33,6 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
   } as unknown as CliPorts;
   const program = buildProgram({
     ports: cli,
-    policyVerify: () => nodePolicyVerifyHost(cli, { executables: `${harness.ports.home}/cache/executables` }, testKernelLock()),
     entries,
     update: () => harness.wiring,
     interrupt: new AbortController().signal,

@@ -19,6 +19,9 @@
       },
       "packages/runtime/src/process/background-jobs.ts": {
         "job": 10
+      },
+      "packages/runtime/src/service/delegation.ts": {
+        "limit": 1
       }
     },
     "burnDown": {
@@ -191,7 +194,7 @@
         "limit": 2
       },
       "packages/cli/src/tui/slash.ts": {
-        "task": 3
+        "task": 1
       },
       "packages/cli/src/tui/transcript.ts": {
         "conversation": 1,
@@ -583,7 +586,7 @@
         "limit": 4
       },
       "packages/runtime/src/worker/claim-runner.ts": {
-        "gateway": 3
+        "gateway": 2
       },
       "packages/runtime/src/worker/compact-pin.ts": {
         "compact": 2
@@ -602,7 +605,7 @@
       },
       "packages/runtime/src/worker/model-step.ts": {
         "gateway": 1,
-        "target": 3
+        "target": 1
       },
       "packages/runtime/src/worker/model-stream.ts": {
         "gateway": 1

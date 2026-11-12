@@ -1,9 +1,8 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { SECRET_CONTENT, SECRET_ENTRY, buildSymlinkLayout, symlinkReadLinesFor } from './symlink-layout.ts';
 import type { SymlinkReadLine } from './symlink-layout.ts';
 
@@ -56,7 +55,7 @@ describe.each(['darwin', 'linux'] as const)('recursive and link-following option
 
   beforeEach(() => {
     if (!hosted) return;
-    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sl-')));
+    dir = createTempDir();
     buildSymlinkLayout(dir);
   });
 
@@ -75,7 +74,7 @@ describe.each(['darwin', 'linux'] as const)('recursive and link-following option
       if (expectsOutput(line)) expect(output).not.toBe('');
 
       if (isSuccess(line)) {
-        const controlDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sl-control-')));
+        const controlDir = createTempDir();
         try {
           buildSymlinkLayout(controlDir);
           const control = run(controlDir, binary as string, withTree(line.argv, 'c'));

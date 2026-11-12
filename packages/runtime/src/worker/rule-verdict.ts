@@ -6,6 +6,8 @@ import type { PinnedRuleVerdict, RuleVerdict, RunEventPayload, RunState } from '
 import type { RunError } from '@momonga/store';
 import { permissionRulesFor } from '../governance/rules.ts';
 import type { RuleVerifierPort, ToolEnv } from '../ports.ts';
+import { RuleVerificationFailure } from '../process/rule-verifier-thread-client.ts';
+import { sessionScratchRoleOf } from '../process/session-scratch-role.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Delegation } from './held-calls.ts';
 import type { HeldSession } from './known.ts';
@@ -37,10 +39,23 @@ const undecidedOf = (verifier: RuleVerifierPort): Map<string, Undecided> => {
 
 const NOT_NEEDED = { verdict: 'not-needed', refuted: [], unknown: [], notProved: [] } as const satisfies Omit<RuleVerdict, 'solver'>;
 
+const WHOLE_VERIFICATION = 'verification';
+
+const unverified = (solver: string, failure: RuleVerificationFailure): RuleVerdict => ({ verdict: 'unknown', solver, refuted: [], unknown: [{ property: WHOLE_VERIFICATION, reason: failure.message }], notProved: [] });
+
+const verdictOrUnverified = async (verifying: Promise<RuleVerdict>, solver: string): Promise<RuleVerdict> => {
+  try {
+    return await verifying;
+  } catch (error) {
+    if (error instanceof RuleVerificationFailure) return unverified(solver, error);
+    throw error;
+  }
+};
+
 export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, session: HeldSession, facts: RuleSetFacts): Promise<PinnedRuleVerdict> => {
   const verifier: RuleVerifierPort = options.ruleVerifier;
   const input = await verifier.inputOf(
-    { rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, exemptDirectory: facts.exemptDirectory, enforcement: facts.enforcement, unixSockets: facts.unixSockets },
+    { rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, exemptDirectory: sessionScratchRoleOf(facts.exemptDirectory), enforcement: facts.enforcement, secrets: [], unixSockets: facts.unixSockets },
     control.signal,
   );
   const solver = await verifier.solverVersion();
@@ -59,11 +74,11 @@ export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, s
   };
   const earlier = undecided.get(fingerprint);
   if (earlier === undefined) {
-    const verdict = await control.recordingRaised(verifier.verify(input, control.signal));
+    const verdict = await control.recordingRaised(verdictOrUnverified(verifier.verify(input, control.signal), solver));
     settle(verdict);
     return { fingerprint, ...verdict };
   }
-  earlier.retry ??= verifier.verify(input, control.signal).then(settle, (error: unknown) => {
+  earlier.retry ??= verdictOrUnverified(verifier.verify(input, control.signal), solver).then(settle, (error: unknown) => {
     earlier.retry = undefined;
     if (!control.signal.aborted) control.fail(error);
   });

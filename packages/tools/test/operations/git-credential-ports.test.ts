@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import type { FileSystem, Random } from '@momonga/foundation';
 import { openGitCredentialChannel } from '@momonga/tools';
+import { createTempDir } from '@momonga/testkit';
 
 const NONCE_ENV = 'MOMONGA_GIT_CREDENTIAL_NONCE';
 const SOCKET_ENV = 'MOMONGA_GIT_CREDENTIAL_SOCKET';
@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 const rootOf = (): string => {
-  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cred-'));
+  const root = createTempDir();
   cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
 };

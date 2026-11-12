@@ -39,9 +39,6 @@ const program = () => {
   const entry = async (): Promise<number> => 0;
   return buildProgram({
     ports: { version: '9.9.9', home: '/h', cwd: '/c', terminal: undefined, stdout: sink, stderr: sink } as unknown as CliPorts,
-    policyVerify: () => {
-      throw new Error('policy verify is not part of this test');
-    },
     entries: { supervise: entry, gateway: entry, runtime: entry },
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -8,7 +7,7 @@ import { momongaLayout, systemTiming } from '@momonga/foundation';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { nodeUpdatePorts } from '../src/update/node-ports.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 
 const RELEASE_HOST = 'release.example.test';
 const TEST_TIMEOUT_MS = 10_000;
@@ -36,7 +35,7 @@ const startForwardingProxy = async (): Promise<{ port: number; seen: string[] }>
 
 describe('the update ports of the CLI', { timeout: TEST_TIMEOUT_MS }, () => {
   it('take the network section of the user settings, so the update download goes through the configured proxy', async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-update-wiring-'));
+    const home = createTempDir();
     cleanups.push(() => fs.rmSync(home, { recursive: true, force: true }));
     const proxy = await startForwardingProxy();
     const paths = momongaLayout(home, process.platform, process.env);

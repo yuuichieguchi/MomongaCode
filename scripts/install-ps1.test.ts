@@ -7,6 +7,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const SCRIPT = `${repoRoot}scripts/install.ps1`;
 
@@ -78,10 +79,29 @@ describe('install.ps1', () => {
     expect(fs.readFileSync(`${repoRoot}scripts/install.sh`, 'utf8')).toContain('sub(/^\\*/, "", name)');
   });
 
+  it('moves a running momonga.exe aside as a .momonga-update. entry before it moves the new one in, puts it back if the move in fails, and names the remedy when the move aside is refused', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    expect(source).not.toContain('Move-Item -Force -LiteralPath $candidate -Destination $target');
+    const aside = source.indexOf("'.momonga-update.'");
+    const moveIn = source.indexOf('Move-Item -LiteralPath $candidate -Destination $target');
+    expect(aside).toBeGreaterThan(-1);
+    expect(moveIn).toBeGreaterThan(aside);
+    expect(source).toContain('Move-Item -LiteralPath $aside -Destination $target');
+    expect(source).toContain('stop the daemon, then run the command again');
+  });
+
+  it('writes beside the aside the empty lock database the update sweep claims, so that sweep removes the aside on every lock form', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    const aside = source.indexOf('Move-Item -LiteralPath $target -Destination $aside');
+    const sidecar = source.indexOf("New-Item -ItemType File -Path ($aside + '.sqlite')");
+    expect(sidecar).toBeGreaterThan(-1);
+    expect(sidecar).toBeGreaterThan(aside);
+  });
+
   it('runs the candidate with --version before it is moved into place, and refuses another version than the one asked for', () => {
     const source = fs.readFileSync(SCRIPT, 'utf8');
     const check = source.indexOf('$reported = & $candidate --version');
-    const move = source.indexOf('Move-Item -Force -LiteralPath $candidate');
+    const move = source.indexOf('Move-Item -LiteralPath $candidate -Destination $target');
     expect(check).toBeGreaterThan(0);
     expect(move).toBeGreaterThan(check);
     expect(source).toContain('version $($env:MOMONGA_VERSION) was asked for, but the downloaded executable reports version $reported; nothing was installed');
@@ -224,7 +244,7 @@ describe.runIf(pwshAvailable)('install.ps1 PATH behaviour under PowerShell', () 
     expect(text).toContain(READ_USER_PATH);
     expect(text).toContain(WRITE_USER_PATH);
     expect(text).toContain(CANDIDATE_CHECK);
-    const directory = fs.mkdtempSync(path.join(root, 'stubbed-'));
+    const directory = createTempDir({ parent: root });
     const script = path.join(directory, 'install.ps1');
     fs.writeFileSync(
       script,
@@ -255,7 +275,7 @@ describe.runIf(pwshAvailable)('install.ps1 PATH behaviour under PowerShell', () 
     });
 
   const setup = (initialUserPath: string): { prefix: string; userPathFile: string; script: string } => {
-    const prefix = fs.mkdtempSync(path.join(root, 'prefix-'));
+    const prefix = createTempDir({ parent: root });
     const userPathFile = path.join(root, `user-path-${path.basename(prefix)}`);
     fs.writeFileSync(userPathFile, initialUserPath);
     return { prefix, userPathFile, script: stubbedInstaller(userPathFile) };

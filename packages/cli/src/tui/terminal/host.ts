@@ -1,5 +1,6 @@
 import { writeSync } from 'node:fs';
-import type { DeliverableSignal, ProcessPort, TerminalOutputPort } from './layer.ts';
+import { signalsOf } from '@momonga/foundation';
+import type { ProcessPort, TerminalOutputPort } from './layer.ts';
 
 export class TerminalWriteError extends Error {
   constructor(reason: string) {
@@ -47,8 +48,6 @@ export const terminalOutputOf = (stdout: NodeJS.WriteStream, write: DescriptorWr
 
 export const hostTerminalOutput = (stdout: NodeJS.WriteStream): HostOutput => terminalOutputOf(stdout, (descriptor, buffer, offset) => writeSync(descriptor, buffer, offset));
 
-const WINDOWS_DELIVERABLE: readonly DeliverableSignal[] = ['SIGINT', 'SIGHUP'];
-
 export const hostProcessOn = (platform: NodeJS.Platform): ProcessPort => ({
   on: (event, listener) => {
     process.on(event, listener);
@@ -59,5 +58,5 @@ export const hostProcessOn = (platform: NodeJS.Platform): ProcessPort => ({
   kill: (signal) => {
     process.kill(process.pid, signal);
   },
-  deliverable: (signal) => platform !== 'win32' || WINDOWS_DELIVERABLE.includes(signal),
+  deliverable: (signal) => signalsOf(platform).includes(signal),
 });

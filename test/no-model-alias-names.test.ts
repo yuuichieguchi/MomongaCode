@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const root = path.resolve(import.meta.dirname, '..');
 const packagesDir = path.join(root, 'packages');
@@ -45,6 +48,8 @@ const PERMANENT_FOR_COMMAND_AND_PATH_ALIASES: readonly string[] = [
   'packages/cli/src/tui/slash.ts',
 ];
 
+const PERMANENT_FOR_HIGHLIGHT_LANGUAGE_ALIASES: readonly string[] = ['packages/cli/src/tui/screen/highlight-core.d.ts', 'packages/cli/src/tui/screen/highlight.ts'];
+
 const ALLOWED_UNTIL: readonly Listed[] = [];
 
 const filesUnder = (directory: string): string[] =>
@@ -73,6 +78,7 @@ const PERMANENT_FOR_RETIRED_FORMAT_REASONS: readonly string[] = ['packages/proto
 const isPermanent = (file: string, token: Token): boolean =>
   PERMANENT_FILES.includes(file) ||
   (token === 'aliases' && PERMANENT_FOR_COMMAND_AND_PATH_ALIASES.includes(file)) ||
+  (token === 'aliases' && PERMANENT_FOR_HIGHLIGHT_LANGUAGE_ALIASES.includes(file)) ||
   (token === 'an alias' && PERMANENT_FOR_RETIRED_FORMAT_REASONS.includes(file));
 
 const pairOf = (file: string, token: Token): string => `${file}: ${token}`;
@@ -107,7 +113,7 @@ describe('no model is called by an alias name any more (I-N9)', () => {
 
   it('the keys of an earlier build are named in three files: the decoder, the migration and the old-key sentences (I-N17)', () => {
     expect(['modelAlias', 'previousModelAlias'].filter((key) => !sourceOf('packages/protocol/src/model-ref.ts').includes(key))).toEqual([]);
-    expect(sourceOf('packages/config/src/settings.ts')).toContain('models.targets is not a setting any more');
+    expect(sourceOf('packages/config/src/settings.ts')).toMatch(/path: \['models', 'targets'\], sentence: 'is not a setting any more/);
     const holders = scannedFiles()
       .filter((full) => LEGACY_KEY_TOKENS.some((token) => fs.readFileSync(full, 'utf8').includes(token)))
       .map(relative)

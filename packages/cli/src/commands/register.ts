@@ -689,7 +689,7 @@ const registerPolicy: CommandGroup = (program, deps) => {
     .option('--mandate <name>', 'check the rules as a run under this mandate of the user settings would have them, and report an allow rule that admits a Bash form a dedicated operation replaces or names an operation that always needs a person')
     .action(async (options: { json?: true; mode?: PermissionMode; secret: string[]; mandate?: string }) => {
       deps.complete(
-        await policyVerify(deps.ports, await pathsOf(deps.ports), await deps.policyVerify(), {
+        await policyVerify(deps.ports, await pathsOf(deps.ports), {
           json: options.json === true,
           secrets: options.secret,
           ...(options.mode === undefined ? {} : { mode: options.mode }),

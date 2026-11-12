@@ -56,7 +56,7 @@ const silentMcpTool = async (): Promise<AnyTool> => {
     releaseCheckpoint: async () => undefined,
     cancelOutcome: () => undefined,
     redact: (text) => text,
-    diagnostics: () => ({ server: 'jobs', state: 'connected', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '' }),
+    diagnostics: () => ({ server: 'jobs', state: 'connected', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '', exit: null }),
     close: async () => undefined,
   };
   const [listed] = await createMcpToolSource({ server: 'jobs', connection, toolIdleTimeoutMs: MCP_IDLE_MS }).list();

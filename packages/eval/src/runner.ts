@@ -13,7 +13,7 @@ import type { Answerer, RecordedRun, Transcript, TranscriptChild, TranscriptRefl
 
 export type EvalWorkspace = { cwd: string; env: Record<string, string> };
 
-export type EvalSessionInput = { cwd: string; env?: Record<string, string>; permissionMode: GoldenCase['permissionMode']; model?: string };
+export type EvalSessionInput = { cwd: string; env?: Record<string, string>; permissionMode: GoldenCase['permissionMode']; model?: string; mcpServers?: GoldenCase['mcpServers'] };
 
 export type EvalRunApi = {
   createSession(input: EvalSessionInput): Promise<{ id: string }>;
@@ -145,6 +145,7 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
       ...scope.workspace,
       permissionMode: golden.permissionMode,
       ...(ports.model === undefined ? {} : { model: ports.model }),
+      ...(golden.mcpServers === undefined ? {} : { mcpServers: golden.mcpServers }),
     });
     if (golden.oracle !== undefined && scope.oracle === undefined) throw new EvalError(`case ${golden.id} declares an oracle but the run has no way to run it`);
     const run = await scope.api.createRun(session.id, {

@@ -103,7 +103,7 @@ describe('admission of one model request against the budget of the run tree', ()
   });
 
   it('refuses when the cap would fall below the floor, naming cap_too_small, and limit when nothing is left', () => {
-    expect(admitRequest(ask({ limits: { tokens: 1200 } }), NOTHING)).toEqual({ kind: 'refused', dimension: 'tokens', cause: 'cap_too_small', spent: 0, limit: 1200 });
+    expect(admitRequest(ask({ limits: { tokens: 1200 } }), NOTHING)).toEqual({ kind: 'refused', dimension: 'tokens', cause: 'cap_too_small', spent: 0, limit: 1200, admitsAt: 1256 });
     expect(admitRequest(ask({ limits: { tokens: 1200 } }), { ...NOTHING, totalTokens: 1200 })).toEqual({ kind: 'refused', dimension: 'tokens', cause: 'limit', spent: 1200, limit: 1200 });
   });
 
@@ -121,7 +121,7 @@ describe('admission of one model request against the budget of the run tree', ()
 
   it('refuses a priced request that does not fit the money left, and an unpriced one whenever a money limit is declared', () => {
     const price = { inUnits: 3_000_000n, outUnits: 15_000_000n };
-    expect(admitRequest(ask({ price, limits: { costNano: 5_000 } }), NOTHING)).toEqual({ kind: 'refused', dimension: 'cost', cause: 'cap_too_small', spent: 0, limit: 5_000 });
+    expect(admitRequest(ask({ price, limits: { costNano: 5_000 } }), NOTHING)).toEqual({ kind: 'refused', dimension: 'cost', cause: 'cap_too_small', spent: 0, limit: 5_000, admitsAt: 6_840 });
     expect(admitRequest(ask({ price, limits: { costNano: 5_000 } }), { ...NOTHING, costNano: 4_000, reservedNano: 1_000 })).toEqual({ kind: 'refused', dimension: 'cost', cause: 'limit', spent: 5_000, limit: 5_000 });
     expect(admitRequest(ask({ limits: { costNano: 5_000 } }), NOTHING)).toEqual({ kind: 'refused', dimension: 'cost', cause: 'unpriced', spent: 0, limit: 5_000 });
   });

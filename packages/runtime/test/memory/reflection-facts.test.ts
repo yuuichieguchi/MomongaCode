@@ -112,7 +112,7 @@ describe('repository facts with reflection off', () => {
     const run = await env.finishedRun(VERIFIED_TWICE(env.project));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toEqual([]);
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toEqual([]);
     expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: 'reflection is off', dropped: [] });
     expect(await candidatesOf(env, (await run).id)).toEqual([
       { text: NPM_TEST_FACT, kind: 'procedure', scope: 'project', origin: 'trusted', project: env.project, ordinal: 0 },
@@ -188,7 +188,7 @@ describe('repository facts with reflection on', () => {
     env.gateway.script.push(textStep(JSON.stringify({ candidates: [{ text: NPM_TEST_FACT, kind: 'fact', paths: [] }, { text: 'the fixture needs a seed', kind: 'fact', paths: [] }] })));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toHaveLength(1);
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toHaveLength(1);
     expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: null, dropped: [{ ordinal: 2, text: NPM_TEST_FACT, cause: 'duplicate', reason: DUPLICATE_REASON }] });
     expect((await candidatesOf(env, (await run).id)).map((candidate) => [candidate.text, candidate.kind, candidate.ordinal])).toEqual([
       [NPM_TEST_FACT, 'procedure', 0],
@@ -216,6 +216,6 @@ describe('repository facts with reflection on', () => {
       [NPM_TEST_FACT, 'procedure', 0],
       [LINT_FACT, 'procedure', 1],
     ]);
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toEqual([]);
   });
 });

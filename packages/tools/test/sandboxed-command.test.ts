@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, findHolders } from '@momonga/foundation';
@@ -7,7 +6,7 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import * as tools from '@momonga/tools';
 import { nodeShellHost } from '@momonga/tools';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED, testProcessInspector } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -29,7 +28,7 @@ const runSandboxedCommand: RunSandboxedCommand = (request) => {
 let dir = '';
 
 beforeEach(() => {
-  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sandboxed-')));
+  dir = createTempDir();
   fs.mkdirSync(path.join(dir, 'markers'));
 });
 

@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { FileRuleError, HOST_FLAVOUR, compileFileRuleSet, fileRuleBlocks, fileRuleFingerprint, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleEntry, FileRuleSet, FileRuleSpec, PathResolution } from '@momonga/foundation';
 import { syncPaths } from '../src/index.ts';
+import { createTempDir } from '@momonga/testkit';
 
 
 const CWD = '/w';
@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-frules-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

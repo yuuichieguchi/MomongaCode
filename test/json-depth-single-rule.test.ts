@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from '@momonga/foundation';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 

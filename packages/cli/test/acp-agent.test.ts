@@ -37,6 +37,8 @@ const toolCall = (callId = 'call-1'): EventPayload => ({
 
 const message = (itemId: string, text: string): EventPayload => ({ type: 'agent.message.delta', step: 1, attempt: 0, itemId, text });
 
+const RESPONDED: EventPayload = { type: 'model.responded', step: 1, attempt: 0, response: { status: 'completed', output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } };
+
 const finishedRun = (status: 'COMPLETED' | 'CANCELLED' = 'COMPLETED') => runView({ id: 'run-1', status });
 
 describe('initialize', () => {
@@ -192,13 +194,14 @@ describe('session/new', () => {
 });
 
 describe('session/prompt', () => {
-  it('creates a run from the text, forwards its events in order without echoing the user message, and ends the turn', async () => {
+  it('creates a run from the text, sends the answer once its item completes without echoing the user message, and ends the turn', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);
     harness.scripts.set('run-1', async ({ onEvent }) => {
       onEvent(frameOf('run-1', 1, { type: 'user.message', text: 'Say hello' }));
       onEvent(frameOf('run-1', 2, message('m1', 'Hel')));
       onEvent(frameOf('run-1', 3, message('m1', 'lo')));
+      onEvent(frameOf('run-1', 4, RESPONDED));
       return finishedRun();
     });
 
@@ -207,8 +210,7 @@ describe('session/prompt', () => {
     expect(result).toEqual({ stopReason: 'end_turn' });
     expect(harness.runtime.calls).toContain(`createRun ${sessionId} ${JSON.stringify({ input: 'Say hello' })}`);
     expect(updatesOf(harness.peer.received).filter((update) => update.sessionUpdate !== 'available_commands_update')).toEqual([
-      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hel' }, messageId: 'run-1/m1' },
-      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'lo' }, messageId: 'run-1/m1' },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hello' }, messageId: 'run-1/m1' },
     ]);
     await harness.peer.close();
   });
@@ -1013,11 +1015,12 @@ describe('model selection', () => {
 
 describe('session/load', () => {
   const history = (harness: Harness): void => {
-    harness.runtime.runs = [runView({ id: 'run-1', status: 'COMPLETED', lastSeq: 3 })];
+    harness.runtime.runs = [runView({ id: 'run-1', status: 'COMPLETED', lastSeq: 4 })];
     harness.scripts.set('run-1', async ({ onEvent }) => {
       onEvent(frameOf('run-1', 1, { type: 'user.message', text: 'Say hello' }));
       onEvent(frameOf('run-1', 2, { type: 'notice', level: 'warning', message: 'live only' }));
       onEvent(frameOf('run-1', 3, message('m1', 'Hello')));
+      onEvent(frameOf('run-1', 4, RESPONDED));
       return finishedRun();
     });
   };
@@ -1093,14 +1096,16 @@ describe('session/load', () => {
 
   it('keeps forwarding the events of a run that is still going after it has answered', async () => {
     const harness = startAgent();
-    harness.runtime.runs = [runView({ id: 'run-1', status: 'RUNNING', lastSeq: 2 })];
+    harness.runtime.runs = [runView({ id: 'run-1', status: 'RUNNING', lastSeq: 3 })];
     const release = Promise.withResolvers<void>();
     harness.scripts.set('run-1', async ({ onEvent }) => {
       onEvent(frameOf('run-1', 1, { type: 'user.message', text: 'Long task' }));
       onEvent(frameOf('run-1', 2, message('m1', 'Working')));
+      onEvent(frameOf('run-1', 3, RESPONDED));
       await release.promise;
-      onEvent(frameOf('run-1', 3, { type: 'notice', level: 'warning', message: 'a live notice' }));
-      onEvent(frameOf('run-1', 4, message('m2', 'Done')));
+      onEvent(frameOf('run-1', 4, { type: 'notice', level: 'warning', message: 'a live notice' }));
+      onEvent(frameOf('run-1', 5, message('m2', 'Done')));
+      onEvent(frameOf('run-1', 6, RESPONDED));
       return finishedRun();
     });
     await harness.peer.request('initialize', INITIALIZE);
@@ -1112,7 +1117,7 @@ describe('session/load', () => {
 
     const live = updatesOf(harness.peer.received).slice(2).filter((update) => update.sessionUpdate !== 'available_commands_update');
     expect(live).toEqual([
-      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'momonga warning: a live notice\n' }, messageId: 'run-1/notice/3' },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'momonga warning: a live notice\n' }, messageId: 'run-1/notice/4' },
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' }, messageId: 'run-1/m2' },
     ]);
     await harness.peer.close();

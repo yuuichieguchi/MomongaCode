@@ -1,12 +1,11 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { Sandbox } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor, testProbes, NEVER_CANCELLED, testSecretLocations } from '@momonga/testkit';
+import { createTempDir, isWritableFor, NEVER_CANCELLED, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, testProbes, testSecretLocations } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { collect } from './read-only-collect.ts';
@@ -76,7 +75,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
   };
 
   beforeAll(async () => {
-    base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-matrix-')));
+    base = createTempDir();
     project = path.join(base, 'project');
     home = path.join(base, 'home');
     const tmpDir = path.join(base, 'sessions', 'session-0');

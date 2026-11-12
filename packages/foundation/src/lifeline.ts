@@ -1,12 +1,13 @@
-import fs from 'node:fs';
+import type fs from 'node:fs';
 import net from 'node:net';
 import { EntryUsageError } from './entry-flags.ts';
 import { STOP_MESSAGE_MAX_BYTES } from './process-contract.ts';
+import { nodeFileSystemSync } from './node-file-system.ts';
 
 const assertUsableLifelineFd = (fd: number): void => {
   let stat: fs.Stats;
   try {
-    stat = fs.fstatSync(fd);
+    stat = nodeFileSystemSync.fstatSync(fd);
   } catch (error) {
     throw new EntryUsageError(`lifeline fd ${fd} is not usable: ${(error as Error).message}`);
   }

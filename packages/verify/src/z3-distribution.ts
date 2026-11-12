@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
-import { createLockedEntry, sha256Hex, sweepLeftovers } from '@momonga/foundation';
+import { createLockedEntry, parseShippedManifest, sha256Hex, sweepLeftovers } from '@momonga/foundation';
 import type { FileSystem, KernelLockMechanism } from '@momonga/foundation';
 
 export const Z3_MANIFEST_ASSET = 'z3-manifest.json';
@@ -43,7 +43,7 @@ const hashField = (value: unknown, what: string): string => {
 };
 
 export const parseZ3Manifest = (text: string): Z3Manifest => {
-  const parsed: unknown = JSON.parse(text);
+  const parsed = parseShippedManifest(text, Z3_MANIFEST_ASSET, (message) => new Z3DistributionError(message));
   if (!isRecord(parsed) || !Array.isArray(parsed['files']) || !isRecord(parsed['wasm'])) throw new Z3DistributionError('the Z3 manifest is malformed');
   const wasm = parsed['wasm'];
   if (typeof wasm['asset'] !== 'string') throw new Z3DistributionError('the Z3 manifest names no solver binary');

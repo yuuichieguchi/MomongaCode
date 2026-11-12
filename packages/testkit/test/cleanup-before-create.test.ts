@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
+import { systemTempRoot } from '../src/test-support.ts';
 
 const MISSING_CONTEXT = /test context/i;
 
@@ -14,7 +14,7 @@ const redirectTempRoot = (context: CleanupContext): string => {
     else process.env['TMPDIR'] = previous;
   });
   process.env['TMPDIR'] = root;
-  expect(fs.realpathSync(os.tmpdir())).toBe(root);
+  expect(systemTempRoot()).toBe(root);
   return root;
 };
 

@@ -26,7 +26,6 @@ export type BenchRunView = {
   agent: string;
   mode: PermissionMode;
   model: string;
-  declared: boolean;
 };
 
 export type BenchRunApi = {
@@ -76,7 +75,7 @@ const setUp = async (task: BenchTask, workspace: string, probe: WorkspaceProbe, 
 
 type Trial = { facts: RunFactsView; children: RunFactsView[]; answeredBy: AnsweredByView[]; costs: RunCostView[] };
 
-const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, events: readonly PublicRunEvent[], costs: ReadonlyMap<string, RunCostView>): Promise<RunFactsView> => {
+const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, events: readonly PublicRunEvent[], costs: ReadonlyMap<string, RunCostView>, declared: boolean): Promise<RunFactsView> => {
   const cost = costs.get(runId);
   if (cost === undefined) throw new EvalError(`the cost record holds no entry for run ${runId}`);
   const view = await api.runOf(runId);
@@ -97,7 +96,7 @@ const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, ev
     agent: view.agent,
     origin: view.origin,
   });
-  return { ...folded, declared: view.declared };
+  return { ...folded, declared };
 };
 
 const runTrial = async (task: BenchTask, repository: string, workspace: string, api: BenchRunApi, ports: BenchRunPorts): Promise<Trial> => {
@@ -114,9 +113,9 @@ const runTrial = async (task: BenchTask, repository: string, workspace: string, 
   const treeRunIds = [run.id, ...driven.children.map((child) => child.runId)];
   const costs = await api.costs(treeRunIds);
   const costOfRun = new Map(costs.map((cost) => [cost.runId, cost]));
-  const folded = await factsOfRun(api, run.id, run.id, driven.events, costOfRun);
+  const folded = await factsOfRun(api, run.id, run.id, driven.events, costOfRun, mandate !== undefined);
   const children: RunFactsView[] = [];
-  for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events, costOfRun));
+  for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events, costOfRun, false));
   const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe, files: ports.files });
   const answeredBy = await answeredByOfRuns((runId) => api.answeredBy(runId), treeRunIds);
   return { facts: { ...folded, ...treeSpendOf([folded, ...children]), met: grade.met }, children, answeredBy, costs };

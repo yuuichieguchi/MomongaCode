@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, walkPath } from '@momonga/foundation';
-import { EMPTY_SYMLINK_SUPPORTED } from '@momonga/testkit';
+import { createTempDir, EMPTY_SYMLINK_SUPPORTED } from '@momonga/testkit';
 import { syncPaths } from '../src/index.ts';
 
 const tempDirs: string[] = [];
@@ -13,7 +12,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-pres-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

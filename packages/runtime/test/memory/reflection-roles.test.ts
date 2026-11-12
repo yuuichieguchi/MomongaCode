@@ -78,7 +78,7 @@ describe('the reflection role', () => {
     expect(env.gateway.streams.map((stream) => stream.role)).toEqual(['reflection']);
     expect(env.gateway.streams.map((stream) => stream.body.momonga?.exact_model)).toEqual([true]);
     expect(env.gateway.capabilityRequests).toEqual(['cheap']);
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: (await run).id, model: 'cheap', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toMatchObject([{ purpose: 'reflection', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
   });
 
   it('guards a cap taken from the wrong model: the output cap follows the capabilities of the role model', async () => {
@@ -106,19 +106,15 @@ describe('the reflection role', () => {
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['fm']);
   });
 
-  it('guards a charge spent on a target that cannot enforce the schema: a reflection target reporting no structured output is not called and ends done naming the role and the alias', async () => {
+  it('calls and charges a reflection target reporting no structured output with the same request', async () => {
     const env = await setup();
     env.gateway.capabilitiesByModel['plain'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
     const run = await env.finishedRun({ reflection: 'plain' });
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
-    expect(env.gateway.capabilityRequests).toEqual(['plain']);
-    expect(env.gateway.streams).toEqual([]);
-    expect(env.api.contextCharges.list()).toEqual([]);
-    const job = env.api.reflection.get((await run).id);
-    expect(job?.state).toBe('done');
-    expect(job?.lastError).toContain('models.roles.reflection');
-    expect(job?.lastError).toContain('plain');
+    expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['plain']);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toMatchObject([{ purpose: 'reflection', inputTokens: 100, outputTokens: 20 }]);
+    expect(env.api.reflection.get((await run).id)?.state).toBe('done');
   });
 
   it('guards a blanket skip: a reflection target reporting json_schema is still called and charged', async () => {
@@ -129,7 +125,7 @@ describe('the reflection role', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['strict']);
     expect(env.api.reflection.get((await run).id)?.state).toBe('done');
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', model: 'strict', inputTokens: 100, outputTokens: 20 }]);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toMatchObject([{ purpose: 'reflection', inputTokens: 100, outputTokens: 20 }]);
   });
 });
 
@@ -144,7 +140,7 @@ describe('the reflection call is admitted by the budget of its run', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
 
     expect(env.gateway.streams).toEqual([]);
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(env.store.readRunEventsOfTypes(created.run.id, ['usage.charged'])).toEqual([]);
     const job = env.api.reflection.get(created.run.id);
     expect(job?.state).toBe('done');
     expect(job?.lastError).toContain('budget');

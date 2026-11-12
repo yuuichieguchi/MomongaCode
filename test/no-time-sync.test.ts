@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseSource } from './support/source-scan.ts';
 import { countTimeSync, timeSyncOfTests } from './support/time-sync-scan.ts';
 import type { TimeSyncKind } from './support/time-sync-scan.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 type Kept = { kinds: Partial<Record<TimeSyncKind, number>>; reason: string };
 
@@ -22,7 +25,6 @@ const KEPT: Readonly<Record<string, Kept>> = {
   'packages/policy/test/decision-resolver.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the case proves the decision does not block the event loop: a timer that fires while the work is pending is the event' },
   'packages/runtime/test/calibration/offloop-cost.test.ts': { kinds: { 'wall-clock reading': 1 }, reason: 'a calibration measures wall time by design and runs only in the calibration project' },
   'packages/runtime/test/gateway-client/real-gateway-liveness.test.ts': { kinds: { 'timer wait': 3 }, reason: 'the subject is a silence of the upstream longer than the idle bound of the real client, in real time behind a real gateway' },
-  'packages/runtime/test/memory/deadline-signal.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the subject is a host timer that must not fire at once for a deadline beyond the range of a timer: only real time shows it' },
   'packages/runtime/test/worker/search-index-cost.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the case proves the indexing does not block the event loop: a turn that runs while the work is pending is the event' },
   'packages/sandbox/test/bubblewrap-launch.test.ts': { kinds: { 'wall-clock reading': 2 }, reason: 'the subject is the kill grace of a real process group: SIGKILL may not come before it and a command that honours SIGTERM ends inside it' },
   'packages/sandbox/test/bubblewrap-real.test.ts': { kinds: { 'wall-clock reading': 2 }, reason: 'the subject is the kill grace of a real process group: SIGKILL may not come before it and a command that honours SIGTERM ends inside it' },

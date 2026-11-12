@@ -1,10 +1,9 @@
-import { protectedSetOf } from '@momonga/verify';
 import fs from 'node:fs';
 import http from 'node:http';
-import { ensureMomongaDirs, momongaPaths, verdictKey } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { GoverningFactView, MemoryView, PolicyGovernanceResponse } from '@momonga/protocol';
-import { fakePolicyFilesystem, hostFilesystemOf, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
+import { registerCleanup, withTempDir, firstGeneration, testEndpointScope } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { memoryHistory } from '../src/commands/memory.ts';
@@ -12,7 +11,6 @@ import { policyVerify } from '../src/commands/policy.ts';
 import { ruleAdd, ruleHistory, ruleList, ruleRetire } from '../src/commands/rule.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { terminalPorts } from '../src/terminal-writer.ts';
-import type { PolicyVerifyHost } from '../src/verify/host.ts';
 import { startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
 const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
@@ -90,6 +88,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     home,
     cwd: project,
     clock: virtualClock(),
+    endpointScope: testEndpointScope,
     self: { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' },
     spawnDetached: () => {
       throw new Error('the daemon is already running');
@@ -194,65 +193,41 @@ describe('momonga memory history', () => {
 describe('momonga policy verify', () => {
   const governance: PolicyGovernanceResponse = { rules: [{ id: 'g1', behavior: 'ask', rule: 'Bash(git push:*)' }], textOnly: [fact('g2')] };
 
+  const verified = (exitCode = 0) => ({ fingerprint: 'f'.repeat(64), stored: exitCode === 0, exitCode, text: 'verification report', findings: { exitCode, status: exitCode === 0 ? 'proved' : 'refuted' } });
+
   const answering =
-    (body: PolicyGovernanceResponse) =>
+    (body: PolicyGovernanceResponse, exitCode = 0) =>
     ({ url, method }: Seen): Answer => {
-      if (method === 'PUT') return { status: 204, body: undefined };
-      return url.startsWith('/v1/trust') ? { status: 200, body: { trust: { path: 'x', decision: 'trusted' } } } : { status: 200, body };
+      if (method === 'POST' && url === '/v1/policy/verify') return { status: 200, body: verified(exitCode) };
+      return { status: 200, body };
     };
 
-  const hostCapturing = (exitCode = 0, status = 'proved') => {
-    const requests: { rules: { text: string; effect: string; layer?: string }[] }[] = [];
-    const host = {
-      loadVerifier: async () => ({
-        secretLocationsOf: () => [],
-        protectedSetOf,
-        verifyPermissions: async (_api: unknown, request: { rules: { text: string; effect: string; layer?: string }[] }) => {
-          requests.push(request);
-          return { exitCode, status };
-        },
-        formatReport: () => 'verification report',
-        ruleVerifyInputOf: (request: { rules: { text: string }[]; mode: string; secretLocations: unknown[] }) => ({ rules: request.rules.map((rule) => rule.text), mode: request.mode, secretLocations: request.secretLocations }),
-        verdictOfReport: (report: { status: string }, solver: string) => ({ verdict: report.status, solver, refuted: [], unknown: [], notProved: ['shell commands'] }),
-      }),
-      solverVersion: async () => 'z3 9',
-      loadPolicyFilesystem: async () => hostFilesystemOf(fakePolicyFilesystem()),
-      openSolver: async () => ({ api: {}, close: async () => undefined }),
-    } as unknown as PolicyVerifyHost;
-    return { host, requests };
-  };
-
-  it('asks the runtime for the governance layer of this folder and verifies it with the rules of the settings', async (context) => {
+  it('asks the daemon to verify the rules of this folder and prints the report the daemon returns, with the governance layer', async (context) => {
     const { paths, ports, seen, out } = await setup(context, answering(governance));
-    const { host, requests } = hostCapturing();
-    expect(await policyVerify(ports, paths, host, { json: false, secrets: [] })).toBe(0);
-    const fingerprint = verdictKey({ rules: ['Bash(git push:*)'], mode: 'manual', secretLocations: [] } as never, 'z3 9');
-    expect(seen.map((entry) => `${entry.method} ${entry.url}`)).toEqual([
-      `GET /v1/trust?path=${encodeURIComponent(ports.cwd)}`,
-      `GET /v1/policy/governance?project=${encodeURIComponent(ports.cwd)}`,
-      `PUT /v1/policy/verdicts/${fingerprint}`,
-    ]);
-    expect(JSON.parse(seen[2]?.body ?? '')).toEqual({ verdict: { verdict: 'proved', solver: 'z3 9', refuted: [], unknown: [], notProved: ['shell commands'] } });
-    expect(requests[0]?.rules).toMatchObject([{ text: 'Bash(git push:*)', effect: 'ask', layer: 'governance' }]);
+    expect(await policyVerify(ports, paths, { json: false, secrets: ['~/vault', '/keys'], mode: 'plan', mandate: 'release' })).toBe(0);
+    expect(seen.map((entry) => `${entry.method} ${entry.url}`)).toEqual([`GET /v1/policy/governance?project=${encodeURIComponent(ports.cwd)}`, 'POST /v1/policy/verify']);
+    expect(JSON.parse(seen[1]?.body ?? '')).toEqual({ project: ports.cwd, secrets: [`${ports.home}/vault`, '/keys'], mode: 'plan', mandate: 'release' });
     expect(out.join('')).toContain('verification report');
     expect(out.join('')).toContain('g1: verified as ask Bash(git push:*)');
     expect(out.join('')).toContain('g2: text-only, no guarantee');
   });
 
-  for (const status of ['refuted', 'unknown']) {
-    it(`does not claim a rule was verified when the report says ${status}`, async (context) => {
-      const { paths, ports, out } = await setup(context, answering(governance));
-      const { host } = hostCapturing(1, status);
-      expect(await policyVerify(ports, paths, host, { json: false, secrets: [] })).toBe(1);
-      expect(out.join('')).toContain('g1: included in the verification as ask Bash(git push:*), which did not prove');
-      expect(out.join('')).not.toContain('verified as');
-    });
-  }
+  it('does not claim a rule was verified when the daemon reports that the rules did not prove', async (context) => {
+    const { paths, ports, out } = await setup(context, answering(governance, 1));
+    expect(await policyVerify(ports, paths, { json: false, secrets: [] })).toBe(1);
+    expect(out.join('')).toContain('g1: included in the verification as ask Bash(git push:*), which did not prove');
+    expect(out.join('')).not.toContain('verified as');
+  });
 
-  it('adds the governance answer to the JSON report only when there is one', async (context) => {
+  it('prints the findings as JSON, with the governance answer only when there is one', async (context) => {
     const { paths, ports, out } = await setup(context, answering({ rules: [], textOnly: [] }));
-    const { host } = hostCapturing();
-    await policyVerify(ports, paths, host, { json: true, secrets: [] });
+    await policyVerify(ports, paths, { json: true, secrets: [] });
     expect(JSON.parse(out.join(''))).toEqual({ exitCode: 0, status: 'proved' });
+  });
+
+  it('refuses a secret location that is neither absolute nor under the home before it asks the daemon', async (context) => {
+    const { paths, ports, seen } = await setup(context, answering(governance));
+    await expect(policyVerify(ports, paths, { json: false, secrets: ['vault'] })).rejects.toThrow('--secret "vault" must be an absolute path or start with ~/');
+    expect(seen).toEqual([]);
   });
 });

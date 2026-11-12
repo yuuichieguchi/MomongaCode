@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SLASH_COMMANDS } from '../../src/tui/commands/index.ts';
 import { HOOKS_TITLE, HOOK_COMMAND_TITLE, HOOK_EVENT_TITLE, HOOK_MATCHER_TITLE, HOOK_TIMEOUT_TITLE } from '../../src/tui/commands/hooks.ts';
 import { ADD_HTTP_ROW, ADD_STDIO_ROW, MCP_ADDRESS_TITLE, MCP_ARGUMENTS_TITLE, MCP_COMMAND_TITLE, MCP_ENVIRONMENT_TITLE, MCP_NAME_TITLE, MCP_TITLE, sessionServerNote } from '../../src/tui/commands/mcp.ts';
-import { PERMISSIONS_TITLE, PROTECTED_HEADING, PROTECTED_LINES } from '../../src/tui/commands/permissions.ts';
+import { PERMISSIONS_TITLE, PROTECTED_HEADING, PROTECTED_LINES, TRUST_ROW, TRUST_TITLE } from '../../src/tui/commands/permissions.ts';
 import { APPLIES_NEXT_SESSION, APPLIES_NOW, SAVE_TO_TITLE } from '../../src/tui/settings-screen.tsx';
 import { FAKE_INIT_INSTRUCTION, runView } from '../fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
@@ -37,6 +37,32 @@ describe('the commands of the settings', () => {
 });
 
 describe('/permissions', () => {
+  it('shows the folder trust as read from the runtime and changes it through the trust port', async () => {
+    const place = freshPlace();
+    const started = await startAt(place);
+    const frame = await command(started, '/permissions', PERMISSIONS_TITLE);
+    expect(frame).toContain(`6. ${TRUST_ROW}  trusted`);
+    await press(started, '6', `› 6. ${TRUST_ROW}`);
+    started.app.stdin.write(KEYS.enter);
+    const choices = await untilFrame(started.app, TRUST_TITLE);
+    expect(choices).toContain('1. Trust this folder');
+    expect(choices).toContain('2. Do not trust this folder');
+    expect(choices).toContain('3. Clear the decision: the next start asks again');
+    await press(started, '2', '› 2. Do not trust this folder');
+    started.app.stdin.write(KEYS.enter);
+    await started.backend.called('trust:untrusted');
+    const after = await untilFrame(started.app, `${TRUST_ROW}: untrusted  ${APPLIES_NEXT_SESSION}`);
+    expect(after).toContain(`6. ${TRUST_ROW}  untrusted`);
+    await press(started, '6', `› 6. ${TRUST_ROW}`);
+    started.app.stdin.write(KEYS.enter);
+    await untilFrame(started.app, TRUST_TITLE);
+    await press(started, '3', '› 3. Clear the decision');
+    started.app.stdin.write(KEYS.enter);
+    await started.backend.called('trust:clear');
+    expect(await untilFrame(started.app, `6. ${TRUST_ROW}  not decided`)).toContain(PERMISSIONS_TITLE);
+    started.app.unmount();
+  });
+
   it('shows the start mode, the three kinds of rules with their counts, the directories and the block that cannot be edited', async () => {
     const place = freshPlace();
     writeSettings(place.userFile, { permissions: { allow: ['Bash(npm test:*)'], deny: ['Read(./secrets/**)'] } });

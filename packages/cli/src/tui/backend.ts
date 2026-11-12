@@ -2,8 +2,9 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { findProgramOnPathSync, nodeFileSystemSync, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
-import { editSettings, readSettingsSnapshot } from '@momonga/config';
-import type { SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
+import { approveProjectItems, editProjectMandate, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import type { ProjectItemsApproval, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
+import type { ProjectItems } from './project-items.ts';
 import { programModelOf, serversDetector } from '../commands/models.ts';
 import type { ModelsHost } from '../commands/models.ts';
 import { storeSecretValue } from '../commands/secret.ts';
@@ -61,6 +62,12 @@ export type TuiBackend = {
   readonly cwd: string;
   boot(): Promise<TrustView>;
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
+  trust(): Promise<TrustView>;
+  clearTrust(): Promise<void>;
+  projectItems(): Promise<ProjectItems>;
+  approveProjectItems(approval: ProjectItemsApproval): Promise<void>;
+  projectMandate(): Promise<ProjectMandateState>;
+  writeProjectMandate(document: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
   openSession(model?: string, permissionMode?: PermissionMode): Promise<SessionView>;
   resumeSession(id: string): Promise<SessionView>;
   continueSession(): Promise<SessionView>;
@@ -110,6 +117,12 @@ export type TuiBackend = {
   mcpServers(): Promise<readonly McpServerView[]>;
   initInstruction(): Promise<string>;
   close(): Promise<void>;
+};
+
+const replacedBy = (document: Readonly<Record<string, unknown>>) => (current: Record<string, unknown>): boolean => {
+  for (const key of Object.keys(current)) delete current[key];
+  Object.assign(current, document);
+  return true;
 };
 
 export const createTuiBackend = (
@@ -166,6 +179,8 @@ export const createTuiBackend = (
     addTarget: (account, request) => withGateway((gateway) => gateway.plan.addTarget(account, request)),
   };
 
+  const trustOracle: TrustOracle = { isTrusted: async (folder) => (await runtime().trust(folder)).decision === 'trusted' };
+
   return {
     cwd: ports.cwd,
     plan,
@@ -203,11 +218,27 @@ export const createTuiBackend = (
     decideTrust: async (decision) => {
       await runtime().setTrust(ports.cwd, decision);
     },
+    trust: () => runtime().trust(ports.cwd),
+    projectItems: async () => {
+      if (!(await trustOracle.isTrusted(ports.cwd, closing.signal))) return { hooks: [] };
+      const loaded = await loadSettings({ home: paths.home, projectDir: ports.cwd, cli: {}, trust: trustOracle, signal: closing.signal });
+      const mandate = await projectMandateState({ projectDir: ports.cwd, approvals: loaded.settings.projectApprovals, signal: closing.signal });
+      return { hooks: loaded.settings.pendingHooks, ...(mandate.found && mandate.approval !== 'approved' ? { mandate } : {}) };
+    },
+    approveProjectItems: (approval) => approveProjectItems(paths.home, ports.cwd, approval, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
+    projectMandate: async () => projectMandateState({ projectDir: ports.cwd, approvals: (await loadUserSettings({ home: paths.home, signal: closing.signal })).settings.projectApprovals, signal: closing.signal }),
+    writeProjectMandate: (document, signal) =>
+      editProjectMandate(ports.cwd, replacedBy(document), { home: paths.home, trust: trustOracle, ...settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: AbortSignal.any([closing.signal, signal]) }) }),
+    clearTrust: async () => {
+      const shown = await runtime().trust(ports.cwd);
+      await runtime().clearTrust(shown.inheritedFrom ?? shown.path);
+    },
     openSession: async (model, permissionMode) => {
       const chosen = model ?? options.model;
       const chosenMode = permissionMode ?? options.permissionMode;
       const created = await runtime().createSession({
         cwd: ports.cwd,
+        terminalUi: true,
         env: await environmentSnapshot(ports, closing.signal),
         ...(chosenMode === undefined ? {} : { permissionMode: chosenMode }),
         ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),

@@ -1,11 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import type { CliPorts } from '../src/ports.ts';
-import { waitFor } from '@momonga/testkit';
+import { createTempDir, waitFor } from '@momonga/testkit';
 
 const reader = vi.hoisted(() => ({
   read: (): Promise<readonly string[]> => new Promise<readonly string[]>(() => undefined),
@@ -29,7 +27,7 @@ afterEach(() => {
 });
 
 const ports = (): CliPorts => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-cli-trust-'));
+  const home = createTempDir();
   homes.push(home);
   return {
     home,

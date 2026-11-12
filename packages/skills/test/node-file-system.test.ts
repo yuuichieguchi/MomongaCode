@@ -1,13 +1,13 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { UnreadablePathError, createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
+import { createTempDir } from '@momonga/testkit';
 
 const roots: string[] = [];
 
 const tempRoot = (): string => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'skills-')));
+  const root = createTempDir();
   roots.push(root);
   return root;
 };

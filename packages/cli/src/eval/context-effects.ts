@@ -93,7 +93,7 @@ const ownedRoots = (ports: CliPorts, lock: KernelLockMechanism): OwnedRoots => {
   const owned = new Map<string, OwnedDirectory>();
   return {
     make: async () => {
-      const root = await createOwnedDirectory({ parent: shortTempBase(ports.platform), prefix: ROOT_PREFIX, lock });
+      const root = await createOwnedDirectory({ parent: shortTempBase(ports.platform, ports.tmpdir), prefix: ROOT_PREFIX, lock });
       owned.set(root.path, root);
       return root.path;
     },
@@ -122,7 +122,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism): 
       const from = (await pathsOf(ports)).probe;
       await withinCommandLimit(command, async (signal) => copyProbeRecord(ports.files, from, paths.probe, source, (await loadUserModels({ home: ports.home, signal })).resolved.servers, ports.platform, signal));
     },
-    listRoots: () => listEvalRoots(ports.files, shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : ports.process.uid()),
+    listRoots: () => listEvalRoots(ports.files, shortTempBase(ports.platform, ports.tmpdir), ports.platform === 'win32' ? undefined : ports.process.uid()),
     readOwner: (root) => readEvalOwner(ports.files, root),
     sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }, ports.interrupt),
     makeRoot: () => roots.make(),

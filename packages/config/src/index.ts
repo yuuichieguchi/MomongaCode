@@ -1,6 +1,6 @@
 export { editUserSettings } from './edit-user-settings.ts';
-export { editProjectMandate } from './edit-project-file.ts';
-export type { EditProjectMandateOptions, ProjectMandateEdit } from './edit-project-file.ts';
+export { approveProjectItems, editProjectMandate } from './edit-project-file.ts';
+export type { EditProjectMandateOptions, ProjectItemsApproval, ProjectMandateEdit } from './edit-project-file.ts';
 export type { EditUserSettingsOptions, SettingsEdit } from './edit-user-settings.ts';
 export { settingsFileLock, settingsWriterPorts } from './file-lock.ts';
 export type { SettingsFileLockOptions, SettingsLockPort, SettingsWriterOptions, SettingsWriterPorts } from './file-lock.ts';
@@ -57,8 +57,8 @@ export { PROBE_KEY_DIGEST_CHARS, knownKeyOf, managedServerDigest, probeKeyOf } f
 export type { EndpointProbeKeyInput, KnownProbeKey, ManagedProbeKeyInput, ProbeKey, ProbeKeyInput, UnknownProbeKey } from './probe-key.ts';
 export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './probe-record-key.ts';
 export { FIVE_MINUTES_MS, chainOf, credentialEnvNames, outputBoundFieldOf, plainHttpWarningText, resolveModels } from './models.ts';
-export { PROJECT_MANDATE_FILE, PROJECT_MANDATE_USER_ONLY_KEYS, loadProjectMandate, parseProjectMandate } from './project-mandate.ts';
-export type { ProjectMandate, ProjectMandateInput } from './project-mandate.ts';
+export { PROJECT_MANDATE_FILE, PROJECT_MANDATE_USER_ONLY_KEYS, loadProjectMandate, parseProjectMandate, projectMandateState } from './project-mandate.ts';
+export type { ProjectMandate, ProjectMandateInput, ProjectMandateState, ProjectMandateStateInput } from './project-mandate.ts';
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
 export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileOAuth } from './plan-profiles.ts';
 export type { PlanProfiles, ResolveModelsOptions, ResolvedConnection, ResolvedModel, ResolvedModels } from './models.ts';
@@ -67,7 +67,7 @@ export type { ServerRegistry } from './server-registry.ts';
 export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, readUserStopValuesOrDefault, stopValuesOfSettings, userSettingsChangeKey, userSettingsOfText } from './user-settings.ts';
 export type { AppliedRecordPorts, LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot, UserStopValuesOptions } from './user-settings.ts';
 export type { GatewayStopValues, LoadSettingsOptions, LoadSettingsResult, PendingHookGroup, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
-export { assertSessionMcpServers, loadMcpServers, serverKeyOfLabel } from './mcp-servers.ts';
+export { assertSessionMcpServers, loadMcpServers, projectMcpServersFile, serverKeyOfLabel } from './mcp-servers.ts';
 export { mcpServerNameProblem, mcpServerUrlProblem, mcpServerUrlProblemOf } from './mcp-server-rules.ts';
 export type { McpServerUrlProblem } from './mcp-server-rules.ts';
 export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope, PendingMcpServer, ServerKeyOfLabel } from './mcp-servers.ts';

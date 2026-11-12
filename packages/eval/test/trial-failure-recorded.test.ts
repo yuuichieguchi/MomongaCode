@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { decodeReliabilityReport, encodeReliabilityReport, formatReliabilityReport } from '@momonga/reliability';
@@ -7,6 +6,7 @@ import { nodeWorkspaceFiles, runBenchmark } from '@momonga/eval';
 import type { BenchRunApi } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ADD_FIXED, benchmarkDir, nodeProbe } from './bench-fixtures.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const T0 = 1_800_000_000_000;
 
@@ -42,7 +42,7 @@ const apiFailingOn = (failing: number): BenchRunApi => {
 };
 
 const run = async (dir: string, api: BenchRunApi) => {
-  const at = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-trial-failure-'));
+  const at = createTempDir();
   scratches.push(at);
   return runBenchmark(path.join(dir, 'benchmark.json'), {
     open: async (task, trial) => {

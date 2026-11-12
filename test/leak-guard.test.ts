@@ -46,7 +46,7 @@ describe('leak guard', () => {
   });
 
   it('sweeps the base of homes and the base of other directories', () => {
-    expect(testTempBases()).toEqual([...new Set([shortTempBase(process.platform), os.tmpdir()].map((base) => fs.realpathSync(base)))]);
+    expect(testTempBases()).toEqual([...new Set([shortTempBase(process.platform, os.tmpdir()), os.tmpdir()].map((base) => fs.realpathSync(base)))]);
   });
 });
 

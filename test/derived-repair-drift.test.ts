@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DERIVATIONS, DERIVED_VALUES } from '../packages/store/src/derived-repair.ts';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const root = path.resolve(import.meta.dirname, '..');
 const spec = fs.readFileSync(path.join(root, 'specs', 'tla', 'DerivedRepair.tla'), 'utf8');

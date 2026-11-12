@@ -122,8 +122,8 @@ describe('App run rendering', () => {
       }),
     );
     const prompt = await untilFrame(app, 'Permission requested: Edit /work/project/a.toml');
-    expect(prompt).toContain('- name = "old"');
-    expect(prompt).toContain('+ name = "new"');
+    expect(prompt).toContain('1 -name = "old"');
+    expect(prompt).toContain('1 +name = "new"');
     for (const label of ['1. Allow once', '2. Always allow', '3. Reject once', '4. Always reject']) expect(prompt).toContain(label);
     app.stdin.write('2');
     await backend.called('approve:ap1:o2');

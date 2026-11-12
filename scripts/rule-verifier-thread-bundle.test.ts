@@ -7,7 +7,8 @@ import { momongaLayout, nodeFileSystem, systemClock } from '@momonga/foundation'
 import { createPolicyFilesystem } from '@momonga/tools';
 import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 import { Z3_MANIFEST_ASSET, parseZ3Manifest } from '@momonga/verify';
-import { createRuleVerifier } from '../packages/runtime/src/process/rule-verifier.ts';
+import { RULE_VERIFY_LOAD_ALLOWANCE_MS, createRuleVerifier } from '../packages/runtime/src/process/rule-verifier.ts';
+import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { RuleSolverHost } from '../packages/runtime/src/process/rule-verifier.ts';
 import { systemTimers } from '../packages/runtime/src/service/timers.ts';
 import { bundleRuleVerifierThread, repoRoot, ruleVerifierThreadEntry } from './bundle.ts';
@@ -78,11 +79,11 @@ describe('the bundle of the verification thread', () => {
         },
         threadCode: code,
       };
-      const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths: momongaLayout(home, process.platform, {}), timers: systemTimers, bashPath: () => '/bin/bash', clock: systemClock });
+      const verifier = createRuleVerifier({ host, fs: createPolicyFilesystem(), paths: momongaLayout(home, process.platform, {}), timers: systemTimers, bashPath: () => '/bin/bash', clock: systemClock, budgetMs: RULE_VERIFY_BUDGET_MS, startBoundMs: RULE_VERIFY_LOAD_ALLOWANCE_MS });
       const rule = (text: string, effect: 'allow' | 'deny') => parseRule(text, { effect, origin: 'user', source: path.join(home, '.momonga', 'settings.json'), settingsRoot: home, home, cwd: work });
 
       const input = await verifier.inputOf(
-        { unixSockets: { kind: 'limited', allowed: [] }, rules: [rule('Bash', 'allow'), rule('Bash(git push:*)', 'deny')], roots: [work], mode: 'manual', home, cwd: work, exemptDirectory: path.join(home, '.momonga', 'tmp', 'sessions', 's1'), enforcement: 'exact-paths' },
+        { unixSockets: { kind: 'limited', allowed: [] }, rules: [rule('Bash', 'allow'), rule('Bash(git push:*)', 'deny')], roots: [work], mode: 'manual', home, cwd: work, exemptDirectory: path.join(home, '.momonga', 'tmp', 'sessions', 's1'), enforcement: 'exact-paths', secrets: [] },
         NEVER_CANCELLED,
       );
       const verification = await verifier.report(input, new AbortController().signal);

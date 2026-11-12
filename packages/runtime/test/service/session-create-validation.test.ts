@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
@@ -7,12 +6,13 @@ import { momongaLayout, momongaPaths, syncPaths } from '@momonga/foundation';
 import { GatewayRequestError } from '@momonga/runtime';
 import { MODEL_ID, expectError, expectSchema, onCleanup, startService } from './helpers.ts';
 import type { JsonResponse, ServiceEnv } from './helpers.ts';
+import { systemTempRoot } from '@momonga/testkit';
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const CASE_INSENSITIVE = syncPaths.volumeIsCaseInsensitive(fs.realpathSync(os.tmpdir()));
+const CASE_INSENSITIVE = syncPaths.volumeIsCaseInsensitive(systemTempRoot());
 const RUNNING_AS_ROOT = process.getuid?.() === 0;
 const SESSION_ENV = { PATH: '/usr/bin:/bin', LANG: 'C' };
 
@@ -247,12 +247,14 @@ describe('session create validation (fake timers)', () => {
     expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });
 
-  it('500 for a 4xx from the model listing', async () => {
+  it('a 4xx from the model listing keeps its status, code and text', async () => {
     const env = await startService({ fakeTimers: true });
     const failure = new GatewayRequestError({ status: 400, type: 'invalid_request', code: 'invalid_request', message: 'bad request' });
     env.ports.listingFailure.error = failure;
-    expectError(await post(env, { cwd: env.layout.project }), 500, 'internal_error');
-    expect(env.errors).toEqual([failure]);
+    const response = await post(env, { cwd: env.layout.project });
+    expectError(response, 400, 'invalid_request');
+    expect(response.json.error.message).toBe('bad request');
+    expect(env.errors).toEqual([]);
   });
 
   it('the session view carries additionalDirectories and validates against RUN_API_SCHEMAS.SessionView', async () => {

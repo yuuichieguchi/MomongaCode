@@ -5704,7 +5704,7 @@
       "role": "check",
       "expect": "holds",
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 494247,
       "measuredSeconds": 1279.67,
       "measuredCpuSeconds": 1312.07,

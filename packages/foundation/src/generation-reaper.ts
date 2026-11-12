@@ -1,6 +1,6 @@
-import fs from 'node:fs';
+import type { FileSystem } from './node-file-system.ts';
+import type fs from 'node:fs';
 import path from 'node:path';
-import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { listGenerationNumbers, lockReadsHeld } from './generation-registry.ts';
 import { sweepLeftovers } from './leftover-sweep.ts';
 import type { LeftoverFiles } from './leftover-sweep.ts';
@@ -19,6 +19,11 @@ import { claimPathOf, sidecarSuffixOf } from './platform/lock-form.ts';
 import { readAttemptRecord } from './platform/marker-record.ts';
 import type { RetryKind } from './platform/marker-record.ts';
 import { survivorNoticeText } from './process-markers.ts';
+import { nodeFileSystem } from './node-file-system.ts';
+import { systemWaitTiming } from './system-timing.ts';
+import { sleep } from './timing.ts';
+
+const GENERATION_YIELD_MS = 0;
 
 export const GENERATION_REAPER_STEP_ACTIONS = {
   'claim-dead': 'ClaimDead',
@@ -38,8 +43,7 @@ export const GENERATION_MARKER_REAP_ORDER: readonly MarkerKind[] = ['daemons', '
 
 export const GENERATION_MARKER_LABELS: Readonly<Record<MarkerKind, string>> = { daemons: 'daemon', mcp: 'mcp', tools: 'tool', targets: 'managed server' };
 
-export type GenerationReaperFiles = {
-  readdir(directory: string): Promise<string[]>;
+export type GenerationReaperFiles = Pick<FileSystem, 'readdir'> & {
   markerFiles(directory: string): Promise<string[]>;
   mkdir(directory: string): Promise<void>;
   unlink(file: string): Promise<void>;
@@ -69,7 +73,7 @@ const missing = (error: unknown): boolean => codeOf(error) === 'ENOENT';
 const markerFilesUnder = async (directory: string): Promise<string[]> => {
   let entries: fs.Dirent[];
   try {
-    entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    entries = await nodeFileSystem.readdirEntries(directory);
   } catch (error) {
     if (missing(error)) return [];
     throw error;
@@ -84,20 +88,18 @@ const markerFilesUnder = async (directory: string): Promise<string[]> => {
 };
 
 export const nodeGenerationReaperFiles: GenerationReaperFiles = {
-  readdir: (directory) => fs.promises.readdir(directory),
+  readdir: (directory) => nodeFileSystem.readdir(directory),
   markerFiles: markerFilesUnder,
-  mkdir: async (directory) => {
-    await fs.promises.mkdir(directory, { mode: 0o700 });
-  },
-  unlink: (file) => fs.promises.rm(file, { force: true }),
+  mkdir: (directory) => nodeFileSystem.makeDirectory(directory, 0o700),
+  unlink: (file) => nodeFileSystem.rm(file),
   rmdir: async (directory) => {
     try {
-      await fs.promises.rmdir(directory);
+      await nodeFileSystem.removeEmptyDirectory(directory);
     } catch (error) {
       if (!missing(error)) throw error;
     }
   },
-  removeTree: (directory) => fs.promises.rm(directory, { recursive: true, force: true }),
+  removeTree: (directory) => nodeFileSystem.rm(directory, { recursive: true }),
 };
 
 class EntryKept extends Error {
@@ -353,7 +355,7 @@ export const reapDeadGenerations = async (options: GenerationReaperOptions): Pro
     if (outcome === 'interrupted') break;
     if (outcome === 'removed') removed.push(generation);
     if (outcome === 'kept') kept.push(generation);
-    await yieldToEventLoop();
+    await sleep(systemWaitTiming, GENERATION_YIELD_MS);
   }
   return { removed, kept, busy: false };
 };

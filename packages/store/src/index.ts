@@ -99,6 +99,7 @@ export type {
   GuidelineStore,
   ContextCharge,
   ContextChargeInput,
+  RunCharge,
   ContextChargeStore,
   MemoryChange,
   MemoryInclude,

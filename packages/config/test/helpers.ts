@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
+import { createTempDir } from '@momonga/testkit';
 
 const cleanups: Array<() => void> = [];
 
@@ -15,7 +15,7 @@ export const registerCleanup = (cleanup: () => void): void => {
 };
 
 export const makeDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cfg-')));
+  const dir = createTempDir();
   fs.chmodSync(dir, 0o700);
   registerCleanup(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;

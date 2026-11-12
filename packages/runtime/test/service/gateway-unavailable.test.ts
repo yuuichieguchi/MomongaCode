@@ -1,9 +1,10 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { createGatewayClient } from '@momonga/runtime';
 import { createFakeClock } from '@momonga/testkit';
-import { START_MS, createFakePorts, createNotifier, launchService, makeLayout, onCleanup, openStore, sendJson, serviceOptions } from './helpers.ts';
+import { PERSON_CAPABILITY_TEST_HEADER, START_MS, createFakePorts, createNotifier, launchService, makeLayout, onCleanup, openStore, personCapabilityFileOf, sendJson, serviceOptions } from './helpers.ts';
 
 describe('gateway unavailable (system timers)', () => {
   it('session create answers 503 gateway_unavailable with retry-after 1 while the gateway is down', async () => {
@@ -21,7 +22,7 @@ describe('gateway unavailable (system timers)', () => {
     const client = createUdsClient(fixedSocket(layout.socketPath), { connectTimeoutMs: 0 });
     onCleanup(() => client.close());
 
-    const response = await sendJson(client, 'POST', '/v1/sessions', { body: { cwd: layout.project, env: { PATH: '/usr/bin:/bin' } } });
+    const response = await sendJson(client, 'POST', '/v1/sessions', { body: { cwd: layout.project, env: { PATH: '/usr/bin:/bin' } }, headers: { [PERSON_CAPABILITY_TEST_HEADER]: fs.readFileSync(personCapabilityFileOf(layout.home), 'utf8') } });
 
     expect({ status: response.status, body: response.json, retryAfter: response.headers['retry-after'] }).toEqual({
       status: 503,

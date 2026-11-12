@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords, writeAppliedRecord } from '@momonga/config';
 import { systemRandom } from '@momonga/foundation';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 
 const NOT_ABORTED = new AbortController().signal;
 
@@ -22,7 +21,7 @@ const settingsWithModel = (model: string) => ({
 });
 
 const makeTree = () => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-applied-bad-')));
+  const home = createTempDir();
   cleanups.push(() => fs.rmSync(home, { recursive: true, force: true }));
   const root = path.join(home, '.momonga');
   const dir = path.join(root, 'run', 'g1');

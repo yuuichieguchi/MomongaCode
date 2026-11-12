@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { setCaseSensitivityProbe } from '@momonga/foundation';
 import { syncPaths } from '../src/index.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-vcase-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   return dir;
 };

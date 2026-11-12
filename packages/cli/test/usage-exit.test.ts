@@ -1,6 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { rmSync } from 'node:fs';
 import type { EntryIo } from '@momonga/foundation';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CliPorts } from '../src/ports.ts';
@@ -10,6 +8,7 @@ import { runMain } from '../src/run-main.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { NO_HELPER } from './no-helper.ts';
+import { createTempDir } from '@momonga/testkit';
 
 let home: string;
 const initialArgv = process.argv;
@@ -17,7 +16,7 @@ const initialExitCode = process.exitCode;
 const initialInterruptListeners = process.listeners('SIGINT');
 
 beforeEach(() => {
-  home = mkdtempSync(path.join(os.tmpdir(), 'momonga-usage-exit-'));
+  home = createTempDir();
 });
 
 afterEach(() => {
@@ -33,9 +32,6 @@ const depsOf = (written: string[], completed: number[]): ProgramDeps => {
   const entry = async (): Promise<number> => 0;
   return {
     ports,
-    policyVerify: () => {
-      throw new Error('policy verify is not part of this test');
-    },
     entries: { supervise: entry, gateway: entry, runtime: entry },
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

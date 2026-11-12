@@ -35,6 +35,13 @@ type Api = {
 
 const apiOf = (store: RuntimeStore): Api => store as unknown as Api;
 
+const reflectionCharges = (env: { dbPath: string }): Record<string, unknown>[] =>
+  rawDb(env.dbPath)
+    .prepare("SELECT payload_json FROM events WHERE type = 'usage.charged' ORDER BY id")
+    .all()
+    .map((row) => JSON.parse(String(row['payload_json'])) as Record<string, unknown>)
+    .filter((payload) => payload['purpose'] === 'reflection');
+
 type Reflector = { runOne(signal: AbortSignal): Promise<'idle' | 'busy' | 'ran'> };
 
 const SIGNAL = new AbortController().signal;
@@ -248,18 +255,27 @@ describe('the reflection call', () => {
     expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema' });
   });
 
-  it('makes no call, no charge and no candidate when the run model reports no structured output, and ends done naming the role setting and the model', async () => {
+  it('sends the same request on a target with no structured output and stores the candidates of its reply', async () => {
     const env = await setup({ structured: false });
     const run = await queued(env);
-    env.gateway.script.push(textStep(CANDIDATE_REPLY(['src/a.ts']), { usage: usageOf(100, 20) }));
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
-    expect(env.gateway.streams).toEqual([]);
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema', name: 'memory_candidates' });
+    expect(reflectionCharges(env)).toHaveLength(1);
+    expect(env.api.memories.candidates()).toMatchObject([{ text: 'the fixture needs a seed', kind: 'fact' }]);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: null });
+  });
+
+  it('ends the job with the parse reason when a target with no structured output replies with no JSON', async () => {
+    const env = await setup({ structured: false });
+    const run = await queued(env);
+    env.gateway.script.push(textStep('here are my notes', { usage: usageOf(100, 20) }));
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: expect.stringMatching(/^output failed the schema/) });
     expect(env.api.memories.candidates()).toEqual([]);
-    const job = env.api.reflection.get(run.id);
-    expect(job?.state).toBe('done');
-    expect(job?.lastError).toContain('models.roles.reflection');
-    expect(job?.lastError).toContain('fm');
+    expect(reflectionCharges(env)).toHaveLength(1);
   });
 
   it('sends the fixed instructions, ending with the contract of the schema', async () => {
@@ -289,7 +305,7 @@ describe('the reflection call', () => {
     expect(env.gateway.streams).toHaveLength(1);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: expect.stringMatching(/^output failed the schema/) });
     expect(env.api.memories.candidates()).toEqual([]);
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
   });
 
   it('treats an incomplete response as an invalid reply even when its text is a valid value', async () => {
@@ -299,7 +315,7 @@ describe('the reflection call', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: expect.stringContaining('max_output_tokens') });
     expect(env.api.memories.candidates()).toEqual([]);
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
   });
 
   it('records the cached input and the measured timing of the reflection call on its charge', async () => {
@@ -307,17 +323,32 @@ describe('the reflection call', () => {
     await queued(env);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: { ...usageOf(100, 20), input_tokens_details: { cached_tokens: 40 } } }));
     await env.reflector().runOne(SIGNAL);
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', detail: { responseId: expect.stringMatching(/\S/), cachedInputTokens: 40, timing: { durationMs: expect.any(Number) } } }]);
+    expect(reflectionCharges(env)).toMatchObject([{ purpose: 'reflection', responseId: expect.stringMatching(/\S/), cachedInputTokens: 40, timing: { durationMs: expect.any(Number) } }]);
   });
 
-  it('charges context_charges and leaves the terminal run untouched', async () => {
+  it('charges the reflection call to the usage of its run, so the total of the run tree includes it, and keeps no second record', async () => {
     const env = await setup();
     const run = await queued(env);
-    const before = env.store.getRun(run.id)?.usage;
+    const before = env.store.treeSpend(run.id).totalTokens;
     env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: usageOf(100, 20) }));
     await env.reflector().runOne(SIGNAL);
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: run.id, project: env.project, model: 'fm', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
-    expect(env.store.getRun(run.id)?.usage).toEqual(before);
+    expect(reflectionCharges(env)).toMatchObject([{ purpose: 'reflection', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
+    expect(env.store.treeSpend(run.id).totalTokens).toBe(before + 120);
+    expect(env.store.getRun(run.id)?.usage.totalTokens).toBe(before + 120);
+    expect(env.api.contextCharges.list()).toEqual([]);
+  });
+
+  it('writes a notice with the reason into the journal of a run whose budget does not pay for the reflection call', async () => {
+    const env = await setup();
+    const run = await queued(env);
+    rawDb(env.dbPath).prepare('UPDATE runs SET limits_json = ? WHERE id = ?').run(JSON.stringify({ maxSteps: 10, maxTotalTokens: 1 }), run.id);
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: usageOf(100, 20) }));
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.gateway.streams).toEqual([]);
+    const reason = env.api.reflection.get(run.id)?.lastError;
+    expect(reason).toEqual(expect.stringContaining('reflection'));
+    const notices = env.store.readRunEventsOfTypes(run.id, ['notice']).filter((event) => event.type === 'notice' && event.code === 'budget_auxiliary_skipped');
+    expect(notices).toEqual([expect.objectContaining({ level: 'warning', message: expect.stringContaining(String(reason)) })]);
   });
 
   it.each([
@@ -333,7 +364,7 @@ describe('the reflection call', () => {
     expect(['done', 'failed']).toContain(job?.state);
     expect(job?.lastError).toEqual(expect.stringMatching(/schema/i));
     expect(env.api.memories.candidates()).toEqual([]);
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
     expect(await env.reflector().runOne(SIGNAL)).toBe('idle');
   });
 });
@@ -382,7 +413,7 @@ describe('scheduling and restart', () => {
     await env.reflector().runOne(SIGNAL);
     expect(await env.reflector().runOne(SIGNAL)).toBe('idle');
     expect(env.gateway.streams).toHaveLength(1);
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
   });
 
   it('resumes a call that failed, with the same key', async () => {
@@ -418,7 +449,7 @@ describe('scheduling and restart', () => {
     env.clock.advance(REQUEUE_MAX_MS);
     expect(await reflector.runOne(SIGNAL)).toBe('idle');
     expect(env.gateway.streams).toHaveLength(MAX_ATTEMPTS);
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(reflectionCharges(env)).toEqual([]);
   });
 
   it('lets the next job run while a failed one backs off', async () => {
@@ -502,13 +533,13 @@ describe('the charge of a reflection', () => {
     failOn(env.dbPath, 'memories');
     env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: USAGE }), textStep(CANDIDATE_REPLY([]), { usage: USAGE }));
     await expect(reflector.runOne(SIGNAL)).rejects.toThrow('injected failure');
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
     expect(env.api.memories.candidates()).toEqual([]);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 1 });
     healed(env.dbPath, 'memories');
     env.clock.advance(REQUEUE_MAX_MS);
     expect(await reflector.runOne(SIGNAL)).toBe('ran');
-    expect(env.api.contextCharges.list()).toMatchObject([{ runId: run.id, totalTokens: 120 }]);
+    expect(reflectionCharges(env)).toMatchObject([{ totalTokens: 120 }]);
     expect(env.api.memories.candidates()).toHaveLength(1);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', attempts: 2 });
   });
@@ -516,12 +547,12 @@ describe('the charge of a reflection', () => {
   it('reports both failures when the charge cannot be written, and leaves the candidates unstored and the job open', async () => {
     const env = await setup();
     const run = await queued(env);
-    failOn(env.dbPath, 'context_charges');
+    failOn(env.dbPath, 'events');
     env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: USAGE }));
     const raised: unknown = await env.reflector().runOne(SIGNAL).catch((error: unknown) => error);
     expect(raised).toBeInstanceOf(AggregateError);
     expect((raised as AggregateError).errors.map((error: Error) => error.message)).toEqual(['injected failure', 'injected failure']);
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(reflectionCharges(env)).toEqual([]);
     expect(env.api.memories.candidates()).toEqual([]);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running' });
   });
@@ -532,14 +563,14 @@ describe('the charge of a reflection', () => {
     const reflector = env.reflector();
     env.gateway.script.push(failedWithUsage(), failedWithUsage(), failedWithUsage());
     await expect(reflector.runOne(SIGNAL)).rejects.toThrow('overloaded');
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
     env.clock.advance(REQUEUE_MAX_MS);
     await expect(reflector.runOne(SIGNAL)).rejects.toThrow('overloaded');
-    expect(env.api.contextCharges.list()).toHaveLength(2);
+    expect(reflectionCharges(env)).toHaveLength(2);
     env.clock.advance(REQUEUE_MAX_MS);
     await expect(reflector.runOne(SIGNAL)).rejects.toThrow('overloaded');
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'failed', attempts: MAX_ATTEMPTS });
-    expect(env.api.contextCharges.list()).toMatchObject([{ totalTokens: 120 }, { totalTokens: 120 }, { totalTokens: 120 }]);
+    expect(reflectionCharges(env)).toMatchObject([{ totalTokens: 120 }, { totalTokens: 120 }, { totalTokens: 120 }]);
   });
 
   it('records no charge for a failed response that carries no usage', async () => {
@@ -547,7 +578,7 @@ describe('the charge of a reflection', () => {
     await queued(env);
     env.gateway.script.push(failedStep('overloaded'));
     await expect(env.reflector().runOne(SIGNAL)).rejects.toThrow('overloaded');
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(reflectionCharges(env)).toEqual([]);
   });
 
   it('records the charge when a step after the call throws, once for the attempt', async () => {
@@ -556,7 +587,7 @@ describe('the charge of a reflection', () => {
     const failure = new Error('the memory list failed');
     env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: USAGE }));
     await expect(env.reflector(() => true, throwingAt(env.store, 'list', failure)).runOne(SIGNAL)).rejects.toBe(failure);
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: run.id, inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
+    expect(env.store.readRunEventsOfTypes(run.id, ['usage.charged'])).toMatchObject([{ purpose: 'reflection', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 1 });
   });
 
@@ -571,7 +602,7 @@ describe('the charge of a reflection', () => {
       await expect(reflector.runOne(SIGNAL)).rejects.toBe(failure);
     }
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'failed', attempts: MAX_ATTEMPTS, lastError: 'the memory list failed' });
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
   });
 
   it('records the charge of an aborted attempt whose usage had come back, and still gives the attempt back', async () => {
@@ -593,7 +624,7 @@ describe('the charge of a reflection', () => {
     });
     env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: USAGE }));
     await expect(env.reflector(() => true, store).runOne(stopping.signal)).rejects.toBe(abort);
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 0 });
   });
 
@@ -603,7 +634,7 @@ describe('the charge of a reflection', () => {
     env.gateway.script.push(textStep('not json', { usage: USAGE }));
     await env.reflector().runOne(SIGNAL);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done' });
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
   });
 });
 
@@ -642,7 +673,7 @@ describe('candidates of a reflection', () => {
 
     expect(env.api.memories.candidates()).toEqual([]);
     expect(env.api.reflection.get((await run).id)?.state).not.toBe('done');
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: (await run).id }]);
+    expect(env.store.readRunEventsOfTypes((await run).id, ['usage.charged'])).toMatchObject([{ purpose: 'reflection' }]);
     expect(timers.pending()).toEqual([]);
   });
 
@@ -675,7 +706,7 @@ describe('candidates of a reflection', () => {
     expect(await reflector.runOne(SIGNAL)).toBe('ran');
 
     expect(env.api.reflection.get((await run).id)?.state).toBe('done');
-    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(reflectionCharges(env)).toHaveLength(1);
   });
 
   it('stores a candidate bound to a journal path, with the recorded hash', async () => {
@@ -810,7 +841,7 @@ describe('candidates of a reflection', () => {
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', attempts: 1, lastError: expect.stringMatching(/schema/i) });
     expect(await env.reflector().runOne(SIGNAL)).toBe('idle');
     expect(env.gateway.streams).toHaveLength(1);
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: run.id, totalTokens: 15 }]);
+    expect(env.store.readRunEventsOfTypes(run.id, ['usage.charged'])).toMatchObject([{ purpose: 'reflection', totalTokens: 15 }]);
   });
 
   it.each([

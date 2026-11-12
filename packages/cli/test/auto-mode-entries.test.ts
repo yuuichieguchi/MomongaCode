@@ -1,4 +1,3 @@
-import { testKernelLock } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, removeTempDir } from '@momonga/testkit';
 import { nodeProcess } from '../src/node-ports.ts';
@@ -10,7 +9,6 @@ import { createSlashRegistry } from '../src/tui/slash.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
-import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { fakeBackend } from './fake-backend.ts';
 import { createFoundServers } from '../src/tui/models/context.ts';
 import { NO_HELPER } from './no-helper.ts';
@@ -44,7 +42,6 @@ const programWith = (interrupt: AbortSignal) => {
   const entry = async (): Promise<number> => 0;
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
     entries: { supervise: entry, gateway: entry, runtime: entry },
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt,

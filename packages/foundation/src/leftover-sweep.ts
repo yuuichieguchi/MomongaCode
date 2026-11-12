@@ -1,11 +1,11 @@
+import type { FileSystem } from './node-file-system.ts';
 import path from 'node:path';
 import { nodeFileSystem } from './node-file-system.ts';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { claimPathOf, lockFormOf, sidecarSuffixOf } from './platform/lock-form.ts';
 import type { LockForm } from './platform/lock-form.ts';
 
-export type LeftoverFiles = {
-  readdir(directory: string): Promise<string[]>;
+export type LeftoverFiles = Pick<FileSystem, 'readdir'> & {
   rm(entry: string): Promise<void>;
 };
 

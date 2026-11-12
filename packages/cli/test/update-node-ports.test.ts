@@ -3,7 +3,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
-import { ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarOf, systemTiming } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarOf, systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import { registerCleanup, spawnTracked, testEndpointScope, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
@@ -251,6 +251,20 @@ describe('update http', () => {
   });
 });
 
+describe('the aside install.ps1 leaves beside a running momonga.exe', () => {
+  for (const mechanism of ['file-lock', 'sqlite-lock'] as const) {
+    it(`is removed by the one update sweep once no process holds it (${mechanism})`, async (context) => {
+      const directory = withTempDir(context);
+      const aside = path.join(directory, `${STAGING_PREFIX}0123456789abcdef0123456789abcdef`);
+      fs.writeFileSync(path.join(directory, 'momonga.exe'), 'new');
+      fs.writeFileSync(aside, 'old');
+      fs.writeFileSync(`${aside}${LOCK_DATABASE_SUFFIX}`, '');
+      await nodeUpdateFs(kernelLockNamed(mechanism)).removeLeftovers(directory);
+      expect(fs.readdirSync(directory)).toEqual(['momonga.exe']);
+    });
+  }
+});
+
 describe('publishing over a running executable', () => {
   const refusal = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: rename refused`), { code });
 
@@ -332,7 +346,9 @@ describe('publishing over a running executable', () => {
     const rename = async (): Promise<void> => {
       throw refusal('EACCES');
     };
-    await expect(nodeUpdateFs(testKernelLock(), rename).publish(staged, target)).rejects.toMatchObject({ code: 'EACCES' });
+    const outcome = nodeUpdateFs(testKernelLock(), rename).publish(staged, target);
+    await expect(outcome).rejects.toMatchObject({ code: 'EACCES' });
+    await expect(outcome).rejects.toThrow(/stop the daemon, then run the command again/);
     expect(fs.readFileSync(target, 'utf8')).toBe('old');
   });
 

@@ -4,6 +4,8 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { MODEL_COST_SCHEMA, carriesOutput, planAccountRefOf, reportedCachedTokensOf } from '@momonga/protocol';
 import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ClaimContext } from './claim-context.ts';
+import { elapsedMsSince } from '../service/timers.ts';
+import type { ServiceTimers } from '../service/timers.ts';
 import { streamAdmitted } from './admitted-request.ts';
 import type { AdmissionProof } from './admitted-request.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -28,15 +30,19 @@ type DeltaBuffer = {
 };
 
 const createDeltaBuffer = (
+  timers: Pick<ServiceTimers, 'setTimeout' | 'clearTimeout'>,
   append: (payloads: readonly RunEventPayload[]) => void,
   position: { step: number; attempt: number },
   onFailure: (error: unknown) => void,
 ): DeltaBuffer => {
   const pending = new Map<string, Pending>();
-  let timer: NodeJS.Timeout | undefined;
-  const flush = (): void => {
-    clearTimeout(timer);
+  let timer: unknown;
+  const stopTimer = (): void => {
+    if (timer !== undefined) timers.clearTimeout(timer);
     timer = undefined;
+  };
+  const flush = (): void => {
+    stopTimer();
     if (pending.size === 0) return;
     const payloads = [...pending.values()].map(
       (entry): RunEventPayload => ({ type: entry.type, step: position.step, attempt: position.attempt, itemId: entry.itemId, text: entry.text }),
@@ -54,7 +60,7 @@ const createDeltaBuffer = (
       if (Buffer.byteLength(entry.text) >= FLUSH_BYTES) {
         flush();
       } else if (timer === undefined) {
-        timer = setTimeout(() => {
+        timer = timers.setTimeout(() => {
           try {
             flush();
           } catch (error) {
@@ -64,10 +70,7 @@ const createDeltaBuffer = (
       }
     },
     flush,
-    dispose: () => {
-      clearTimeout(timer);
-      timer = undefined;
-    },
+    dispose: stopTimer,
   };
 };
 
@@ -138,13 +141,13 @@ export const streamModel = async (
   position: { step: number; attempt: number },
   proof: AdmissionProof,
 ): Promise<StreamedModel> => {
-  const buffer = createDeltaBuffer((payloads) => ctx.journal.append(payloads), position, (error) => ctx.control.fail(error));
+  const { timers } = ctx.options;
+  const buffer = createDeltaBuffer(timers, (payloads) => ctx.journal.append(payloads), position, (error) => ctx.control.fail(error));
   let terminal: ModelResult | undefined;
   let firstEventMs: number | undefined;
-  const { clock } = ctx.options;
   ctx.journal.verifyLease();
   ctx.control.inFlight.modelKey = idempotencyKey;
-  const startedAt = clock.now();
+  const startedAt = timers.monotonicMs();
   try {
     await ctx.control.recordingRaised(
       (async (): Promise<void> => {
@@ -155,7 +158,7 @@ export const streamModel = async (
           traceparent: ctx.agentSpan.traceparent,
         });
         for await (const event of events) {
-          if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
+          if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = elapsedMsSince(timers, startedAt);
           switch (event.type) {
             case 'response.output_text.delta':
               buffer.add('agent.message.delta', event.item_id, event.delta);
@@ -185,5 +188,5 @@ export const streamModel = async (
   delete ctx.control.inFlight.modelKey;
   if (terminal === undefined) throw new GatewayRequestError({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the gateway stream ended without a terminal event' });
   buffer.flush();
-  return { result: terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt } };
+  return { result: terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: elapsedMsSince(timers, startedAt) } };
 };

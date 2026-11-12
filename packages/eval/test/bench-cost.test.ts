@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TRANSCRIPT_FORMAT, decodeTranscript, encodeTranscript, nodeWorkspaceFiles, parseDataset, runBenchmark, runFiguresOf } from '@momonga/eval';
@@ -7,6 +6,7 @@ import type { BenchRunApi, BenchRunView, RecordedRun } from '@momonga/eval';
 import { formatReliabilityReport } from '@momonga/reliability';
 import type { PublicRunEvent, RunCostView } from '@momonga/protocol';
 import { ADD_FIXED, benchmarkDir, nodeProbe } from './bench-fixtures.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const T0 = 1_800_000_000_000;
 const ONE_DOLLAR_UNITS = '1000000000000000';
@@ -37,7 +37,7 @@ const pricedApi = (asked: string[][]): BenchRunApi => {
     },
     runOf: async (runId): Promise<BenchRunView> => {
       const run = runs.get(runId) as { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } };
-      return { sessionId: run.sessionId, status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + run.timeoutMs, limits: run.limits, step: 1, tokensTotal: 10, origin: 'trusted', agent: 'main', mode: 'acceptEdits', model: 'fake/system', declared: true };
+      return { sessionId: run.sessionId, status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + run.timeoutMs, limits: run.limits, step: 1, tokensTotal: 10, origin: 'trusted', agent: 'main', mode: 'acceptEdits', model: 'fake/system'};
     },
     costs: async (runIds) => {
       asked.push([...runIds]);
@@ -58,7 +58,7 @@ describe('one cost record: a report prints the cost of its population', () => {
     const benchmark = JSON.parse(fs.readFileSync(file, 'utf8')) as { tasks: { runs: number }[] };
     for (const task of benchmark.tasks) task.runs = 2;
     fs.writeFileSync(file, JSON.stringify(benchmark));
-    const at = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-bench-cost-'));
+    const at = createTempDir();
     scratches.push(at);
     const asked: string[][] = [];
     const api = pricedApi(asked);
