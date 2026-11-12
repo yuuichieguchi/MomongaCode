@@ -19,12 +19,14 @@ import {
   tokensOfText,
   truncatedMarker,
   user,
+  withTurnsBeforeCurrent,
 } from './helpers.ts';
 import type { DeepReadonly, HistoryItem } from '@momonga/context';
 
 const OLD_TEXT = (letter: string): string => letter.repeat(2400);
+const CURRENT_TEXT = 'f'.repeat(2000);
 
-const evictionHistory = (): HistoryItem[] => [
+const evictionHistory = (): HistoryItem[] => withTurnsBeforeCurrent([
   user(1, 'old question'),
   call(2, 'c1'),
   output(3, 'c1', OLD_TEXT('a')),
@@ -39,8 +41,8 @@ const evictionHistory = (): HistoryItem[] => [
   assistant(12, 'old answer'),
   user(13, 'current question'),
   call(14, 'c6'),
-  output(15, 'c6', OLD_TEXT('f')),
-];
+  output(15, 'c6', CURRENT_TEXT),
+]);
 
 const W = 4000;
 const I = 2920;
@@ -60,7 +62,7 @@ describe('eviction of stale tool outputs', () => {
     const { ports, blobs } = harness(capabilities);
     const history = evictionHistory();
     const result = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ history }) }),
       ports,
     );
     expect(result.budget.I).toBe(I);
@@ -76,7 +78,7 @@ describe('eviction of stale tool outputs', () => {
     );
     expect(tokensOfItems(restored)).toBeGreaterThan(LOW_MARK);
 
-    expect(outputTextOf(result.input, 'c6')).toBe(OLD_TEXT('f'));
+    expect(outputTextOf(result.input, 'c6')).toBe(CURRENT_TEXT);
     expect(result.evictions.some((eviction) => eviction.callId === 'c6')).toBe(false);
     expect(blobs.puts.length).toBe(evictedIds.filter((id) => id !== 'c2').length);
   });
@@ -86,7 +88,7 @@ describe('eviction of stale tool outputs', () => {
     const { ports, blobs } = harness(capabilities);
     const history = evictionHistory();
     const result = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ history }) }),
       ports,
     );
     const marker = outputTextOf(result.input, 'c1') ?? '';
@@ -105,7 +107,7 @@ describe('eviction of stale tool outputs', () => {
     const capabilities = capabilitiesFor(W);
     const { ports, blobs } = harness(capabilities);
     const result = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history: evictionHistory() }), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ history: evictionHistory() }) }),
       ports,
     );
     expect(result.evictions[1]).toEqual({ callId: 'c2', handle: 'pre-c2', kind: 'omitted', tokens: expect.any(Number) });
@@ -117,7 +119,7 @@ describe('eviction of stale tool outputs', () => {
     const capabilities = capabilitiesFor(W);
     const { ports } = harness(capabilities);
     const result = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history: evictionHistory() }), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ history: evictionHistory() }) }),
       ports,
     );
     const callIds = result.input.flatMap((item) => (item.type === 'function_call' ? [item.call_id] : []));
@@ -129,7 +131,7 @@ describe('eviction of stale tool outputs', () => {
     const capabilities = capabilitiesFor(W);
     const build = async () =>
       buildContext(
-        inputFor(capabilities, { sources: sourcesWith({ history: evictionHistory() }), keepRecentTurns: 1 }),
+        inputFor(capabilities, { sources: sourcesWith({ history: evictionHistory() }) }),
         harness(capabilities).ports,
       );
     const first = await build();
@@ -145,7 +147,7 @@ describe('eviction of stale tool outputs', () => {
       entry.item.type === 'function_call_output' && entry.item.call_id === 'c1' ? { ...entry, handle: 'blob-1' } : entry,
     );
     const result = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history }), evicted: new Set(['c1']), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ history }), evicted: new Set(['c1']) }),
       ports,
     );
     const match = omittedMarker.exec(outputTextOf(result.input, 'c1') ?? '');
@@ -159,7 +161,7 @@ describe('eviction of stale tool outputs', () => {
     const capabilities = capabilitiesFor(200000);
     const { ports, blobs } = harness(capabilities);
     const result = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history: evictionHistory() }), keepRecentTurns: 1 }),
+      inputFor(capabilities, { sources: sourcesWith({ history: evictionHistory() }) }),
       ports,
     );
     expect(result.evictions).toEqual([]);

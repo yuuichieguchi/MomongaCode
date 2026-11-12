@@ -45,7 +45,6 @@ const inputWith = (history: HistoryItem[], memories: MemoryView[]): BuildContext
   trusted: true,
   projectRoot: PROJECT,
   home: HOME,
-  keepRecentTurns: 1,
   observedCapacity: true,
   renderedFull: new Set(['c1', 'c2']),
   fence: TEST_FENCE,

@@ -51,7 +51,6 @@ const inputWith = (layout: Layout, history: HistoryItem[], extra: Partial<BuildC
   projectRoot: PROJECT,
   home: HOME,
   harnessOutputTools: [RAW_OUTPUT_TOOL],
-  keepRecentTurns: 1,
   observedCapacity: true,
   renderedFull: new Set(['c1', 'c2']),
   ...(layout === 'cachePrefix' ? { layout } : {}),

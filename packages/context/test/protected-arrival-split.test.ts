@@ -102,7 +102,7 @@ const assistantHeavy: HistoryItem[] = [
 ];
 
 const smallInput = (history: HistoryItem[], level: number): BuildContextInput => ({
-  ...inputWith(history, { keepRecentTurns: 1, level }),
+  ...inputWith(history, { level }),
   capabilities: small,
   renderedFull: new Set(history.flatMap((entry) => (entry.item.type === 'function_call_output' ? [entry.item.call_id] : []))),
 });

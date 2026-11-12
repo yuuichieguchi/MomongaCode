@@ -18,11 +18,6 @@ type Entry = { readonly seq: number; readonly item: { readonly type: string; rea
 
 const isUserMessage = (item: Entry['item']): boolean => item.type === 'message' && item.role === 'user';
 
-export const positiveInteger = (name: string, value: number): number => {
-  if (!Number.isInteger(value) || value < 1) throw new RangeError(`${name} must be a positive integer, received ${value}`);
-  return value;
-};
-
 export const retainedHistoryOf = <Item extends { readonly seq: number }>(history: readonly Item[], summary: { replacedThroughSeq: number } | undefined): Item[] =>
   summary === undefined ? [...history] : history.filter((entry) => entry.seq > summary.replacedThroughSeq);
 

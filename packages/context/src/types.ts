@@ -171,16 +171,12 @@ export type BuildContextInput = {
   projectRoot: string;
   home: string;
   expectedPinnedDigest?: string;
-  keepRecentTurns?: number;
-  keepRecentSteps?: number;
   level?: number;
-  itemCap?: number;
   memoryShare?: number;
   pinnedTokens?: number;
   toolsFrozen?: true;
   compactNow?: true;
   compactionFocus?: string;
-  compactAt?: number;
   tools?: 'none';
   companions?: { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
   trailing?: readonly InputItem[];
