@@ -25,6 +25,7 @@ const lantern = (dir: string) => {
   };
   const subject: ProbeSubject<LanternKey, LanternReport> = {
     target: KEY.target,
+    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
     readKey: async () => KEY,
     precondition: {
       boundMs: 50,
@@ -67,7 +68,7 @@ describe('the automatic probe through its one interface, with an adapter no othe
     expect(state.measures).toBe(0);
 
     state.verdict = { kind: 'met' };
-    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
+    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling' } });
     expect(state.measures).toBe(1);
   });
 
@@ -141,7 +142,7 @@ describe('the automatic probe through its one interface, with an adapter no othe
     const { state, subject } = lantern(dir);
     const autoProbe = createAutoProbe({ lock: testKernelLock(), dir, clock: createFakeClock(START_MS), timers: hostTimers, retryAfterMs: 120_000, onEvent: () => undefined, role: { current: () => 'retiring' } });
 
-    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
+    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling' } });
 
     expect(state.measures).toBe(0);
     expect(autoProbe.openFlights()).toBe(0);

@@ -5,7 +5,7 @@ import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningF
 import { approveProjectItems, editProjectMandate, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { ProjectItemsApproval, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
 import type { ProjectItems } from './project-items.ts';
-import { programModelOf, serversDetector } from '../commands/models.ts';
+import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
 import type { ModelsHost } from '../commands/models.ts';
 import { storeSecretValue } from '../commands/secret.ts';
 import { createGatewayClient } from '../client/gateway-client.ts';
@@ -201,6 +201,7 @@ export const createTuiBackend = (
         listing: () => withGateway((gateway) => gateway.modelList(interrupt)),
         detect: (request) => withIdentityReadFetch(ports, request.signal, (fetch) => serversDetector(ports, fetch)(request)),
         programModel: (program, measuring) => programModelOf(ports, paths, program, measuring, onWarning),
+        describe: (server, model, signal) => withIdentityReadFetch(ports, signal, (fetch) => modelDescriber(fetch)(server, model, signal)),
       };
     },
     storeSecret: (name, value, signal) => storeSecretValue(ports, name, value, AbortSignal.any([closing.signal, signal])),

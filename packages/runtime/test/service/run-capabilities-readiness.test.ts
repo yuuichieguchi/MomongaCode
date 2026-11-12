@@ -15,7 +15,7 @@ const UNAVAILABLE: UnavailableCapabilities = {
   source: 'unprobed',
 };
 
-const PROBING: ProbingCapabilities = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' };
+const PROBING: ProbingCapabilities = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' };
 
 const IMAGE = { mediaType: 'image/png', data: Buffer.from('fake png bytes').toString('base64') };
 

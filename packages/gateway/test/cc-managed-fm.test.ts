@@ -85,6 +85,7 @@ const pollingTimers = (clock: FakeClock): ManagedServerTimers => ({
   },
   clearTimeout: () => undefined,
   now: () => clock.now(),
+  monotonicMs: () => clock.monotonicMs(),
 });
 
 type Setup = {

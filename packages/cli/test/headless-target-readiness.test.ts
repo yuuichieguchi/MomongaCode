@@ -105,9 +105,9 @@ describe('headless asks capabilitiesOf(model) at session open and shows the verd
   });
 
   it('shows that the model is being measured, once per model and OS build, before the run is created, and the run proceeds', async (context) => {
-    const result = await headless(context, { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
+    const result = await headless(context, { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } });
 
-    const noticeAt = log.findIndex((entry) => entry.startsWith('stderr:') && entry.includes(TARGET_PROBING_MESSAGE));
+    const noticeAt = log.findIndex((entry) => entry.startsWith('stderr:') && entry.includes('measuring toolCalling of this model, starting; to skip it, declare toolCalling for the model in its settings'));
     expect(noticeAt).toBeGreaterThan(-1);
     expect(noticeAt).toBeLessThan(log.indexOf('createRun'));
     expect(result.code).toBe(0);

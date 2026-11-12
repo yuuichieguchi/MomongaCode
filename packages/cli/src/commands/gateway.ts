@@ -1,7 +1,7 @@
 import { isProbeable, isProbedBy, loadUserSettings, recordKeyOf, registeredServer, requireOfferedEndpointForm, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey, Probeable, ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
 import { createBinaryHashCache, endpointHostOf, managedInstanceIn, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
-import type { ManagedInstancePaths, MomongaPaths, OutboundNetwork } from '@momonga/foundation';
+import type { ManagedInstancePaths, MomongaPaths, OutboundNetwork, Timing } from '@momonga/foundation';
 import { displayMapOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { DialectDefinition, ManagedServerDescription, ProbeReportDialect } from '@momonga/protocol';
 import { withinCommandLimit } from '../command-limit.ts';
@@ -42,13 +42,16 @@ export const probeSubjectOf = (models: ResolvedModels, text: string): ProbeSubje
   return { canon, display, model };
 };
 
-export const managedProbeTimersOf = (ports: CliPorts): { setTimeout: CliPorts['timers']['setTimeout']; clearTimeout: CliPorts['timers']['clearTimeout']; now(): number } => ({
+export const managedProbeTimersOf = (ports: CliPorts): Timing => ({
   setTimeout: (callback, ms) => ports.timers.setTimeout(callback, ms),
   clearTimeout: (handle) => ports.timers.clearTimeout(handle),
+  monotonicMs: () => ports.timers.monotonicMs(),
   now: () => ports.clock.now(),
 });
 
-const probePortsOf = (ports: CliPorts): { clock: CliPorts['clock']; timers: CliPorts['timers'] } => ({ clock: ports.clock, timers: ports.timers });
+type ProbeGate = Awaited<typeof import('@momonga/gateway')>['PERSON_TRAFFIC'];
+
+const probePortsOf = (ports: CliPorts, gate: ProbeGate) => ({ clock: ports.clock, timers: managedProbeTimersOf(ports), gate });
 
 export const cliProbeInstance = async (
   ports: Pick<CliPorts, 'platform' | 'endpointScope'>,
@@ -171,7 +174,7 @@ const probeChatCompletions = async (
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
 ): Promise<number> => {
-  const { DEFAULT_SAMPLES, capabilitiesFromProbe, decideToolCalling, isMeteredTarget, measurementBoundOf, probeEndpointTarget, reachableEndpoint, saveMeasurementConsent } = await import('@momonga/gateway');
+  const { DEFAULT_SAMPLES, capabilitiesFromProbe, decideToolCalling, isMeteredTarget, measurementBoundOf, probeEndpointTarget, reachableEndpoint, saveMeasurementConsent, PERSON_TRAFFIC } = await import('@momonga/gateway');
   const key = endpointRecordKeyOf(subject, target);
   const metered = isMeteredTarget(target) ? { display: subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   if (metered !== undefined && options.consented) {
@@ -180,7 +183,7 @@ const probeChatCompletions = async (
   const { report, toolCalling } = await probeEndpointTarget({
     probeRecordDir: paths.probe,
     ...(metered === undefined ? {} : { metered }),
-    ports: probePortsOf(ports),
+    ports: probePortsOf(ports, PERSON_TRAFFIC),
     lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
     key,
@@ -206,10 +209,10 @@ const probeOllama = async (
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
 ): Promise<number> => {
-  const { probeOllamaTarget, reachableEndpoint } = await import('@momonga/gateway');
+  const { probeOllamaTarget, reachableEndpoint, PERSON_TRAFFIC } = await import('@momonga/gateway');
   const { report, key } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
-    ports: probePortsOf(ports),
+    ports: probePortsOf(ports, PERSON_TRAFFIC),
     lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
     key: endpointRecordKeyOf(subject, target),

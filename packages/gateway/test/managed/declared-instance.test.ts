@@ -115,13 +115,14 @@ describe('a declared server whose binary exists but cannot be read for its hash 
         createInstanceProbe({
           target: 'workbench',
           unknown,
+          ask: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
           dir: probeRecordDir,
           measure: async () => {
             measured += 1;
             return makeReport(1, 1);
           },
           retryAfterMs: 120_000,
-          clock: { now: () => 0 },
+          clock: { now: () => 0, monotonicMs: () => 0 },
           onNotice: (text) => notices.push(text),
         }),
       currency: managedCurrencyOf(description, { userDialects: {} }),

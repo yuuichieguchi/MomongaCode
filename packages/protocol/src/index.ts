@@ -837,3 +837,5 @@ export {
   RULE_PROPOSE_TOOL_NAME,
   TOOL_NAMES,
 } from './tool-names.ts';
+export { isMeasuring, measuringLineOf, measuringOfWire, measuringSkipOf, measuringStepOf, measuringWireOf } from './measuring.ts';
+export type { Measuring, MeasuringWire } from './measuring.ts';

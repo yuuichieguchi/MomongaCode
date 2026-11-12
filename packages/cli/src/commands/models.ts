@@ -57,6 +57,7 @@ export type ModelsShell = {
   listing(): Promise<MomongaModelList>;
   detect(request: DetectRequest): Promise<readonly LocalServerDetection[]>;
   programModel(program: ServerProgram, signal: AbortSignal): Promise<string>;
+  describe(server: DetectedLocalServer, model: DetectedModel, signal: AbortSignal): Promise<DetectedModel>;
 };
 
 export type ModelsHost = Omit<ModelsShell, 'stdout' | 'stderr'>;
@@ -451,7 +452,7 @@ const proposeSearchedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: Fo
   const [only, ...others] = holders;
   if (only === undefined) throw new ShellRefusal(`No model server on this computer lists "${id}".`);
   if (others.length > 0) throw new ShellRefusal(`"${id}" is listed by ${serverCountText(holders.length)} servers: ${holders.map((holder) => holder.server.provider).join(', ')}. Run again with --address.`);
-  return foundProposalOf(edit, input, only.server, only.model);
+  return foundProposalOf(edit, input, only.server, await shell.describe(only.server, only.model, shell.interrupt));
 };
 
 const proposeAddressedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, address: string, print: Print): Promise<ModelsProposal> => {
@@ -470,7 +471,7 @@ const proposeAddressedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: F
   }
   const model = server.models.find((candidate) => candidate.id === id);
   if (model === undefined) throw new ShellRefusal(`The server at ${address} does not list "${id}".`);
-  return foundProposalOf(edit, input, server, model);
+  return foundProposalOf(edit, input, server, await shell.describe(server, model, shell.interrupt));
 };
 
 const proposeAdd = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, print: Print): Promise<ModelsProposal> => {
@@ -859,6 +860,15 @@ export const serversDetector =
     return detectLocalServers({ ...request, fetch, ...localManagedPorts(settings.models.servers, ports) });
   };
 
+export const modelDescriber =
+  (fetch: OutboundFetch | typeof globalThis.fetch): ModelsShell['describe'] =>
+  async (server, model, signal) => {
+    const { describeModel, reportedWindowOf } = await import('@momonga/gateway');
+    const described = await describeModel({ server, model, signal, fetch });
+    const window = reportedWindowOf(described);
+    return window === undefined ? described : { ...described, contextWindow: window };
+  };
+
 export const modelsShellOf = (ports: CliPorts, paths: MomongaPaths, interrupt: AbortSignal): ModelsShell => ({
   stdout: ports.stdout,
   stderr: ports.stderr,
@@ -879,4 +889,5 @@ export const modelsShellOf = (ports: CliPorts, paths: MomongaPaths, interrupt: A
   },
   detect: (request) => withIdentityReadFetch(ports, request.signal, (fetch) => serversDetector(ports, fetch)(request)),
   programModel: (program, signal) => programModelOf(ports, paths, program, signal, (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`)),
+  describe: (server, model, signal) => withIdentityReadFetch(ports, signal, (fetch) => modelDescriber(fetch)(server, model, signal)),
 });

@@ -357,6 +357,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
         if (options.programModel === undefined) throw new Error('the fake backend starts no server program');
         return options.programModel;
       },
+      describe: async (_server, model) => model,
     }),
     storeSecret: async (name, value) => {
       record(`secret:${name}`);

@@ -33,7 +33,7 @@ export type AcpStdio = { input: AcpInput; output: WritableStream<Uint8Array> };
 
 export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream; colourOff(): void };
 
-export type CliTimers = Pick<Timing, 'setTimeout' | 'clearTimeout'>;
+export type CliTimers = Pick<Timing, 'setTimeout' | 'clearTimeout' | 'monotonicMs'>;
 
 export type StandardInput = { isTerminal: boolean; bytes(): AsyncIterable<Uint8Array> };
 

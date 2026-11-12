@@ -192,7 +192,7 @@ describe('the probed prompt cache becomes the target capability', () => {
 
   const probedTarget = (declared: Capabilities, report: ProbeReport) =>
     createProbedEndpointTarget({
-      targetName: 'remote',
+      toolCalling: 'auto', readReported: async () => ({}), targetName: 'remote',
       endpoint: 'unix:/nowhere',
       model: 'm',
       declared,

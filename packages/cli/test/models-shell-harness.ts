@@ -134,6 +134,7 @@ export type ShellFakes = {
   listing?: () => MomongaModelList;
   programModel?: string;
   interrupt?: AbortSignal;
+  describe?: ModelsShell['describe'];
 };
 
 export const shellOf = ({ home, settingsFile }: ShellHome, fakes: ShellFakes = {}): ShellHarness => {
@@ -165,6 +166,7 @@ export const shellOf = ({ home, settingsFile }: ShellHome, fakes: ShellFakes = {
       if (fakes.programModel === undefined) throw new Error('the program was started, but this case gives no model for it');
       return fakes.programModel;
     },
+    describe: fakes.describe ?? (async (_server, model) => model),
   };
   return { shell, stdout, stderr, detections, listings, out: () => stdout.join(''), err: () => stderr.join('') };
 };

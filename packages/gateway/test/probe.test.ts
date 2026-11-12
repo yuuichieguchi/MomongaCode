@@ -1,3 +1,4 @@
+import { createRequestGate } from '../src/probe/request-gate.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { vocabularyOf, capabilitiesFromProbe, ProbeTimeoutError, runProbe } from '@momonga/gateway';
 import { DEFAULT_STEP_TIMEOUT_MS } from '../src/probe/run-probe.ts';
@@ -289,7 +290,7 @@ describe('runProbe server features', () => {
         contextWindow: 8192,
         contextSizeExposure: 'models',
       },
-      { ports: waitRecordingProbePorts(fixedNow, DEFAULT_STEP_TIMEOUT_MS, waits) },
+      { ports: waitRecordingProbePorts(fixedNow, waits) },
     );
     expect(waits).toEqual([3000, 3000]);
     expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
@@ -301,7 +302,7 @@ describe('runProbe server features', () => {
     await expect(
       probe(
         { scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 }, rateLimitSizedImages: { count: 1, retryAfter: '2026-10-23T12:00:02.000Z' } },
-        { ports: waitRecordingProbePorts(fixedNow, DEFAULT_STEP_TIMEOUT_MS, waits) },
+        { ports: waitRecordingProbePorts(fixedNow, waits) },
       ),
     ).rejects.toThrow(/HTTP 429/);
     expect(waits).toEqual([]);
@@ -312,7 +313,7 @@ describe('runProbe server features', () => {
     await expect(
       probe(
         { scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 }, rateLimitSizedImages: { count: 1, retryAfter: '3600' } },
-        { ports: waitRecordingProbePorts(fixedNow, 5000, waits), stepTimeoutMs: 5000 },
+        { ports: waitRecordingProbePorts(fixedNow, waits), stepTimeoutMs: 5000 },
       ),
     ).rejects.toThrow(/HTTP 429/);
     expect(waits).toEqual([]);
@@ -599,6 +600,8 @@ describe('runProbe deadlines', () => {
     const open = new Set<unknown>();
     let armed = 0;
     const timers: ProbePorts['timers'] = {
+      now: () => systemTiming.now(),
+      monotonicMs: () => systemTiming.monotonicMs(),
       setTimeout: (callback, ms) => {
         armed += 1;
         const handle: unknown = systemTiming.setTimeout(() => {
@@ -613,7 +616,7 @@ describe('runProbe deadlines', () => {
         systemTiming.clearTimeout(handle);
       },
     };
-    await probe({ scenario: 'tools-ok', contextSizeExposure: 'models' }, { ports: { clock: systemTiming, timers }, samples: 2 });
+    await probe({ scenario: 'tools-ok', contextSizeExposure: 'models' }, { ports: { clock: systemTiming, timers, gate: createRequestGate() }, samples: 2 });
     expect(armed).toBeGreaterThan(10);
     expect(open.size).toBe(0);
   });

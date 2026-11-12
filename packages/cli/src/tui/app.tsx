@@ -2,7 +2,7 @@ import { askProjectItems } from './project-items.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
 import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
-import type { ChainCapabilities, ImageAttachment, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import type { ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
@@ -238,7 +238,7 @@ export function App(props: AppProps) {
   const imageCount = useRef(0);
   const shellRunning = useRef(false);
   const [reconnectingSince, setReconnectingSince] = useState<number | undefined>(undefined);
-  const [measuringSince, setMeasuringSince] = useState<number | undefined>(undefined);
+  const [measuring, setMeasuring] = useState<{ since: number; state: Measuring } | undefined>(undefined);
   const [commands, setCommands] = useState<readonly WaitingPhase[]>([]);
   const stopMeasuring = useRef<(() => void) | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
@@ -453,7 +453,7 @@ export function App(props: AppProps) {
   const endMeasuring = (): void => {
     stopMeasuring.current?.();
     stopMeasuring.current = undefined;
-    setMeasuringSince(undefined);
+    setMeasuring(undefined);
   };
 
   const modelUnread = (error: unknown, announce = true): void => {
@@ -466,8 +466,14 @@ export function App(props: AppProps) {
     setModel(entry);
     const readiness = agentReadiness(entry.capabilities);
     if (readiness.state === 'probing') {
-      setMeasuringSince(now());
-      stopMeasuring.current = followMeasurement({ read: () => backend.model(), timers }, readiness.retryAfterSeconds, (measured) => showModel(measured), (error) => modelUnread(error));
+      setMeasuring({ since: now(), state: readiness.measuring });
+      stopMeasuring.current = followMeasurement(
+        { read: () => backend.model(), timers },
+        readiness.retryAfterSeconds,
+        (measured) => showModel(measured),
+        (error) => modelUnread(error),
+        (state) => setMeasuring((before) => (before === undefined ? undefined : { since: before.since, state })),
+      );
       return;
     }
     const text = readinessNoticeOf(readiness, 'tui');
@@ -1501,7 +1507,7 @@ export function App(props: AppProps) {
     reconnectingSince: phase.kind === 'ready' ? reconnectingSince : undefined,
     run: phase.kind === 'ready' ? shownRunPhase(transcript) : undefined,
     command: commands.at(-1),
-    measuringSince: phase.kind === 'ready' ? measuringSince : undefined,
+    measuring: phase.kind === 'ready' ? measuring : undefined,
     panelOwnsEscape: overlay !== undefined,
     loading: phase.kind === 'ready' ? loading : undefined,
   });

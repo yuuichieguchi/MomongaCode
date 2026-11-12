@@ -15,7 +15,7 @@ const KEY: LanternKey = { target: 'lantern', lamp: 'brass-7' };
 const RETRY_AFTER_MS = 120_000;
 const CAUSE = 'the lantern went out';
 const FAILED_MESSAGE = `measuring this model failed: ${CAUSE}`;
-const PROBING = { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 };
+const PROBING = { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: expect.objectContaining({ fields: ['toolCalling'], declaration: 'declare toolCalling' }) };
 
 type Pending = { resolve: (report: LanternReport) => void; reject: (error: Error) => void };
 
@@ -23,6 +23,7 @@ const lantern = () => {
   const state = { measures: 0, saved: [] as LanternReport[], pending: [] as Pending[] };
   const subject: ProbeSubject<LanternKey, LanternReport> = {
     target: KEY.target,
+    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
     readKey: async () => KEY,
     precondition: { boundMs: 50, check: async () => ({ kind: 'met' }) },
     measure: () => {
@@ -127,6 +128,7 @@ const setupInstance = () => {
   const probe = createInstanceProbe<LanternReport>({
     target: 'lantern',
     unknown: { component: 'hostOsBuild', reason: 'sw_vers is not on PATH' },
+    ask: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
     dir: makeDir(),
     measure: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
     retryAfterMs: RETRY_AFTER_MS,

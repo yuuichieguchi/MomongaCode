@@ -18,7 +18,7 @@ const SELECTED_2020 = reportOf({ selected: 'json-schema-2020-12', shape: 'union'
 
 const targetOf = (targetName: string, declared: DeclaredCapabilities, report: ProbeReport | null) =>
   createProbedEndpointTarget({
-    targetName,
+    toolCalling: 'auto', readReported: async () => ({}), targetName,
     endpoint: 'unix:/nowhere',
     model: 'm',
     declared,
