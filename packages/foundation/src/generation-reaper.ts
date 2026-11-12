@@ -1,3 +1,4 @@
+import type { FileSystem } from './node-file-system.ts';
 import type fs from 'node:fs';
 import path from 'node:path';
 import { listGenerationNumbers, lockReadsHeld } from './generation-registry.ts';
@@ -42,8 +43,7 @@ export const GENERATION_MARKER_REAP_ORDER: readonly MarkerKind[] = ['daemons', '
 
 export const GENERATION_MARKER_LABELS: Readonly<Record<MarkerKind, string>> = { daemons: 'daemon', mcp: 'mcp', tools: 'tool', targets: 'managed server' };
 
-export type GenerationReaperFiles = {
-  readdir(directory: string): Promise<string[]>;
+export type GenerationReaperFiles = Pick<FileSystem, 'readdir'> & {
   markerFiles(directory: string): Promise<string[]>;
   mkdir(directory: string): Promise<void>;
   unlink(file: string): Promise<void>;
