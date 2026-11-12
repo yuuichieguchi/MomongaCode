@@ -1,5 +1,5 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
-import { permissionRulesComposerFor } from '../governance/rules.ts';
+import { permissionRulesComposerFor, permissionRulesFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
 import { reapTimingOf } from '../process/reap-timing.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
@@ -35,7 +35,7 @@ import { EXACT_MODEL } from './exact-model.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
 import { deferredPinFor, tokenPinFor, tokenPolicyOf } from './token-pin.ts';
-import { completionPinFor } from './completion-pin.ts';
+import { COMPLETION_CONDITION_DENIED_CODE, completionPinFor, deniedConditionText } from './completion-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals, releaseClaimLease } from './terminals.ts';
@@ -408,7 +408,15 @@ const drive = async (
     await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: roleModelNotConfiguredText(lostRole, newRoles[lostRole] ?? '') } });
     return;
   }
-  const completionPin = pinned === undefined ? await completionPinFor({ run, session, settings: options.settings, signal: control.signal }) : undefined;
+  const pinning =
+    pinned === undefined
+      ? await completionPinFor({ run, session, settings: options.settings, rules: await permissionRulesFor(options, session, control.signal), mode: session.permissionMode, signal: control.signal })
+      : undefined;
+  if (pinning?.kind === 'denied') {
+    await terminals.finish('FAILED', { error: { code: COMPLETION_CONDITION_DENIED_CODE, message: deniedConditionText(pinning.denied) } });
+    return;
+  }
+  const completionPin = pinning?.pin;
   const { delegation } = delegationOf((pinned ?? completionPin ?? {}) as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts());
   const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories, delegation }, session);
   const startRefusal = policyRefusal(startVerdict);

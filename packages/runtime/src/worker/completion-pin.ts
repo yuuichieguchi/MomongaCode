@@ -1,6 +1,9 @@
 import { conditionIdOf, readMandate } from '@momonga/protocol';
-import type { CompletionDeclaration, ConditionSource, ConditionWhen, Mandate, MandateHold, MandateScope, PinnedCompletion, PinnedCondition } from '@momonga/protocol';
+import type { CompletionDeclaration, ConditionSource, ConditionWhen, Mandate, MandateHold, MandateScope, PermissionMode, PinnedCompletion, PinnedCondition } from '@momonga/protocol';
 import { readAgentPin } from '@momonga/agents';
+import type { PermissionRule } from '@momonga/config';
+import { denyingRuleFor } from '@momonga/policy';
+import { shellCommandSubject } from '@momonga/tools';
 import type { Run, Session } from '@momonga/store';
 import type { SettingsPort } from '../ports.ts';
 
@@ -21,7 +24,37 @@ const pinnedConditionOf = (layer: Layer, condition: NonNullable<CompletionDeclar
   ...(condition.timeoutMs === undefined ? {} : { timeoutMs: condition.timeoutMs }),
 });
 
-export const completionPinFor = async (input: { run: Run; session: Session; settings: Pick<SettingsPort, 'verification'>; signal: AbortSignal }): Promise<CompletionPin> => {
+export const COMPLETION_CONDITION_DENIED_CODE = 'completion_condition_denied';
+
+const SOURCE_NAMES: Record<ConditionSource, string> = {
+  request: 'the mandate of the request',
+  profile: 'the front matter of the agent',
+  settings: 'verification.commands of the settings',
+};
+
+export type DeniedCondition = { command: string; source: ConditionSource; rule: PermissionRule };
+
+export const deniedConditionOf = (rules: readonly PermissionRule[], mode: PermissionMode, conditions: ReadonlyArray<{ command: string; source: ConditionSource }>): DeniedCondition | undefined => {
+  for (const condition of conditions) {
+    const rule = denyingRuleFor(rules, mode, shellCommandSubject(condition.command));
+    if (rule !== undefined) return { command: condition.command, source: condition.source, rule };
+  }
+  return undefined;
+};
+
+export const deniedConditionText = ({ command, source, rule }: DeniedCondition): string =>
+  `the completion condition ${JSON.stringify(command)} from ${SOURCE_NAMES[source]} is denied by the permission rule ${rule.text} (${rule.origin}: ${rule.source})`;
+
+export type CompletionPinOutcome = { kind: 'pinned'; pin: CompletionPin } | { kind: 'denied'; denied: DeniedCondition };
+
+export const completionPinFor = async (input: {
+  run: Run;
+  session: Session;
+  settings: Pick<SettingsPort, 'verification'>;
+  rules: readonly PermissionRule[];
+  mode: PermissionMode;
+  signal: AbortSignal;
+}): Promise<CompletionPinOutcome> => {
   const { run, session, settings, signal } = input;
   const standing = await settings.verification(session, signal);
   const request = requestMandateOf(run);
@@ -43,12 +76,15 @@ export const completionPinFor = async (input: { run: Run; session: Session; sett
     }
     if (layer.declaration.inherit === false) break;
   }
+  const denied = deniedConditionOf(input.rules, input.mode, conditions);
+  if (denied !== undefined) return { kind: 'denied', denied };
   const hasMandate = request !== undefined || profile !== undefined;
   const declared = hasMandate || conditions.length > 0 || requirements.length > 0;
-  return {
+  const pin: CompletionPin = {
     ...(declared
       ? { mandate: { completion: { conditions, requirements }, ...(request?.scope === undefined ? {} : { scope: request.scope }), ...(request?.hold === undefined ? {} : { hold: request.hold }) } }
       : {}),
     ...(standing.required || hasMandate ? { verificationRequired: true as const } : {}),
   };
+  return { kind: 'pinned', pin };
 };

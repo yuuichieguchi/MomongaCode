@@ -4,8 +4,6 @@ import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, serverKeyOfLabel, stripCredentialEnv } from '@momonga/config';
 import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
-import { denyingRuleFor } from '@momonga/policy';
-import { shellCommandSubject } from '@momonga/tools';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
@@ -49,6 +47,7 @@ import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, pageLimitOf, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
 import { compactInputOf, compactPinOf } from '../worker/compact-pin.ts';
+import { deniedConditionOf, deniedConditionText } from '../worker/completion-pin.ts';
 import type { AddInboxBody, CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
@@ -496,15 +495,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   const refuseDeniedConditions = async (session: Session, mandate: Mandate | undefined, signal: AbortSignal): Promise<void> => {
-    const conditions = mandate?.completion?.conditions ?? [];
+    const conditions = (mandate?.completion?.conditions ?? []).map(({ command }) => ({ command, source: 'request' as const }));
     if (conditions.length === 0) return;
-    const rules = await deps.permissionRules(session, signal);
-    for (const condition of conditions) {
-      const rule = denyingRuleFor(rules, knownValue(session.permissionMode, `the permission mode of session ${session.id}`), shellCommandSubject(condition.command));
-      if (rule !== undefined) {
-        throw invalidRequest(`the completion condition ${JSON.stringify(condition.command)} is denied by the permission rule ${rule.text} (${rule.origin}: ${rule.source})`, 'mandate');
-      }
-    }
+    const denied = deniedConditionOf(await deps.permissionRules(session, signal), knownValue(session.permissionMode, `the permission mode of session ${session.id}`), conditions);
+    if (denied !== undefined) throw invalidRequest(deniedConditionText(denied), 'mandate');
   };
 
   const standingOfGateway = async (signal: AbortSignal): Promise<GatewayStanding> => {
