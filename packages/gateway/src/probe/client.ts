@@ -129,6 +129,7 @@ export type ProbeClientOptions = {
   timers: ProbeTimers;
   gate: RequestGate;
   routes?: ManagedProbeRoutes;
+  onSend?: (body: unknown) => void;
 };
 
 export class MeasurementYieldedError extends Error {
@@ -153,8 +154,17 @@ export const createProbeClient = (endpoint: ProbeEndpoint, options: ProbeClientO
     requestBytes: number,
     perform: (requestSignal: AbortSignal, timedOut: () => boolean, dispose: () => void) => Promise<T>,
     streaming: boolean,
+    body: unknown,
   ): Promise<T> => {
     const turn = await gate.turn(parent);
+    if (method === 'POST') {
+      try {
+        options.onSend?.(body);
+      } catch (error) {
+        turn.end();
+        throw error;
+      }
+    }
     const limitMs = bound.currentMs(requestBytes);
     const limit = operationLimit(AbortSignal.any([parent, turn.yielded]), limitMs, `the step bound of ${method} ${path}`, timers);
     const timedOut = (): boolean => limit.signal.reason instanceof OperationLimitError;
@@ -180,13 +190,14 @@ export const createProbeClient = (endpoint: ProbeEndpoint, options: ProbeClientO
   const withTimeout = async <T>(
     method: string,
     path: string,
-    requestBytes: number,
+    body: unknown,
     perform: (requestSignal: AbortSignal, timedOut: () => boolean, dispose: () => void) => Promise<T>,
     streaming = false,
   ): Promise<T> => {
+    const requestBytes = bytesOf(body);
     for (;;) {
       try {
-        return await onceWithin(method, path, requestBytes, perform, streaming);
+        return await onceWithin(method, path, requestBytes, perform, streaming, body);
       } catch (error) {
         if (!(error instanceof MeasurementYieldedError)) throw error;
       }
@@ -207,17 +218,17 @@ export const createProbeClient = (endpoint: ProbeEndpoint, options: ProbeClientO
   return {
     hasHealthRoute,
     get: (route) =>
-      withTimeout('GET', paths[route], 0, async (requestSignal) => {
+      withTimeout('GET', paths[route], undefined, async (requestSignal) => {
         const response = await uds.request({ method: 'GET', path: paths[route], headers: authHeaders, signal: requestSignal });
         return { status: response.status, text: await readProbeReply('GET', paths[route], response), headers: response.headers };
       }),
     post: (route, body) =>
-      withTimeout('POST', paths[route], bytesOf(body), async (requestSignal) => {
+      withTimeout('POST', paths[route], body, async (requestSignal) => {
         const response = await jsonPost(paths[route], body, requestSignal);
         return { status: response.status, text: await readProbeReply('POST', paths[route], response), headers: response.headers };
       }),
     request: (method, path, body) =>
-      withTimeout(method, path, bytesOf(body), async (requestSignal) => {
+      withTimeout(method, path, body, async (requestSignal) => {
         const response =
           method === 'GET'
             ? await uds.request({ method, path, headers: authHeaders, signal: requestSignal })
@@ -229,7 +240,7 @@ export const createProbeClient = (endpoint: ProbeEndpoint, options: ProbeClientO
       return withTimeout(
         'POST',
         path,
-        bytesOf(body),
+        body,
         async (requestSignal, timedOut, dispose) => {
           const response = await jsonPost(path, body, requestSignal);
           async function* chunks(): AsyncGenerator<Uint8Array> {

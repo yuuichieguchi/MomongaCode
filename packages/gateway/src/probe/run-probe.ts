@@ -154,11 +154,11 @@ const requestedOutputOf = (body: unknown, contextWindow: number): number => {
   return maxOutputTokensFor(contextWindow);
 };
 
-const meteredProbeClient = (client: ProbeClient, metered: MeteredMeasurement, bound: MeasurementBound): ProbeClient => {
+const meteredCounter = (metered: MeteredMeasurement, bound: MeasurementBound): ((body: unknown) => void) => {
   let requests = 0;
   let inputTokens = 0;
   let outputTokens = 0;
-  const count = (body: unknown): void => {
+  return (body) => {
     const nextRequests = requests + 1;
     const nextInput = inputTokens + tokensForText(JSON.stringify(body));
     const nextOutput = outputTokens + requestedOutputOf(body, metered.declaredContextWindow);
@@ -167,35 +167,18 @@ const meteredProbeClient = (client: ProbeClient, metered: MeteredMeasurement, bo
     inputTokens = nextInput;
     outputTokens = nextOutput;
   };
-  return {
-    hasHealthRoute: client.hasHealthRoute,
-    get: (route) => client.get(route),
-    post: async (route, body) => {
-      count(body);
-      return client.post(route, body);
-    },
-    request: async (method, requestPath, body) => {
-      if (method === 'POST') count(body);
-      return client.request(method, requestPath, body);
-    },
-    stream: async (route, body) => {
-      count(body);
-      return client.stream(route, body);
-    },
-    close: () => client.close(),
-  };
 };
 
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
   const bound = speedStepBound(options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
-  const unmetered = createProbeClient(endpointOf(options), {
+  const client = createProbeClient(endpointOf(options), {
     signal: options.signal,
     bound,
     timers: options.ports.timers,
     gate: options.ports.gate,
     ...(options.managed === undefined ? {} : { routes: options.managed }),
+    ...(options.metered === undefined ? {} : { onSend: meteredCounter(options.metered.measurement, options.metered.bound) }),
   });
-  const client = options.metered === undefined ? unmetered : meteredProbeClient(unmetered, options.metered.measurement, options.metered.bound);
   try {
     return await probeWith(client, options, (name) => options.progress?.step(name, bound.currentMs(0)));
   } finally {

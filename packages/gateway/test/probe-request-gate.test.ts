@@ -93,6 +93,25 @@ describe('the request gate of a server: a measurement yields to the person', () 
   });
 });
 
+describe('a request sent again after it gave way', () => {
+  it('is counted once per send, so a metered bound sees both sends', async () => {
+    const { socketPath, seen } = await serverOf((index, response) => {
+      if (index > 0) answerJson(response);
+    });
+    const gate = createRequestGate();
+    const sends: unknown[] = [];
+    const client = createProbeClient({ kind: 'unix', socketPath }, { signal: undefined, bound: speedStepBound(20_000), timers: systemTiming, gate, onSend: (body) => sends.push(body) });
+    closers.push(() => client.close());
+
+    const measured = client.post('chat', { n: 1 });
+    await until(() => seen.arrived === 1, 'the measurement request reached the server');
+    gate.person()();
+    await measured;
+
+    expect(sends).toEqual([{ n: 1 }, { n: 1 }]);
+  });
+});
+
 describe('the bound of a measurement step comes from the observed speed of the model', { timeout: 30_000 }, () => {
   it('is the cap until the first answer, which carries the load of the model; then the slowest observed speed times the stated multiple for the size of the request, never above the cap', () => {
     const bound = speedStepBound(120_000);

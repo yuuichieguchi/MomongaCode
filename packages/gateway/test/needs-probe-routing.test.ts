@@ -82,6 +82,7 @@ describe.each(KINDS)('an auto %s target with no probe record through the router'
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe(TARGET_PROBING);
+    expect(response.body.error.measuring).toMatchObject({ fields: expect.arrayContaining(['toolCalling']), step: null, elapsed_seconds: expect.any(Number), declaration: expect.stringContaining('toolCalling') });
     expect(completionRequests(second)).toEqual([]);
   });
 });
