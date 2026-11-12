@@ -381,12 +381,23 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     ports.toast(startingModelSetText(display));
   };
 
+  const catalogNotCurrent = (account: string, reason: string): string => `the list of models of ${account} is not current: ${reason}`;
+
   const modelPicker = async (current: string | undefined): Promise<void> => {
     const context = flowContext();
     const read = await ports.loading('Models', async () => {
       const [readListing, readHealth, readListed] = await Promise.all([backend.modelList(), backend.health(), backend.plan.accounts()]);
       const signedIn = readListed.accounts.filter((account) => account.state === 'active');
-      const readCatalogs = await Promise.all(signedIn.map(async (account) => ({ account, profile: profileOf(readListed.profiles, account.profile), catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) })));
+      const readCatalogs = await Promise.all(
+        signedIn.map(async (account) => {
+          const profile = profileOf(readListed.profiles, account.profile);
+          try {
+            return { kind: 'read' as const, account, profile, catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) };
+          } catch (error) {
+            return { kind: 'unread' as const, account, reason: error instanceof Error ? error.message : String(error) };
+          }
+        }),
+      );
       const remembered = ports.found.servers();
       return { listing: readListing, health: readHealth, listed: readListed, catalogs: readCatalogs, remembered, opened: remembered.length === 0 ? undefined : await openEdit(context) };
     });
@@ -394,8 +405,10 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const { listing, health, listed, catalogs, remembered, opened } = read.value;
     const entries = listing.data;
     const served = new Set(entries.flatMap((entry) => entry.chain.map((member) => member.upstream)));
-    const catalogChoices = catalogs.flatMap(({ account, profile, catalog }) =>
-      catalog.models
+    const catalogChoices = catalogs.flatMap((read) => {
+      if (read.kind === 'unread') return [{ row: { label: catalogNotCurrent(read.account.label, read.reason), disabled: true }, act: async () => undefined }];
+      const { account, profile, catalog } = read;
+      return catalog.models
         .filter((entry) => !served.has(entry.slug))
         .map((entry): Choice =>
           entry.usable
@@ -407,8 +420,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
                 },
               }
             : { row: { label: `${entry.slug} · ${entry.reason} · ${profile.messages.pickerLabel}`, disabled: true }, act: async () => undefined },
-        ),
-    );
+        );
+    });
     const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
     const { rows, listed: listedRows } = modelListRows({ listing, current, health, found });
     if (rows.length + catalogChoices.length === 0) {
