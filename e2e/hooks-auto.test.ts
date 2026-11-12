@@ -187,7 +187,7 @@ describe('hooks and auto mode against real processes', () => {
         pollMs: REFLECTION_POLL_MS,
         now: () => Date.now(),
         wait: abortableWait,
-      });
+      }, { clock: nodeClock, random: () => 0, reconnectBoundMs: E2E_REFLECTION_ATTEMPTS_BOUND_MS, restoreConnection: async () => undefined });
       const report = await runDataset(dataset, {
         open: async (golden, runIndex) => {
           const cwd = workspaceOf(golden, runIndex);

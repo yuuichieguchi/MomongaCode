@@ -105,7 +105,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'SHORT_TEMP_BASE',
   'SHUTDOWN_MARGIN_MS',
   'SIGNATURE_REJECTED_EXIT_CODE',
-  'STDIO_EXIT_FLUSH_MS',
   'STOP_MESSAGE_MAX_BYTES',
   'SecretProcessPort',
   'SecretProcessResult',

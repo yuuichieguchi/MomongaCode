@@ -95,7 +95,7 @@ export const CONTENT_KEYS = Object.values(GENAI_CONTENT_SEMCONV) as string[];
 
 const EVERY_BODY = Number.MAX_SAFE_INTEGER;
 
-export type BilledCallAtCallTime = BilledCall & { price: CallPrice };
+export type BilledCallAtCallTime = BilledCall & { price: CallPrice; retried: boolean };
 
 const priceAtCallTime = (span: SpanRecord, call: BilledCall, table: PriceTable): CallPrice => {
   const usageSource = span.attributes[MOMONGA_ATTRIBUTES.usageSource];
@@ -110,7 +110,7 @@ const recordedAtCallTime = (runId: string, spans: readonly SpanRecord[], table: 
     .toSorted((left, right) => left.startMs - right.startMs || (left.spanId < right.spanId ? -1 : 1))
     .map((span) => {
       const call = billedCallOf(runId, span);
-      return { ...call, price: priceAtCallTime(span, call, table) };
+      return { ...call, retried: false, price: priceAtCallTime(span, call, table) };
     });
 
 export const billedCallsOfRun = (store: TraceStore, runId: string, table: PriceTable): BilledCallAtCallTime[] => recordedAtCallTime(runId, store.spansForRun(runId), table);

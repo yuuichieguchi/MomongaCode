@@ -74,6 +74,7 @@ type Opened = {
   release: Release;
   span: AttemptSpan;
   capabilities: Capabilities;
+  retryOfSeq: number | undefined;
 };
 
 type Pulled = { kind: 'event'; event: StreamEvent } | { kind: 'failed'; error: unknown };
@@ -238,7 +239,7 @@ const openAttempt = async (
       if (carriesOutput(step.value) || TERMINAL_TYPES.has(step.value.type)) break;
     }
     span.committed();
-    return { iterator, held, release, span, capabilities };
+    return { iterator, held, release, span, capabilities, retryOfSeq };
   } catch (error) {
     if (iterator !== undefined) await closeOnError(iterator, span);
     release();
@@ -479,6 +480,7 @@ async function* relaySteps(
       ...(cacheReadNotReported === undefined ? {} : { cacheReadNotReported }),
       ...(pricing === undefined ? {} : pricingFieldsOf(pricing)),
       ...(retryable === undefined ? {} : { retryable }),
+      ...(opened.retryOfSeq === undefined ? {} : { retryOf: opened.retryOfSeq }),
     };
   };
   const completedAt = Math.floor(clock.now() / 1000);

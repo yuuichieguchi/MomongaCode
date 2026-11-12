@@ -47,6 +47,7 @@ export const preparerFake = (): PreparerFake => {
       ...noJournalFacts,
       inheritPlan: async (request, signal) => boundReader().inheritPlan(request, signal),
       inheritedWindow: async (request, signal) => boundReader().inheritedWindow(request, signal),
+      runState: async (request, signal) => boundReader().runState(request, signal),
       measure: async (request): Promise<ContributionMeasured> => {
         requests.push({ runId: request.runId, leading: [...request.leading] });
         if (gate !== undefined) await gate;
@@ -63,4 +64,5 @@ export const preparerFake = (): PreparerFake => {
 export const inertTimers: ServiceTimers = {
   setTimeout: () => undefined,
   clearTimeout: () => undefined,
+  monotonicMs: () => 0,
 };

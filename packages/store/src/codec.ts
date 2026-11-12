@@ -261,6 +261,7 @@ const decodeRunEvent = (row: Row, identity: string, type: string, payload: Recor
     leaseToken: reader.number('lease_token'),
     createdAt: reader.number('created_at'),
   };
+  if (type === 'model.stream.restarted' && payload['itemIds'] === undefined) return decodeRunEvent(row, identity, type, { ...payload, itemIds: [] });
   const renames = Object.hasOwn(EVENT_PAYLOAD_RENAMES, type) ? EVENT_PAYLOAD_RENAMES[type as RunEventPayload['type']] : undefined;
   return { ...withRecordedCosts(type, renames === undefined ? payload : withCurrentNames(payload, renames)), ...envelope } as RunEvent;
 };
@@ -563,7 +564,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 25;
+export const SNAPSHOT_STATE_VERSION = 26;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 

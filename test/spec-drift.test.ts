@@ -44,6 +44,7 @@ const UNMODELLED_EVENT_TYPES = [
   'context.contribution',
   'context.governing_loaded',
   'context.inherited',
+  'context.inherited_compacted',
   'context.memories_loaded',
   'context.truncated',
   'hook.completed',
@@ -80,6 +81,7 @@ const UNMODELLED_EVENT_TYPES = [
   'tool.updated',
   'usage.charged',
   'usage.updated',
+  'user.compact',
 ];
 
 describe('RunRecovery.tla against the implementation', () => {

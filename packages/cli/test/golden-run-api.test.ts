@@ -8,6 +8,8 @@ const job = (state: ReflectionJobView['state'], attempts = state === 'pending' ?
 
 const charge = (id: number): ContextChargeView => ({ id, purpose: 'reflection', runId: 'run-1', project: '/w', model: 'm', inputTokens: 10, outputTokens: 2, totalTokens: 12, createdAt: 1 });
 
+const NO_FOLLOW = { clock: { now: () => 0, sleep: async () => undefined }, random: () => 0, reconnectBoundMs: 1, restoreConnection: async () => undefined };
+
 type Bounds = { pendingBoundMs: number; attemptBoundMs: number; pollMs: number };
 
 type View = Omit<RunReflectionView, 'queuedAhead'> & { queuedAhead?: number };
@@ -31,7 +33,7 @@ const apiOver = (views: View[], waits: number[], bounds: Bounds = { pendingBound
       options.onWait?.();
     },
     ...(options.signal === undefined ? {} : { signal: options.signal }),
-  });
+  }, NO_FOLLOW);
   return { api, reads: () => reads };
 };
 
@@ -156,7 +158,7 @@ describe('what answered a run in the golden run api', () => {
         return { answeredBy: answered };
       },
     };
-    const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined });
+    const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined }, NO_FOLLOW);
     expect(await api.answeredBy('run-9')).toEqual(answered);
     expect(asked).toEqual(['run-9']);
   });
@@ -176,8 +178,9 @@ describe('the events of a run in the golden run api across a retiring daemon (20
         }
         yield event(3);
       },
+      getRun: async () => ({ id: 'run-1', status: 'COMPLETED' }),
     };
-    const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined });
+    const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined }, NO_FOLLOW);
 
     const seen: unknown[] = [];
     for await (const data of api.events('run-1')) seen.push(data);
@@ -194,7 +197,7 @@ describe('the events of a run in the golden run api across a retiring daemon (20
         throw lost;
       },
     };
-    const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined });
+    const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined }, NO_FOLLOW);
 
     const failure = await (async () => {
       for await (const _ of api.events('run-1')) void _;

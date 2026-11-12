@@ -265,6 +265,7 @@ describe('approval views', () => {
       createdAt: START_MS,
       suggestedRule: 'Write(/work/a/call_1.txt)',
       reason: 'edits require approval',
+      shown: { title: 'approval', input: {} },
       toolCall: {
         callId: 'call_1',
         name: 'Write',

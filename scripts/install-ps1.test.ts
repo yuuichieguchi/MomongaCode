@@ -37,6 +37,12 @@ describe('install.ps1', () => {
     expect(source).toContain('set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish');
   });
 
+  it('refuses a release key that is not one ssh-ed25519 public key line, and names a tampered download in the words of install.sh', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    expect(source).toContain("if ($publicKey -notmatch '^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$') { Fail 'the release signing key is not one ssh-ed25519 public key line (ssh-ed25519 AAAA...), so it cannot verify the release; nothing was installed' }");
+    expect(source).toContain('does not match the SHA-256 that $checksumsName records (expected $expected, got $actual); nothing was installed');
+  });
+
   it('declares the release repository yuuichieguchi/MomongaCode right after the embedded release public key', () => {
     const lines = fs.readFileSync(SCRIPT, 'utf8').split('\n').map((line) => line.trim());
     const keyLine = lines.indexOf("$embeddedReleasePublicKey = ''");
@@ -73,10 +79,29 @@ describe('install.ps1', () => {
     expect(fs.readFileSync(`${repoRoot}scripts/install.sh`, 'utf8')).toContain('sub(/^\\*/, "", name)');
   });
 
+  it('moves a running momonga.exe aside as a .momonga-update. entry before it moves the new one in, puts it back if the move in fails, and names the remedy when the move aside is refused', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    expect(source).not.toContain('Move-Item -Force -LiteralPath $candidate -Destination $target');
+    const aside = source.indexOf("'.momonga-update.'");
+    const moveIn = source.indexOf('Move-Item -LiteralPath $candidate -Destination $target');
+    expect(aside).toBeGreaterThan(-1);
+    expect(moveIn).toBeGreaterThan(aside);
+    expect(source).toContain('Move-Item -LiteralPath $aside -Destination $target');
+    expect(source).toContain('stop the daemon, then run the command again');
+  });
+
+  it('writes beside the aside the empty lock database the update sweep claims, so that sweep removes the aside on every lock form', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    const aside = source.indexOf('Move-Item -LiteralPath $target -Destination $aside');
+    const sidecar = source.indexOf("New-Item -ItemType File -Path ($aside + '.sqlite')");
+    expect(sidecar).toBeGreaterThan(-1);
+    expect(sidecar).toBeGreaterThan(aside);
+  });
+
   it('runs the candidate with --version before it is moved into place, and refuses another version than the one asked for', () => {
     const source = fs.readFileSync(SCRIPT, 'utf8');
     const check = source.indexOf('$reported = & $candidate --version');
-    const move = source.indexOf('Move-Item -Force -LiteralPath $candidate');
+    const move = source.indexOf('Move-Item -LiteralPath $candidate -Destination $target');
     expect(check).toBeGreaterThan(0);
     expect(move).toBeGreaterThan(check);
     expect(source).toContain('version $($env:MOMONGA_VERSION) was asked for, but the downloaded executable reports version $reported; nothing was installed');

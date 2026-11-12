@@ -39,7 +39,7 @@ type FitApi = {
 };
 
 type NoticeApi = {
-  autoModeNotice: (input: { view: { model: string; key: AutoGateKey; measurement: 'not_measured' }; surface: 'tui' | 'cli' }) => string;
+  autoModeNotice: (input: { view: { model: string; key: AutoGateKey; measurement: 'not_measured' }; surface: 'tui' | 'cli'; shownModel: string }) => string;
 };
 
 const exportsOf = <T>(module: unknown, names: readonly string[], from: string): T => {
@@ -145,10 +145,10 @@ describe('measurement', () => {
 
   it('states the not-measured text naming /auto-mode check in the TUI and momonga auto-mode check outside it', () => {
     const caveat = 'auto reduces prompts but does not guarantee safety.';
-    const tui = notice().autoModeNotice({ view: { model: 'guard', key: KEY, measurement: 'not_measured' }, surface: 'tui' });
+    const tui = notice().autoModeNotice({ view: { model: 'guard', key: KEY, measurement: 'not_measured' }, surface: 'tui', shownModel: 'guard' });
     expect(tui.startsWith('auto: classifier guard has not been measured for this version; run /auto-mode check')).toBe(true);
     expect(tui.endsWith(caveat)).toBe(true);
-    const cli = notice().autoModeNotice({ view: { model: 'guard', key: KEY, measurement: 'not_measured' }, surface: 'cli' });
+    const cli = notice().autoModeNotice({ view: { model: 'guard', key: KEY, measurement: 'not_measured' }, surface: 'cli', shownModel: 'guard' });
     expect(cli.startsWith('auto: classifier guard has not been measured for this version; run momonga auto-mode check')).toBe(true);
     expect(cli.endsWith(caveat)).toBe(true);
     expect(tui).not.toContain('momonga eval');

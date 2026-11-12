@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import type { RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '@momonga/runtime';
 import { capabilitiesFor, makeEnv } from './harness.ts';
@@ -62,6 +63,7 @@ const hopFailure = (): ScriptStep => thrown({ status: 0, type: 'transport', code
 describe('worker gateway error policy: fatal 4xx', () => {
   it.each(FATAL)('fails the run with the gateway code and message on %s', async (_label, fields) => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(thrown(fields), textStep('never sent'));
     const run = await env.enqueue('Work');
 
@@ -76,6 +78,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
 
   it('fails the run as model_not_found with the sentence that asks for another model when the gateway does not list the model of the session', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const fields: ErrorFields = { status: 404, type: 'not_found', code: 'model_not_found', message: 'model fm does not exist' };
     env.gateway.capabilitiesHook = async () => {
       throw gatewayError(fields);
@@ -93,6 +96,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
 
   it('requeues the run and records attempt.failed provider_unavailable when capabilities cannot reach the provider (decision 65)', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const fields: ErrorFields = { status: 502, type: 'server_error', code: 'provider_unavailable', message: 'the chat-completions upstream is unreachable' };
     env.gateway.capabilitiesHook = async () => {
       throw gatewayError(fields);
@@ -111,6 +115,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
 
   it('passes the claim signal to capabilities', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(textStep('Hello.'));
     await env.enqueue('Work');
 
@@ -123,6 +128,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
 
   it('fails the run when countTokens rejects with authentication_failed', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(textStep('never sent'));
     env.gateway.countHook = async () => {
       throw gatewayError({ status: 401, type: 'invalid_request', code: 'authentication_failed', message: 'counting was rejected' });
@@ -137,6 +143,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
 
   it('composes the deterministic summary and records the code when a proactive compact rejects with invalid_request', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Task one');
     const responded = (step: number, text: string): RunEventPayload => ({
       type: 'model.responded',
@@ -176,6 +183,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
 describe('worker gateway error policy: timeout', () => {
   it.each(TIMEOUT)('stops the run with timeout on %s', async (_label, failure) => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(failure(), textStep('never sent'));
     const run = await env.enqueue('Work');
 
@@ -189,6 +197,7 @@ describe('worker gateway error policy: timeout', () => {
 describe('worker gateway error policy: refundable', () => {
   it.each(REFUNDABLE)('requeues with a refunded attempt on %s', async (_label, fields) => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(thrown(fields), textStep('Recovered.'));
     const run = await env.enqueue('Work');
     const worker = env.worker();
@@ -208,6 +217,7 @@ describe('worker gateway error policy: refundable', () => {
 
   it('requeues with a refund when capabilities rejects with gateway_closed', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     let calls = 0;
     env.gateway.capabilitiesHook = async () => {
       calls += 1;
@@ -225,6 +235,7 @@ describe('worker gateway error policy: refundable', () => {
 describe('worker gateway error policy: hop failures and deferrals requeue, everything else fails', () => {
   it.each(HOP_FAILURES)('requeues with a counted attempt on %s', async (_label, fields) => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(thrown(fields), textStep('Recovered.'));
     const run = await env.enqueue('Work');
     const worker = env.worker();
@@ -243,6 +254,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
 
   it.each(AFTER_THE_GATEWAY_BUDGET)('fails the run on its first claim with the gateway code and message on %s', async (_label, fields) => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(thrown(fields), textStep('never sent'));
     const run = await env.enqueue('Work');
 
@@ -254,6 +266,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
 
   it('fails the run on its first claim with internal_error and the message of a plain error thrown by non-gateway code', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push({ events: [], error: new Error('the parser blew up') }, textStep('never sent'));
     const run = await env.enqueue('Work');
 
@@ -265,6 +278,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
 
   it('requeues a deferral at exactly its retryAfterMs', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(thrown(deferral(120_000)));
     const run = await env.enqueue('Work');
 
@@ -276,6 +290,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
 
   it('fails the run with rate_limited instead of requeueing a deferral at or after the deadline', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Work', { deadlineAt: env.clock.now() + 60_000 });
     env.gateway.script.push(thrown(deferral(60_000)));
 
@@ -286,6 +301,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
 
   it('grows the backoff with the streak and resets it after a successful model response', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(hopFailure(), hopFailure(), callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), hopFailure());
     const run = await env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM });
@@ -315,6 +331,7 @@ describe('worker gateway error policy: hop failures and deferrals requeue, every
 describe('worker gateway error policy: stream_interrupted cap', () => {
   it('refunds the first three consecutive interruptions of a run and counts the fourth', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const interrupted = (): ScriptStep => thrown({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the stream closed early' });
     env.gateway.script.push(interrupted(), interrupted(), interrupted(), interrupted(), interrupted());
     const run = await env.enqueue('Work');
@@ -337,6 +354,7 @@ describe('worker gateway error policy: stream_interrupted cap', () => {
 describe('worker deadline at claim start', () => {
   it('stops a run claimed at or after its deadline before reading the tool set or capabilities', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Work', { deadlineAt: env.clock.now() + 1_000 });
     env.clock.advance(1_000);
     let toolSetReads = 0;

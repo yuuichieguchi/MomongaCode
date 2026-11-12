@@ -1,9 +1,10 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
 import { permissionRulesComposerFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
+import { reapTimingOf } from '../process/reap-timing.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
-import { computeBackoff, sha256Hex } from '@momonga/foundation';
+import { computeBackoff, sha256Hex, sleep } from '@momonga/foundation';
 import { REFERENCE_KINDS, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { JournalThreadError, UnknownValueError, isFatalStoreError } from '@momonga/store';
@@ -120,9 +121,10 @@ const recordUpstreamFailures = (journal: Journal, failures: readonly string[]): 
 const touchedOf = (session: Session, options: WorkerOptions, signal: AbortSignal): ClaimTouched => {
   const source = (after: { eventId: number; path: string } | null, limit: number) =>
     after === null ? options.store.sessionTouched.after(session.id, 0, limit) : options.store.sessionTouched.after(session.id, after.eventId, limit, after.path);
+  const nextTurn = (): Promise<unknown> => sleep(options.timers, 0, signal);
   return {
-    governing: createGoverningActivation({ project: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
-    probes: createInstructionProbes({ reader: options.instructionReaderFor(signal), projectRoot: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
+    governing: createGoverningActivation({ project: session.cwd, source, pageRows: MEMORY_PAGE_ROWS, nextTurn }),
+    probes: createInstructionProbes({ reader: options.instructionReaderFor(signal), projectRoot: session.cwd, source, pageRows: MEMORY_PAGE_ROWS, nextTurn }),
   };
 };
 
@@ -377,7 +379,8 @@ const drive = async (
   const skills = await options.skills.load(session, control.signal);
   const admit = createSkillAdmission(() => ctx);
   const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name), admit });
-  const recalled = await options.memories.load(session, signalUntil(run.deadlineAt, clock.now(), control.signal));
+  const recallDeadline = signalUntil(reapTimingOf(clock, options.timers), run.deadlineAt, control.signal);
+  const recalled = await options.memories.load(session, recallDeadline.signal).finally(() => recallDeadline.dispose());
   const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session, control.signal) : undefined;
   const agentTool = options.agents === undefined ? undefined : agentSet?.tool(options.agents.runs);
   const toolSet = await tools.toolSet(run.id, {
@@ -556,7 +559,6 @@ const drive = async (
       quote: (model) => control.recordingRaised(gateway.quote(model, { signal: control.signal })),
       spend: () => options.store.treeSpend(run.id),
       ledger: { admitModelRequest: (ask) => options.store.admitModelRequest(claim, ask) },
-      release: () => options.store.releaseBudget(run.id),
       tail: Promise.resolve(),
     },
     ...(delegation === undefined ? {} : { delegation }),

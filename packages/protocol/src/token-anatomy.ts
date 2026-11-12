@@ -61,7 +61,7 @@ export type PriceNotRecorded = { kind: 'not_recorded' };
 
 export type RecordedPrice = RecordedPricing | PriceNotRecorded;
 
-export type RecordedCost = { runId: string; responseId?: string; step?: number; price: RecordedPrice };
+export type RecordedCost = { runId: string; responseId?: string; step?: number; price: RecordedPrice; retryOf?: number };
 
 export const UNPRICED_CODE_TEXT: Readonly<Record<UnpricedCode, string>> = {
   plan: 'plan usage, no per-token price',

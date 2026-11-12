@@ -8,6 +8,8 @@ import { nodeWorkspaceSandbox } from '../src/node-ports.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
+const NO_DECLARED_CREDENTIALS = { models: { connections: [] }, credentials: { env: [], keep: [], valuePatterns: [] } };
+
 const PLATFORM_SANDBOX = process.platform === 'darwin' ? 'seatbelt' : process.platform === 'linux' && fs.existsSync('/usr/bin/bwrap') ? 'bubblewrap' : undefined;
 
 let root = '';
@@ -35,7 +37,7 @@ describe('the real sandbox port of the oracle commands is the sandbox of a tool 
     const warnings: string[] = [];
     const probe = createWorkspaceProbe({
       env,
-      sandbox: nodeWorkspaceSandbox({ home, platform: process.platform, env, signal: new AbortController().signal, sandbox: PLATFORM_SANDBOX ?? 'none', network: 'deny', warn: (text) => warnings.push(text) }),
+      sandbox: nodeWorkspaceSandbox({ home, platform: process.platform, env, signal: new AbortController().signal, sandbox: PLATFORM_SANDBOX ?? 'none', network: 'deny', warn: (text) => warnings.push(text), credentialNaming: NO_DECLARED_CREDENTIALS }),
       files: nodeWorkspaceFiles,
       timing: systemTiming,
       groups: hostProcessGroupPort(),
@@ -61,12 +63,37 @@ describe('the real sandbox port of the oracle commands is the sandbox of a tool 
     const warnings: string[] = [];
     const probe = createWorkspaceProbe({
       env,
-      sandbox: nodeWorkspaceSandbox({ home, platform: process.platform, env, signal: new AbortController().signal, sandbox: 'none', network: 'deny', warn: (text) => warnings.push(text) }),
+      sandbox: nodeWorkspaceSandbox({ home, platform: process.platform, env, signal: new AbortController().signal, sandbox: 'none', network: 'deny', warn: (text) => warnings.push(text), credentialNaming: NO_DECLARED_CREDENTIALS }),
       files: nodeWorkspaceFiles,
       timing: systemTiming,
       groups: hostProcessGroupPort(),
     });
     expect(await probe.run('echo x > made.txt', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
     expect(warnings[0]).toBe('sandbox is none: Bash asks before every command');
+  });
+
+  it.skipIf(process.platform === 'win32')('an oracle command gets the environment a tool command gets: a credential-named variable is withheld, the Bash additions are set, and node on the PATH is still found', async () => {
+    const nodeDirectory = path.dirname(process.execPath);
+    const env = { PATH: `${nodeDirectory}:/usr/bin:/bin`, HOME: home, MY_API_TOKEN: 'secret-value' };
+    await ensureMomongaDirs(momongaPaths(home, process.platform, env));
+    const probe = createWorkspaceProbe({
+      env,
+      sandbox: nodeWorkspaceSandbox({
+        home,
+        platform: process.platform,
+        env,
+        signal: new AbortController().signal,
+        sandbox: 'none',
+        network: 'deny',
+        warn: () => undefined,
+        credentialNaming: NO_DECLARED_CREDENTIALS,
+      }),
+      files: nodeWorkspaceFiles,
+      timing: systemTiming,
+      groups: hostProcessGroupPort(),
+    });
+    expect(await probe.run('[ -z "${MY_API_TOKEN+x}" ]', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
+    expect(await probe.run('[ "$PAGER" = cat ] && [ "$GIT_TERMINAL_PROMPT" = 0 ]', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
+    expect(await probe.run('node --version > /dev/null', 30_000, workspace)).toEqual({ exitCode: 0, timedOut: false });
   });
 });

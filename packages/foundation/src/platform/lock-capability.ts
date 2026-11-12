@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { OPEN_FLAGS, nodeFileSystemSync } from '../node-file-system.ts';
 import type { DirectoryIdentity, FileSystemSync } from '../node-file-system.ts';
+import { NAME_SUFFIX_BYTES } from '../random.ts';
 import type { Random } from '../random.ts';
 import { systemRandom } from '../system-random.ts';
 import { nodeFileLockOps, resolveKernelLock } from './kernel-lock.ts';
@@ -45,11 +46,10 @@ const createLockedFlags = (access: number): number => access | OPEN_FLAGS.create
 
 const codeOf = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | undefined)?.code;
 
-const STAGING_SUFFIX_BYTES = 6;
 
 const stagingPathOf = (file: string, random: Random): string => {
   const dir = path.dirname(file);
-  return path.join(path.dirname(dir), `.${path.basename(dir)}.${path.basename(file)}.${random.hex(STAGING_SUFFIX_BYTES)}.creating`);
+  return path.join(path.dirname(dir), `.${path.basename(dir)}.${path.basename(file)}.${random.hex(NAME_SUFFIX_BYTES)}.creating`);
 };
 
 export class StagingLinkError extends Error {

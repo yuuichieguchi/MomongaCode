@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { nodeFileSystem } from '@momonga/foundation';
 import { createMemoryPort } from '@momonga/runtime';
 import type { Worker } from '@momonga/runtime';
 import { defineTool } from '@momonga/tools';
@@ -34,6 +35,7 @@ const requestText = (env: Env, from: number): string =>
 
 const upkeep = (env: Env) =>
   runMemoryUpkeep({
+    fileSystem: nodeFileSystem,
     store: env.store,
     clock: env.clock,
     views: createRecordViews({ store: env.store, evidenceRun: () => unavailableEvidenceRun() }),

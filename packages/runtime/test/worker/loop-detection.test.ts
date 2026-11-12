@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { makeEnv } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
@@ -7,6 +8,7 @@ const echo = (callId: string, value: string) => callsStep([{ callId, name: 'Echo
 describe('worker loop detection', () => {
   it('stops at loop before executing the third identical call with identical outputs', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(echo('call_l_1', 'same'), echo('call_l_2', 'same'), echo('call_l_3', 'same'), textStep('never sent'));
     const run = await env.enqueue('Loop');
 
@@ -21,6 +23,7 @@ describe('worker loop detection', () => {
 
   it('continues when the repeated call produced different outputs', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const count = (callId: string) => callsStep([{ callId, name: 'Counter', args: { value: 'same' } }]);
     env.gateway.script.push(count('call_c_1'), count('call_c_2'), count('call_c_3'), textStep('Counted.'));
     const run = await env.enqueue('Count');
@@ -33,6 +36,7 @@ describe('worker loop detection', () => {
 
   it('does not treat a repeat separated by a different call as a loop', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(echo('call_a_1', 'a'), echo('call_a_2', 'a'), echo('call_b_1', 'b'), echo('call_a_3', 'a'), textStep('Done.'));
     const run = await env.enqueue('Mix');
 
@@ -44,6 +48,7 @@ describe('worker loop detection', () => {
 
   it('uses loopThreshold from run.limits', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(echo('call_l_1', 'same'), echo('call_l_2', 'same'), textStep('never sent'));
     const run = await env.enqueue('Loop', { limits: { loopThreshold: 2 } });
 

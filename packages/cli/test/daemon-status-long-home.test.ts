@@ -31,7 +31,7 @@ describe.skipIf(process.platform === 'win32')('daemon start on a home too long f
     const codes: number[] = [];
     const spawned: unknown[] = [];
     const ports: CliPorts = {
-      ...nodePorts('9.9.9', new AbortController().signal),
+      ...nodePorts('9.9.9', new AbortController().signal, LONG_HOME),
       home: LONG_HOME,
       cwd: LONG_HOME,
       env: { PATH: testHostPath('/usr/bin:/bin'), HOME: LONG_HOME },

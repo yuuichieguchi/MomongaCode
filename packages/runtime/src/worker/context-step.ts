@@ -418,7 +418,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
       const admittedRequest: CompactRequest = { ...request, momonga: { ...request.momonga, ...ceilingOf(admitted) } };
       journal.append([{ type: 'context.compacting', step: journal.state.step, attempt: FIRST_REQUEST_ATTEMPT }]);
       ctx.control.inFlight.compactionKey = idempotencyKey;
-      const startedAt = options.clock.now();
+      const startedAt = options.timers.monotonicMs();
       try {
         const resource = await ctx.control.recordingRaised(
           compactAdmitted(options.gateway, proof, admittedRequest, {
@@ -482,7 +482,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     inputTokens: resource.usage.input_tokens,
     outputTokens: resource.usage.output_tokens,
     totalTokens: resource.usage.total_tokens,
-    ...billedDetailOf(resource.usage, resource.momonga, { durationMs: options.clock.now() - startedAt }, resource.id),
+    ...billedDetailOf(resource.usage, resource.momonga, { durationMs: options.timers.monotonicMs() - startedAt }, resource.id),
     ...(resource.momonga === undefined ? {} : { target: resource.momonga.target }),
   };
   const unreadableNotices =

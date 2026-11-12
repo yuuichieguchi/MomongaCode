@@ -5,7 +5,8 @@ import { applyCredentialEffect } from '../src/adapters/shared/auth.ts';
 import { GatewayError } from '../src/core/errors.ts';
 import { accountViewOf, planRouteError } from '../src/plan/api.ts';
 import { PlanCredentialError } from '../src/plan/auth-source.ts';
-import { LATEST_DATE_MS, pauseEndOf } from '../src/plan/pause-end.ts';
+import { MAX_DATE_MS } from '@momonga/foundation';
+import { pauseEndOf } from '../src/plan/pause-end.ts';
 import { collectTerminalResource } from '../src/server/response-body.ts';
 import { fakeAuth } from './plan-auth-support.ts';
 import { NEVER_ENDED, PAUSE_CODE, PROFILE_ID, START_MS, editRecord, readRecord, signedIn, startHarness } from './plan-support.ts';
@@ -23,10 +24,10 @@ const BEYOND_DATE_MS = 9_000_000_000_000 * 1000;
 
 describe('the end of a pause is a time a Date can hold, or it is not set (N-PAUSE-1, G6-7, G6-8)', () => {
   it('pauseEndOf gives now + retryAfterMs up to 8.64e15 ms and nothing beyond it', () => {
-    expect(LATEST_DATE_MS).toBe(8.64e15);
+    expect(MAX_DATE_MS).toBe(8.64e15);
     expect(pauseEndOf(START_MS, 30_000)).toBe(START_MS + 30_000);
-    expect(pauseEndOf(START_MS, LATEST_DATE_MS - START_MS)).toBe(LATEST_DATE_MS);
-    expect(pauseEndOf(START_MS, LATEST_DATE_MS - START_MS + 1)).toBeUndefined();
+    expect(pauseEndOf(START_MS, MAX_DATE_MS - START_MS)).toBe(MAX_DATE_MS);
+    expect(pauseEndOf(START_MS, MAX_DATE_MS - START_MS + 1)).toBeUndefined();
     expect(pauseEndOf(START_MS, BEYOND_DATE_MS)).toBeUndefined();
     expect(pauseEndOf(START_MS, Number.POSITIVE_INFINITY)).toBeUndefined();
     expect(pauseEndOf(START_MS, Number.NaN)).toBeUndefined();

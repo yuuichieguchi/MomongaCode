@@ -45,8 +45,8 @@ const realModelCheck = (baseline: ContextReport, candidate: ContextReport) =>
   compareContextReports(baseline, candidate, { seed: 1 }).gate.checks.find((check) => check.name === 'real_model');
 
 describe('the transcript records what answered', () => {
-  it('is format momonga-transcript/9', () => {
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/9');
+  it('is format momonga-transcript/10', () => {
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/10');
   });
 
   it('an unknown answerer without adapter and upstreamModel is written and parsed back without those fields', () => {
@@ -60,7 +60,7 @@ describe('the transcript records what answered', () => {
     const header = { format: 'momonga-transcript/5', caseId: 'a-on', runIndex: 0, run: recorded('a-on', 0, []).run, children: [], policy: {}, codeDigest: 'c'.repeat(64), answeredBy: [REAL_TARGET] };
     const text = `${JSON.stringify(header)}\n${JSON.stringify({ end: true, events: 0, childEvents: 0 })}\n`;
     expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(TranscriptError);
-    expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(/momonga-transcript\/5 transcripts do not record .*momonga-transcript\/9/);
+    expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(/momonga-transcript\/5 transcripts do not record .*momonga-transcript\/10/);
   });
 
   it('answeredBy is written and parsed back', () => {

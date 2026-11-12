@@ -291,6 +291,19 @@ describe('/keybindings', () => {
     app.unmount();
   });
 
+  it('opens the key-binding file in $EDITOR from the row Open the file and comes back to the list', async () => {
+    const openedFiles: string[] = [];
+    const started = await withFile(undefined, {}, { columns: 150, rows: 40 }, { externalEditor: { edit: () => Promise.reject(new Error('not edited')), open: async (file) => { openedFiles.push(file); return { kind: 'opened' }; } } });
+    await untilFrame(started.app, 'mode: manual');
+    await command(started.app, '/keybindings');
+    await untilFrame(started.app, 'Key bindings');
+    started.app.stdin.write(PRESS.enter);
+    await untilFrame(started.app, () => openedFiles.length === 1);
+    expect(openedFiles).toEqual([FILE]);
+    await untilFrame(started.app, 'Reset all to the defaults');
+    started.app.unmount();
+  });
+
   it('captures the next key for an action, writes the file at once and applies it without a restart', async () => {
     const { app, terminal, written, content } = await opened();
     await choose(app, 'history.search', 'history.search  ctrl+r  search the history');
@@ -383,15 +396,6 @@ describe('/keybindings', () => {
     app.stdin.write(PRESS.enter);
     await untilFrame(app, (now) => now.includes('Key bindings') && !now.includes('(changed)') && now.includes('editor.left  left  one character left'));
     expect(content()).toEqual(file());
-    app.unmount();
-  });
-
-  it('prints the path of the file on its row', async () => {
-    const { app } = await opened();
-    await choose(app, 'Open', 'Open the file');
-    app.stdin.write(PRESS.enter);
-    await untilOutput(app, SHOWN);
-    expect(app.lastFrame() ?? '').not.toContain('Key bindings');
     app.unmount();
   });
 

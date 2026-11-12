@@ -51,7 +51,7 @@ const typedModelOf = (models: UserModels, text: string): string => {
 
 const classifierOf = (models: UserModels, configured: string | undefined, named: string | undefined): string => {
   if (named !== undefined) return typedModelOf(models, named);
-  if (configured === undefined) throw new AutoModeCheckError('no classifier model: name one, or set autoMode.classifier in the user settings');
+  if (configured === undefined) throw new AutoModeCheckError('no classifier model: name one with momonga auto-mode check <model>, or set autoMode.classifier in the user settings (/config in a session)');
   return configured;
 };
 

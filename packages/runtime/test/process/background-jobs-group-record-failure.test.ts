@@ -116,9 +116,9 @@ const runJob = async (survives: boolean) => {
 };
 
 describe('a background job whose process group cannot be recorded into its marker', () => {
-  it('still finishes with its real exit, settles the marker with the group held in memory as decision 12 says, and reports the failed record once', async () => {
+  it('finishes unknown with its real exit code, since its group was not confirmed stopped, settles the marker with the group held in memory as decision 12 says, and reports the failed record once', async () => {
     const { read, warnings, marker, markerKept } = await runJob(true);
-    expect(read.job).toMatchObject({ status: 'exited', exitCode: 0 });
+    expect(read.job).toMatchObject({ status: 'unknown', exitCode: 0 });
     expect(read.output).toContain('job-output');
     expect(read.output).toContain(STILL_RUNNING);
     expect(read.output).toContain(FOUR_OCCASIONS);

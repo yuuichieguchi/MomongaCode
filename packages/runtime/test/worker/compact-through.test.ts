@@ -58,6 +58,8 @@ const contextFor = (options: ContextOptions = {}) => {
   let appendFailures = options.failAppendOnce === true ? 1 : 0;
   let tick = 0;
   const clockReads = { count: 0 };
+  const monotonicReads = { count: 0 };
+  let monotonicTick = 0;
   const capabilityRequests: string[] = [];
   const ctx = {
     options: {
@@ -65,6 +67,14 @@ const contextFor = (options: ContextOptions = {}) => {
         now: () => {
           clockReads.count += 1;
           return (tick += 40);
+        },
+      },
+      timers: {
+        setTimeout: () => undefined,
+        clearTimeout: () => undefined,
+        monotonicMs: () => {
+          monotonicReads.count += 1;
+          return (monotonicTick += 40);
         },
       },
       blobs: {
@@ -149,7 +159,7 @@ const contextFor = (options: ContextOptions = {}) => {
     },
     agentSpan: { traceparent: undefined },
   } as unknown as ClaimContext;
-  return { ctx, appended, batches, requests, produced, blobReads, asked, appendedAtRequest, clockReads, capabilityRequests };
+  return { ctx, appended, batches, requests, produced, blobReads, asked, appendedAtRequest, clockReads, monotonicReads, capabilityRequests };
 };
 
 const keyOf = (request: CompactRequest): string => sha256Hex(canonicalJson(['run_compact', 'compact', sha256Hex(canonicalJson(request))]));
@@ -195,13 +205,13 @@ describe('compactThrough', () => {
     ]);
   });
 
-  it('records the measured duration of the compaction call on its charge', async () => {
-    const { ctx, appended, clockReads } = contextFor();
+  it('records the duration of the compaction call measured on the monotonic clock on its charge', async () => {
+    const { ctx, appended, monotonicReads } = contextFor();
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, tokens: PLAN_TOKENS, rebuilt: PLAN_REBUILT, notices: [] });
 
     expect(appended[1]).toMatchObject({ type: 'usage.charged', purpose: 'compaction', timing: { durationMs: 40 }, responseId: 'compaction_1' });
-    expect(clockReads.count).toBe(2);
+    expect(monotonicReads.count).toBe(2);
   });
 
   it('derives a new key when only the cap differs', async () => {
@@ -299,7 +309,6 @@ const recordingBudget = (priceUnits: string[] = []) => {
         return admitRequest(ask, NOTHING_SPENT);
       },
     },
-    release: () => undefined,
     tail: Promise.resolve(),
   };
   return { account, asks };

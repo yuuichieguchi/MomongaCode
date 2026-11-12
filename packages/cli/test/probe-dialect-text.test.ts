@@ -20,13 +20,13 @@ const dialectLine = (text: string): string => text.split('\n').find((line) => li
 
 describe('the probe output names the measured dialect (rule 4) and a refused declaration (decision b)', () => {
   it('prints the selected dialect and its shape for an endpoint and for fm', () => {
-    expect(dialectLine(probeEndpointText('t', 'http://e', '/r', SELECTED, 'native'))).toContain('explicit-keys');
-    expect(dialectLine(probeEndpointText('t', 'http://e', '/r', SELECTED, 'native'))).toContain('union');
+    expect(dialectLine(probeEndpointText('t', 'http://e', '/r', SELECTED, 'native', undefined))).toContain('explicit-keys');
+    expect(dialectLine(probeEndpointText('t', 'http://e', '/r', SELECTED, 'native', undefined))).toContain('union');
     expect(dialectLine(probeFmText('t', '/r', SELECTED, 'constrained'))).toContain('explicit-keys');
   });
 
   it('prints the refusal of a declared dialect with the server reason', () => {
-    const line = dialectLine(probeEndpointText('t', 'http://e', '/r', REFUSED, 'native'));
+    const line = dialectLine(probeEndpointText('t', 'http://e', '/r', REFUSED, 'native', undefined));
     expect(line).toContain('strict-closed');
     expect(line).toContain('refused');
     expect(line).toContain('Invalid schema: additionalProperties');

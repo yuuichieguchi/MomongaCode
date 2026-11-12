@@ -25,7 +25,8 @@ const chatDetail = (span: RunTraceSpan): string => {
   const target = span.attributes[MOMONGA_ATTRIBUTES.target];
   if (typeof target !== 'string') return '';
   const attempt = span.attributes[MOMONGA_ATTRIBUTES.attempt];
-  const where = `target ${target}${typeof attempt === 'number' ? `, attempt ${attempt}` : ''}`;
+  const retryOf = span.attributes[MOMONGA_ATTRIBUTES.retryOf];
+  const where = `target ${target}${typeof attempt === 'number' ? `, attempt ${attempt}` : ''}${typeof retryOf === 'number' ? `, retry of recorded call ${retryOf}` : ''}`;
   const failure = span.attributes[MOMONGA_ATTRIBUTES.failureMessage];
   if (typeof failure === 'string') {
     const errorType = span.attributes[ERROR_TYPE_ATTRIBUTE];

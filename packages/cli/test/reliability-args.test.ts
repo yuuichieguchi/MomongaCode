@@ -96,7 +96,7 @@ const row = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView
 
 const clientOf = (rows: readonly RunFactsView[]) => ({
   reportFacts: async (): Promise<ReportPage> => ({ rows: [...rows], unavailable: [], nextCursor: null }),
-  reportCost: async (runIds: readonly string[]): Promise<RunCostView[]> => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+  reportCost: async (runIds: readonly string[]): Promise<RunCostView[]> => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
 });
 
 describe('momonga reliability --days is bounded where it is parsed', () => {

@@ -38,10 +38,11 @@ export const CREDENTIAL_CAPABILITY_ENV = 'MOMONGA_CREDENTIAL_CAPABILITY';
 export const CREDENTIAL_CAPABILITY_HEADER = 'momonga-credential-capability';
 
 export const KILL_CONFIRM_MS = 5000;
-export const DAEMON_MARKER_KILL_GRACE_MS = 2000;
-export const ABANDON_KILL_GRACE_MS = 2000;
 export const ABORT_SETTLE_LIMIT_MS = 2000;
 export const SANDBOX_KILL_GRACE_MS = 1000;
+export const REAP_KILL_GRACE_MS = 2 * SANDBOX_KILL_GRACE_MS;
+export const DAEMON_MARKER_KILL_GRACE_MS = REAP_KILL_GRACE_MS;
+export const ABANDON_KILL_GRACE_MS = REAP_KILL_GRACE_MS;
 export const groupTerminationBoundMs = (graceMs: number): number => graceMs + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS;
 export const RUNTIME_ABORT_BUDGET_MS = ABORT_SETTLE_LIMIT_MS + groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS);
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
@@ -53,8 +54,7 @@ export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_RE
 export const managedServerStopBoundMs = (stopGraceMs: number): number => stopGraceMs + KILL_CONFIRM_MS + markerReapClockBoundMs(stopGraceMs);
 export const ENTRY_HARD_EXIT_MARGIN_MS = 3000;
 export const SHUTDOWN_MARGIN_MS = 5000;
-export const STDIO_EXIT_FLUSH_MS = 1000;
-export const CHILD_STDIO_FLUSH_MS = 1000;
+export const STDIO_FLUSH_MS = 1000;
 export const LOCAL_REQUEST_HEADERS_TIMEOUT_MS = 2000;
 export const CONTROL_REQUEST_TIMEOUT_MS = 5000;
 export const SUPERVISOR_RESPONSE_BOUND_MS = CONTROL_REQUEST_TIMEOUT_MS + LOCAL_REQUEST_HEADERS_TIMEOUT_MS;
@@ -170,7 +170,7 @@ export const gatewayAbortBudgetMs = (values: StopValues): number => gatewayAbort
 
 export const managedServerReapBoundMs = (values: StopValues): number => markerReapClockBoundMs(values.managedServerStopGraceMs);
 
-export const killedChildSettleMs = (): number => KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS;
+export const killedChildSettleMs = (): number => KILL_CONFIRM_MS + STDIO_FLUSH_MS;
 
 export const supervisorMaxCloseMs = (values: StopValues): number =>
   SHUTDOWN_DRAIN_BOUND_MS +

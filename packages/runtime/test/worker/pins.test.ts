@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { USER_SHELL_TAG } from '@momonga/protocol';
 import { defineTool } from '@momonga/tools';
 import { capabilitiesFor, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
@@ -154,7 +155,7 @@ describe('the output of ! commands on a small window', () => {
     expect(env.run(run.id).error?.code).not.toBe('pinned_overflow');
     expect(env.run(run.id).status).toBe('COMPLETED');
     const sent = JSON.stringify(env.gateway.streams[0]?.body.input);
-    for (const index of [1, 2, 3]) expect(sent).toContain(`<command>make step${index}</command>`);
+    for (const index of [1, 2, 3]) expect(sent).toContain(JSON.stringify(`<${USER_SHELL_TAG} command=${JSON.stringify(`make step${index}`)}`).slice(1, -1));
     expect(sent).not.toContain('z'.repeat(20_000));
   });
 });

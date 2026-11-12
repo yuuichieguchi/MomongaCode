@@ -8,15 +8,14 @@ import { assertsFormat, ataEngine } from './untrusted-engine.ts';
 import type { Engine, EngineValidator } from './untrusted-engine.ts';
 import { createErrorDescriber } from './untrusted-errors.ts';
 import type { UntrustedError } from './untrusted-errors.ts';
-import { capText, sanitizeServerText } from './untrusted-text.ts';
+import { SERVER_TEXT_EXCERPT_CHARS, capText, sanitizeServerText } from './untrusted-text.ts';
 
 export type { UntrustedError } from './untrusted-errors.ts';
 
 const MAX_CACHED_VALIDATORS = 512;
-const MAX_FAILURE_MESSAGE_CHARS = 200;
 const MAX_SCHEMA_PROBLEMS = 3;
 
-export const cleanFailureMessage = (message: string): string => capText(sanitizeServerText(message), MAX_FAILURE_MESSAGE_CHARS);
+export const cleanFailureMessage = (message: string): string => capText(sanitizeServerText(message), SERVER_TEXT_EXCERPT_CHARS);
 
 export type UntrustedVerdict = { valid: true } | { valid: false; errors: readonly UntrustedError[] };
 

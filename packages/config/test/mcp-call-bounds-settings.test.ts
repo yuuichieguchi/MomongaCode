@@ -39,7 +39,7 @@ describe('the MCP call bounds: an idle key per transport and one total key', () 
 
   it('refuses the retired mcp.toolIdleTimeoutMs and names both idle keys', async () => {
     const { loaded } = load({ toolIdleTimeoutMs: 600_000 });
-    await expect(loaded).rejects.toThrow(/mcp\.toolIdleTimeoutMs.*mcp\.toolIdleTimeoutNetworkMs.*mcp\.toolIdleTimeoutStdioMs/);
+    await expect(loaded).rejects.toThrow(/invalid settings at \/mcp\/toolIdleTimeoutMs: is not a setting any more; .*mcp\.toolIdleTimeoutNetworkMs.*mcp\.toolIdleTimeoutStdioMs/);
   });
 
   it.for(KEYS.map((key) => ({ key })))('discards mcp.$key from project settings with a warning naming the file', async ({ key }) => {

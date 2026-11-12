@@ -4,7 +4,7 @@ import http from 'node:http';
 import { ensureMomongaDirs, momongaPaths, verdictKey } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { GoverningFactView, MemoryView, PolicyGovernanceResponse } from '@momonga/protocol';
-import { fakePolicyFilesystem, hostFilesystemOf, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
+import { fakePolicyFilesystem, hostFilesystemOf, registerCleanup, withTempDir, firstGeneration, testEndpointScope } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { memoryHistory } from '../src/commands/memory.ts';
@@ -14,6 +14,8 @@ import type { CliPorts } from '../src/ports.ts';
 import { terminalPorts } from '../src/terminal-writer.ts';
 import type { PolicyVerifyHost } from '../src/verify/host.ts';
 import { startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
 
 const VERSION = '1.2.3';
 
@@ -88,6 +90,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     home,
     cwd: project,
     clock: virtualClock(),
+    endpointScope: testEndpointScope,
     self: { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' },
     spawnDetached: () => {
       throw new Error('the daemon is already running');
@@ -95,6 +98,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     stdout: { write: (text: string) => void out.push(text) },
     stderr: { write: (text: string) => void err.push(text) },
     interrupt: new AbortController().signal,
+    personCapability: async () => FAKE_PERSON_CAPABILITY,
   } as unknown as CliPorts;
   return { paths, ports: terminalPorts(ports), project, seen, out, err };
 };

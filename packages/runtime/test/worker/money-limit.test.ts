@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { definePriceTable } from '@momonga/observability';
 import type { CreateResponseBody } from '@momonga/protocol';
-import { admitRequest } from '@momonga/protocol';
+import { admitRequest, usdOfNano } from '@momonga/protocol';
 import type { AdmissionAsk, TreeSpend } from '@momonga/protocol';
 import { OUTPUT_FLOOR_TOKENS, admitStep } from '../../src/worker/budget.ts';
 import { FAKE_ADAPTER, FAKE_PROVIDER, PRIMARY_TARGET } from './fake-gateway.ts';
@@ -188,8 +188,14 @@ describe('the first request of a run is admitted by the same rule as every other
     expect(firstRequest(worstCaseAtFloorNano)).toMatchObject({ kind: 'admitted', maxOutputTokens: OUTPUT_FLOOR_TOKENS, reservedNano: worstCaseAtFloorNano, inputUpper: 1032 });
   });
 
-  it('refuses it one nano below, naming cap_too_small with nothing spent', () => {
-    expect(firstRequest(worstCaseAtFloorNano - 1)).toEqual({ kind: 'exhausted', exhausted: { dimension: 'cost', cause: 'cap_too_small', spent: 0, limit: worstCaseAtFloorNano - 1 } });
+  it('refuses it one nano below, naming cap_too_small with nothing spent and the smallest budget that admits it', () => {
+    expect(firstRequest(worstCaseAtFloorNano - 1)).toEqual({ kind: 'exhausted', exhausted: { dimension: 'cost', cause: 'cap_too_small', spent: 0, limit: worstCaseAtFloorNano - 1, admitsAt: worstCaseAtFloorNano } });
+  });
+
+  it('names the smallest token budget that admits a request the tokens left do not pay for', () => {
+    const upper = size.inputTokens + size.marginTokens + OUTPUT_FLOOR_TOKENS;
+    const refused = admitStep({ size, limits: { maxTotalTokens: upper - 1 }, price: undefined, unpricedCalls: 0, spentNano: 0, ledger: { admitModelRequest: (ask: AdmissionAsk) => admitRequest(ask, { ...NOTHING, totalTokens: 10 }) } });
+    expect(refused).toEqual({ kind: 'exhausted', exhausted: { dimension: 'tokens', cause: 'cap_too_small', spent: 10, limit: upper - 1, admitsAt: upper + 10 } });
   });
 
   it('stops a run whose money limit pays for no request before anything is sent, saying so', async () => {
@@ -201,9 +207,12 @@ describe('the first request of a run is admitted by the same rule as every other
     await env.runOnce(worker(env));
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
-    expect(env.ofType(run.id, 'budget.exhausted')).toEqual([{ ...env.ofType(run.id, 'budget.exhausted')[0], dimension: 'cost', cause: 'cap_too_small', spent: 0, limit: 1 }]);
+    const [exhausted] = env.ofType(run.id, 'budget.exhausted');
+    expect(exhausted).toEqual({ ...exhausted, dimension: 'cost', cause: 'cap_too_small', spent: 0, limit: 1, admitsAt: expect.any(Number) });
+    expect(exhausted?.admitsAt).toBeGreaterThan(1);
     expect(env.ofType(run.id, 'model.requested')).toEqual([]);
     expect(env.gateway.script).toHaveLength(1);
-    expect(env.fold(run.id).notes.some((note) => note.code === 'budget_exhausted' && note.message.includes('does not pay for another model request'))).toBe(true);
+    const named = `A budget of ${usdOfNano(exhausted?.admitsAt ?? 0)} USD admits the next model request`;
+    expect(env.fold(run.id).notes.some((note) => note.code === 'budget_exhausted' && note.message.includes('does not pay for another model request') && note.message.includes(named))).toBe(true);
   });
 });
