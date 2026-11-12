@@ -34,6 +34,7 @@ const recordOf = (runId: string, events: readonly PublicRunEvent[]): RunCostView
   const priced = responses.flatMap((billed) => (billed?.cost === undefined ? [] : [billed.cost.units ?? '0']));
   return {
     runId,
+    retries: 0,
     calls: responses.length,
     notPriced: responses.filter((billed) => billed?.cost === undefined).length,
     legacyPrecisionCalls: 0,

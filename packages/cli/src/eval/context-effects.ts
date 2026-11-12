@@ -143,6 +143,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism): 
     applyStep: (cwd, step) => applyWorkspaceStep(ports.files, cwd, step),
     now: () => ports.clock.now(),
     after: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
+    random: ports.random,
   };
 };
 

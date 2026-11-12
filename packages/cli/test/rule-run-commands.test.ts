@@ -15,6 +15,8 @@ import { terminalPorts } from '../src/terminal-writer.ts';
 import type { PolicyVerifyHost } from '../src/verify/host.ts';
 import { startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
+const FAKE_PERSON_CAPABILITY = 'f'.repeat(32);
+
 const VERSION = '1.2.3';
 
 const fact = (id: string, overrides: Partial<GoverningFactView> = {}): GoverningFactView => ({
@@ -95,6 +97,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     stdout: { write: (text: string) => void out.push(text) },
     stderr: { write: (text: string) => void err.push(text) },
     interrupt: new AbortController().signal,
+    personCapability: async () => FAKE_PERSON_CAPABILITY,
   } as unknown as CliPorts;
   return { paths, ports: terminalPorts(ports), project, seen, out, err };
 };

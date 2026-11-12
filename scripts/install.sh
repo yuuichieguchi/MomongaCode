@@ -44,6 +44,7 @@ fi
 
 public_key="${MOMONGA_RELEASE_PUBLIC_KEY:-$EMBEDDED_RELEASE_PUBLIC_KEY}"
 [ -n "$public_key" ] || fail "this installer pins no release signing key, so it cannot verify the release: install from a release whose installer pins the key, or set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish (ssh-ed25519 AAAA...)"
+[[ "$public_key" =~ ^ssh-ed25519\ [A-Za-z0-9+/]+={0,2}$ ]] || fail "the release signing key is not one ssh-ed25519 public key line (ssh-ed25519 AAAA...), so it cannot verify the release; nothing was installed"
 command -v ssh-keygen > /dev/null || fail "ssh-keygen is required to verify the release signature"
 
 loopback_http='^http://(127\.0\.0\.1|localhost|\[::1\])(:[0-9]+)?(/.*)?$'
@@ -85,7 +86,7 @@ else
   actual="$(shasum -a 256 "$staging/$ASSET_NAME" | awk '{ print $1 }')"
 fi
 if [ "$actual" != "$expected" ]; then
-  fail "sha256 mismatch for $ASSET_NAME: expected $expected, got $actual; nothing was installed"
+  fail "the downloaded $ASSET_NAME does not match the SHA-256 that $CHECKSUMS_NAME records (expected $expected, got $actual); nothing was installed"
 fi
 
 chmod 755 "$staging/$ASSET_NAME"

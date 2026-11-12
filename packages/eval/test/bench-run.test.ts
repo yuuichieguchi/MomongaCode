@@ -158,7 +158,7 @@ const fakeApi = (behaviour: Behaviour = {}) => {
       };
     },
     answeredBy: async () => [{ target: 'fake/system', answers: 'script' }],
-    costs: async (runIds) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+    costs: async (runIds) => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
     resolveApproval: async (approvalId, optionId) => {
       resolved.push({ approvalId, optionId });
     },

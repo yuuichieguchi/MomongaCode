@@ -518,7 +518,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
             },
             ['input_tokens', 'output_tokens', 'total_tokens'],
           ),
-          momonga: withOnePriceOutcome(closed({ cacheWriteInputTokens: nonNegativeInteger, cacheReadNotReported: { type: 'boolean', const: true }, cost: recordedModelCost, unpriced: unpricedOutcome }, [])),
+          momonga: withOnePriceOutcome(closed({ cacheWriteInputTokens: nonNegativeInteger, cacheReadNotReported: { type: 'boolean', const: true }, cost: recordedModelCost, unpriced: unpricedOutcome, retryOf: nonNegativeInteger }, [])),
           timing: callTiming,
         },
         ['status', 'output', 'usage'],

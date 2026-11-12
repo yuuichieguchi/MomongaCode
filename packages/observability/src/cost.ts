@@ -143,16 +143,17 @@ export const quoteChain = (model: string, members: readonly QuotedMember[], tabl
   };
 };
 
-export type RunCostCall = { runId: string; price: { kind: 'priced'; units: string; priceVersion: string; legacyPrecision: boolean } | { kind: 'unpriced' } | { kind: 'not_recorded' } };
+export type RunCostCall = { runId: string; retried: boolean; price: { kind: 'priced'; units: string; priceVersion: string; legacyPrecision: boolean } | { kind: 'unpriced' } | { kind: 'not_recorded' } };
 
-type RunCostTally = { calls: number; notPriced: number; legacyPrecisionCalls: number; units: Map<string, bigint> };
+type RunCostTally = { calls: number; retries: number; notPriced: number; legacyPrecisionCalls: number; units: Map<string, bigint> };
 
 export const runCostsOf = (runIds: readonly string[], calls: readonly RunCostCall[]): RunCostView[] => {
-  const tallies = new Map<string, RunCostTally>(runIds.map((runId) => [runId, { calls: 0, notPriced: 0, legacyPrecisionCalls: 0, units: new Map() }]));
+  const tallies = new Map<string, RunCostTally>(runIds.map((runId) => [runId, { calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, units: new Map() }]));
   for (const call of calls) {
     const tally = tallies.get(call.runId);
     if (tally === undefined) throw new RangeError(`a billed call belongs to run ${call.runId}, which was not asked for`);
     tally.calls += 1;
+    if (call.retried) tally.retries += 1;
     if (call.price.kind === 'priced') {
       tally.units.set(call.price.priceVersion, (tally.units.get(call.price.priceVersion) ?? 0n) + BigInt(call.price.units));
       if (call.price.legacyPrecision) tally.legacyPrecisionCalls += 1;
@@ -161,6 +162,7 @@ export const runCostsOf = (runIds: readonly string[], calls: readonly RunCostCal
   return [...tallies].map(([runId, tally]) => ({
     runId,
     calls: tally.calls,
+    retries: tally.retries,
     notPriced: tally.notPriced,
     legacyPrecisionCalls: tally.legacyPrecisionCalls,
     priced: [...tally.units]

@@ -113,20 +113,22 @@ const heldUpdate = (toolCallId: string, held: { approvalId: string; reason: stri
 const awaitedText = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
   awaits.kind === 'run' ? `waiting for subagent ${awaits.agent}` : `waiting for job ${awaits.jobId}`;
 
-const skipOpaque = (event: PublicStreamEvent, state: MapperState): event is Extract<PublicStreamEvent, { opaque: true }> => {
-  if (!isOpaqueEvent(event)) return false;
+const skippedText = (type: string): string => `an event of type ${type} from a newer daemon was skipped; the session goes on`;
+
+const opaqueNotice = (event: Extract<PublicStreamEvent, { opaque: true }>, state: MapperState, features: ClientFeatures): Effect[] => {
+  if (state.opaqueTypes.has(event.type)) return [];
   state.opaqueTypes.add(event.type);
-  return true;
+  return [{ kind: 'update', update: noticeUpdate(features, `${event.sessionId}/opaque/${event.type}`, 'warning', skippedText(event.type)) }];
 };
 
 export const mapChildEvent = (event: PublicStreamEvent, agent: string, state: MapperState, features: ClientFeatures): Effect[] => {
-  if (skipOpaque(event, state)) return [];
+  if (isOpaqueEvent(event)) return opaqueNotice(event, state, features);
   const child = asChildEvent(event, agent);
   return child === undefined ? [] : mapRunEvent(child, 'live', state, features);
 };
 
 export const mapRunEvent = (event: PublicStreamEvent, phase: Phase, state: MapperState, features: ClientFeatures): Effect[] => {
-  if (skipOpaque(event, state)) return [];
+  if (isOpaqueEvent(event)) return opaqueNotice(event, state, features);
   return mapKnownEvent(event, phase, state, features);
 };
 

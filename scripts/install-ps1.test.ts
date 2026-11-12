@@ -36,6 +36,12 @@ describe('install.ps1', () => {
     expect(source).toContain('set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish');
   });
 
+  it('refuses a release key that is not one ssh-ed25519 public key line, and names a tampered download in the words of install.sh', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    expect(source).toContain("if ($publicKey -notmatch '^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$') { Fail 'the release signing key is not one ssh-ed25519 public key line (ssh-ed25519 AAAA...), so it cannot verify the release; nothing was installed' }");
+    expect(source).toContain('does not match the SHA-256 that $checksumsName records (expected $expected, got $actual); nothing was installed');
+  });
+
   it('declares the release repository yuuichieguchi/MomongaCode right after the embedded release public key', () => {
     const lines = fs.readFileSync(SCRIPT, 'utf8').split('\n').map((line) => line.trim());
     const keyLine = lines.indexOf("$embeddedReleasePublicKey = ''");

@@ -4,10 +4,19 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Command } from 'commander';
 import { GATE_NAMES, nodeWorkspaceFiles, treeDigest } from '@momonga/eval';
+import type { CommandSandbox } from '@momonga/eval';
 import { REPORT_PAGE_ROWS, REVIEW_SAMPLE_SIZE } from '@momonga/protocol';
 import type { RunCallView } from '@momonga/protocol';
-import { momongaPaths, ensureMomongaDirs } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { CONTROL_PLANE_LAUNCH, ensureMomongaDirs, hostProcessGroupPort, launchGroupLeader, momongaPaths } from '@momonga/foundation';
+import type { MomongaPaths, ProcessGroupPort } from '@momonga/foundation';
+
+const passThroughSandbox: CommandSandbox = {
+  start: async (command, cwd, env) => {
+    const { pgid, onExit } = launchGroupLeader({ file: '/bin/sh', args: ['-c', command], cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: CONTROL_PLANE_LAUNCH });
+    if (pgid === undefined) throw new Error('the command started with no process group');
+    return { pgid, exited: new Promise((resolve, reject) => onExit(({ code }) => resolve({ code }), reject)) };
+  },
+};
 
 type Review = { runId: string; callId: string; label: string; reviewedAt: number };
 type ReviewPage = { calls: RunCallView[]; reviews: Review[]; nextCursor: string | null };
@@ -244,10 +253,11 @@ describe('momonga eval bench --validate', () => {
   };
 
   const portsOf = async (cwd: string) => {
-    const { createWorkspaceProbe } = await load<{ createWorkspaceProbe(env: Readonly<Record<string, string>>): Probe }>('node-ports.ts');
+    const { nodeWorkspaceProbeOf } = await load<{ nodeWorkspaceProbeOf(sandbox: CommandSandbox, groups: ProcessGroupPort): (env: Readonly<Record<string, string>>) => Probe }>('node-ports.ts');
     const out: string[] = [];
     const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-    return { ports: { cwd, stdout: { write: (text: string) => out.push(text) }, probe: createWorkspaceProbe(env), files: nodeWorkspaceFiles, tmpdir: os.tmpdir() }, out };
+    const probeOf = nodeWorkspaceProbeOf(passThroughSandbox, hostProcessGroupPort());
+    return { ports: { cwd, env, stdout: { write: (text: string) => out.push(text) }, probe: probeOf, files: nodeWorkspaceFiles, tmpdir: os.tmpdir() }, out, probe: probeOf(env) };
   };
 
   it('exits 0 and names every task as valid when each fails first and passes with its reference, without a model or a daemon', async () => {
@@ -276,14 +286,14 @@ describe('momonga eval bench --validate', () => {
 
   it('the probe reports a command that outlives its time as timed out, and the paths that differ from a base', async () => {
     const dir = await benchmark(BUGGY);
-    const { ports } = await portsOf(dir);
+    const { probe } = await portsOf(dir);
     const repository = path.join(dir, 'repos/fix');
     const solved = path.join(dir, 'solutions/fix');
-    expect(await ports.probe.run('exit 4', 5000, repository)).toEqual({ exitCode: 4, timedOut: false });
-    expect((await ports.probe.run('sleep 30', 200, repository)).timedOut).toBe(true);
-    expect(await ports.probe.changedPaths(solved, repository)).toEqual(['src/add.js', 'test/add.test.js']);
-    expect(await ports.probe.digest(repository, ['src/add.js'])).not.toBe(await ports.probe.digest(solved, ['src/add.js']));
-    expect(await ports.probe.digest(repository, ['missing.js'])).toBe(await ports.probe.digest(solved, ['missing.js']));
+    expect(await probe.run('exit 4', 5000, repository)).toEqual({ exitCode: 4, timedOut: false });
+    expect((await probe.run('sleep 30', 200, repository)).timedOut).toBe(true);
+    expect(await probe.changedPaths(solved, repository)).toEqual(['src/add.js', 'test/add.test.js']);
+    expect(await probe.digest(repository, ['src/add.js'])).not.toBe(await probe.digest(solved, ['src/add.js']));
+    expect(await probe.digest(repository, ['missing.js'])).toBe(await probe.digest(solved, ['missing.js']));
   });
 });
 
