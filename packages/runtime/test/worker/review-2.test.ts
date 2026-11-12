@@ -144,11 +144,10 @@ describe('worker default error reporter', () => {
     expect(env.ofType(failing.id, 'notice').filter((notice) => notice.message.includes('load exploded'))).toEqual([]);
   });
 
-  it('keeps polling without an unhandled rejection when the reporter itself fails', async () => {
+  it('ends through onFatal without an unhandled rejection when the reporter itself fails', async () => {
     const env = await makeEnv();
     const failing = await env.enqueue('Fails to load');
-    const healthy = await secondSessionRun(env);
-    env.gateway.script.push(textStep('Hello.'));
+    const reporterFailure = new Error('reporter append exploded');
     const store: RuntimeStore = {
       ...env.store,
       load: (runId, signal) => {
@@ -156,29 +155,32 @@ describe('worker default error reporter', () => {
         return env.store.load(runId, signal);
       },
       append: (claim, payloads) => {
-        if (payloads.some(isFailureNotice)) throw new Error('reporter append exploded');
+        if (payloads.some(isFailureNotice)) throw reporterFailure;
         return env.store.append(claim, payloads);
       },
       appendAsService: (runId, expectedVersion, to, payloads, patch) => {
-        if (payloads.some(isFailureNotice)) throw new Error('reporter append exploded');
+        if (payloads.some(isFailureNotice)) throw reporterFailure;
         return env.store.appendAsService(runId, expectedVersion, to, payloads, patch);
       },
     };
+    const fatals: Error[] = [];
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown): void => {
       unhandled.push(reason);
     };
     process.on('unhandledRejection', onUnhandled);
     try {
-      const worker = env.worker('worker-1', { store, idlePollMs: 10 });
+      const worker = env.worker('worker-1', { store, idlePollMs: 10, onFatal: (error) => fatals.push(error) });
       worker.start();
-      await env.passTime(() => env.run(healthy.id).status === 'COMPLETED', 'the healthy run to complete');
+      await env.passTime(() => fatals.length > 0, 'onFatal');
       await env.settled(worker.stop(), 'the worker to stop');
     } finally {
       process.off('unhandledRejection', onUnhandled);
     }
 
     expect(unhandled).toEqual([]);
+    expect(fatals).toEqual([reporterFailure]);
+    expect(env.ofType(failing.id, 'notice').filter((notice) => notice.message.includes('load exploded'))).toEqual([]);
   });
 });
 
