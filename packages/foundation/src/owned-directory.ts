@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { claimNewEntry, claimNewEntrySync } from './platform/lock-form.ts';
+import { NAME_SUFFIX_BYTES } from './random.ts';
 import type { Random } from './random.ts';
 import { systemRandom } from './system-random.ts';
 
@@ -11,7 +12,6 @@ export type OwnedDirectory = { readonly path: string; dispose(): Promise<void> }
 
 export type OwnedDirectorySync = { readonly path: string; dispose(): void };
 
-const NAME_SUFFIX_BYTES = 6;
 const OWNED_DIRECTORY_MODE = 0o700;
 
 const ownedPathOf = (options: OwnedDirectoryOptions): string =>

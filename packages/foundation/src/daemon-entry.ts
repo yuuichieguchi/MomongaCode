@@ -5,7 +5,7 @@ import { EntryUsageError, parseFlags } from './entry-flags.ts';
 import type { FlagSpec, ParsedFlags } from './entry-flags.ts';
 import { watchLifeline } from './lifeline.ts';
 import type { LifelineHandlers, LifelineWatch } from './lifeline.ts';
-import { ENTRY_HARD_EXIT_MARGIN_MS, EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, EXIT_OK, STDIO_EXIT_FLUSH_MS, STOP_MESSAGE_OVERLONG_REASON, createJsonLogger, parseStopMessage } from './process-contract.ts';
+import { ENTRY_HARD_EXIT_MARGIN_MS, EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, EXIT_OK, STDIO_FLUSH_MS, STOP_MESSAGE_OVERLONG_REASON, createJsonLogger, parseStopMessage } from './process-contract.ts';
 import type { JsonLogger, StopValues, TextStream } from './process-contract.ts';
 import { guardStandardStreams } from './standard-streams.ts';
 import type { GuardedStandardStreams, StandardStream } from './standard-streams.ts';
@@ -558,7 +558,7 @@ export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStan
     exit: (code) => {
       host.exitCode = code;
       const timeout = Promise.withResolvers<void>();
-      const timer = setTimeout(timeout.resolve, STDIO_EXIT_FLUSH_MS);
+      const timer = setTimeout(timeout.resolve, STDIO_FLUSH_MS);
       void Promise.race([Promise.all([flushed(host.stdout), flushed(host.stderr)]), timeout.promise]).then(() => {
         clearTimeout(timer);
         host.exit(code);

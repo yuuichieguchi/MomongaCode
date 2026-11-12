@@ -1,4 +1,4 @@
-export { computeBackoff, parseRetryAfter } from './backoff.ts';
+export { MAX_DATE_MS, computeBackoff, parseRetryAfter } from './backoff.ts';
 export { TRANSIENT_REQUEST_STATUSES, isRetryableHttp, parseShouldRetry } from './http-retry.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
 export { sessionRootsOf, verdictKey, verdictSubjectOf } from './rule-fingerprint.ts';
@@ -287,8 +287,7 @@ export {
   CONTROL_REQUEST_TIMEOUT_MS,
   LOCAL_REQUEST_HEADERS_TIMEOUT_MS,
   SUPERVISOR_RESPONSE_BOUND_MS,
-  STDIO_EXIT_FLUSH_MS,
-  CHILD_STDIO_FLUSH_MS,
+  STDIO_FLUSH_MS,
   KILL_CONFIRM_MS,
   DAEMON_MARKER_KILL_GRACE_MS,
   ABANDON_KILL_GRACE_MS,
