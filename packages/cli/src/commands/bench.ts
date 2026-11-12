@@ -32,7 +32,7 @@ const PROBLEM_TEXT: Record<BenchProblem, string> = {
   unsolvable: 'the oracle does not pass with the reference solution',
 };
 
-const oracleEnvOf = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
+const definedEnvOf = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
   Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
 
 const tasksText = (count: number): string => `${count} ${count === 1 ? 'task' : 'tasks'}`;
@@ -46,7 +46,7 @@ const validationLine = (task: TaskValidation): string => {
 };
 
 const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe' | 'files' | 'tmpdir' | 'env'>, paths: MomongaPaths, benchmarkFile: string): Promise<number> => {
-  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe(oracleEnvOf(ports.env)), files: ports.files, tmpdir: ports.tmpdir, lock: resolveLayoutLocks(paths).mechanism });
+  const { name, tasks } = await validateBenchmark(benchmarkFile, { probe: ports.probe(definedEnvOf(ports.env)), files: ports.files, tmpdir: ports.tmpdir, lock: resolveLayoutLocks(paths).mechanism });
   for (const task of tasks) ports.stdout.write(validationLine(task));
   const wrong = tasks.filter((task) => task.problems.length > 0).length;
   if (wrong === 0) {
@@ -175,7 +175,7 @@ const run = async (
     benchmarkFile,
     model: pinnedModelOf(models, options.model),
     models,
-    probe: ports.probe(oracleEnvOf(ports.env)),
+    probe: ports.probe(definedEnvOf(ports.env)),
     files: ports.files,
     codeDigest: await codeDigestOfRunningProcess(),
     groupBy: options.groupBy,
