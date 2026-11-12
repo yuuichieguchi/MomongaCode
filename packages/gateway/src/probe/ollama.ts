@@ -1,4 +1,6 @@
 import { isRecord } from '@momonga/foundation';
+import { SERVER_KINDS } from '@momonga/protocol';
+import { readModelDetails } from '../detect-local-servers.ts';
 import { field } from './reply.ts';
 import type { DialectId, OllamaProbeReport } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
@@ -53,7 +55,6 @@ export type ProbeOllamaTargetResult = { report: OllamaProbeReport; key: Endpoint
 const CHAT_PATH = '/api/chat';
 const CACHE_PROBE_OUTPUT_TOKENS = 1;
 const VERSION_PATH = '/api/version';
-const SHOW_PATH = '/api/show';
 const TAGS_PATH = '/api/tags';
 
 const withClient = async <T>(
@@ -108,24 +109,19 @@ const digestIn = (tags: unknown, model: string): string | undefined => {
 export const readOllamaDigest = (upstream: UpstreamEndpoint, ports: ProbePorts, model: string, signal: AbortSignal): Promise<string | undefined> =>
   withClient(upstream, ports, signal, async (client) => digestIn(await jsonOf(client, 'GET', TAGS_PATH), model));
 
-export const trainedContextOf = (show: unknown, model: string): number => {
-  const info = isRecord(show) ? show['model_info'] : undefined;
-  if (!isRecord(info)) throw new Error(`/api/show for model ${model} carries no model_info`);
-  const architecture = info['general.architecture'];
-  if (typeof architecture !== 'string') throw new Error(`/api/show for model ${model} carries no general.architecture`);
-  const length = info[`${architecture}.context_length`];
-  if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 1) {
-    throw new Error(`/api/show for model ${model} carries no ${architecture}.context_length`);
-  }
-  return length;
-};
+const OLLAMA_DETAILS = (() => {
+  const details = SERVER_KINDS.find((kind) => kind.kind === 'ollama')?.read?.details;
+  if (details === undefined) throw new Error('the server kinds have no Ollama details read');
+  return details;
+})();
 
-const capabilitiesOf = (show: unknown, model: string): readonly string[] => {
-  const capabilities = isRecord(show) ? show['capabilities'] : undefined;
-  if (!Array.isArray(capabilities) || !capabilities.every((entry): entry is string => typeof entry === 'string')) {
-    throw new Error(`/api/show for model ${model} carries no capabilities list`);
-  }
-  return capabilities;
+type OllamaShow = { trained: number; capabilities: readonly string[] };
+
+const ollamaShowOf = async (client: ProbeClient, model: string): Promise<OllamaShow> => {
+  const details = await readModelDetails((method, path, body) => jsonOf(client, method, path, body), OLLAMA_DETAILS, model);
+  if (details?.window === undefined) throw new Error(`${OLLAMA_DETAILS.path} for model ${model} carries no context length`);
+  if (details.capabilities === undefined) throw new Error(`${OLLAMA_DETAILS.path} for model ${model} carries no capabilities list`);
+  return { trained: details.window, capabilities: details.capabilities };
 };
 
 const promptEvalCountOf = (body: unknown): number | undefined => {
@@ -228,18 +224,17 @@ export const measureOllama =
     const { model, upstream } = options;
     const { version, show, tags } = await withClient(upstream, options.ports, signal, async (client) => ({
       version: await jsonOf(client, 'GET', VERSION_PATH),
-      show: await jsonOf(client, 'POST', SHOW_PATH, { model }),
+      show: await ollamaShowOf(client, model),
       tags: await jsonOf(client, 'GET', TAGS_PATH),
     }));
     const serverVersion = versionOf(version);
     if (serverVersion === undefined) throw new Error(`the server at ${key.endpoint} did not answer ${VERSION_PATH} in Ollama's form`);
-    const trained = trainedContextOf(show, model);
+    const { trained, capabilities } = show;
     if (options.contextWindow > trained) {
       throw new Error(`the context window ${options.contextWindow} is above the trained context length ${trained} of model ${model}`);
     }
     const identity = digestIn(tags, model);
     if (identity === undefined) throw new Error(`the Ollama server does not list model ${model}; pull it with \`ollama pull ${model}\``);
-    const capabilities = capabilitiesOf(show, model);
     const imageInputAccepted = capabilities.includes('vision');
     const imageTokens = imageInputAccepted
       ? await withClient(upstream, options.ports, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS)
