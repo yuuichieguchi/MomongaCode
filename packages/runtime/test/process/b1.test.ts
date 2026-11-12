@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_DETERMINISTIC_REPLY } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_DETERMINISTIC_REPLY, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { eventTypes, launchRuntime, readDb, startStack, waitForStatus } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -11,7 +11,7 @@ describe('scenario b1: abort mid-request, then restart (system timers, in-proces
     const session = await first.createSession();
     const hold = stack.hold();
     const run = await first.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     expect(await first.handle.abort()).toEqual({ clean: true, abandoned: [], stragglers: [] });
     expect(await waitForStatus(stack.temp, run.id, ['QUEUED', 'COMPLETED', 'FAILED'])).toBe('QUEUED');
     hold.release();

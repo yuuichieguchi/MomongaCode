@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { startFakeChatCompletions, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 
 const servers: FakeChatCompletionsServer[] = [];
@@ -119,7 +119,7 @@ describe('fake chat completions routes', () => {
     expect(await settled(routed)).toBe(true);
     expect(contentOf((await routed).text)).toBe('routed while held');
     const held = post(fake.socketPath, modelBody);
-    const arrived = await hold.waitForRequest();
+    const arrived = await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     expect(arrived.body).toEqual(modelBody);
     expect(await settled(held)).toBe(false);
     hold.release();

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { writeInvalidUserSettings } from './helpers.ts';
 import { launchRuntime, startStack, waitForStatus } from './run-helpers.ts';
 
@@ -15,7 +15,7 @@ describe('a broken user settings file under a running runtime (SettingsHealth, s
     const hold = stack.hold();
     const session = await launched.createSession();
     const run = await launched.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
 
     writeInvalidUserSettings(stack.temp.home);
     hold.release();

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { RUNTIME_ENTRY_FLAGS } from '@momonga/runtime';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import { fireTimer, launchRuntime, startStack, stepsLogged, timerIds, waitForCondition, waitForStatus, waitForTimer } from './run-helpers.ts';
 
@@ -74,7 +74,7 @@ const runningRequest = async (stack: Awaited<ReturnType<typeof startStack>>, lau
   const hold = stack.hold();
   const session = await launched.createSession();
   const run = (await launched.createRun(session.id)) as { id: string };
-  await hold.waitForRequest();
+  await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
   return { id: run.id, hold };
 };
 

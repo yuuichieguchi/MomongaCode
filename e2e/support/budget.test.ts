@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import { sha256Hex } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
-import { ACCEPTANCE_MAX_OUTPUT, ACCEPTANCE_WINDOW, ESCALATION_NOTICE_PREFIX, GREP_AND_READ_BACK_CALLS, PERTURBATIONS, escalationBudgetVerdict, fitLimitAfterReport, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget } from './budget.ts';
+import { ACCEPTANCE_MAX_OUTPUT, ACCEPTANCE_WINDOW, ESCALATION_NOTICE_PREFIX, GREP_AND_READ_BACK_CALLS, PERTURBATIONS, escalationBudgetVerdict, fitLimitAfterReport, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget, overflowStepRange } from './budget.ts';
+import { capacityFor } from '../../packages/context/src/budget.ts';
+import { createTokenMeter } from '@momonga/context';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf } from '@momonga/protocol';
+import type { InputItem } from '@momonga/protocol';
 import type { FillerShape, JournalEvent, PlanCaseSpec } from './budget.ts';
 import type { Capabilities } from '@momonga/protocol';
 import { readDb } from './db.ts';
@@ -11,7 +15,7 @@ import { createE2eHome } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { createRuntimeClient } from './runtime-client.ts';
 import { startStack } from './stack.ts';
-import { chatCompletions, messagesOf, textReply } from './upstream.ts';
+import { chatCompletions, messagesOf, reportedTokensOf, textReply } from './upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './wait.ts';
 import { firstGeneration } from '@momonga/testkit';
 
@@ -141,6 +145,7 @@ describe('planner acceptance criteria', () => {
         toolCalling: 'native',
         usageReported: true,
       };
+      const unobservedPins = { capabilities, token: {} };
       type Evidence = Parameters<typeof escalationBudgetVerdict>[0];
       const evidence = (overrides: Partial<Evidence>): Evidence => ({
         facts: { requestsBeforeEscalation: 4 } as Evidence['facts'],
@@ -152,31 +157,31 @@ describe('planner acceptance criteria', () => {
       });
 
       it('fits at most 2853 tokens after a report of 2400 at W=4096, where the bound is ceil(0.3 x the tokens past it) against I0 = 2990', async () => {
-        expect(await fitLimitAfterReport(capabilities, 2400)).toBe(2853);
+        expect(await fitLimitAfterReport(unobservedPins, 2400)).toBe(2853);
       });
 
       it('(g1, g2) accepts an escalation whose unevicted input does not fit and whose level-0 pass was refused', async () => {
-        expect(await escalationBudgetVerdict(evidence({}), capabilities)).toBeUndefined();
+        expect(await escalationBudgetVerdict(evidence({}), unobservedPins)).toBeUndefined();
       });
 
       it('(g2) accepts a kept level-0 pass that lowered the load below the unevicted 2900+150', async () => {
-        expect(await escalationBudgetVerdict(evidence({ overflows: [{ inputTokens: 2700, inputBudget: 2990 - 300, level: 0 }] }), capabilities)).toBeUndefined();
+        expect(await escalationBudgetVerdict(evidence({ overflows: [{ inputTokens: 2700, inputBudget: 2990 - 300, level: 0 }] }), unobservedPins)).toBeUndefined();
       });
 
       it('(g1) judges the unevicted input by the escalating step’s own growth, not by the largest growth seen before', async () => {
-        expect(await escalationBudgetVerdict(evidence({ unevictedAtEscalation: 2500 }), capabilities)).toMatch(/^\(g1\) escalated although the unevicted input/);
+        expect(await escalationBudgetVerdict(evidence({ unevictedAtEscalation: 2500 }), unobservedPins)).toMatch(/^\(g1\) escalated although the unevicted input/);
       });
 
       it('(g1) rejects a dry run whose escalating step left no measurable growth', async () => {
-        expect(await escalationBudgetVerdict(evidence({ unevictedAtEscalation: undefined }), capabilities)).toMatch(/^\(g1\) /);
+        expect(await escalationBudgetVerdict(evidence({ unevictedAtEscalation: undefined }), unobservedPins)).toMatch(/^\(g1\) /);
       });
 
       it('(g2) rejects a dry run with no level-0 ContextOverflowError captured before the escalation', async () => {
-        expect(await escalationBudgetVerdict(evidence({ overflows: [] }), capabilities)).toMatch(/^\(g2\) 0 level-0 ContextOverflowErrors/);
+        expect(await escalationBudgetVerdict(evidence({ overflows: [] }), unobservedPins)).toMatch(/^\(g2\) 0 level-0 ContextOverflowErrors/);
       });
 
       it('(g2) rejects a kept level-0 pass that raised the load: 2890+290 against the unevicted 2900+150', async () => {
-        expect(await escalationBudgetVerdict(evidence({ overflows: [{ inputTokens: 2890, inputBudget: 2990 - 290, level: 0 }] }), capabilities)).toMatch(
+        expect(await escalationBudgetVerdict(evidence({ overflows: [{ inputTokens: 2890, inputBudget: 2990 - 290, level: 0 }] }), unobservedPins)).toMatch(
           /^\(g2\) the level-0 pass was kept although it does not lower the load/,
         );
       });
@@ -284,5 +289,55 @@ describe('acceptance (a) support', () => {
     const completed = ofType(journal, 'tool.completed');
     expect(predicted.journal.filter((event) => event.type === 'tool.completed').map((event) => event.data['output'])).toEqual(completed.map((event) => event.data['output']));
     for (const post of modelPosts) expect(wireTokensOfBody(post.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0).R);
+  });
+});
+
+describe('the step range is sized under the pins of the stack it predicts', () => {
+  const stackCapabilities: Capabilities = {
+    contextWindow: ACCEPTANCE_WINDOW,
+    maxOutputTokens: ACCEPTANCE_MAX_OUTPUT,
+    imageInput: false,
+    maxConcurrency: 4,
+    schemaDialect: 'json-schema-2020-12',
+    source: 'config',
+    stopSequences: true,
+    streaming: true,
+    structuredOutput: 'none',
+    tokenCounting: 'estimated',
+    toolCalling: 'native',
+    usageReported: true,
+  };
+  const textOf = (tokens: number): InputItem => ({ type: 'message', role: 'user', content: 'x'.repeat(ESTIMATED_CHARACTERS_PER_TOKEN * tokens) });
+  const stackMeterFits = async (observedCapacity: boolean, base: number, step: number, steps: number): Promise<boolean> => {
+    const meter = createTokenMeter({
+      counter: {
+        count: async (request) => {
+          if (typeof request.input === 'string') throw new Error('the stack meter of this test counts message items');
+          const characters = request.input.reduce((sum, item) => sum + (item.type === 'message' && typeof item.content === 'string' ? item.content.length : 0), 0);
+          return countReplyOf(Math.ceil(characters / ESTIMATED_CHARACTERS_PER_TOKEN), 'estimated', ESTIMATED_ERROR_SHAPE);
+        },
+      },
+      model: 'm',
+      capabilities: stackCapabilities,
+      observedCapacity,
+    });
+    const items: InputItem[] = [textOf(base)];
+    const first = await meter.count({ input: items, tools: [] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: reportedTokensOf(base) });
+    for (let index = 1; index <= steps; index += 1) {
+      items.push(textOf(step));
+      const view = await meter.count({ input: items, tools: [] });
+      if (view.inputTokens > capacityFor(stackCapabilities, view.underAt)) return false;
+      meter.observe({ inputDigest: view.inputDigest, inputTokens: reportedTokensOf(base + index * step) });
+    }
+    return true;
+  };
+
+  it.for([true, false])('with observed capacity %s the last of three steps of the lowest size stops fitting in the stack meter fed the upstream reports, and one token less fits', async (observedCapacity) => {
+    const base = 1200;
+    const range = await overflowStepRange({ capabilities: stackCapabilities, token: observedCapacity ? { observedCapacity: true } : {} }, base, 3);
+    expect(await stackMeterFits(observedCapacity, base, range.lowest, 3)).toBe(false);
+    expect(await stackMeterFits(observedCapacity, base, range.lowest - 1, 3)).toBe(true);
+    expect(await stackMeterFits(observedCapacity, base, range.highest, 2)).toBe(true);
   });
 });

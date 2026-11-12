@@ -5,7 +5,7 @@ import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, textReply } from './support/upstream.ts';
-import { E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_TEST_TIMEOUT_MS, until, E2E_RUN_COMPLETED_BOUND_MS } from './support/wait.ts';
 
 const REPLY_AFTER_RESTART = 'after the restart';
 
@@ -22,7 +22,7 @@ describe('b3: kill the gateway during the model call', () => {
     try {
       const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Say hello');
-      await hold.waitForRequest();
+      await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
       const disconnectsBefore = stack.fake.disconnects();
 
       const before = await stack.client.health();

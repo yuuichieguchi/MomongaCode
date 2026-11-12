@@ -165,7 +165,7 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
     inject: async (env) => {
       const point = env.point as Point;
       await untilFrames(env, point.type, point.occurrence, `${point.type} number ${point.occurrence}`);
-      if (point.type === 'model.requested') await (env.holds.at(-1) as FakeResponseHold).waitForRequest();
+      if (point.type === 'model.requested') await (env.holds.at(-1) as FakeResponseHold).waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
       await killRuntime(env);
       for (const hold of env.holds) hold.release();
     },
@@ -236,7 +236,7 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
     inject: async (env) => {
       const stack = env.stack as E2eStack;
       const hold = env.holds[0] as FakeResponseHold;
-      await hold.waitForRequest();
+      await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
       await (env.stream as RunEventStream).close();
       const stopping = await stack.client.shutdown();
       if (stopping.status !== 202) throw new Error(`scenario ${env.scenario.id}: the first supervisor answered ${stopping.status} to its stop`);

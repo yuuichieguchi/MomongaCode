@@ -9,7 +9,7 @@ import { startStack } from './support/stack.ts';
 import type { E2eStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions } from './support/upstream.ts';
-import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_TEST_TIMEOUT_MS, until, E2E_RUN_COMPLETED_BOUND_MS } from './support/wait.ts';
 
 type ReleaseTiming = 'after-claim' | 'while-down';
 
@@ -33,7 +33,7 @@ const killRuntimeDuringModelCall = async (release: ReleaseTiming): Promise<void>
   try {
     const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const { run } = await runtime.createRun(session.id, 'Say hello');
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
 
     const before = await stack.client.health();
     const oldRuntime = childOf(before, 'runtime');
