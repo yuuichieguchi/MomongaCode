@@ -1,4 +1,4 @@
-export { AGENT_TOOL_NAME } from './constants.ts';
+export { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_TOOL_NAME } from './constants.ts';
 export { createAgentLoader } from './loader.ts';
 export type { AgentLoaderOptions } from './loader.ts';
 export { agentSystemPrompt, pinOf, readAgentPin } from './pin.ts';

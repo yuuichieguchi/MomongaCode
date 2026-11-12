@@ -2,7 +2,9 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { findProgramOnPathSync, nodeFileSystemSync, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { TrustItemsView } from '@momonga/protocol';
-import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage } from '@momonga/protocol';
+import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
+import { createFromTemplate } from './file-templates.ts';
+import type { CreatedFile, TemplateKind } from './file-templates.ts';
 import { approveProjectItems, editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { ApprovedItem, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
 import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
@@ -89,6 +91,8 @@ export type TuiBackend = {
   openUrl(url: URL, watch: AbortSignal, onFailure: (message: string) => void): void;
   copyToClipboard(text: string): Promise<CopyOutcome>;
   skills(): Promise<SkillsResponse>;
+  agents(): Promise<AgentsResponse>;
+  createFromTemplate(kind: TemplateKind, name: string): Promise<CreatedFile>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
@@ -309,6 +313,8 @@ export const createTuiBackend = (
       return copyThroughRoutes({ env: ports.env, findProgram: (name) => findProgramOnPathSync(name, ports.env, nodeFileSystemSync), pipe: clipboard.pipe, writeTerminal: (sequence) => void terminal.stdout.write(sequence) }, text);
     },
     skills: () => runtime().skills(current().id),
+    agents: () => runtime().agents(current().id),
+    createFromTemplate: (kind, name) => createFromTemplate(ports.files, paths.home, kind, name),
     memories: (filter) => runtime().memories(filter),
     memory: (id) => runtime().memory(id),
     deleteMemory: (id) => runtime().deleteMemory(id),

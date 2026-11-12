@@ -107,6 +107,8 @@ export type { BackgroundJobRegistry, BackgroundJobsOptions } from './process/bac
 export { createNodeJobMarkerFiles } from './process/job-marker-files.ts';
 export type { JobMarkerFiles } from './process/job-marker-files.ts';
 export { createSkillsPort } from './process/skills-port.ts';
+export { SKILL_DIRECTORY_SEGMENTS, SKILL_FILE_NAME, isValidSkillName } from '@momonga/skills';
+export { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX } from '@momonga/agents';
 export type { SkillsPortOptions } from './process/skills-port.ts';
 export { fixedSandboxBindings } from './process/sandbox-bindings.ts';
 export { createNetworkDerivation } from './process/network-derivation.ts';

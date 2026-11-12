@@ -16,7 +16,15 @@ import { momongaLayout } from '@momonga/foundation';
 import type { DetectRequest } from '../src/commands/models.ts';
 import { freshHome } from './fresh-home.ts';
 import { listingOf } from './models-shell-harness.ts';
-import type { McpServerView } from '@momonga/protocol';
+import type { AgentView, McpServerView } from '@momonga/protocol';
+import { createFromTemplate } from '../src/tui/file-templates.ts';
+import type { TemplateFiles } from '../src/tui/file-templates.ts';
+
+const templateFiles: TemplateFiles = {
+  readTextIfPresent: async (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined),
+  mkdirPrivate: async (directory) => void fs.mkdirSync(directory, { recursive: true, mode: 0o700 }),
+  writeText: async (file, text) => fs.writeFileSync(file, text, { mode: 0o600 }),
+};
 
 export const SESSION: SessionView = {
   id: 'session-1',
@@ -81,6 +89,7 @@ export type FakeBackend = TuiBackend & {
 
 export type FakeBackendOptions = {
   storedResults?: Readonly<Record<string, string>>;
+  agents?: readonly AgentView[];
   trust?: TrustView;
   trustItems?: TrustItemsView;
   session?: Partial<SessionView>;
@@ -490,6 +499,8 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return { kind: 'copied', characters: [...text].length };
     },
     skills: async () => ({ skills: [...(options.skills ?? [])], warnings: [...(options.skillWarnings ?? [])] }),
+    agents: async () => ({ agents: [...(options.agents ?? [])], warnings: [] }),
+    createFromTemplate: (kind, name) => createFromTemplate(templateFiles, settingsPlace().home, kind, name),
     memories: async () => memories,
     memory: async (id) => {
       const found = memories.find((memory) => memory.id === id);

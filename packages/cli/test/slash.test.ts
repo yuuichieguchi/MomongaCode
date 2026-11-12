@@ -45,10 +45,13 @@ const unusedDisplay: SlashContext['display'] = {
   a11y: () => NO_A11Y,
   storedA11y: () => false,
   storeA11y: async () => undefined,
+  storeTui: async () => undefined,
   pick: async () => undefined,
 };
 
 const unusedExternalEditor: SlashContext['externalEditor'] = { open: () => Promise.reject(new Error('unused')) };
+
+const unusedClipboard: SlashContext['clipboard'] = { selected: () => undefined, lastAnswer: () => undefined };
 
 const unusedOverlays: SlashContext['overlays'] = { choose: async () => undefined, promptText: async () => undefined };
 const unusedKeyBindings: SlashContext['keyBindings'] = { store: fixedKeyBindings(DEFAULT_KEY_TABLE), choose: async () => undefined, captureKey: async () => undefined };
@@ -110,6 +113,7 @@ describe('built-in commands', () => {
       keyBindings: unusedKeyBindings,
       overlays: unusedOverlays,
       externalEditor: unusedExternalEditor,
+      clipboard: unusedClipboard,
       refusedWhileRunning: () => false,
       status: () => [],
       ...overrides,
@@ -118,18 +122,18 @@ describe('built-in commands', () => {
   };
   const run = (name: string, args: string, context: SlashContext) => createSlashRegistry(BUILTIN_SLASH_COMMANDS).find(name)?.run(args, context);
 
-  it('/mode without an argument shows the current mode and the choices, without auto', async () => {
-    const { context, infos } = contextOf({ mode: 'plan' });
+  it('/mode without an argument offers the selectable modes in a picker, without auto when no classifier is configured', async () => {
+    const asked: string[][] = [];
+    const { context } = contextOf({ mode: 'plan', overlays: { ...unusedOverlays, choose: async (request) => void asked.push(request.rows.map((row) => row.label.split('  ')[0] ?? '')) } });
     await run('mode', '', context);
-    expect(infos[0]).toContain('permission mode: plan');
-    expect(infos[0]).toContain('acceptEdits');
-    expect(infos[0]).not.toContain('auto');
+    expect(asked).toEqual([['manual', 'acceptEdits', 'plan']]);
   });
 
-  it('/mode lists auto when a classifier is configured', async () => {
-    const { context, infos } = contextOf({ autoAvailable: true });
+  it('/mode offers auto when a classifier is configured', async () => {
+    const asked: string[][] = [];
+    const { context } = contextOf({ autoAvailable: true, overlays: { ...unusedOverlays, choose: async (request) => void asked.push(request.rows.map((row) => row.label.split('  ')[0] ?? '')) } });
     await run('mode', '', context);
-    expect(infos[0]).toBe('permission mode: manual (available: manual, acceptEdits, plan, auto)');
+    expect(asked).toEqual([['manual', 'acceptEdits', 'plan', 'auto']]);
   });
 
   it('/mode sets a known mode and refuses an unknown one', async () => {
@@ -227,6 +231,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     keyBindings: unusedKeyBindings,
     overlays: unusedOverlays,
     externalEditor: unusedExternalEditor,
+    clipboard: unusedClipboard,
     refusedWhileRunning: () => false,
     status: () => [],
   };
@@ -329,7 +334,7 @@ describe('/memory', () => {
     const { context, infos } = contextWith();
     await memory?.run('show', context);
     await memory?.run('forget mem-1', context);
-    expect(infos).toEqual(Array(2).fill('usage: /memory [list] | /memory show <id> | /memory delete <id> (retires the memory; it stays in /memory history) | /memory add <text> | /memory history <id> | /memory review | /memory restore <id> | /memory promote <id> --skill <name>'));
+    expect(infos).toEqual(Array(2).fill('usage: /memory [list] | /memory open (Open AGENTS.md in $EDITOR) | /memory show <id> | /memory delete <id> (retires the memory; it stays in /memory history) | /memory add <text> | /memory history <id> | /memory review | /memory restore <id> | /memory promote <id> --skill <name>'));
   });
 });
 
