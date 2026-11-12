@@ -18,13 +18,13 @@ const scriptedObserver = (script: Scripted[]) => {
     mark: async () => {
       counts.mark += 1;
       next += 1;
-      return { id: `m${next}` } as unknown as WorkTreeMark;
+      return script[counts.changedSince] === undefined ? undefined : ({ id: `m${next}` } as unknown as WorkTreeMark);
     },
     changedSince: async () => {
-      const files = script[counts.changedSince];
+      const files = script[counts.changedSince] ?? [];
       counts.changedSince += 1;
       next += 1;
-      return files === undefined ? undefined : { files, mark: { id: `m${next}` } as unknown as WorkTreeMark };
+      return { files, mark: { id: `m${next}` } as unknown as WorkTreeMark, oversized: [] };
     },
   };
   return { observer, counts, trees: () => counts.mark + counts.changedSince };
@@ -103,7 +103,7 @@ describe('the executor observes the work tree around a non-read-only call that d
     expect(counts.changedSince).toBe(1);
   });
 
-  it('leaves files absent when the observer returns undefined', async () => {
+  it('leaves files absent when the folder is not observed', async () => {
     const { harness, counts } = setup([undefined]);
     const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'true' }, 'allow_once')]));
     expect(counts.mark).toBe(1);

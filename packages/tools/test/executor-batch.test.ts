@@ -81,6 +81,29 @@ describe('batch scheduling', () => {
     expect(reader.maxActive()).toBe(2);
   });
 
+  it.each([
+    [2, 2],
+    [0, 1],
+  ])('takes its default parallelism from the host: %i processing units run %i read-only calls at once', async (units, expected) => {
+    const harness = makeHarness({ executor: { hostParallelism: units } });
+    const reader = controllable('Read');
+    const calls = ['r1', 'r2', 'r3'].map((id) => call(id, 'Read'));
+    const pending = harness.executor.runBatch(await harness.input(await toolSetOf(reader.tool), calls));
+    await waitFor(() => reader.startedIds.length === expected, { description: 'the first calls start' });
+    await afterMicrotasks();
+    expect(reader.startedIds).toHaveLength(expected);
+    const finished = new Set<string>();
+    while (finished.size < calls.length) {
+      await waitFor(() => reader.startedIds.some((id) => !finished.has(id)), { description: 'a call starts' });
+      for (const id of reader.startedIds.filter((started) => !finished.has(started))) {
+        finished.add(id);
+        reader.finish(id);
+      }
+    }
+    await pending;
+    expect(reader.maxActive()).toBe(expected);
+  });
+
   it('runs write and exec calls one at a time in order', async () => {
     const harness = makeHarness();
     const writer = controllable('Write', 'write');

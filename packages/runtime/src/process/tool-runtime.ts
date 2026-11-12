@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import { credentialNamesOf, stopValuesOfSettings } from '@momonga/config';
 import {
@@ -146,6 +147,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   });
   const executor = createToolExecutor({
     jobs,
+    hostParallelism: availableParallelism(),
     outboundNetwork: async (signal) => (await options.network(signal)).outbound,
     fs: policyFilesystem,
     leaseMs: options.leaseMs,
@@ -327,7 +329,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       const key = `${trusted ? 'trusted' : 'untrusted'}\n${session.cwd}`;
       const known = observers.get(key);
       if (known !== undefined) return known;
-      const created = createGitWorkTreeObserver({ storeDir: path.join(paths.state, 'observer', sha256Hex(session.cwd)), workTree: session.cwd, trusted });
+      const created = createGitWorkTreeObserver({ storeRoot: path.join(paths.state, 'observer'), cwd: session.cwd, trusted });
       observers.set(key, created);
       return created;
     },
