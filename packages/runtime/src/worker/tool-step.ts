@@ -304,7 +304,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   const hasToolHooks = hookSettings.PreToolUse !== undefined || hookSettings.PostToolUse !== undefined;
   const toolHooks = hasToolHooks
     ? createToolHooks(
-        hookRunContextFor(ctx, session, hookSettings, policy, held.sandbox, (execution) => journal.append([{ type: 'hook.completed', ...execution }])),
+        hookRunContextFor(ctx, session, hookSettings, policy, held.sandbox, bash.drainIdleMs, (execution) => journal.append([{ type: 'hook.completed', ...execution }])),
       )
     : undefined;
   const classifier = session.permissionMode === 'auto' ? createAutoClassifier(ctx, options.tools.sessionState(session).cwd, step) : undefined;

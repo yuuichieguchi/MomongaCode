@@ -83,7 +83,7 @@ const harness = () => {
   const entry = async (): Promise<number> => 0;
   const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
   const sink = { write: (text: string) => void out.push(text) };
-  const ports = { version: '9.9.9', interrupt: new AbortController().signal, home: freshHome(), env: {}, cwd: '/c', terminal: {}, stdout: sink, stderr: sink } as unknown as CliPorts;
+  const ports = { version: '9.9.9', interrupt: new AbortController().signal, home: freshHome(), env: {}, cwd: '/c', terminal: {}, stdout: sink, stderr: sink, stdin: { isTerminal: true, bytes: async function* () {} } } as unknown as CliPorts;
   const program = buildProgram({
     ports,
     entries,

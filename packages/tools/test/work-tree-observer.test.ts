@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { createGitWorkTreeObserver, observedToolFiles } from '@momonga/tools';
+import { OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, createGitWorkTreeObserver, observedToolFiles, unprotectedLaunch } from '@momonga/tools';
 import type { ObservedFile, WorkTreeObserver } from '@momonga/tools';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -13,7 +13,7 @@ const SYSTEM_GIT = '/usr/bin/git';
 
 let root = '';
 let project = '';
-let storeDir = '';
+let storeRoot = '';
 let gitEnv: NodeJS.ProcessEnv = {};
 const savedHome = process.env['HOME'];
 
@@ -32,16 +32,16 @@ const put = (name: string, content: string): string => {
 
 const signal = (): AbortSignal => new AbortController().signal;
 
-const observerFor = (workTree: string, trusted = true): WorkTreeObserver => createGitWorkTreeObserver({ storeDir, workTree, trusted });
+const observerFor = (cwd: string, trusted = true): WorkTreeObserver => createGitWorkTreeObserver({ storeRoot, cwd, trusted }, unprotectedLaunch('the tests of the observer start git without the protection of the home'));
 
 const sorted = (files: readonly ObservedFile[]): ObservedFile[] => [...files].sort((a, b) => a.path.localeCompare(b.path) || a.change.localeCompare(b.change));
 
-const observe = async (observer: WorkTreeObserver, act: () => void): Promise<ObservedFile[] | undefined> => {
+const observe = async (observer: WorkTreeObserver, act: () => void): Promise<ObservedFile[]> => {
   const opening = await observer.mark(signal());
   expect(opening).toBeDefined();
   act();
   const closed = await observer.changedSince(opening!, signal());
-  return closed === undefined ? undefined : sorted(closed.files);
+  return sorted(closed.files);
 };
 
 beforeEach(() => {
@@ -62,7 +62,7 @@ beforeEach(() => {
     GIT_COMMITTER_EMAIL: 'test@example.invalid',
   };
   project = path.join(root, 'project');
-  storeDir = path.join(root, 'state', 'observer');
+  storeRoot = path.join(root, 'state', 'observer');
   fs.mkdirSync(project);
   gitOk(project, 'init', '-q');
   put('.gitignore', 'build/\n');
@@ -153,20 +153,20 @@ describe('the git work-tree observer on a real temporary repository', () => {
       put('src/a.ts', 'private\n');
     });
     expect(fs.readFileSync(index).equals(before)).toBe(true);
-    expect(fs.existsSync(storeDir)).toBe(true);
+    expect(fs.readdirSync(storeRoot)).toEqual([sha256Hex(project)]);
   });
 
   it('returns undefined in a folder that is not a git work tree', async () => {
     const plain = path.join(root, 'plain');
     fs.mkdirSync(plain);
     fs.writeFileSync(path.join(plain, 'x.txt'), 'x');
-    expect(await createGitWorkTreeObserver({ storeDir, workTree: plain, trusted: true }).mark(signal())).toBeUndefined();
+    expect(await observerFor(plain).mark(signal())).toBeUndefined();
   });
 
   it('returns undefined in an untrusted folder and runs no git there', async () => {
     gitOk(project, 'config', 'core.fsmonitor', path.join(root, 'never.sh'));
     expect(await observerFor(project, false).mark(signal())).toBeUndefined();
-    expect(fs.existsSync(storeDir)).toBe(false);
+    expect(fs.existsSync(storeRoot)).toBe(false);
   });
 
   it('lets two sessions on one project share one store without corruption', async () => {
@@ -185,5 +185,39 @@ describe('the git work-tree observer on a real temporary repository', () => {
     ]);
     const after = await first.changedSince(firstClosed!.mark, signal());
     expect(sorted(after!.files)).toEqual([{ path: path.join(project, 'src/new.ts'), change: 'write' }]);
+  });
+  it('observes the repository of a session started in a subfolder of it, in the store of the repository root', async () => {
+    const files = await observe(observerFor(path.join(project, 'src')), () => {
+      put('src/a.ts', 'below\n');
+      put('top.txt', 'top\n');
+    });
+    expect(files).toEqual([
+      { path: path.join(project, 'src/a.ts'), change: 'write' },
+      { path: path.join(project, 'top.txt'), change: 'write' },
+    ]);
+    expect(fs.readdirSync(storeRoot)).toEqual([sha256Hex(project)]);
+  });
+
+  it('does not copy a file the repository does not track that is over the size bound, and names it', async () => {
+    const observer = observerFor(project);
+    const opening = await observer.mark(signal());
+    put('big.bin', 'x'.repeat(OBSERVED_UNTRACKED_FILE_MAX_BYTES + 1));
+    put('src/a.ts', 'small\n');
+    const closed = await observer.changedSince(opening!, signal());
+    expect(sorted(closed.files)).toEqual([{ path: path.join(project, 'src/a.ts'), change: 'write' }]);
+    expect(closed.oversized).toEqual([path.join(project, 'big.bin')]);
+  });
+
+  it('a git command that fails is an error naming the reason, not an observation of nothing', async () => {
+    const observer = observerFor(project);
+    const opening = await observer.mark(signal());
+    const locked = put('src/locked.ts', 'locked\n');
+    fs.chmodSync(locked, 0o000);
+    try {
+      await expect(observer.changedSince(opening!, signal())).rejects.toThrow(WorkTreeObservationError);
+      await expect(observer.changedSince(opening!, signal())).rejects.toThrow(/git add exited with/);
+    } finally {
+      fs.chmodSync(locked, 0o644);
+    }
   });
 });

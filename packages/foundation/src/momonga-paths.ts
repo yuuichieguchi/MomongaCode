@@ -16,6 +16,7 @@ import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
 import { SocketPathUnmeasuredError, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, isPipePath, pipePathFor } from './socket-path.ts';
 import type { EndpointForm, EndpointScope } from './socket-path.ts';
 import { ownerOnlySecret } from './platform/owner-only-secret.ts';
+import { LAYOUT_ENV_NAMES } from './environment-variables.ts';
 import type { OwnerOnlySecretPorts } from './platform/owner-only-secret.ts';
 
 export interface MomongaPaths {
@@ -58,7 +59,6 @@ const pathFor = (platform: NodeJS.Platform): path.PlatformPath => (platform === 
 const absoluteOrUndefined = (candidate: string | undefined, flavor: path.PlatformPath): string | undefined =>
   candidate === undefined || !flavor.isAbsolute(candidate) ? undefined : candidate;
 
-const LAYOUT_ENV_NAMES = ['XDG_CACHE_HOME', 'XDG_DATA_HOME', 'LOCALAPPDATA', 'APPDATA'] as const;
 
 type LayoutEnvName = (typeof LAYOUT_ENV_NAMES)[number];
 

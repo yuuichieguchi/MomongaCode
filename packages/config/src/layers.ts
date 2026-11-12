@@ -72,6 +72,35 @@ const USER_ONLY_MODES = ['bypassPermissions', 'auto'] as const;
 
 const USER_ONLY_TUI_KEYS = ['screen', 'mouse', 'copyOnSelect'] as const;
 
+const USER_ONLY_KEYS = [
+  'sandbox',
+  'sandboxUnixSockets',
+  'telemetry',
+  'projectApprovals',
+  'projectChecks',
+  'retention',
+  'network',
+  'limits',
+  'ceilings',
+  'mandates',
+  'issues',
+  'forges',
+  'operations',
+  'pricing',
+  'autoUpdates',
+  'gateway',
+  'runtime',
+  'autoMode',
+] as const satisfies readonly (keyof Settings)[];
+
+export const USER_LAYER_ONLY_SETTINGS: readonly string[] = ['models', 'credentials', 'mcp', 'mcpServers', 'sandboxNetwork', ...USER_ONLY_KEYS];
+
+export const USER_LAYER_ONLY_PARTS: readonly string[] = ['tools.ripgrep', ...USER_ONLY_TUI_KEYS.map((key) => `tui.${key}`)];
+
+export const USER_LAYER_ONLY_MODES: readonly string[] = USER_ONLY_MODES;
+
+export const PROJECT_ENV_NAMES: readonly string[] = [...PROJECT_ENV_ALLOWLIST];
+
 const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {
   const restricted: Settings = { ...settings };
 
@@ -100,80 +129,15 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.mcpServers;
   }
 
-  if (settings.sandbox !== undefined) {
-    warnings.push(`${source}: sandbox is only honored in user settings; discarded`);
-    delete restricted.sandbox;
-  }
-
   if (settings.sandboxNetwork !== undefined) {
     warnings.push(`${source}: sandboxNetwork is only honored in user settings and on the command line; discarded`);
     delete restricted.sandboxNetwork;
   }
 
-  if (settings.sandboxUnixSockets !== undefined) {
-    warnings.push(`${source}: sandboxUnixSockets is only honored in user settings; discarded`);
-    delete restricted.sandboxUnixSockets;
-  }
-
-  if (settings.telemetry !== undefined) {
-    warnings.push(`${source}: telemetry is only honored in user settings; discarded`);
-    delete restricted.telemetry;
-  }
-
-  if (settings.projectApprovals !== undefined) {
-    warnings.push(`${source}: projectApprovals is only honored in user settings; discarded`);
-    delete restricted.projectApprovals;
-  }
-
-  if (settings.projectChecks !== undefined) {
-    warnings.push(`${source}: projectChecks is only honored in user settings; discarded`);
-    delete restricted.projectChecks;
-  }
-
-  if (settings.retention !== undefined) {
-    warnings.push(`${source}: retention is only honored in user settings; discarded`);
-    delete restricted.retention;
-  }
-
-  if (settings.network !== undefined) {
-    warnings.push(`${source}: network is only honored in user settings; discarded`);
-    delete restricted.network;
-  }
-
-  for (const key of ['limits', 'ceilings', 'mandates', 'issues'] as const) {
+  for (const key of USER_ONLY_KEYS) {
     if (settings[key] === undefined) continue;
     warnings.push(`${source}: ${key} is only honored in user settings; discarded`);
     delete restricted[key];
-  }
-
-  if (settings.forges !== undefined) {
-    warnings.push(`${source}: forges is only honored in user settings; discarded`);
-    delete restricted.forges;
-  }
-
-  if (settings.operations !== undefined) {
-    warnings.push(`${source}: operations is only honored in user settings; discarded`);
-    delete restricted.operations;
-  }
-
-  if (settings.pricing !== undefined) {
-    warnings.push(`${source}: pricing is only honored in user settings; discarded`);
-    delete restricted.pricing;
-  }
-
-  if (settings.autoUpdates !== undefined) {
-    warnings.push(`${source}: autoUpdates is only honored in user settings; discarded`);
-    delete restricted.autoUpdates;
-  }
-
-  if (settings.gateway !== undefined) {
-    warnings.push(`${source}: gateway is only honored in user settings; discarded`);
-    delete restricted.gateway;
-  }
-
-  if (settings.runtime !== undefined) {
-    warnings.push(`${source}: runtime is only honored in user settings; discarded`);
-    delete restricted.runtime;
   }
 
   if (settings.tools?.ripgrep !== undefined) {
@@ -187,11 +151,6 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     warnings.push(`${source}: permissions.defaultMode ${mode} is only honored in user settings and on the command line; discarded`);
     const { defaultMode: _discarded, ...remaining } = settings.permissions;
     restricted.permissions = remaining;
-  }
-
-  if (settings.autoMode !== undefined) {
-    warnings.push(`${source}: autoMode is only honored in user settings; discarded`);
-    delete restricted.autoMode;
   }
 
   if (settings.tui !== undefined) {

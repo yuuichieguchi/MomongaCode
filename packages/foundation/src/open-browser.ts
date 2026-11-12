@@ -1,3 +1,4 @@
+import { BROWSER_ENV } from './environment-variables.ts';
 import { findProgramOnPath, findProgramOnPathSync } from './program-search.ts';
 import type { ProgramSearchFiles, ProgramSearchFilesSync, SearchEnv } from './program-search.ts';
 
@@ -18,7 +19,7 @@ const OPENED_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:']);
 const ONLY_WEB_ADDRESSES = 'only http and https addresses can be opened';
 
 const browserOf = (env: SearchEnv): string | undefined => {
-  const browser = env['BROWSER'];
+  const browser = env[BROWSER_ENV];
   return browser === undefined || browser === '' ? undefined : browser;
 };
 

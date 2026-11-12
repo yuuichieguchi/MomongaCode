@@ -1,7 +1,7 @@
 export { EarlierAttemptNotStoppedError, sweepCallLocks } from './call-lock.ts';
 export type { CallLock } from './call-lock.ts';
 export { RetiringYield } from './ports.ts';
-export { ReconcileUndecidedError, createToolExecutor, heldCallWaitMs, subjectDigestOf, approvalDescriptionOf } from './executor.ts';
+export { IDEMPOTENCY_TTL_MS, ReconcileUndecidedError, createToolExecutor, heldCallWaitMs, subjectDigestOf, approvalDescriptionOf } from './executor.ts';
 export type { ApprovalDescription } from './executor.ts';
 export { callStopOf } from './call-stop.ts';
 export type { CallStop, CallStopTerms } from './call-stop.ts';
@@ -24,7 +24,7 @@ export type {
   ToolExecutorOptions,
   WaitingOutcome,
 } from './executor.ts';
-export type { AutoClassifier, AutoClassifierRequest, ChildPorts, ChildSpawnOptions, LineFilter, PortChild, ToolTimers } from './ports.ts';
+export type { AutoClassifier, AutoClassifierRequest, ChildLaunch, ChildPorts, ChildSpawnOptions, LineFilter, PortChild, ToolTimers } from './ports.ts';
 export { createLineFilter } from './builtins/jobs.ts';
 export { createToolHooks, runSessionStart, runStop, runUserPromptSubmit, hasStopHooks, resolvePreToolUse } from './hooks/events.ts';
 export type { PostToolHookResult, PreToolHookVerdict, PromptHookResult, SessionStartHookResult, StopHookResult, ToolHookCall, ToolHooks } from './hooks/events.ts';
@@ -49,8 +49,8 @@ export type {
   ToolIdempotencyLookup,
   ToolIdempotencyRecord,
 } from './ports.ts';
-export { OBSERVED_FILE_HASH_PAGE_BYTES, observedToolFiles, workTreeObserverOn } from './work-tree-observer.ts';
-export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, WorkTreeMark, WorkTreeObserver, WorkTreeObserverPorts } from './work-tree-observer.ts';
+export { OBSERVED_FILE_HASH_PAGE_BYTES, OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, observedToolFiles, observerStoreOf, pruneObserverStores, workTreeObserverOn } from './work-tree-observer.ts';
+export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, ObserverStorePrune, WorkTreeMark, WorkTreeObserver, WorkTreeObserverPorts } from './work-tree-observer.ts';
 export { createToolRegistry, extendToolSet } from './registry.ts';
 export { pageToFit } from './paging.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
@@ -101,10 +101,12 @@ export type { ExecutableCheck, ShellHost, ShellPorts, ShellPortsNow } from './bu
 export { createGlobExpander, policyFilesystemOn } from './policy-filesystem.ts';
 export {
   createGitWorkTreeObserver,
+  pruneGitObserverStores,
   createHostRipgrepLocator,
   createPolicyFilesystem,
   listDirectoryEntries,
   listFileCandidates,
+  unprotectedLaunch,
   nodeChildPorts,
   nodeShellHost,
   nodeShellPorts,
@@ -178,6 +180,7 @@ export { createForgeAccess } from './forge/instances.ts';
 export { ISSUE_URL_FORM, hasFilter, issueLocationOf, listMatchingIssues, parseIssueUrl, readIssue } from './forge/issues.ts';
 export type { IssueAsk, IssueFilter, IssueLocation } from './forge/issues.ts';
 export type { ForgeAccess, ForgeAccessOptions, ForgeCredentialReference, ForgeInstance, ForgeRequest } from './forge/instances.ts';
+export { MAX_FORGE_RESPONSE_BYTES } from './forge/http.ts';
 export type { ForgeFetch } from './forge/http.ts';
 export { EMPTY_FOOTPRINT, blockedByHeldText, blockerOf, footprintOf, footprintsConflict } from './footprint.ts';
 export type { Footprint, HeldFootprint } from './footprint.ts';

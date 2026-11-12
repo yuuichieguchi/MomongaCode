@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { ensureMomongaDirs, sidecarOf, systemRandom, nodeFileSystem, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { ensureMomongaDirs, sidecarOf, systemRandom, nodeFileSystem, nodeFileSystemSync, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testKernelLock } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
@@ -19,7 +19,7 @@ type Seeded = { idle: string; recent: string; active: string; activeSymlink: str
 const seedSessions = async (temp: RunHome): Promise<Seeded> => {
   await ensureMomongaDirs(temp.paths);
   const clock = createFakeClock(START_MS);
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
   const session = () => store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'manual', model: 'default' }).id;
   try {
     const idle = session();

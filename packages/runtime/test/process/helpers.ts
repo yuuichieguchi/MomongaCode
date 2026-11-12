@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
-import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, momongaPaths, nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, momongaPaths, nodeFileSystem, nodeFileSystemSync, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { JsonLogger, LogFields, MomongaPaths, Timing, RolePort, SessionScratch } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
@@ -109,7 +109,7 @@ export type StoreFixture = { store: RuntimeStore; notifier: RunNotifier; clock: 
 
 export const openStore = (temp: TempHome, clock: FakeClock = createFakeClock(START_MS)): StoreFixture => {
   const notifier = runtime.createRunNotifier();
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: temp.dbPath,
     home: temp.home,
     clock,
@@ -269,7 +269,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const reapTiming = recordingReapTiming(fixture.clock, fixture.timers);
   const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: temp.home, platform: process.platform, cache, store: fixture.store });
   fs.mkdirSync(temp.paths.jobs, { recursive: true, mode: 0o700 });
-  const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH,
+  const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: runtime.unprotectedLaunch('the tests of the runtime start git without the protection of the home'), hostParallelism: 8,
     kernelLock: testKernelLock(),
     lockCapability: testLocks().capability,
     version: FIXTURE_RUNTIME_VERSION,

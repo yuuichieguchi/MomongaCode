@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { EXIT_FAILURE } from '@momonga/foundation';
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
@@ -12,8 +13,7 @@ describe('the first run with nothing configured', () => {
 
     const result = await runCli(home, ['-p', 'hello']);
 
-    expect(result.code).not.toBe(0);
-    expect(result.code).not.toBeNull();
+    expect(result.code).toBe(EXIT_FAILURE);
     expect(result.stdout).toBe('');
     const lines = result.stderr.split('\n');
     expect(lines[0]).toBe('momonga: no model target is set up');
@@ -29,8 +29,7 @@ describe('the first run with nothing configured', () => {
 
     const result = await runCli(home, ['-p', 'hello', '--output-format', 'json']);
 
-    expect(result.code).not.toBe(0);
-    expect(result.code).not.toBeNull();
+    expect(result.code).toBe(EXIT_FAILURE);
     const reply = JSON.parse(result.stdout) as { error?: { code?: string; message?: string } };
     expect(reply.error?.code).toBe('target_not_ready');
     expect(reply.error?.message).toContain('no model target is set up');

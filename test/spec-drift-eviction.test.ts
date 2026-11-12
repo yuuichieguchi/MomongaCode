@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { cfgNames } from './formal/cfg-names.ts';
+import type { CfgNames } from './formal/cfg-names.ts';
 
 const tlaDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
 const spec = fs.readFileSync(path.join(tlaDir, 'RequestPrefix.tla'), 'utf8');
-const mainConfig = fs.readFileSync(path.join(tlaDir, 'RequestPrefix.cfg'), 'utf8');
+const mainConfig = cfgNames(tlaDir, 'RequestPrefix');
 
 const definitionOf = (name: string): string => {
   const lines = spec.split('\n');
@@ -15,21 +17,7 @@ const definitionOf = (name: string): string => {
   return [lines[start], ...(end < 0 ? rest : rest.slice(0, end))].join('\n');
 };
 
-const checkedIn = (config: string): string[] => {
-  const names: string[] = [];
-  let section: string | undefined;
-  for (const line of config.split('\n')) {
-    const header = /^(INVARIANTS?|PROPERTIES|PROPERTY)\b/.exec(line);
-    if (header !== null) {
-      section = header[1];
-      continue;
-    }
-    if (/^\S/.test(line)) section = undefined;
-    const name = line.trim();
-    if (section !== undefined && name !== '') names.push(name);
-  }
-  return names;
-};
+const checkedIn = (config: CfgNames): string[] => [...config.invariants, ...config.properties];
 
 describe('RequestPrefix.tla states the eviction and reference rules the code implements (review C-4, C-6)', () => {
   it('never makes a reference rendering an eviction candidate (build-context.ts evictOldest skips state.reference)', () => {
@@ -64,14 +52,14 @@ describe('RequestPrefix.tla states the eviction and reference rules the code imp
   });
 
   it('checks the group rule in an every-run configuration, and an evidence configuration that evicts protected copies violates NoProtectedEvicted', () => {
-    const groups = fs.readFileSync(path.join(tlaDir, 'RequestPrefix.groups.cfg'), 'utf8');
-    const evidence = fs.readFileSync(path.join(tlaDir, 'RequestPrefix.protectedCopies.cfg'), 'utf8');
-    expect(groups).toMatch(/EvictProtectedCopies = FALSE/);
-    expect(groups).toMatch(/RefModel = TRUE/);
+    const groups = cfgNames(tlaDir, 'RequestPrefix.groups');
+    const evidence = cfgNames(tlaDir, 'RequestPrefix.protectedCopies');
+    expect(groups.constants['EvictProtectedCopies']).toBe('FALSE');
+    expect(groups.constants['RefModel']).toBe('TRUE');
     expect(checkedIn(groups)).toContain('NoProtectedEvicted');
-    expect(evidence).toMatch(/EvictProtectedCopies = TRUE/);
+    expect(evidence.constants['EvictProtectedCopies']).toBe('TRUE');
     expect(checkedIn(evidence)).toContain('NoProtectedEvicted');
-    expect(mainConfig).toMatch(/EvictProtectedCopies = FALSE/);
+    expect(mainConfig.constants['EvictProtectedCopies']).toBe('FALSE');
   });
 
   it('makes the next full copy the referent when a referent stops being full, instead of sending every referrer to full', () => {

@@ -107,7 +107,8 @@ describe('momonga models, cost and memory', () => {
     const text = await runCli(home, ['cost', '--all']);
     expect(text.code).toBe(0);
     expect(text.stdout).toContain('cost report');
-    expect(text.stdout).toContain(`total: 2 call(s), ${CACHE_READ_TEXT.inputClause({ calls: 2, notReported: 2, inputTokens, cachedInputTokens: null })} + 10 output tokens, not complete: ${CACHE_READS_NOT_REPORTED} in 2 call(s)\n`);
+    expect(text.stdout).toContain(`total: 2 call(s), ${CACHE_READ_TEXT.inputClause({ calls: 2, notReported: 0, inputTokens, cachedInputTokens: 0 })} + 10 output tokens`);
+    expect(text.stdout).not.toContain(CACHE_READS_NOT_REPORTED);
     const mixed = await runCli(home, ['cost', secondRun.run_id, '--all']);
     expect(mixed.code).toBe(EXIT_USAGE);
     expect(mixed.stderr).toContain('choose one of a run id, --session and --all');

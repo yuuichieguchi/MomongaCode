@@ -1,19 +1,8 @@
 import { isIP } from 'node:net';
 import { isAddressInRange } from './global-address.ts';
 import { claimsLoopback, normalizedHost } from './loopback.ts';
+import { NETWORK_ENV_NAMES } from './environment-variables.ts';
 
-export const NETWORK_ENV_NAMES = [
-  'https_proxy',
-  'HTTPS_PROXY',
-  'http_proxy',
-  'HTTP_PROXY',
-  'all_proxy',
-  'ALL_PROXY',
-  'no_proxy',
-  'NO_PROXY',
-  'SSL_CERT_FILE',
-  'NODE_EXTRA_CA_CERTS',
-] as const;
 
 export type NetworkEnvName = (typeof NETWORK_ENV_NAMES)[number];
 

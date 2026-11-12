@@ -26,7 +26,7 @@ import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { holdSandbox } from '../worker/held-sandbox.ts';
 import { createBuiltinTools, offeredBashOf, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { BuiltinToolOffer, BundledRipgrepResolver, ForgeAccess, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
+import type { ChildLaunch, BuiltinToolOffer, BundledRipgrepResolver, ForgeAccess, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolEnv, ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
@@ -48,10 +48,14 @@ import type { SettingsComposition } from './settings-port.ts';
 import { createPolicyFor, createRecoveryContextFor } from './tool-policy.ts';
 import type { EnforcedPolicyFor } from './tool-policy.ts';
 
+export const observerStoreRoot = (paths: { state: string }): string => path.join(paths.state, 'observer');
+
 export const sandboxNetworkOf = (session: Pick<Session, 'sandboxNetwork'>, setting: SandboxNetworkSetting): SandboxNetworkSetting => session.sandboxNetwork ?? setting;
 
 export type ToolRuntimeOptions = {
   mcpLaunch: StdioLaunch;
+  childLaunch: ChildLaunch;
+  hostParallelism: number;
   lockCapability: LockCapabilityProbe;
   kernelLock: KernelLockMechanism;
   paths: MomongaPaths;
@@ -146,6 +150,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   });
   const executor = createToolExecutor({
     jobs,
+    hostParallelism: options.hostParallelism,
     outboundNetwork: async (signal) => (await options.network(signal)).outbound,
     fs: policyFilesystem,
     leaseMs: options.leaseMs,
@@ -200,6 +205,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   };
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
   const operationTools = createOperationToolSource({
+    drainIdleMs: () => settings.takeUserSnapshot().settings.tools.bash.drainIdleMs,
     paths,
     home,
     sandboxes,
@@ -327,7 +333,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       const key = `${trusted ? 'trusted' : 'untrusted'}\n${session.cwd}`;
       const known = observers.get(key);
       if (known !== undefined) return known;
-      const created = createGitWorkTreeObserver({ storeDir: path.join(paths.state, 'observer', sha256Hex(session.cwd)), workTree: session.cwd, trusted });
+      const created = createGitWorkTreeObserver({ storeRoot: observerStoreRoot(paths), cwd: session.cwd, trusted }, options.childLaunch);
       observers.set(key, created);
       return created;
     },

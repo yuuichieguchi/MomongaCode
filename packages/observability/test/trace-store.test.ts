@@ -23,7 +23,7 @@ describe('openTraceStore', () => {
 
   it('refuses a directory that is not 0700', () => {
     const dir = makeDir(0o755);
-    expect(() => openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(dir, 'traces.db'), clock: createFakeClock(START_MS) })).toThrow(/0700/);
+    expect(() => openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(dir, 'traces.db') })).toThrow(/0700/);
   });
 
   it('indexes spans by run_id', () => {
@@ -53,7 +53,7 @@ describe('openTraceStore', () => {
     await h.telemetry.forceFlush();
     h.store.close();
     expect(() => h.store.close()).not.toThrow();
-    const reopened = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: h.file, clock: h.clock });
+    const reopened = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: h.file });
     try {
       expect(reopened.spansForRun(RUN_ID)).toHaveLength(1);
     } finally {
@@ -201,24 +201,4 @@ describe('body capture', () => {
     ]);
   });
 
-  it('purgeBodies removes exactly the bodies whose retention has elapsed', async () => {
-    const h = harness({ content: { retentionMs: 1000 } });
-    const first = chatSpanOf(h);
-    first.setAttribute(CONTENT.ATTR_GEN_AI_INPUT_MESSAGES, SENTINEL);
-    first.end(h.clock.now());
-    h.clock.advance(10);
-    const second = chatSpanOf(h);
-    second.setAttribute(CONTENT.ATTR_GEN_AI_OUTPUT_MESSAGES, 'later');
-    second.end(h.clock.now());
-    await h.telemetry.forceFlush();
-    expect(h.store.purgeBodies(START_MS + 999)).toBe(0);
-    expect(h.store.purgeBodies(START_MS + 1000)).toBe(1);
-    expect(bodiesOfSpan(h.store, first.spanContext().spanId)).toEqual([]);
-    expect(bodiesOfSpan(h.store, second.spanContext().spanId).map((body) => body.content)).toEqual(['later']);
-    expect(h.store.purgeBodies(START_MS + 1010)).toBe(1);
-    expect(bodiesOfSpan(h.store, second.spanContext().spanId)).toEqual([]);
-    await h.telemetry.shutdown();
-    h.store.close();
-    expect(dumpAllRows(h.file)).not.toContain(SENTINEL);
-  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { launchRuntime, readDb, startStack } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -20,7 +20,7 @@ describe('health through startRuntimeProcess (system timers, in-process gateway)
     const hold = stack.hold();
     const session = await launched.createSession();
     await launched.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     const closing = launched.handle.close();
     let health = await launched.http('GET', '/v1/health');
     for (let attempt = 0; attempt < 50 && health.json?.state !== 'draining'; attempt += 1) health = await launched.http('GET', '/v1/health');
@@ -41,7 +41,7 @@ describe('health through startRuntimeProcess (system timers, in-process gateway)
     expect((await launched.http('GET', '/v1/health')).json.pid).toBe(ready.pid);
     const session = await launched.createSession();
     const run = await launched.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     const owner = readDb<{ lease_owner: string }>(stack.temp.paths.databases.runtime, 'SELECT lease_owner FROM runs WHERE id = ?', run.id)[0]?.lease_owner;
     expect(owner?.split('-')[1]).toBe(String(ready.pid));
     hold.release();

@@ -1,5 +1,6 @@
 import { GENERATION_STARTING_CODE, MOVED_CODE } from '@momonga/foundation';
-import { TARGET_NOT_READY, TARGET_PROBE_FAILED, messageOf } from '@momonga/protocol';
+import { TARGET_NOT_READY, TARGET_PROBE_FAILED, measuringLineOf, measuringWireOf, messageOf } from '@momonga/protocol';
+import type { Measuring, MeasuringWire } from '@momonga/protocol';
 import { MODEL_NOT_FOUND_CODE } from '../gateway-client.ts';
 
 export type ApiErrorInit = {
@@ -9,6 +10,7 @@ export type ApiErrorInit = {
   message: string;
   param?: string;
   headers?: Record<string, string>;
+  measuring?: MeasuringWire;
 };
 
 export class ApiError extends Error {
@@ -17,6 +19,7 @@ export class ApiError extends Error {
   readonly code: string;
   readonly param: string | undefined;
   readonly headers: Record<string, string>;
+  readonly measuring: MeasuringWire | undefined;
 
   constructor(init: ApiErrorInit) {
     super(init.message);
@@ -26,6 +29,7 @@ export class ApiError extends Error {
     this.code = init.code;
     this.param = init.param;
     this.headers = init.headers ?? {};
+    this.measuring = init.measuring;
   }
 }
 
@@ -59,13 +63,10 @@ export const conflict = (
 
 export const targetNotReady = (message: string): ApiError => new ApiError({ status: 409, type: 'conflict', code: TARGET_NOT_READY, message });
 
-const MS_PER_SECOND = 1000;
+export const measuringNotReady = (measuring: Measuring): ApiError =>
+  new ApiError({ status: 409, type: 'conflict', code: TARGET_NOT_READY, message: measuringLineOf(measuring), measuring: measuringWireOf(measuring) });
 
-export const targetProbeFailed = (message: string, retryAfterMs: number | undefined): ApiError => {
-  if (retryAfterMs === undefined) return new ApiError({ status: 503, type: 'server_error', code: TARGET_PROBE_FAILED, message });
-  const seconds = Math.ceil(retryAfterMs / MS_PER_SECOND);
-  return new ApiError({ status: 503, type: 'server_error', code: TARGET_PROBE_FAILED, message: `${message}; it is measured again in ${seconds} seconds`, headers: { 'retry-after': String(seconds) } });
-};
+export const targetProbeFailed = (message: string): ApiError => new ApiError({ status: 503, type: 'server_error', code: TARGET_PROBE_FAILED, message });
 
 export const imageTooLarge = (byteLength: number, maxBytes: number): ApiError =>
   new ApiError({ status: 413, type: 'invalid_request', code: 'body_too_large', message: `an image of the prompt holds ${byteLength} bytes, more than the ${maxBytes} bytes a pasted image may hold`, param: 'images' });
@@ -127,7 +128,13 @@ export const configError = (message: string, param?: string): ApiError =>
 export const errorResponse = (error: ApiError): Response =>
   new Response(
     JSON.stringify({
-      error: { type: error.type, code: error.code, message: error.message, ...(error.param === undefined ? {} : { param: error.param }) },
+      error: {
+        type: error.type,
+        code: error.code,
+        message: error.message,
+        ...(error.param === undefined ? {} : { param: error.param }),
+        ...(error.measuring === undefined ? {} : { measuring: error.measuring }),
+      },
     }),
     { status: error.status, headers: { 'content-type': 'application/json', ...error.headers } },
   );

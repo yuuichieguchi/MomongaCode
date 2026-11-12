@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { canonicalJson, createUninspectableRegistry, nodeFileSystem, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { canonicalJson, createUninspectableRegistry, nodeFileSystem, nodeFileSystemSync, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
@@ -80,7 +80,7 @@ const setup = async (probes: Parameters<typeof createBackgroundJobs>[0]['probes'
   fs.mkdirSync(markerDir);
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
-  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
   const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
   const created = await store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');
@@ -447,6 +447,40 @@ describe('a job that is still starting is owned by its starter', () => {
     expect(t.reaped).toEqual([]);
     expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running', pgid: 4000 });
     expect(t.jobs.liveCount()).toBe(1);
+    t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
+    await t.settled(jobId);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited', exitCode: 0 });
+  });
+
+  it('a reconcile that runs after the spawn and before the process is attached and registered leaves the job alone, and the job ends with its own result', async () => {
+    const nodeMarkerFiles = createNodeJobMarkerFiles();
+    const hook: { afterSpawn: () => Promise<void> } = { afterSpawn: async () => undefined };
+    const t = await setup(
+      {},
+      {
+        markerFiles: {
+          create: async <T>(marker: string, use: Parameters<typeof nodeMarkerFiles.create<T>>[1]): Promise<T> => {
+            const spawned = await nodeMarkerFiles.create(marker, use);
+            await hook.afterSpawn();
+            return spawned;
+          },
+          remove: nodeMarkerFiles.remove,
+        },
+      },
+    );
+    const seenAfterSpawn: { spawned: number; status: string | undefined; live: number }[] = [];
+    hook.afterSpawn = async () => {
+      await t.jobs.reconcileOrphans();
+      seenAfterSpawn.push({ spawned: t.spawned.length, status: t.store.jobs.listRunning()[0]?.status, live: t.jobs.liveCount() });
+    };
+
+    const { jobId } = await t.start('call-1');
+
+    expect(seenAfterSpawn).toEqual([{ spawned: 1, status: 'running', live: 0 }]);
+    expect(t.reaped).toEqual([]);
+    expect(t.reconciled).toEqual([]);
+    expect(t.reports).toEqual([]);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'running', pgid: 4000 });
     t.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await t.settled(jobId);
     expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'exited', exitCode: 0 });

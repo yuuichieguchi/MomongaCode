@@ -56,6 +56,7 @@ const stage = async () => {
     shellHost: nodeShellHost(),
     outboundNetwork: unconfiguredNetworkOf,
     markerDir: world.base,
+    drainIdleMs: () => 1000,
     credentialRoot: world.base,
   });
   return { world, layout, sandbox, spawns, remote, runArgv };
@@ -83,7 +84,7 @@ describe('the permission of GitPush to a remote reached over the network under t
   const push = async (sandboxNetwork: 'ask' | 'deny'): Promise<CallOutcome | undefined> => {
     const { world, layout, sandbox } = await stage();
     const tools = createOperationTools({
-      runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir: sessionTmpDirOf(layout) }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir: world.base, credentialRoot: world.base }),
+      runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir: sessionTmpDirOf(layout) }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir: world.base, drainIdleMs: () => 1000, credentialRoot: world.base }),
       forge: NO_FORGE,
       settings: {},
     });

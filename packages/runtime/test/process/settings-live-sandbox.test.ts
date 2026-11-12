@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, decodeOtlpSpans, startOtlpCollector, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { onCleanup, writeInvalidUserSettings } from './helpers.ts';
 import { finishApprovingPrompts, launchRuntime, prepareStack, scriptedToolCall, startGateway, startStack, waitForCondition, waitForStatus } from './run-helpers.ts';
 
@@ -88,7 +88,7 @@ describe('S3 runtime sandbox: each tool batch pins the sandbox it started with (
     const hold = stack.hold();
     const session = await launched.createSession();
     const running = await launched.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     stack.settings({ sandbox: OTHER_KIND });
     const refused = await launched.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'hello' } });
     const settingsFile = path.join(stack.temp.home, '.momonga', 'settings.json');
@@ -142,7 +142,7 @@ describe('S7 no rollback after apply: a tightened sandbox survives a broken file
     const hold = stack.hold();
     const session = await launched.createSession(BYPASS);
     const run = await launched.createRun(session.id, { input: 'touch outside' });
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     writeInvalidUserSettings(stack.temp.home);
     hold.release();
     expect(await finishApprovingPrompts(launched, stack.temp, run.id)).toBe('COMPLETED');
@@ -161,7 +161,7 @@ describe('S2 runtime telemetry: the tracer lease is held for the agent span of a
     const session = await launched.createSession();
     const hold = stack.hold();
     const running = await launched.createRun(session.id, { input: 'first' });
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     stack.settings({ telemetry: { otlp: { endpoint: after.endpoint } } });
     hold.release();
     expect(await waitForStatus(stack.temp, running.id, FINAL)).toBe('COMPLETED');

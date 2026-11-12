@@ -73,7 +73,7 @@ describe('e: SSE reconnect', () => {
       const { run } = await runtime.createRun(session.id, 'Plan the work');
       const live = runtime.events(run.id);
       const requested = await live.until((frame) => frame.data.type === 'model.requested', E2E_RUN_COMPLETED_BOUND_MS);
-      await hold.waitForRequest();
+      await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
       await live.close();
       const k = requested.id - 2;
       expect(k).toBeGreaterThanOrEqual(1);

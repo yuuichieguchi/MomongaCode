@@ -57,6 +57,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Stall' } });
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const executor = createToolExecutor({
+    hostParallelism: 8,
     layout: momongaLayout(env.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),

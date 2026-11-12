@@ -1,9 +1,9 @@
 import { Worker } from 'node:worker_threads';
-import type { CommitRequest, CompactionCommit, RecordedSend, SendRecord, StoreDatabase, StoredCompaction, StoredIdempotency } from './store-database.ts';
+import type { CommitRequest, CompactionCommit, RecordedSend, RetainedPurge, SendRecord, StoreDatabase, StoredCompaction, StoredIdempotency } from './store-database.ts';
 import type { StoreOperation, StoreReply, StoreRequest } from './store-worker.ts';
 
 export { MIGRATIONS } from './store-database.ts';
-export type { CommitRequest, CompactionCommit, RecordedSend, SendRecord, StoredCompaction, StoredIdempotency } from './store-database.ts';
+export type { CommitRequest, CompactionCommit, RecordedSend, RetainedPurge, SendRecord, StoredCompaction, StoredIdempotency } from './store-database.ts';
 
 export const STORE_QUEUE_LENGTH = 256;
 
@@ -22,6 +22,7 @@ export type GatewayStore = {
   getCompaction(key: string, signal: AbortSignal): Promise<StoredCompaction | undefined>;
   deleteCompaction(key: string, signal: AbortSignal): Promise<void>;
   commitCompaction(commit: CompactionCommit, signal: AbortSignal): Promise<void>;
+  purgeRetained(purge: RetainedPurge, signal: AbortSignal): Promise<number>;
   close(forced: AbortSignal): Promise<void>;
 };
 
@@ -134,6 +135,7 @@ export const openGatewayStore = async ({ dbPath, code, signal }: GatewayStoreOpt
     getCompaction: operation('getCompaction'),
     deleteCompaction: operation('deleteCompaction'),
     commitCompaction: operation('commitCompaction'),
+    purgeRetained: operation('purgeRetained'),
     close: (forced) => {
       closing ??= (async () => {
         try {

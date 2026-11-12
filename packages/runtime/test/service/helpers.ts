@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, nodeFileSystem, nodeFileSystemSync, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -20,7 +20,7 @@ import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, ContributionPreparer, RuntimeStore, Session } from '@momonga/store';
 import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, pollUntil, removeTempDir, testProbes, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
-import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
+import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost, unprotectedLaunch } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AnyTool, ToolSessionState } from '@momonga/tools';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
@@ -48,7 +48,6 @@ export const DEFAULT_TIMEOUT_MS = 6 * HOUR_MS;
 export const DEFAULT_TTL_MS = 30 * 60 * 1000;
 export const FORMER_APPROVAL_LIMIT_MS = DEFAULT_TTL_MS;
 export const DEFAULT_LIMITS = { maxSteps: 50, maxTotalTokens: 1_000_000, approvalTtlMs: DEFAULT_TTL_MS, loopThreshold: 3 };
-export const SOCKET_PATH_LIMIT = 104;
 export const SERVICE_PID = 424_242;
 export const STARTED_AT = new Date(START_MS).toISOString();
 
@@ -86,7 +85,6 @@ export const makeLayout = (): Layout => {
   const project = path.join(root, 'p');
   fs.mkdirSync(project);
   const socketPath = path.join(runDir, 'r.sock');
-  if (Buffer.byteLength(socketPath) >= SOCKET_PATH_LIMIT - 4) throw new Error(`test socket path is too long: ${socketPath}`);
   return { root, home, momonga, runDir, project, projectReal: fs.realpathSync(project), socketPath, dbPath: path.join(root, 's.db') };
 };
 
@@ -521,7 +519,7 @@ export const openStore = (
   clock: FakeClock,
   extra: { notifier?: Notifier; maxAttempts?: number; preparer?: (dbPath: string, store: () => RuntimeStore) => ContributionPreparer; onDecode?: (rows: number, bytes: number) => void } = {},
 ): RuntimeStore => {
-  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home: path.dirname(dbPath),
     clock,
@@ -806,6 +804,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executor = createToolExecutor({
+    hostParallelism: 8,
     layout: momongaLayout(env.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
@@ -837,7 +836,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   };
   const tools: ToolRuntimePort = {
     inspector: testProcessInspector(),
-    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(env.layout.root, 'observer'), workTree: target.cwd, trusted: false }),
+    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeRoot: path.join(env.layout.root, 'observer'), cwd: target.cwd, trusted: false }, unprotectedLaunch('the tests of the runtime start git without the protection of the home')),
     envFor: (target: Session) => ({ ...target.env }),
     toolSet: async (_runId: string, toolSetOptions: { additionalTools?: readonly AnyTool[]; only?: readonly string[] }) =>
       snapshotToolbox(toolSetOptions.additionalTools, toolSetOptions.only),

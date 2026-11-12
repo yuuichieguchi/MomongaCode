@@ -213,7 +213,7 @@ describe('agents: subagents', () => {
     try {
       const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Review my change');
-      await childRequest.waitForRequest();
+      await childRequest.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
       const child = await until(() => childRunsOf(home, run.id)[0], { deadlineMs: E2E_MARGIN_MS, description: 'a child run' });
 
       const before = await stack.client.health();

@@ -1248,6 +1248,22 @@ const INHERITED_COMPACTED_RECORDED = `
 SELECT 'event type: context.inherited_compacted';
 `;
 
+const RETENTION_SWEEPS = `
+CREATE TABLE retention_sweeps (
+  session_id TEXT PRIMARY KEY,
+  run_ids_json TEXT NOT NULL,
+  cutoff_ms INTEGER NOT NULL,
+  started_at INTEGER NOT NULL
+) WITHOUT ROWID;
+DROP TRIGGER events_reject_delete;
+CREATE TRIGGER events_reject_delete BEFORE DELETE ON events
+WHEN NOT EXISTS (SELECT 1 FROM retention_sweeps WHERE session_id = OLD.session_id) BEGIN
+  SELECT RAISE(ABORT, 'events are append-only: DELETE is not allowed');
+END;
+DROP TRIGGER search_docs_session_delete;
+DROP TRIGGER fidelity_verdicts_session_delete;
+`;
+
 const STORED_SETS_RECORDED = `
 SELECT 'event type: user_shell; inbox delivery: steer, queue; inbox state: pending, delivered, withdrawn';
 `;
@@ -1521,5 +1537,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 49,
     name: 'record that this build writes the run event type context.inherited_compacted, which a run writes once before its first model request when it inherits the summary of a compaction it did not do itself, so that a build without this migration reads it with tolerance: no table changes',
     sql: INHERITED_COMPACTED_RECORDED,
+  },
+  {
+    version: 50,
+    name: 'let retention delete the rows of an expired session closure: record each session being deleted in retention_sweeps with its run ids until every store has let them go, allow a delete of events only for a session recorded there, and drop the two delete triggers of sessions, whose tables the retention registry deletes from',
+    sql: RETENTION_SWEEPS,
   },
 ];

@@ -60,8 +60,8 @@ const setup = (outcomes: { prune?: ServingTaskOutcome[] } = {}) => {
 
 describe('the serving tick (17.2, 20.48)', () => {
   it('names the serving-only tasks and loops and the every-role loops as data', () => {
-    expect(SERVING_TASK_NAMES).toEqual(['idempotency-purge', 'session-scratch', 'spawn-scratch', 'call-locks', 'fidelity-prune', 'derived-catch-up', 'tool-markers', 'job-reconcile', 'placeholder-recovery']);
-    expect(SERVING_LOOP_NAMES).toEqual(['approval-sweeper', 'terminal-sweeper', 'search-sweeper', 'memory-sweeper', 'facts-sweeper', 'body-purge']);
+    expect(SERVING_TASK_NAMES).toEqual(['idempotency-purge', 'session-scratch', 'spawn-scratch', 'call-locks', 'fidelity-prune', 'derived-catch-up', 'tool-markers', 'job-reconcile', 'placeholder-recovery', 'retention-sweep']);
+    expect(SERVING_LOOP_NAMES).toEqual(['approval-sweeper', 'terminal-sweeper', 'search-sweeper', 'memory-sweeper', 'facts-sweeper']);
     expect(EVERY_ROLE_LOOP_NAMES).toEqual(['role-tick', 'store-identity', 'session-state-eviction', 'data-version-poll']);
   });
 

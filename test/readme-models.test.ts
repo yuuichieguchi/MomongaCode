@@ -6,6 +6,7 @@ import { momongaLayout } from '@momonga/foundation';
 import { withTempDir } from '@momonga/testkit';
 
 const README = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'README.md'), 'utf8');
+const REFERENCE = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'docs', 'reference.md'), 'utf8');
 
 const modelsSection = (): string => {
   const lines = README.split('\n');
@@ -35,6 +36,6 @@ describe('the README states the model settings in the shape the product loads (d
   it('the README names none of models.targets, models.aliases and --model <alias>', () => {
     expect(['models.targets', 'models.aliases', '--model <alias>', '"targets"', '"aliases"'].filter((token) => README.includes(token))).toEqual([]);
     expect(README).toContain('`models.connections`');
-    expect(README).toContain('`--model <model>`');
+    expect(REFERENCE).toContain('`--model <model>`');
   });
 });

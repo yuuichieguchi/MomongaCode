@@ -1,3 +1,5 @@
+import { NO_MOTION_ENV, SCREEN_READER_ENV } from '@momonga/foundation';
+
 export type A11y = { readonly screenReader: boolean; readonly reducedMotion: boolean };
 
 export type StoredA11y = { readonly screenReader: boolean; readonly reducedMotion: boolean };
@@ -6,8 +8,7 @@ export type AskedA11y = { readonly screenReaderFlag: boolean; readonly env: Read
 
 export const NO_A11Y: A11y = { screenReader: false, reducedMotion: false };
 
-export const SCREEN_READER_ENV = 'MOMONGA_SCREEN_READER';
-export const NO_MOTION_ENV = 'NO_MOTION';
+export { NO_MOTION_ENV, SCREEN_READER_ENV };
 
 const ASKED = '1';
 

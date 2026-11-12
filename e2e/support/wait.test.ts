@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
+import { REFLECTION_PICKUP_BOUND_MS } from '@momonga/runtime';
+import * as waits from './wait.ts';
 import { DEFAULT_LEASE_MS } from '../../packages/runtime/src/process/start-runtime-process.ts';
 import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { SETTINGS_DEBOUNCE_MS, SETTINGS_POLL_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/supervisor';
@@ -165,5 +168,22 @@ describe('withinBound', () => {
   it('rejects naming the description and the bound when the promise does not settle in time', async () => {
     const pending = new Promise<never>(() => undefined);
     await expect(withinBound(pending, 10, 'the pending promise')).rejects.toThrow('the pending promise did not happen within 10 ms');
+  });
+});
+
+describe('the bounds a test waits on', () => {
+  it('are all in the one list the test timeout is computed from', () => {
+    const listed = new Set(Object.keys(waits.E2E_TEST_WAIT_BOUNDS_MS));
+    const exported = Object.keys(waits).filter((name) => name.endsWith('_BOUND_MS') && !['E2E_DISPOSE_BOUND_MS'].includes(name));
+    expect(exported.filter((name) => !listed.has(name))).toEqual([]);
+  });
+
+  it('wait for the sweeper reflection as long as one pickup and one attempt of the e2e stack, which answers like a run', () => {
+    expect(waits.E2E_REFLECTION_SETTLED_BOUND_MS).toBe(REFLECTION_PICKUP_BOUND_MS + waits.E2E_RUN_COMPLETED_BOUND_MS);
+    expect(waits.E2E_REFLECTION_SETTLED_BOUND_MS).toBeLessThan(waits.E2E_TEST_TIMEOUT_MS);
+  });
+
+  it('give a run that verifies its rules the rule verify budget', () => {
+    expect(waits.E2E_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RECOVERY_BOUND_MS + RULE_VERIFY_BUDGET_MS + waits.E2E_MARGIN_MS);
   });
 });

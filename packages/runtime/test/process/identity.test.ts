@@ -105,7 +105,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     const error = await failureOf(registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, clock, timers, logger, stdout })));
     expect(error).toBeInstanceOf(StoreIdentityError);
     expect(stepsLogged(logger).at(-1)).toBe('ready');
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'sandbox', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'trace-store', 'store', 'sandbox', 'lock']);
     expect(stdout.chunks).toEqual([]);
     expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     expect(timers.pending()).toEqual([]);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_DETERMINISTIC_REPLY } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_DETERMINISTIC_REPLY, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { launchRuntime, readDb, startStack } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -45,7 +45,7 @@ describe('runtime end to end over runtime.sock (system timers, in-process gatewa
     const hold = stack.hold();
     const session = await launched.createSession();
     await launched.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     expect(leaseOwners(stack.temp.paths.databases.runtime)).toEqual([`runtime-${process.pid}-${startedAtMs}-0`]);
     hold.release();
   });
@@ -59,7 +59,7 @@ describe('runtime end to end over runtime.sock (system timers, in-process gatewa
     const second = await launched.createSession();
     await launched.createRun(first.id);
     await launched.createRun(second.id);
-    await Promise.all(holds.map((hold) => hold.waitForRequest()));
+    await Promise.all(holds.map((hold) => hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' })));
     expect([...leaseOwners(stack.temp.paths.databases.runtime)].sort()).toEqual([`runtime-${process.pid}-${startedAtMs}-0`, `runtime-${process.pid}-${startedAtMs}-1`]);
     for (const hold of holds) hold.release();
   });

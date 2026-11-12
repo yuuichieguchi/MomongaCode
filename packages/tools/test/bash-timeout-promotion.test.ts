@@ -129,7 +129,7 @@ const fakeCommand = () => {
 };
 
 const LIMITS: ToolLimits = {
-  bash: { defaultTimeoutMs: 5_000, maxTimeoutMs: 10_000, onTimeout: 'background', backgroundTimeoutMs: 50_000, maxBackgroundTimeoutMs: 100_000 },
+  bash: { defaultTimeoutMs: 5_000, maxTimeoutMs: 10_000, onTimeout: 'background', backgroundTimeoutMs: 50_000, maxBackgroundTimeoutMs: 100_000, drainIdleMs: 1000 },
   search: { timeoutMs: 60_000 },
   operations: { timeoutMs: 120_000 },
 };

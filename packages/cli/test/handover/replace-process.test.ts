@@ -35,6 +35,7 @@ const relayHost = (log: string[]) => {
     exit: (code) => {
       exits.push(code);
     },
+    flush: async () => undefined,
     onSignal: (signal, listener) => {
       signalListeners.set(signal, listener);
     },
@@ -159,6 +160,7 @@ const realRelay = (code: number) => {
     exit: (exitCode) => {
       exits.push(exitCode);
     },
+    flush: async () => undefined,
     onSignal: (signal, listener) => {
       listeners.set(signal, listener);
     },

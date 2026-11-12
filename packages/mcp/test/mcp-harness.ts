@@ -212,6 +212,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
   const callLocks = path.join(root, 'call-locks');
   fs.mkdirSync(callLocks, { mode: 0o700 });
   const executor = createToolExecutor({
+    hostParallelism: 8,
     layout: momongaLayout(home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),

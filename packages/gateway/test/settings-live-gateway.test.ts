@@ -21,6 +21,7 @@ import {
   withTempDir,
   registerOwned,
   testLocks,
+  REAL_PROCESS_WAIT_MS,
 } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply, OtlpCollector } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, modelsOf, prepareHome } from './gateway-process-helpers.ts';
@@ -95,7 +96,7 @@ const servedBy = (server: FakeChatCompletionsServer) => ({ models: modelsOf({ a:
 const heldRequest = async (client: UdsClient, fake: FakeChatCompletionsServer, payload: unknown = ask()) => {
   const hold = fake.hold();
   const settled = post(client, payload).catch((error: unknown) => ({ status: -1, text: String(error) }));
-  await hold.waitForRequest();
+  await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
   return { hold, settled };
 };
 

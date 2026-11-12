@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { GuidelineConflictError, GuidelineTextError, openRuntimeStore } from '@momonga/store';
 import { createFakeClock, createTempDir, testKernelLock } from '@momonga/testkit';
 import { UNASKED_COMMANDS } from './helpers.ts';
-import { nodeFileSystem, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { nodeFileSystem, nodeFileSystemSync, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 const START_MS = 1_000;
 const WINNER = { gate: 'PASS' };
@@ -12,7 +12,7 @@ const BIDIRECTIONAL_CONTROLS = ['061C', '200E', '200F', '202A', '202B', '202C', 
 const open = () => {
   const root = createTempDir();
   const clock = createFakeClock(START_MS);
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1_000, maxAttempts: 5, maxTotalAttempts: 50 });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1_000, maxAttempts: 5, maxTotalAttempts: 50 });
   return { store, clock };
 };
 

@@ -7,13 +7,11 @@ import type { ExportResult } from '@opentelemetry/core';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import type { SpanExporter } from '@opentelemetry/sdk-trace';
 import {
-  BODY_PURGE_INTERVAL_MS,
   createBodyQueue,
   createTelemetry,
   createTraceStoreExporter,
   openTraceStore,
   startAgentSpan,
-  startBodyPurge,
   startChatSpan,
 } from '@momonga/observability';
 import type { BodyRecord, TraceStore } from '@momonga/observability';
@@ -266,44 +264,6 @@ describe('contentRetentionMs validation', () => {
 });
 
 describe('body retention', () => {
-  it('bodiesForSpan hides bodies whose retention has elapsed', async () => {
-    const h = harness({ content });
-    const chat = endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'x' });
-    await h.telemetry.forceFlush();
-    h.clock.advance(999);
-    expect(bodiesOfSpan(h.store, chat.spanContext().spanId)).toHaveLength(1);
-    h.clock.advance(1);
-    expect(bodiesOfSpan(h.store, chat.spanContext().spanId)).toEqual([]);
-  });
-
-  it('an export never purges; the purge timer removes the expired bodies', async () => {
-    const h = harness({ content: { retentionMs: BODY_PURGE_INTERVAL_MS + BODY_PURGE_INTERVAL_MS / 6 } });
-    endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'old' });
-    await h.telemetry.forceFlush();
-    h.clock.advance(BODY_PURGE_INTERVAL_MS / 3);
-    endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'new' });
-    await h.telemetry.forceFlush();
-    expect(countRows(h.file, 'bodies')).toBe(2);
-    const timers = createFakeTimers(h.clock);
-    const reportedErrors: unknown[] = [];
-    const purge = startBodyPurge({ store: h.store, timers, report: (error) => void reportedErrors.push(error) });
-    registerCleanup(() => purge.stop());
-    timers.advance(BODY_PURGE_INTERVAL_MS);
-    expect(countRows(h.file, 'bodies')).toBe(1);
-    expect(reportedErrors).toEqual([]);
-  });
-
-  it('opening the store purges expired bodies', async () => {
-    const h = harness({ content });
-    endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'old' });
-    await h.telemetry.shutdown();
-    h.store.close();
-    expect(countRows(h.file, 'bodies')).toBe(1);
-    h.clock.advance(2000);
-    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: h.file, clock: h.clock }).close();
-    expect(countRows(h.file, 'bodies')).toBe(0);
-  });
-
   it('a purge removes the purged bytes from the database file and compact removes them from the WAL', async () => {
     const marker = 'WALMARKER-5f2c9d41';
     const h = harness({ content });
@@ -313,7 +273,7 @@ describe('body retention', () => {
       [h.file, `${h.file}-wal`].map((file) => (fs.existsSync(file) ? fs.readFileSync(file).toString('latin1') : '')).join('|');
     expect(bytes()).toContain(marker);
     h.clock.advance(5000);
-    expect(h.store.purgeBodies(h.clock.now())).toBe(1);
+    expect(h.store.purgeRuns([RUN_ID], h.clock.now())).toBeGreaterThan(0);
     expect(fs.readFileSync(h.file).toString('latin1')).not.toContain(marker);
     h.store.compact();
     expect(bytes()).not.toContain(marker);
@@ -329,7 +289,7 @@ describe('body retention', () => {
       reader.exec('BEGIN');
       reader.prepare('SELECT COUNT(*) FROM bodies').get();
       h.clock.advance(5000);
-      expect(h.store.purgeBodies(h.clock.now())).toBe(1);
+      expect(h.store.purgeRuns([RUN_ID], h.clock.now())).toBeGreaterThan(0);
       expect(errors).toHaveLength(1);
       expect(String(errors[0])).toContain('checkpoint');
     } finally {
@@ -360,7 +320,7 @@ describe('housekeeping is separate from the write', () => {
   const brokenPurge = (store: TraceStore): TraceStore =>
     new Proxy(store, {
       get: (target, key, receiver) =>
-        key === 'purgeExpired' || key === 'purgeBodies'
+        key === 'purgeRuns'
           ? () => {
               throw new Error('database is locked');
             }
@@ -388,31 +348,6 @@ describe('housekeeping is separate from the write', () => {
     expect(errors).toEqual([]);
   });
 
-  it('the purge timer reports a purge that throws and keeps ticking', () => {
-    const clock = createFakeClock(START_MS);
-    const timers = createFakeTimers(clock);
-    const { store } = openStore(clock);
-    const reported: unknown[] = [];
-    const purge = startBodyPurge({ store: brokenPurge(store), timers, report: (error) => void reported.push(error) });
-    registerCleanup(() => purge.stop());
-    timers.advance(BODY_PURGE_INTERVAL_MS);
-    expect(reported.map(String).join('|')).toContain('database is locked');
-    expect(timers.pending()).toHaveLength(1);
-    timers.advance(BODY_PURGE_INTERVAL_MS);
-    expect(reported).toHaveLength(2);
-  });
-
-  it('stopping the purge timer clears the pending timer and no tick runs afterwards', () => {
-    const clock = createFakeClock(START_MS);
-    const timers = createFakeTimers(clock);
-    const { store } = openStore(clock);
-    const reported: unknown[] = [];
-    const purge = startBodyPurge({ store: brokenPurge(store), timers, report: (error) => void reported.push(error) });
-    purge.stop();
-    expect(timers.pending()).toEqual([]);
-    timers.advance(BODY_PURGE_INTERVAL_MS * 2);
-    expect(reported).toEqual([]);
-  });
 });
 
 describe('standalone store exporter', () => {

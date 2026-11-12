@@ -174,3 +174,20 @@ describe('migration 38: the money and the mandate figures of a run', () => {
     expect(factsOf(store).get(plain)).toEqual({ kind: 'facts', facts: factsRow(plain) });
   });
 });
+
+describe('the totals of a tree are written again when a member ends after its root (BudgetLedger.tla, B7)', () => {
+  it('lists the ended root again with a child that ends after it, so its totals include the spend the child recorded after the root ended', async () => {
+    const { store } = harness();
+    const root = await enqueue(store, newSession(store).id);
+    const rootClaim = mustClaim(store, 'w-root');
+    const created = await store.createChildRun({ parentRunId: root.id, parentCallId: 'call-1', input: 'child task', pins: { agent: { name: 'helper' } }, model: 'fm' });
+    if (created.kind !== 'created') throw new Error(`expected a child run, got ${created.kind}`);
+    const childClaim = mustClaim(store, 'w-child');
+    expect((await store.transition(rootClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
+    const first = factsOf(store).nextBatch(10);
+    expect(first.runIds).toEqual([root.id]);
+    factsOf(store).commit({ calls: [], rows: [factsRow(root.id)], unavailable: [], throughEventId: first.throughEventId });
+    expect((await store.transition(childClaim, ['RUNNING', 'CANCELLING'], 'CANCELLED')).kind).toBe('ok');
+    expect(factsOf(store).nextBatch(10).runIds).toEqual([created.run.id, root.id]);
+  });
+});

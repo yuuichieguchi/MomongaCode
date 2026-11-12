@@ -63,6 +63,7 @@ export type FakeFixedUsage = {
   completion_tokens: number;
   total_tokens: number;
   completion_tokens_details?: { reasoning_tokens: number };
+  prompt_tokens_details?: { cached_tokens: number };
 };
 
 export type FakeUsageOfRequest = (requestBody: unknown) => FakeFixedUsage;
@@ -92,7 +93,7 @@ export interface RecordedRequest {
 }
 
 export interface FakeResponseHold {
-  waitForRequest(): Promise<RecordedRequest>;
+  waitForRequest(bound: { readonly timeoutMs: number; readonly description: string }): Promise<RecordedRequest>;
   release(): void;
 }
 
@@ -368,7 +369,14 @@ export const startFakeChatCompletions = async (
     const pending = { arrived, released, release };
     holds.push(pending);
     createdHolds.push(pending);
-    return { waitForRequest: () => request, release };
+    const waitForRequest: FakeResponseHold['waitForRequest'] = ({ timeoutMs, description }) => {
+      let timer: NodeJS.Timeout | undefined;
+      const bound = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${description} did not happen within ${timeoutMs} ms`)), timeoutMs);
+      });
+      return Promise.race([request, bound]).finally(() => clearTimeout(timer));
+    };
+    return { waitForRequest, release };
   };
 
   const guardrailFailure = (): Error =>

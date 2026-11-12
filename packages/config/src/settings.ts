@@ -386,7 +386,7 @@ export type RipgrepSetting = 'bundled' | 'system' | (string & {});
 
 export type BashOnTimeout = (typeof BASH_ON_TIMEOUT)[number];
 
-export type BashSettings = { defaultTimeoutMs?: number; maxTimeoutMs?: number; onTimeout?: BashOnTimeout; backgroundTimeoutMs?: number; maxBackgroundTimeoutMs?: number };
+export type BashSettings = { defaultTimeoutMs?: number; maxTimeoutMs?: number; onTimeout?: BashOnTimeout; backgroundTimeoutMs?: number; maxBackgroundTimeoutMs?: number; drainIdleMs?: number };
 
 export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean; ripgrep?: RipgrepSetting; bash?: BashSettings; search?: { timeoutMs?: number }; operations?: { timeoutMs?: number } };
 

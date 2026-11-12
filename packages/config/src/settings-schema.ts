@@ -558,6 +558,7 @@ export const SETTINGS_SCHEMA = {
             onTimeout: { enum: [...BASH_ON_TIMEOUT] },
             backgroundTimeoutMs: { type: 'integer', minimum: 1 },
             maxBackgroundTimeoutMs: { type: 'integer', minimum: 1 },
+            drainIdleMs: { type: 'integer', minimum: 1 },
           },
           additionalProperties: false,
         },

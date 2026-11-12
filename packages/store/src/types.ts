@@ -1,6 +1,7 @@
 import type { RuleVerdictStore } from './rule-verdicts.ts';
 import type { Stored, UNKNOWN_VALUE } from './rows.ts';
-import type { Clock, FileSystem, Random, Redactor, KernelLockMechanism, SandboxNetworkSetting } from '@momonga/foundation';
+import type { Clock, FileSystem, FileSystemSync, Random, Redactor, KernelLockMechanism, SandboxNetworkSetting } from '@momonga/foundation';
+import type { RetentionStore } from './retention.ts';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
@@ -640,6 +641,7 @@ export type RuntimeStore = {
   sessionActivity(sessionId: string): { lastActivityAt: number; hasActiveRun: boolean } | undefined;
   checkIdentity(): Promise<void>;
   pruneFidelityVerdicts(bound: number): number;
+  retention: RetentionStore;
   readonly maxTotalAttempts: number;
   getRun(id: string): Run | undefined;
   claim(workerId: string): Claim | null;
@@ -754,6 +756,7 @@ export type RuntimeStoreOptions = {
   busyTimeoutMs: number;
   clock: Clock;
   fileSystem: FileSystem;
+  fileSystemSync: Pick<FileSystemSync, 'rmSync'>;
   random: Random;
   leaseMs: number;
   maxAttempts: number;

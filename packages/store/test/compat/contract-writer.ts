@@ -6,7 +6,7 @@ import type { Claim, Run, RuntimeStore } from '@momonga/store';
 import { createFakeClock, createTempDir } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { UNASKED_COMMANDS } from '../support/unasked.ts';
-import { nodeFileSystem, resolveLayoutLocks, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { nodeFileSystem, nodeFileSystemSync, resolveLayoutLocks, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 
 export const CONTRACT_START_MS = 1_900_000_000_000;
 const LEASE_MS = 1000;
@@ -23,7 +23,7 @@ export const openContractStore = (dbPath: string, clock: FakeClock = createFakeC
   const proof = path.join(path.dirname(dbPath), `${path.basename(dbPath)}.lock-proof`);
   fs.mkdirSync(proof, { recursive: true, mode: 0o700 });
   const { mechanism } = resolveLayoutLocks({ callLocks: proof, lockProof: proof });
-  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: mechanism, fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: path.dirname(dbPath), clock, leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000 });
+  const store = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: mechanism, fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS, path: dbPath, home: path.dirname(dbPath), clock, leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000 });
   return { store, clock, dbPath, close: () => store.close() };
 };
 

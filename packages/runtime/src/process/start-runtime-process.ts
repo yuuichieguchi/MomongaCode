@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import { loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
@@ -30,12 +31,12 @@ import {
   startDeadlineSignal,
   SETTINGS_APPLIED_ENV,
   systemClock,
-  nodeFileSystem,
+  nodeFileSystem, nodeFileSystemSync,
   systemRandom,
   runtimeTeardownBudgetMs,
 } from '@momonga/foundation';
 import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
-import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
+import { createTelemetry, exportersFor, openTraceStore, pageRunBodies } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, DEFAULT_SANDBOX_EXEC_PATH, bubblewrapPresent, childProtectionFor, protectionCommandOf, createPlaceholderJournal, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
@@ -47,8 +48,8 @@ import { folderPolicyVerification, mandateRunVerification } from './folder-verif
 import type { MandateRunSources } from './folder-verification.ts';
 import { supervisedGatewayStanding } from './supervised-gateway.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
-import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, operationCatalogueFacts, sweepCallLocks } from '@momonga/tools';
-import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
+import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, operationCatalogueFacts, pruneGitObserverStores, sweepCallLocks } from '@momonga/tools';
+import type { BundledRipgrepResolver, ChildLaunch, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../memory/journal-thread-limits.ts';
@@ -127,7 +128,7 @@ import type { TeardownStep } from './teardown.ts';
 import { sweepSessionTmp, sweepSpawnTmp } from './tmp-sweep.ts';
 import { reapToolMarkers } from './tool-markers.ts';
 import { createNetworkDerivation } from './network-derivation.ts';
-import { createToolRuntime } from './tool-runtime.ts';
+import { createToolRuntime, observerStoreRoot } from './tool-runtime.ts';
 
 const USER_COMMANDS_STRAGGLER = 'user-commands';
 import type { ToolRuntime, ToolRuntimeOptions } from './tool-runtime.ts';
@@ -434,6 +435,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const { helperSelf } = options;
     const bubblewrap = platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
     const noneProtection = childProtectionFor({ sandbox: 'none', home: canonicalHome, platform, env: process.env, bubblewrap });
+    const childLaunch: ChildLaunch = {
+      protection: noneProtection,
+      commandOf: (argv, scratch) => protectionCommandOf(noneProtection, { platform, argv, scratch, sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
+    };
     const sandboxOf = createSandboxOf({
       platform,
       paths,
@@ -494,6 +499,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           preparer: startedThread,
           unaskedCommands: unaskedCommandsFor(platform),
           fileSystem: nodeFileSystem,
+          fileSystemSync: nodeFileSystemSync,
           random: systemRandom,
         });
         try {
@@ -524,20 +530,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       await sweepCallLocks({ dir: paths.callLocks, mechanism: kernelLock });
     });
 
-    const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, clock, busyTimeoutMs: storeBusyWaitMs }));
+    const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, busyTimeoutMs: storeBusyWaitMs }));
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
-    const contentRetentionMs = resolveRetentionSettings(settings.retention).days * DAY_MS;
-    let bodyPurge: { stop(): void } | undefined;
-    const applyBodyPurge = (role: GenerationRole): void => {
-      if (role === 'serving') {
-        bodyPurge ??= startBodyPurge({ store: traceStore, timers, report, legacyRetentionMs: contentRetentionMs });
-        return;
-      }
-      bodyPurge?.stop();
-      bodyPurge = undefined;
-    };
-    cleanups.push({ name: 'body-purge', run: () => bodyPurge?.stop() });
 
     const networks = createNetworkDerivation({
       cache,
@@ -600,6 +595,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const ports = await step('ports', async () => {
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock });
       const runtime: ToolRuntime = createToolRuntime({
+        hostParallelism: availableParallelism(),
+        childLaunch,
         version,
         mcpLaunch: {
           protection: noneProtection,
@@ -771,6 +768,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         policyVerification: folderPolicyVerification({ ...verificationSources, mandates: async (requestSignal) => (await settingsComposition.userSnapshot(requestSignal)).settings.mandates }),
         mandateVerification,
         userInput: createUserInputPort({
+          childLaunch,
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
           store,
@@ -1054,6 +1052,28 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             },
           },
           {
+            name: 'retention-sweep',
+            intervalMs: IDEMPOTENCY_PURGE_MS,
+            run: async (): Promise<ServingTaskOutcome> => {
+              const retention = resolveRetentionSettings(settingsComposition.takeUserSnapshot().settings.retention);
+              const report = await store.retention.sweep(
+                {
+                  periodMs: retention.days * DAY_MS,
+                  purges: [
+                    async (runIds, cutoffMs) => {
+                      traceStore.purgeRuns(runIds, cutoffMs);
+                      traceStore.moveLegacyContent({ retentionMs: retention.days * DAY_MS });
+                    },
+                    (runIds, cutoffMs, purgeSignal) => gatewayClient.retentionPurge(runIds, cutoffMs, purgeSignal),
+                    (_runIds, cutoffMs, purgeSignal) => pruneGitObserverStores({ storeRoot: observerStoreRoot(paths), cutoffMs }, childLaunch, purgeSignal),
+                  ],
+                },
+                sweepStop.signal,
+              );
+              return report.more ? 'again' : 'done';
+            },
+          },
+          {
             name: 'placeholder-recovery',
             intervalMs: Number.POSITIVE_INFINITY,
             run: async (): Promise<ServingTaskOutcome> => {
@@ -1092,7 +1112,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       };
       const applyRole = async (role: GenerationRole): Promise<void> => {
         requireService().applyRole();
-        applyBodyPurge(role);
         await servingTasks.tick(role);
         if (role === 'retiring') onWorkEnded();
       };

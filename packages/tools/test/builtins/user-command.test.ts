@@ -34,6 +34,7 @@ const runAsUser = async (tools: Builtins, command: string, rules: PermissionRule
       trackGroup((await child).pgid);
       return child;
     },
+    drainIdleMs: 1000,
     onOutput: (text) => {
       streamed += text;
       onText(text);

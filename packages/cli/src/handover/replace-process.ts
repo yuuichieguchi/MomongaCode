@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { EXIT_SIGNAL_BASE } from '@momonga/foundation';
+import { flushOutput } from '../flush-output.ts';
 
 export type ReplaceTarget = { file: string; args: readonly string[]; env: NodeJS.ProcessEnv };
 
@@ -20,6 +21,7 @@ export type ReplaceHost = {
   execve: ((file: string, args: readonly string[], env: NodeJS.ProcessEnv) => void) | undefined;
   spawn(file: string, args: readonly string[], options: { stdio: 'inherit'; env: NodeJS.ProcessEnv }): RelayChild;
   exit(code: number): void;
+  flush(): Promise<void>;
   onSignal(signal: RelayedSignal, listener: () => void): void;
 };
 
@@ -43,13 +45,16 @@ const relay = (target: ReplaceTarget, host: ReplaceHost, hooks: ReplaceHooks): P
       }
     });
     child.once('exit', (code, signal) => {
-      host.exit(exitCodeOf(code, signal));
-      resolve('relayed');
+      host.flush().then(() => {
+        host.exit(exitCodeOf(code, signal));
+        resolve('relayed');
+      }, reject);
     });
   });
 
 export const replaceProcess = async (target: ReplaceTarget, host: ReplaceHost, hooks: ReplaceHooks): Promise<'relayed'> => {
   if (typeof host.execve !== 'function') return relay(target, host, hooks);
+  await host.flush();
   host.execve(target.file, [target.file, ...target.args], target.env);
   throw new Error(`the exec of ${target.file} returned without replacing the process`);
 };
@@ -58,6 +63,7 @@ export const hostReplace: ReplaceHost = {
   execve: typeof process.execve === 'function' ? (file, args, env) => process.execve?.(file, args, env) : undefined,
   spawn: (file, args, options) => spawn(file, args, options),
   exit: (code) => process.exit(code),
+  flush: () => flushOutput([process.stdout, process.stderr]),
   onSignal: (signal, listener) => {
     process.on(signal, listener);
   },

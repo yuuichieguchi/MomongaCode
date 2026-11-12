@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, openDatabase, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS, momongaLayout } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, nodeFileSystemSync, openDatabase, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS, momongaLayout } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -17,7 +17,7 @@ import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, in
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
 import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testLocks, testProcessInspector, createTempDir } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
-import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
+import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost, unprotectedLaunch } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, reportHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
@@ -105,7 +105,7 @@ export const diskSkillsPort = (home: string, trusted: () => boolean = () => true
 
 export const diskAgentCatalog = (home: string, trusted: () => boolean = () => true): AgentCatalogPort => {
   const loader = createAgentLoader({ home, fileSystem: createNodeSkillFileSystem() });
-  return { load: async (session) => loader.load({ projectRoot: session.cwd, trusted: trusted(), approvedProjectAgents: { has: () => true } }) };
+  return { load: async (session) => loader.load({ projectRoot: session.cwd, trusted: trusted(), projectAgentApproved: () => true }) };
 };
 
 export type FakeInstructions = InstructionReader & { files: Map<string, string>; reads: string[] };
@@ -169,7 +169,7 @@ const inProcessFidelity = (dbPath: string) => async (request: object): Promise<n
   try {
     const handler = fidelityHandler({
       reader: createJournalReader(db),
-      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), { lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom }),
+      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath), { lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom }),
       current: { progress: undefined },
       gateFor: () => ({ unit: () => undefined }),
     });
@@ -234,7 +234,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const clock: FakeClock = createFakeClock(START_MS);
   const timers: FakeTimers = createFakeTimers(clock);
   const scriptedContributions = new Map<string, ContributionItems>();
-  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
+  const store: RuntimeStore = openRuntimeStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), fileSystem: nodeFileSystem, fileSystemSync: nodeFileSystemSync, random: systemRandom, unaskedCommands: UNASKED_COMMANDS,
     path: dbPath,
     home,
     clock,
@@ -261,6 +261,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const executorWarnings: string[] = [];
   const layout = momongaLayout(home, process.platform, process.env);
   const realExecutor = createToolExecutor({
+    hostParallelism: 8,
     layout,
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),
@@ -326,7 +327,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
 
   const toolRuntime = (toolList: () => AnyTool[]): ToolRuntimePort => ({
     inspector: testProcessInspector(),
-    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(stateDir, 'observer'), workTree: target.cwd, trusted: false }),
+    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeRoot: path.join(stateDir, 'observer'), cwd: target.cwd, trusted: false }, unprotectedLaunch('the tests of the runtime start git without the protection of the home')),
     envFor: (target: Session) => {
       const env: ToolEnv = { ...target.env };
       portCalls.envFor.push({ sessionId: target.id, env });

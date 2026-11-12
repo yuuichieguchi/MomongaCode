@@ -29,6 +29,8 @@ import { UNPRICED_CODES } from './token-anatomy.ts';
 import type { BilledDetail, NewBilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
 
 const DAY_MS = 86_400_000;
+
+export const MAX_RUN_TIMEOUT_MS = 7 * DAY_MS;
 const operationEffect: JsonSchema = closed({ operation: string, target: string, outcome: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['operation', 'target', 'outcome']);
 const appliedDiffFields = {
   hunks: { type: 'array', items: closed({ oldStart: integer, newStart: integer, lines: { type: 'array', items: string } }, ['oldStart', 'newStart', 'lines']) },
@@ -1534,7 +1536,7 @@ export const RUN_API_SCHEMAS = {
       {
         input: PROMPT_TEXT,
         limits: runLimits,
-        timeoutMs: boundedInteger(1000, 7 * DAY_MS),
+        timeoutMs: boundedInteger(1000, MAX_RUN_TIMEOUT_MS),
         history: historyMode,
         skill: { type: 'string', minLength: 1 },
         images: { type: 'array', items: imageAttachment },
@@ -1848,7 +1850,21 @@ export const RUN_API_SCHEMAS = {
     ),
   ),
   ErrorBody: root(
-    closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
+    closed(
+      {
+        error: closed(
+          {
+            type: string,
+            code: string,
+            message: string,
+            param: string,
+            measuring: closed({ fields: { type: 'array', items: string }, step: nullable(string), elapsed_seconds: nonNegativeInteger, declaration: string }, ['fields', 'step', 'elapsed_seconds', 'declaration']),
+          },
+          ['type', 'code', 'message'],
+        ),
+      },
+      ['error'],
+    ),
   ),
   PublicRunEvent: root({ type: 'object', oneOf: [...EVENT_TYPES.map(publicEventVariant), publicOpaqueVariant()] }),
   ReportPage: root(

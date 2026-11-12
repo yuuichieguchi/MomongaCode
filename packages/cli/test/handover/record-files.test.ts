@@ -163,6 +163,7 @@ describe('P-323: a relayed record names the child as its reader', () => {
                 return child;
               },
               exit: () => undefined,
+              flush: async () => undefined,
               onSignal: () => undefined,
             },
             hooks,

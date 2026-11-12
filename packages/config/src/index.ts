@@ -83,6 +83,7 @@ export { DEFAULT_RETENTION_DAYS, defaultSandboxSetting, resolveRetentionSettings
 export { MAX_RETENTION_DAYS, MIN_RETENTION_DAYS } from './settings-schema.ts';
 export { APPROVAL_DIGEST_PATTERN, approvalDigestOf, hookGroupApprovalDigestOf, projectAgentDigestOf } from './approval-digest.ts';
 export { DECLARED_CHECK_SOURCES, acceptedCheckOf, declaredChecksOf, recordProjectCheck } from './declared-checks.ts';
+export { forgetProjectCheck, readProjectCheck } from './project-checks.ts';
 export type { AcceptedCheck, CheckProposal, DeclaredCheck, DeclaredCheckSource } from './declared-checks.ts';
 export { resolveNetwork, resolveNetworkSources } from './network.ts';
 export type { NetworkEnvironment, NetworkSources, ShownNetworkValue } from './network.ts';
@@ -103,6 +104,7 @@ export type { RipgrepSetting, HookApproval, MandateApproval } from './settings.t
 export { UnreadableKeptCopyError, createKeptSettings, diskKeptRecords, keptSettingsDirectory, noKeptRecords } from './kept-settings.ts';
 export type { KeptProblem, KeptRecords, KeptSettings } from './kept-settings.ts';
 export type { KeptLayers, TrustOracle, UserLayer } from './layers.ts';
+export { PROJECT_ENV_NAMES, USER_LAYER_ONLY_MODES, USER_LAYER_ONLY_PARTS, USER_LAYER_ONLY_SETTINGS } from './layers.ts';
 export type { SettingsUse } from './last-good.ts';
 export type {
   McpOAuthConfig,

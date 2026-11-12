@@ -105,6 +105,7 @@ const prepareEdit = async (input: EditInput, ctx: PreconditionContext): Promise<
 
 export const editTool = defineTool<EditInput>({
   name: 'Edit',
+  companionOf: 'Read',
   description:
     'Replaces text in an existing file. file_path may be absolute or relative; a relative path is resolved against the working directory. The file must have been read with Read first and must be unchanged since. old_string must match exactly once (include surrounding context to make it unique) unless replace_all is true.',
   conciseDescription:

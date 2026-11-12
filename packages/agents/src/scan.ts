@@ -4,11 +4,9 @@ import { attemptRead, describeUnreadable, parseSkillFile } from '@momonga/skills
 import type { SkillFileSystem } from '@momonga/skills';
 import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_NAME_MAX_LENGTH, INHERIT_MODEL, SUPPORTED_FIELDS } from './constants.ts';
 import type { Mandate } from '@momonga/protocol';
-import { projectAgentDigestOf } from '@momonga/config';
-import type { ProjectAgentFile } from '@momonga/config';
-import type { AgentDefinition, AgentScope } from './types.ts';
+import type { AgentDefinition, AgentScope, ProjectAgentApproved, ProjectAgentFile } from './types.ts';
 
-export type AgentScanRequest = { home: string; projectRoot: string; trusted: boolean; approvedProjectAgents: Pick<ReadonlySet<string>, 'has'> };
+export type AgentScanRequest = { home: string; projectRoot: string; trusted: boolean; projectAgentApproved: ProjectAgentApproved };
 
 export type AgentScanResult = { agents: AgentDefinition[]; warnings: string[]; pendingApproval: ProjectAgentFile[] };
 
@@ -110,7 +108,7 @@ const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSys
   return { agent, text };
 };
 
-export const scanAgents = async ({ home, projectRoot, trusted, approvedProjectAgents }: AgentScanRequest, fileSystem: SkillFileSystem): Promise<AgentScanResult> => {
+export const scanAgents = async ({ home, projectRoot, trusted, projectAgentApproved }: AgentScanRequest, fileSystem: SkillFileSystem): Promise<AgentScanResult> => {
   const warnings: string[] = [];
   const chosen = new Map<string, AgentDefinition>();
   const waiting = new Map<string, ProjectAgentFile>();
@@ -140,7 +138,7 @@ export const scanAgents = async ({ home, projectRoot, trusted, approvedProjectAg
         warnings.push(`Agent ${JSON.stringify(agent.name)} at ${agent.location} was ignored because ${existing} takes precedence`);
         continue;
       }
-      if (scope === 'project' && !approvedProjectAgents.has(projectAgentDigestOf(agent.name, text))) {
+      if (scope === 'project' && !projectAgentApproved({ name: agent.name, text })) {
         waiting.set(agent.name, { name: agent.name, text, source: agent.location });
         warnings.push(`Agent ${JSON.stringify(agent.name)} at ${agent.location} is not run until it is approved: it is new, or changed since it was approved`);
         continue;

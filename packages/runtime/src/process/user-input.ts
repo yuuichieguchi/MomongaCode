@@ -8,7 +8,7 @@ import { tokensForText } from '@momonga/protocol';
 import type { ProtectionOnlySandbox } from '@momonga/sandbox';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { listDirectoryEntries, runUserCommand } from '@momonga/tools';
-import type { UserPolicy, UserPolicyFacts } from '@momonga/tools';
+import type { ChildLaunch, UserPolicy, UserPolicyFacts } from '@momonga/tools';
 import { permissionRulesFor } from '../governance/rules.ts';
 import type { SettingsPort, ToolRuntimePort, UserInputPort } from '../ports.ts';
 import { holdSandbox } from '../worker/held-sandbox.ts';
@@ -17,11 +17,12 @@ export type UserInputOptions = {
   tools: Pick<ToolRuntimePort, 'envFor' | 'policyFor' | 'sandboxes' | 'sessionState' | 'shellHost'>;
   policy: UserPolicy;
   store: Pick<RuntimeStore, 'governing'>;
-  settings: Pick<SettingsPort, 'rules' | 'trusted'>;
+  settings: Pick<SettingsPort, 'rules' | 'trusted' | 'tools'>;
   clock: Clock;
   home: string;
   unsandboxed: ProtectionOnlySandbox;
   files: FileSystem;
+  childLaunch: ChildLaunch;
 };
 
 export const readMentionFile = async (files: FileSystem, absolute: string, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> => {
@@ -62,7 +63,7 @@ export const mentionTargetOf = async (
   return stat.isFile() ? { absolute, shown: mention, kind: 'file', size: stat.size } : undefined;
 };
 
-export const createUserInputPort = ({ tools, policy, store, settings, clock, home, unsandboxed, files }: UserInputOptions): UserInputPort => {
+export const createUserInputPort = ({ tools, policy, store, settings, clock, home, unsandboxed, files, childLaunch }: UserInputOptions): UserInputPort => {
   const factsFor = async (session: Session, signal: AbortSignal): Promise<UserPolicyFacts> => {
     const held = await holdSandbox(tools.sandboxes, signal);
     try {
@@ -87,7 +88,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
         resolve: (mention) => mentionTargetOf(files, session, facts.roots, mention, signal),
         floor: async (absolute) => ((await policy.userRefusal({ tool: 'Read', path: absolute }, facts)) === undefined ? 'allowed' : 'denied'),
         read: (absolute, maxBytes) => readMentionFile(files, absolute, maxBytes, signal),
-        list: (absolute) => listDirectoryEntries({ root: absolute, env: facts.env, trusted, signal }),
+        list: (absolute) => listDirectoryEntries({ root: absolute, env: facts.env, trusted, signal }, childLaunch),
       };
       return attachMentions(text, host);
     },
@@ -105,6 +106,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
           return unsandboxed.spawn(spawned, facts.sandboxPolicy, signal);
         },
         onOutput: io.onOutput,
+        drainIdleMs: (await settings.tools(session, io.signal)).bash.drainIdleMs,
       });
     },
   };

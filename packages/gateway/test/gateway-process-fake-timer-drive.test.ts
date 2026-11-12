@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BODY_PURGE_INTERVAL_MS } from '@momonga/observability';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, startLoopbackServer } from '@momonga/testkit';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -44,8 +43,8 @@ const settledFlag = (promise: Promise<unknown>): (() => boolean) => {
   return () => settled;
 };
 
-describe('driving the injected fake timers of an in-process gateway whose body purge is armed on them', () => {
-  it('settles a request to a closed upstream within the retry budget horizon and leaves the purge timer unfired', async () => {
+describe('driving the injected fake timers of an in-process gateway', () => {
+  it('settles a request to a closed upstream within the retry budget horizon', async () => {
     const { clock, timers, startedAt, handle } = await launchAgainstClosedUpstream();
 
     const pending = ask(handle.socketPath);
@@ -55,15 +54,14 @@ describe('driving the injected fake timers of an in-process gateway whose body p
 
     expect(response.body.error.code).toBe('provider_unavailable');
     expect(clock.now() - startedAt).toBeLessThanOrEqual(RETRY_BUDGET_MS);
-    expect(timers.pending()).toContainEqual(expect.objectContaining({ delayMs: BODY_PURGE_INTERVAL_MS, dueAt: startedAt + BODY_PURGE_INTERVAL_MS }));
   });
 
-  it('fails fast, naming the purge timer, when its predicate never holds', async () => {
+  it('fails fast, naming the pending timers, when its predicate never holds', async () => {
     const { timers, startedAt, handle } = await launchAgainstClosedUpstream();
     const settled = settledFlag(ask(handle.socketPath));
 
     await expect(driveFakeTime(timers, { done: () => false, considered: notTheRoleTick, horizonAt: startedAt + RETRY_BUDGET_MS, deadlineMs: 3000, description: 'a condition that never holds' })).rejects.toThrow(
-      new RegExp(`a condition that never holds not met within ${RETRY_BUDGET_MS} fake ms: the real-time deadline of 3000 ms passed; pending timers .*"delayMs":${BODY_PURGE_INTERVAL_MS}`),
+      new RegExp(`a condition that never holds not met within ${RETRY_BUDGET_MS} fake ms: the real-time deadline of 3000 ms passed; pending timers `),
     );
     expect(settled()).toBe(true);
   });

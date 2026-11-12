@@ -1,8 +1,8 @@
 import type { Clock, GenerationRole } from '@momonga/foundation';
 
-export const SERVING_TASK_NAMES = ['idempotency-purge', 'session-scratch', 'spawn-scratch', 'call-locks', 'fidelity-prune', 'derived-catch-up', 'tool-markers', 'job-reconcile', 'placeholder-recovery'] as const;
+export const SERVING_TASK_NAMES = ['idempotency-purge', 'session-scratch', 'spawn-scratch', 'call-locks', 'fidelity-prune', 'derived-catch-up', 'tool-markers', 'job-reconcile', 'placeholder-recovery', 'retention-sweep'] as const;
 
-export const SERVING_LOOP_NAMES = ['approval-sweeper', 'terminal-sweeper', 'search-sweeper', 'memory-sweeper', 'facts-sweeper', 'body-purge'] as const;
+export const SERVING_LOOP_NAMES = ['approval-sweeper', 'terminal-sweeper', 'search-sweeper', 'memory-sweeper', 'facts-sweeper'] as const;
 
 export const EVERY_ROLE_LOOP_NAMES = ['role-tick', 'store-identity', 'session-state-eviction', 'data-version-poll'] as const;
 

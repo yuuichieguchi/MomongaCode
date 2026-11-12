@@ -1,4 +1,3 @@
-import { cancellableTimer } from './timers.ts';
 import type { ToolTimers } from './ports.ts';
 
 const HEAD_BYTES = 4 * 1024 * 1024;
@@ -58,20 +57,39 @@ export const createCapture = (headLimit: number = HEAD_BYTES, tailLimit: number 
   };
 };
 
-const STREAM_DRAIN_MS = 1000;
+export const CAPTURE_MAX_BYTES = HEAD_BYTES + TAIL_BYTES;
 
-export const pumpOutput = (
-  streams: readonly AsyncIterable<Uint8Array>[],
-  onChunk: (streamIndex: number, chunk: Buffer) => void,
-  timers: ToolTimers,
-): { settle(): Promise<void>; ended(): Promise<void>; close(): Promise<void>; failure(): { error: unknown } | undefined } => {
+export const DRAIN_RESIDUE_MAX_BYTES = CAPTURE_MAX_BYTES;
+
+export type DrainEnd = { kind: 'idle'; idleMs: number } | { kind: 'bytes'; maxBytes: number };
+
+export type Drained = { complete: true } | { complete: false; note: string };
+
+export const drainIncompleteNote = (end: DrainEnd): string =>
+  end.kind === 'idle'
+    ? `Stopped reading output after ${end.idleMs} ms without data; output may be incomplete.`
+    : `Stopped reading output after ${end.maxBytes} bytes that came after the command ended; output may be incomplete.`;
+
+export type PumpedOutput = {
+  drainAfterExit(idleMs: number): Promise<Drained>;
+  ended(): Promise<void>;
+  close(): Promise<void>;
+  failure(): { error: unknown } | undefined;
+};
+
+export const pumpOutput = (streams: readonly AsyncIterable<Uint8Array>[], onChunk: (streamIndex: number, chunk: Buffer) => void, timers: ToolTimers): PumpedOutput => {
   const iterators = streams.map((stream) => stream[Symbol.asyncIterator]());
   let streamFailure: { error: unknown } | undefined;
   let closing: Promise<void> | undefined;
+  let draining: ((bytes: number) => void) | undefined;
   const close = (): Promise<void> => (closing ??= Promise.all(iterators.map((iterator) => iterator.return?.())).then(() => undefined));
   const pumps = iterators.map((iterator, index) =>
     (async () => {
-      for (let step = await iterator.next(); step.done !== true; step = await iterator.next()) onChunk(index, Buffer.from(step.value));
+      for (let step = await iterator.next(); step.done !== true; step = await iterator.next()) {
+        const chunk = Buffer.from(step.value);
+        onChunk(index, chunk);
+        draining?.(chunk.length);
+      }
     })().catch((error: unknown) => {
       streamFailure ??= { error };
       close().catch((closeError: unknown) => {
@@ -79,16 +97,33 @@ export const pumpOutput = (
       });
     }),
   );
+  const allEnded = Promise.all(pumps).then(() => undefined);
   return {
-    settle: async () => {
-      const drain = cancellableTimer(timers, STREAM_DRAIN_MS);
-      try {
-        await Promise.race([Promise.all(pumps).then(() => undefined), drain.done]);
-      } finally {
-        drain.cancel();
-      }
-    },
-    ended: () => Promise.all(pumps).then(() => undefined),
+    drainAfterExit: (idleMs) =>
+      new Promise<Drained>((resolve) => {
+        let settled = false;
+        let received = 0;
+        let idle: unknown;
+        const finish = (drained: Drained): void => {
+          if (settled) return;
+          settled = true;
+          timers.clearTimeout(idle);
+          draining = undefined;
+          resolve(drained);
+        };
+        const arm = (): void => {
+          timers.clearTimeout(idle);
+          idle = timers.setTimeout(() => finish({ complete: false, note: drainIncompleteNote({ kind: 'idle', idleMs }) }), idleMs);
+        };
+        draining = (bytes) => {
+          received += bytes;
+          if (received > DRAIN_RESIDUE_MAX_BYTES) finish({ complete: false, note: drainIncompleteNote({ kind: 'bytes', maxBytes: DRAIN_RESIDUE_MAX_BYTES }) });
+          else arm();
+        };
+        arm();
+        void allEnded.then(() => finish({ complete: true }));
+      }),
+    ended: () => allEnded,
     close,
     failure: () => streamFailure,
   };

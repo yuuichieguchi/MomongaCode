@@ -1,8 +1,9 @@
 import path from 'node:path';
+import { EDITOR_ENV_NAMES } from '@momonga/foundation';
 import { commandWords } from './command-words.ts';
 import type { KeyTable } from './keys/table.ts';
 
-export const EDITOR_VARIABLES = ['VISUAL', 'EDITOR'] as const;
+export const EDITOR_VARIABLES = EDITOR_ENV_NAMES;
 
 export const openUnsetText = (file: string): string => `Set $VISUAL or $EDITOR to open ${file}`;
 

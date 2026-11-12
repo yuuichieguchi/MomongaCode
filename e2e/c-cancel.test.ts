@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SANDBOX_KILL_GRACE_MS } from '../packages/runtime/src/process/constants.ts';
 import { readDb } from './support/db.ts';
 import { skipCase, titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
@@ -21,6 +20,7 @@ import {
   E2E_RECOVERY_BOUND_MS,
   E2E_TEST_TIMEOUT_MS,
   until,
+  E2E_RUN_COMPLETED_BOUND_MS,
 } from './support/wait.ts';
 
 const PARTIAL_TEXT = 'partial';
@@ -36,7 +36,7 @@ const untilStatus = async (runtime: RuntimeClient, runId: string, status: string
   await until(async () => (await runtime.getRun(runId)).run.status === status, { deadlineMs, description: `run ${runId} is ${status}` });
 };
 
-const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise<{ elapsed: number; project: string }> => {
+const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise<{ project: string }> => {
   const home = await createE2eHome();
   const stack = await startStack({ home, needsBash: true, script: [toolCallReply('Bash', { command })] });
   expect(stack.sandbox).toBe(platformSandbox());
@@ -48,13 +48,11 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
     expect(groupAlive(pgid)).toBe(true);
     expect((await runtime.getRun(run.id)).run.status).not.toBe('CANCELLED');
 
-    const t0 = Date.now();
     const cancelled = await runtime.cancel(run.id);
     expect(cancelled.status).toBe(202);
     expect(cancelled.run.cancelRequested).toBe(true);
 
     await untilStatus(runtime, run.id, 'CANCELLED', cancelBoundMs);
-    const elapsed = Date.now() - t0;
     expect(groupAlive(pgid)).toBe(false);
 
     const stream = runtime.events(run.id);
@@ -69,7 +67,7 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
     await shutdownBarrier(stack);
     expect(chatCompletions(stack.fake)).toHaveLength(1);
     expect(readDb<{ state: string }>(home.paths.databases.runtime, 'SELECT state FROM idempotency').map((row) => row.state)).toEqual(['COMPLETED']);
-    return { elapsed, project: home.project };
+    return { project: home.project };
   } finally {
     await runtime.close();
   }
@@ -84,8 +82,8 @@ describe('c: cancel', () => {
 
   it.skipIf(skipCase('c1b'))(titleOf('c1b'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
     sandboxOrSkip(context);
-    const { elapsed } = await cancelDuringBash("trap '' TERM; while :; do sleep 1; done", E2E_CANCEL_KILL_BOUND_MS);
-    expect(elapsed).toBeGreaterThanOrEqual(SANDBOX_KILL_GRACE_MS);
+    const { project } = await cancelDuringBash(`trap ': > ${TERM_RECEIVED_FILE}' TERM; while :; do sleep 1; done`, E2E_CANCEL_KILL_BOUND_MS);
+    expect(fs.existsSync(path.join(project, TERM_RECEIVED_FILE)), 'the command was asked with SIGTERM first, ignored it, and was killed').toBe(true);
   });
 
   it(titleOf('c2'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -136,7 +134,7 @@ describe('c: cancel', () => {
     try {
       const first = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const runA = (await runtime.createRun(first.session.id, 'Say hello')).run;
-      await hold.waitForRequest();
+      await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
 
       const second = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       expect(second.session.id).not.toBe(first.session.id);

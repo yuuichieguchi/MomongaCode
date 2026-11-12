@@ -54,6 +54,7 @@ const contextFor = (hooks: HooksSettings, overrides: Partial<HookRunContext> = {
     clock: { now: () => Date.now() },
     signal: new AbortController().signal,
     deadlineAt: Date.now() + 60_000,
+    drainIdleMs: 1000,
     started: () => undefined,
     report: (execution) => executions.push(execution),
     ...overrides,
