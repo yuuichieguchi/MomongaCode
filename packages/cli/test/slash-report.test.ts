@@ -60,6 +60,8 @@ const shellPort = () => {
   });
 };
 
+const backgroundWork: Promise<unknown>[] = [];
+
 const slashContext = (conversations: readonly FakeConversation[]) => {
   const infos: string[] = [];
   const context = {
@@ -71,6 +73,11 @@ const slashContext = (conversations: readonly FakeConversation[]) => {
     keys: DEFAULT_KEY_TABLE,
     negotiation: 'unknown',
     display: { a11y: () => ({ screenReader: false, reducedMotion: false }) },
+    background: <T,>(_label: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+      const done = work(new AbortController().signal);
+      backgroundWork.push(done);
+      return done;
+    },
   } as unknown as SlashContext;
   return { context, infos };
 };
@@ -80,6 +87,7 @@ const run = async (line: string, context: SlashContext): Promise<void> => {
   const command = createSlashRegistry(DEFAULT_SLASH_COMMANDS).find(name ?? '');
   if (command === undefined) throw new Error(`/${name} is not a slash command`);
   await command.run(rest.join(' '), context);
+  while (backgroundWork.length > 0) await Promise.all(backgroundWork.splice(0));
 };
 
 const THIS_SESSION: FakeConversation = { session: { id: 'session-1' }, firstPrompt: 'fix it', runs: [{ id: 'run-1', frames: [] }, { id: 'run-2', frames: [] }] };
