@@ -85,6 +85,8 @@ export { APPROVAL_DIGEST_PATTERN, approvalDigestOf, hookGroupApprovalDigestOf, p
 export { DECLARED_CHECK_SOURCES, acceptedCheckOf, declaredChecksOf, recordProjectCheck } from './declared-checks.ts';
 export { forgetProjectCheck, readProjectCheck } from './project-checks.ts';
 export type { AcceptedCheck, CheckProposal, DeclaredCheck, DeclaredCheckSource } from './declared-checks.ts';
+export { SETTING_READ_POINTS, SETTING_READ_POINT_KINDS, settingReadPointOf } from './setting-read-points.ts';
+export type { SettingReadPoint } from './setting-read-points.ts';
 export { resolveNetwork, resolveNetworkSources } from './network.ts';
 export type { NetworkEnvironment, NetworkSources, ShownNetworkValue } from './network.ts';
 export {

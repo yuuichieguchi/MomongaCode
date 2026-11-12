@@ -1,5 +1,5 @@
-import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, editModelsSettings } from '@momonga/config';
-import type { ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
+import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, settingReadPointOf } from '@momonga/config';
+import type { ProjectMandateState, SettingReadPoint, SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import { openInEditor } from './external-editor.ts';
 import type { PickRow } from './picker.tsx';
@@ -34,7 +34,6 @@ export type SettingSection = (typeof SETTING_SECTIONS)[number];
 export type SettingPresentation = {
   readonly label: string;
   readonly section: SettingSection;
-  readonly appliesNow: boolean;
   readonly confirm?: { readonly value: unknown; readonly question: string };
   readonly form?: readonly FormField[];
   readonly constants?: Readonly<Record<string, unknown>>;
@@ -83,80 +82,80 @@ const forgeLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['id'])}  ${String(entry['descriptor'])}  ${Array.isArray(entry['hosts']) ? entry['hosts'].map(String).join(', ') : ''}  ${String(entry['apiBaseUrl'])}`;
 
 export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
-  'tui.screen': { label: 'Screen mode at start', section: 'Display', appliesNow: false },
-  'tui.mouse': { label: 'Mouse', section: 'Display', appliesNow: false },
-  'tui.copyOnSelect': { label: 'Copy on select', section: 'Display', appliesNow: false },
-  'tui.theme': { label: 'Theme', section: 'Display', appliesNow: true },
-  'tui.screenReader': { label: 'Screen-reader display', section: 'Display', appliesNow: true },
-  'tui.reducedMotion': { label: 'Reduced motion', section: 'Display', appliesNow: true },
-  'tui.notify': { label: 'Ring the terminal bell when a run ends or needs you', section: 'Display', appliesNow: true },
-  'tui.attachFileMentions': { label: 'Attach @files when sending', section: 'Display', appliesNow: false },
-  'context.adaptiveBudget': { label: 'Adaptive budget', section: 'Context', appliesNow: true },
-  'context.autoCompact': { label: 'Automatic compaction', section: 'Context', appliesNow: true },
-  'context.cachePrefix': { label: 'Cache prefix', section: 'Context', appliesNow: true },
-  'context.outputFormatters': { label: 'Output formatters', section: 'Context', appliesNow: true },
-  'context.loopGuidance': { label: 'Loop guidance', section: 'Context', appliesNow: true },
-  'context.observedCapacity': { label: 'Observed capacity', section: 'Context', appliesNow: true },
-  'context.unboundedOutputReserve': { label: 'Unbounded output reserve', section: 'Context', appliesNow: true },
-  'tools.deferral': { label: 'Tool deferral', section: 'Tools', appliesNow: true },
-  'tools.conciseDescriptions': { label: 'Concise tool descriptions', section: 'Tools', appliesNow: true },
-  'tools.ripgrep': { label: 'ripgrep program', section: 'Tools', appliesNow: false },
-  'tools.bash.defaultTimeoutMs': { label: 'Time a shell command may run when the model names none (ms)', section: 'Tools', appliesNow: false },
-  'tools.bash.maxTimeoutMs': { label: 'Longest time the model may give a shell command (ms)', section: 'Tools', appliesNow: false },
-  'tools.bash.onTimeout': { label: 'What happens to a shell command at its time', section: 'Tools', appliesNow: false },
-  'tools.bash.backgroundTimeoutMs': { label: 'Time a background shell command may run when the model names none (ms)', section: 'Tools', appliesNow: false },
-  'tools.bash.maxBackgroundTimeoutMs': { label: 'Longest time the model may give a background shell command (ms)', section: 'Tools', appliesNow: false },
-  'tools.bash.drainIdleMs': { label: 'Time without output after a shell command ended before its output is read no further (ms)', section: 'Tools', appliesNow: false },
-  'tools.search.timeoutMs': { label: 'Time a file search may run (ms)', section: 'Tools', appliesNow: false },
-  'tools.operations.timeoutMs': { label: 'Time a Git or forge operation may run (ms)', section: 'Tools', appliesNow: false },
-  'memory.reflection.enabled': { label: 'Reflection', section: 'Memory', appliesNow: false },
-  'memory.reflection.maxTokens': { label: 'Reflection token limit', section: 'Memory', appliesNow: false },
-  'memory.forgetAfterDays': { label: 'Forget after (days)', section: 'Memory', appliesNow: false },
-  'memory.repositoryFacts': { label: 'Repository facts', section: 'Memory', appliesNow: false },
-  'verification.commands': { label: 'Verification commands', section: 'Verification', appliesNow: false },
-  'verification.manifests': { label: 'Verification manifests', section: 'Verification', appliesNow: false },
-  'verification.required': { label: 'Require a completion condition', section: 'Verification', appliesNow: false },
-  projectChecks: { label: 'Check commands by folder', section: 'Verification', appliesNow: false },
-  projectApprovals: { label: 'Approvals by folder', section: 'Permissions', appliesNow: false },
-  enableAllProjectMcpServers: { label: 'Enable every server of .mcp.json', section: 'MCP', appliesNow: false },
-  'mcp.toolIdleTimeoutNetworkMs': { label: 'Tool idle timeout of URL servers (ms)', section: 'MCP', appliesNow: false },
-  'mcp.toolIdleTimeoutStdioMs': { label: 'Tool idle timeout of command servers (ms)', section: 'MCP', appliesNow: false },
-  'mcp.toolTotalTimeoutMs': { label: 'Tool total timeout (ms)', section: 'MCP', appliesNow: false },
-  'mcp.connectTimeoutMs': { label: 'Connect timeout (ms)', section: 'MCP', appliesNow: false },
-  'models.dialects': { label: 'Schema dialects', section: 'Models', appliesNow: false },
-  env: { label: 'Environment variables', section: 'Environment variables', appliesNow: false },
-  'credentials.env': { label: 'Variables treated as credentials', section: 'Credentials', appliesNow: false },
-  'credentials.keep': { label: 'Variables kept for commands', section: 'Credentials', appliesNow: false },
-  'credentials.valuePatterns': { label: 'Value patterns of credentials', section: 'Credentials', appliesNow: false },
-  'credentials.plaintextTokenFiles': { label: 'Plain-text token files', section: 'Credentials', appliesNow: false },
-  'network.httpProxy': { label: 'HTTP proxy', section: 'Network', appliesNow: false },
-  'network.httpsProxy': { label: 'HTTPS proxy', section: 'Network', appliesNow: false },
-  'network.noProxy': { label: 'No proxy for', section: 'Network', appliesNow: false },
-  'network.extraCaFiles': { label: 'Extra CA files', section: 'Network', appliesNow: false },
-  'network.environment': { label: 'Proxy from the environment', section: 'Network', appliesNow: false },
-  sandbox: { label: 'Sandbox', section: 'Sandbox', appliesNow: false, confirm: { value: 'none', question: 'Run commands without a sandbox?' } },
-  sandboxNetwork: { label: 'Network of a sandboxed command', section: 'Sandbox', appliesNow: false, confirm: { value: 'allow', question: 'Let every command that requests the network use it without asking you?' } },
-  'sandboxUnixSockets.allow': { label: 'Unix sockets a command may connect to', section: 'Sandbox', appliesNow: false },
-  'telemetry.otlp.endpoint': { label: 'OTLP endpoint', section: 'Telemetry', appliesNow: false },
-  'telemetry.otlp.headers': { label: 'OTLP headers', section: 'Telemetry', appliesNow: false },
-  'telemetry.captureMessageContent': { label: 'Capture message content', section: 'Telemetry', appliesNow: false, confirm: { value: true, question: 'Capture message content in telemetry?' } },
-  'retention.days': { label: 'Retention of every store (days)', section: 'Telemetry', appliesNow: false },
-  pricing: { label: 'Prices', section: 'Pricing', appliesNow: false, form: PRICE_FORM, constants: PRICE_CONSTANTS, line: priceLine },
-  'limits.maxCostUsd': { label: 'Money limit of a run (USD)', section: 'Budget and delegation', appliesNow: false },
-  'ceilings.costUsd': { label: 'Ceiling on the money a mandate may declare (USD)', section: 'Budget and delegation', appliesNow: false },
-  'ceilings.tokens': { label: 'Ceiling on the tokens a mandate may declare', section: 'Budget and delegation', appliesNow: false },
-  'ceilings.timeMs': { label: 'Ceiling on the time a mandate may declare (ms)', section: 'Budget and delegation', appliesNow: false },
-  mandates: { label: 'Mandates by name', section: 'Budget and delegation', appliesNow: false },
-  forges: { label: 'Forges for pull request operations', section: 'Git and pull requests', appliesNow: false, form: FORGE_FORM, line: forgeLine },
-  'issues.watch': { label: 'Issues the watch takes', section: 'Git and pull requests', appliesNow: false, form: ISSUE_WATCH_FORM, line: issueWatchLine },
-  'operations.protectedRefs': { label: 'Protected branches (a push always asks you)', section: 'Git and pull requests', appliesNow: false },
-  'operations.approval': { label: 'Approval class by operation (rule or always)', section: 'Git and pull requests', appliesNow: false },
-  autoUpdates: { label: 'Automatic updates', section: 'Updates', appliesNow: false },
-  'update.stallTimeoutMs': { label: 'Time an update transfer may wait for an answer or for data (ms)', section: 'Updates', appliesNow: false },
-  'gateway.closeGraceMs': { label: 'Close grace (ms)', section: 'Shutdown', appliesNow: false },
-  'gateway.managedServerStopGraceMs': { label: 'Managed server stop grace (ms)', section: 'Shutdown', appliesNow: false },
-  'runtime.drainTimeoutMs': { label: 'Run drain timeout (ms)', section: 'Shutdown', appliesNow: false },
-  'mcp.closeGraceMs': { label: 'MCP server close grace (ms)', section: 'Shutdown', appliesNow: false },
+  'tui.screen': { label: 'Screen mode at start', section: 'Display' },
+  'tui.mouse': { label: 'Mouse', section: 'Display' },
+  'tui.copyOnSelect': { label: 'Copy on select', section: 'Display' },
+  'tui.theme': { label: 'Theme', section: 'Display' },
+  'tui.screenReader': { label: 'Screen-reader display', section: 'Display' },
+  'tui.reducedMotion': { label: 'Reduced motion', section: 'Display' },
+  'tui.notify': { label: 'Ring the terminal bell when a run ends or needs you', section: 'Display' },
+  'tui.attachFileMentions': { label: 'Attach @files when sending', section: 'Display' },
+  'context.adaptiveBudget': { label: 'Adaptive budget', section: 'Context' },
+  'context.autoCompact': { label: 'Automatic compaction', section: 'Context' },
+  'context.cachePrefix': { label: 'Cache prefix', section: 'Context' },
+  'context.outputFormatters': { label: 'Output formatters', section: 'Context' },
+  'context.loopGuidance': { label: 'Loop guidance', section: 'Context' },
+  'context.observedCapacity': { label: 'Observed capacity', section: 'Context' },
+  'context.unboundedOutputReserve': { label: 'Unbounded output reserve', section: 'Context' },
+  'tools.deferral': { label: 'Tool deferral', section: 'Tools' },
+  'tools.conciseDescriptions': { label: 'Concise tool descriptions', section: 'Tools' },
+  'tools.ripgrep': { label: 'ripgrep program', section: 'Tools' },
+  'tools.bash.defaultTimeoutMs': { label: 'Time a shell command may run when the model names none (ms)', section: 'Tools' },
+  'tools.bash.maxTimeoutMs': { label: 'Longest time the model may give a shell command (ms)', section: 'Tools' },
+  'tools.bash.onTimeout': { label: 'What happens to a shell command at its time', section: 'Tools' },
+  'tools.bash.backgroundTimeoutMs': { label: 'Time a background shell command may run when the model names none (ms)', section: 'Tools' },
+  'tools.bash.maxBackgroundTimeoutMs': { label: 'Longest time the model may give a background shell command (ms)', section: 'Tools' },
+  'tools.bash.drainIdleMs': { label: 'Time without output after a shell command ended before its output is read no further (ms)', section: 'Tools' },
+  'tools.search.timeoutMs': { label: 'Time a file search may run (ms)', section: 'Tools' },
+  'tools.operations.timeoutMs': { label: 'Time a Git or forge operation may run (ms)', section: 'Tools' },
+  'memory.reflection.enabled': { label: 'Reflection', section: 'Memory' },
+  'memory.reflection.maxTokens': { label: 'Reflection token limit', section: 'Memory' },
+  'memory.forgetAfterDays': { label: 'Forget after (days)', section: 'Memory' },
+  'memory.repositoryFacts': { label: 'Repository facts', section: 'Memory' },
+  'verification.commands': { label: 'Verification commands', section: 'Verification' },
+  'verification.manifests': { label: 'Verification manifests', section: 'Verification' },
+  'verification.required': { label: 'Require a completion condition', section: 'Verification' },
+  projectChecks: { label: 'Check commands by folder', section: 'Verification' },
+  projectApprovals: { label: 'Approvals by folder', section: 'Permissions' },
+  enableAllProjectMcpServers: { label: 'Enable every server of .mcp.json', section: 'MCP' },
+  'mcp.toolIdleTimeoutNetworkMs': { label: 'Tool idle timeout of URL servers (ms)', section: 'MCP' },
+  'mcp.toolIdleTimeoutStdioMs': { label: 'Tool idle timeout of command servers (ms)', section: 'MCP' },
+  'mcp.toolTotalTimeoutMs': { label: 'Tool total timeout (ms)', section: 'MCP' },
+  'mcp.connectTimeoutMs': { label: 'Connect timeout (ms)', section: 'MCP' },
+  'models.dialects': { label: 'Schema dialects', section: 'Models' },
+  env: { label: 'Environment variables', section: 'Environment variables' },
+  'credentials.env': { label: 'Variables treated as credentials', section: 'Credentials' },
+  'credentials.keep': { label: 'Variables kept for commands', section: 'Credentials' },
+  'credentials.valuePatterns': { label: 'Value patterns of credentials', section: 'Credentials' },
+  'credentials.plaintextTokenFiles': { label: 'Plain-text token files', section: 'Credentials' },
+  'network.httpProxy': { label: 'HTTP proxy', section: 'Network' },
+  'network.httpsProxy': { label: 'HTTPS proxy', section: 'Network' },
+  'network.noProxy': { label: 'No proxy for', section: 'Network' },
+  'network.extraCaFiles': { label: 'Extra CA files', section: 'Network' },
+  'network.environment': { label: 'Proxy from the environment', section: 'Network' },
+  sandbox: { label: 'Sandbox', section: 'Sandbox', confirm: { value: 'none', question: 'Run commands without a sandbox?' } },
+  sandboxNetwork: { label: 'Network of a sandboxed command', section: 'Sandbox', confirm: { value: 'allow', question: 'Let every command that requests the network use it without asking you?' } },
+  'sandboxUnixSockets.allow': { label: 'Unix sockets a command may connect to', section: 'Sandbox' },
+  'telemetry.otlp.endpoint': { label: 'OTLP endpoint', section: 'Telemetry' },
+  'telemetry.otlp.headers': { label: 'OTLP headers', section: 'Telemetry' },
+  'telemetry.captureMessageContent': { label: 'Capture message content', section: 'Telemetry', confirm: { value: true, question: 'Capture message content in telemetry?' } },
+  'retention.days': { label: 'Retention of every store (days)', section: 'Telemetry' },
+  pricing: { label: 'Prices', section: 'Pricing', form: PRICE_FORM, constants: PRICE_CONSTANTS, line: priceLine },
+  'limits.maxCostUsd': { label: 'Money limit of a run (USD)', section: 'Budget and delegation' },
+  'ceilings.costUsd': { label: 'Ceiling on the money a mandate may declare (USD)', section: 'Budget and delegation' },
+  'ceilings.tokens': { label: 'Ceiling on the tokens a mandate may declare', section: 'Budget and delegation' },
+  'ceilings.timeMs': { label: 'Ceiling on the time a mandate may declare (ms)', section: 'Budget and delegation' },
+  mandates: { label: 'Mandates by name', section: 'Budget and delegation' },
+  forges: { label: 'Forges for pull request operations', section: 'Git and pull requests', form: FORGE_FORM, line: forgeLine },
+  'issues.watch': { label: 'Issues the watch takes', section: 'Git and pull requests', form: ISSUE_WATCH_FORM, line: issueWatchLine },
+  'operations.protectedRefs': { label: 'Protected branches (a push always asks you)', section: 'Git and pull requests' },
+  'operations.approval': { label: 'Approval class by operation (rule or always)', section: 'Git and pull requests' },
+  autoUpdates: { label: 'Automatic updates', section: 'Updates' },
+  'update.stallTimeoutMs': { label: 'Time an update transfer may wait for an answer or for data (ms)', section: 'Updates' },
+  'gateway.closeGraceMs': { label: 'Close grace (ms)', section: 'Shutdown' },
+  'gateway.managedServerStopGraceMs': { label: 'Managed server stop grace (ms)', section: 'Shutdown' },
+  'runtime.drainTimeoutMs': { label: 'Run drain timeout (ms)', section: 'Shutdown' },
+  'mcp.closeGraceMs': { label: 'MCP server close grace (ms)', section: 'Shutdown' },
 };
 
 export const SETTINGS_REACHED_BY_COMMAND: Readonly<Record<string, string>> = {
@@ -258,6 +257,8 @@ export const shownValue = (value: unknown): string => {
   return wordOf(value);
 };
 
+export const appliesNowOf = (key: string, table: Readonly<Record<string, SettingReadPoint>>): boolean => settingReadPointOf(key, table) === 'operation';
+
 export const settingRowLabel = (label: string, value: unknown, source: SettingSource, applied?: boolean): string =>
   [label, shownValue(value), source, ...(applied === undefined ? [] : [applied ? APPLIES_NOW : APPLIES_NEXT_SESSION])].join('  ');
 
@@ -283,7 +284,7 @@ export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { re
     }
     for (const { leaf, presentation } of settings) {
       const { value, source } = currentOf(snapshot, leaf.path);
-      rows.push({ label: settingRowLabel(presentation.label, value, source, written === leaf.key ? presentation.appliesNow : undefined) });
+      rows.push({ label: settingRowLabel(presentation.label, value, source, written === leaf.key ? appliesNowOf(leaf.key, SETTING_READ_POINTS) : undefined) });
       listed.push({ kind: 'setting', leaf, presentation });
     }
     if (section === MANDATE_SECTION && mandate !== undefined) {
