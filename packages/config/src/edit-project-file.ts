@@ -31,11 +31,23 @@ export const editProjectMandate = async (projectDir: string, edit: ProjectMandat
   await approveProjectItems(home, projectDir, [{ kind: 'mandate', ...written }], { lock, mechanism, random, signal });
 };
 
-export type ApprovedItem = { kind: 'hook'; event: string; group: unknown; digest: string } | { kind: 'mandate'; document: unknown; digest: string };
+export type ApprovedItem = { kind: 'hook'; event: string; group: unknown; digest: string } | { kind: 'mandate'; document: unknown; digest: string } | { kind: 'mcp'; name: string; config: unknown; digest: string };
 
 export const approveProjectItems = async (home: string, projectDir: string, approved: readonly ApprovedItem[], ports: SettingsWriterPorts): Promise<void> => {
   const folder = await hostPaths(ports.signal).canonicalPath(projectDir);
-  await editUserSettings(layoutOf(home).settingsFile, (settings) => recordApproval(settings, folder, approved), ports);
+  await editUserSettings(layoutOf(home).settingsFile, (settings) => [recordApproval(settings, folder, approved), recordServers(settings, approved)].some(Boolean), ports);
+};
+
+const nameOf = (entry: unknown): unknown => (isRecord(entry) ? entry['name'] : entry);
+
+const recordServers = (settings: Record<string, unknown>, approved: readonly ApprovedItem[]): boolean => {
+  const servers = approved.flatMap((item) => (item.kind === 'mcp' ? [{ name: item.name, digest: item.digest, config: item.config }] : []));
+  if (servers.length === 0) return false;
+  const names = new Set(servers.map((server) => server.name));
+  const enabled: unknown[] = Array.isArray(settings['enabledMcpjsonServers']) ? settings['enabledMcpjsonServers'] : [];
+  settings['enabledMcpjsonServers'] = [...enabled.filter((entry) => !names.has(String(nameOf(entry)))), ...servers];
+  if (Array.isArray(settings['disabledMcpjsonServers'])) settings['disabledMcpjsonServers'] = settings['disabledMcpjsonServers'].filter((name) => !names.has(String(name)));
+  return true;
 };
 
 const recordApproval = (settings: Record<string, unknown>, folder: string, approved: readonly ApprovedItem[]): boolean => {

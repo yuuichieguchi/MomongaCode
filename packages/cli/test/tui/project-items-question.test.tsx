@@ -55,4 +55,15 @@ describe('a hook group or mandate file of a trusted folder that is new or change
     expect(question).toContain('./scripts/check.sh --fix');
     app.unmount();
   });
+
+  it('asks about an MCP server of the folder with its whole command and records its config on Approve', async () => {
+    const config = { command: 'npx', args: ['docs-server', '--write'] };
+    const { backend, app } = start({ trustItems: { items: [{ kind: 'mcp', name: 'docs', config, digest: 'm2', source: '/work/.mcp.json', change: { kind: 'new' } }], refused: [] } });
+    const question = await untilFrame(app, APPROVE_ROW);
+    expect(question).toContain('The MCP server docs of this folder is new');
+    expect(question).toContain('docs-server');
+    app.stdin.write(KEYS.enter);
+    await backend.called(`approve:${JSON.stringify([{ kind: 'mcp', name: 'docs', config, digest: 'm2' }])}`);
+    app.unmount();
+  });
 });

@@ -335,7 +335,7 @@ export type ProjectCheckAnswer = { commands: string[] } | { declined: true };
 
 export type ProjectChecksSettings = Record<string, ProjectCheckAnswer>;
 
-export type McpServerApproval = string | { name: string; digest: string };
+export type McpServerApproval = string | { name: string; digest: string; config?: unknown };
 
 export type HookApproval = string | { digest: string; event: string; group: unknown };
 

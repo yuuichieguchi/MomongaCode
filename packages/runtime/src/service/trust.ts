@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { Context } from 'hono';
 import { pendingProjectItems } from '@momonga/config';
-import type { PendingChange } from '@momonga/config';
+import type { PendingChange, PendingProjectItem } from '@momonga/config';
 import type { TrustItemChange, TrustItemsView } from '@momonga/protocol';
 import { diffOfContents } from '@momonga/tools';
 import { hostPaths } from '@momonga/foundation';
@@ -32,6 +32,8 @@ export const undecidedFolderNotice = async (
 };
 
 const shownContent = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+const contentOf = (item: PendingProjectItem): unknown => (item.kind === 'hook' ? item.group : item.kind === 'mandate' ? item.document : item.config);
 
 const shownChange = (change: PendingChange, now: unknown): TrustItemChange => (change.kind === 'changed' ? { kind: 'changed', diff: diffOfContents(shownContent(change.earlier), shownContent(now)) } : change);
 
@@ -78,7 +80,7 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
     }
     const trust = { isTrusted: async (folder: string, asked: AbortSignal): Promise<boolean> => (await store.trust.decisionAsked(folder, asked)).decision === 'trusted' };
     const pending = await pendingProjectItems({ home: deps.home, projectDir: result.path, trust, signal });
-    const view: TrustItemsView = { items: pending.items.map((item) => ({ ...item, change: shownChange(item.change, item.kind === 'hook' ? item.group : item.document) })), refused: pending.refused };
+    const view: TrustItemsView = { items: pending.items.map((item) => ({ ...item, change: shownChange(item.change, contentOf(item)) })), refused: pending.refused };
     return json(view, 200);
   };
 

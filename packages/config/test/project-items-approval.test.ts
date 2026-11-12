@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PROJECT_MANDATE_FILE, approvalDigestOf, approveProjectItems, hookGroupApprovalDigestOf, loadProjectMandate, loadSettings, loadUserSettings, pendingProjectItems, projectMandateState, settingsFileLock, systemFileLockPorts } from '@momonga/config';
+import { PROJECT_MANDATE_FILE, approvalDigestOf, approveProjectItems, hookGroupApprovalDigestOf, loadMcpServers, loadProjectMandate, loadSettings, loadUserSettings, pendingProjectItems, projectMandateState, settingsFileLock, systemFileLockPorts } from '@momonga/config';
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -94,5 +94,39 @@ describe('the approved content is kept beside its digest, and a later change is 
     writeJson(path.join(tree.project, PROJECT_MANDATE_FILE), { ...DECLARED, steps: 50 });
     expect((await pendingProjectItems(trusted(tree))).items).toEqual([expect.objectContaining({ kind: 'mandate', change: { kind: 'changed', earlier: DECLARED } })]);
     await expect(loadProjectMandate({ projectDir: tree.project, trusted: true, approvals: await approvals(tree), signal })).rejects.toThrow('changed since it was approved');
+  });
+});
+
+describe('an MCP server of .mcp.json is asked about by the same mechanism', () => {
+  const DOCS = { command: 'npx', args: ['docs-server'] };
+  const mcpFile = (tree: Tree): string => path.join(tree.project, '.mcp.json');
+  const trusted = (tree: Tree) => ({ home: tree.home, projectDir: tree.project, trust: trusting(tree), signal });
+  const servers = async (tree: Tree) => loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, signal });
+
+  it('lists a server never approved as new, and after the approval keeps its config and starts it', async () => {
+    const tree = makeTree();
+    writeJson(mcpFile(tree), { mcpServers: { docs: DOCS } });
+    const [item] = (await pendingProjectItems(trusted(tree))).items;
+    expect(item).toEqual({ kind: 'mcp', name: 'docs', config: DOCS, digest: approvalDigestOf(DOCS), source: mcpFile(tree), change: { kind: 'new' } });
+    await approveProjectItems(tree.home, tree.project, [{ kind: 'mcp', name: 'docs', config: DOCS, digest: approvalDigestOf(DOCS) }], writerOf(tree));
+    expect((await loadUserSettings({ home: tree.home, signal })).settings.enabledMcpjsonServers).toEqual([{ name: 'docs', digest: approvalDigestOf(DOCS), config: DOCS }]);
+    expect((await servers(tree)).enabled.map((server) => server.name)).toEqual(['docs']);
+    expect((await pendingProjectItems(trusted(tree))).items).toEqual([]);
+  });
+
+  it('says a server changed since its approval with the approved config, and not recorded under a name-only approval', async () => {
+    const tree = makeTree();
+    await approveProjectItems(tree.home, tree.project, [{ kind: 'mcp', name: 'docs', config: DOCS, digest: approvalDigestOf(DOCS) }], writerOf(tree));
+    writeJson(mcpFile(tree), { mcpServers: { docs: { ...DOCS, args: ['docs-server', '--write'] } } });
+    expect((await pendingProjectItems(trusted(tree))).items.map((item) => item.change)).toEqual([{ kind: 'changed', earlier: DOCS }]);
+    writeJson(userSettingsPath(tree), { enabledMcpjsonServers: ['docs'] });
+    expect((await pendingProjectItems(trusted(tree))).items.map((item) => item.change)).toEqual([{ kind: 'not-recorded' }]);
+  });
+
+  it('does not ask about a server the person disabled', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { disabledMcpjsonServers: ['docs'] });
+    writeJson(mcpFile(tree), { mcpServers: { docs: DOCS } });
+    expect((await pendingProjectItems(trusted(tree))).items).toEqual([]);
   });
 });

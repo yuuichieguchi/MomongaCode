@@ -456,7 +456,7 @@ export const SETTINGS_SCHEMA = {
       items: {
         oneOf: [
           { type: 'string' },
-          { type: 'object', properties: { name: { type: 'string', minLength: 1 }, digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN } }, required: ['name', 'digest'], additionalProperties: false },
+          { type: 'object', properties: { name: { type: 'string', minLength: 1 }, digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN }, config: {} }, required: ['name', 'digest'], additionalProperties: false },
         ],
       },
     },

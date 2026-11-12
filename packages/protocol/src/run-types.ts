@@ -221,7 +221,8 @@ export type TrustItemChange = { kind: 'new' } | { kind: 'changed'; diff: Applied
 
 export type TrustItem =
   | { kind: 'hook'; event: string; group: unknown; digest: string; source: string; change: TrustItemChange }
-  | { kind: 'mandate'; document: unknown; digest: string; source: string; change: TrustItemChange };
+  | { kind: 'mandate'; document: unknown; digest: string; source: string; change: TrustItemChange }
+  | { kind: 'mcp'; name: string; config: unknown; digest: string; source: string; change: TrustItemChange };
 
 export type TrustItemsView = { items: TrustItem[]; refused: string[] };
 

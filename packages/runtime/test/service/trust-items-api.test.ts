@@ -65,4 +65,14 @@ describe('GET /v1/trust/items: what a trusted folder could make the product run 
       items: [{ kind: 'mandate', change: { kind: 'changed', diff: { hunks: [{ lines: expect.arrayContaining(['-  "steps": 5', '+  "steps": 50']) }], added: 1, removed: 1 } } }],
     });
   });
+
+  it('answers an MCP server of .mcp.json that waits for an approval', async () => {
+    const env = await startService({ fakeTimers: true });
+    const folder = env.layout.projectReal;
+    writeJson(path.join(folder, '.mcp.json'), { mcpServers: { docs: { command: 'npx', args: ['docs-server'] } } });
+    expect((await env.http('PUT', '/v1/trust', { body: { path: folder, decision: 'trusted' } })).status).toBe(200);
+    const response = await env.http('GET', items(folder));
+    expectSchema('TrustItemsResponse', response.json);
+    expect(response.json).toMatchObject({ items: [{ kind: 'mcp', name: 'docs', config: { command: 'npx', args: ['docs-server'] }, source: path.join(folder, '.mcp.json'), change: { kind: 'new' } }] });
+  });
 });

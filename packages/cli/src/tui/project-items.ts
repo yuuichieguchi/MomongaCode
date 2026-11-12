@@ -27,14 +27,23 @@ const changeLines = (item: TrustItem, now: unknown): SelectLine[] => {
   return [...(diff.diffOmitted === undefined ? [] : [`${CHANGE_NOT_SHOWN_LEAD}${diff.diffOmitted}`]), ...diffRows(diff.hunks ?? [])];
 };
 
-export const itemQuestionTitle = (item: TrustItem): string =>
-  item.kind === 'hook' ? `A ${item.event} hook group of this folder ${changeWords(item)}` : `The mandate file of this folder ${changeWords(item)}`;
+export const itemQuestionTitle = (item: TrustItem): string => {
+  if (item.kind === 'hook') return `A ${item.event} hook group of this folder ${changeWords(item)}`;
+  if (item.kind === 'mcp') return `The MCP server ${item.name} of this folder ${changeWords(item)}`;
+  return `The mandate file of this folder ${changeWords(item)}`;
+};
 
-const itemLines = (item: TrustItem): SelectLine[] =>
-  item.kind === 'hook' ? [item.source, ...changeLines(item, item.group)] : [item.source, ...changeLines(item, item.document), MANDATE_REFUSED_LINE];
+const itemLines = (item: TrustItem): SelectLine[] => {
+  if (item.kind === 'hook') return [item.source, ...changeLines(item, item.group)];
+  if (item.kind === 'mcp') return [item.source, ...changeLines(item, item.config)];
+  return [item.source, ...changeLines(item, item.document), MANDATE_REFUSED_LINE];
+};
 
-const approvedOf = (item: TrustItem): ApprovedItem =>
-  item.kind === 'hook' ? { kind: 'hook', event: item.event, group: item.group, digest: item.digest } : { kind: 'mandate', document: item.document, digest: item.digest };
+const approvedOf = (item: TrustItem): ApprovedItem => {
+  if (item.kind === 'hook') return { kind: 'hook', event: item.event, group: item.group, digest: item.digest };
+  if (item.kind === 'mcp') return { kind: 'mcp', name: item.name, config: item.config, digest: item.digest };
+  return { kind: 'mandate', document: item.document, digest: item.digest };
+};
 
 export const askTrustItems = async (items: readonly TrustItem[], choose: OverlayPorts['choose']): Promise<ApprovedItem[]> => {
   const chosen: ApprovedItem[] = [];
