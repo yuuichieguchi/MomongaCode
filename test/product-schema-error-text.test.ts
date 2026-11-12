@@ -54,18 +54,18 @@ describe('settings and MCP config errors keep a specific message', () => {
 
   it('refuses the keys of an earlier build with the sentence that says what replaces each, before the schema', () => {
     const old = (models: unknown): string => thrown(() => assertSettings({ models }, 'settings.json')).message;
-    expect(old({ targets: { local: { ...OLLAMA_ENTRY, adapter: 'ollama' } } })).toBe('settings.json: models.targets is not a setting any more; declare each server under models.connections with its models (see README, Models).');
+    expect(old({ targets: { local: { ...OLLAMA_ENTRY, adapter: 'ollama' } } })).toBe('settings.json: invalid settings at /models/targets: is not a setting any more; declare each server under models.connections with its models (see README, Models).');
     expect(old({ connections: [OLLAMA_CONNECTION], aliases: { default: ['local'] } })).toBe(
-      'settings.json: models.aliases is not a setting any more; list the models to try after the model in models.fallback and choose the first with models.start (see README, Models).',
+      'settings.json: invalid settings at /models/aliases: is not a setting any more; list the models to try after the model in models.fallback and choose the first with models.start (see README, Models).',
     );
     expect(old({ connections: [OLLAMA_CONNECTION], billingChanges: [{ from: 'local', to: 'metered', alias: 'default' }] })).toBe(
-      'settings.json: models.billingChanges[0].alias is not a setting any more; write "model" with the model it applies to (see README, Models).',
+      'settings.json: invalid settings at /models/billingChanges/0/alias: is not a setting any more; write "model" with the model it applies to (see README, Models).',
     );
   });
 
   it('names the property an MCP server is missing and the field of an MCP file that has the wrong type', () => {
-    expect(thrown(() => assertMcpServer({ type: 'stdio' }, 'mcp.json', 'srv')).message).toBe(`mcp.json: invalid MCP server "srv": /: must have required property 'command'`);
-    expect(thrown(() => assertMcpServersFile({ mcpServers: 3 }, 'mcp.json')).message).toBe('mcp.json: invalid MCP server file at /mcpServers: must be object');
+    expect(thrown(() => assertMcpServer({ type: 'stdio' }, 'mcp.json', 'srv')).message).toBe(`mcp.json: invalid settings at /mcpServers/srv: must have required property 'command'`);
+    expect(thrown(() => assertMcpServersFile({ mcpServers: 3 }, 'mcp.json')).message).toBe('mcp.json: invalid settings at /mcpServers: must be object');
   });
 });
 
