@@ -315,8 +315,9 @@ export const createTuiBackend = (
     },
     userInput: {
       fileCandidates: async (signal) => {
-        const { listFileCandidates, unprotectedLaunch } = await import('@momonga/runtime');
-        return listFileCandidates({ root: ports.cwd, env: ports.env, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal }, unprotectedLaunch('the file list of the terminal UI starts git without the protection of the home'));
+        const { hostHomeProtectedLaunch, listFileCandidates } = await import('@momonga/runtime');
+        const launch = await hostHomeProtectedLaunch({ home: paths.home, platform: ports.platform, env: ports.env }, signal);
+        return listFileCandidates({ root: ports.cwd, env: ports.env, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal }, launch);
       },
       shell: (command, include, io) => runtime().userShell(current().id, command, include, io),
       stopShell: () => runtime().stopUserShell(current().id),

@@ -12,6 +12,8 @@ import { ripgrepLocatorOn } from './ripgrep-locator.ts';
 import type { HostRipgrepLocatorOptions, RipgrepLocator } from './ripgrep-locator.ts';
 import { workTreeObserverOn } from './work-tree-observer.ts';
 import type { GitWorkTreeObserverOptions, WorkTreeObserver } from './work-tree-observer.ts';
+import { homeProtectedLaunch } from './home-protected-launch.ts';
+import type { HomeProtectedLaunchInput } from './home-protected-launch.ts';
 
 export const nodeChildPorts = (): ChildPorts => ({
   spawn: (file, args, { cwd, env, signal }) =>
@@ -41,6 +43,8 @@ const hostListing = (launch: ChildLaunch): FileListingPorts => ({ child: nodeChi
 export const listFileCandidates = (options: FileListingOptions, launch: ChildLaunch): Promise<FileCandidates> => fileCandidatesOn(hostListing(launch), options);
 
 export const listDirectoryEntries = (options: FileListingOptions, launch: ChildLaunch): Promise<string[]> => directoryEntriesOn(hostListing(launch), options);
+
+export const hostHomeProtectedLaunch = (input: Omit<HomeProtectedLaunchInput, 'files'>, signal: AbortSignal): Promise<ChildLaunch> => homeProtectedLaunch({ ...input, files: nodeFileSystem }, signal);
 
 export const unprotectedLaunch = (reason: string): ChildLaunch => ({
   protection: { kind: 'unprotected', reason },

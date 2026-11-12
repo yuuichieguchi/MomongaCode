@@ -38,7 +38,7 @@ import {
 import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, DEFAULT_SANDBOX_EXEC_PATH, bubblewrapPresent, childProtectionFor, protectionCommandOf, createPlaceholderJournal, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
+import { createPlaceholderJournal, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { unaskedCommandsFor } from '@momonga/policy';
 import { DERIVED_CATCH_UP_PAGES, FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
@@ -48,7 +48,7 @@ import { folderPolicyVerification, mandateRunVerification } from './folder-verif
 import type { MandateRunSources } from './folder-verification.ts';
 import { supervisedGatewayStanding } from './supervised-gateway.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
-import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, operationCatalogueFacts, sweepCallLocks } from '@momonga/tools';
+import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, operationCatalogueFacts, sweepCallLocks, homeProtectedLaunch } from '@momonga/tools';
 import type { BundledRipgrepResolver, ChildLaunch, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
@@ -433,12 +433,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const journalDirectory = placeholderJournalDirectoryOf(paths);
     const { helperSelf } = options;
-    const bubblewrap = platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
-    const noneProtection = childProtectionFor({ sandbox: 'none', home: canonicalHome, platform, env: process.env, bubblewrap });
-    const childLaunch: ChildLaunch = {
-      protection: noneProtection,
-      commandOf: (argv, scratch) => protectionCommandOf(noneProtection, { platform, argv, scratch, sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
-    };
+    const childLaunch: ChildLaunch = await homeProtectedLaunch({ home: canonicalHome, platform, env: process.env, files: nodeFileSystem }, startDeadlineSignal(signal));
+    const noneProtection = childLaunch.protection;
     const sandboxOf = createSandboxOf({
       platform,
       paths,
@@ -610,7 +606,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         version,
         mcpLaunch: {
           protection: noneProtection,
-          commandOf: (argv) => protectionCommandOf(noneProtection, { platform, argv, scratch: [], sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
+          commandOf: (argv) => childLaunch.commandOf(argv, []),
         },
         owners: markerOwners,
         lockCapability,

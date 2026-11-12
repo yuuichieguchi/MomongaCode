@@ -102,12 +102,15 @@ export type { SandboxPolicyOptions } from './builtins/index.ts';
 export { ShellNotFoundError, executableCheckNowOn, executableCheckOn, resolveBashPath, resolveBashPathNow } from './builtins/shell.ts';
 export type { ExecutableCheck, ShellHost, ShellPorts, ShellPortsNow } from './builtins/shell.ts';
 export { createGlobExpander, policyFilesystemOn } from './policy-filesystem.ts';
+export { homeProtectedLaunch } from './home-protected-launch.ts';
+export type { HomeProtectedLaunchInput } from './home-protected-launch.ts';
 export {
   createGitWorkTreeObserver,
   createHostRipgrepLocator,
   createPolicyFilesystem,
   listDirectoryEntries,
   listFileCandidates,
+  hostHomeProtectedLaunch,
   unprotectedLaunch,
   nodeChildPorts,
   nodeShellHost,
