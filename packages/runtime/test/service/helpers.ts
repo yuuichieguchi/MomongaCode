@@ -445,7 +445,7 @@ export type ServiceOverrides = {
   mandateVerification?: MandateRunVerification;
   permissionRules?: (session: Session) => Promise<readonly PermissionRule[]>;
   role?: RolePort;
-  work?: { steps(): number; jobs(): number };
+  work?: { runs(): readonly string[]; jobs(): readonly { id: string; command: string }[] };
   ignorableMarkerDirectories?: (signal: AbortSignal) => Promise<readonly string[]>;
   onRequestEnd?: () => void;
   timers?: FakeTimers;
@@ -606,7 +606,7 @@ export const serviceOptions = (
       text: 'cost report',
     })),
   role: overrides.role ?? fixedRolePort('serving'),
-  work: overrides.work ?? { steps: () => 0, jobs: () => 0 },
+  work: overrides.work ?? { runs: () => [], jobs: () => [] },
   ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home, process.platform, process.env).markers.root]),
   files: nodeFileSystem,
   ...(overrides.onRequestEnd === undefined ? {} : { onRequestEnd: overrides.onRequestEnd }),

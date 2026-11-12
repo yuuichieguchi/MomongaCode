@@ -6,7 +6,7 @@ import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
@@ -123,7 +123,7 @@ export type RunAppDeps = {
   isDraining(): boolean;
   beginDraining(): void;
   role(): GenerationRole;
-  work: { steps(): number; jobs(): number };
+  work: { runs(): readonly string[]; jobs(): readonly { id: string; command: string }[] };
   health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind> };
   protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
@@ -297,8 +297,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     startedAt: deps.health.startedAt,
     state: deps.isDraining() ? 'draining' : deps.role() === 'retiring' ? 'retiring' : 'running',
     role: deps.role(),
-    steps: deps.work.steps(),
-    jobs: deps.work.jobs(),
+    steps: deps.work.runs().length,
+    jobs: deps.work.jobs().length,
+    interrupts: interruptedWorkOf(deps.work.runs(), deps.work.jobs()),
     sandbox: await deps.health.sandbox(context.req.raw.signal),
   });
 
