@@ -22,13 +22,13 @@ describe('leak guard', () => {
     expect(leakedTempDirs(root, 'abcd')).toEqual(['mmt-abcd-111111', 'mmt-abcd-222222']);
   });
 
-  it('fails naming the leaked directories and never deletes them', (context) => {
+  it('fails naming the leaked directories of its run, and removes them once they are named', (context) => {
     const root = withTempDir(context);
     fs.mkdirSync(path.join(root, 'mmt-abcd-111111'));
+    fs.writeFileSync(path.join(root, 'mmt-abcd-111111', 'left'), 'planted');
     fs.mkdirSync(path.join(root, 'mmt-ffff-333333'));
-    expect(() => assertNoLeakedTempDirs([root], 'abcd', [])).toThrow('mmt-abcd-111111');
-    expect(() => assertNoLeakedTempDirs([root], 'ffff', [])).toThrow('mmt-ffff-333333');
-    expect(fs.readdirSync(root).sort()).toEqual(['mmt-abcd-111111', 'mmt-ffff-333333']);
+    expect(() => assertNoLeakedTempDirs([root], 'abcd', [])).toThrow(`test run abcd left 1 temp dir(s): ${path.join(root, 'mmt-abcd-111111')}`);
+    expect(fs.readdirSync(root)).toEqual(['mmt-ffff-333333']);
   });
 
   it('passes when nothing of this run is left', (context) => {
@@ -57,7 +57,7 @@ describe('leak guard over the entries the run recorded', () => {
     fs.mkdirSync(left);
     expect(leakedTempEntries([root], 'abcd', [left, path.join(root, 'mm-removed')])).toEqual([left]);
     expect(() => assertNoLeakedTempDirs([root], 'abcd', [left])).toThrow(`test run abcd left 1 temp dir(s): ${left}`);
-    expect(fs.existsSync(left)).toBe(true);
+    expect(fs.existsSync(left)).toBe(false);
   });
 
   it('names an entry once when it carries the run token and was recorded', (context) => {

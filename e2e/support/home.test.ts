@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
 import { createTempDir, firstGeneration, registerCleanup, spawnTracked, startLockHolder } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { OVERLAP_MESSAGE, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
+import { KEPT_HOME_FILE_NAME, OVERLAP_MESSAGE, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
+import type { E2eTestOutcome } from './home.ts';
 import { parsePidsFile } from './ledger.ts';
 import { E2E_RUN_ENV, currentIdentity, e2eTmpRoot, privateRootName, sharedTempBase } from './run-env.ts';
 
@@ -32,6 +33,12 @@ const deadPid = (): number => {
   return result.pid;
 };
 
+const STOP_BOUNDS_OF_A_HOME_WITHOUT_A_PRODUCT = { supervisorAsked: 0, orphaned: 0 };
+
+const logLine = (service: string): string => `${JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', level: 'info', service, pid: 1, msg: `${service} line of the failed test` })}\n`;
+
+const passed = (test: string): E2eTestOutcome => ({ test, failed: false });
+
 const entriesWithPrefix = (dir: string, prefix: string): string[] => fs.readdirSync(dir).filter((entry) => entry.startsWith(prefix));
 
 describe('createE2eHome', () => {
@@ -53,7 +60,7 @@ describe('createE2eHome', () => {
     expect(fs.statSync(created.sessionTmp).mode & 0o777).toBe(0o700);
     expect(created.paths.root).toBe(path.join(created.root, '.momonga'));
     expect(fs.readFileSync(liveMarker(), 'utf8')).toBe(String(process.pid));
-    await disposeAll();
+    await disposeAll(passed('lays out the home'));
     expect(fs.existsSync(created.root)).toBe(false);
     expect(fs.existsSync(liveMarker())).toBe(false);
   });
@@ -128,7 +135,7 @@ describe('single-live-home guard', () => {
     fs.writeFileSync(liveMarker(), '', { flag: 'wx', mode: 0o600 });
     await createE2eHome();
     expect(fs.readFileSync(liveMarker(), 'utf8')).toBe(String(process.pid));
-    await disposeAll();
+    await disposeAll(passed('replaces an empty marker'));
     fs.writeFileSync(liveMarker(), 'not a pid', { flag: 'wx', mode: 0o600 });
     await createE2eHome();
     expect(fs.readFileSync(liveMarker(), 'utf8')).toBe(String(process.pid));
@@ -172,7 +179,7 @@ describe('disposing a home whose daemon appeared after the ledger was swept', ()
       holderPid = (await startLockHolder(context, generation.locks.supervisor)).pid;
     });
 
-    await disposeAll();
+    await disposeAll(passed('stops the lock holder'));
 
     expect(holderPid).toBeDefined();
     expect(isProcessAlive(holderPid as number)).toBe(false);
@@ -193,8 +200,50 @@ describe('registerE2eCleanup and disposeAll', () => {
     registerE2eCleanup(async () => {
       order.push('third');
     });
-    await expect(disposeAll()).rejects.toThrow('second cleanup failed');
+    await expect(disposeAll(passed('runs every cleanup'))).rejects.toThrow('second cleanup failed');
     expect([...order].sort()).toEqual(['first', 'second', 'third']);
-    await expect(disposeAll()).resolves.toBeUndefined();
+    await expect(disposeAll(passed('runs every cleanup'))).resolves.toBeUndefined();
+  });
+});
+
+describe('the cleanup after an e2e test is also a detector', () => {
+  it('fails the test with the pgid, the command and the test name of a process group that outlives the stop, and kills it only after naming it', async (context) => {
+    ownMarkerCleanup(context);
+    const created = await createE2eHome();
+    const survivor = spawnTracked(context, '/bin/sleep', ['300'], { stdio: 'ignore' });
+    const pgid = survivor.pid as number;
+    await created.ledger.add(pgid, 'db');
+
+    registerCleanup(context, () => fs.rmSync(created.root, { recursive: true, force: true }));
+
+    const disposed = disposeAll(passed('the test that left a sleeper'), STOP_BOUNDS_OF_A_HOME_WITHOUT_A_PRODUCT);
+
+    await expect(disposed).rejects.toThrow(new RegExp(`the test that left a sleeper left process group ${pgid} alive after the product was asked to stop: .*/bin/sleep 300`));
+    expect(isProcessAlive(pgid)).toBe(false);
+  });
+
+  it('keeps the home of a failed test and puts the product logs in the failure', async (context) => {
+    ownMarkerCleanup(context);
+    const created = await createE2eHome();
+    registerCleanup(context, () => fs.rmSync(created.root, { recursive: true, force: true }));
+    fs.mkdirSync(path.dirname(created.paths.logFiles.supervisor), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(created.paths.logFiles.supervisor, logLine('supervisor'));
+    fs.writeFileSync(created.paths.logFiles.gateway, logLine('gateway'));
+    fs.writeFileSync(created.paths.logFiles.runtime, logLine('runtime'));
+
+    const disposed = disposeAll({ test: 'the failing test', failed: true });
+
+    await expect(disposed).rejects.toThrow(/the failing test failed; its home is kept at .*supervisor line of the failed test.*gateway line of the failed test.*runtime line of the failed test/s);
+    expect(fs.existsSync(created.root)).toBe(true);
+    expect(fs.existsSync(path.join(created.root, KEPT_HOME_FILE_NAME))).toBe(true);
+  });
+
+  it('removes the home of a passed test', async (context) => {
+    ownMarkerCleanup(context);
+    const created = await createE2eHome();
+
+    await disposeAll(passed('the passing test'));
+
+    expect(fs.existsSync(created.root)).toBe(false);
   });
 });

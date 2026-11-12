@@ -6,13 +6,14 @@ import { FIRST_GENERATION, assertUnixSocketPathFits, ensureMomongaDirs, generati
 import type { MomongaPaths } from '@momonga/foundation';
 import { stopSupervisorHolders } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
-import type { ProcessLedger } from './ledger.ts';
+import type { LedgerSurvivor, ProcessLedger } from './ledger.ts';
+import { readDb } from './db.ts';
 import { groupAlive } from './process.ts';
 import { removeTree } from './remove-tree.ts';
-import { E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, createHarnessFile, e2eEntryPrefix, e2eTmpRoot, harnessFilePath, readHarnessFile } from './run-env.ts';
-import { E2E_DISPOSE_BOUND_MS, withinBound } from './wait.ts';
+import { E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, createHarnessFile, e2eEntryPrefix, e2eTmpRoot, harnessFilePath, readHarnessFile } from './run-env.ts';
+import { E2E_DISPOSE_BOUND_MS, E2E_STOP_SETTLED_BOUNDS_MS, UNTIL_DEFAULT_INTERVAL_MS, abortableWait, withinBound } from './wait.ts';
 
-export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eTmpRoot } from './run-env.ts';
+export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eTmpRoot } from './run-env.ts';
 export const PROJECT_DIR_NAME = 'p';
 export const SESSION_TMP_DIR_NAME = 'session-tmp';
 export const UPSTREAM_SOCKET_NAME = 'u.sock';
@@ -33,6 +34,8 @@ export type E2eHome = {
 };
 
 export type CreateE2eHomeOptions = { tmpRoot?: string; run?: string };
+
+export type E2eTestOutcome = { readonly test: string; readonly failed: boolean };
 
 export type E2eCleanup = () => void | Promise<void>;
 
@@ -137,13 +140,66 @@ export const registerE2eCleanup = (cleanup: E2eCleanup): void => {
   cleanups.push(cleanup);
 };
 
-const supervisorGroupsOf = (home: E2eHome): number[] => home.ledger.entries().filter((entry) => entry.source === 'supervisor').map((entry) => entry.pgid);
+export type E2eStopBounds = { readonly supervisorAsked: number; readonly orphaned: number };
 
-const stopProcessesOf = async (home: E2eHome): Promise<void> => {
+const LOG_TAIL_BYTES = 16 * 1024;
+const JOURNAL_TAIL_ROWS = 40;
+const JOURNAL_TAIL_SQL = `SELECT run_id, seq, type FROM events ORDER BY id DESC LIMIT ${JOURNAL_TAIL_ROWS}`;
+
+const liveSupervisorsOf = (home: E2eHome): number[] => home.ledger.entries().filter((entry) => entry.source === 'supervisor' && groupAlive(entry.pgid)).map((entry) => entry.pgid);
+
+const survivorsAfterStop = async (home: E2eHome, bounds: E2eStopBounds): Promise<LedgerSurvivor[]> => {
   await home.ledger.collect({});
-  const supervisors = supervisorGroupsOf(home);
-  if (supervisors.length > 0) await home.ledger.kill(supervisors);
+  const supervisors = liveSupervisorsOf(home);
+  for (const pid of supervisors) process.kill(pid, 'SIGTERM');
+  const deadline = performance.now() + (supervisors.length > 0 ? bounds.supervisorAsked : bounds.orphaned);
+  let survivors = await home.ledger.survivors();
+  while (survivors.length > 0 && performance.now() < deadline) {
+    await abortableWait(UNTIL_DEFAULT_INTERVAL_MS);
+    await home.ledger.collect({});
+    survivors = await home.ledger.survivors();
+  }
+  return survivors;
+};
+
+const survivorErrors = (outcome: E2eTestOutcome, survivors: readonly LedgerSurvivor[]): Error[] =>
+  survivors.map((survivor) => new Error(`${outcome.test} left process group ${survivor.pgid} alive after the product was asked to stop: ${survivor.command} (found by ${survivor.source})`));
+
+const stopProcessesOf = async (home: E2eHome, outcome: E2eTestOutcome, bounds: E2eStopBounds): Promise<Error[]> => {
+  const errors = survivorErrors(outcome, await survivorsAfterStop(home, bounds));
   await home.ledger.sweep({});
+  return errors;
+};
+
+const tailOf = (file: string): string => {
+  if (!fs.existsSync(file)) return `${file} does not exist`;
+  const bytes = fs.readFileSync(file);
+  return bytes.subarray(Math.max(0, bytes.length - LOG_TAIL_BYTES)).toString('utf8');
+};
+
+const journalTailOf = (home: E2eHome): string => {
+  const database = home.paths.databases.runtime;
+  if (!fs.existsSync(database)) return `${database} does not exist`;
+  try {
+    return readDb(database, JOURNAL_TAIL_SQL)
+      .reverse()
+      .map((row) => `${String(row['run_id'])} #${String(row['seq'])} ${String(row['type'])}`)
+      .join('\n');
+  } catch (error) {
+    return `the journal could not be read: ${error instanceof Error ? error.message : String(error)}`;
+  }
+};
+
+const productLogsOf = (home: E2eHome): string =>
+  [
+    ...Object.entries(home.paths.logFiles).map(([role, file]) => `--- ${role} log (tail) ---\n${tailOf(file)}`),
+    `--- run journal (last ${JOURNAL_TAIL_ROWS} events) ---\n${journalTailOf(home)}`,
+  ].join('\n');
+
+const keepHome = (home: E2eHome, outcome: E2eTestOutcome): Error => {
+  fs.writeFileSync(path.join(home.root, KEPT_HOME_FILE_NAME), `${outcome.test}\n`, { mode: 0o600 });
+  fs.rmSync(liveMarkerPath(home.tmpRoot, home.run), { force: true });
+  return new Error(`${outcome.test} failed; its home is kept at ${home.root}\n${productLogsOf(home)}`);
 };
 
 const removeHome = async (home: E2eHome): Promise<void> => {
@@ -156,7 +212,7 @@ const removeHome = async (home: E2eHome): Promise<void> => {
 const survivingGroups = (disposing: readonly E2eHome[]): number[] =>
   disposing.flatMap((home) => home.ledger.entries().map((entry) => entry.pgid).filter((pgid) => groupAlive(pgid)));
 
-export const disposeAll = async (): Promise<void> => {
+export const disposeAll = async (outcome: E2eTestOutcome, bounds: E2eStopBounds = E2E_STOP_SETTLED_BOUNDS_MS): Promise<void> => {
   const disposing = homes.splice(0);
   const callbacks = cleanups.splice(0);
   const failures: unknown[] = [];
@@ -168,9 +224,14 @@ export const disposeAll = async (): Promise<void> => {
     }
   };
   const work = async (): Promise<void> => {
-    for (const home of disposing) await attempt(() => stopProcessesOf(home));
+    const stopped = await Promise.all(disposing.map(async (home) => ({ home, errors: await stopProcessesOf(home, outcome, bounds) })));
+    for (const { errors } of stopped) failures.push(...errors);
     for (const callback of callbacks) await attempt(callback);
-    for (const home of disposing) await attempt(() => removeHome(home));
+    const keep = outcome.failed || failures.length > 0;
+    for (const home of disposing) await attempt(async () => {
+      if (keep) throw keepHome(home, { test: outcome.test, failed: true });
+      await removeHome(home);
+    });
   };
   try {
     await withinBound(work(), E2E_DISPOSE_BOUND_MS, 'disposeAll');
@@ -178,7 +239,7 @@ export const disposeAll = async (): Promise<void> => {
     throw new Error(`${error instanceof Error ? error.message : String(error)}; surviving process groups: ${survivingGroups(disposing).join(', ') || 'none'}`, { cause: error });
   }
   if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) throw new AggregateError(failures, `e2e cleanup failed ${failures.length} times`);
+  if (failures.length > 1) throw new AggregateError(failures, `e2e cleanup failed ${failures.length} times: ${failures.map((failure) => (failure instanceof Error ? failure.message : String(failure))).join('\n')}`);
 };
 
-afterEach(disposeAll);
+afterEach((context) => disposeAll({ test: context.task.name, failed: context.task.result?.state === 'fail' }));

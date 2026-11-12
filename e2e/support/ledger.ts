@@ -23,6 +23,7 @@ export type LedgerPorts = {
   killGroups: (pgids: readonly number[]) => Promise<void>;
   findHolders: (marker: string) => Promise<number[]>;
   pgidOf: (pid: number) => Promise<number | undefined>;
+  commandOf: (pid: number) => Promise<string | undefined>;
 };
 
 export type LedgerCollectSources = {
@@ -31,6 +32,8 @@ export type LedgerCollectSources = {
   recordFiles?: readonly string[];
 };
 
+export type LedgerSurvivor = { readonly pgid: number; readonly source: LedgerSource; readonly command: string };
+
 export type ProcessLedger = {
   readonly pidsFile: string;
   add(pid: number, source: LedgerSource): Promise<void>;
@@ -38,6 +41,7 @@ export type ProcessLedger = {
   collect(sources: LedgerCollectSources): Promise<void>;
   entries(): readonly LedgerEntry[];
   kill(pgids?: readonly number[]): Promise<number[]>;
+  survivors(): Promise<LedgerSurvivor[]>;
   sweep(sources: LedgerCollectSources): Promise<number[]>;
 };
 
@@ -94,6 +98,20 @@ export const processGroupOf = (pid: number): Promise<number | undefined> =>
     });
   });
 
+export const processCommandOf = (pid: number): Promise<string | undefined> =>
+  new Promise((resolve, reject) => {
+    execFile(PS_PATH, ['-o', 'command=', '-p', String(pid)], { env: { LC_ALL: 'C' } }, (error, stdout) => {
+      if (error !== null && String(error.code) !== '1') {
+        reject(error);
+        return;
+      }
+      const text = stdout.trim();
+      resolve(text === '' ? undefined : text);
+    });
+  });
+
+export const HARNESS_SOURCES: ReadonlySet<LedgerSource> = new Set<LedgerSource>(['fixture']);
+
 export const defaultLedgerPorts: LedgerPorts = {
   startTimeOf: (pid) => testProcessInspector().startTimeOf(pid, { signal: new AbortController().signal }),
   groupAlive: (pgid) => isProcessAlive(-pgid),
@@ -101,6 +119,7 @@ export const defaultLedgerPorts: LedgerPorts = {
   killGroups: killGroupsForCleanup,
   findHolders: (marker) => findHolders(marker, { inspector: testProcessInspector(), signal: new AbortController().signal }),
   pgidOf: processGroupOf,
+  commandOf: processCommandOf,
 };
 
 export const formatPidsLine = (entry: LedgerEntry): string => `${entry.pgid}${PIDS_FIELD_SEPARATOR}${entry.startTime ?? NO_START_TIME}${PIDS_FIELD_SEPARATOR}${entry.source}\n`;
@@ -292,6 +311,18 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
     return signal;
   };
 
+  const survivors = async (): Promise<LedgerSurvivor[]> => {
+    const product = [...entries.values()].filter((entry) => !HARNESS_SOURCES.has(entry.source));
+    const { signal } = await selectGroupsToSignal(product, ports);
+    const found: LedgerSurvivor[] = [];
+    for (const pgid of signal) {
+      const entry = entries.get(pgid);
+      if (entry === undefined) continue;
+      found.push({ pgid, source: entry.source, command: (await ports.commandOf(pgid)) ?? 'a group whose leader has exited' });
+    }
+    return found;
+  };
+
   const sweep = async (sources: LedgerCollectSources): Promise<number[]> => {
     const collectFailures = await gatherFailures(collectSteps(sources));
     const killed = await kill();
@@ -299,5 +330,5 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
     return killed;
   };
 
-  return { pidsFile, add, record, collect, entries: () => [...entries.values()], kill, sweep };
+  return { pidsFile, add, record, collect, entries: () => [...entries.values()], kill, survivors, sweep };
 };
