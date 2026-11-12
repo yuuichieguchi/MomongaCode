@@ -13,10 +13,12 @@ export const reportedTokensOfRequest = (body: unknown): number => reportedTokens
 
 const SCRIPTED_COMPLETION_TOKENS = 5;
 
-export const SCRIPTED_USAGE = (body: unknown): FakeFixedUsage => {
+export const cacheReadUnreportedUsage = (body: unknown): FakeFixedUsage => {
   const promptTokens = reportedTokensOfRequest(body);
   return { prompt_tokens: promptTokens, completion_tokens: SCRIPTED_COMPLETION_TOKENS, total_tokens: promptTokens + SCRIPTED_COMPLETION_TOKENS };
 };
+
+export const SCRIPTED_USAGE = (body: unknown): FakeFixedUsage => ({ ...cacheReadUnreportedUsage(body), prompt_tokens_details: { cached_tokens: 0 } });
 
 export type ChatMessage = { readonly role: string; readonly content: unknown; readonly tool_call_id?: string; readonly tool_calls?: unknown };
 
