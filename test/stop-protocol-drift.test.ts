@@ -10,12 +10,15 @@ import {
   gatewayAbortCloseMs,
   gatewayMaxCloseMs,
   gatewayStopBudgetMs,
+  killedChildSettleMs,
   managedServerReapBoundMs,
   markerReapClockBoundMs,
+  runtimeMaxCloseMs,
   runtimeStopBudgetMs,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
+import { shutdownStepBoundsMs } from '@momonga/supervisor';
 
 const specPath = path.resolve(import.meta.dirname, '..', 'specs', 'tla', 'StopProtocol.tla');
 const spec = fs.readFileSync(specPath, 'utf8');
@@ -38,8 +41,10 @@ describe('StopProtocol.tla composes the stop bounds the way process-contract.ts 
     expect(definitionOf('CG')).toBe('v');
     expect(definitionOf('GW')).toBe('CG(v) + FmBound');
     expect(definitionOf('CHILD')).toBe('GW(v) + KILLCONF + 1');
-    expect(definitionOf('RT')).toBe('r + 1');
-    expect(definitionOf('SUP')).toBe('RT(r) + CHILD(v) + KILLCONF + REAP');
+    expect(definitionOf('RTK')).toBe('r + 1');
+    expect(definitionOf('RT')).toBe('r + KILLCONF + 1');
+    expect(definitionOf('RTSHARE')).toBe('IF Variant = "runtimeNoShare" THEN RTK(r) ELSE RT(r)');
+    expect(definitionOf('SUP')).toBe('RTSHARE(r) + CHILD(v) + KILLCONF + REAP + 1');
     expect(definitionOf('DAEMON')).toBe('SUP(v, r) + 1');
     expect(definitionOf('ABUD')).toBe('FmBound + KILLCONF + 1');
     expect(definitionOf('REAP')).toBe('FmBound');
@@ -63,8 +68,20 @@ describe('StopProtocol.tla composes the stop bounds the way process-contract.ts 
     expect(spec).toMatch(/sent\[g\] => rtv\[g\]\.applied = sv\[g\]/);
   });
 
-  it('SUP: the supervisor close is the runtime stop budget, the gateway stop budget and the reap, plus a part that depends on no value', () => {
-    const fixed = SAMPLED_VALUES.map((values) => supervisorMaxCloseMs(values) - runtimeStopBudgetMs(values) - gatewayStopBudgetMs(values) - managedServerReapBoundMs(values));
+  it('RT: the runtime is killed at its stop budget (RTK) and its term of the supervisor close adds the settle of a killed child, the share the gateway term carries', () => {
+    for (const values of SAMPLED_VALUES) {
+      const [, runtimeStop, runtimeShare, gatewayStop, gatewayShare] = shutdownStepBoundsMs(values);
+      expect(runtimeStop, JSON.stringify(values)).toBe(runtimeStopBudgetMs(values));
+      expect(runtimeStopBudgetMs(values) - runtimeMaxCloseMs(values), JSON.stringify(values)).toBe(SHUTDOWN_MARGIN_MS);
+      expect(runtimeShare, JSON.stringify(values)).toBe(killedChildSettleMs());
+      expect(gatewayStop, JSON.stringify(values)).toBe(gatewayStopBudgetMs(values));
+      expect(gatewayShare, JSON.stringify(values)).toBe(killedChildSettleMs());
+      expect(shutdownStepBoundsMs(values).reduce((sum, bound) => sum + bound, 0), JSON.stringify(values)).toBe(supervisorMaxCloseMs(values));
+    }
+  });
+
+  it('SUP: the supervisor close is the runtime term, the gateway term, the kill share and the reap, plus a part that depends on no value (the + 1)', () => {
+    const fixed = SAMPLED_VALUES.map((values) => supervisorMaxCloseMs(values) - runtimeStopBudgetMs(values) - killedChildSettleMs() - gatewayStopBudgetMs(values) - killedChildSettleMs() - managedServerReapBoundMs(values));
     expect(new Set(fixed).size).toBe(1);
     expect(fixed[0]).toBeGreaterThan(0);
   });

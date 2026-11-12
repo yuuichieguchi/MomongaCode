@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createPosixGroupPort, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
+import { MAXIMUM_STOP_VALUES, createPosixGroupPort, gatewayStopBudgetMs, killedChildSettleMs, managedServerReapBoundMs, reapMarkedProcesses, reconcileProcessGroup, runtimeStopBudgetMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ProcessGroupPort, ProcessInspector, Timing } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
 import { canStillRun } from '../packages/foundation/src/platform/run-state.ts';
@@ -273,5 +273,20 @@ describe('the settle says that a process is still running only while a holder or
 
   it('the candidate configuration holds every-run', () => {
     expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.settleCandidate')).toMatchObject({ role: 'check', tier: 'every-run', expect: 'holds' });
+  });
+});
+
+describe('every child a stop kills has a bound that holds its own kill confirmation, as specs/tla/StopProtocol.tla RT and CHILD state', () => {
+  const stopProtocol = fs.readFileSync(path.join(specDir, 'StopProtocol.tla'), 'utf8');
+
+  it('the supervisor close holds the runtime stop budget and the settle of a killed runtime before the gateway term, and the evidence without that share violates NoManagedOutlives', () => {
+    expect(stopProtocol).toMatch(/^RT\(r\) == r \+ KILLCONF \+ 1$/m);
+    expect(stopProtocol).toMatch(/^CHILD\(v\) == GW\(v\) \+ KILLCONF \+ 1$/m);
+    const evidence = manifest.entries.find((entry) => entry.config === 'StopProtocol.runtimeNoShare');
+    expect(evidence?.expect).toEqual({ violates: 'NoManagedOutlives', exitCode: 12 });
+    for (const values of [MAXIMUM_STOP_VALUES, { closeGraceMs: 0, managedServerStopGraceMs: 0, drainTimeoutMs: 0, mcpCloseGraceMs: 0 }]) {
+      const withShares = runtimeStopBudgetMs(values) + killedChildSettleMs() + gatewayStopBudgetMs(values) + killedChildSettleMs() + managedServerReapBoundMs(values);
+      expect(supervisorMaxCloseMs(values), JSON.stringify(values)).toBeGreaterThanOrEqual(withShares);
+    }
   });
 });
