@@ -17,7 +17,7 @@ export const SAVING_PHASE = 'saving the setting';
 
 export const windowPrompt = (display: string, ceiling: number | undefined): string => (ceiling === undefined ? `Context window for ${display}:` : `Context window for ${display} (at most ${ceiling}):`);
 
-export const windowProblem = (ceiling: number | undefined): string => (ceiling === undefined ? 'Enter a whole number of at least 1.' : `Enter a whole number from 1 to ${ceiling}.`);
+export { windowProblem } from '../../models-check.ts';
 
 const [EXAMPLE_ADDRESS] = LOCAL_SERVER_CANDIDATES;
 

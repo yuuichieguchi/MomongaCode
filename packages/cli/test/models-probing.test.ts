@@ -18,7 +18,7 @@ describe('the model list of a model the gateway is measuring', () => {
     };
     const listing: MomongaModelList = { object: 'list', data: [entry], start: 'apple/system', roles: {} };
 
-    const document = modelsDocumentOf(listing, new Map(), new Set());
+    const document = modelsDocumentOf(listing, new Map(), new Set(), new Map());
 
     expect(formatModels(document)).toBe('apple\n  system  ·  window not known  ·  starts new sessions');
     expect(document.models[0]).toMatchObject({ state: 'probing', contextWindow: null });

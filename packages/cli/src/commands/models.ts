@@ -22,13 +22,14 @@ import {
   withDefaultTag,
   messageOf,
 } from '@momonga/protocol';
-import type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, ModelView, ModelViews, MomongaModelEntry, MomongaModelList, MomongaModelRoles, PlanAccountView, PlanCatalogEntry, Readiness, ServerKind, ServerKindAdapter, TargetBilling } from '@momonga/protocol';
+import type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, ModelEntryState, ModelView, ModelViews, MomongaModelEntry, MomongaModelList, MomongaModelRoles, PlanAccountView, PlanCatalogEntry, Readiness, ServerKind, ServerKindAdapter, TargetBilling } from '@momonga/protocol';
 import { createGatewayClient, listingViewsOf } from '../client/gateway-client.ts';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { formatTokens } from '../format-tokens.ts';
 import { localManagedPorts } from '../local-managed-ports.ts';
-import { NOT_LISTED_BY_SERVER_MARK, NO_SERVER_ANSWERED_TEXT, RUN_AGAIN_WITH_YES_TEXT, noServerAnsweredAtText, notListedByServerText } from '../models-texts.ts';
+import { windowProblem, wholeNumberWithin } from '../models-check.ts';
+import { NOT_LISTED_BY_SERVER_MARK, NO_SERVER_ANSWERED_TEXT, RUN_AGAIN_WITH_YES_TEXT, noServerAnsweredAtText, noServerAnsweredStatementOf, notListedByServerText } from '../models-texts.ts';
 import { withIdentityReadFetch } from '../network.ts';
 import { announcePlainHttp } from '../plain-http.ts';
 import type { CliFiles, CliPorts } from '../ports.ts';
@@ -56,6 +57,7 @@ export type ModelsShell = {
   files: Pick<CliFiles, 'readText' | 'readTextIfPresent'>;
   listing(): Promise<MomongaModelList>;
   detect(request: DetectRequest): Promise<readonly LocalServerDetection[]>;
+  describe(server: DetectedLocalServer, model: DetectedModel, signal: AbortSignal): Promise<DetectedModel>;
   programModel(program: ServerProgram, signal: AbortSignal): Promise<string>;
 };
 
@@ -85,6 +87,7 @@ export type ListedModel = {
   address: string | null;
   billing: TargetBilling;
   contextWindow: number | null;
+  health: ModelEntryState;
   fallback: string[];
   state: Readiness['state'];
   code?: string;
@@ -103,7 +106,10 @@ const stateOf = (entry: MomongaModelEntry, name: string, notListed: boolean): Pi
   return { state: agentReadiness(capabilities).state };
 };
 
-export const modelsDocumentOf = (listing: MomongaModelList, addresses: ReadonlyMap<string, string>, notListed: ReadonlySet<string>): ModelsDocument => {
+export const configuredWindowsOf = (resolved: ResolvedModels): ReadonlyMap<string, number> =>
+  new Map([...resolved.models.values()].flatMap((model): [string, number][] => (model.capabilities?.contextWindow === undefined ? [] : [[model.canon, model.capabilities.contextWindow]])));
+
+export const modelsDocumentOf = (listing: MomongaModelList, addresses: ReadonlyMap<string, string>, notListed: ReadonlySet<string>, configured: ReadonlyMap<string, number>): ModelsDocument => {
   const displays = displayMapOf(listingViewsOf(listing.data));
   const models = listing.data.map((entry): ListedModel => {
     const name = displays.get(entry.id) ?? entry.id;
@@ -113,7 +119,8 @@ export const modelsDocumentOf = (listing: MomongaModelList, addresses: ReadonlyM
       provider: entry.provider,
       address: addresses.get(entry.provider) ?? null,
       billing: entry.billing,
-      contextWindow: isNotListedCapabilities(entry.capabilities) ? null : entry.capabilities.contextWindow,
+      contextWindow: isNotListedCapabilities(entry.capabilities) ? (configured.get(entry.id) ?? null) : entry.capabilities.contextWindow,
+      health: entry.state,
       fallback: entry.chain.slice(1).map((member) => member.model),
       ...stateOf(entry, name, notListed.has(entry.id)),
     };
@@ -122,7 +129,7 @@ export const modelsDocumentOf = (listing: MomongaModelList, addresses: ReadonlyM
 };
 
 const windowPartsOf = (model: ListedModel): string[] => {
-  if (model.billing === 'plan') return [model.billing];
+  if (model.billing === 'plan') return [model.billing, model.health];
   return model.contextWindow === null ? [WINDOW_NOT_KNOWN] : [`${formatTokens(model.contextWindow)} tokens`, model.billing];
 };
 
@@ -150,7 +157,7 @@ export const listModels = async (shell: ModelsShell, options: { json: boolean })
   const listing = await shell.listing();
   const { resolved } = await loadUserModels({ home: shell.home, signal: shell.interrupt });
   announcePlainHttp(shell, resolved.plainHttp);
-  printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), new Set()), options.json);
+  printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), new Set(), configuredWindowsOf(resolved)), options.json);
   return 0;
 };
 
@@ -175,7 +182,7 @@ export const checkModels = async (shell: ModelsShell, options: { json: boolean }
   const listing = await shell.listing();
   const { resolved } = await loadUserModels({ home: shell.home, signal: shell.interrupt });
   announcePlainHttp(shell, resolved.plainHttp);
-  printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), await notListedOf(shell, resolved)), options.json);
+  printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), await notListedOf(shell, resolved), configuredWindowsOf(resolved)), options.json);
   return 0;
 };
 
@@ -269,6 +276,8 @@ export type FormOption = string | boolean | readonly string[] | undefined;
 export type FormInput = { args: readonly string[]; options: Readonly<Record<string, FormOption>> };
 
 class UsageError extends Error {}
+
+class NamedUsageError extends UsageError {}
 
 export class ShellRefusal extends Error {}
 
@@ -403,15 +412,20 @@ const addOperation = (connection: Json, model: Json): ModelsOperation => ({ kind
 
 export const entryOf = (id: string, window: number | undefined): Json => ({ id, ...(window === undefined ? {} : { capabilities: { contextWindow: window, maxOutputTokens: maxOutputTokensFor(window) } }) });
 
-const windowOf = (input: FormInput): number | undefined => {
+const windowOf = (input: FormInput, ceiling: number | undefined): number | undefined => {
   const text = optionText(input, 'window');
-  return text === undefined ? undefined : wholeNumber(text, 1);
+  if (text === undefined) return undefined;
+  const window = wholeNumberWithin(text, ceiling);
+  if (window === undefined) throw new NamedUsageError(`--window: ${windowProblem(ceiling)}`);
+  return window;
 };
 
 export const addProposalOf = (edit: ModelsEdit, connection: Json, model: Json, confirm?: string): ModelsProposal => ({
   operations: [addOperation(connection, model)],
   confirm: (plan) => confirm ?? `Add ${addedDisplayOf(edit, plan)} to your settings?`,
 });
+
+const foundLinesOf = (server: DetectedLocalServer): string[] => [foundRowOf(server), ...server.models.map((model) => `${ROW_INDENT}${model.id}`)];
 
 export const foundRowOf = (server: DetectedLocalServer): string => `${server.provider}${SEPARATOR}${server.address}${SEPARATOR}${server.models.length} ${server.models.length === 1 ? 'model' : 'models'}`;
 
@@ -436,22 +450,27 @@ export const foundProposalOf = (edit: ModelsEdit, input: FormInput, server: Dete
     ...(service === undefined ? {} : { provider: service }),
     ...keyReferenceOf(input),
   };
-  return addProposalOf(edit, connection, entryOf(model.id, windowOf(input) ?? model.contextWindow));
+  const window = windowOf(input, model.ceiling) ?? model.contextWindow ?? model.ceiling;
+  if (window === undefined) throw new ShellRefusal(`${server.provider} does not report the context window of ${model.id}. Name it: momonga models add --model ${model.id} --window <tokens>`);
+  return addProposalOf(edit, connection, entryOf(model.id, window));
 };
+
+const pickedProposalOf = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, server: DetectedLocalServer, model: DetectedModel): Promise<ModelsProposal> =>
+  foundProposalOf(edit, input, server, await shell.describe(server, model, shell.interrupt));
 
 const proposeSearchedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, print: Print): Promise<ModelsProposal> => {
   const servers = offeredServers(await shell.detect({ candidates: LOCAL_SERVER_CANDIDATES, typed: [], signal: shell.interrupt }));
   if (servers.length === 0) throw new ShellRefusal(NO_SERVER_ANSWERED_TEXT);
   const id = optionText(input, 'model');
   if (id === undefined) {
-    print(servers.map(foundRowOf));
+    print(servers.flatMap(foundLinesOf));
     throw new UsageError();
   }
   const holders = servers.flatMap((server) => server.models.filter((model) => model.id === id).map((model) => ({ server, model })));
   const [only, ...others] = holders;
   if (only === undefined) throw new ShellRefusal(`No model server on this computer lists "${id}".`);
   if (others.length > 0) throw new ShellRefusal(`"${id}" is listed by ${serverCountText(holders.length)} servers: ${holders.map((holder) => holder.server.provider).join(', ')}. Run again with --address.`);
-  return foundProposalOf(edit, input, only.server, only.model);
+  return pickedProposalOf(shell, edit, input, only.server, only.model);
 };
 
 const proposeAddressedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, address: string, print: Print): Promise<ModelsProposal> => {
@@ -459,25 +478,40 @@ const proposeAddressedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: F
   const id = optionText(input, 'model');
   if (server === undefined) {
     const api = optionText(input, 'api');
-    if (api === undefined || id === undefined) throw new ShellRefusal(noServerAnsweredAtText(address));
+    if (api === undefined || id === undefined) throw new ShellRefusal(noServerAnsweredStatementOf(address));
     const service = optionText(input, 'service');
     const connection = { adapter: adapterOfApi(api), baseUrl: address, ...(service === undefined ? {} : { provider: service }), ...keyReferenceOf(input) };
-    return addProposalOf(edit, connection, entryOf(id, windowOf(input)), noServerAnsweredAtText(address));
+    return addProposalOf(edit, connection, entryOf(id, windowOf(input, undefined)), noServerAnsweredAtText(address));
   }
   if (id === undefined) {
-    print([foundRowOf(server)]);
+    print(foundLinesOf(server));
     throw new UsageError();
   }
   const model = server.models.find((candidate) => candidate.id === id);
   if (model === undefined) throw new ShellRefusal(`The server at ${address} does not list "${id}".`);
-  return foundProposalOf(edit, input, server, model);
+  return pickedProposalOf(shell, edit, input, server, model);
+};
+
+const PLAN_UNUSABLE_FLAGS = ['address', 'api', 'service', 'apiKeyEnv', 'apiKeySecret'] as const;
+
+const flagOf = (option: string): string => `--${option.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+
+const proposeBuiltIn = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, id: string): Promise<ModelsProposal> => {
+  const others = Object.keys(input.options).filter((option) => option !== 'builtin' && option !== 'yes');
+  if (others.length > 0) throw new NamedUsageError(`The built-in server takes no ${others.map(flagOf).join(', ')}.`);
+  const model = await shell.programModel({ id, builtIn: true }, shell.interrupt);
+  return addProposalOf(edit, { adapter: 'managed', server: id }, { id: model });
 };
 
 const proposeAdd = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, print: Print): Promise<ModelsProposal> => {
+  const builtIn = optionText(input, 'builtin');
+  if (builtIn !== undefined) return proposeBuiltIn(shell, edit, input, builtIn);
   const profile = optionText(input, 'plan');
   if (profile !== undefined) {
+    const unusable = PLAN_UNUSABLE_FLAGS.filter((flag) => input.options[flag] !== undefined);
+    if (unusable.length > 0) throw new NamedUsageError(`A plan model takes no ${unusable.map(flagOf).join(', ')}.`);
     const account = optionText(input, 'account');
-    return addProposalOf(edit, { adapter: 'open-responses', plan: { profile, ...(account === undefined ? {} : { account }) } }, entryOf(requiredOption(input, 'model'), windowOf(input)));
+    return addProposalOf(edit, { adapter: 'open-responses', plan: { profile, ...(account === undefined ? {} : { account }) } }, entryOf(requiredOption(input, 'model'), windowOf(input, undefined)));
   }
   const address = optionText(input, 'address');
   return address === undefined ? proposeSearchedAdd(shell, edit, input, print) : proposeAddressedAdd(shell, edit, input, address, print);
@@ -673,10 +707,19 @@ const proposeAddProgram = async (shell: ModelsHost, edit: ModelsEdit, input: For
 
 const PROGRAM_FIELDS = ['command', 'args', 'readyPath'] as const;
 
+const outsideJsonOf = (text: string, where: string): unknown => {
+  try {
+    return parseOutsideJson(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new NamedUsageError(`${where} is not JSON: ${error.message}`);
+    throw error;
+  }
+};
+
 const programValueOf = (field: (typeof PROGRAM_FIELDS)[number], text: string): unknown => {
   if (field !== 'args') return text;
-  const parsed: unknown = parseOutsideJson(text);
-  if (!Array.isArray(parsed)) throw new UsageError();
+  const parsed = outsideJsonOf(text, 'args');
+  if (!Array.isArray(parsed)) throw new NamedUsageError('args is not a JSON list of strings.');
   return parsed;
 };
 
@@ -714,7 +757,7 @@ const proposeTimeouts = async (_shell: ModelsHost, edit: ModelsEdit, input: Form
 
 const proposeDialectsSet = async (shell: ModelsHost, _edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const file = requiredOption(input, 'file');
-  const dialects: unknown = parseOutsideJson(await shell.files.readText(file));
+  const dialects = outsideJsonOf(await shell.files.readText(file), file);
   if (!isRecord(dialects)) throw new ShellRefusal(`${file} does not hold a JSON object.`);
   return { operations: [{ kind: 'setDialects', dialects }], confirm: () => `Save the schema dialects of ${file}?` };
 };
@@ -749,7 +792,7 @@ const usage = (form: ModelsForm, rest: string): string => `usage: momonga models
 
 const FORM_SPECS: Readonly<Record<ModelsForm, FormSpec>> = {
   add: {
-    usage: usage('add', '[--address <url>] --model <own name> [--window <tokens>] [--api ollama|openai|anthropic|responses] [--api-key-env <NAME> | --api-key-secret <name>] [--service <name>] [--plan <profile> [--account <label>]] [--yes]'),
+    usage: usage('add', '[--address <url>] --model <own name> [--window <tokens>] [--api ollama|openai|anthropic|responses] [--api-key-env <NAME> | --api-key-secret <name>] [--service <name>] [--plan <profile> [--account <label>]] [--builtin <server>] [--yes]'),
     propose: proposeAdd,
   },
   remove: { usage: usage('remove', '<model> [--yes]'), propose: proposeRemove },
@@ -815,7 +858,7 @@ export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input:
     return await proposeAndWrite(shell, edit, await spec.propose(shell, edit, input, (lines) => print(shell.stdout, lines)), input.options['yes'] === true);
   } catch (error) {
     if (error instanceof UsageError) {
-      print(shell.stderr, [spec.usage]);
+      print(shell.stderr, error instanceof NamedUsageError ? [error.message, spec.usage] : [spec.usage]);
       return EXIT_USAGE;
     }
     if (isModelsRefusal(error)) {
@@ -859,6 +902,18 @@ export const serversDetector =
     return detectLocalServers({ ...request, fetch, ...localManagedPorts(settings.models.servers, ports) });
   };
 
+type DescribeFetch = (
+  url: string,
+  init: { method: 'GET' | 'POST'; signal: AbortSignal; headers?: Record<string, string>; body?: string },
+) => Promise<{ ok: boolean; body: AsyncIterable<Uint8Array> | null }>;
+
+export const modelDescriber =
+  (fetch: DescribeFetch): ModelsShell['describe'] =>
+  async (server, model, signal) => {
+    const { describeModel } = await import('@momonga/gateway');
+    return describeModel({ server, model, signal, fetch });
+  };
+
 export const modelsShellOf = (ports: CliPorts, paths: MomongaPaths, interrupt: AbortSignal): ModelsShell => ({
   stdout: ports.stdout,
   stderr: ports.stderr,
@@ -878,5 +933,6 @@ export const modelsShellOf = (ports: CliPorts, paths: MomongaPaths, interrupt: A
     }
   },
   detect: (request) => withIdentityReadFetch(ports, request.signal, (fetch) => serversDetector(ports, fetch)(request)),
+  describe: (server, model, signal) => withIdentityReadFetch(ports, signal, (fetch) => modelDescriber(fetch)(server, model, signal)),
   programModel: (program, signal) => programModelOf(ports, paths, program, signal, (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`)),
 });

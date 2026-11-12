@@ -353,6 +353,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
         detections.push(request);
         return options.detect === undefined ? [...(options.detected ?? [])] : options.detect(request);
       },
+      describe: async (_server, model) => model,
       programModel: async () => {
         if (options.programModel === undefined) throw new Error('the fake backend starts no server program');
         return options.programModel;

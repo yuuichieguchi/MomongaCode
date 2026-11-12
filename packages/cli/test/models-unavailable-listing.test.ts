@@ -40,7 +40,7 @@ const LOCAL_MODEL = 'lmstudio/local-model';
 const SLOW_MODEL = 'apple/slow';
 
 const LISTING = [
-  { id: PLAN_MODEL, object: 'model', provider: 'chatgpt', ownName: 'plan-model', billing: 'plan', capabilities: UNAV, chain: [member(PLAN_MODEL, 'plan-model', 'plan', UNAV), member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
+  { id: PLAN_MODEL, object: 'model', provider: 'chatgpt', ownName: 'plan-model', billing: 'plan', capabilities: UNAV, state: 'available', chain: [member(PLAN_MODEL, 'plan-model', 'plan', UNAV), member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
   { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local', capabilities: LOCAL, chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
   { id: SLOW_MODEL, object: 'model', provider: 'apple', ownName: 'slow', billing: 'local', capabilities: PROBING, chain: [member(SLOW_MODEL, 'slow', 'local', PROBING)] },
 ];
@@ -94,13 +94,13 @@ describe('the CLI shows a model that is not listed with capabilities by its stat
   });
 
   it('momonga models prints a plan model with its billing, a listed one with its window and a measured one without a window', () => {
-    expect(formatModels(modelsDocumentOf(LISTED, new Map([['lmstudio', 'http://127.0.0.1:1234/v1']]), new Set()))).toBe(
-      ['chatgpt', '  plan-model  ·  plan', 'lmstudio  ·  http://127.0.0.1:1234/v1', '  local-model  ·  32.8k tokens  ·  local', 'apple', '  slow  ·  window not known'].join('\n'),
+    expect(formatModels(modelsDocumentOf(LISTED, new Map([['lmstudio', 'http://127.0.0.1:1234/v1']]), new Set(), new Map()))).toBe(
+      ['chatgpt', '  plan-model  ·  plan  ·  available', 'lmstudio  ·  http://127.0.0.1:1234/v1', '  local-model  ·  32.8k tokens  ·  local', 'apple', '  slow  ·  window not known'].join('\n'),
     );
   });
 
   it('momonga models --json names the state of each model, with the code and the message of an unavailable one', () => {
-    expect(modelsDocumentOf(LISTED, new Map(), new Set()).models.map(({ model, state, code, message }) => ({ model, state, code, message }))).toEqual([
+    expect(modelsDocumentOf(LISTED, new Map(), new Set(), new Map()).models.map(({ model, state, code, message }) => ({ model, state, code, message }))).toEqual([
       { model: PLAN_MODEL, state: 'unavailable', code: 'capabilities_unknown', message: M },
       { model: LOCAL_MODEL, state: 'ready', code: undefined, message: undefined },
       { model: SLOW_MODEL, state: 'probing', code: undefined, message: undefined },
