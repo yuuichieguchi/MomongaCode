@@ -53,6 +53,7 @@ import type {
   RunUsage,
   Admission,
   AdmissionAsk,
+  RequestBudget,
   TreeSpend,
 } from '@momonga/protocol';
 
@@ -709,7 +710,7 @@ export type RuntimeStore = {
   listChildRuns(runId: string): Run[];
   treeSpend(runId: string): TreeSpend & { runsRead: number };
   admitModelRequest(holder: LeaseFence | SettledRun, ask: AdmissionAsk): Admission | LeaseLost;
-  releaseBudget(runId: string): void;
+  reserveRecorded(claim: LeaseFence, recorded: Pick<RequestBudget, 'reservedTokens' | 'reservedNano'>): { kind: 'ok' } | LeaseLost;
   rootSessionId(sessionId: string): string;
   jobs: JobStore;
   idempotency: IdempotencyStore;

@@ -556,7 +556,6 @@ const drive = async (
       quote: (model) => control.recordingRaised(gateway.quote(model, { signal: control.signal })),
       spend: () => options.store.treeSpend(run.id),
       ledger: { admitModelRequest: (ask) => options.store.admitModelRequest(claim, ask) },
-      release: () => options.store.releaseBudget(run.id),
       tail: Promise.resolve(),
     },
     ...(delegation === undefined ? {} : { delegation }),

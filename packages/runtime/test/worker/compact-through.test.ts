@@ -299,7 +299,6 @@ const recordingBudget = (priceUnits: string[] = []) => {
         return admitRequest(ask, NOTHING_SPENT);
       },
     },
-    release: () => undefined,
     tail: Promise.resolve(),
   };
   return { account, asks };

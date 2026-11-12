@@ -201,7 +201,6 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       quote: (quoted) => gateway.quote(quoted, { signal }),
       spend: () => store.treeSpend(runId),
       ledger: { admitModelRequest: (ask) => store.admitModelRequest({ runId, settled: true }, ask) },
-      release: () => undefined,
       tail: Promise.resolve(),
     };
     const outputWanted = Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities));

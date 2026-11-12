@@ -8,6 +8,5 @@ export const unlimitedBudget = (): BudgetAccount => ({
   quote: async (model) => ({ model, priced: false }),
   spend: () => NOTHING_SPENT,
   ledger: { admitModelRequest: (ask) => admitRequest(ask, NOTHING_SPENT) },
-  release: () => undefined,
   tail: Promise.resolve(),
 });

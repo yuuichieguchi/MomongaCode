@@ -658,6 +658,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       const seq = current.lastSeq + 1;
       insertEvent({ runId: run.id, sessionId: run.sessionId, seq, step, leaseToken: run.leaseToken, createdAt, payload });
       const spend = spendOf(payload);
+      if (spend !== undefined) sql.reserveBudget.run({ id: run.id, tokens: 0, nano: 0 });
       const usage = spend === undefined ? current.usage : addUsage(current.usage, spend);
       current = { ...current, step, lastSeq: seq, usage };
     }
@@ -1488,9 +1489,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return verdict;
       }),
 
-    releaseBudget: (runId) => {
-      sql.reserveBudget.run({ id: runId, tokens: 0, nano: 0 });
-    },
+    reserveRecorded: (claim, recorded) =>
+      transaction<{ kind: 'ok' } | LeaseLost>(() => {
+        if (fenced(claim) === undefined) return leaseLost;
+        sql.reserveBudget.run({ id: claim.runId, tokens: recorded.reservedTokens, nano: recorded.reservedNano ?? 0 });
+        return { kind: 'ok' };
+      }),
 
     rootSessionId: rootSessionIdOf,
 

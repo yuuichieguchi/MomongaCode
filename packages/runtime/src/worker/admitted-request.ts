@@ -9,7 +9,6 @@ export type BudgetAccount = {
   quote(model: string): Promise<ModelQuote>;
   spend(): { unpricedCalls: number; costNano: number; reservedNano: number };
   ledger: BudgetLedger;
-  release(): void;
   tail: Promise<void>;
 };
 
@@ -66,11 +65,7 @@ const admitAndSend = async <T>(account: BudgetAccount, ask: { model: string; siz
   const quote = await quoteFor(account, ask.model);
   const admission = admissionFor(account, ask.size, quote);
   if (admission.kind !== 'admitted') return admission;
-  try {
-    return { kind: 'sent', value: await send({ admitted: admission, proof: requestBudgetOf(admission, quote) }) };
-  } finally {
-    account.release();
-  }
+  return { kind: 'sent', value: await send({ admitted: admission, proof: requestBudgetOf(admission, quote) }) };
 };
 
 export const withAdmission = <T>(account: BudgetAccount, ask: { model: string; size: StepSize }, send: (admitted: Admitted) => Promise<T>): Promise<Sent<T>> => {
