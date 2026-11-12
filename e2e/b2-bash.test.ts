@@ -10,7 +10,7 @@ import { TOOL_GROUPS_SQL } from './support/ledger.ts';
 import { groupAlive, hostPidOf, isAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import { REFUSED_WRITE_TEXT, SANDBOX_ENDS_WITH_RUNTIME, platformSandbox, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, precedingAssistantCallId, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -67,11 +67,11 @@ const killRuntimeDuringBash = async (command: (files: { effect: string; shell: s
   const stack = await startStack({
     home,
     needsBash: true,
-    deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+    deps: { restart: E2E_RESTART_POLICY },
     script: [toolCallReply('Bash', { command: command(files) }), textReply('done')],
   });
   const runtime = createRuntimeClient(home);
-  const { session } = await runtime.createSession();
+  const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
   const { run } = await runtime.createRun(session.id, 'Say hello');
   await until(() => linesOf(files.effect)?.length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'effect.log has one line' });
   const [pgid] = await until(
@@ -112,7 +112,7 @@ describe('b2: Bash under the platform sandbox', () => {
     const runtime = createRuntimeClient(home);
     try {
       expect((await runtime.health()).sandbox).toBe(platformSandbox());
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Say hello');
       const stream = runtime.events(run.id);
       const frames = await stream.toEnd(E2E_RECOVERY_BOUND_MS);
@@ -149,14 +149,14 @@ describe('b2: Bash under the platform sandbox', () => {
     const stack = await startStack({
       home,
       needsBash: true,
-      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      deps: { restart: E2E_RESTART_POLICY },
       script: [toolCallReply('Bash', { command: `echo effect >> ${effectLog}; sleep 30` }), textReply('done')],
     });
     expect(stack.sandbox).toBe(platformSandbox());
     const runtime = createRuntimeClient(home);
     try {
       expect((await runtime.health()).sandbox).toBe(platformSandbox());
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Say hello');
 
       await until(() => linesOf(effectLog)?.length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'effect.log has one line' });

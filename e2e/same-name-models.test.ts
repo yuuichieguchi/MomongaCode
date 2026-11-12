@@ -36,7 +36,6 @@ describe('two servers that serve a model of the same name', () => {
     if (first === undefined) throw new Error('no server was started');
     await startStack({
       home,
-      sandbox: 'none',
       upstream: first.fake,
       settings: modelSettings({
         start: first.canon,

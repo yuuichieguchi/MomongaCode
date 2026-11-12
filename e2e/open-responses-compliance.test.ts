@@ -8,7 +8,7 @@ import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import { SUPERVISOR_APP_VERSION } from './support/app-version.ts';
 import { roleMainOverride } from './support/launcher.ts';
 import { readLog } from './support/log-reader.ts';
-import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import { toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -83,7 +83,6 @@ describe('Open Responses compliance suite against the supervised gateway debug l
         }),
       },
       deps: {
-        ...DEFAULT_E2E_DEPS,
         launcherOverrides: { gateway: roleMainOverride('gateway', SUPERVISOR_APP_VERSION, ['--debug-tcp-port=0', `--debug-tcp-token-file=${tokenFile}`]) },
       },
     });

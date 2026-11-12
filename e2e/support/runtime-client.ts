@@ -68,8 +68,8 @@ export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver
     const { session } = await product.createSession({
       cwd: home.project,
       env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp },
-      permissionMode: options.permissionMode ?? 'bypassPermissions',
-      bypassAllowed: true,
+      ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
+      ...(options.permissionMode === 'bypassPermissions' ? { bypassAllowed: true } : {}),
     });
     return { session };
   };

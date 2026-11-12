@@ -1,3 +1,4 @@
+import { PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,7 +8,7 @@ import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
+import { createRuntimeClient, personCapabilityOfHome, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { baseSettings, shutdownBarrier, startStack, withStructuredRole } from './support/stack.ts';
 import { chatCompletions, messagesOf, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
@@ -27,7 +28,8 @@ const rawClient = (home: E2eHome) => {
     const response = await client.request({
       method,
       path: target,
-      ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+      headers: { [PERSON_CAPABILITY_HEADER]: await personCapabilityOfHome(home), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const text = await response.text();
     return { status: response.status, json: text === '' ? {} : (JSON.parse(text) as Json) };
@@ -64,7 +66,6 @@ describe('learning loop', () => {
     const project = fs.realpathSync.native(home.project);
     const stack = await startStack({
       home,
-      sandbox: 'none',
       version: cliPackage.version,
       settings: withStructuredRole(
         { models: baseSettings(home, 'none')['models'], memory: { reflection: { enabled: true } }, verification: { commands: ['echo verified'] } },
