@@ -35,7 +35,7 @@ const unprobedTarget = async (kind: Kind): Promise<{ target: Record<string, unkn
     return { target: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath } };
   }
   if (kind === 'ollama') {
-    const fake = await startFakeOllama({ chat: [] });
+    const fake = await startFakeOllama({ chat: [], show: SHOW_WITHOUT_CAPABILITIES });
     return { target: { adapter: 'ollama', model: OLLAMA_LISTED, baseUrl: fake.origin, capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } } };
   }
   const fake = await startFake({ scenario: 'tools-ok' });
@@ -59,6 +59,8 @@ const launch = async (kind: Kind, fallbackTo: readonly string[], extraServers: R
   return { client: clientFor(handle.socketPath), model: modelOf(servers, 'local') };
 };
 
+const SHOW_WITHOUT_CAPABILITIES = { model_info: {} };
+
 const completionRequests = (fake: Awaited<ReturnType<typeof startFake>>) => fake.requests.filter((entry) => entry.path === '/v1/chat/completions');
 
 describe.each(KINDS)('an auto %s target with no probe record through the router', (kind) => {
@@ -69,7 +71,7 @@ describe.each(KINDS)('an auto %s target with no probe record through the router'
     const models = await getJson(client, '/v1/momonga/models');
 
     const entry = models.body.data.find((listed: { id: string }) => listed.id === model);
-    expect(entry.capabilities).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' });
+    expect(entry.capabilities).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: expect.objectContaining({ fields: expect.arrayContaining(['toolCalling']) }) }, source: 'unprobed' });
   });
 
   it('answers a request with tools 503 target_probing and does not reroute it to the next model of the fallback order', async () => {

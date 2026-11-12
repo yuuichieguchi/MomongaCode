@@ -1,8 +1,9 @@
 import { probeKeyComponentLabel } from '@momonga/foundation';
 import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Probing } from '@momonga/protocol';
-import { probeBackoffOf, targetProbeFailedError } from './auto-probe.ts';
-import type { MeasuringAsk, ProbeBackoff } from './auto-probe.ts';
+import type { Redactor } from '@momonga/foundation';
+import { probeFailureOf, targetProbeFailedError } from './auto-probe.ts';
+import type { MeasuringAsk, ProbeFailure } from './auto-probe.ts';
 import type { MeasurementProgress } from './client.ts';
 
 const MS_PER_SECOND = 1000;
@@ -20,6 +21,7 @@ export type InstanceProbeOptions<Report> = {
   unknown: { component: string; reason: string };
   dir: string;
   ask: MeasuringAsk;
+  redactor: Pick<Redactor, 'text'>;
   measure: (signal: AbortSignal, progress: MeasurementProgress) => Promise<Report>;
   retryAfterMs: number;
   clock: { now(): number; monotonicMs(): number };
@@ -48,7 +50,7 @@ export const createInstanceProbe = <Report>(options: InstanceProbeOptions<Report
   let instance = 0;
   let noticed = false;
   let measured: { report: Report } | undefined;
-  let backoff: ProbeBackoff | undefined;
+  let failure: ProbeFailure | undefined;
   let flight: Promise<void> | undefined;
 
   const startFlight = (): void => {
@@ -66,7 +68,7 @@ export const createInstanceProbe = <Report>(options: InstanceProbeOptions<Report
       },
       (error: unknown) => {
         if (stop.signal.aborted) return;
-        if (flightInstance === instance) backoff = probeBackoffOf(error, options.clock.now() + options.retryAfterMs);
+        if (flightInstance === instance) failure = probeFailureOf(error, options.target, options.ask, options.redactor);
         options.onFailure?.(error);
       },
     );
@@ -83,18 +85,14 @@ export const createInstanceProbe = <Report>(options: InstanceProbeOptions<Report
         noticed = true;
         options.onNotice(unreadableKeyNotice(options.target, options.unknown.component, options.unknown.reason));
       }
-      if (backoff !== undefined) {
-        const remaining = backoff.until - options.clock.now();
-        if (remaining > 0) throw targetProbeFailedError(backoff, remaining);
-        backoff = undefined;
-      }
+      if (failure !== undefined) throw targetProbeFailedError(failure);
       if (flight === undefined && !stop.signal.aborted) startFlight();
       return { kind: 'probing', probing: probing() };
     },
     restarted: () => {
       instance += 1;
       measured = undefined;
-      backoff = undefined;
+      failure = undefined;
       noticed = false;
     },
     close: async () => {

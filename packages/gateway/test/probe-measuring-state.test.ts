@@ -1,3 +1,4 @@
+import { createRedactor } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { TARGET_PROBING, measuringOfWire } from '@momonga/protocol';
 import { ProbeInProgressError, acquireProbeLock, createAutoProbe, probingOf, recordProbe, targetProbingError } from '@momonga/gateway';
@@ -30,7 +31,7 @@ const setup = () => {
     },
     save: async () => undefined,
   };
-  const autoProbe = createAutoProbe({ lock: testKernelLock(), dir, clock, timers, retryAfterMs: CAP_MS, onEvent: () => undefined });
+  const autoProbe = createAutoProbe({ redactor: createRedactor({ credentials: [] }), lock: testKernelLock(), dir, clock, timers, retryAfterMs: CAP_MS, onEvent: () => undefined });
   return { dir, clock, timers, autoProbe, subject, progress, pending };
 };
 

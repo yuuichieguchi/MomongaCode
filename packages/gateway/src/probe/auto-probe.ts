@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { POLL_INTERVAL_MS, ProcessLockHeldError, acquireProcessLock, canonicalJson, cleanFailureMessage, settledOrAborted, waitUntil } from '@momonga/foundation';
-import type { GenerationRole, ProcessLock, KernelLockMechanism, Timing } from '@momonga/foundation';
+import type { GenerationRole, ProcessLock, KernelLockMechanism, Redactor, Timing } from '@momonga/foundation';
 import { SERVICE_UNAVAILABLE_STATUS, TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing, measuringOfWire, measuringWireOf } from '@momonga/protocol';
 import type { Measuring, Probing } from '@momonga/protocol';
 import { GatewayError } from '../core/errors.ts';
 import type { GatewayTimers } from '../types.ts';
 import type { MeasurementProgress } from './client.ts';
 import { ensurePrivateProbeDirectory } from './record.ts';
+import { measurementCauseOf, measurementFailedText } from './remedy.ts';
 
 const LOCK_DIGEST_CHARS = 16;
 
@@ -123,17 +124,20 @@ export const targetProbingError = (probing: Probing): GatewayError =>
     measuring: measuringWireOf(probing.measuring),
   });
 
-export type ProbeBackoff = { until: number; cause: string };
+export type ProbeFailure = { cause: string; target: string; declaration: string };
 
-export const probeBackoffOf = (error: unknown, until: number): ProbeBackoff => ({ until, cause: cleanFailureMessage(error instanceof Error ? error.message : String(error)) });
+export const probeFailureOf = (error: unknown, target: string, ask: MeasuringAsk, redactor: Pick<Redactor, 'text'>): ProbeFailure => ({
+  cause: redactor.text(cleanFailureMessage(measurementCauseOf(error))),
+  target,
+  declaration: ask.declaration,
+});
 
-export const targetProbeFailedError = (backoff: ProbeBackoff, remainingMs: number): GatewayError =>
+export const targetProbeFailedError = (failure: ProbeFailure): GatewayError =>
   new GatewayError({
     status: SERVICE_UNAVAILABLE_STATUS,
     type: 'server_error',
     code: TARGET_PROBE_FAILED,
-    message: `measuring this model failed: ${backoff.cause}`,
-    headers: { 'retry-after': String(Math.ceil(remainingMs / MS_PER_SECOND)) },
+    message: measurementFailedText(failure.target, failure.cause, failure.declaration),
   });
 
 export const isTargetProbingError = (error: unknown): error is GatewayError => error instanceof GatewayError && isTargetProbing({ status: error.status, code: error.body.code });
@@ -155,6 +159,7 @@ export const targetNotReadyError = (target: string, refusal: Extract<Preconditio
 export type ProbeEvent = { kind: 'failed' | 'stopped'; target: string; error: Error };
 
 export type AutoProbeOptions = {
+  redactor: Pick<Redactor, 'text'>;
   dir: string;
   lock: KernelLockMechanism;
   clock: Pick<Timing, 'now' | 'monotonicMs'>;
@@ -179,7 +184,7 @@ type Flight = { done: Promise<void>; startedMs: number; ask: MeasuringAsk; step:
 export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
   const flights = new Map<string, Flight>();
   const starting = new Map<string, Promise<void>>();
-  const backoffs = new Map<string, ProbeBackoff>();
+  const failures = new Map<string, ProbeFailure>();
   const stop = new AbortController();
 
   const measuringOf = (flight: Flight | undefined, ask: MeasuringAsk): Measuring => ({
@@ -222,7 +227,7 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
           options.onEvent({ kind: 'stopped', target: subject.target, error: errorOf(error) });
           return;
         }
-        backoffs.set(name, probeBackoffOf(error, options.clock.now() + options.retryAfterMs));
+        failures.set(name, probeFailureOf(error, subject.target, subject.unknown, options.redactor));
         options.onEvent({ kind: 'failed', target: subject.target, error: errorOf(error) });
       },
     );
@@ -235,12 +240,6 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
   return {
     ensure: async (subject, key) => {
       const name = identityOf(key);
-      const backoff = backoffs.get(name);
-      if (backoff !== undefined) {
-        const remaining = backoff.until - options.clock.now();
-        if (remaining > 0) throw targetProbeFailedError(backoff, remaining);
-        backoffs.delete(name);
-      }
       if (flights.has(name) || stop.signal.aborted || options.role?.current() === 'retiring') return probingFor(name, subject.unknown);
       const pending = starting.get(name);
       if (pending !== undefined) {
@@ -249,6 +248,8 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
       }
       const verdict = await verdictWithin(subject.precondition);
       if (verdict !== BOUND_EXPIRED && verdict.kind === 'refused') throw targetNotReadyError(subject.target, verdict);
+      const failure = failures.get(name);
+      if (failure !== undefined) throw targetProbeFailedError(failure);
       if (flights.has(name)) return probingFor(name, subject.unknown);
       const already = starting.get(name);
       if (already !== undefined) {

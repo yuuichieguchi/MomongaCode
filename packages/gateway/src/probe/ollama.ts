@@ -123,8 +123,13 @@ const OLLAMA_DETAILS = (() => {
   return details;
 })();
 
+const reportedJsonOf = async (client: ProbeClient, method: 'GET' | 'POST', path: string, body: unknown): Promise<unknown> => {
+  const result = await client.request(method, path, body);
+  return result.status === 200 ? parseExternalJson(result.text) : undefined;
+};
+
 export const readOllamaReported = (upstream: UpstreamEndpoint, ports: ProbeHostPorts, model: string): Promise<ReportedFields> =>
-  withClient(upstream, ports, new AbortController().signal, (client) => readReportedFields((method, path, body) => jsonOf(client, method, path, body), OLLAMA_DETAILS, model), identityTraffic());
+  withClient(upstream, ports, new AbortController().signal, (client) => readReportedFields((method, path, body) => reportedJsonOf(client, method, path, body), OLLAMA_DETAILS, model), identityTraffic());
 
 type OllamaShow = { trained: number; capabilities: readonly string[] };
 

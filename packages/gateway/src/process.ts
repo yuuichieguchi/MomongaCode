@@ -169,6 +169,7 @@ import { checkModels } from './server/config-check.ts';
 import { createRouter } from './core/router.ts';
 import { createReasoningOriginCodec } from './core/reasoning-origin.ts';
 import { createRedactor } from './core/redaction.ts';
+import type { Redactor } from './core/redaction.ts';
 import type { GatewayEpoch, GatewayEpochs } from './core/services.ts';
 import { systemProcessPorts } from './process-ports.ts';
 import type { ProcessFilePorts } from './process-ports.ts';
@@ -436,6 +437,7 @@ type ManagedAdapterWiring = {
   files: ProcessFilePorts;
   autoProbe: AutoProbe;
   gates: RequestGates;
+  redactor: Pick<Redactor, 'text'>;
   probeServers: Set<ManagedServer>;
   timers: ManagedServerTimers;
   timeoutSignal: GatewayTimers['timeoutSignal'];
@@ -543,6 +545,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
         dir: paths.probe,
         measure: (signal, progress) => measure({ key: {}, signal, progress }),
         retryAfterMs: DEFAULT_STEP_TIMEOUT_MS,
+        redactor: wiring.redactor,
         clock: wiring.timers,
         onNotice: wiring.onWarning,
         onFailure: (error) => wiring.onWarning(aboutModel(name, `the measurement failed: ${error instanceof Error ? error.message : String(error)}`)),
@@ -1060,7 +1063,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const childEnv = minimalChildEnv(options.env);
     const exec = options.exec ?? createExecFn(childEnv);
 
+    const redactor = createRedactor({ credentials: [] });
     const autoProbe = createAutoProbe({
+      redactor,
       dir: paths.probe,
       lock: kernelLock,
       clock,
@@ -1095,7 +1100,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const codeDigest = await codeDigestOfRunningProcess();
     const secretStore =
       options.secretStore ?? createGivenSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env);
-    const shared: GatewayEpochsShared = { redactor: createRedactor({ credentials: [] }), reasoningOrigin: createReasoningOriginCodec(hmacKey) };
+    const shared: GatewayEpochsShared = { redactor, reasoningOrigin: createReasoningOriginCodec(hmacKey) };
     type HeldPlanScope = PlanScope & { close(): Promise<void> };
     const planScopes = createPinnedDerivation<HeldPlanScope>({
       cache,
@@ -1298,6 +1303,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               files,
               autoProbe,
               gates,
+              redactor,
               probeServers,
               timers: managedTimers,
               timeoutSignal: timers.timeoutSignal,
