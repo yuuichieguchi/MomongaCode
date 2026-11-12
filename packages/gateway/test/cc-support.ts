@@ -3,7 +3,7 @@ import { createChatCompletionsAdapter, unauthenticatedSource } from '@momonga/ga
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from '@momonga/gateway';
 import { wireUsageOf } from '@momonga/protocol';
 import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent, ToolCallingMode } from '@momonga/protocol';
-import { createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
+import { TEST_FENCE, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer } from '@momonga/testkit';
 import { START_MS, registerCleanup, validator } from './gateway-helpers.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
@@ -59,7 +59,7 @@ export const collect = async (
 ): Promise<Collected> => {
   const events: StreamEvent[] = [];
   try {
-    for await (const event of adapter.create(request, await contextOf(adapter, TARGET, signal))) events.push(event);
+    for await (const event of adapter.create({ fence: TEST_FENCE, ...request }, await contextOf(adapter, TARGET, signal))) events.push(event);
   } catch (error) {
     return { events, error };
   }

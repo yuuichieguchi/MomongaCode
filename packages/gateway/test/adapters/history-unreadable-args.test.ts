@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { AdapterInputItem } from '@momonga/protocol';
 import { buildMessagesBody } from '../../src/adapters/anthropic/request.ts';
@@ -18,11 +19,11 @@ const history: AdapterInputItem[] = [
 ];
 
 const wires: Record<string, () => unknown> = {
-  anthropic: () => buildMessagesBody({ model: 'm', input: history }, 4096, { cache: undefined }, EVERY_REASONING_IS_OWN).messages,
-  'open-responses': () => buildResponsesBody({ model: 'm', input: history }, EVERY_REASONING_IS_OWN).input,
-  'chat-completions native': () => nativeHistoryOf(history, EVERY_REASONING_IS_OWN),
-  'chat-completions plain': () => plainHistoryOf(history, { envelopeReplies: false, origin: EVERY_REASONING_IS_OWN }),
-  ollama: () => ollamaHistoryOf(history, EVERY_REASONING_IS_OWN),
+  anthropic: () => buildMessagesBody({ model: 'm', input: history, fence: TEST_FENCE }, 4096, { cache: undefined }, EVERY_REASONING_IS_OWN).messages,
+  'open-responses': () => buildResponsesBody({ model: 'm', input: history, fence: TEST_FENCE }, EVERY_REASONING_IS_OWN).input,
+  'chat-completions native': () => nativeHistoryOf(history, EVERY_REASONING_IS_OWN, TEST_FENCE),
+  'chat-completions plain': () => plainHistoryOf(history, { envelopeReplies: false, origin: EVERY_REASONING_IS_OWN, boundary: TEST_FENCE }),
+  ollama: () => ollamaHistoryOf(history, EVERY_REASONING_IS_OWN, TEST_FENCE),
 };
 
 describe('a past call whose arguments are not a JSON object is replaced by a note on every wire (gateway-core-C10)', () => {

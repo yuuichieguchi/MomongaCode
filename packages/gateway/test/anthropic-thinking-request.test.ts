@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { keyAuthSource } from '@momonga/gateway';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter } from '@momonga/gateway';
@@ -170,7 +171,7 @@ describe('anthropic thinking request from a declared budget form', () => {
 
   it('adds the lowest budget to the compaction summary cap, and the summary still arrives', async () => {
     const { fake, adapter } = await directAdapter(BUDGET, anthropicTextReply(['GOAL: fix it. STATE: none.']));
-    const compactRequest: AdapterCompactRequest = { model: 'remote-model', input: [{ type: 'message', role: 'user', content: 'a long conversation' }], momonga: { max_summary_tokens: 64 } };
+    const compactRequest: AdapterCompactRequest = { model: 'remote-model', input: [{ type: 'message', role: 'user', content: 'a long conversation' }], momonga: { fence: TEST_FENCE, max_summary_tokens: 64 } };
     const result = await adapter.compact?.(compactRequest, await contextOf(adapter, REMOTE_TARGET));
     expect(result?.summary).toBe('GOAL: fix it. STATE: none.');
     const body: any = fake.requests.filter((request) => request.path === '/v1/messages').at(-1)?.body;

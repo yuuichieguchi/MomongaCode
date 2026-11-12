@@ -95,7 +95,7 @@ describe('renderWire is byte-equal to the wire create sends', () => {
     });
     expect(adapter.renderWire).toBeTypeOf('function');
     await collect(adapter, request);
-    expect(JSON.stringify(adapter.renderWire?.(request, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: await adapter.capabilities(TARGET) }))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
+    expect(JSON.stringify(adapter.renderWire?.({ fence: TEST_FENCE, ...request }, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: await adapter.capabilities(TARGET) }))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
   });
 });
 

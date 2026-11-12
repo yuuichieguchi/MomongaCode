@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { createChatCompletionsAdapter, unauthenticatedSource } from '@momonga/gateway';
@@ -32,7 +33,7 @@ const historyWith = (args: string): AdapterInputItem[] => [
   { type: 'function_call_output', call_id: 'call_1', output: 'Invalid JSON arguments for Write: Unexpected token' },
 ];
 
-const requestWith = (args: string, tools: FunctionTool[]): AdapterRequest => ({ model: 'm', input: historyWith(args), ...(tools.length === 0 ? {} : { tools }) });
+const requestWith = (args: string, tools: FunctionTool[]): AdapterRequest => ({ model: 'm', input: historyWith(args), fence: TEST_FENCE, ...(tools.length === 0 ? {} : { tools }) });
 
 const chatAdapter = (mode: ToolCallingMode) =>
   createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',

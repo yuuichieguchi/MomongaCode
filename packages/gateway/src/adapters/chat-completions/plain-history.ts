@@ -3,7 +3,7 @@ import { CHAT_REASONING_FIELDS, TOOL_OUTPUT_TAG, compactionSummaryMessage, fence
 import type { AdapterInputItem, ChatReasoningField, ReasoningOrigin } from '@momonga/protocol';
 import { callArgumentsObject, readableHistoryOf } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
-import { boundaryOf, reasoningTextOf, textOfContent } from '../shared/input-text.ts';
+import { fenceOf, reasoningTextOf, textOfContent } from '../shared/input-text.ts';
 import type { ReasoningInput } from '../shared/input-text.ts';
 import { ownReasoning } from '../shared/reasoning-origin.ts';
 import { userContentOf } from './user-content.ts';
@@ -89,8 +89,7 @@ export const plainHistoryOf = (input: readonly AdapterInputItem[], options: Plai
     list.push({ role: 'assistant', content: toolCallsText(pendingCalls) });
     pendingCalls = [];
   };
-  const boundary = boundaryOf(options.boundary, input);
-  for (const item of readableHistoryOf(input, boundary)) {
+  for (const item of readableHistoryOf(input, options.boundary)) {
     if (item.type === 'reasoning') {
       flushCalls();
       list.hold(carrierOf(item, options.origin));
@@ -109,7 +108,7 @@ export const plainHistoryOf = (input: readonly AdapterInputItem[], options: Plai
       if (name === undefined) {
         throw new UnsupportedInputError('unknown_call_id', `function_call_output "${item.call_id}" has no matching function_call`, 'input');
       }
-      list.push({ role: 'user', content: toolResultBlock(item.call_id, name, textOfContent(item.output), boundary) });
+      list.push({ role: 'user', content: toolResultBlock(item.call_id, name, textOfContent(item.output), fenceOf(options.boundary)) });
     } else if (item.role === 'user') {
       list.push({ role: 'user', content: userContentOf(item.content) });
     } else if (item.role === 'assistant') {

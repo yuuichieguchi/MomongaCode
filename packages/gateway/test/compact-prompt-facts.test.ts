@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { COMPACTION_INSTRUCTIONS_VERSION, WORKING_FACT_KINDS } from '@momonga/protocol';
 import type { AdapterCompactRequest } from '@momonga/protocol';
@@ -5,7 +6,7 @@ import { factKindsSentence, summaryRequestOf } from '../src/adapters/shared/comp
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { userText } from './cc-support.ts';
 
-const request: AdapterCompactRequest = { model: 'system', input: [userText('Fix the parser')], momonga: {} };
+const request: AdapterCompactRequest = { model: 'system', input: [userText('Fix the parser')], momonga: { fence: TEST_FENCE } };
 const instructions = (): string => summaryRequestOf(request, 512, EVERY_REASONING_IS_OWN).instructions ?? '';
 
 describe('the summary instructions ask for no fact the working state records', () => {

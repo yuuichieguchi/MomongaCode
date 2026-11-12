@@ -1,4 +1,4 @@
-import { fenceBoundaryIn } from '@momonga/testkit';
+import { TEST_FENCE, fenceBoundaryIn } from '@momonga/testkit';
 import { contextOf } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import type { AdapterCompactRequest, AdapterInputItem, ToolCallingMode } from '@momonga/protocol';
@@ -25,6 +25,7 @@ const compactRequest = (overrides: Partial<AdapterCompactRequest> = {}): Adapter
   model: 'system',
   input: conversation,
   ...overrides,
+  momonga: { fence: TEST_FENCE, ...overrides.momonga },
 });
 
 describe('chat-completions adapter compact', () => {

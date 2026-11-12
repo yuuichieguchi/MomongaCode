@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { TOOL_OUTPUT_TAG } from '@momonga/protocol';
 import { fenceBoundaryIn } from '@momonga/testkit';
 import { toolResultBlock } from '../src/adapters/chat-completions/plain-history.ts';
@@ -144,6 +145,7 @@ describe('chat-completions bodies merge adjacent user messages', () => {
   it('merges a marker and the task and keeps a tool call with its tool message untouched in the native body', () => {
     const body = buildNativeBody({
       model: 'system',
+      fence: TEST_FENCE,
       instructions: 'Be terse.',
       input: [
         userText('first'),
@@ -172,6 +174,7 @@ describe('chat-completions bodies merge adjacent user messages', () => {
 
   const parallelResults = (lastOutput: string): AdapterRequest => ({
     model: 'system',
+    fence: TEST_FENCE,
     tools: [readFileTool],
     input: [
       userText('Read both'),
@@ -204,6 +207,7 @@ describe('chat-completions bodies merge adjacent user messages', () => {
     const { body } = buildConstrainedBody(
       {
         model: 'system',
+        fence: TEST_FENCE,
         tools: [readFileTool],
         input: [userText('q'), { type: 'message', role: 'assistant', content: 'first' }, { type: 'message', role: 'assistant', content: 'second' }, userText('r')],
       },

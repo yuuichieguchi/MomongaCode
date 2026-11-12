@@ -6,7 +6,6 @@ import { plainHistoryOf } from '../../src/adapters/chat-completions/plain-histor
 import { buildResponsesBody } from '../../src/adapters/open-responses/request.ts';
 import { FULL_KEYWORD_SUPPORT } from '../../src/dialect/keyword-support.ts';
 import { summaryRequestOf } from '../../src/adapters/shared/compact.ts';
-import { boundaryOf } from '../../src/adapters/shared/input-text.ts';
 import { createRequestValidator } from '../../src/core/validation.ts';
 import { EVERY_REASONING_IS_OWN } from '../own-reasoning.ts';
 
@@ -40,11 +39,8 @@ describe('untrusted text reaches the model unchanged inside the one fence', () =
     expect(textOf(body.input)).not.toContain('&lt;');
   });
 
-  it('without a session fence the boundary is derived from the first input item, the same on every build', () => {
-    const derived = boundaryOf(undefined, history);
-    expect(derived).toBe(boundaryOf(undefined, [...history]));
-    expect(derived).not.toBe(boundaryOf(undefined, [{ type: 'message', role: 'user', content: 'another conversation' }, ...history.slice(1)]));
-    expect(boundaryOf(FENCE, history)).toBe(FENCE);
+  it('without a fence an adapter refuses to fence untrusted text', () => {
+    expect(() => plainHistoryOf(history, { envelopeReplies: true, origin: EVERY_REASONING_IS_OWN })).toThrow(/without its fence boundary/);
   });
 
   it('the compaction transcript fences every text with the session boundary and the instructions name it', () => {

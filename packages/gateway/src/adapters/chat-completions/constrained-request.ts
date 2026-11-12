@@ -2,7 +2,7 @@ import { canonicalJson } from '@momonga/foundation';
 import { allowedNamesOf, allowedToolsModeOf } from '../../core/tool-choice.ts';
 import { TOOL_OUTPUT_TAG } from '@momonga/protocol';
 import type { AdapterRequest, FunctionTool, ReasoningOrigin } from '@momonga/protocol';
-import { boundaryOf } from '../shared/input-text.ts';
+import { fenceOf } from '../shared/input-text.ts';
 import type { DialectChoice } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
 import type { KeywordSupport } from '../../dialect/keyword-support.ts';
@@ -74,11 +74,10 @@ export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSu
   const restrictedNames = envelopeActive && choice !== undefined ? restrictedNamesOf(choice) : undefined;
   const envelopeTools = restrictedNames === undefined ? tools : restrictedToolsOf(tools, restrictedNames, support);
   const system = systemTextOf(request.instructions, request.input);
-  const boundary = boundaryOf(request.fence, request.input);
-  if (envelopeActive) system.push(`${PROTOCOL_PREAMBLE}\n${toolOutputSentence(boundary)}`, toolListing(tools));
+  if (envelopeActive) system.push(`${PROTOCOL_PREAMBLE}\n${toolOutputSentence(fenceOf(request.fence))}`, toolListing(tools));
   const messages: ChatMessage[] = [];
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
-  messages.push(...plainHistoryOf(request.input, { envelopeReplies: envelopeActive, origin: origin, boundary }));
+  messages.push(...plainHistoryOf(request.input, { envelopeReplies: envelopeActive, origin: origin, ...(request.fence === undefined ? {} : { boundary: request.fence }) }));
   const envelopeSchema = envelopeActive
     ? buildToolsEnvelope(
         envelopeTools.map((tool) => ({ name: tool.name, parameters: tool.parameters })),

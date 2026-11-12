@@ -3,7 +3,7 @@ import type { AdapterCompactRequest, AdapterInputItem, AdapterRequest, ContentPa
 import { tokensForText } from '../../core/estimate.ts';
 import { CompactionReplyError, StreamFailure } from './failures.ts';
 import { hasImagePart, isImagePart } from './image-part.ts';
-import { boundaryOf, reasoningTextOf, textOfContent } from './input-text.ts';
+import { fenceOf, reasoningTextOf, textOfContent } from './input-text.ts';
 import { ownReasoning } from './reasoning-origin.ts';
 
 export const COMPACTION_INSTRUCTIONS_MARKER =
@@ -104,7 +104,7 @@ const transcriptOf = (items: readonly AdapterInputItem[], origin: ReasoningOrigi
 };
 
 export const summaryRequestOf = (request: AdapterCompactRequest, cap: number, origin: ReasoningOrigin): AdapterRequest => {
-  const boundary = boundaryOf(request.momonga?.fence, request.input);
+  const boundary = fenceOf(request.momonga?.fence);
   const rules = instructionsFor(cap, request.momonga?.retains_user_request === true, boundary);
   const guideline = request.momonga?.guideline;
   const guided = guideline === undefined ? rules : `${rules}\n${guideline}`;

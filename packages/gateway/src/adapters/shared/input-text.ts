@@ -1,4 +1,3 @@
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { AdapterInputItem, ContentPart } from '@momonga/protocol';
 import { UnsupportedInputError } from './failures.ts';
 
@@ -23,10 +22,10 @@ const textOfPart = (part: ContentPart): string => {
 export const textOfContent = (content: string | readonly ContentPart[]): string =>
   typeof content === 'string' ? content : content.map(textOfPart).join(PART_SEPARATOR);
 
-const DERIVED_BOUNDARY_LENGTH = 32;
-
-export const boundaryOf = (fence: string | undefined, input: readonly AdapterInputItem[]): string =>
-  fence ?? sha256Hex(canonicalJson(input[0] ?? null)).slice(0, DERIVED_BOUNDARY_LENGTH);
+export const fenceOf = (fence: string | undefined): string => {
+  if (fence === undefined) throw new Error('a request that fences untrusted text reached the adapter without its fence boundary');
+  return fence;
+};
 
 export type ReasoningInput = Extract<AdapterInputItem, { type: 'reasoning' }>;
 

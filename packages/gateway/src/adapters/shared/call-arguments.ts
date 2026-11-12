@@ -1,7 +1,7 @@
 import { isRecord } from '@momonga/foundation';
 import type { AdapterInputItem } from '@momonga/protocol';
 import { fenceUntrusted } from '@momonga/protocol';
-import { boundaryOf } from './input-text.ts';
+import { fenceOf } from './input-text.ts';
 import { usableUpstreamJson } from './upstream-json.ts';
 
 const parsedObjectOf = (text: string): Record<string, unknown> | undefined => {
@@ -27,10 +27,9 @@ ${fenceUntrusted(CUT_OFF_TAG, { name }, rawArguments, boundary)}`,
 export type HistoryItemOf = (item: AdapterInputItem) => AdapterInputItem | undefined;
 
 export const readableHistoryItemOf = (input: readonly AdapterInputItem[], fence?: string): HistoryItemOf => {
-  const boundary = boundaryOf(fence, input);
   const cutOff = new Set(input.flatMap((item) => (item.type === 'function_call' && parsedObjectOf(item.arguments) === undefined ? [item.call_id] : [])));
   return (item) => {
-    if (item.type === 'function_call' && cutOff.has(item.call_id)) return cutOffNoteOf(item.name, item.arguments, boundary);
+    if (item.type === 'function_call' && cutOff.has(item.call_id)) return cutOffNoteOf(item.name, item.arguments, fenceOf(fence));
     if (item.type === 'function_call_output' && cutOff.has(item.call_id)) return undefined;
     return item;
   };

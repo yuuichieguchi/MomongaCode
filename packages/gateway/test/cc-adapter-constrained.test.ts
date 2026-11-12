@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
 import { fenceBoundaryIn } from '@momonga/testkit';
 import { contextOf } from './own-reasoning.ts';
@@ -175,7 +176,7 @@ describe('constrained streaming', () => {
     });
     const controller = new AbortController();
     const adapter = makeAdapter(fake, constrained);
-    const iterator = adapter.create(toolRequest('hello'), await contextOf(adapter, TARGET, controller.signal))[Symbol.asyncIterator]();
+    const iterator = adapter.create({ ...toolRequest('hello'), fence: TEST_FENCE }, await contextOf(adapter, TARGET, controller.signal))[Symbol.asyncIterator]();
     let delta: any;
     for (;;) {
       const step = await iterator.next();
