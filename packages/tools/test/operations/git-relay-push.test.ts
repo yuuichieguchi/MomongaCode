@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeGitHttp, testKernelLock, testProcessInspector, unconfiguredNetworkOf } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, hostBuiltSocketGuard, startFakeGitHttp, testKernelLock, testProcessInspector, unconfiguredNetworkOf } from '@momonga/testkit';
 import { createSandboxedArgvRunner, nodeShellHost } from '@momonga/tools';
 import { makeLayout, policyFor, sessionTmpDirOf } from '../helpers.ts';
 import type { Layout } from '../helpers.ts';
@@ -22,7 +22,7 @@ const PASSWORD = 'fake-git-credential-for-tests';
 const scopedSandbox = (tmpRoot: string): Sandbox =>
   process.platform === 'darwin'
     ? createSeatbeltSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300 })
-    : createBubblewrapSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300, journal: createPlaceholderJournal(`${tmpRoot}-journal`), holders: heldMountPoints, relay: () => [process.execPath, RELAY_MAIN] });
+    : createBubblewrapSandbox({ lock: testKernelLock(), tmpRoot, killGraceMs: 300, journal: createPlaceholderJournal(`${tmpRoot}-journal`), holders: heldMountPoints, socketGuard: hostBuiltSocketGuard(), relay: () => [process.execPath, RELAY_MAIN] });
 
 const stage = async () => {
   const world = makeGitWorld();
