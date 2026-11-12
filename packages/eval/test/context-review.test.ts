@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOOTSTRAP_RESAMPLES, BOOTSTRAP_TAIL_RANK, CONTEXT_DATASET_FORMAT, EvalError, MINIMUM_PAIRS, formatContextReport, parseContextDataset } from '@momonga/eval';
+import { BOOTSTRAP_RESAMPLES, BOOTSTRAP_TAIL_RANK, CONTEXT_DATASET_FORMAT, MINIMUM_PAIRS, formatContextReport, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload } from '@momonga/protocol';
 import { compacted, contextCase, fidelity, governing, historyRead, padding, ran, read, recorded, summarized } from './context-fixtures.ts';
@@ -52,14 +52,15 @@ describe('what a compacted run is', () => {
     expect(report.metrics.continuationRate).toBeUndefined();
   });
 
-  it('refuses a run of an off case that holds a compaction, because the comparison would be void', () => {
-    expect(() => build(sample(), base([summarized(2, fidelity([], 1, 1))], undefined, [compacted(1, 'model')]))).toThrow(EvalError);
+  it('records a run of an off case that holds a compaction as a stopped row, because the comparison would be void', () => {
+    const report = build(sample(), base([summarized(2, fidelity([], 1, 1))], undefined, [compacted(1, 'model')]));
+    expect(report.stopped).toEqual([{ caseId: 's1-off', runIndex: 0, reason: expect.stringMatching(/^could not be measured: .*off/) }]);
   });
 
-  it('refuses it in a child run too', () => {
+  it('records it as a stopped row when a child run compacted too', () => {
     const child = { runId: 'child-1', agent: 'explore', events: recorded('s1-off', 0, [compacted(1, 'model')]).events };
     const transcripts = base([summarized(2, fidelity([], 1, 1))]).map((entry) => (entry.caseId === 's1-off' ? { ...entry, children: [child] } : entry));
-    expect(() => build(sample(), transcripts)).toThrow(/off/);
+    expect(build(sample(), transcripts).stopped).toEqual([{ caseId: 's1-off', runIndex: 0, reason: expect.stringMatching(/^could not be measured: .*off/) }]);
   });
 
   it('scores a scenario as contrastive only when its on case compacted', () => {
@@ -80,9 +81,11 @@ describe('what a run is made of', () => {
     expect(report.metrics.lossSignalsPerCompaction).toMatchObject({ signals: 1, compactions: 3 });
   });
 
-  it('refuses a gold anchor that no event of the run carries, which would otherwise measure nothing', () => {
+  it('records a run whose gold anchor no event carries as a stopped row, which would otherwise measure nothing', () => {
     const dataset = sample({}, { gold: [{ anchor: 'NEEDLE-absent', in: 'tool.completed' }] });
-    expect(() => build(dataset, base([summarized(2, fidelity([], 1, 1)), ...padding(2)]))).toThrow(EvalError);
+    const { stopped } = build(dataset, base([summarized(2, fidelity([], 1, 1)), ...padding(2)]));
+    expect(stopped.length).toBeGreaterThan(0);
+    expect(stopped.every((row) => /^could not be measured: the gold anchor "NEEDLE-absent"/.test(row.reason))).toBe(true);
   });
 
   it('measures retrieval against the range of the call that carries the anchor, wherever the run placed it', () => {

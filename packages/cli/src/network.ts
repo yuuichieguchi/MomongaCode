@@ -1,9 +1,11 @@
 import { createPinnedDerivation, createUserSettingsCache, derivedInputsOf, noKeptRecords, resolveNetwork } from '@momonga/config';
 import type { PinnedDerivation, ResolvedSettings } from '@momonga/config';
-import { HOST_READ_BOUND_MS, createOutboundDispatcher, installTrust, trustFailureText, outboundFetch } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, createOutboundDispatcher, installTrust, operationLimit, trustFailureText, outboundFetch } from '@momonga/foundation';
 import type { OutboundFetch, OutboundNetwork } from '@momonga/foundation';
 import type { CliPorts } from './ports.ts';
 import { escapedLines } from './terminal-writer.ts';
+
+const TRUST_READ_LABEL = 'the read of the trusted certificates';
 
 type NetworkPorts = Pick<CliPorts, 'home' | 'env' | 'stderr' | 'files' | 'timers'>;
 
@@ -13,9 +15,8 @@ const warn = (ports: NetworkPorts, message: string): void => {
 
 const resolveAndInstall = async (ports: NetworkPorts, settings: ResolvedSettings, signal: AbortSignal): Promise<OutboundNetwork> => {
   const config = resolveNetwork(settings.network, ports.env);
-  const bound = new AbortController();
-  const timer = ports.timers.setTimeout(() => bound.abort(new Error(`the read took longer than ${HOST_READ_BOUND_MS} ms`)), HOST_READ_BOUND_MS);
-  const trust = await installTrust(config, ports.files, { signal: AbortSignal.any([signal, bound.signal]) }).finally(() => ports.timers.clearTimeout(timer));
+  const limit = operationLimit(signal, HOST_READ_BOUND_MS, TRUST_READ_LABEL, ports.timers);
+  const trust = await installTrust(config, ports.files, { signal: limit.signal }).finally(() => limit.dispose());
   for (const failure of trust.failures) warn(ports, trustFailureText(failure));
   return { config, trust };
 };

@@ -3,12 +3,13 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
 import { GENERATION_RETIRED_CODE } from '@momonga/foundation';
+import type { MomongaModelList } from '@momonga/protocol';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { createGatewayClient } from '../src/client/gateway-client.ts';
 
 const RETIRED_MESSAGE = 'This gateway belongs to a replaced generation and takes no new requests. The request was not run; send it again.';
 
-const MODEL_LIST = { data: [], start: null, roles: {} };
+const MODEL_LIST: MomongaModelList = { object: 'list', data: [], start: null, roles: {} };
 
 type Answer = { status: number; body: unknown };
 

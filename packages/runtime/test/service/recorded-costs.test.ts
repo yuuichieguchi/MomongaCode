@@ -79,6 +79,7 @@ describe('reportCostOf', () => {
       {
         runId,
         calls: 5,
+        retries: 0,
         notPriced: 2,
         legacyPrecisionCalls: 0,
         priced: [

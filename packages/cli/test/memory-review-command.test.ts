@@ -1,3 +1,4 @@
+import { testEndpointScope } from '@momonga/testkit';
 import fs from 'node:fs';
 import http from 'node:http';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
@@ -75,12 +76,14 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     home,
     cwd: project,
     clock: virtualClock(),
+    endpointScope: testEndpointScope,
     self: { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' },
     spawnDetached: () => {
       throw new Error('the daemon is already running');
     },
     stdout: { write: (text: string) => void out.push(text) },
     stderr: { write: () => undefined },
+    personCapability: async () => 'f'.repeat(32),
   } as unknown as CliPorts;
   return { paths, ports: terminalPorts(ports), project, seen, out };
 };

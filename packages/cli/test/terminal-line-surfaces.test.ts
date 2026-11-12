@@ -135,7 +135,7 @@ describe('a value a person did not write stays on its own line in command output
   } as unknown as Parameters<typeof probeEndpointText>[3];
 
   it('shows a probed endpoint target name, model id, endpoint and record path with a newline on their line', () => {
-    const lines = probeEndpointText(`t ${FORGED}`, `http://e ${FORGED}`, `/r ${FORGED}`, probeReport, 'native').split('\n');
+    const lines = probeEndpointText(`t ${FORGED}`, `http://e ${FORGED}`, `/r ${FORGED}`, probeReport, 'native', undefined).split('\n');
     expect(lines[0]).toBe(`probed t ${SHOWN}: model m ${SHOWN} at http://e ${SHOWN}, context window 8 (listed)`);
     expect(lines.at(-2)).toBe(`  recorded in /r ${SHOWN}`);
     expect(lines).toHaveLength(9);

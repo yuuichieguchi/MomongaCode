@@ -10,6 +10,7 @@ type BurnDown = { kinds: Partial<Record<TimeSyncKind, number>>; owner: string };
 const KEPT: Readonly<Record<string, Kept>> = {
   'packages/cli/test/broken-pipe-entry.ts': { kinds: { 'timer wait': 1 }, reason: 'the flooding command gives the event loop a turn so that the broken pipe of its output is delivered while it still writes: the turn is the event the case needs' },
   'packages/eval/test/runner.test.ts': { kinds: { 'timer wait': 2 }, reason: 'node reports an unhandled rejection only after a macrotask: the turn is the event the case waits for' },
+  'packages/foundation/test/file-pattern-linear.test.ts': { kinds: { 'timer wait': 1 }, reason: 'a backtracking matcher blocks its thread so no test timeout can fire: the bound that ends the worker running the pathological rule is the only way such a regression fails instead of holding the run' },
   'packages/foundation/test/outbound-trust-off-loop.test.ts': { kinds: { 'wall-clock reading': 1 }, reason: 'the fake worker spends a fixed span of CPU so the case can show it runs off the event loop' },
   'packages/foundation/test/path-asking.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the case proves the asking does not block the event loop: a turn that runs while the work is pending is the event' },
   'packages/foundation/test/path-resolver-async.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the case proves the resolution does not block the event loop: a timer that fires while the work is pending is the event' },
@@ -21,7 +22,6 @@ const KEPT: Readonly<Record<string, Kept>> = {
   'packages/policy/test/decision-resolver.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the case proves the decision does not block the event loop: a timer that fires while the work is pending is the event' },
   'packages/runtime/test/calibration/offloop-cost.test.ts': { kinds: { 'wall-clock reading': 1 }, reason: 'a calibration measures wall time by design and runs only in the calibration project' },
   'packages/runtime/test/gateway-client/real-gateway-liveness.test.ts': { kinds: { 'timer wait': 3 }, reason: 'the subject is a silence of the upstream longer than the idle bound of the real client, in real time behind a real gateway' },
-  'packages/runtime/test/memory/deadline-signal.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the subject is a host timer that must not fire at once for a deadline beyond the range of a timer: only real time shows it' },
   'packages/runtime/test/worker/search-index-cost.test.ts': { kinds: { 'timer wait': 1 }, reason: 'the case proves the indexing does not block the event loop: a turn that runs while the work is pending is the event' },
   'packages/sandbox/test/bubblewrap-launch.test.ts': { kinds: { 'wall-clock reading': 2 }, reason: 'the subject is the kill grace of a real process group: SIGKILL may not come before it and a command that honours SIGTERM ends inside it' },
   'packages/sandbox/test/bubblewrap-real.test.ts': { kinds: { 'wall-clock reading': 2 }, reason: 'the subject is the kill grace of a real process group: SIGKILL may not come before it and a command that honours SIGTERM ends inside it' },

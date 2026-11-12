@@ -5,7 +5,7 @@ import type { PageCostAnswer } from '@momonga/protocol';
 
 const validate = defineProductSchema<PageCostAnswer>('report/PageCostAnswer.test', REPORT_SCHEMAS.PageCostAnswer);
 
-const row = (runId: string, units: string) => ({ runId, calls: 1, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD' as const, priceVersion: 'v1', units }] });
+const row = (runId: string, units: string) => ({ runId, calls: 1, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [{ currency: 'USD' as const, priceVersion: 'v1', units }] });
 
 const answer: PageCostAnswer = {
   runs: [row('run-1', '2000'), row('run-2', '0')],

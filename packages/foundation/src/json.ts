@@ -27,3 +27,10 @@ export const spanValueOfJsonText = (text: string, kind: JsonTextKind): unknown =
 };
 
 export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const parseShippedManifest = (text: string, manifest: string, failure: (message: string) => Error): unknown => {
+  const bounded = parseBoundedJson(text);
+  if (bounded.kind === 'value') return bounded.value;
+  const why = bounded.reason === 'too_deep' ? 'nests deeper than the bound of a JSON value' : 'is not valid JSON';
+  throw failure(`the manifest ${manifest} ${why}: reinstall momonga`);
+};

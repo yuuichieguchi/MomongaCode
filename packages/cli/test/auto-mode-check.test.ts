@@ -82,7 +82,7 @@ const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }
       },
       getRun: async (id: string) => ({ id, sessionId: `s-${root}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 1 } }),
       runReflection: async () => ({ job: null, charges: [], queuedAhead: 0 }),
-      reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
+      reportCost: async (runIds: readonly string[]) => runIds.map((runId) => ({ runId, calls: 0, retries: 0, notPriced: 0, legacyPrecisionCalls: 0, priced: [] })),
       resolveApproval: async () => ({}),
       cancel: async () => ({ status: 200, run: {} }),
       addRule: async () => ({ fact: { id: 'fact' }, size: [], warnings: [] }),
@@ -138,6 +138,7 @@ const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }
     applyStep: async () => undefined,
     after: (_milliseconds, signal) => waitForAbort(signal),
     now: () => 0,
+    random: () => 0,
     ownerPid: 7,
     ownerHome: '/home/person',
     readSecret: async () => {
@@ -238,6 +239,15 @@ describe('auto-mode check over the embedded dataset', () => {
       recordedAt: '2026-11-06T00:00:00.000Z',
     });
     expect(output.join('')).toContain('did not pass');
+  });
+
+  it('with no classifier named or configured, refuses with the command and the setting that give one', async () => {
+    const state = fake();
+    const { ports } = portsFor(state.effects);
+    const { configuredClassifier: _configured, ...unconfigured } = ports;
+    await expect(autoModeCheck({ ...unconfigured, configuredClassifier: undefined }, { agent: WORKER, signal: NEVER_INTERRUPTED })).rejects.toThrow(
+      'no classifier model: name one with momonga auto-mode check <model>, or set autoMode.classifier in the user settings (/config in a session)',
+    );
   });
 
   it('defaults the classifier to the configured autoMode.classifier', async () => {

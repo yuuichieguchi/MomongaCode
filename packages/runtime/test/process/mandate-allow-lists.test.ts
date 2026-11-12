@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RULE_VERIFY_BUDGET_MS, refusingRefutations } from '@momonga/protocol';
 import { NEVER_CANCELLED, withTempDir } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
-import { systemClock } from '@momonga/foundation';
+import { momongaLayout, systemClock } from '@momonga/foundation';
 import { RULE_VERIFY_LOAD_ALLOWANCE_MS, createRuleVerifier, installedRuleSolver } from '../../src/process/rule-verifier.ts';
 import { systemTimers } from '../../src/service/timers.ts';
 import { delegationOf } from '../../src/worker/held-calls.ts';
@@ -28,7 +28,7 @@ describe('a mandate whose allow list names tools that cover one another', () => 
     const verifier = createRuleVerifier({
       host: installedRuleSolver(import.meta.url),
       fs: createPolicyFilesystem(),
-      paths: { home, root: `${home}/.momonga`, keychains: `${home}/keys` } as never,
+      paths: momongaLayout(home, process.platform, {}),
       timers: systemTimers,
       bashPath: () => '/bin/bash',
       clock: systemClock,

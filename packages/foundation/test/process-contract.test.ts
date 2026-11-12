@@ -22,8 +22,7 @@ import {
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_MARGIN_MS,
-  STDIO_EXIT_FLUSH_MS,
-  CHILD_STDIO_FLUSH_MS,
+  STDIO_FLUSH_MS,
   ABORT_SETTLE_LIMIT_MS,
   POLL_INTERVAL_MS,
   KILL_CONFIRM_MS,
@@ -266,20 +265,19 @@ describe('close budgets', () => {
     expect([DEFAULT_STOP_VALUES.closeGraceMs, DEFAULT_STOP_VALUES.managedServerStopGraceMs, managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs), gatewayMaxCloseMs(DEFAULT_STOP_VALUES)]).toEqual([10_000, 3000, 22_075, 32_075]);
     expect(ENTRY_HARD_EXIT_MARGIN_MS).toBe(3000);
     expect(SHUTDOWN_MARGIN_MS).toBe(5000);
-    expect(STDIO_EXIT_FLUSH_MS).toBe(1000);
-    expect(CHILD_STDIO_FLUSH_MS).toBe(1000);
+    expect(STDIO_FLUSH_MS).toBe(1000);
   });
 
   it('pins the supervisor shutdown bounds', () => {
     expect([KILL_CONFIRM_MS, SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS]).toEqual([5000, 2000, 4000, 5000]);
   });
 
-  it('ENTRY_HARD_EXIT_MARGIN_MS + STDIO_EXIT_FLUSH_MS < SHUTDOWN_MARGIN_MS', () => {
-    expect(ENTRY_HARD_EXIT_MARGIN_MS + STDIO_EXIT_FLUSH_MS).toBeLessThan(SHUTDOWN_MARGIN_MS);
+  it('ENTRY_HARD_EXIT_MARGIN_MS + STDIO_FLUSH_MS < SHUTDOWN_MARGIN_MS', () => {
+    expect(ENTRY_HARD_EXIT_MARGIN_MS + STDIO_FLUSH_MS).toBeLessThan(SHUTDOWN_MARGIN_MS);
   });
 
   it('a child that had to be group-killed settles within the kill confirmation plus one stdio flush', () => {
-    expect(killedChildSettleMs()).toBe(KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS);
+    expect(killedChildSettleMs()).toBe(KILL_CONFIRM_MS + STDIO_FLUSH_MS);
   });
 
   it('the stop budgets are the child close budgets plus the shutdown margin', () => {
@@ -295,9 +293,9 @@ describe('close budgets', () => {
       const steps = [
         SHUTDOWN_DRAIN_BOUND_MS,
         runtimeStopBudgetMs(values),
-        KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS,
+        KILL_CONFIRM_MS + STDIO_FLUSH_MS,
         gatewayStopBudgetMs(DEFAULT_STOP_VALUES),
-        KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS,
+        KILL_CONFIRM_MS + STDIO_FLUSH_MS,
         managedServerReapBoundMs(DEFAULT_STOP_VALUES),
         SHUTDOWN_REAP_BOUND_MS,
         SHUTDOWN_RELEASE_BOUND_MS,

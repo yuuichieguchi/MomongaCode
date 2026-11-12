@@ -4,6 +4,8 @@ import { DEFAULT_BWRAP_PATH, bubblewrapPresent, childProtectionFor } from '@momo
 import type { SandboxSetting } from '@momonga/sandbox';
 import { createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
 import { createSandboxOf, placeholderJournalDirectoryOf } from './sandbox-of.ts';
+import { toolCommandEnvOf } from './tool-command-env.ts';
+import type { ToolCommandCredentials } from './tool-command-env.ts';
 import { toolSandboxPolicyOf } from './tool-policy.ts';
 
 export type WorkspaceCommandSandboxInput = {
@@ -14,6 +16,7 @@ export type WorkspaceCommandSandboxInput = {
   sandbox: SandboxSetting;
   network: SandboxNetworkSetting;
   warn(text: string): void;
+  credentialNaming: ToolCommandCredentials;
 };
 
 export type WorkspaceCommandRun = { pgid: number; exited: Promise<{ code: number | null }> };
@@ -56,7 +59,7 @@ export const workspaceCommandSandbox = async (input: WorkspaceCommandSandboxInpu
       };
       try {
         const policy = await toolSandboxPolicyOf({ paths, home, fs: createPolicyFilesystem(), ruleEnforcement }, { roots: [root], tmpDir: scratch.dir, rules: [], gitConfigFiles: [], readableDirectories: [] }, signal);
-        const child = await sandbox.spawn({ argv: [shell, '-c', command], cwd: root, env, tmpDir: scratch.dir }, { ...policy, network }, signal);
+        const child = await sandbox.spawn({ argv: [shell, '-c', command], cwd: root, env: toolCommandEnvOf(env, input.credentialNaming), tmpDir: scratch.dir }, { ...policy, network }, signal);
         const output = Promise.all([drained(child.stdout), drained(child.stderr)]);
         const exited = Promise.all([child.exited, output]).then(
           async ([exit]) => {

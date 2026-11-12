@@ -24,7 +24,7 @@ export type BilledCall = {
 
 export type BilledCallWire = Omit<BilledCall, 'spanId'>;
 
-export type PricedBilledCall = BilledCallWire & { price: CallPrice };
+export type PricedBilledCall = BilledCallWire & { price: CallPrice; retried: boolean };
 
 export const callPriceOf = (recorded: RecordedPrice): CallPrice => {
   if (recorded.kind !== 'priced') return recorded;

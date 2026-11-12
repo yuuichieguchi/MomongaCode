@@ -6,6 +6,8 @@ import { canonicalJson, migrate } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { createFakeClock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
+
+const RECONCILED_CALL_ID_MIGRATION = 44;
 import { START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, openStoreAt, rawDb } from './helpers.ts';
 
 const call: RunEventPayload = { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: 'Bash', rawInput: {} };
@@ -25,7 +27,7 @@ describe('the call id of a tool.reconciled event is a column of its row', () => 
   });
 
   it('is filled by a migration of its own for a row written before', () => {
-    const before = MIGRATIONS.slice(0, -1);
+    const before = MIGRATIONS.filter((migration) => migration.version < RECONCILED_CALL_ID_MIGRATION);
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     const db = new DatabaseSync(dbPath);
     try {

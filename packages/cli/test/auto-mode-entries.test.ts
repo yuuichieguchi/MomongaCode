@@ -25,6 +25,8 @@ vi.mock('../src/commands/auto-mode.ts', async (importOriginal) => {
 
 const homes: string[] = [];
 
+const completed: number[] = [];
+
 const freshHome = (): string => {
   const home = createTempDir({ asHome: true });
   homes.push(home);
@@ -45,7 +47,7 @@ const programWith = (interrupt: AbortSignal) => {
     interrupt,
     helper: NO_HELPER,
     entryIo: (args) => ({ argv: [...args] }) as unknown as EntryIo,
-    complete: () => undefined,
+    complete: (code: number) => void completed.push(code),
   });
   program.exitOverride();
   return program;
@@ -158,5 +160,18 @@ describe('/auto-mode in the TUI', () => {
     expect(checks[0]?.['classifier']).toBeUndefined();
     release.resolve({ measurement: 'did_not_pass' });
     await Promise.all(pending);
+  });
+});
+
+describe('auto-mode check exits by its measurement, like the other measuring commands (cli-commands-C42)', () => {
+  it.each([
+    ['passed', 0],
+    ['did_not_pass', 1],
+    ['unmeasurable', 1],
+  ] as const)('a measurement that %s ends the command with %s', async (measurement, code) => {
+    completed.length = 0;
+    spies.check.mockImplementationOnce(async () => ({ measurement }) as never);
+    await programWith(new AbortController().signal).parseAsync(['auto-mode', 'check', 'guard'], { from: 'user' });
+    expect(completed).toEqual([code]);
   });
 });

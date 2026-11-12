@@ -10,10 +10,11 @@ export type TouchedCursor = { eventId: number; path: string };
 
 export type TouchedSource = (after: TouchedCursor | null, limit: number) => Promise<readonly TouchedEntry[]>;
 
-const yieldToLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+export type LoopTurn = () => Promise<unknown>;
 
 const readFrom = async (
   source: TouchedSource,
+  nextTurn: LoopTurn,
   from: TouchedCursor | null,
   pageRows: number,
   visit: (page: readonly TouchedEntry[]) => void | Promise<void>,
@@ -26,7 +27,7 @@ const readFrom = async (
     if (last === undefined) return cursor;
     cursor = { eventId: last.firstEventId, path: last.path };
     if (page.length < pageRows) return cursor;
-    await yieldToLoop();
+    await nextTurn();
   }
 };
 
@@ -35,8 +36,8 @@ export type GoverningActivation = {
   witnesses(): string[];
 };
 
-export const createGoverningActivation = (options: { project: string; source: TouchedSource; pageRows: number }): GoverningActivation => {
-  const { project, source, pageRows } = options;
+export const createGoverningActivation = (options: { project: string; source: TouchedSource; pageRows: number; nextTurn: LoopTurn }): GoverningActivation => {
+  const { project, source, pageRows, nextTurn } = options;
   const matchers = new Map<string, PathScopeMatcher>();
   const tested = new Set<string>();
   const activated = new Map<string, string>();
@@ -56,7 +57,7 @@ export const createGoverningActivation = (options: { project: string; source: To
       );
       if (open.length === 0) return;
       const unseen = open.some((fact) => !tested.has(fact.id));
-      const reached = await readFrom(source, unseen ? null : watermark, pageRows, (page) => {
+      const reached = await readFrom(source, nextTurn, unseen ? null : watermark, pageRows, (page) => {
         for (const entry of page) {
           for (const fact of open) if (!activated.has(fact.id) && matcherOf(fact)(entry.path)) activated.set(fact.id, entry.path);
         }
@@ -73,8 +74,8 @@ export type InstructionProbes = {
   witnesses(): TouchedPath[];
 };
 
-export const createInstructionProbes = (options: { reader: InstructionReader; projectRoot: string; source: TouchedSource; pageRows: number }): InstructionProbes => {
-  const { reader, source, pageRows } = options;
+export const createInstructionProbes = (options: { reader: InstructionReader; projectRoot: string; source: TouchedSource; pageRows: number; nextTurn: LoopTurn }): InstructionProbes => {
+  const { reader, source, pageRows, nextTurn } = options;
   const projectRoot = projectRootOf(reader.platform, options.projectRoot);
   const probed = new Set<string>();
   const present = new Set<string>();
@@ -90,7 +91,7 @@ export const createInstructionProbes = (options: { reader: InstructionReader; pr
   return {
     advance: async () => {
       const known = await rootsOf();
-      watermark = await readFrom(source, watermark, pageRows, async (page) => {
+      watermark = await readFrom(source, nextTurn, watermark, pageRows, async (page) => {
         for (const entry of page) {
           for (const candidate of nestedInstructionCandidates(known, projectRoot, [{ path: entry.path, kind: 'directory' }], reader.platform)) {
             if (probed.has(candidate)) continue;

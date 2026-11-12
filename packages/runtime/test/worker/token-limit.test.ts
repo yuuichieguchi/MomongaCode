@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import type { CreateResponseBody } from '@momonga/protocol';
 import { usageOf } from '@momonga/testkit';
 import { makeEnv } from './harness.ts';
@@ -21,6 +22,7 @@ describe('the token limit of a run is a ceiling held by the same admission as th
     const probe = await firstRequestOf();
     const limit = probe.inputUpper + 1000;
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(callsStep([{ callId: 'call_1', name: 'Echo', args: { value: 'x' } }], usageOf(probe.inputUpper, 900)), textStep('never sent'));
     const run = await env.enqueue('Work', { limits: { maxTotalTokens: limit } });
 
@@ -43,6 +45,7 @@ describe('the token limit of a run is a ceiling held by the same admission as th
 
   it('sends nothing when the limit does not hold the first request at the output floor', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(textStep('never sent'));
     const run = await env.enqueue('Work', { limits: { maxTotalTokens: 100 } });
 
@@ -59,6 +62,7 @@ describe('the token limit of a run is a ceiling held by the same admission as th
     const limit = budget.limits.maxTotalTokens;
     const { left } = budget;
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(callsStep([{ callId: 'call_1', name: 'Echo', args: { value: 'x' } }], budget.usageUpTo()), textStep('Summary.'), echo('never_sent'));
     const run = await env.enqueue('Work', { limits: { maxTotalTokens: limit } });
 
@@ -82,6 +86,7 @@ describe('the token limit of a run is a ceiling held by the same admission as th
 
   it('records which limit asked for the summary when the steps run out', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(echo('call_1'), textStep('Summary.'));
     const run = await env.enqueue('Work', { limits: { maxSteps: 1 } });
 

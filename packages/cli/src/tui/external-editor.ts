@@ -4,6 +4,12 @@ import type { KeyTable } from './keys/table.ts';
 
 export const EDITOR_VARIABLES = ['VISUAL', 'EDITOR'] as const;
 
+export const openUnsetText = (file: string): string => `Set $VISUAL or $EDITOR to open ${file}`;
+
+export const openInEditor = async (port: Pick<ExternalEditorPort, 'open'>, file: string, info: (text: string) => void): Promise<void> => {
+  if ((await port.open(file)).kind === 'unset') info(openUnsetText(file));
+};
+
 export const editorUnsetHint = (keys: KeyTable): string => {
   const key = keys.keyHint('editor.external');
   return key === '' ? 'Set $EDITOR to edit the draft in an editor.' : `Set $EDITOR to use ${key}.`;

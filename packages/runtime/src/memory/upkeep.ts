@@ -1,7 +1,6 @@
-import fs from 'node:fs';
 import { archivableIds, duplicateMarks } from '@momonga/memory';
 import type { DuplicateKeepers } from '@momonga/memory';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, FileSystem } from '@momonga/foundation';
 import type { MemoryRecord } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import type { RecordViews } from './views.ts';
@@ -20,6 +19,7 @@ export type UpkeepPass = {
 export type MemoryUpkeepOptions = {
   store: Pick<RuntimeStore, 'memories'>;
   clock: Clock;
+  fileSystem: Pick<FileSystem, 'stat'>;
   views: RecordViews;
   forgetAfterDays(project: string | null): Promise<number>;
   batchSize: number;
@@ -41,9 +41,9 @@ export const beginUpkeepPass = (store: Pick<RuntimeStore, 'memories'>): UpkeepPa
   present: new Set(),
 });
 
-const isDirectory = (target: string): boolean => {
+const isDirectory = async (fileSystem: Pick<FileSystem, 'stat'>, target: string): Promise<boolean> => {
   try {
-    return fs.statSync(target).isDirectory();
+    return (await fileSystem.stat(target)).isDirectory();
   } catch (error) {
     if (error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return false;
     throw error;
@@ -56,19 +56,17 @@ export const runMemoryUpkeep = async (options: MemoryUpkeepOptions): Promise<Mem
   const limit = options.pageRows ?? UNLIMITED_ROWS;
   const raw = store.memories.activePage(pass.cursor, limit);
   const skipped: string[] = [];
-  const present = (record: MemoryRecord): boolean => {
-    const { project } = record;
-    if (project === null || pass.present.has(project)) return true;
-    if (pass.missing.has(project)) return false;
-    if (isDirectory(project)) {
+  const live = raw.filter((record) => !pass.superseded.has(record.id));
+  for (const project of new Set(live.flatMap((record) => (record.project === null || pass.present.has(record.project) || pass.missing.has(record.project) ? [] : [record.project])))) {
+    signal.throwIfAborted();
+    if (await isDirectory(options.fileSystem, project)) {
       pass.present.add(project);
-      return true;
+    } else {
+      pass.missing.add(project);
+      skipped.push(project);
     }
-    pass.missing.add(project);
-    skipped.push(project);
-    return false;
-  };
-  const page = raw.filter((record) => !pass.superseded.has(record.id) && present(record));
+  }
+  const page = live.filter((record) => record.project === null || pass.present.has(record.project));
   const duplicates = duplicateMarks(page, pass.keepers);
   const marks = duplicates.slice(0, batchSize);
   for (const mark of marks) store.memories.markDuplicate(mark.id, mark.duplicateOf);

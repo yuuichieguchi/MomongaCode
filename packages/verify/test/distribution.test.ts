@@ -85,12 +85,15 @@ describe('the embedded Z3 distribution', () => {
     expect(Buffer.from(fs.readFileSync(repaired.entry)).equals(Buffer.from(API))).toBe(true);
   });
 
-  it('sweeps a staged file that a run which ended left behind, at the next extraction', async () => {
+  it('sweeps a staged file whose writer ended without removing it, with its lock, at the next extraction', async () => {
     const root = executablesRoot();
     const directory = folderOf(root);
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     const leftover = path.join(directory, `${Z3_STAGED_PREFIX}dead-1-${Z3_API_FILE}`);
+    const claimed = await testKernelLock().claim(leftover);
+    if (claimed.kind !== 'claimed') throw new Error('the test could not claim the staged file');
     fs.writeFileSync(leftover, 'half written');
+    claimed.lock.release();
     await ensureBundledZ3(portsFor(root));
     expect(fs.existsSync(leftover)).toBe(false);
     expect(fs.readdirSync(directory).filter((name) => name.startsWith(Z3_STAGED_PREFIX))).toEqual([]);
@@ -120,5 +123,14 @@ describe('the embedded Z3 distribution', () => {
     expect(() => parseZ3Manifest('{}')).toThrow(Z3DistributionError);
     expect(() => parseZ3Manifest(JSON.stringify({ ...manifestFor(), contentHash: 'abc' }))).toThrow('content hash');
     expect(() => parseZ3Manifest(JSON.stringify({ ...manifestFor(), wasm: { asset: 1 } }))).toThrow('solver binary');
+  });
+});
+
+describe('the Z3 manifest is read through the one bounded JSON parser', () => {
+  it('refuses a manifest that is not valid JSON or nests beyond the bound, naming the file and the way forward', () => {
+    for (const text of ['{ not json', `${'['.repeat(10000)}${']'.repeat(10000)}`]) {
+      expect(() => parseZ3Manifest(text)).toThrow(Z3DistributionError);
+      expect(() => parseZ3Manifest(text)).toThrow(/z3-manifest\.json .*reinstall momonga/);
+    }
   });
 });

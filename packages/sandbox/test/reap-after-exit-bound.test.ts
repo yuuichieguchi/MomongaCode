@@ -41,7 +41,7 @@ describe('the reap after the leader exits is bounded by its own stop bound, not 
     await driveUntil(timing, () => signals.includes('SIGTERM'), KILL_GRACE_MS - 1, 'the reap to signal the follower');
     controller.abort();
     await driveUntilSettled(timing, exited, 2 * KILL_GRACE_MS + 100);
-    expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null } });
+    expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null, stop: 'confirmed' } });
     expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
   });
 });

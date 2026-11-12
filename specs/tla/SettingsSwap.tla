@@ -16,7 +16,7 @@ ASSUME Swapped \subseteq 1..MaxV
 
 DerivedObjects == {"D1", "D2", "D3", "D4", "D5"}
 InputsD1 == {"models", "network", "pricing", "context.unboundedOutputReserve"}
-InputsD2 == {"network", "telemetry"}
+InputsD2 == {"network", "telemetry", "retention"}
 InputsD3 == {"sandbox"}
 InputsD4 == {"network"}
 InputsD5 == {"network", "credentials.plaintextTokenFiles"}

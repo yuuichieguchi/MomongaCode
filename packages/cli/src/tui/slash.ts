@@ -1,4 +1,5 @@
-import { ModelRefError, PERMISSION_MODES, displayMapOf, isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
+import type { ExternalEditorPort } from './external-editor.ts';
+import { ModelRefError, PERMISSION_MODES, displayMapOf } from '@momonga/protocol';
 import type { Mandate, MomongaModelEntry, PermissionMode } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { listedModelOf } from '../commands/models.ts';
@@ -54,6 +55,7 @@ export type SlashContext = ModeAvailability & {
   readonly display: DisplayPort;
   readonly keyBindings: KeyBindingsScreen;
   readonly overlays: Pick<OverlayPorts, 'choose' | 'promptText'>;
+  readonly externalEditor: Pick<ExternalEditorPort, 'open'>;
   refusedWhileRunning(): boolean;
   status(): readonly string[];
   readonly sessions: SessionsPort;
@@ -196,25 +198,4 @@ export const switchModel = async (args: string, entries: readonly MomongaModelEn
 
 export const MODEL_USAGE = `[model] [${START_FLAG}]`;
 
-const model: SlashCommand = {
-  name: 'model',
-  usage: MODEL_USAGE,
-  description: 'list the configured models with the current one marked, or switch the model from the next task',
-  run: async (args, context) => {
-    const entries = await context.backend.models();
-    if (args === '') {
-      const displays = displayMapOf(listingViewsOf(entries));
-      context.info(
-        [
-          'models (the current one is marked *):',
-          ...entries.map((entry) => `  ${entry.id === context.model ? '*' : ' '} ${displays.get(entry.id) ?? entry.id}  ${isNotListedCapabilities(entry.capabilities) ? notListedMessage(entry.capabilities) : `${entry.capabilities.contextWindow}-token window`}`),
-          'switch with /model <model>; a change applies from the next task',
-        ].join('\n'),
-      );
-      return;
-    }
-    await switchModel(args, entries, context);
-  },
-};
-
-export const BUILTIN_SLASH_COMMANDS: readonly SlashCommand[] = [help, mode, model, exit];
+export const BUILTIN_SLASH_COMMANDS: readonly SlashCommand[] = [help, mode, exit];

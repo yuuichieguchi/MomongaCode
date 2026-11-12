@@ -227,6 +227,7 @@ export type RuntimeClient = {
   costBreakdownText(filter?: CostFilter): Promise<string>;
   trust(path: string): Promise<TrustView>;
   setTrust(path: string, decision: 'trusted' | 'untrusted'): Promise<TrustView>;
+  clearTrust(path: string): Promise<void>;
   streamEvents(runId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
   streamSessionEvents(sessionId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
   close(): Promise<void>;
@@ -807,6 +808,10 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkTrust(fieldOf(body, 'trust', description), description);
   };
 
+  const clearTrust = async (path: string): Promise<void> => {
+    await send('DELETE', `/v1/trust?path=${encodeURIComponent(path)}`, [204]);
+  };
+
   async function* openEventStream(path: string, eventsOptions: EventsOptions): AsyncGenerator<RunEventFrame> {
     const description = `GET ${path}`;
     const response = await http.request({
@@ -921,6 +926,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     costBreakdownText,
     trust,
     setTrust,
+    clearTrust,
     streamEvents,
     streamSessionEvents,
     close: () => http.close(),

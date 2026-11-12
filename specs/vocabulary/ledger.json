@@ -191,7 +191,7 @@
         "limit": 2
       },
       "packages/cli/src/tui/slash.ts": {
-        "task": 3
+        "task": 1
       },
       "packages/cli/src/tui/transcript.ts": {
         "conversation": 1,

@@ -207,7 +207,7 @@ describe('snapshot plus tail equals the full fold for an inheriting run', () => 
       { type: 'context.truncated', callId: 'c_old', handle: 'blob-evict', kind: 'omitted' },
       requested(1),
       { type: 'agent.message.delta', step: 1, attempt: 1, itemId: 'mx', text: 'discarded' },
-      { type: 'model.stream.restarted', step: 1, attempt: 1 },
+      { type: 'model.stream.restarted', step: 1, attempt: 1, itemIds: ['mx'] },
       { type: 'agent.message.delta', step: 1, attempt: 1, itemId: 'my', text: 'kept' },
       responded(1, [assistantItem('m2', 'kept')]),
       { type: 'context.compacted', item: fixtureCompactionItem('cmp-2', 'through the task'), summary: 'through the task', replacedThroughSeq: 7 },

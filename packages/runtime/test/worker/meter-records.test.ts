@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { foldMeter } from '@momonga/context';
 import type { ObservedEvent } from '@momonga/context';
 import type { Capabilities, RunEvent, RunEventPayload } from '@momonga/protocol';
@@ -44,6 +45,7 @@ const sessionWithRuns = async (runs: number, eventsPerRun: number) => {
       decoded.bytes += bytes;
     },
   });
+  env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
   let index = 0;
   for (let at = 0; at < runs; at += 1) {
     env.clock.advance(1);

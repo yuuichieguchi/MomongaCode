@@ -1,6 +1,6 @@
 import { ensureMomongaDirs, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { testKernelLock } from '@momonga/testkit';
+import { testKernelLock, testEndpointScope } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { personCapabilityFileOf, startService } from '../../runtime/test/service/helpers.ts';
@@ -41,6 +41,7 @@ export const startRealRuntime = async (overrides: Parameters<typeof startService
       platform: process.platform,
       interrupt: new AbortController().signal,
       clock: { now: () => service.clock.now(), sleep: async () => undefined },
+      endpointScope: testEndpointScope,
       random: () => 0.5,
       personCapability: async () => fs.promises.readFile(personCapabilityFileOf(layout.home), 'utf8'),
       stdout: { write: (text: string) => (stdout.push(text), true) },

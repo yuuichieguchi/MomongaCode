@@ -15,6 +15,7 @@ import type { PermissionRule } from '@momonga/config';
 import { asError } from '../process/as-error.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
+import type { SkillFileSystem } from '../memory/skill-promotion.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { createRunApp } from './app.ts';
 import type { ModelListing, RunLimitDefaults, SessionCreateSettings } from './app.ts';
@@ -61,6 +62,7 @@ export type RunServiceOptions = {
   gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
+  skillFiles: SkillFileSystem;
   platform: NodeJS.Platform;
   defaults: { runTimeoutMs?: number; limits: RunLimitDefaults };
   timers?: ServiceTimers;
@@ -162,6 +164,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     gatewayStanding: options.gatewayStanding,
     userInput: options.userInput,
     evidenceRun: options.evidenceRun,
+    skillFiles: options.skillFiles,
     platform: options.platform,
     isDraining: () => draining,
     beginDraining: () => {

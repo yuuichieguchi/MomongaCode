@@ -1,3 +1,4 @@
+import { testEndpointScope } from '@momonga/testkit';
 import type { EntryIo } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
@@ -23,6 +24,7 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
     stdout: { write: (text: string) => void stdout.push(text) },
     stderr: harness.ports.stderr,
     clock: harness.ports.clock,
+    endpointScope: testEndpointScope,
     env: harness.ports.env,
     self: harness.ports.self,
     spawnDetached: harness.ports.spawnDetached,

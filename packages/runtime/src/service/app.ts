@@ -51,6 +51,7 @@ import { compactInputOf, compactPinOf } from '../worker/compact-pin.ts';
 import type { AddInboxBody, CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
+import type { SkillFileSystem } from '../memory/skill-promotion.ts';
 import { contextChargesText, contextChargesView } from './context-charges.ts';
 import { registerGuidelineRoutes } from './guidelines.ts';
 import { registerMemoryRoutes } from './memories.ts';
@@ -115,6 +116,7 @@ export type RunAppDeps = {
   gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
+  skillFiles: SkillFileSystem;
   platform: NodeJS.Platform;
   isDraining(): boolean;
   beginDraining(): void;
@@ -840,6 +842,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     store,
     views: createRecordViews({ store, evidenceRun: deps.evidenceRun }),
     evidenceRun: deps.evidenceRun,
+    skillFiles: deps.skillFiles,
     platform: deps.platform,
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
