@@ -18,7 +18,6 @@ export const normalizeInput = (input: string | InputItem[] | null | undefined): 
 };
 
 export type ResolvedInput = {
-  stored: InputItem[];
   forAdapter: AdapterInputItem[];
 };
 
@@ -31,7 +30,7 @@ export const resolveInput = (codec: CompactionCodec, clientInput: InputItem[]): 
     }
     return { type: 'compaction_summary', summary };
   });
-  return { stored: clientInput, forAdapter };
+  return { forAdapter };
 };
 
 const partsHaveImage = (content: string | readonly ContentPart[]): boolean =>

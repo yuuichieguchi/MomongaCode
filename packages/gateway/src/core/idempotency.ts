@@ -9,7 +9,7 @@ export type IdempotencyLookup =
   | { kind: 'stored'; frames: StreamEvent[] };
 
 export type IdempotencyRegistry = {
-  lookup(key: string, digest: string): IdempotencyLookup;
+  lookup(key: string, digest: string, signal: AbortSignal): Promise<IdempotencyLookup>;
   begin(key: string, digest: string, run: SharedRun): void;
   end(key: string, run: SharedRun): void;
   take(key: string): SharedRun | undefined;
@@ -35,21 +35,26 @@ export const parseIdempotencyKey = (header: string | undefined): string | undefi
 export const createIdempotencyRegistry = (services: GatewayServices): IdempotencyRegistry => {
   const inflight = new Map<string, { digest: string; run: SharedRun }>();
   return {
-    lookup: (key, digest) => {
-      const running = inflight.get(key);
-      if (running !== undefined) {
+    lookup: async (key, digest, signal) => {
+      const joinRunning = (): IdempotencyLookup | undefined => {
+        const running = inflight.get(key);
+        if (running === undefined) return undefined;
         if (running.digest !== digest) throw reusedError(key);
         if (!running.run.joinable()) throw idempotencyInProgressError(key);
         return { kind: 'inflight', run: running.run };
-      }
-      const stored = services.store.getIdempotency(key);
+      };
+      const runningBeforeRead = joinRunning();
+      if (runningBeforeRead !== undefined) return runningBeforeRead;
+      const stored = await services.store.getIdempotency(key, signal);
+      const runningAfterRead = joinRunning();
+      if (runningAfterRead !== undefined) return runningAfterRead;
       if (stored === undefined) return { kind: 'miss' };
-      if (services.clock.now() >= stored.storedAtMs + services.config.idempotency.ttlMs) {
-        services.store.deleteIdempotency(key);
-        return { kind: 'miss' };
+      if (services.clock.now() < stored.storedAtMs + services.config.idempotency.ttlMs) {
+        if (stored.digest !== digest) throw reusedError(key);
+        return { kind: 'stored', frames: stored.frames };
       }
-      if (stored.digest !== digest) throw reusedError(key);
-      return { kind: 'stored', frames: stored.frames };
+      await services.store.deleteIdempotency(key, signal);
+      return joinRunning() ?? { kind: 'miss' };
     },
     begin: (key, digest, run) => {
       inflight.set(key, { digest, run });

@@ -17,6 +17,9 @@ export const journalThreadModule = `${repoRoot}packages/runtime/src/memory/journ
 export const ruleVerifierThreadEntry = `${repoRoot}packages/runtime/src/process/rule-verifier-thread.ts`;
 export const ruleVerifierThreadModule = `${repoRoot}packages/runtime/src/process/rule-verifier-thread-code.generated.ts`;
 
+export const storeWorkerEntry = `${repoRoot}packages/gateway/src/core/store-worker.ts`;
+export const storeWorkerModule = `${repoRoot}packages/gateway/src/core/store-worker-code.generated.ts`;
+
 export type UpdateSourceInputs = {
   readonly releaseRepo?: string;
   readonly teamId?: string;
@@ -28,6 +31,7 @@ export type BundleOptions = UpdateSourceInputs & {
   readonly outfile: string;
   readonly journalThreadModule?: string;
   readonly ruleVerifierThreadModule?: string;
+  readonly storeWorkerModule?: string;
 };
 
 export const updateSourceDefines = ({ releaseRepo, teamId, releasePublicKey }: UpdateSourceInputs): Record<string, string> => {
@@ -107,9 +111,16 @@ export const writeRuleVerifierThreadModule = async (modulePath: string = ruleVer
   writeThreadModule(modulePath, 'RULE_VERIFIER_THREAD_CODE', await bundleRuleVerifierThread());
 };
 
+export const bundleStoreWorker = (): Promise<string> => bundleThreadOf('store-worker', storeWorkerEntry);
+
+export const writeStoreWorkerModule = async (modulePath: string = storeWorkerModule): Promise<void> => {
+  writeThreadModule(modulePath, 'STORE_WORKER_CODE', await bundleStoreWorker());
+};
+
 export const writeThreadModules = async (): Promise<void> => {
   await writeJournalThreadModule();
   await writeRuleVerifierThreadModule();
+  await writeStoreWorkerModule();
 };
 
 const bundleBuildOptions = ({
@@ -119,6 +130,7 @@ const bundleBuildOptions = ({
   releasePublicKey,
   journalThreadModule: generatedModule = journalThreadModule,
   ruleVerifierThreadModule: generatedVerifierModule = ruleVerifierThreadModule,
+  storeWorkerModule: generatedStoreModule = storeWorkerModule,
 }: Omit<BundleOptions, 'outfile'>): BuildOptions => ({
   entryPoints: [entry],
   define: updateSourceDefines({
@@ -138,6 +150,7 @@ const bundleBuildOptions = ({
       setup: (build) => {
         build.onResolve({ filter: /(^|\/)journal-thread-code\.generated(\.ts)?$/ }, () => ({ path: generatedModule }));
         build.onResolve({ filter: /(^|\/)rule-verifier-thread-code\.generated(\.ts)?$/ }, () => ({ path: generatedVerifierModule }));
+        build.onResolve({ filter: /(^|\/)store-worker-code\.generated(\.ts)?$/ }, () => ({ path: generatedStoreModule }));
       },
     },
   ],
@@ -152,6 +165,7 @@ const bundleBuildOptions = ({
 export const bundle = async (options: BundleOptions): Promise<void> => {
   await writeJournalThreadModule(options.journalThreadModule ?? journalThreadModule);
   await writeRuleVerifierThreadModule(options.ruleVerifierThreadModule ?? ruleVerifierThreadModule);
+  await writeStoreWorkerModule(options.storeWorkerModule ?? storeWorkerModule);
   await build({ ...bundleBuildOptions(options), outfile: options.outfile });
 };
 
