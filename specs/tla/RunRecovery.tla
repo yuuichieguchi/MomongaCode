@@ -16,7 +16,13 @@ CONSTANTS
     Gen2Workers,
     Promotes,
     GenDies,
-    KeepsLockWhileChild
+    KeepsLockWhileChild,
+    NoUnknownGate,
+    NeedsVerdict,
+    RuleVerdicts,
+    RefusingProps,
+    UngatedRules,
+    RefusesNotes
 
 ASSUME ParentCalls \subseteq {"none", "exec", "rec", "spawn"}
 ASSUME /\ MaxStep \in Nat \ {0}
@@ -31,6 +37,12 @@ ASSUME /\ MaxStep \in Nat \ {0}
        /\ Promotes \in BOOLEAN
        /\ GenDies \in BOOLEAN
        /\ KeepsLockWhileChild \in BOOLEAN
+       /\ NoUnknownGate \in BOOLEAN
+       /\ NeedsVerdict \in BOOLEAN
+       /\ RuleVerdicts \subseteq {"proved", "refuted", "unknown"} /\ RuleVerdicts # {}
+       /\ RefusingProps \subseteq BOOLEAN /\ RefusingProps # {}
+       /\ UngatedRules \in BOOLEAN
+       /\ RefusesNotes \in BOOLEAN
 
 Parent == "P"
 Child == "C"
@@ -96,7 +108,10 @@ DeadLetterEdges == [
 ModelledEvents == {"user.message", "run.started", "run.status", "model.requested",
                    "model.responded", "tool.call", "tool.permission.requested",
                    "tool.permission.resolved", "tool.permission.cancelled",
-                   "tool.started", "tool.completed", "tool.reconciled", "tool.waiting"}
+                   "tool.started", "tool.completed", "tool.reconciled", "tool.waiting",
+                   "tool.unknown.requested", "tool.unknown.resolved", "tool.unknown.cancelled"}
+
+AskKinds == {"tool.permission.requested", "tool.unknown.requested"}
 
 ToolKinds == {"exec", "rec", "spawn"}
 
@@ -105,9 +120,14 @@ CallChoices(r) == IF r = Parent THEN ParentCalls ELSE {"none"}
 -----------------------------------------------------------------------------
 VARIABLES run, ev, appr, idem, idemRes, eff, dl, child,
           pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags,
-          serving, genLock, childGen, ownerDead
+          serving, genLock, childGen, ownerDead,
+          vstate, vref, stored, vflags
 
-vars == <<run, ev, appr, idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags, serving, genLock, childGen, ownerDead>>
+oldVars == <<run, ev, appr, idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags, serving, genLock, childGen, ownerDead>>
+
+verdictVars == <<vstate, vref, stored, vflags>>
+
+vars == <<oldVars, verdictVars>>
 
 genVars == <<serving, genLock, childGen, ownerDead>>
 
@@ -129,6 +149,17 @@ EvOf(r, k, s) == ev[r][CHOOSE i \in DOMAIN ev[r] : ev[r][i].k = k /\ ev[r][i].s 
 RespKind(r, s) == EvOf(r, "model.responded", s).x
 ResolvedChoice(r, s) == EvOf(r, "tool.permission.resolved", s).x
 
+UnknownAt(r, s) == Has(r, "tool.reconciled", s) /\ EvOf(r, "tool.reconciled", s).x = "unknown"
+
+UnknownOpen(r, s) == UnknownAt(r, s) /\ ~Has(r, "tool.unknown.resolved", s)
+
+LastAskKind(S, r, s) ==
+    LET asks == {i \in DOMAIN S.ev[r] : S.ev[r][i].k \in AskKinds /\ S.ev[r][i].s = s}
+    IN IF asks = {} THEN "none" ELSE S.ev[r][Max(asks)].k
+
+CancelledKind(S, r, s) ==
+    IF LastAskKind(S, r, s) = "tool.unknown.requested" THEN "tool.unknown.cancelled" ELSE "tool.permission.cancelled"
+
 OutcomeEvent(r, s) ==
     IF idemRes[<<r, s>>] \in {"already_applied", "unknown"}
     THEN E("tool.reconciled", s, idemRes[<<r, s>>], "")
@@ -144,7 +175,7 @@ Withdraw(S, r) ==
     IF PendingStep(S, r) = {} THEN S
     ELSE LET s == CHOOSE x \in PendingStep(S, r) : TRUE
          IN AppendEvs([S EXCEPT !.appr[r][s] = "withdrawn"], r,
-                   <<E("tool.permission.cancelled", s, "withdrawn", "")>>)
+                   <<E(CancelledKind(S, r, s), s, "withdrawn", "")>>)
 
 Base(S, r, to, lead, refund, resetFailures) ==
     LET x == S.run[r]
@@ -334,6 +365,10 @@ Init ==
     /\ childGen = [k \in Keys |-> 1]
     /\ ownerDead = [k \in Keys |-> FALSE]
     /\ flags = [stale |-> FALSE, reissue |-> FALSE, retryUnknown |-> FALSE, killed |-> {}, reapedLive |-> FALSE]
+    /\ vstate \in RuleVerdicts
+    /\ vref \in RefusingProps
+    /\ stored = "none"
+    /\ vflags = [refutedRan |-> FALSE, noteRefused |-> FALSE]
 
 -----------------------------------------------------------------------------
 
@@ -444,7 +479,12 @@ DispatchTarget(r) ==
     IN IF s > 0 /\ Responded(r, s) /\ ~Has(r, "tool.call", s) THEN "decide"
        ELSE IF s > 0 /\ Has(r, "tool.call", s) /\ ~CallDone(r, s) THEN "settle"
        ELSE IF s > 0 /\ ~Responded(r, s) THEN "stream"
+       ELSE IF s > 0 /\ CallDone(r, s) /\ UnknownOpen(r, s) /\ ~NoUnknownGate THEN "unknownGate"
        ELSE "loop"
+
+StartPc == IF NeedsVerdict THEN "ruleVerify" ELSE "started"
+
+BatchPc == IF NeedsVerdict THEN "ruleVerifyBatch" ELSE "begin"
 
 Drive(w) ==
     /\ pc[w] = "drive"
@@ -456,7 +496,7 @@ Drive(w) ==
           /\ Leave(w, "STOPPED")
        \/ /\ ~(ws[w] = "CANCELLING" \/ run[r].cancelReq)
           /\ ~dl[r]
-          /\ PcOnly(w, "started")
+          /\ PcOnly(w, StartPc)
 
 Started(w) ==
     /\ pc[w] = "started"
@@ -530,9 +570,9 @@ Settle(w) ==
           \/ /\ kind \in {"exec", "rec"} /\ a = "resolved" /\ ResolvedChoice(r, s) = "reject"
              /\ AppendStep(w, <<E("tool.completed", s, "rejected", "")>>, "loop")
           \/ /\ kind \in {"exec", "rec"} /\ a = "resolved" /\ ResolvedChoice(r, s) = "allow"
-             /\ PcOnly(w, "begin")
+             /\ PcOnly(w, BatchPc)
           \/ /\ kind = "spawn"
-             /\ PcOnly(w, "begin")
+             /\ PcOnly(w, BatchPc)
 
 YieldHuman(w) == pc[w] = "yieldHuman" /\ LeaveYield(w, "WAITING_HUMAN")
 
@@ -619,7 +659,25 @@ Complete(w) ==
 
 JournalOut(w) ==
     /\ pc[w] = "journalOut"
-    /\ AppendStep(w, <<OutcomeEvent(wr[w], wstep[w])>>, "loop")
+    /\ AppendStep(w, <<OutcomeEvent(wr[w], wstep[w])>>,
+                  IF idemRes[KeyOf(w)] = "unknown" /\ ~NoUnknownGate THEN "unknownGate" ELSE "loop")
+
+UnknownGate(w) ==
+    /\ pc[w] = "unknownGate"
+    /\ LET r == wr[w]
+           s == wstep[w]
+       IN \/ /\ ~UnknownOpen(r, s)
+             /\ PcOnly(w, "loop")
+          \/ /\ UnknownOpen(r, s) /\ appr[r][s] = "pending"
+             /\ PcOnly(w, "yieldHuman")
+          \/ /\ UnknownOpen(r, s) /\ appr[r][s] # "pending"
+             /\ \/ /\ Fence(w)
+                   /\ SetStore(AppendEvs([Snap EXCEPT !.appr[r][s] = "pending"], r,
+                                      <<E("tool.unknown.requested", s, "", "")>>))
+                   /\ Goto(w, "yieldHuman")
+                   /\ UNCHANGED <<serving, genLock, childGen, ownerDead, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
+                \/ /\ ~Fence(w) /\ KeepStore /\ ToIdle(w) /\ UNCHANGED flags
+             /\ UNCHANGED <<serving, genLock, childGen, ownerDead, idem, idemRes, eff, dl, child>>
 
 ReconLock(w) ==
     /\ pc[w] = "reconLock"
@@ -765,7 +823,7 @@ Step(w) ==
     \/ DoEffect(w) \/ Complete(w) \/ JournalOut(w)
     \/ ReconLock(w) \/ Reap(w) \/ Reconcile(w) \/ ReconDone(w) \/ SpawnExec(w) \/ WaitAppend(w)
     \/ CancelRec(w) \/ CancelJournal(w) \/ CancelFinish(w) \/ StaleLedger(w)
-    \/ RetireYield(w) \/ AbortDone(w)
+    \/ RetireYield(w) \/ AbortDone(w) \/ UnknownGate(w)
 
 -----------------------------------------------------------------------------
 
@@ -783,10 +841,12 @@ RequestCancel(r) ==
 Resolve(r, s, choice) ==
     /\ appr[r][s] = "pending"
     /\ ~run[r].cancelReq
-    /\ LET S0 == [Snap EXCEPT !.appr[r][s] = "resolved"]
-           lead == <<E("tool.permission.resolved", s, choice, "")>>
-           settled == run[r].status = "WAITING_HUMAN" /\ PendingStep(S0, r) = {}
-       IN SetStore(IF settled THEN Change(S0, r, "QUEUED", lead, FALSE, FALSE) ELSE AppendEvs(S0, r, lead))
+    /\ LET unknownAsk == LastAskKind(Snap, r, s) = "tool.unknown.requested"
+           S0 == [Snap EXCEPT !.appr[r][s] = "resolved"]
+           lead == <<E(IF unknownAsk THEN "tool.unknown.resolved" ELSE "tool.permission.resolved", s, choice, "")>>
+       IN /\ unknownAsk => choice = "allow"
+          /\ LET settled == run[r].status = "WAITING_HUMAN" /\ PendingStep(S0, r) = {}
+             IN SetStore(IF settled THEN Change(S0, r, "QUEUED", lead, FALSE, FALSE) ELSE AppendEvs(S0, r, lead))
     /\ UNCHANGED <<serving, genLock, childGen, ownerDead, idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 SweepQueued(r) ==
@@ -803,7 +863,7 @@ SweepHuman(r) ==
            S0 == [Snap EXCEPT !.appr[r] = [s \in Steps |-> IF s \in due THEN "expired" ELSE @[s]]]
            lead == IF due = {} THEN <<>>
                    ELSE LET s == CHOOSE x \in due : TRUE
-                        IN <<E("tool.permission.cancelled", s, "expired", "")>>
+                        IN <<E(CancelledKind(Snap, r, s), s, "expired", "")>>
        IN SetStore(Change(S0, r, "STOPPED", lead, FALSE, FALSE))
     /\ UNCHANGED <<serving, genLock, childGen, ownerDead, idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
@@ -829,11 +889,39 @@ HolderAlive(r) ==
 
 ExpireDead(r) == ~HolderAlive(r) /\ ExpireLease(r)
 
+Refuses(v) == v = "refuted" /\ (vref \/ RefusesNotes)
+
+VerdictSeen == IF stored # "none" THEN stored ELSE vstate
+
+RuleVerify(w, from, next) ==
+    /\ pc[w] = from
+    /\ ~lost[w]
+    /\ LET v == VerdictSeen
+           refuse == Refuses(v) /\ ~UngatedRules
+       IN /\ stored' = IF v # "unknown" THEN v ELSE stored
+          /\ vflags' = [vflags EXCEPT !.refutedRan = @ \/ (~refuse /\ v = "refuted" /\ vref),
+                                      !.noteRefused = @ \/ (refuse /\ ~(v = "refuted" /\ vref))]
+          /\ IF refuse THEN Leave(w, "FAILED") ELSE PcOnly(w, next)
+    /\ UNCHANGED <<vstate, vref>>
+
+RuleVerifyStart(w) == RuleVerify(w, "ruleVerify", "started")
+
+RuleVerifyBatch(w) == RuleVerify(w, "ruleVerifyBatch", "begin")
+
+RetryVerdict ==
+    /\ vstate = "unknown"
+    /\ \E v \in RuleVerdicts \ {"unknown"} : vstate' = v /\ stored' = v
+    /\ UNCHANGED <<oldVars, vref, vflags>>
+
+KeepVerdict(A) == A /\ UNCHANGED verdictVars
+
+VerdictStep(w) == RuleVerifyStart(w) \/ RuleVerifyBatch(w)
+
 AllDone == \A r \in Runs : run[r].status \in Terminal \cup {"ABSENT"}
 
 Terminated == AllDone /\ UNCHANGED vars
 
-NextWithoutSweeper ==
+OldNextWithoutSweeper ==
     \/ \E w \in Workers : Claim(w) \/ ClaimNone(w) \/ Step(w) \/ HB(w) \/ Abort(w) \/ Crash(w)
     \/ \E r \in Runs : Deadline(r) \/ RequestCancel(r) \/ ExpireLease(r)
                        \/ SweepQueued(r) \/ SweepHuman(r) \/ SweepTool(r)
@@ -841,20 +929,27 @@ NextWithoutSweeper ==
     \/ \E r \in Runs, s \in Steps, c \in {"allow", "reject"} : Resolve(r, s, c)
     \/ Promote
     \/ \E g \in Gens : GenDie(g)
+
+NextWithoutSweeper ==
+    \/ KeepVerdict(OldNextWithoutSweeper)
+    \/ \E w \in Workers : VerdictStep(w)
+    \/ RetryVerdict
     \/ Terminated
 
-Next == NextWithoutSweeper \/ \E r \in Runs : FinishCancelled(r)
+Next == NextWithoutSweeper \/ \E r \in Runs : KeepVerdict(FinishCancelled(r))
+
+WorkerStep(w) == KeepVerdict(Step(w)) \/ VerdictStep(w)
 
 Fairness ==
-    /\ \A w \in Workers : WF_vars(Claim(w)) /\ WF_vars(ClaimNone(w)) /\ WF_vars(Step(w)) /\ WF_vars(HB(w)) /\ WF_vars(Abort(w))
-    /\ \A r \in Runs : WF_vars(ExpireDead(r)) /\ WF_vars(SweepQueued(r))
-                       /\ WF_vars(SweepHuman(r)) /\ WF_vars(SweepTool(r)) /\ WF_vars(FinishCancelled(r))
+    /\ \A w \in Workers : WF_vars(KeepVerdict(Claim(w))) /\ WF_vars(KeepVerdict(ClaimNone(w))) /\ WF_vars(WorkerStep(w)) /\ WF_vars(KeepVerdict(HB(w))) /\ WF_vars(KeepVerdict(Abort(w)))
+    /\ \A r \in Runs : WF_vars(KeepVerdict(ExpireDead(r))) /\ WF_vars(KeepVerdict(SweepQueued(r)))
+                       /\ WF_vars(KeepVerdict(SweepHuman(r))) /\ WF_vars(KeepVerdict(SweepTool(r))) /\ WF_vars(KeepVerdict(FinishCancelled(r)))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
-SpecWithoutWorkers == Init /\ [][Next]_vars /\ \A r \in Runs : WF_vars(ExpireDead(r)) /\ WF_vars(FinishCancelled(r))
+SpecWithoutWorkers == Init /\ [][Next]_vars /\ \A r \in Runs : WF_vars(KeepVerdict(ExpireDead(r))) /\ WF_vars(KeepVerdict(FinishCancelled(r)))
 
-SpecWithoutSweeper == Init /\ [][NextWithoutSweeper]_vars /\ \A r \in Runs : WF_vars(ExpireDead(r))
+SpecWithoutSweeper == Init /\ [][NextWithoutSweeper]_vars /\ \A r \in Runs : WF_vars(KeepVerdict(ExpireDead(r)))
 
 LiveTimeoutOutcomes(kind, k) ==
     IF kind = "exec" THEN {"unknown"}
@@ -888,9 +983,9 @@ RecordedCompleted(kind, k) == {"completed"}
 
 LiveTimeoutRecordsCompleted(w) == LiveKill(w, RecordedCompleted)
 
-SpecLiveTimeout == Init /\ [][Next \/ \E w \in Workers : LiveTimeout(w)]_vars
+SpecLiveTimeout == Init /\ [][Next \/ \E w \in Workers : KeepVerdict(LiveTimeout(w))]_vars
 
-SpecLiveTimeoutFailed == Init /\ [][Next \/ \E w \in Workers : LiveTimeoutRecordsCompleted(w)]_vars
+SpecLiveTimeoutFailed == Init /\ [][Next \/ \E w \in Workers : KeepVerdict(LiveTimeoutRecordsCompleted(w))]_vars
 
 -----------------------------------------------------------------------------
 
@@ -968,6 +1063,24 @@ Settles ==
 
 CancelNeedsNoWorker ==
     \A r \in Runs : SweeperOwned(run[r]) ~> (run[r].status \in Terminal)
+
+UnknownNeedsHuman ==
+    \A w \in Workers : pc[w] = "loop" => ~UnknownOpen(wr[w], wstep[w])
+
+UnknownNeedsHumanEvents ==
+    \A r \in Runs, s \in Steps :
+        UnknownOpen(r, s) => ~\E i \in DOMAIN ev[r] : ev[r][i].k = "model.requested" /\ ev[r][i].s > s
+
+UnknownResolvedWasRequested ==
+    \A r \in Runs, s \in Steps : Has(r, "tool.unknown.resolved", s) => Has(r, "tool.unknown.requested", s)
+
+RefutedNeverRuns == ~vflags.refutedRan
+
+NotesNeverRefuse == ~vflags.noteRefused
+
+UnknownNotFinal == stored # "unknown"
+
+NoWaitWithoutRefusal == ~NeedsVerdict => \A w \in Workers : pc[w] \notin {"ruleVerify", "ruleVerifyBatch"}
 
 WorkerSymmetry == Permutations(Workers)
 

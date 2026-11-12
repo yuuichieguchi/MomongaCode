@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { EVENT_TYPES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, UNKNOWN_VALUE } from '@momonga/protocol';
+import { EVENT_TYPES, REFUSING_PROPERTIES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, UNKNOWN_VALUE } from '@momonga/protocol';
+import type { PinnedRuleVerdict, RuleVerdict } from '@momonga/protocol';
+import { unknownGateDecision } from '../packages/runtime/src/worker/unknown-gate.ts';
+import { policyRefusal } from '../packages/runtime/src/worker/rule-verdict.ts';
 import { moduleOf, readManifest } from './formal/manifest.ts';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from '@momonga/store';
 import { resolveKernelLock } from '../packages/foundation/src/platform/kernel-lock.ts';
@@ -75,9 +78,6 @@ const UNMODELLED_EVENT_TYPES = [
   'tool.offered',
   'tool.permission.classified',
   'tool.permission.classifying',
-  'tool.unknown.cancelled',
-  'tool.unknown.requested',
-  'tool.unknown.resolved',
   'tool.updated',
   'usage.charged',
   'usage.updated',
@@ -239,6 +239,9 @@ describe('the checked configurations against the repaired recovery design', () =
       'RunRecovery.reapOnly': ['TRUE', 'TRUE', 'FALSE'],
       'RunRecovery.unfixed': ['TRUE', 'TRUE', 'TRUE'],
       'RunRecovery.abortDropsLock': ['FALSE', 'FALSE', 'FALSE'],
+      'RunRecovery.unknownUngated': ['FALSE', 'FALSE', 'FALSE'],
+      'RunRecovery.ungatedRules': ['FALSE', 'FALSE', 'FALSE'],
+      'RunRecovery.refusesNote': ['FALSE', 'FALSE', 'FALSE'],
     };
     expect([...evidenceNames].sort()).toEqual(Object.keys(switchesOf).sort());
     for (const name of evidenceNames) expect(repairs(name), name).toEqual(switchesOf[name]);
@@ -336,5 +339,52 @@ describe('the failed listing of ProcessStop.tla', () => {
   ])('keeps %s as the every-run evidence that violates %s', (config, property) => {
     expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 13 } });
     expect(lists(config, property)).toBe(true);
+  });
+});
+
+describe('the unknown-effect gate of RunRecovery.tla, against the gate of the code', () => {
+  it('sends a worker whose step ended in an unknown outcome to the gate, after the journal write and after a crash before the ask', () => {
+    expect(definitionOf('JournalOut')).toContain('"unknownGate"');
+    expect(definitionOf('DispatchTarget')).toContain('"unknownGate"');
+    expect(definitionOf('UnknownGate')).toContain('E("tool.unknown.requested"');
+  });
+
+  it('answers each case of the model as the code does: an unresolved unknown outcome waits for a person, an asked one waits without a second ask, an answered one continues', () => {
+    const cases: { model: string; effects: Parameters<typeof unknownGateDecision>[0]; decision: ReturnType<typeof unknownGateDecision> }[] = [
+      { model: 'no unknown outcome: loop', effects: {}, decision: { kind: 'continue' } },
+      { model: 'unknown, not asked: UnknownGate appends tool.unknown.requested and yields', effects: { call_1: { acknowledged: false } }, decision: { kind: 'wait', ask: ['call_1'] } },
+      { model: 'unknown, asked and pending: UnknownGate yields without a second ask', effects: { call_1: { approvalId: 'a1', acknowledged: false } }, decision: { kind: 'wait', ask: [] } },
+      { model: 'unknown, resolved: DispatchTarget gives loop', effects: { call_1: { approvalId: 'a1', acknowledged: true } }, decision: { kind: 'continue' } },
+    ];
+    for (const { model, effects, decision } of cases) expect(unknownGateDecision(effects), model).toEqual(decision);
+  });
+});
+
+describe('the rule verdict of RunRecovery.tla, against the refusal of the code', () => {
+  const verdictOf = (verdict: RuleVerdict['verdict'], refuted: readonly string[]): PinnedRuleVerdict => ({
+    fingerprint: 'f',
+    solver: 's',
+    verdict,
+    refuted: refuted.map((property) => ({ property, subject: 'Read(~/.ssh/**)', message: 'opened by an allow rule' })),
+    unknown: verdict === 'unknown' ? [{ property: 'verification', reason: 'budget' }] : [],
+    notProved: [],
+  });
+
+  it('refuses exactly when the model refuses: a refutation of a refusing property, never a consistency finding, never unknown, never proved', () => {
+    expect(definitionOf('Refuses')).toContain('vref');
+    const consistency = 'deny-precedence';
+    expect(REFUSING_PROPERTIES as readonly string[]).not.toContain(consistency);
+    const cases: { model: string; verdict: PinnedRuleVerdict; refuses: boolean }[] = [
+      { model: 'vstate refuted, vref TRUE', verdict: verdictOf('refuted', [REFUSING_PROPERTIES[0]]), refuses: true },
+      { model: 'vstate refuted, vref FALSE', verdict: verdictOf('refuted', [consistency]), refuses: false },
+      { model: 'vstate unknown', verdict: verdictOf('unknown', []), refuses: false },
+      { model: 'vstate proved', verdict: verdictOf('proved', []), refuses: false },
+    ];
+    for (const { model, verdict, refuses } of cases) expect(policyRefusal(verdict) !== undefined, model).toBe(refuses);
+    for (const property of REFUSING_PROPERTIES) expect(policyRefusal(verdictOf('refuted', [property])), property).toBeDefined();
+  });
+
+  it('never stores unknown as a final verdict, in the model and in the code', () => {
+    expect(spec).toMatch(/^UnknownNotFinal == stored # "unknown"$/m);
   });
 });
