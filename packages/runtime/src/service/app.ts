@@ -495,7 +495,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   const issueOf = async (session: Session, body: CreateRunBody, signal: AbortSignal): Promise<IssueRead | undefined> => {
     if (body.issue === undefined) return undefined;
     if (body.mandate?.profile === undefined) {
-      throw invalidRequest('a run from an issue runs under a named mandate: give mandate.profile, the name of a mandate under mandates in the user settings', 'mandate');
+      throw invalidRequest('a run from an issue runs under a named mandate: name one of the mandates declared under mandates in the user settings', 'mandate');
     }
     return deps.issues.read(body.issue.url, signal);
   };

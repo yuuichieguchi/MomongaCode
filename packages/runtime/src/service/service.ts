@@ -7,7 +7,7 @@ import type { MarkerOwners } from '@momonga/tools';
 import type { PolicyVerification } from '../process/folder-verification.ts';
 import type { GatewayStanding } from '../process/supervised-gateway.ts';
 import type { Clock, FileSystem, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
-import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
@@ -92,6 +92,7 @@ export type RunServiceOptions = {
 
 export type RunService = {
   socketPath: string;
+  askAsPerson(method: string, path: string, body: unknown, signal: AbortSignal): Promise<{ status: number; body: unknown }>;
   beginDraining(): void;
   applyRole(): void;
   openRequests(): number;
@@ -99,6 +100,8 @@ export type RunService = {
   retire(current: DaemonCurrentFrame | undefined): Promise<void>;
   close(): Promise<void>;
 };
+
+const IN_PROCESS_ORIGIN = 'http://runtime.invalid';
 
 const STREAM_REQUEST = /^\/v1\/(?:runs|sessions)\/[^/?]+\/events(?:\?|$)/;
 
@@ -317,6 +320,12 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
 
   return {
     socketPath: options.socketPath,
+    askAsPerson: async (method, requestPath, body, signal) => {
+      const response = await app.fetch(
+        new Request(new URL(requestPath, IN_PROCESS_ORIGIN), { method, headers: { 'content-type': 'application/json', [PERSON_CAPABILITY_HEADER]: personCapability }, body: JSON.stringify(body), signal }),
+      );
+      return { status: response.status, body: await response.json() };
+    },
     beginDraining: () => {
       draining = true;
     },

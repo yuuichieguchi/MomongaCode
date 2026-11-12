@@ -495,6 +495,7 @@ export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }
 
 export type RunService = {
   socketPath: string;
+  askAsPerson(method: string, path: string, body: unknown, signal: AbortSignal): Promise<{ status: number; body: unknown }>;
   beginDraining(): void;
   applyRole(): void;
   openRequests(): number;
