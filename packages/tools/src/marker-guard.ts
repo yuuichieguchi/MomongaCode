@@ -20,7 +20,7 @@ const triesLine = (record: AttemptRecord): string => {
     : `MomongaCode will try to stop it again at: ${unspent.map((kind) => KIND_WORDS[kind]).join(', ')}.`;
 };
 
-const remedyLine = (name: string, group: number | undefined): string => markerRemedyText({ surface: 'any', name, group, addressed: 'model' });
+const remedyLine = (name: string, group: number | undefined): string => markerRemedyText({ name, group, addressed: 'model' });
 
 export type MarkerGuardRefusal = 'settled' | 'interrupted';
 

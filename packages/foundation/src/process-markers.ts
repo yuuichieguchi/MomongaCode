@@ -664,21 +664,17 @@ const markerFilesUnder = async (dir: string): Promise<string[]> => {
   return nested.flat();
 };
 
-export type MarkerRemedySurface = 'tui' | 'any';
-
-export type MarkerRemedy = { surface: MarkerRemedySurface; name: string; group: number | undefined; addressed: 'person' | 'model' };
+export type MarkerRemedy = { name: string; group: number | undefined; addressed: 'person' | 'model' };
 
 const holderWords = (group: number | undefined): string => (group === undefined ? 'the process that holds it' : `the process group ${group}`);
 
-export const markerRemedyText = ({ surface, name, group, addressed }: MarkerRemedy): string => {
-  const ask = addressed === 'model' ? 'ask the person to ' : '';
-  if (surface === 'tui') return `If it can stay running, ${ask}run /markers ignore ${name}.`;
+export const markerRemedyText = ({ name, group, addressed }: MarkerRemedy): string => {
   const lead = addressed === 'model' ? `Ask the person to stop ${holderWords(group)}, or, if it can stay running, to` : `Stop ${holderWords(group)}, or, if it can stay running,`;
   return `${lead} run /markers ignore ${name} in an interactive session.`;
 };
 
 export const survivorNoticeText = (label: string, name: string, group: number | undefined): string =>
-  `a ${label} process (marker ${name}) may still be running. MomongaCode has used its ${RETRY_KINDS.length} retries and will not try again. ${markerRemedyText({ surface: 'any', name, group, addressed: 'person' })}`;
+  `a ${label} process (marker ${name}) may still be running. MomongaCode has used its ${RETRY_KINDS.length} retries and will not try again. ${markerRemedyText({ name, group, addressed: 'person' })}`;
 
 const allRetriesSpent = (record: AttemptRecord): boolean => RETRY_KINDS.every((kind) => record.spent[kind]);
 

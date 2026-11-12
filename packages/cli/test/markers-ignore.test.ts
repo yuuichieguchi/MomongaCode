@@ -11,16 +11,16 @@ const GROUP = 4242;
 const SPENT = { spent: { guard: true, sweep: true, startup: true, shutdown: true }, ignored: false };
 const SLASH_AS_RUNNABLE = new RegExp(`run /markers ignore ${NAME}\\.`);
 
-describe('C48 the remedy for a call blocked by a marker exists on the surface that shows it', () => {
+describe('C48 the remedy for a call blocked by a marker exists on every surface that shows it', () => {
   it('the headless form names stopping the process with its group and the interactive session for /markers ignore', () => {
-    const text = markerRemedyText({ surface: 'any', name: NAME, group: GROUP, addressed: 'person' });
+    const text = markerRemedyText({ name: NAME, group: GROUP, addressed: 'person' });
     expect(text).toContain(`Stop the process group ${GROUP}`);
     expect(text).toContain(`/markers ignore ${NAME} in an interactive session`);
     expect(text).not.toMatch(SLASH_AS_RUNNABLE);
   });
 
   it('the headless form without a recorded group names the process', () => {
-    expect(markerRemedyText({ surface: 'any', name: NAME, group: undefined, addressed: 'person' })).toContain('Stop the process that holds it');
+    expect(markerRemedyText({ name: NAME, group: undefined, addressed: 'person' })).toContain('Stop the process that holds it');
   });
 
   it('a blocked call refused by the guard tells the model the remedy that exists on every surface', () => {
@@ -34,11 +34,6 @@ describe('C48 the remedy for a call blocked by a marker exists on the surface th
     const text = survivorNoticeText('tool', NAME, GROUP);
     expect(text).toContain(`Stop the process group ${GROUP}`);
     expect(text).not.toMatch(SLASH_AS_RUNNABLE);
-  });
-
-  it('the terminal UI form is unchanged', () => {
-    expect(markerRemedyText({ surface: 'tui', name: NAME, group: GROUP, addressed: 'person' })).toBe(`If it can stay running, run /markers ignore ${NAME}.`);
-    expect(markerRemedyText({ surface: 'tui', name: NAME, group: GROUP, addressed: 'model' })).toBe(`If it can stay running, ask the person to run /markers ignore ${NAME}.`);
   });
 
   it('momonga markers remains no command (decision 51 A)', () => {
