@@ -20,6 +20,7 @@ const EXPECTED_TABLES = [
   'fidelity_verdicts',
   'governing_facts',
   'idempotency',
+  'issue_watch_starts',
   'jobs',
   'memories',
   'memories_index',
