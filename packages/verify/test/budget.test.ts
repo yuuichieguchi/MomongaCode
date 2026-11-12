@@ -12,7 +12,7 @@ describe('the overall budget of a verification', () => {
     const layout = makeLayout();
     const fileSystem = caseSensitiveFs();
     const roots = [layout.project];
-    const request: VerifyRequest = {
+    const request: VerifyRequest = { unixSockets: { kind: 'limited', allowed: [] },
       rules: rulesOf(layout, [
         ['allow', 'Write(src/**)'],
         ['deny', 'Write(src/secret/**)'],

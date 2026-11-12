@@ -22,6 +22,7 @@ export const lateResultOrigin = (tool: string, callId: string, outcome: LateOutc
 export type ProducedItem = { item: InputItem; callId?: string; handle?: string };
 
 export type ItemFacts = {
+  fence: string;
   providerCallIdOf(callId: string): string;
   heldToolNameOf(callId: string): string;
 };
@@ -40,12 +41,12 @@ const lateResultOf = (callId: string, outcome: LateOutcome, output: string, fact
 });
 
 const ITEM_PRODUCERS = {
-  'user.message': (event) => [
+  'user.message': (event, facts) => [
     {
       item: {
         type: 'message',
         role: 'user',
-        content: [...includedShellTexts(event.shell).map((text): ContentPart => ({ type: 'input_text', text })), ...userMessageContent(event.text, event.images, event)],
+        content: [...includedShellTexts(event.shell, facts.fence).map((text): ContentPart => ({ type: 'input_text', text })), ...userMessageContent(event.text, event.images, event, facts.fence)],
       },
     },
   ],
@@ -69,6 +70,6 @@ const produced = <Type extends ItemEventType>(type: Type, event: EventOf<Type>, 
 
 export const itemsOfEvent = (event: RunEventPayload, facts: ItemFacts): ProducedItem[] => (isItemEvent(event) ? produced(event.type, event, facts) : []);
 
-const UNREAD_FACTS: ItemFacts = { providerCallIdOf: (callId) => callId, heldToolNameOf: (callId) => callId };
+const UNREAD_FACTS: ItemFacts = { fence: '', providerCallIdOf: (callId) => callId, heldToolNameOf: (callId) => callId };
 
 export const itemCountOf = (event: RunEventPayload): number => itemsOfEvent(event, UNREAD_FACTS).length;

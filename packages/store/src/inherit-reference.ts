@@ -6,6 +6,7 @@ import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
 import { createDerivedSnapshot } from './derived-repair.ts';
 import { isFatalStoreError } from './fatal.ts';
 import { foldRunState, initialRunState } from './fold.ts';
+import { runFenceReader } from './session-fence.ts';
 import { ITEM_EVENT_TYPES, itemsOfEvent } from './history-items.ts';
 import type { ItemFacts } from './history-items.ts';
 import { InheritanceError, compactCommandOf, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
@@ -147,6 +148,7 @@ const outputCallIdOf = (entry: WindowEntry): string | undefined => {
 export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): ReferenceReader => {
   const { unit, stepped } = hooks;
   const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
+  const fenceOfRun = runFenceReader(db);
   const firstInherited = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.inherited' ORDER BY seq LIMIT 1");
   const eventAt = db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq = :seq');
   const itemRows = db.prepare(
@@ -156,6 +158,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   const latestCompacted = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.compacted' AND seq <= :bound ORDER BY seq DESC LIMIT 1");
   const derived = createDerivedSnapshot(db);
   const itemFactsOf = (runId: string): ItemFacts => ({
+    fence: fenceOfRun(runId),
     providerCallIdOf: (callId) => callId,
     heldToolNameOf: (callId) => {
       const call = derived.read((view) => view.toolCallOf(runId, callId));
@@ -505,7 +508,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   type Folded = { state: RunState; carriedSkills: string[]; pointer: { runId: string; eventSeq: number } | undefined };
 
   const foldOwn = (run: Run): Folded => {
-    let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
+    let state = initialRunState({ runId: run.id, sessionId: run.sessionId, fence: fenceOfRun(run.id) });
     let carriedSkills: string[] = [];
     let oldSummaryEventSeq: number | undefined;
     for (let from = 1; from <= run.lastSeq; from += INHERIT_RANGE_ROWS) {

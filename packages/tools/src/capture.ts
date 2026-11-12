@@ -64,7 +64,7 @@ export const pumpOutput = (
   streams: readonly AsyncIterable<Uint8Array>[],
   onChunk: (streamIndex: number, chunk: Buffer) => void,
   timers: ToolTimers,
-): { settle(): Promise<void>; close(): Promise<void>; failure(): { error: unknown } | undefined } => {
+): { settle(): Promise<void>; ended(): Promise<void>; close(): Promise<void>; failure(): { error: unknown } | undefined } => {
   const iterators = streams.map((stream) => stream[Symbol.asyncIterator]());
   let streamFailure: { error: unknown } | undefined;
   let closing: Promise<void> | undefined;
@@ -88,6 +88,7 @@ export const pumpOutput = (
         drain.cancel();
       }
     },
+    ended: () => Promise.all(pumps).then(() => undefined),
     close,
     failure: () => streamFailure,
   };

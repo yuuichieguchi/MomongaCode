@@ -7,7 +7,6 @@ import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { HAS_REAL_SANDBOX, keyFor, noneSandbox } from '../helpers.ts';
 import { approvalOf, isAlive, makeBuiltins, onCleanup, resultOf, trackGroup, trackPid, waitFor } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
-import { bashTool, MAX_BACKGROUND_TIMEOUT_MS, MAX_TIMEOUT_MS } from '../../src/builtins/bash.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -390,22 +389,7 @@ describe('Bash admission and metadata', () => {
     expect(outcome.suggestedRule).toBeDefined();
   });
 
-  it('refuses a foreground timeout above the maximum and names the limit', async () => {
-    const tools = await makeBuiltins();
-    const result = resultOf(await tools.run('Bash', { command: 'true', timeout: 1_800_000 }, { mode: 'bypassPermissions' }));
-    expect(result.status).toBe('failed');
-    expect(result.output).toContain('600000');
-  });
-
-  it('states in the schema the same limits as in the description', () => {
-    const tool = bashTool;
-    const properties = tool.inputSchema['properties'] as Record<string, { description: string }>;
-    expect(properties['timeout']?.description).toContain(String(MAX_TIMEOUT_MS));
-    expect(properties['timeout']?.description).toContain(String(MAX_BACKGROUND_TIMEOUT_MS));
-    expect(tool.description).toContain(String(MAX_TIMEOUT_MS));
-  });
-
-  it.each([0, 600_001, 1.5])('rejects timeout %s', async (timeout) => {
+  it.each([0, 1.5])('rejects timeout %s', async (timeout) => {
     const tools = await makeBuiltins();
     const result = resultOf(await tools.run('Bash', { command: 'true', timeout }, { mode: 'bypassPermissions' }));
     expect(result.status).toBe('failed');

@@ -5,6 +5,7 @@ import { buildContext, createTokenMeter } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, HistoryItem } from '@momonga/context';
 import { HOME, MODEL, PROJECT, READ_TOOL, call, capabilitiesFor, fakeBlobs, fakeCounter, fakeReader, output, seeded, sourcesWith, tokensOfItem, tokensOfTool, touchedFile } from './helpers.ts';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { TEST_FENCE } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -66,6 +67,7 @@ const inputFor = (requestStep: number, arrivalStep: number, placement: Placement
   const cachePrefix = layout === 'cachePrefix';
   return {
     capabilities,
+    fence: TEST_FENCE,
     model: MODEL,
     sources: sourcesWith({ history: historyFor(requestStep, arrivalStep, placement), tools: [READ_TOOL], memories: [memory] }),
     evicted: new Set<string>(),

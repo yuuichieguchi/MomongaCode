@@ -1,23 +1,28 @@
 import { describe, expect, it } from 'vitest';
+import { unixSocketPolicyOf } from '@momonga/foundation';
 import { formatReport } from '../src/index.ts';
 import type { PropertyResult, VerificationReport } from '../src/report.ts';
 
-const result = (title: string, verdict: PropertyResult['verdict']): PropertyResult => ({ id: 'secret-reach' as PropertyResult['id'], title, subject: 'the rules', proves: 'p', doesNotProve: [], verdict });
+const proved: PropertyResult = { id: 'secret-reach', title: 'Secrets', subject: 'the rules', proves: 'p', doesNotProve: [], verdict: { status: 'proved', notes: [] } };
 
-const report = (results: PropertyResult[]): VerificationReport => ({ mode: 'manual', ruleCount: 1, solver: 'z3', results, mismatches: [], timings: [], outsideProof: ['x'], exitCode: 0 });
+const refuted: PropertyResult = { ...proved, verdict: { status: 'refuted', findings: [], notes: [] } };
 
-const lastLine = (text: string): string => text.split('\n').at(-1) ?? '';
+const unknown: PropertyResult = { ...proved, id: 'mandate-holds', verdict: { status: 'unknown', reason: 'the solver timed out', notes: [] } };
 
-describe('the policy verify report ends with one result line (cli-commands-C42)', () => {
-  it('no refuted and no undecided property: No rule is refuted', () => {
-    expect(lastLine(formatReport(report([result('Secrets', { status: 'proved', notes: [] })])))).toBe('No rule is refuted');
-  });
+const report = (results: PropertyResult[]): VerificationReport => ({ mode: 'manual', ruleCount: 1, solver: 'z3', results, mismatches: [], timings: [], outsideProof: ['x'], unixSockets: unixSocketPolicyOf('seatbelt', []), exitCode: 0 });
 
-  it('a refuted property names it', () => {
-    expect(lastLine(formatReport(report([result('Secrets', { status: 'refuted', findings: [], notes: [] }), result('Forms', { status: 'unknown', reason: 'timeout', notes: [] })])))).toBe('Refuted: Secrets');
-  });
+const RESULT_LINE = /^(No rule is refuted|Refuted: |Unknown: )/;
 
-  it('an undecided property and no refuted one names the reason', () => {
-    expect(lastLine(formatReport(report([result('Forms', { status: 'unknown', reason: 'the solver timed out', notes: [] })])))).toBe('Unknown: Forms: the solver timed out');
+const resultLines = (text: string): string[] => text.split('\n').filter((line) => RESULT_LINE.test(line));
+
+describe('the policy verify report ends with one result line, the one of the report format (cli-commands-C42, policy-verify-sandbox C23)', () => {
+  it.each([
+    ['every property proved', [proved], /^No rule is refuted$/],
+    ['a refuted property among others', [refuted, unknown], /^Refuted: /],
+    ['an undecided property and no refuted one', [proved, unknown], /^Unknown: .*\(the solver timed out\)/],
+  ] as const)('%s: exactly one result line, and it is the last line', (_case, results, expected) => {
+    const text = formatReport(report([...results]));
+    expect(resultLines(text)).toHaveLength(1);
+    expect(text.split('\n').at(-1)).toMatch(expected);
   });
 });

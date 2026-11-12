@@ -69,6 +69,7 @@ export type ErrorRule = {
   credential: CredentialEffect;
   keepParam?: true;
   message: string;
+  cause?: string;
 };
 
 export type ErrorRules = readonly ErrorRule[];

@@ -25,6 +25,7 @@ import {
   user,
 } from './helpers.ts';
 import { weightMeter, weightOf, weightOfAll } from './weight-meter.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 type Arrival = { kind: 'instructions'; path: string; content: string } | { kind: 'skill'; name: string; content: string };
 
@@ -216,6 +217,7 @@ const candidateInput = (capabilities: ReturnType<typeof capabilitiesFor>): Build
   projectRoot: PROJECT,
   home: HOME,
   keepRecentTurns: 1,
+  fence: TEST_FENCE,
 });
 
 const portsOf = () => ({ meter: weightMeter(), blobs: fakeBlobs(), instructions: fakeReader() });

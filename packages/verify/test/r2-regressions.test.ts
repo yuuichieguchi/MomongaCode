@@ -122,7 +122,7 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
     const roots = [layout.project];
     const fileSystem = caseSensitiveFs();
     const contextFor = async (): Promise<QueryContext> =>
-      await buildQueryContext(z3.engine().api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
+      await buildQueryContext(z3.engine().api, { unixSockets: { kind: 'limited', allowed: [] }, deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
         rules: rulesOf(layout, rules),
         roots,
         mode: 'manual',

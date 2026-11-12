@@ -10,12 +10,12 @@ const MODEL_STEP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 describe('one renderer of a fallback cause covers billing records (P3, M9)', () => {
   it('renders a refused billing change as the member that was not tried', () => {
     const refused = { target: 'metered', code: 'billing_change_refused', message: 'not tried', fromBilling: 'plan', toBilling: 'metered', reason: 'billing_change_refused' } as FallbackCause;
-    expect(describeFallbackCause(refused)).toBe('changing from plan to metered billing is not allowed, so metered was not tried');
+    expect(describeFallbackCause(refused, 'tui')).toBe('Did not fall back to metered: billing from plan to metered is not allowed. Run /models billing.');
   });
 
   it('renders an allowed change as the failure of the member left, naming both billing kinds', () => {
     const allowed = { target: 'plan', code: 'upstream_error', message: 'plan is unavailable', fromBilling: 'plan', toBilling: 'metered', reason: 'billing_change_allowed' } as FallbackCause;
-    const text = describeFallbackCause(allowed);
+    const text = describeFallbackCause(allowed, 'cli');
     expect(text.startsWith('plan failed (upstream_error: plan is unavailable)')).toBe(true);
     expect(text).toContain('from plan to metered billing');
   });

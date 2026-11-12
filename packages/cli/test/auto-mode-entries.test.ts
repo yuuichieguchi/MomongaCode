@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, removeTempDir } from '@momonga/testkit';
 import { nodeProcess } from '../src/node-ports.ts';
@@ -43,7 +44,7 @@ const programWith = (interrupt: AbortSignal) => {
   const entry = async (): Promise<number> => 0;
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }),
+    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
     entries: { supervise: entry, gateway: entry, runtime: entry },
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt,

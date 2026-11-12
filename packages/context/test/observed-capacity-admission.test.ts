@@ -5,6 +5,7 @@ import type { Capabilities, MemoryView } from '@momonga/protocol';
 import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, TASK, capabilitiesFor, fakeBlobs, fakeReader, sourcesWith, touchedFile, user } from './helpers.ts';
 import { weightMeter, weightOf } from './weight-meter.ts';
 import type { UnderRule } from './weight-meter.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 8192;
 const OUTPUT = 1024;
@@ -46,6 +47,7 @@ type Extra = { memories?: readonly MemoryView[]; files?: Record<string, string>;
 const buildWith = (capabilities: Capabilities, under: UnderRule, { memories, files, observed }: Extra): Promise<BuiltContext> => {
   const input: BuildContextInput & { observedCapacity?: true } = {
     capabilities,
+    fence: TEST_FENCE,
     model: MODEL,
     sources: sourcesWith({ history: [user(1, 'question')], ...(memories === undefined ? {} : { memories }) }),
     evicted: new Set<string>(),

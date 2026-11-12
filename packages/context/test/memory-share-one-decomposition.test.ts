@@ -4,6 +4,7 @@ import type { MemoryView } from '@momonga/protocol';
 import { buildContext, createTokenMeter } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, HistoryItem } from '@momonga/context';
 import { HOME, MODEL, PROJECT, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const sized = capabilitiesFor(8192, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
 
@@ -43,6 +44,7 @@ const inputWith = (history: HistoryItem[], memories: MemoryView[]): BuildContext
   keepRecentTurns: 1,
   observedCapacity: true,
   renderedFull: new Set(['c1']),
+  fence: TEST_FENCE,
 });
 
 const secondBuildWith = async (extraReported: number, memories: MemoryView[]): Promise<string[]> => {

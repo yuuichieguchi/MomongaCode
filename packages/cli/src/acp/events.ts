@@ -249,6 +249,7 @@ const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, 
             },
           ]
         : [];
+    case 'user.compact':
     case 'context.inherited_compacted':
       return [];
     case 'context.compaction_rejected':

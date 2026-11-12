@@ -5,6 +5,7 @@ import { buildContext, inputCeilingFor } from '@momonga/context';
 import type { HistoryItem } from '@momonga/context';
 import { HOME, RAW_OUTPUT_TOOL, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user } from './helpers.ts';
 import { weightMeter, weightOf, weightOfAll } from './weight-meter.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const systemItem: InputItem = { type: 'message', role: 'system', content: SYSTEM_PROMPT };
 const floorTokens = weightOf(systemItem) + weightOf(TASK);
@@ -15,6 +16,7 @@ const buildWith = (capabilities: Capabilities, history: HistoryItem[], extra: Pa
   buildContext(
     {
       capabilities,
+      fence: TEST_FENCE,
       model: MODEL,
       sources: sourcesWith({ history }),
       evicted: new Set<string>(),
@@ -183,7 +185,8 @@ describe('proactive acceptance needs one summary item of new history (0.2 #25, B
         home: HOME,
         harnessOutputTools: [RAW_OUTPUT_TOOL],
         keepRecentTurns: 1,
-      },
+        fence: TEST_FENCE,
+},
       portsWith(),
     );
 
@@ -208,7 +211,8 @@ describe('proactive acceptance needs one summary item of new history (0.2 #25, B
         home: HOME,
         harnessOutputTools: [RAW_OUTPUT_TOOL],
         keepRecentTurns: 1,
-      },
+        fence: TEST_FENCE,
+},
       portsWith(),
     );
 

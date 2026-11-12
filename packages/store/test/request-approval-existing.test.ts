@@ -8,6 +8,7 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
 import { START_MS, makeStoreDir, mustClaim, mustRun, openStoreAt } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const OPTIONS: PermissionOption[] = [
   { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
@@ -63,7 +64,7 @@ describe('store.requestApproval with a pending approval migrated from v1 without
     expect(result.approval.id).not.toBe('appr-legacy');
     expect(store.approvals.get('appr-legacy')?.status).toBe('superseded');
     expect(await store.resolveApproval('appr-legacy', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'superseded' });
-    const fresh = () => initialRunState({ runId: 'run-1', sessionId: 'sess-1' });
+    const fresh = () => initialRunState({ runId: 'run-1', sessionId: 'sess-1', fence: TEST_FENCE });
     const requests = store.readRunEvents('run-1', 0, 100).filter((event) => event.type === 'tool.permission.requested');
     expect(requests).toEqual([expect.objectContaining({ approvalId: result.approval.id, callId: 'call_1', subjectDigest: DIGEST })]);
     expect(store.readRunEvents('run-1', 0, 100).reduce(foldRunState, fresh()).pendingCalls['call_1']).toMatchObject({

@@ -16,6 +16,7 @@ import { JournalThreadError, StalePreparation } from './journal-port.ts';
 import { createJournalReader, payloadStep } from './journal-reader.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
+import { createIssueWatchStore } from './issue-watch.ts';
 import { decodeJob, prepareJobStatements } from './jobs.ts';
 import { createGoverningFactStore } from './governing.ts';
 import { createGuidelineStore } from './guidelines.ts';
@@ -237,10 +238,12 @@ const afterCursor = (cursor: string | null): { afterCreatedAt: number; afterId: 
   return { afterCreatedAt: Number(parts[1]), afterId: String(parts[2]) };
 };
 
+const FENCE_NONCE_BYTE_LENGTH = 16;
+
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
-    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, sandbox_network, additional_directories_json, mcp_servers_json, created_at)
-     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :sandboxNetwork, :additionalDirectories, :mcpServers, :createdAt)`,
+    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, sandbox_network, additional_directories_json, mcp_servers_json, created_at, fence_nonce)
+     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :sandboxNetwork, :additionalDirectories, :mcpServers, :createdAt, :fenceNonce)`,
   ),
   updateSessionMcpServers: db.prepare('UPDATE sessions SET mcp_servers_json = :mcpServers WHERE id = :id'),
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
@@ -357,14 +360,14 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   listExhausted: db.prepare(`SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER}`),
   exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
-  unshownPendingRuns: db.prepare(
-    `SELECT DISTINCT a.run_id AS run_id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
-     WHERE a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
-     ORDER BY a.run_id`,
+  pendingPermissionRequests: db.prepare(
+    `SELECT e.* FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.status = 'pending' AND a.kind = 'permission'
+     ORDER BY a.run_id, e.seq`,
   ),
-  unshownPendingOfRun: db.prepare(
-    `SELECT a.id AS id FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
-     WHERE a.run_id = :runId AND a.status = 'pending' AND a.kind = 'permission' AND json_extract(e.payload_json, '$.shown') IS NULL
+  pendingPermissionRequestsOfRun: db.prepare(
+    `SELECT e.* FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
+     WHERE a.run_id = :runId AND a.status = 'pending' AND a.kind = 'permission'
      ORDER BY e.seq`,
   ),
   listSweeperOwned: db.prepare(
@@ -488,6 +491,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const contextCharges = createContextChargeStore(db, clock, decodeContext);
   const reflection = createReflectionStore(db, clock, { memories, contextCharges }, decodeContext);
   const governing = createGoverningFactStore(db, clock, decodeContext);
+  const issueWatch = createIssueWatchStore(db, clock);
   const runFacts = createRunFactsStore(db, decodeContext);
   const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
   const trust = createTrustStore(db, clock, home, decodeContext, fileSystem);
@@ -535,6 +539,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     observeDecode(rows);
     return decodeRunEvents(rows, decodeContext);
   };
+
+  const unshownRequestsOf = (rows: readonly Row[]): { runId: string; approvalId: string }[] =>
+    decodeEvents(rows).flatMap((event) => (event.type === 'tool.permission.requested' && event.shown === undefined ? [{ runId: event.runId, approvalId: event.approvalId }] : []));
 
   const decodeKnownEvents = (rows: readonly Row[]): (RunEvent | SessionEvent)[] => {
     observeDecode(rows);
@@ -1329,6 +1336,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           additionalDirectories: canonicalJson(input.additionalDirectories ?? []),
           mcpServers: canonicalJson(input.mcpServers ?? {}),
           createdAt: clock.now(),
+          fenceNonce: random.hex(FENCE_NONCE_BYTE_LENGTH),
         });
         const row = sql.selectSession.get({ id });
         if (row === undefined) throw new Error(`session ${id} vanished during create`);
@@ -1439,6 +1447,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           additionalDirectories: canonicalJson(parentSession.additionalDirectories),
           mcpServers: canonicalJson(parentSession.mcpServers),
           createdAt: now,
+          fenceNonce: random.hex(FENCE_NONCE_BYTE_LENGTH),
         });
         const runId = uuidv7(clock);
         sql.insertRun.run({
@@ -1874,11 +1883,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     reaskUnshownApprovals: async (onError) => {
       const reasked: string[] = [];
-      for (const row of sql.unshownPendingRuns.all()) {
-        const runId = readerFor('approvals', 'unshown', row).string('run_id');
+      const unshownRuns = [...new Set(unshownRequestsOf(sql.pendingPermissionRequests.all()).map((request) => request.runId))];
+      for (const runId of unshownRuns) {
         try {
           const didReask = await derivedReads.write({ runTree: runId }, () => {
-            const ids = sql.unshownPendingOfRun.all({ runId }).map((entry) => readerFor('approvals', runId, entry).string('id'));
+            const ids = unshownRequestsOf(sql.pendingPermissionRequestsOfRun.all({ runId })).map((request) => request.approvalId);
             if (ids.length === 0) return false;
             const events = ids.map((id) => {
               const approval = approvalOps.store.get(id);
@@ -1971,6 +1980,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     contextCharges,
     guidelines: createGuidelineStore(db, clock),
     governing,
+    issueWatch,
     search: createSearchStore(db, decodeContext, derivedReads),
     runFacts,
     permissionReviews: createPermissionReviewsStore(db, decodeContext, runFacts.calls),

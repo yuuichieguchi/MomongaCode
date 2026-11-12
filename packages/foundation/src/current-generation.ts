@@ -5,9 +5,10 @@ import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import { parseOutsideJson } from './json-depth.ts';
 import { listGenerations } from './generation-registry.ts';
 import type { ListGenerationsOptions } from './generation-registry.ts';
-import { generationLayout } from './momonga-paths.ts';
+import { generationSockets } from './momonga-paths.ts';
 import type { GenerationProcessRole, GenerationSockets, MomongaPaths } from './momonga-paths.ts';
 import { nodeFileSystem } from './node-file-system.ts';
+import type { EndpointScope } from './socket-path.ts';
 import { systemRandom } from './system-random.ts';
 
 export type CurrentGeneration = { generation: number; version: string; sockets: GenerationSockets };
@@ -115,16 +116,18 @@ export class NoGenerationOfVersionError extends Error {
 
 export type ResolvedGeneration = { generation: number; version: string; sockets: GenerationSockets };
 
-export const resolveGenerationFor = async (paths: MomongaPaths, version: string, options: ListGenerationsOptions): Promise<ResolvedGeneration | undefined> => {
+export type ResolveGenerationOptions = ListGenerationsOptions & { scope: EndpointScope };
+
+export const resolveGenerationFor = async (paths: MomongaPaths, version: string, options: ResolveGenerationOptions): Promise<ResolvedGeneration | undefined> => {
   const current = await readCurrentGeneration(paths);
   if (current !== undefined && current.version === version) return current;
   const sameVersion = (await listGenerations(paths, options)).filter((listed) => listed.live && listed.record.kind === 'record' && listed.record.record.version === version);
   const newest = sameVersion.at(-1);
-  return newest === undefined ? undefined : { generation: newest.generation, version, sockets: generationLayout(homeOf(paths), newest.generation).sockets };
+  return newest === undefined ? undefined : { generation: newest.generation, version, sockets: generationSockets(homeOf(paths), newest.generation, options.scope) };
 };
 
 export const versionSocketResolver =
-  (paths: MomongaPaths, version: string, role: GenerationProcessRole, options: ListGenerationsOptions): (() => Promise<string>) =>
+  (paths: MomongaPaths, version: string, role: GenerationProcessRole, options: ResolveGenerationOptions): (() => Promise<string>) =>
   async () => {
     const own = await resolveGenerationFor(paths, version, options);
     if (own === undefined) throw new NoGenerationOfVersionError(version);

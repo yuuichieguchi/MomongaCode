@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import type { EntryIo } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { freshHome } from './fresh-home.ts';
@@ -23,7 +24,7 @@ const harness = () => {
   const ports = { version: '9.9.9', interrupt: new AbortController().signal, home: freshHome(), cwd: '/c', env: {}, platform: process.platform, terminal: undefined } as unknown as CliPorts;
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }),
+    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

@@ -4,6 +4,7 @@ import type { BuildContextInput } from '@momonga/context';
 import type { MessageInputItem } from '@momonga/protocol';
 import { HOME, PROJECT, capabilitiesFor, fakeBlobs, fakeReader, sourcesWith } from './helpers.ts';
 import { EXACT, meterOf, piece, pieceCounter, toolOf } from './meter-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 4096;
 const capabilities = capabilitiesFor(WINDOW, { tokenCounting: 'exact', maxOutputTokens: 1024 });
@@ -12,6 +13,7 @@ const toolTokens = Math.ceil(inputBudget / 2) + 100;
 
 const inputWith = (extra: Partial<BuildContextInput>): BuildContextInput => ({
   capabilities,
+  fence: TEST_FENCE,
   model: 'm',
   sources: sourcesWith({ systemPrompt: 'system#100', task: piece('task', 10) as MessageInputItem, tools: [toolOf('A', toolTokens), toolOf('B', toolTokens)] }),
   evicted: new Set<string>(),

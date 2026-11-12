@@ -235,7 +235,7 @@ export const buildCostReport = (calls: readonly PricedBilledCall[], runs: readon
 const describeTotals = (totals: RoleCost): string => {
   const fallback = (totals.fallbacks ?? []).map(
     (entry) =>
-      `, ${entry.calls} of ${totals.calls} call(s) were answered by the fallback model ${entry.answeredBy} after ${entry.failed.map(describeFallbackCause).join('; ')}`,
+      `, ${entry.calls} of ${totals.calls} call(s) were answered by the fallback model ${entry.answeredBy} after ${entry.failed.map((cause) => describeFallbackCause(cause, 'cli')).join('; ')}`,
   );
   const money = describeMoney({ calls: totals.calls, unpriced: totals.unpriced, priceNotRecorded: totals.priceNotRecordedCalls, amount: totals.amount, meteredPriceVersions: totals.priceVersions, legacyPrecisionCalls: totals.legacyPrecisionCalls });
   const retries = totals.retries === 0 ? '' : `, ${totals.retries} of them ${totals.retries === 1 ? 'a retry' : 'retries'}`;

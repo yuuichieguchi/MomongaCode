@@ -127,6 +127,7 @@ const ruledError = (matched: { rule: ErrorRule; by: ErrorMatch['kind'] }, facts:
     verdict: rule.verdict,
     fallback: rule.fallback,
     credential: rule.credential,
+    ...(rule.cause === undefined ? {} : { cause: rule.cause }),
     error: body(rule.type, rule.code, ruleMessage(rule, by, facts.code, requestIds), rule.keepParam === true ? param : null),
   };
 };

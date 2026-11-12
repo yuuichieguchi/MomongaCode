@@ -1,9 +1,9 @@
 import path from 'node:path';
-import { CONTROL_REQUEST_TIMEOUT_MS, generationLayout, inspectProcessLock, listGenerations, orderVersions, readCurrentGeneration, resolveLayoutLocks, versionSocketResolver } from '@momonga/foundation';
+import { CONTROL_REQUEST_TIMEOUT_MS, generationLayout, generationSockets, inspectProcessLock, listGenerations, orderVersions, readCurrentGeneration, resolveLayoutLocks, versionSocketResolver } from '@momonga/foundation';
 import type { GenerationProcessRole, GenerationRole, KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
-import type { CliClock } from '../ports.ts';
+import type { CliClock, CliPorts } from '../ports.ts';
 import type { RetiringWork } from '../update/ports.ts';
 import { DaemonStartError, STOP_WAIT_WHEN_UNKNOWN_MS, healthAt, liveGenerationsUnderLock, reopenSessionMessage } from './ensure-daemon.ts';
 import type { NewerListener } from './ensure-daemon.ts';
@@ -14,8 +14,9 @@ export type LiveGeneration = { generation: number; role: GenerationRole; health:
 
 export type GenerationListingOptions = { lock?: KernelLockMechanism };
 
-export const listLiveGenerations = async (ports: { clock: CliClock }, paths: MomongaPaths, options: GenerationListingOptions = {}): Promise<LiveGeneration[]> => {
+export const listLiveGenerations = async (ports: Pick<CliPorts, 'clock' | 'endpointScope'>, paths: MomongaPaths, options: GenerationListingOptions = {}): Promise<LiveGeneration[]> => {
   const lock = options.lock ?? resolveLayoutLocks(paths).mechanism;
+  const scope = await ports.endpointScope(paths);
   const generations = await liveGenerationsUnderLock(ports, paths, lock, CONTROL_REQUEST_TIMEOUT_MS);
   const current = await readCurrentGeneration(paths);
   const roleOf = (generation: number): GenerationRole => {
@@ -24,7 +25,7 @@ export const listLiveGenerations = async (ports: { clock: CliClock }, paths: Mom
   };
   const dialed = await Promise.all(
     generations.map(async (generation) => {
-      const health = await healthAt(generationLayout(homeOf(paths), generation).sockets.supervisor);
+      const health = await healthAt(generationSockets(homeOf(paths), generation, scope).supervisor);
       return health === undefined ? undefined : { generation, role: roleOf(generation), health };
     }),
   );
@@ -42,8 +43,10 @@ export const retiringWorkOf = (live: readonly LiveGeneration[]): RetiringWork =>
   };
 };
 
-export const sessionSocketResolver = (paths: MomongaPaths, version: string, role: GenerationProcessRole, options: GenerationListingOptions = {}): (() => Promise<string>) =>
-  versionSocketResolver(paths, version, role, { lock: options.lock ?? resolveLayoutLocks(paths).mechanism });
+export const sessionSocketResolver =
+  (ports: Pick<CliPorts, 'version' | 'endpointScope'>, paths: MomongaPaths, role: GenerationProcessRole, options: GenerationListingOptions = {}): (() => Promise<string>) =>
+  async () =>
+    versionSocketResolver(paths, ports.version, role, { lock: options.lock ?? resolveLayoutLocks(paths).mechanism, scope: await ports.endpointScope(paths) })();
 
 export const endSessionWhenMovedAway =
   (paths: MomongaPaths, version: string, onNewer?: NewerListener): (() => Promise<void>) =>

@@ -119,6 +119,7 @@ describe('run event payloads', () => {
       | 'usage.charged'
       | 'context.compacted'
       | 'context.compaction_rejected'
+      | 'user.compact'
       | 'context.contribution'
       | 'context.governing_loaded'
       | 'context.inherited'
@@ -428,6 +429,7 @@ describe('RunState', () => {
     expectTypeOf<RunState>().toEqualTypeOf<{
       runId: string;
       sessionId: string;
+      fence: string;
       status: RunStatus;
       stopReason?: StopReason;
       step: number;

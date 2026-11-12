@@ -95,7 +95,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
     await settle();
     members = [];
     world.fake.keepers[0]?.say('exit 3\n');
-    expect(await launched.exited).toEqual({ code: 3, signal: null });
+    expect(await launched.exited).toEqual({ code: 3, signal: null, stop: 'confirmed' });
     expect(world.afterExit).toBe(1);
   });
 
@@ -115,7 +115,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
     await settle();
     members = [77];
     world.fake.keepers[0]?.say('exit 0\n');
-    expect(await launched.exited).toEqual({ code: 0, signal: null });
+    expect(await launched.exited).toEqual({ code: 0, signal: null, stop: 'confirmed' });
     expect(world.fake.keepers[0]?.written.filter((line) => line === 'terminate\n')).toHaveLength(1);
   });
 
@@ -127,7 +127,7 @@ describe('on a port whose identity is a job the launch goes through the keeper',
     const launched = world.start();
     await settle();
     world.fake.keepers[0]?.hangUp();
-    expect(await launched.exited).toEqual({ code: null, signal: 'SIGKILL' });
+    expect(await launched.exited).toEqual({ code: null, signal: 'SIGKILL', stop: 'confirmed' });
   });
 });
 
@@ -165,7 +165,7 @@ describe('an abort on a port with one signal', () => {
     expect(keeper.written.filter((line) => line === 'terminate\n')).toHaveLength(1);
     members = [];
     keeper.say(`exit ${KEEPER_TERMINATED}\nempty\n`);
-    expect(await launched.exited).toEqual({ code: KEEPER_TERMINATED, signal: null, killedBy: 'abort' });
+    expect(await launched.exited).toEqual({ code: KEEPER_TERMINATED, signal: null, killedBy: 'abort', stop: 'confirmed' });
   });
 
   it('rejects at the stop bound of the launch, in virtual time, when the pipe never answers', async () => {

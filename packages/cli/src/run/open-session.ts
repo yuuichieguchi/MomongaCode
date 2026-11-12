@@ -1,7 +1,7 @@
 import { credentialEnvNames, loadUserSettings, stripCredentialEnv } from '@momonga/config';
 import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
-import { NO_MODEL_TARGET, TARGET_NOT_READY, agentReadiness, messageOf, startModelOf } from '@momonga/protocol';
+import { TARGET_NOT_READY, messageOf, startModelOf } from '@momonga/protocol';
 import type { Mandate, MomongaModelList, PermissionMode } from '@momonga/protocol';
 import { createRuntimeClient } from '../client/runtime-client.ts';
 import type { CreatedSession, RuntimeClient } from '../client/runtime-client.ts';
@@ -31,7 +31,7 @@ export class NoModelConnected extends Error {
   readonly reason: string;
 
   constructor() {
-    const { message } = agentReadiness({ unavailable: NO_MODEL_TARGET });
+    const message = messageOf('noModelConnected', 'cli');
     super(message);
     this.name = 'NoModelConnected';
     this.reason = message;
@@ -71,9 +71,9 @@ export const autoModeConfigured = async (ports: Pick<CliPorts, 'home'>, signal: 
 export const connectRuntime = (ports: Pick<CliPorts, 'clock' | 'personCapability'>, paths: MomongaPaths): RuntimeClient =>
   createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: ports.clock, personCapability: () => ports.personCapability() });
 
-export const connectSessionRuntime = (ports: Pick<DaemonPorts, 'version' | 'clock'> & Pick<CliPorts, 'personCapability'>, paths: MomongaPaths, onNewer?: NewerListener): RuntimeClient =>
+export const connectSessionRuntime = (ports: Pick<DaemonPorts, 'version' | 'clock' | 'endpointScope'> & Pick<CliPorts, 'personCapability'>, paths: MomongaPaths, onNewer?: NewerListener): RuntimeClient =>
   createRuntimeClient({
-    resolveSocket: sessionSocketResolver(paths, ports.version, 'runtime'),
+    resolveSocket: sessionSocketResolver(ports, paths, 'runtime'),
     clock: ports.clock,
     personCapability: () => ports.personCapability(),
     onMoved: endSessionWhenMovedAway(paths, ports.version, onNewer),

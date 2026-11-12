@@ -1,4 +1,5 @@
-import { escapeTerminalLine } from '@momonga/protocol';
+import { escapeTerminalLine, rulePropertyInWords } from '@momonga/protocol';
+import type { UnixSocketPolicy } from '@momonga/foundation';
 import { describeWitness } from './report.ts';
 import type { Counterexample, PropertyResult, Replay, VerificationReport } from './report.ts';
 
@@ -32,11 +33,20 @@ const describeResult = (result: PropertyResult): string[] => {
   return lines;
 };
 
+export const unixSocketLine = (policy: UnixSocketPolicy): string => {
+  if (policy.kind === 'not_limited') return 'Unix sockets: not limited (sandbox: none)';
+  return policy.allowed.length === 0 ? 'Unix sockets: denied' : `Unix sockets: denied except ${policy.allowed.join(', ')}`;
+};
+
 const resultLine = (report: VerificationReport): string => {
-  const refuted = report.results.filter((result) => result.verdict.status === 'refuted').map((result) => result.title);
-  if (refuted.length > 0) return `Refuted: ${refuted.join('; ')}`;
-  const unknown = report.results.flatMap((result) => (result.verdict.status === 'unknown' ? [`${result.title}: ${result.verdict.reason}`] : []));
-  return unknown.length > 0 ? `Unknown: ${unknown.join('; ')}` : 'No rule is refuted';
+  const refuted = report.results.filter((result) => result.verdict.status === 'refuted');
+  if (refuted.length > 0) return `Refuted: ${[...new Set(refuted.map((result) => `the property that ${rulePropertyInWords(result.id)}`))].join('; ')}`;
+  const undecided = [
+    ...report.results.flatMap((result) => (result.verdict.status === 'unknown' ? [`the property that ${rulePropertyInWords(result.id)} (${result.verdict.reason})`] : [])),
+    ...report.mismatches.map((mismatch) => `the property that ${rulePropertyInWords(mismatch.property)} (the model and the decision code disagree)`),
+  ];
+  if (undecided.length > 0) return `Unknown: ${undecided.join('; ')}; it is tried again in the background`;
+  return 'No rule is refuted';
 };
 
 export const formatReport = (report: VerificationReport): string => {
@@ -51,6 +61,7 @@ export const formatReport = (report: VerificationReport): string => {
     for (const mismatch of report.mismatches) lines.push(`  - ${mismatch.property}: ${mismatch.subject}`, ...describeCounterexample(mismatch.counterexample));
     lines.push('');
   }
+  lines.push(unixSocketLine(report.unixSockets), '');
   lines.push('Outside the proof:');
   for (const item of report.outsideProof) lines.push(`  - ${item}`);
   lines.push('', resultLine(report));

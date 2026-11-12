@@ -196,7 +196,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         const resumed = headlessReopenOf(reopen);
         const paths = await pathsOf(ports);
         const asked = async <T>(ask: (gateway: GatewayClient) => Promise<T>): Promise<T> => {
-          const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'gateway') });
+          const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(ports, paths, 'gateway') });
           try {
             return await ask(gateway);
           } finally {

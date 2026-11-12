@@ -2,7 +2,7 @@ import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TR
 import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool, Transport } from '@modelcontextprotocol/client';
 import { stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules, McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, CredentialStoreError, MCP_CONNECT_TIMEOUT_LIMITS, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, computeBackoff, limitEndOf, limitEndText, operationLimit, routeOf, settledOrAborted } from '@momonga/foundation';
+import { CircuitBreaker, CredentialStoreError, MCP_CONNECT_TIMEOUT_LIMITS, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, createRedactor, computeBackoff, limitEndOf, limitEndText, operationLimit, routeOf, settledOrAborted } from '@momonga/foundation';
 import type { Clock, FileSystem, OperationLimit, OutboundNetwork } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { credentialNoticesOf } from './credential-strength.ts';
@@ -46,7 +46,6 @@ const BACKOFF_BASE_MS = 200;
 const BACKOFF_MAX_MS = 5000;
 const SECRET_HEADER = /auth|token|key|secret|cookie|password/i;
 const DESCRIPTIVE_HEADER = /^(accept(-charset|-encoding|-language)?|content-(type|language)|cache-control|user-agent)$/i;
-const REDACTED = '[redacted]';
 const SDK_TIMER_CEILING_MS = 2_147_483_647;
 
 export const MRTR_MAX_ROUNDS = 10;
@@ -243,7 +242,7 @@ class ManagedConnection implements McpServerConnection {
   private readonly breaker: CircuitBreaker;
   private readonly random: () => number;
   private readonly timers: McpTimers;
-  private readonly secrets = new Set<string>();
+  private readonly redactor = createRedactor({ credentials: [] });
   private session: Session | undefined;
   private lastTransport: ConnectionTransport | undefined;
   private connecting: Promise<Session> | undefined;
@@ -297,9 +296,7 @@ class ManagedConnection implements McpServerConnection {
   }
 
   redact(text: string): string {
-    let redacted = text;
-    for (const secret of this.secrets) redacted = redacted.replaceAll(secret, REDACTED);
-    return redacted;
+    return this.redactor.whole(text);
   }
 
   diagnostics(): McpServerDiagnostics {
@@ -437,7 +434,7 @@ class ManagedConnection implements McpServerConnection {
   }
 
   private trackSecret(value: string): void {
-    if (value.length >= MIN_CREDENTIAL_CHARS) this.secrets.add(value);
+    this.redactor.add(value);
   }
 
   private connectLimitMs(): number {
@@ -693,15 +690,10 @@ class ManagedConnection implements McpServerConnection {
     const base = error instanceof Error ? error : new Error(String(error));
     const message = detail === undefined ? base.message : `${base.message} (${detail})`;
     if (detail !== undefined) this.lastError = detail;
-    if (message === base.message && !this.secretsInMessage(message)) return base;
+    if (message === base.message && this.redact(message) === message) return base;
     const failure = new Error(this.redact(message), { cause: base });
     failure.name = base.name;
     return failure;
-  }
-
-  private secretsInMessage(message: string): boolean {
-    for (const secret of this.secrets) if (message.includes(secret)) return true;
-    return false;
   }
 
   private async ensureSessionUnless(signal: AbortSignal | undefined): Promise<Session> {

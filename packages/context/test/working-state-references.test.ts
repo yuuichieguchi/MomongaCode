@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { referenceKindsOf, renderWorkingState } from '@momonga/context';
 import type { RunState } from '@momonga/protocol';
 import { initialRunState } from '@momonga/store';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const tokensOf = (text: string): number => Math.ceil(text.length / 4);
 
-const base = (): RunState => initialRunState({ runId: 'run-refs', sessionId: 'session-refs' });
+const base = (): RunState => initialRunState({ runId: 'run-refs', sessionId: 'session-refs', fence: TEST_FENCE });
 
 const compacted = (): RunState => {
   const state = base();

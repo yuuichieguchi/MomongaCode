@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { ElicitationRequestView, RunEvent, RunEventPayload } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { FIXTURE_RUN_ID, FIXTURE_SESSION_ID, materializeEvents } from '@momonga/testkit';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const REQUESTS: ElicitationRequestView[] = [{ key: 'who', mode: 'url', message: 'Connect', url: 'https://example.test/c' }];
 
-const foldAll = (events: readonly RunEvent[]) => events.reduce(foldRunState, initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID }));
+const foldAll = (events: readonly RunEvent[]) => events.reduce(foldRunState, initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID, fence: TEST_FENCE }));
 
 const started: RunEventPayload[] = [
   { type: 'user.message', text: 'go' },
