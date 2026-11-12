@@ -1,13 +1,13 @@
 import type { ExecutableHelpers } from '@momonga/foundation';
 import { runMain } from '../src/run-main.ts';
-import { nodePorts } from '../src/node-ports.ts';
+import { nodePorts, processHome } from '../src/node-ports.ts';
 
 const LINES = 20_000;
 const OWN_EXIT_CODE = 7;
 
 const helpers: ExecutableHelpers = {
   flood: async () => {
-    const ports = nodePorts('0.0.0', new AbortController().signal);
+    const ports = nodePorts('0.0.0', new AbortController().signal, processHome());
     for (let line = 0; line < LINES; line += 1) {
       ports.stdout.write(`line ${line} of the output of a command whose reader has gone\n`);
       if (line % 100 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
