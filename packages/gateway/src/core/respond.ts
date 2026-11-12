@@ -128,6 +128,7 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
     ...(body.text === undefined || body.text === null ? {} : { text: body.text }),
     ...(body.prompt_cache_key === undefined || body.prompt_cache_key === null ? {} : { promptCacheKey: body.prompt_cache_key }),
     ...(cacheMarks === undefined ? {} : { cacheMarks }),
+    ...(body.momonga?.fence === undefined ? {} : { fence: body.momonga.fence }),
     ...(Object.keys(job.unknownFields).length === 0 ? {} : { unknownFields: job.unknownFields }),
   };
 };

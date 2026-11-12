@@ -129,7 +129,7 @@ export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOri
     return schema === undefined ? flagged : { ...flagged, parameters: schema as NonNullable<FunctionTool['parameters']> };
   });
   const systemRole = rendering.systemRole ?? DEFAULT_SYSTEM_ROLE;
-  const input = readableHistoryOf(request.input).flatMap((item) => itemOf(item, origin, systemRole) ?? []);
+  const input = readableHistoryOf(request.input, request.fence).flatMap((item) => itemOf(item, origin, systemRole) ?? []);
   const additional = tools.length > 0 && (rendering.toolPlacement ?? DEFAULT_TOOL_PLACEMENT) === 'additional_tools';
   return {
     ...request.unknownFields,

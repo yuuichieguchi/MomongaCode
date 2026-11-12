@@ -1,3 +1,5 @@
+import { TEST_FENCE } from '@momonga/testkit';
+import { toolResultBlock } from '../src/adapters/chat-completions/plain-history.ts';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
@@ -7,14 +9,13 @@ import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { expectErrorBody, postJson, readJson, readSse } from './gateway-helpers.ts';
 import type { Harness } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, TARGET, collect, lastCompletionBody, listDirTool, makeAdapter, readFileTool, startFake, userText, MODEL_FRAMING } from './cc-support.ts';
-import { UNTRUSTED_NOTICE, ccAdapterFor, ccModelOf, signedCompaction, startCcGateway } from './cc-compact-support.ts';
+import { ccAdapterFor, ccModelOf, signedCompaction, startCcGateway } from './cc-compact-support.ts';
 
 const tokensOfWire = (wire: unknown): number => Math.max(1, Math.ceil(JSON.stringify(wire).length / 4));
 
 const boundOf = (tokens: number): number => Math.max(1, Math.ceil(tokens * 0.3));
 
-const block = (callId: string, name: string, body: string): string =>
-  `<tool_result call_id="${callId}" name="${name}">\n${UNTRUSTED_NOTICE}\n${body}\n</tool_result>`;
+const block = (callId: string, name: string, body: string): string => toolResultBlock(callId, name, body, TEST_FENCE);
 
 const tools = [readFileTool, listDirTool];
 
@@ -259,7 +260,7 @@ describe('lenient lone-item counts', () => {
       ...lenient({ c9: 'Grep' }, false),
     });
     expect(counted.status).toBe(200);
-    expect(counted.body.input_tokens).toBe(tokensOfWire({ messages: [{ role: 'user', content: block('c9', 'Grep', 'a &lt; b') }] }));
+    expect(counted.body.input_tokens).toBe(tokensOfWire({ messages: [{ role: 'user', content: block('c9', 'Grep', 'a < b') }] }));
   });
 
   it('counts a constrained output with tools as its tool_result message alone, below 100 tokens', async () => {

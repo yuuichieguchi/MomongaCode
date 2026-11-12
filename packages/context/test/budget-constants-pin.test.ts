@@ -29,7 +29,7 @@ describe('budget constants are pinned by literal values', () => {
     expect(SUMMARY_ROOM_RATIO).toBe(0.3);
     expect(SUMMARY_ACCEPT_RATIO).toBe(1.3);
     expect(SUMMARY_ITEM_OVERHEAD).toBe(69);
-    expect(SUMMARY_PROMPT_TOKENS).toBe(426);
+    expect(SUMMARY_PROMPT_TOKENS).toBe(484);
   });
 
   it.for([

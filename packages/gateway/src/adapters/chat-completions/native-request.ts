@@ -52,6 +52,8 @@ const toolChoiceOf = (choice: ToolChoice): unknown => {
   };
 };
 
+export const fenceOption = (request: AdapterRequest): { boundary?: string } => (request.fence === undefined ? {} : { boundary: request.fence });
+
 export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, SamplingField> => carriedSamplingOf(request);
 
 export const buildNativeBody = (request: AdapterRequest, origin: ReasoningOrigin, dialect: DialectChoice, ledger?: RenderLedger): ChatRequestBody => {
@@ -60,7 +62,7 @@ export const buildNativeBody = (request: AdapterRequest, origin: ReasoningOrigin
   const resolved = resolvedOf(dialect);
   const system = systemTextOf(request.instructions, request.input);
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
-  messages.push(...(tools.length === 0 ? plainHistoryOf(request.input, { envelopeReplies: false, origin: origin }) : nativeHistoryOf(request.input, origin)));
+  messages.push(...(tools.length === 0 ? plainHistoryOf(request.input, { envelopeReplies: false, origin: origin, ...fenceOption(request) }) : nativeHistoryOf(request.input, origin, request.fence)));
   return {
     model: request.model,
     messages,

@@ -1,3 +1,5 @@
+import { fenceUntrusted } from '@momonga/protocol';
+import { fenceBoundaryIn } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import {
   anthropicBlockDelta,
@@ -372,7 +374,8 @@ describe('anthropic adapter through the gateway: compaction', () => {
     const body = gateway.fake.requests[1]?.body as { system: Array<{ text: string; cache_control?: unknown }>; messages: Array<{ content: Array<{ text: string; cache_control?: unknown }> }> };
     expect(body.system[0]?.text).toContain('handoff note');
     expect(JSON.stringify(body)).not.toContain('cache_control');
-    expect(body.messages[0]?.content[0]?.text).toContain('<tool_result id="c1">body</tool_result>');
+    const transcript = body.messages[0]?.content[0]?.text ?? '';
+    expect(transcript).toContain(fenceUntrusted('tool_result', { id: 'c1' }, 'body', fenceBoundaryIn(transcript)));
   });
 
   it('sizes the summary request by counting the system and messages it will actually send', async () => {

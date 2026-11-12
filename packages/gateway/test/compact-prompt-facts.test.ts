@@ -29,7 +29,7 @@ describe('the summary instructions ask for no fact the working state records', (
     expect(factKindsSentence(extended)).toContain('an added kind');
   });
 
-  it('raises the instructions version to 3', () => {
-    expect(COMPACTION_INSTRUCTIONS_VERSION).toBe(3);
+  it('raises the instructions version to 4', () => {
+    expect(COMPACTION_INSTRUCTIONS_VERSION).toBe(4);
   });
 });

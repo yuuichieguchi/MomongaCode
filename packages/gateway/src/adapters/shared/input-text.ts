@@ -1,3 +1,4 @@
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { AdapterInputItem, ContentPart } from '@momonga/protocol';
 import { UnsupportedInputError } from './failures.ts';
 
@@ -22,15 +23,10 @@ const textOfPart = (part: ContentPart): string => {
 export const textOfContent = (content: string | readonly ContentPart[]): string =>
   typeof content === 'string' ? content : content.map(textOfPart).join(PART_SEPARATOR);
 
-export const neutralizeMarkup = (text: string): string => text.replaceAll('<', '&lt;');
+const DERIVED_BOUNDARY_LENGTH = 32;
 
-export const escapeAttribute = (value: string): string =>
-  value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replace(/[\r\n]/g, ' ');
+export const boundaryOf = (fence: string | undefined, input: readonly AdapterInputItem[]): string =>
+  fence ?? sha256Hex(canonicalJson(input[0] ?? null)).slice(0, DERIVED_BOUNDARY_LENGTH);
 
 export type ReasoningInput = Extract<AdapterInputItem, { type: 'reasoning' }>;
 
