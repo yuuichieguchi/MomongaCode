@@ -11,7 +11,7 @@ momonga [options] [prompt]
 | Option | Meaning |
 | --- | --- |
 | `-V, --version` | output the version number |
-| `-p, --print <prompt>` | run the prompt without a terminal UI and print the result |
+| `-p, --print [prompt]` | run the prompt without a terminal UI and print the result; text piped on standard input is given to the run after the prompt, and is the prompt when -p has none |
 | `--output-format <format>` | output format of --print and attach; values: `text`, `json`, `stream-json`; default: `"text"` |
 | `--permission-mode <mode>` | permission mode of the session; values: `manual`, `acceptEdits`, `plan`, `auto`, `bypassPermissions` |
 | `--model <model>` | the model of the session, for example devstral-small-2 (momonga models lists them; /model switches it in an interactive session) |
@@ -130,6 +130,11 @@ momonga [options] [prompt]
 | `momonga models dialects set` | replace the declared schema dialects with the object of a JSON file |
 | `momonga policy` | check the permission rules of this folder |
 | `momonga policy verify` | prove that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect; states what is proved and what is not |
+| `momonga trust [folder]` | show whether a folder is trusted, with the settings of it waiting for approval, or decide it; the current folder when none is given |
+| `momonga project-check` | the command that checks the work of the current folder, kept in the user settings (projectChecks) |
+| `momonga project-check show` | print the check of the current folder |
+| `momonga project-check set <command>` | make this command the check of the current folder |
+| `momonga project-check clear` | remove the check of the current folder |
 
 ### momonga attach
 
@@ -620,6 +625,14 @@ momonga [options] [prompt]
 | `--mode <mode>` | the permission mode to check; the starting mode of the settings when omitted; values: `manual`, `acceptEdits`, `plan`, `auto`, `bypassPermissions` |
 | `--secret <path>` | a further secret location to keep out of reach; repeat for several |
 | `--mandate <name>` | check the rules as a run under this mandate of the user settings would have them, and report an allow rule that admits a Bash form a dedicated operation replaces or names an operation that always needs a person |
+| `-h, --help` | display help for the command |
+
+### momonga trust
+
+| Option | Meaning |
+| --- | --- |
+| `--set <decision>` | decide the folder; values: `trusted`, `untrusted` |
+| `--clear` | return the folder to not decided |
 | `-h, --help` | display help for the command |
 
 ## Settings keys
