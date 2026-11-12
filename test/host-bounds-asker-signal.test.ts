@@ -26,7 +26,11 @@ describe('a bound that guards a host operation belongs to the operation that ask
   });
 
   it('names the limit of a request to the runtime in the client', () => {
-    expect(fs.readFileSync(path.join(PACKAGES, 'cli/src/client/runtime-client.ts'), 'utf8')).toMatch(/createUdsClient\(options\.resolveSocket,\s*\{\s*headersTimeoutMs:\s*HOST_READ_BOUND_MS\s*\}\)/);
+    const source = fs.readFileSync(path.join(PACKAGES, 'cli/src/client/runtime-client.ts'), 'utf8');
+    const options = /createUdsClient\(options\.resolveSocket,\s*\{([^}]*)\}\)/.exec(source)?.[1] ?? '';
+    const bounds = [...options.matchAll(/(\w+TimeoutMs):\s*(\w+)/g)].map(([, name, value]) => ({ name, value }));
+    expect(bounds.map(({ name }) => name)).toContain('headersTimeoutMs');
+    expect(bounds.filter(({ value }) => value !== 'HOST_READ_BOUND_MS')).toEqual([]);
   });
 });
 
