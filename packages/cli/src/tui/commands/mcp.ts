@@ -2,7 +2,6 @@ import { mcpServerNameProblem } from '@momonga/config';
 import type { McpServerView } from '@momonga/protocol';
 import { APPLIES_NEXT_SESSION, confirmed, writeSetting } from '../settings-screen.tsx';
 import type { Refusal } from '../settings-screen.tsx';
-import { NEEDS_SESSION_NOTE } from '../slash.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 import { shellFormOf } from './shell-commands.ts';
 
@@ -14,7 +13,10 @@ export const MCP_NAME_TITLE = 'Name of the server';
 export const MCP_COMMAND_TITLE = 'Command';
 export const MCP_ARGUMENTS_TITLE = 'Arguments, separated by spaces (empty: none)';
 export const MCP_ENVIRONMENT_TITLE = 'Names of the environment variables it is given, separated by spaces (empty: none)';
+export const MCP_SECRETS_TITLE = 'Secrets of the secret store it is given, as NAME=secret-name separated by spaces (momonga secret set; empty: none)';
 export const MCP_ADDRESS_TITLE = 'Address';
+
+export const APPROVING_SERVER = 'recording the approval';
 
 export const sessionServerNote = (name: string): string => `${name} belongs to this session and is in no settings file`;
 
@@ -23,6 +25,15 @@ export const mcpServerLine = (server: McpServerView): string => [server.name, se
 const needed = (what: string) => (text: string): string | undefined => (text.trim() === '' ? `expected ${what}` : undefined);
 
 const words = (text: string): string[] => text.split(/\s+/).filter((word) => word !== '');
+
+const SECRET_ENTRY = /^([A-Za-z_][A-Za-z0-9_]*)=(.+)$/;
+
+const secretsProblem = (text: string): string | undefined => {
+  const wrong = words(text).find((word) => !SECRET_ENTRY.test(word));
+  return wrong === undefined ? undefined : `expected NAME=secret-name, got ${JSON.stringify(wrong)}`;
+};
+
+const secretEnvOf = (text: string): Record<string, string> => Object.fromEntries(words(text).map((word) => SECRET_ENTRY.exec(word)?.slice(1, 3) ?? []));
 
 const entries = (current: unknown): unknown[] => (Array.isArray(current) ? (current as unknown[]) : []);
 
@@ -47,12 +58,16 @@ const addStdio = async (context: SlashContext): Promise<Refusal | 'left' | undef
   if (args === undefined) return 'left';
   const environment = await promptText({ title: MCP_ENVIRONMENT_TITLE, validate: () => undefined });
   if (environment === undefined) return 'left';
+  const secrets = await promptText({ title: MCP_SECRETS_TITLE, validate: secretsProblem });
+  if (secrets === undefined) return 'left';
   const names = words(environment);
+  const secretEnv = secretEnvOf(secrets);
   return addServer(context, name, {
     type: 'stdio',
     command,
     ...(words(args).length === 0 ? {} : { args: words(args) }),
     ...(names.length === 0 ? {} : { env: Object.fromEntries(names.map((variable) => [variable, `\${${variable}}`])) }),
+    ...(Object.keys(secretEnv).length === 0 ? {} : { secretEnv }),
   });
 };
 
@@ -68,12 +83,14 @@ const addHttp = async (context: SlashContext): Promise<Refusal | 'left' | undefi
 const switchProjectServer = async (context: SlashContext, server: McpServerView): Promise<Refusal | 'left' | undefined> => {
   const choice = await context.overlays.choose({ title: server.name, rows: PROJECT_SERVER_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
   if (choice === undefined) return 'left';
-  const enable = PROJECT_SERVER_ACTIONS[choice.index] === 'Enable';
-  if (enable && server.approval === undefined) return 'left';
-  const [joined, left] = enable ? ['enabledMcpjsonServers', 'disabledMcpjsonServers'] : ['disabledMcpjsonServers', 'enabledMcpjsonServers'];
-  const entry = server.approval === undefined || !enable ? server.name : { name: server.name, digest: server.approval.digest };
-  const refusal = await writeSetting(context, 'user', { kind: 'update', path: [left], update: withoutName(server.name) });
-  return refusal ?? writeSetting(context, 'user', { kind: 'update', path: [joined], update: withEntry(server.name, entry) });
+  if (PROJECT_SERVER_ACTIONS[choice.index] === 'Enable') {
+    const pending = await context.backend.pendingProjectServer(server.name);
+    if (pending === undefined) return 'left';
+    await context.background(APPROVING_SERVER, () => context.backend.approveProjectItems([pending]));
+    return undefined;
+  }
+  const refusal = await writeSetting(context, 'user', { kind: 'update', path: ['enabledMcpjsonServers'], update: withoutName(server.name) });
+  return refusal ?? writeSetting(context, 'user', { kind: 'update', path: ['disabledMcpjsonServers'], update: withEntry(server.name, server.name) });
 };
 
 const actOnServer = async (context: SlashContext, server: McpServerView): Promise<Refusal | 'left' | undefined> => {
@@ -98,14 +115,10 @@ export const mcpCommand: SlashCommand = {
       await shellForm.run(args, context);
       return;
     }
-    if (context.model === undefined) {
-      context.info(NEEDS_SESSION_NOTE);
-      return;
-    }
     let at = 0;
     let line: string | undefined;
     for (;;) {
-      const servers = await context.backend.mcpServers();
+      const servers = context.model === undefined ? await context.backend.folderMcpServers() : await context.backend.mcpServers();
       const choice = await context.overlays.choose({
         title: MCP_TITLE,
         lines: line === undefined ? [] : [line],

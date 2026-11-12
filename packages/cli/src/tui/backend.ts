@@ -37,6 +37,7 @@ import type { ClipboardPrograms } from './screen/clipboard-host.ts';
 import { cachedProgramSearch, copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
 import type { ClipboardContent, CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
+import { pendingProjectServerOf } from './project-items.ts';
 import { autoModeConfigured, connectSessionRuntime, environmentSnapshot, reopenedAsTyped, runBoundsOf } from '../run/open-session.ts';
 import type { RunBounds, SessionOptions } from '../run/open-session.ts';
 
@@ -124,6 +125,8 @@ export type TuiBackend = {
   settings(): Promise<SettingsSnapshot>;
   editSettings(layer: SettingsLayer, operation: SettingsOperation, signal: AbortSignal): Promise<void>;
   mcpServers(): Promise<readonly McpServerView[]>;
+  folderMcpServers(): Promise<readonly McpServerView[]>;
+  pendingProjectServer(name: string): Promise<ApprovedItem | undefined>;
   initInstruction(): Promise<string>;
   close(): Promise<void>;
 };
@@ -221,6 +224,8 @@ export const createTuiBackend = (
     settings: async () => readSettingsSnapshot({ home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal: closing.signal }),
     editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { lock: resolveLayoutLocks(paths).mechanism, signal }),
     mcpServers: () => runtime().mcpServers(current().id),
+    folderMcpServers: async () => runtime().folderMcpServers({ cwd: ports.cwd, env: await environmentSnapshot(ports, closing.signal) }),
+    pendingProjectServer: (name) => pendingProjectServerOf({ home: paths.home, projectDir: ports.cwd, trust: trustOracle, signal: closing.signal }, name),
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
     boot: async () => {
       await ensureSessionDaemon(ports, paths, { signal: closing.signal, ...(onNewer === undefined ? {} : { onNewer }) });

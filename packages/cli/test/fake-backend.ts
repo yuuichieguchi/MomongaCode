@@ -18,6 +18,7 @@ import { freshHome } from './fresh-home.ts';
 import { listingOf } from './models-shell-harness.ts';
 import type { AgentView, McpServerView } from '@momonga/protocol';
 import { createFromTemplate } from '../src/tui/file-templates.ts';
+import { pendingProjectServerOf } from '../src/tui/project-items.ts';
 import type { NetworkCheck, NetworkView } from '../src/tui/commands/network.ts';
 import type { TemplateFiles } from '../src/tui/file-templates.ts';
 
@@ -592,7 +593,15 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     dismissNotice: async () => undefined,
     settings: async () => readSettingsSnapshot({ ...settingsPlace(), trusted: (options.trust?.decision ?? 'trusted') === 'trusted', signal: new AbortController().signal }),
     editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { lock: testKernelLock(), signal }),
-    mcpServers: async () => options.mcpServers ?? [],
+    mcpServers: async () => {
+      record('mcpServers');
+      return options.mcpServers ?? [];
+    },
+    folderMcpServers: async () => {
+      record('folderMcpServers');
+      return options.mcpServers ?? [];
+    },
+    pendingProjectServer: (name) => pendingProjectServerOf({ ...settingsPlace(), trust: { isTrusted: async () => (options.trust?.decision ?? 'trusted') === 'trusted' }, signal: new AbortController().signal }, name),
     initInstruction: async () => FAKE_INIT_INSTRUCTION,
     close: async () => {
       record('close');
