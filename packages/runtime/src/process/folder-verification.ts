@@ -3,10 +3,12 @@ import type { MandateProfileSettings, PermissionRule } from '@momonga/config';
 import { hostPaths, sessionRootsOf, verdictKey } from '@momonga/foundation';
 import type { RuleEnforcement, UnixSocketPolicy } from '@momonga/foundation';
 import { isFinalRuleVerdict } from '@momonga/protocol';
-import type { PermissionMode, PolicyVerifyResponse, RuleVerdict } from '@momonga/protocol';
+import type { Mandate, PermissionMode, PolicyVerifyResponse, RuleVerdict } from '@momonga/protocol';
 import type { OperationCatalogueFacts } from '@momonga/tools';
 import type { RuleVerifierPort } from '../ports.ts';
 import { invalidRequest } from '../service/errors.ts';
+import { delegationOf } from '../worker/held-calls.ts';
+import { RuleVerificationFailure } from './rule-verifier-thread-client.ts';
 import { sessionScratchRoleIn } from './session-scratch-role.ts';
 
 export type FolderVerifyRequest = { cwd: string; mode?: PermissionMode; secrets: readonly string[]; mandate?: string };
@@ -30,23 +32,30 @@ const MANDATE_EFFECTS = ['deny', 'ask', 'allow'] as const;
 const mandateRulesOf = (name: string, mandate: MandateProfileSettings, context: { home: string; cwd: string }): PermissionRule[] =>
   MANDATE_EFFECTS.flatMap((effect) => (mandate[effect] ?? []).map((text) => parseRule(text, { effect, origin: 'cli', source: `the mandate ${name}`, settingsRoot: context.cwd, ...context })));
 
+type FolderPlace = { cwd: string; facts: FolderPolicyFacts; roots: readonly string[] };
+
+const folderPlaceOf = async (sources: Pick<FolderPolicySources, 'folder'>, requested: string, signal: AbortSignal): Promise<FolderPlace> => {
+  const paths = hostPaths(signal);
+  const folder = await paths.canonicalDirectory(requested);
+  if (!folder.ok) throw invalidRequest(`the folder ${requested} ${folder.reason}`, 'project');
+  const cwd = folder.path;
+  const facts = await sources.folder(cwd, signal);
+  const roots = await sessionRootsOf(cwd, facts.additionalDirectories, paths);
+  if (!roots.ok) throw invalidRequest(`the folder ${roots.root} ${roots.reason}`, 'project');
+  return { cwd, facts, roots: roots.roots };
+};
+
 export const folderPolicyVerification =
   (sources: FolderPolicySources): PolicyVerification =>
   async (request, signal) => {
-    const paths = hostPaths(signal);
-    const folder = await paths.canonicalDirectory(request.cwd);
-    if (!folder.ok) throw invalidRequest(`the folder ${request.cwd} ${folder.reason}`, 'project');
-    const cwd = folder.path;
-    const facts = await sources.folder(cwd, signal);
-    const roots = await sessionRootsOf(cwd, facts.additionalDirectories, paths);
-    if (!roots.ok) throw invalidRequest(`the folder ${roots.root} ${roots.reason}`, 'project');
+    const { cwd, facts, roots } = await folderPlaceOf(sources, request.cwd, signal);
     const context = { home: sources.home, cwd };
     const mandate = request.mandate === undefined ? undefined : { name: request.mandate, profile: (await sources.mandates(signal))?.[request.mandate] };
     if (mandate !== undefined && mandate.profile === undefined) throw invalidRequest(`no mandate named ${JSON.stringify(mandate.name)} is declared in the user settings`, 'mandate');
     const input = await sources.verifier.inputOf(
       {
         rules: mandate?.profile === undefined ? facts.rules : [...facts.rules, ...mandateRulesOf(mandate.name, mandate.profile, context)],
-        roots: roots.roots,
+        roots,
         mode: request.mode ?? facts.defaultMode ?? 'manual',
         home: sources.home,
         cwd,
@@ -65,4 +74,52 @@ export const folderPolicyVerification =
     const { exitCode } = verification.findings;
     if (typeof exitCode !== 'number') throw new Error('the verification gave findings without an exit code');
     return { fingerprint, stored, exitCode, text: verification.report, findings: verification.findings };
+  };
+
+export type MandateRunRequest = { cwd: string; mode: PermissionMode; mandate: Mandate };
+
+export type MandateRunVerification = (request: MandateRunRequest, signal: AbortSignal) => Promise<RuleVerdict>;
+
+export type MandateRunSources = Omit<FolderPolicySources, 'mandates' | 'ruleVerdicts'> & {
+  ruleVerdicts: { get(fingerprint: string): { verdict: RuleVerdict } | undefined; put(fingerprint: string, verdict: RuleVerdict): void };
+};
+
+const WHOLE_VERIFICATION = 'verification';
+
+export const mandateRunVerification =
+  (sources: MandateRunSources): MandateRunVerification =>
+  async ({ cwd: requested, mode, mandate }, signal) => {
+    const { cwd, facts, roots } = await folderPlaceOf(sources, requested, signal);
+    const catalogue = sources.catalogue();
+    const { delegation } = delegationOf({ mandate }, { home: sources.home, cwd }, catalogue);
+    const rules = [...facts.rules, ...(delegation?.rules ?? [])];
+    const solver = await sources.verifier.solverVersion();
+    if (!rules.some((rule) => rule.effect === 'allow')) return { verdict: 'not-needed', solver, refuted: [], unknown: [], notProved: [] };
+    const input = await sources.verifier.inputOf(
+      {
+        rules,
+        roots,
+        mode,
+        home: sources.home,
+        cwd,
+        exemptDirectory: sessionScratchRoleIn(sources.sessionsRoot),
+        enforcement: facts.enforcement,
+        unixSockets: facts.unixSockets,
+        secrets: [],
+        mandateChecks: catalogue,
+      },
+      signal,
+    );
+    const fingerprint = verdictKey(input, solver);
+    const stored = sources.ruleVerdicts.get(fingerprint);
+    if (stored !== undefined) return stored.verdict;
+    let verdict: RuleVerdict;
+    try {
+      verdict = await sources.verifier.verify(input, signal);
+    } catch (error) {
+      if (!(error instanceof RuleVerificationFailure)) throw error;
+      return { verdict: 'unknown', solver, refuted: [], unknown: [{ property: WHOLE_VERIFICATION, reason: error.message }], notProved: [] };
+    }
+    if (isFinalRuleVerdict(verdict)) sources.ruleVerdicts.put(fingerprint, verdict);
+    return verdict;
   };

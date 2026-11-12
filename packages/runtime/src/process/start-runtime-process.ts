@@ -43,7 +43,8 @@ import { unaskedCommandsFor } from '@momonga/policy';
 import { DERIVED_CATCH_UP_PAGES, FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { productRuleVerifier } from './rule-verifier.ts';
-import { folderPolicyVerification } from './folder-verification.ts';
+import { folderPolicyVerification, mandateRunVerification } from './folder-verification.ts';
+import type { MandateRunSources } from './folder-verification.ts';
 import { supervisedGatewayStanding } from './supervised-gateway.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
 import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, operationCatalogueFacts, sweepCallLocks } from '@momonga/tools';
@@ -123,6 +124,8 @@ import { sweepSessionTmp, sweepSpawnTmp } from './tmp-sweep.ts';
 import { reapToolMarkers } from './tool-markers.ts';
 import { createNetworkDerivation } from './network-derivation.ts';
 import { createToolRuntime } from './tool-runtime.ts';
+
+const USER_COMMANDS_STRAGGLER = 'user-commands';
 import type { ToolRuntime, ToolRuntimeOptions } from './tool-runtime.ts';
 
 export type StartRuntimeProcessOptions = {
@@ -275,11 +278,11 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       handle = timers.setTimeout(resolve, RUNTIME_ABORT_BUDGET_MS);
     });
     try {
-      await Promise.race([Promise.all(aborts), budget]);
+      await Promise.race([Promise.all([...aborts, ...(service === undefined ? [] : [service.userCommands.abortAll('shutdown')])]), budget]);
     } finally {
       timers.clearTimeout(handle);
     }
-    const stragglers = [...unsettled];
+    const stragglers = [...unsettled, ...(service !== undefined && service.userCommands.inFlight() > 0 ? [USER_COMMANDS_STRAGGLER] : [])];
     if (stragglers.length > 0) logger.warn('abort.stragglers', { count: stragglers.length, ids: stragglers });
     return stragglers;
   };
@@ -291,7 +294,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     try {
       return await Promise.race([
-        Promise.allSettled(workers.map(({ worker }) => worker.stop())).then(() => 'drained' as const),
+        Promise.allSettled([...workers.map(({ worker }) => worker.stop()), ...(service === undefined ? [] : [service.userCommands.ended()])]).then(() => 'drained' as const),
         expired,
         abortRequested.then(() => 'abort' as const),
       ]);
@@ -695,6 +698,22 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({ name: 'cancel-upstream', run: () => tracker.settle(CANCEL_UPSTREAM_SETTLE_MS) });
 
     const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, locks: options.locks, timers, shellHost, env: process.env, clock, budgetMs: RULE_VERIFY_BUDGET_MS });
+    const verificationSources: MandateRunSources = {
+      verifier: ruleVerifier,
+      ruleVerdicts: store.ruleVerdicts,
+      home: canonicalHome,
+      sessionsRoot: paths.tmp.sessions,
+      folder: async (cwd: string, requestSignal: AbortSignal) => {
+        const { defaultMode, additionalDirectories } = await settingsComposition.sessionReadSettings(cwd, requestSignal);
+        const rules = await permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, { cwd }, requestSignal);
+        const lease = await sandboxes.acquire(requestSignal);
+        const { ruleEnforcement, sandbox } = lease.value;
+        lease.release();
+        const { sandboxUnixSockets } = (await settingsComposition.userSnapshot(requestSignal)).settings;
+        return { rules, additionalDirectories, enforcement: ruleEnforcement, unixSockets: unixSocketPolicyOf(sandbox.kind, sandboxUnixSockets.allow), ...(defaultMode === undefined ? {} : { defaultMode }) };
+      },
+      catalogue: operationCatalogueFacts,
+    };
     const runService = await step('service', () =>
       createRunService({
         ...(signal === undefined ? {} : { startSignal: signal }),
@@ -740,23 +759,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         agents: agentsPort,
         permissionRules: (session, requestSignal) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session, requestSignal),
         gatewayStanding: supervisedGatewayStanding(fixedSocket(own.sockets.supervisor)),
-        policyVerification: folderPolicyVerification({
-          verifier: ruleVerifier,
-          ruleVerdicts: store.ruleVerdicts,
-          home: canonicalHome,
-          sessionsRoot: paths.tmp.sessions,
-          folder: async (cwd, requestSignal) => {
-            const { defaultMode, additionalDirectories } = await settingsComposition.sessionReadSettings(cwd, requestSignal);
-            const rules = await permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, { cwd }, requestSignal);
-            const lease = await sandboxes.acquire(requestSignal);
-            const { ruleEnforcement, sandbox } = lease.value;
-            lease.release();
-            const { sandboxUnixSockets } = (await settingsComposition.userSnapshot(requestSignal)).settings;
-            return { rules, additionalDirectories, enforcement: ruleEnforcement, unixSockets: unixSocketPolicyOf(sandbox.kind, sandboxUnixSockets.allow), ...(defaultMode === undefined ? {} : { defaultMode }) };
-          },
-          mandates: async (requestSignal) => (await settingsComposition.userSnapshot(requestSignal)).settings.mandates,
-          catalogue: operationCatalogueFacts,
-        }),
+        policyVerification: folderPolicyVerification({ ...verificationSources, mandates: async (requestSignal) => (await settingsComposition.userSnapshot(requestSignal)).settings.mandates }),
+        mandateVerification: mandateRunVerification(verificationSources),
         userInput: createUserInputPort({
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
@@ -1048,7 +1052,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       let announcedRetiring = false;
       const checkRetireExit = (): void => {
         if (phase !== 'running' || lifecycle !== undefined || rolePort.current() !== 'retiring') return;
-        if (stepsInFlight() > 0 || toolRuntime.jobs.liveCount() > 0 || toolRuntime.mcpAdmin.pendingAuthorizations() > 0 || requireService().openRequests() > 0) return;
+        if (stepsInFlight() > 0 || toolRuntime.jobs.liveCount() > 0 || toolRuntime.mcpAdmin.pendingAuthorizations() > 0 || requireService().openRequests() > 0 || requireService().userCommands.inFlight() > 0) return;
         requireService().stopListening();
         logger.info('generation.retired', { data: { generation: options.generation } });
         lifecycle = retire(sharedPaths);
