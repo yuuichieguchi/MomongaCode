@@ -697,10 +697,11 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 134849,
-      "measuredSeconds": 7,
-      "measuredCpuSeconds": 12.54,
-      "budgetCpuSeconds": 29
+      "distinctStates": 491790,
+      "measuredSeconds": 21.68,
+      "measuredCpuSeconds": 27.98,
+      "budgetCpuSeconds": 59,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 3.48 at start)"
     },
     {
       "config": "PlanCredential.crashPoints",
@@ -772,10 +773,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 252,
-      "measuredSeconds": 3.18,
-      "measuredCpuSeconds": 3.03,
-      "budgetCpuSeconds": 10
+      "distinctStates": 243,
+      "measuredSeconds": 1.02,
+      "measuredCpuSeconds": 1.6,
+      "budgetCpuSeconds": 7,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 2.54 at start)"
     },
     {
       "config": "PlanCredential.eraseOnTransient",
@@ -790,6 +792,21 @@
       "measuredSeconds": 3.39,
       "measuredCpuSeconds": 2.6,
       "budgetCpuSeconds": 9
+    },
+    {
+      "config": "PlanCredential.transientSignsOut",
+      "role": "evidence",
+      "expect": {
+        "violates": "TransientNeverSignsOut",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 24,
+      "measuredSeconds": 1.06,
+      "measuredCpuSeconds": 1.32,
+      "budgetCpuSeconds": 6,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 3.48 at start)"
     },
     {
       "config": "PlanCredential.forgetBeforePersist",
@@ -826,9 +843,10 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 342401,
-      "measuredSeconds": 92.93,
-      "measuredCpuSeconds": 101.01,
-      "budgetCpuSeconds": 206
+      "measuredSeconds": 88.83,
+      "measuredCpuSeconds": 96.92,
+      "budgetCpuSeconds": 197,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 3.63 at start)"
     },
     {
       "config": "PlanCredential.signOutNoReload",
@@ -1116,9 +1134,10 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 28746,
-      "measuredSeconds": 4.89,
-      "measuredCpuSeconds": 6.12,
-      "budgetCpuSeconds": 16
+      "measuredSeconds": 2.26,
+      "measuredCpuSeconds": 3.92,
+      "budgetCpuSeconds": 11,
+      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 2.54 at start)"
     },
     {
       "config": "PlanCredential.refreshWhileUnwritable",
