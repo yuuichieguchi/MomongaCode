@@ -334,9 +334,10 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
   };
 };
 
-export const nodePorts = (version: string, interrupt: AbortSignal, streams: GuardedStandardStreams = guardStandardStreams(process)): CliPorts => {
+export const processHome = (): string => process.env['HOME'] ?? os.homedir();
+
+export const nodePorts = (version: string, interrupt: AbortSignal, home: string, streams: GuardedStandardStreams = guardStandardStreams(process)): CliPorts => {
   const self = nodeSelf(process.argv, isSea);
-  const home = process.env['HOME'] ?? os.homedir();
   const lock = layoutLockOf(home, process.platform, process.env);
   const endpointScopes = new Map<string, Promise<EndpointScope>>();
   return {

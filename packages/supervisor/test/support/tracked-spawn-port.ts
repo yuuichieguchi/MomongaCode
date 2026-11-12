@@ -3,6 +3,7 @@ import { killGroupsForCleanup, registerCleanup } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { ChildHandle, SpawnPort } from '../../src/child-manager.ts';
 import { createSpawnPort } from '../../src/spawn-port.ts';
+import type { SpawnPortHost } from '../../src/spawn-port.ts';
 
 export type TrackedSpawnPort = SpawnPort & {
   readonly spawned: readonly ChildHandle[];
@@ -31,3 +32,5 @@ export const trackedSpawnPort = (context: CleanupContext): TrackedSpawnPort => {
     },
   });
 };
+
+export const spawnPortOverFakeHost = (host: Required<SpawnPortHost>): SpawnPort => createSpawnPort(host);

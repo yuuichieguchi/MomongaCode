@@ -67,7 +67,21 @@
     if ($env:MOMONGA_VERSION -and $reported -ne $env:MOMONGA_VERSION) { Fail "version $($env:MOMONGA_VERSION) was asked for, but the downloaded executable reports version $reported; nothing was installed" }
 
     $target = Join-Path $prefix 'momonga.exe'
-    Move-Item -Force -LiteralPath $candidate -Destination $target
+    $aside = $null
+    if (Test-Path -LiteralPath $target) {
+      $aside = Join-Path $prefix ('.momonga-update.' + [System.Guid]::NewGuid().ToString('N'))
+      try {
+        Move-Item -LiteralPath $target -Destination $aside
+      } catch {
+        Fail "$target is in use and could not be moved aside ($($_.Exception.Message)): stop the daemon, then run the command again"
+      }
+    }
+    try {
+      Move-Item -LiteralPath $candidate -Destination $target
+    } catch {
+      if ($aside) { Move-Item -LiteralPath $aside -Destination $target }
+      throw
+    }
     Write-Output "installed momonga to $target"
 
     $openShellLine = @"
