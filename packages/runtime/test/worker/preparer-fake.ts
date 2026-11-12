@@ -63,4 +63,5 @@ export const preparerFake = (): PreparerFake => {
 export const inertTimers: ServiceTimers = {
   setTimeout: () => undefined,
   clearTimeout: () => undefined,
+  monotonicMs: () => 0,
 };

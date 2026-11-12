@@ -73,7 +73,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     let extension: MomongaResponseExtension | undefined;
     let responseId: string | undefined;
     let firstEventMs: number | undefined;
-    const startedAt = clock.now();
+    const startedAt = options.timers.monotonicMs();
     const events = streamAdmitted(gateway, proof, body, {
       idempotencyKey: requestKey(runId, 'reflect', body),
       deadlineAt: clock.now() + options.attemptTimeoutMs,
@@ -81,7 +81,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       role: 'reflection',
     });
     for await (const event of events) {
-      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
+      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = options.timers.monotonicMs() - startedAt;
       terminal = terminalResultOf(event) ?? terminal;
       if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
         usage = event.response.usage;
@@ -90,7 +90,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       }
     }
     if (terminal === undefined) throw new Error(`the reflection call of run ${runId} ended without a terminal event`);
-    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt };
+    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: options.timers.monotonicMs() - startedAt };
     if (responseId === undefined) throw new Error(`the reflection call of run ${runId} ended without a response`);
     return { terminal, usage, detail: billedDetailOf(usage, extension, timing, responseId) };
   };

@@ -847,7 +847,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       leaseMs: LEASE_MS,
       random: () => 0.5,
       platform: 'darwin',
-      timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },
+      timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout), monotonicMs: () => env.clock.monotonicMs() },
       systemPrompt: testSystemPrompt,
       home: env.layout.home,
       blobs: env.store.blobs,

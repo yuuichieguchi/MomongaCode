@@ -141,10 +141,10 @@ export const streamModel = async (
   const buffer = createDeltaBuffer((payloads) => ctx.journal.append(payloads), position, (error) => ctx.control.fail(error));
   let terminal: ModelResult | undefined;
   let firstEventMs: number | undefined;
-  const { clock } = ctx.options;
+  const { timers } = ctx.options;
   ctx.journal.verifyLease();
   ctx.control.inFlight.modelKey = idempotencyKey;
-  const startedAt = clock.now();
+  const startedAt = timers.monotonicMs();
   try {
     await ctx.control.recordingRaised(
       (async (): Promise<void> => {
@@ -155,7 +155,7 @@ export const streamModel = async (
           traceparent: ctx.agentSpan.traceparent,
         });
         for await (const event of events) {
-          if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
+          if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = timers.monotonicMs() - startedAt;
           switch (event.type) {
             case 'response.output_text.delta':
               buffer.add('agent.message.delta', event.item_id, event.delta);
@@ -185,5 +185,5 @@ export const streamModel = async (
   delete ctx.control.inFlight.modelKey;
   if (terminal === undefined) throw new GatewayRequestError({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the gateway stream ended without a terminal event' });
   buffer.flush();
-  return { result: terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt } };
+  return { result: terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: timers.monotonicMs() - startedAt } };
 };
