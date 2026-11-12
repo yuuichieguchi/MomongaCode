@@ -859,6 +859,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       governance: inertGovernancePort,
       tools,
       ruleVerifier: createFakeRuleVerifier(),
+      mandateVerification: provedMandateVerification,
       tracers: fixedTracers(tracer),
       clock: env.clock,
       workerId: id,

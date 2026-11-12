@@ -38,6 +38,10 @@ const verificationIn = (layout: { home: string; work: string }, budgetMs: number
     sessionsRoot: `${layout.home}/.momonga/tmp/sessions`,
     folder: async () => ({ rules: [], additionalDirectories: [], enforcement: 'exact-paths', unixSockets: { kind: 'limited', allowed: [] } }),
     catalogue: operationCatalogueFacts,
+    retrySignal: new AbortController().signal,
+    onRetryFailure: (error) => {
+      throw error;
+    },
   });
 
 describe('the mandate of a run is verified with its two properties and its own rules', () => {

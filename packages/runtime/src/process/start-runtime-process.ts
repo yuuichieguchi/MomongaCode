@@ -713,7 +713,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         return { rules, additionalDirectories, enforcement: ruleEnforcement, unixSockets: unixSocketPolicyOf(sandbox.kind, sandboxUnixSockets.allow), ...(defaultMode === undefined ? {} : { defaultMode }) };
       },
       catalogue: operationCatalogueFacts,
+      retrySignal: lifetime.signal,
+      onRetryFailure: report,
     };
+    const mandateVerification = mandateRunVerification(verificationSources);
     const runService = await step('service', () =>
       createRunService({
         ...(signal === undefined ? {} : { startSignal: signal }),
@@ -760,7 +763,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         permissionRules: (session, requestSignal) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session, requestSignal),
         gatewayStanding: supervisedGatewayStanding(fixedSocket(own.sockets.supervisor)),
         policyVerification: folderPolicyVerification({ ...verificationSources, mandates: async (requestSignal) => (await settingsComposition.userSnapshot(requestSignal)).settings.mandates }),
-        mandateVerification: mandateRunVerification(verificationSources),
+        mandateVerification,
         userInput: createUserInputPort({
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
@@ -835,6 +838,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           agents: agentsPort,
           tools: toolRuntime.port,
           ruleVerifier,
+          mandateVerification,
           tracers,
           clock,
           workerId: id,

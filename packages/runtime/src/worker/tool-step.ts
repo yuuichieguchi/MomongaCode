@@ -19,7 +19,7 @@ import { REJECTED_OUTPUT, hasHeld, heldLinkOf, heldOutput, heldVerdictOf, quiesc
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
-import { laterVerdictNotice, policyRefusal, ruleVerdictFor, runRulesFor } from './rule-verdict.ts';
+import { laterVerdictNotice, mandateRefusal, policyRefusal, ruleVerdictFor, runRulesFor } from './rule-verdict.ts';
 import type { HeldSandbox } from './held-sandbox.ts';
 
 export { REJECTED_OUTPUT } from './held-calls.ts';
@@ -297,7 +297,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement, unixSockets: unixSocketPolicyOf(held.sandbox.kind, policy.sandboxPolicy.unixSocketAllow ?? []) });
   const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
   if (laterVerdict.length > 0) journal.append(laterVerdict);
-  const refusal = policyRefusal(verdict);
+  const refusal = policyRefusal(verdict) ?? (await mandateRefusal(options, session, ctx.delegation, ctx.control.signal));
   if (refusal !== undefined) return ctx.terminals.finish('FAILED', { error: refusal });
   const hookSettings = await options.settings.hooks(session, ctx.control.signal);
   const { bash, search, operations } = await options.settings.tools(session, ctx.control.signal);
