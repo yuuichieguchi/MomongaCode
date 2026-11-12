@@ -85,10 +85,8 @@ const switchProjectServer = async (context: SlashContext, server: McpServerView)
   const choice = await context.overlays.choose({ title: server.name, rows: PROJECT_SERVER_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
   if (choice === undefined) return 'left';
   if (PROJECT_SERVER_ACTIONS[choice.index] === 'Enable') {
-    const undisabled = await writeSetting(context, 'user', { kind: 'update', path: ['disabledMcpjsonServers'], update: withoutName(server.name) });
-    if (undisabled !== undefined) return undisabled;
     for (;;) {
-      const item = (await context.backend.trustItems()).items.find((pending) => pending.kind === 'mcp' && pending.name === server.name);
+      const item = (await context.backend.trustItems(server.name)).items.find((pending) => pending.kind === 'mcp' && pending.name === server.name);
       if (item === undefined) return undefined;
       const [approved] = await askTrustItems([item], context.overlays.choose);
       if (approved === undefined) return 'left';

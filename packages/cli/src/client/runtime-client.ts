@@ -233,7 +233,7 @@ export type RuntimeClient = {
   trust(path: string): Promise<TrustView>;
   setTrust(path: string, decision: 'trusted' | 'untrusted'): Promise<TrustView>;
   clearTrust(path: string): Promise<void>;
-  trustItems(path: string): Promise<TrustItemsView>;
+  trustItems(path: string, server?: string): Promise<TrustItemsView>;
   streamEvents(runId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
   streamSessionEvents(sessionId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
   close(): Promise<void>;
@@ -821,9 +821,9 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkTrust(fieldOf(body, 'trust', description), description);
   };
 
-  const trustItems = async (path: string): Promise<TrustItemsView> => {
+  const trustItems = async (path: string, server?: string): Promise<TrustItemsView> => {
     const description = 'GET /v1/trust/items';
-    const { body } = await send('GET', `/v1/trust/items?path=${encodeURIComponent(path)}`, [200]);
+    const { body } = await send('GET', `/v1/trust/items?path=${encodeURIComponent(path)}${server === undefined ? '' : `&server=${encodeURIComponent(server)}`}`, [200]);
     return checkTrustItems(body, description);
   };
 

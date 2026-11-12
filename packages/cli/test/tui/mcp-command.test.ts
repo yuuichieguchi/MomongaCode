@@ -84,6 +84,25 @@ describe('/mcp Enable asks the item question and approves exactly what was shown
     expect(backend.calls.filter((call) => call.startsWith('approve:'))).toEqual([`approve:${JSON.stringify([{ kind: 'mcp', name: 'tracker', config: item.config, digest: item.digest }])}`]);
   });
 
+  it('asks about the disabled server by its name and, on Not now, leaves it disabled with no settings write', async () => {
+    const place = placeWith(config);
+    const item = await shownItem(place);
+    const { context, backend } = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: servers, trustItems: { items: [item], refused: [] } }, { choices: [{ index: 0, alt: false }, { index: 0, alt: false }, { index: 1, alt: false }] });
+    await runSlash('mcp', '', context);
+    expect(backend.calls).toContain('trustItems:tracker');
+    expect(backend.calls.filter((call) => call.startsWith('approve:'))).toEqual([]);
+    expect(stored(place.userFile)).toEqual({ disabledMcpjsonServers: ['tracker'] });
+  });
+
+  it('changes the disabled list only through the approval itself', async () => {
+    const place = placeWith(config);
+    const item = await shownItem(place);
+    const { context, backend } = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: servers, trustItems: { items: [item], refused: [] } }, { choices: [{ index: 0, alt: false }, { index: 0, alt: false }, { index: 0, alt: false }] });
+    await runSlash('mcp', '', context);
+    expect(backend.calls.filter((call) => call.startsWith('approve:'))).toHaveLength(1);
+    expect(stored(place.userFile)).toEqual({ disabledMcpjsonServers: ['tracker'] });
+  });
+
   it('approves nothing when the file changed between the question and the approval, and asks again', async () => {
     const place = placeWith(config);
     const item = await shownItem(place);

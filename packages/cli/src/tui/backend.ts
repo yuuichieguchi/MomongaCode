@@ -70,7 +70,7 @@ export type TuiBackend = {
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
   trust(): Promise<TrustView>;
   clearTrust(): Promise<void>;
-  trustItems(): Promise<TrustItemsView>;
+  trustItems(server?: string): Promise<TrustItemsView>;
   approveProjectItems(approved: readonly ApprovedItem[]): Promise<void>;
   checkProposal(): Promise<CheckProposal>;
   answerCheck(answer: AcceptedCheck): Promise<void>;
@@ -239,7 +239,7 @@ export const createTuiBackend = (
       await runtime().setTrust(ports.cwd, decision);
     },
     trust: () => runtime().trust(ports.cwd),
-    trustItems: () => runtime().trustItems(ports.cwd),
+    trustItems: (server) => runtime().trustItems(ports.cwd, server),
     approveProjectItems: (approval) => approveProjectItems(paths.home, ports.cwd, approval, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
     checkProposal: async () => {
       const trusted = await trustOracle.isTrusted(ports.cwd, closing.signal);

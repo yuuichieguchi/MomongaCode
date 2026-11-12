@@ -211,7 +211,10 @@ export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record
       record('trust:clear');
       trustNow = { path: cwd(), decision: null };
     },
-    trustItems: async () => trustItems ?? { items: [], refused: [] },
+    trustItems: async (server) => {
+      if (server !== undefined) record(`trustItems:${server}`);
+      return trustItems ?? { items: [], refused: [] };
+    },
     approveProjectItems: async (approval) => {
       record(`approve:${JSON.stringify(approval)}`);
     },

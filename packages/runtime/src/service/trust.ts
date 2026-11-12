@@ -91,7 +91,8 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
       throw invalidRequest(`path ${input} ${result.reason}`, 'path');
     }
     const trust = { isTrusted: async (folder: string, asked: AbortSignal): Promise<boolean> => (await store.trust.decisionAsked(folder, asked)).decision === 'trusted' };
-    const pending = await pendingProjectItems({ home: deps.home, projectDir: result.path, trust, agents: projectAgents, signal });
+    const askedServer = new URL(context.req.url).searchParams.get('server');
+    const pending = await pendingProjectItems({ home: deps.home, projectDir: result.path, trust, agents: projectAgents, signal, ...(askedServer === null ? {} : { askedServer }) });
     const view: TrustItemsView = { items: pending.items.map((item) => ({ ...item, change: shownChange(item.change, contentOf(item)) })), refused: pending.refused };
     return json(view, 200);
   };

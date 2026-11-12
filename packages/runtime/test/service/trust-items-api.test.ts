@@ -76,6 +76,19 @@ describe('GET /v1/trust/items: what a trusted folder could make the product run 
     expect(response.json).toMatchObject({ items: [{ kind: 'mcp', name: 'docs', config: { command: 'npx', args: ['docs-server'] }, source: path.join(folder, '.mcp.json'), change: { kind: 'new' } }] });
   });
 
+  it('answers the one server asked about by name, even one the person disabled, and leaves it out otherwise', async () => {
+    const env = await startService({ fakeTimers: true });
+    const folder = env.layout.projectReal;
+    writeJson(path.join(folder, '.mcp.json'), { mcpServers: { docs: { command: 'npx', args: ['docs-server'] }, wiki: { command: 'npx', args: ['wiki-server'] } } });
+    writeJson(path.join(env.layout.momonga, 'settings.json'), { disabledMcpjsonServers: ['docs'] });
+    expect((await env.http('PUT', '/v1/trust', { body: { path: folder, decision: 'trusted' } })).status).toBe(200);
+    expect((await env.http('GET', items(folder))).json).toMatchObject({ items: [{ kind: 'mcp', name: 'wiki' }] });
+    const asked = await env.http('GET', `${items(folder)}&server=docs`);
+    expectSchema('TrustItemsResponse', asked.json);
+    expect(asked.json).toMatchObject({ items: [{ kind: 'mcp', name: 'docs', change: { kind: 'new' } }] });
+    expect((asked.json as { items: unknown[] }).items).toHaveLength(1);
+  });
+
   it('answers a project agent that waits for an approval with its whole file, and a changed one with the diff of the approved file against the file now', async () => {
     const env = await startService({ fakeTimers: true });
     const folder = env.layout.projectReal;
