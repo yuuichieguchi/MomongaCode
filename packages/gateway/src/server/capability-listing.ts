@@ -1,5 +1,5 @@
-import type { Capabilities, ChainCapabilities, ChainMemberEntry, MomongaModelEntry, NotListedCapabilities, UnavailableCapabilities } from '@momonga/protocol';
-import { isNotListedCapabilities } from '@momonga/protocol';
+import type { Capabilities, ChainCapabilities, ChainMemberEntry, ModelEntryState, MomongaModelEntry, NotListedCapabilities, UnavailableCapabilities } from '@momonga/protocol';
+import { isNotListedCapabilities, isUnavailableCapabilities } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError } from '../core/errors.ts';
 import { UpstreamFailure, failureFrom, plainError } from '../core/retry.ts';
 import { mergeCapabilities } from '../core/router.ts';
@@ -58,6 +58,8 @@ const chainCapabilitiesOf = async (router: Router, model: string, members: reado
   return mergeCapabilities([own, ...listed.slice(1).filter(isListed)]);
 };
 
+const stateOf = (listed: readonly ListedCapabilities<Capabilities>[]): ModelEntryState => (listed.some(isUnavailableCapabilities) ? 'degraded' : 'available');
+
 export const listModel = async (router: Router, model: string, signal: AbortSignal): Promise<MomongaModelEntry> => {
   const members = router.chainOf(model);
   const [first] = members;
@@ -71,6 +73,7 @@ export const listModel = async (router: Router, model: string, signal: AbortSign
     ...(first.defaultTag === undefined ? {} : { defaultTag: first.defaultTag }),
     billing: first.billing,
     capabilities: await chainCapabilitiesOf(router, model, members, listed),
+    state: stateOf(listed),
     chain: members.map((target, index) => memberEntryOf(target, listed[index] as ListedCapabilities<Capabilities>)),
   };
 };

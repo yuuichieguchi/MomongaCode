@@ -8,7 +8,7 @@ const DATA_URL_PAYLOAD = /^data:[^;,]+;base64,(.*)$/s;
 const imageTokenModelMissing = () =>
   invalidRequest(
     'image_token_model_missing',
-    'the target accepts image input but declares no capabilities.imageTokens, so the tokens of an image cannot be estimated',
+    'the model accepts image input but declares no capabilities.imageTokens, so the tokens of an image cannot be estimated',
     'input',
   );
 

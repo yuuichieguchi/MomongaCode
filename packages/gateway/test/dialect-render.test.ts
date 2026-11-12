@@ -444,7 +444,7 @@ describe('each primitive on its seed cases', () => {
     expect(closed('never', { type: 'string' })).toEqual({ type: 'object', additionalProperties: { type: 'string' } });
     expect(closed('non-boolean', { type: 'string' })).toEqual({ type: 'object', additionalProperties: false });
     expect(closed('non-boolean', true)).toEqual({ type: 'object', additionalProperties: true });
-    expect(closed('always', true)).toEqual({ type: 'object', additionalProperties: false });
+    expect(failureOf(() => closed('always', true))).toMatchObject({ reason: 'free-form-object', path: '' });
   });
 
   it('label writes a path label when absent and keeps an existing one', () => {
@@ -561,6 +561,7 @@ describe('user-declared dialects', () => {
   it('prepends the rules of the built-in a user dialect extends', () => {
     expect(definitionOf('ordered-subset', { 'ordered-subset': orderedSubset as never })).toEqual({
       rules: [...BUILTIN_DIALECTS['inlined-subset'].rules, ...orderedSubset.rules],
+      strictPerTool: BUILTIN_DIALECTS['inlined-subset'].strictPerTool,
     });
   });
 

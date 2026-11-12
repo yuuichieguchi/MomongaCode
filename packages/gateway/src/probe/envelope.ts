@@ -22,7 +22,7 @@ const literal = (value: string, support: KeywordSupport): JsonObject => {
 
 const argumentsOf = (tool: ProbeTool, support: KeywordSupport, dialect: DialectChoice, ledger: RenderLedger | undefined): unknown => {
   if (!support.nested) return { type: 'object' };
-  return renderToolParameters(tool, withKeywordSupport(dialect, support), ledger).schema ?? { type: 'object' };
+  return renderToolParameters(tool, withKeywordSupport(dialect, support), ledger).schema ?? { type: 'object', properties: {} };
 };
 
 const callSchema = (tool: ProbeTool, support: KeywordSupport, dialect: DialectChoice, ledger: RenderLedger | undefined): JsonObject => ({

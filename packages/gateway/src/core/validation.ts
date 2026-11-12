@@ -310,12 +310,18 @@ const requireCostCeiling = (momonga: SchemaObject): void => {
   }
 };
 
+const requireFence = (momonga: SchemaObject): void => {
+  const fence = momonga['fence'];
+  if (fence !== undefined && (typeof fence !== 'string' || fence === '')) throwIssue({ segments: ['momonga', 'fence'], message: 'must be a non-empty string' });
+};
+
 const validateCompactMomonga = (value: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions', 'exact_model', 'max_cost_nano', 'max_input_tokens'], ['momonga']);
+  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions', 'exact_model', 'max_cost_nano', 'max_input_tokens', 'fence'], ['momonga']);
   requireExactModelFlag(momonga);
   requireCostCeiling(momonga);
+  requireFence(momonga);
   const cap = momonga['max_summary_tokens'];
   if (cap !== undefined && (!Number.isInteger(cap) || (cap as number) < MIN_SUMMARY_TOKENS)) {
     throwIssue({ segments: ['momonga', 'max_summary_tokens'], message: `must be an integer of at least ${MIN_SUMMARY_TOKENS}` });
@@ -363,9 +369,10 @@ const CACHE_MARK_NAMES = ['stable', 'fixed', 'previousHistory', 'history'] as co
 const validateCreateMomonga = (value: unknown, inputLength: number, maxOutputTokens: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['cache', 'exact_model', 'max_cost_nano', 'max_input_tokens'], ['momonga']);
+  requireKnownKeys(momonga, ['cache', 'exact_model', 'max_cost_nano', 'max_input_tokens', 'fence'], ['momonga']);
   requireExactModelFlag(momonga);
   requireCostCeiling(momonga);
+  requireFence(momonga);
   const cache = momonga['cache'];
   if (cache === undefined) return;
   const at = ['momonga', 'cache'];

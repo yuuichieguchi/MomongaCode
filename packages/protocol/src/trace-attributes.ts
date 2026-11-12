@@ -4,7 +4,7 @@ export const MOMONGA_ATTRIBUTES = {
   runId: 'momonga.run_id',
   step: 'momonga.step',
   attempt: 'momonga.attempt',
-  retryOf: 'momonga.retry_of',
+  retryOf: 'momonga.retry_of_seq',
   billing: 'momonga.billing',
   usageSource: 'momonga.usage_source',
   target: 'momonga.target',
@@ -20,6 +20,7 @@ export const MOMONGA_ATTRIBUTES = {
 
 export const SPAN_ATTRIBUTE_RENAMES: StoredRenames = {
   'momonga.usage.cache_write_input_tokens': 'gen_ai.usage.cache_creation.input_tokens',
+  'momonga.retry_of': 'momonga.retry_of_seq',
 };
 
 export const ERROR_TYPE_ATTRIBUTE = 'error.type';

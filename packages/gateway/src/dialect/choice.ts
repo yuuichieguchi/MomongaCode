@@ -20,5 +20,5 @@ export const resolvedOf = (choice: DialectChoice): ResolvedDialect => (typeof ch
 
 export const withKeywordSupport = (choice: DialectChoice, support: KeywordSupport): ResolvedDialect => {
   const resolved = resolvedOf(choice);
-  return { ...resolved, definition: { rules: [...keywordRules(support), ...resolved.definition.rules] } };
+  return { ...resolved, definition: { ...resolved.definition, rules: [...keywordRules(support), ...resolved.definition.rules] } };
 };

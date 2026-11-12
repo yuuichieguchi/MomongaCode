@@ -505,6 +505,8 @@ const hiddenReasoningOf = (body: unknown): number | undefined => {
 
 const FILLER_SENTENCE = 'The build log lists every file the tool read and every command it ran. ';
 
+const PROBE_TRANSCRIPT_FENCE = '0123456789abcdef0123456789abcdef';
+
 const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
   const maxOutputTokens = maxOutputTokensFor(contextWindow);
   const cap = summaryTokenCapFor({ contextWindow });
@@ -512,7 +514,7 @@ const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
   const transcriptTokens = Math.max(1, Math.floor(limit / (1 + ESTIMATED_ERROR_BOUND_RATIO)) - SUMMARY_PROMPT_TOKENS);
   const transcript = FILLER_SENTENCE.repeat(Math.ceil(transcriptTokens / tokensForText(FILLER_SENTENCE)));
   const summary = summaryRequestOf(
-    { model: '', input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: transcript }] }] },
+    { model: '', input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: transcript }] }], momonga: { fence: PROBE_TRANSCRIPT_FENCE } },
     cap,
     NO_REASONING_IS_OWN,
   );

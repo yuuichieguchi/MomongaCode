@@ -129,7 +129,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         watch?.dispose();
         const segmentWatch = watchContent(options.liveness);
         watch = segmentWatch;
-        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: () => watch?.touch(), outputCeiling, ...retryAfterHint(response, options.clock) });
+        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, nonStrict: ledger.nonStrict, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: () => watch?.touch(), outputCeiling, ...retryAfterHint(response, options.clock) });
         const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage, firstInputTokens: paused.firstInputTokens });
         yield* readSegment(response, segmentWatch, driver, ctx);
         if (!driver.paused) return;

@@ -123,6 +123,7 @@ export const listedEntryOf = (id: string, capabilities: MomongaModelEntry['chain
     ...(parsed.provider === 'ollama' ? { defaultTag: OLLAMA_DEFAULT_TAG } : {}),
     billing: 'local',
     capabilities,
+    state: 'available',
     chain: members.map((member) => ({ model: member, counter: `counter of ${member}`, billing: 'local', adapter: 'chat-completions', answers: 'model', upstream: parseCanon(member)?.ownName ?? member, capabilities })),
   };
 };

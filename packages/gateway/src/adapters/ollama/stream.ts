@@ -13,6 +13,7 @@ export type OllamaStreamOptions = {
   clock: Clock;
   retryAfterMs?: number;
   wraps?: ReadonlyMap<string, WrapRecord>;
+  nonStrict?: ReadonlyMap<string, unknown>;
   narrowings?: readonly SchemaNarrowing[];
   jsonReply?: JsonReplyPath | undefined;
   onOutput?: () => void;
@@ -57,7 +58,7 @@ class OllamaStreamDriver {
   private finished = false;
 
   constructor(options: OllamaStreamOptions) {
-    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.wraps === undefined ? {} : { wraps: options.wraps }), ...(options.narrowings === undefined ? {} : { narrowings: options.narrowings }), jsonReply: options.jsonReply, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }), ...(options.onOutput === undefined ? {} : { onOutput: options.onOutput }), outputCeiling: options.outputCeiling });
+    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.wraps === undefined ? {} : { wraps: options.wraps }), ...(options.nonStrict === undefined ? {} : { nonStrict: options.nonStrict }), ...(options.narrowings === undefined ? {} : { narrowings: options.narrowings }), jsonReply: options.jsonReply, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }), ...(options.onOutput === undefined ? {} : { onOutput: options.onOutput }), outputCeiling: options.outputCeiling });
     this.toolsAllowed = !forbidsTools(options.request.tool_choice);
     this.clock = options.clock;
   }

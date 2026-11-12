@@ -53,7 +53,7 @@ import type {
   TargetCapabilitiesCore,
 } from './settings.ts';
 
-export type ResolvedModel = ResolvedModelTarget & { canon: string; provider: string; ownName: string; defaultTag?: string };
+export type ResolvedModel = ResolvedModelTarget & { canon: string; provider: string; providerWritten: boolean; ownName: string; defaultTag?: string };
 
 export type ResolvedConnection = {
   provider: string;
@@ -471,7 +471,7 @@ const resolveConnections = (connections: readonly ModelConnection[], source: str
     resolved.forEach((target) => {
       const view: ModelView = { canon: canonOf(provider, target.model), provider, ownName: target.model, ...(defaultTag === undefined ? {} : { defaultTag }) };
       configured.views.push(view);
-      configured.models.set(view.canon, { ...target, ...view });
+      configured.models.set(view.canon, { ...target, ...view, providerWritten: (connections[index] as ModelConnection).provider !== undefined });
     });
   });
   return configured;

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startFakeOpenResponses, withTempDir, testLocks, createScriptedAdapter } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, registerOwned, startFakeOpenResponses, withTempDir, testLocks, createScriptedAdapter } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, writeSettings, modelsOf, prepareHome } from '../gateway-process-helpers.ts';
 import { startGateway } from '../gateway-helpers.ts';
 
@@ -15,7 +15,7 @@ const startWith = async (context: Parameters<typeof registerCleanup>[0], target:
   const home = withTempDir(context, { asHome: true });
   prepareHome(home);
   writeSettings(home, { models: modelsOf({ local: { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: CAPABILITIES, ...target } }) });
-  const started = startGatewayProcess({
+  const started = registerOwned(context, () => startGatewayProcess({
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
@@ -23,7 +23,7 @@ const startWith = async (context: Parameters<typeof registerCleanup>[0], target:
     version: PROCESS_VERSION,
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: () => true }, level: 'debug' }),
     stdout: { write: () => true },
-  });
+  }));
   return { started, upstream };
 };
 
@@ -39,9 +39,6 @@ describe('the model rules of the gateway are the rules the settings accept, on e
   it('starts a derived epoch whose model waits no time for a free slot', async (context) => {
     const { started } = await startWith(context, { admissionTimeoutMs: 0 });
     const handle = await started;
-    registerCleanup(context, async () => {
-      await handle.close();
-    });
     expect(handle.socketPath).not.toBe('');
   });
 

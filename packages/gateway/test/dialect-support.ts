@@ -4,7 +4,7 @@ import { SchemaRenderError } from '../src/dialect/render.ts';
 import type { ResolvedDialect } from '../src/dialect/render.ts';
 import { definitionOf } from '../src/dialect/resolve.ts';
 
-export const STATED_REASONS = ['loop', 'reject', 'polarity', 'dependency', 'written-key', 'unsatisfiable', 'ref-sibling', 'inverse-ambiguous', 'construct'] as const;
+export const STATED_REASONS = ['loop', 'reject', 'polarity', 'dependency', 'written-key', 'unsatisfiable', 'ref-sibling', 'inverse-ambiguous', 'construct', 'free-form-object'] as const;
 
 export const builtin = (id: string, extra: Partial<ResolvedDialect> = {}): ResolvedDialect => ({ id, definition: definitionOf(id, {}), ...extra });
 

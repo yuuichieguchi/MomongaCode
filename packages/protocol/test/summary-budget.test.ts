@@ -44,11 +44,11 @@ describe('budget constants shared through the protocol', () => {
     expect(SUMMARY_WINDOW_RATIO).toBe(0.06);
     expect(SUMMARY_ROOM_RATIO).toBe(0.3);
     expect(SUMMARY_ACCEPT_RATIO).toBe(1.3);
-    expect(COMPACTION_INSTRUCTIONS_VERSION).toBe(3);
+    expect(COMPACTION_INSTRUCTIONS_VERSION).toBe(4);
   });
 
   it('pins the measured summary prompt and item overhead', () => {
-    expect(SUMMARY_PROMPT_TOKENS).toBe(426);
+    expect(SUMMARY_PROMPT_TOKENS).toBe(484);
     expect(SUMMARY_ITEM_OVERHEAD).toBe(69);
   });
 

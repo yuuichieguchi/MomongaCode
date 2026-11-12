@@ -120,6 +120,7 @@ export const listingOf = (home: string): MomongaModelList => {
       ...(model.defaultTag === undefined ? {} : { defaultTag: model.defaultTag }),
       billing: model.billing,
       capabilities: capabilitiesOf(model),
+      state: 'available',
       chain: (resolved.chains.get(model.canon) ?? [model.canon]).map((canon, index) => memberOf(modelOf(canon), index)),
     }),
   );

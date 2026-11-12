@@ -1,3 +1,4 @@
+import { TEST_FENCE } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { AdapterInputItem } from '@momonga/protocol';
 import { buildMessagesBody } from '../../src/adapters/anthropic/request.ts';
@@ -18,21 +19,22 @@ const history: AdapterInputItem[] = [
 ];
 
 const wires: Record<string, () => unknown> = {
-  anthropic: () => buildMessagesBody({ model: 'm', input: history }, 4096, { cache: undefined }, EVERY_REASONING_IS_OWN).messages,
-  'open-responses': () => buildResponsesBody({ model: 'm', input: history }, EVERY_REASONING_IS_OWN).input,
-  'chat-completions native': () => nativeHistoryOf(history, EVERY_REASONING_IS_OWN),
-  'chat-completions plain': () => plainHistoryOf(history, { envelopeReplies: false, origin: EVERY_REASONING_IS_OWN }),
-  ollama: () => ollamaHistoryOf(history, EVERY_REASONING_IS_OWN),
+  anthropic: () => buildMessagesBody({ model: 'm', input: history, fence: TEST_FENCE }, 4096, { cache: undefined }, EVERY_REASONING_IS_OWN).messages,
+  'open-responses': () => buildResponsesBody({ model: 'm', input: history, fence: TEST_FENCE }, EVERY_REASONING_IS_OWN).input,
+  'chat-completions native': () => nativeHistoryOf(history, EVERY_REASONING_IS_OWN, TEST_FENCE),
+  'chat-completions plain': () => plainHistoryOf(history, { envelopeReplies: false, origin: EVERY_REASONING_IS_OWN, boundary: TEST_FENCE }),
+  ollama: () => ollamaHistoryOf(history, EVERY_REASONING_IS_OWN, TEST_FENCE),
 };
 
 describe('a past call whose arguments are not a JSON object is replaced by a note on every wire (gateway-core-C10)', () => {
-  it.for(Object.keys(wires).map((wire) => [wire] as const))('on %s: the call and its output are gone, the note names the tool and carries the raw text made inert, and no {} is sent', ([wire]) => {
+  it.for(Object.keys(wires).map((wire) => [wire] as const))('on %s: the call and its output are gone, the note names the tool and carries the raw text unchanged inside the fence, and no {} is sent', ([wire]) => {
     const sent = JSON.stringify((wires[wire] as () => unknown)());
 
     expect(sent).not.toContain('"cut"');
     expect(sent).not.toContain('the arguments were not valid JSON');
     expect(sent).toContain('A call to the tool write_file was cut off');
-    expect(sent).toContain('src/&lt;a>.ts');
+    expect(sent).toContain(JSON.stringify(CUT_OFF_ARGUMENTS).slice(1, -1));
+    expect(sent).toContain('<cut_off_tool_call name=');
     expect(sent).toContain('partial');
     expect(sent).not.toContain('{}');
     expect(sent).toContain('read_file');

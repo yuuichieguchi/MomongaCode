@@ -78,7 +78,7 @@ describe('a chat completions reply whose JSON is too deep is unusable JSON, like
 
 describe('gateway adapters parse upstream JSON through one module', () => {
   const ADAPTERS = path.resolve(import.meta.dirname, '../src/adapters');
-  const ENTRY = 'shared/upstream-json.ts';
+  const ENTRY = 'shared/json.ts';
   const PARSE_CALL = /\b(?:JSON\.parse|parseOutsideJson)\(/;
 
   const sourcesUnder = (dir: string): string[] =>

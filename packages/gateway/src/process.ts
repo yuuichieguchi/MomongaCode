@@ -10,7 +10,6 @@ import {
   isMeasuredBy,
   keptSettingsDirectory,
   probeRecordKeyOf,
-  providerNameOf,
   registeredIds,
   registeredServer,
   requireOfferedEndpointForm,
@@ -23,7 +22,7 @@ import {
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
-import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, WORDS, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
+import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, WORDS, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
 import type { ManagedServerDescription, PlanAccountRef, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
 import {
   acquireProcessLock,
@@ -797,16 +796,10 @@ const planTargetsOf = (settings: ResolvedSettings): PlanTarget[] => [...settings
 const planTargetRefsOf = (settings: ResolvedSettings): PlanTargetRef[] =>
   planTargetsOf(settings).map((target) => ({ name: target.canon, profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }));
 
-const writtenProviderOf = (target: ResolvedTarget): string | undefined => {
-  const { provider: _provider, ...connection } = target;
-  return providerNameOf(connection, SERVER_KINDS) === target.provider ? undefined : target.provider;
-};
-
-const keyGroupOf = (target: ResolvedTarget): { keyGroup?: string } => {
+export const keyGroupOf = (target: ResolvedTarget): { keyGroup?: string } => {
   const fields: Readonly<Record<string, unknown>> = target;
   if (fields['apiKeyEnv'] === undefined && fields['apiKeySecret'] === undefined) return {};
-  const written = writtenProviderOf(target);
-  if (written !== undefined) return { keyGroup: written };
+  if (target.providerWritten) return { keyGroup: target.provider };
   const baseUrl = fields['baseUrl'];
   return { keyGroup: typeof baseUrl === 'string' ? new URL(baseUrl).origin : target.provider };
 };

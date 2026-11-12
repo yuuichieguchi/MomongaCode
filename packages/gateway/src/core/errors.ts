@@ -7,6 +7,7 @@ import {
   SIGN_IN_REQUIRED_CODE,
   TARGET_NOT_READY,
   USAGE_PAUSED_CODE,
+  WORDS,
 } from '@momonga/protocol';
 import type { ErrorBody, ErrorType, PlanAccountRef } from '@momonga/protocol';
 
@@ -97,7 +98,7 @@ export const missingApiKeyError = (apiKeyEnv: string): GatewayError =>
     type: 'invalid_request',
     code: 'missing_api_key',
     param: apiKeyEnv,
-    message: `the environment variable ${apiKeyEnv} is unset or empty in the gateway process`,
+    message: `the environment variable ${apiKeyEnv} is unset or empty in the environment the daemon was started with, and the daemon keeps that environment; set it in your shell and run \`${WORDS.command} daemon stop\`, so that the next ${WORDS.command} command starts the daemon with it`,
   });
 
 export const secretUnavailableError = (secretName: string, cause: Error): GatewayError =>
