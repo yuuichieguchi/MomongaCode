@@ -29,7 +29,7 @@ export const callNetworkOf = ({ requested, granted, sandbox }: CallNetworkInput)
   if (requested.kind !== 'none' && !accepted.includes(requested.kind)) {
     return {
       kind: 'refused',
-      reason: `the command requests ${describeNetworkScope(requested)}, and the sandbox in use (${sandbox}) cannot limit a command to that; nothing wider is granted in its place. This sandbox accepts ${acceptedNetworkForms(sandbox).join(' or ')}`,
+      reason: `the command requests ${describeNetworkScope(requested)}, and the sandbox in use (${sandbox}) cannot hold a command to that; nothing wider is granted in its place. This sandbox accepts ${acceptedNetworkForms(sandbox).join(' or ')}`,
     };
   }
   const scope = enforcedNetworkScope({ requested, granted, backend: accepted });

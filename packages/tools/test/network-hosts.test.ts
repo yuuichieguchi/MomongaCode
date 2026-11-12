@@ -1,11 +1,11 @@
 import http from 'node:http';
 import net from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { SANDBOX_NETWORK_SCOPES } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
 import type { BackgroundJobStart, BackgroundJobs, ExecutionBatchInput } from '@momonga/tools';
-import { bashTool } from '../src/builtins/bash.ts';
+import { bashToolFor } from '../src/builtins/bash.ts';
 import { approvalOf, makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import type { Builtins } from './builtins/fixtures.ts';
 import { makeLayout } from './helpers.ts';
@@ -70,7 +70,7 @@ const authorizationOf = (proxyUrl: string): string => {
 
 describe('the Bash tool tells the model how to ask for named hosts', () => {
   it('names the hosts form in both descriptions', () => {
-    for (const text of [bashTool.description, bashTool.conciseDescription]) expect(text).toContain('{"hosts": [');
+    for (const text of [bashToolFor(TEST_BUILTIN_TOOL_OFFER).description, bashToolFor(TEST_BUILTIN_TOOL_OFFER).conciseDescription]) expect(text).toContain('{"hosts": [');
   });
 });
 
@@ -117,7 +117,7 @@ describe('a Bash call that asks for named hosts, before it runs', () => {
     expect(result.status).toBe('failed');
     expect(result.denial).toEqual({
       source: 'sandbox',
-      reason: 'the command requests network access to registry.example.org only, and the sandbox in use (none) cannot limit a command to that; nothing wider is granted in its place. This sandbox accepts network "open"',
+      reason: 'the command requests network access to registry.example.org only, and the sandbox in use (none) cannot hold a command to that; nothing wider is granted in its place. This sandbox accepts network "open"',
     });
   });
 });
