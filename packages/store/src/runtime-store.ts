@@ -899,8 +899,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const error = overTotal
       ? { code: 'max_total_attempts', message: `run ${run.id} exceeded ${maxTotalAttempts} total attempts` }
       : { code: 'max_attempts', message: `run ${run.id} exceeded ${failedMaximum} consecutive failed attempts` };
-    const cancelled = run.cancelRequested || run.status === 'CANCELLING';
-    changeStatus(run, cancelled ? 'CANCELLED' : 'FAILED', {
+    changeStatus(run, run.status === 'CANCELLING' ? 'CANCELLED' : 'FAILED', {
       edges: DEAD_LETTER_TRANSITIONS,
       deadLetter: true,
       patch: { error },

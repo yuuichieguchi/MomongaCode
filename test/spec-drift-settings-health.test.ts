@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { createUserSettingsCache } from '@momonga/config';
+import type { KeptRecords } from '@momonga/config';
+import { makeTree, userSettingsPath, writeJson, writeText } from '../packages/config/test/helpers.ts';
+import { cfgNames } from './formal/cfg-names.ts';
 import { readManifest } from './formal/manifest.ts';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
 
@@ -67,12 +71,6 @@ const ADMIT_CALL = /\badmitUserSnapshot\(/;
 const SESSION_CREATE_CALL = /\bsessionCreateSettings\(/;
 const CACHE_CALL = /\bcache\.(snapshot|read|load|loadOrKeep)\(/;
 
-const configOf = (name: string): string => fs.readFileSync(path.join(specDir, `${name}.cfg`), 'utf8');
-const constantOf = (cfg: string, name: string): string => {
-  const match = new RegExp(`^\\s*${name}\\s*=\\s*(\\S+)`, 'm').exec(cfg);
-  if (match === null) throw new Error(`${name} is not set`);
-  return match[1] as string;
-};
 
 describe('the code follows SettingsHealth.tla (one rule for every settings file)', () => {
   it('the header of the model names the admission, in-run and background readers', () => {
@@ -150,14 +148,74 @@ describe('the code follows SettingsHealth.tla (one rule for every settings file)
   });
 
   it('the holding configuration is the design the code builds, and every configuration is in the manifest', () => {
-    const cfg = configOf('SettingsHealth');
-    expect(constantOf(cfg, 'ReadMode')).toBe('"lastGood"');
-    expect(constantOf(cfg, 'AdmitMode')).toBe('"disk"');
-    expect(constantOf(cfg, 'StartMode')).toBe('"refuse"');
-    expect(constantOf(cfg, 'NameFile')).toBe('TRUE');
+    expect(cfgNames(specDir, 'SettingsHealth').constants).toMatchObject({ ReadMode: '"lastGood"', AdmitMode: '"disk"', StartMode: '"refuse"', NameFile: 'TRUE' });
     const configs = fs.readdirSync(specDir).filter((file) => /^SettingsHealth(\.\w+)?\.cfg$/.test(file)).map((file) => file.slice(0, -'.cfg'.length)).sort();
     const entries = readManifest(path.join(specDir, 'manifest.json')).entries.filter((entry) => entry.config.startsWith('SettingsHealth'));
     expect(entries.map((entry) => entry.config).sort()).toEqual(configs);
     expect(entries.find((entry) => entry.config === 'SettingsHealth')?.expect).toBe('holds');
+  });
+});
+
+type HealthStep = 'edit1' | 'edit2' | 'break' | 'admit' | 'read' | 'crash';
+
+const HEALTH_STEPS: readonly HealthStep[] = ['edit1', 'edit2', 'break', 'admit', 'read', 'crash'];
+
+const healthRuns = (length: number): HealthStep[][] => {
+  let runs: HealthStep[][] = [[]];
+  for (let index = 0; index < length; index += 1) runs = runs.flatMap((run) => HEALTH_STEPS.map((step) => [...run, step]));
+  return runs;
+};
+
+const memoryKeptRecords = (): KeptRecords => {
+  const records = new Map<string, Parameters<KeptRecords['save']>[1]>();
+  return { load: async (file) => records.get(file), save: async (file, read) => void records.set(file, read) };
+};
+
+describe('the user settings cache does what SettingsHealth.tla states, on the edit, admission, in-run read and crash sequences of the model', () => {
+  it('admission refuses a broken file and names it (AdmittedOnlyWhenValid, RefusalNamesFile); an in-run read never throws and returns the current valid version, or the last good copy while the file is broken, across a crash (NoReaderThrows, ReadsValid, ReadsCurrent, Persist)', async () => {
+    const config = cfgNames(specDir, 'SettingsHealth');
+    expect(config.constants).toMatchObject({ ReadMode: '"lastGood"', AdmitMode: '"disk"', NameFile: 'TRUE', Persist: 'TRUE' });
+    const signal = new AbortController().signal;
+    const failures: string[] = [];
+    for (const run of healthRuns(4)) {
+      const tree = makeTree();
+      const file = userSettingsPath(tree);
+      const kept = memoryKeptRecords();
+      const cacheOf = () => createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: kept });
+      writeJson(file, { env: { TZ: 'v1' } });
+      let cache = cacheOf();
+      await cache.loadOrKeep(signal);
+      let disk = 1;
+      let lastGood = 1;
+      for (const step of run) {
+        const where = `${run.join(' ')} at ${step}`;
+        if (step === 'edit1' || step === 'edit2') {
+          disk = step === 'edit1' ? 1 : 2;
+          writeJson(file, { env: { TZ: `v${disk}` } });
+        } else if (step === 'break') {
+          disk = 0;
+          writeText(file, '{ "env": ');
+        } else if (step === 'crash') {
+          cache = cacheOf();
+        } else if (step === 'admit') {
+          const snapshot = await cache.load(signal);
+          if (disk === 0) {
+            if (!('error' in snapshot)) failures.push(`${where}: a broken file was admitted`);
+            else if (!snapshot.error.message.includes(file)) failures.push(`${where}: the refusal does not name ${file}`);
+          } else if ('error' in snapshot) failures.push(`${where}: a valid file was refused`);
+          else if (snapshot.settings.env['TZ'] !== `v${disk}`) failures.push(`${where}: admission read ${String(snapshot.settings.env['TZ'])}, not v${disk}`);
+          if (disk !== 0) lastGood = disk;
+        } else {
+          const expected = disk === 0 ? lastGood : disk;
+          const read = await cache.loadOrKeep(signal).then(
+            (loaded) => String(loaded.settings.env['TZ']),
+            (error: unknown) => `threw ${error instanceof Error ? error.message : String(error)}`,
+          );
+          if (read !== `v${expected}`) failures.push(`${where}: the in-run read got ${read}, not v${expected}`);
+          if (disk !== 0) lastGood = disk;
+        }
+      }
+    }
+    expect(failures.slice(0, 5)).toEqual([]);
   });
 });
