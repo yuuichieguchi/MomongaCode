@@ -15,16 +15,16 @@ const HOSTS: NetworkScope = { kind: 'hosts', hosts: ['example.org'] };
 
 describe('the one network scope table', () => {
   it('gives each sandbox the policy network it can keep for what the call requests and was granted', () => {
-    expect(callNetworkOf({ requested: NO_NETWORK, granted: NO_NETWORK, sandbox: 'seatbelt' })).toEqual({ kind: 'admitted', scope: NO_NETWORK, sandboxNetwork: 'deny' });
-    expect(callNetworkOf({ requested: HOSTS, granted: HOSTS, sandbox: 'bubblewrap' })).toEqual({ kind: 'admitted', scope: HOSTS, sandboxNetwork: 'deny' });
-    expect(callNetworkOf({ requested: OPEN_NETWORK, granted: OPEN_NETWORK, sandbox: 'bubblewrap' })).toEqual({ kind: 'admitted', scope: OPEN_NETWORK, sandboxNetwork: 'allow' });
-    expect(callNetworkOf({ requested: OPEN_NETWORK, granted: NO_NETWORK, sandbox: 'seatbelt' })).toEqual({ kind: 'admitted', scope: NO_NETWORK, sandboxNetwork: 'deny' });
-    expect(callNetworkOf({ requested: NO_NETWORK, granted: NO_NETWORK, sandbox: 'none' })).toEqual({ kind: 'admitted', scope: NO_NETWORK, sandboxNetwork: 'allow' });
-    expect(callNetworkOf({ requested: OPEN_NETWORK, granted: OPEN_NETWORK, sandbox: 'none' })).toEqual({ kind: 'admitted', scope: OPEN_NETWORK, sandboxNetwork: 'allow' });
+    expect(callNetworkOf({ requested: NO_NETWORK, granted: NO_NETWORK, sandbox: 'seatbelt', unkeptHosts: 'refuse' })).toEqual({ kind: 'admitted', scope: NO_NETWORK, sandboxNetwork: 'deny' });
+    expect(callNetworkOf({ requested: HOSTS, granted: HOSTS, sandbox: 'bubblewrap', unkeptHosts: 'refuse' })).toEqual({ kind: 'admitted', scope: HOSTS, sandboxNetwork: 'deny' });
+    expect(callNetworkOf({ requested: OPEN_NETWORK, granted: OPEN_NETWORK, sandbox: 'bubblewrap', unkeptHosts: 'refuse' })).toEqual({ kind: 'admitted', scope: OPEN_NETWORK, sandboxNetwork: 'allow' });
+    expect(callNetworkOf({ requested: OPEN_NETWORK, granted: NO_NETWORK, sandbox: 'seatbelt', unkeptHosts: 'refuse' })).toEqual({ kind: 'admitted', scope: NO_NETWORK, sandboxNetwork: 'deny' });
+    expect(callNetworkOf({ requested: NO_NETWORK, granted: NO_NETWORK, sandbox: 'none', unkeptHosts: 'refuse' })).toEqual({ kind: 'admitted', scope: NO_NETWORK, sandboxNetwork: 'allow' });
+    expect(callNetworkOf({ requested: OPEN_NETWORK, granted: OPEN_NETWORK, sandbox: 'none', unkeptHosts: 'refuse' })).toEqual({ kind: 'admitted', scope: OPEN_NETWORK, sandboxNetwork: 'allow' });
   });
 
   it('refuses a scope the sandbox cannot keep and names the form it accepts', () => {
-    const refused = callNetworkOf({ requested: HOSTS, granted: HOSTS, sandbox: 'none' });
+    const refused = callNetworkOf({ requested: HOSTS, granted: HOSTS, sandbox: 'none', unkeptHosts: 'refuse' });
     expect(refused.kind).toBe('refused');
     expect(refused.kind === 'refused' ? refused.reason : '').toContain('network access to example.org only');
     expect(refused.kind === 'refused' ? refused.reason : '').toContain('"open"');

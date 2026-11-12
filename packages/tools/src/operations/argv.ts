@@ -3,6 +3,7 @@ import { canonicalJson, groupRecordOutcome, sha256Hex } from '@momonga/foundatio
 import type { HelperSelf, NetworkScope, OutboundNetwork, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openGrantedNetwork } from '../builtins/network-egress.ts';
+import { callNetworkOf } from '../network-scope.ts';
 import type { GrantedNetwork } from '../builtins/network-egress.ts';
 import type { ShellHost } from '../builtins/shell.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
@@ -10,7 +11,7 @@ import type { MarkerOwners } from '../marker-owners.ts';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { runSandboxedCommand } from '../sandboxed-command.ts';
 import { ToolExecutionError } from '../types.ts';
-import { gitProxyEnvironment } from '../read-only-call.ts';
+import { gitProxyEnvironment, withNetwork } from '../read-only-call.ts';
 import type { ProbeContext, ToolContext } from '../types.ts';
 import { openGitCredentialChannel } from './git-credential.ts';
 import type { GitCredentialChannel, GitOriginCredential } from './git-credential.ts';
@@ -86,9 +87,12 @@ const sandboxOf = (ports: SandboxedRunnerPorts, context: ProbeContext): Promise<
 
 const destinationsOf = (network: RenderedNetwork): readonly string[] => (network === 'none' ? [] : network.destinations);
 
-const grantNetwork = async (options: ArgvOptions, argv: readonly string[], granting: Pick<ToolContext, 'outboundNetwork' | 'sandboxPolicy'>): Promise<GrantedNetwork> => {
+const grantNetwork = async (options: ArgvOptions, argv: readonly string[], granting: Pick<ToolContext, 'outboundNetwork' | 'sandboxPolicy' | 'sandbox'>): Promise<GrantedNetwork> => {
   const destinations = destinationsOf(options.network);
-  const granted = await openGrantedNetwork({ network: networkScopeOfDestinations(destinations, programOf(argv)), outboundNetwork: granting.outboundNetwork, sandboxPolicy: granting.sandboxPolicy, env: options.env });
+  const requested = networkScopeOfDestinations(destinations, programOf(argv));
+  const network = callNetworkOf({ requested, granted: requested, sandbox: granting.sandbox.kind, unkeptHosts: options.context.sandboxNetwork });
+  if (network.kind === 'refused') throw new ToolExecutionError(`${programOf(argv)} was not run: ${network.reason}`);
+  const granted = await openGrantedNetwork({ network: network.scope, outboundNetwork: granting.outboundNetwork, sandboxPolicy: withNetwork(granting.sandboxPolicy, network.sandboxNetwork), env: options.env });
   return granted.proxy === undefined ? granted : { ...granted, env: gitProxyEnvironment(granted.env, granted.proxy, destinations) };
 };
 
@@ -99,7 +103,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
   const held: ReconcileSandbox = await sandboxOf(ports, context);
   let network: GrantedNetwork;
   try {
-    network = await grantNetwork(options, argv, { outboundNetwork: await ports.outboundNetwork(context.signal), sandboxPolicy: held.sandboxPolicy });
+    network = await grantNetwork(options, argv, { outboundNetwork: await ports.outboundNetwork(context.signal), sandboxPolicy: held.sandboxPolicy, sandbox: held.sandbox });
   } catch (error) {
     held.release();
     throw error;
