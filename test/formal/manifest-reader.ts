@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { cfgNames } from './cfg-names.ts';
 
 export const MANIFEST_FORMAT = 'momonga-tla-manifest/1';
 
@@ -120,6 +121,15 @@ export const readManifest = (file: string): Manifest => {
   };
 };
 
+const cfgProblems = (specDir: string, config: string): string[] => {
+  try {
+    const names = cfgNames(specDir, config);
+    return names.invariants.length + names.properties.length === 0 ? [`${config}.cfg checks no invariant and no property`] : [];
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
+};
+
 export const moduleOf = (config: string): string => config.split('.')[0] as string;
 
 export const discoveryProblems = (specDir: string, manifest: Manifest): string[] => {
@@ -133,5 +143,6 @@ export const discoveryProblems = (specDir: string, manifest: Manifest): string[]
   for (const config of new Set(listed)) if (!onDisk.includes(config)) problems.push(`${config} is listed in the manifest but ${config}.cfg is not on disk`);
   for (const config of onDisk) if (!modules.has(moduleOf(config))) problems.push(`${config}.cfg names the module ${moduleOf(config)}, but ${moduleOf(config)}.tla is not on disk`);
   for (const module of modules) if (!onDisk.some((config) => moduleOf(config) === module)) problems.push(`${module}.tla has no configuration`);
+  for (const config of onDisk) problems.push(...cfgProblems(specDir, config));
   return problems;
 };
