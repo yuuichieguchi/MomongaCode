@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import { loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
@@ -600,6 +601,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const ports = await step('ports', async () => {
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store, lock: kernelLock });
       const runtime: ToolRuntime = createToolRuntime({
+        hostParallelism: availableParallelism(),
         version,
         mcpLaunch: {
           protection: noneProtection,

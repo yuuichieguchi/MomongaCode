@@ -11,6 +11,7 @@ import type { Sandbox, SandboxCommand, SandboxExit, SandboxedProcess } from '@mo
 import type { BackgroundJobs } from '../ports.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
+import type { Drained } from '../capture.ts';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { describeJobStatus } from './jobs.ts';
 import { openGrantedNetwork } from './network-egress.ts';
@@ -391,7 +392,8 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
       if (groupNotice !== undefined) notes.push(groupNotice);
       if (exit.stop === 'not_confirmed') notes.push(STOP_NOT_CONFIRMED_NOTE);
       notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
-      await pump.settle();
+      const drained = await pump.drainAfterExit(ctx.limits.bash.drainIdleMs);
+      if (!drained.complete) notes.push(drained.note);
     } finally {
       await pump.close();
       refusals = await network.settle();
@@ -451,6 +453,7 @@ export type UserCommandHost = {
   refusal(command: string): Promise<string | undefined>;
   spawn(command: SandboxCommand, signal: AbortSignal): SandboxedProcess | Promise<SandboxedProcess>;
   onOutput(text: string): void;
+  drainIdleMs: number;
 };
 
 export type UserCommandOutcome = { kind: 'refused'; reason: string } | { kind: 'ran'; exitCode: number | null; output: string };
@@ -468,14 +471,15 @@ export const runUserCommand = async (host: UserCommandHost): Promise<UserCommand
     if (text !== '') host.onOutput(text);
   }, host.shellHost.child);
   let exit: SandboxExit;
+  let drained: Drained;
   try {
     exit = await child.exited;
-    await pump.settle();
+    drained = await pump.drainAfterExit(host.drainIdleMs);
   } finally {
     await pump.close();
   }
   const failure = pump.failure();
   if (failure !== undefined) throw failure.error;
-  const output = capture.text().replace(/\n+$/, '');
+  const output = withLine(capture.text().replace(/\n+$/, ''), drained.complete ? undefined : drained.note);
   return { kind: 'ran', exitCode: exit.code, output: exit.signal === null ? output : `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]` };
 };

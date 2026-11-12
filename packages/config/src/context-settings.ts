@@ -17,7 +17,7 @@ export type ResolvedContextSettings = {
   unboundedOutputReserve: boolean;
 };
 
-export type ResolvedBashSettings = { defaultTimeoutMs: number; maxTimeoutMs: number; onTimeout: BashOnTimeout; backgroundTimeoutMs: number; maxBackgroundTimeoutMs: number };
+export type ResolvedBashSettings = { defaultTimeoutMs: number; maxTimeoutMs: number; onTimeout: BashOnTimeout; backgroundTimeoutMs: number; maxBackgroundTimeoutMs: number; drainIdleMs: number };
 
 export type ResolvedToolsSettings = {
   deferral: boolean;
@@ -32,6 +32,7 @@ export const DEFAULT_BASH_TIMEOUT_MS = 120_000;
 export const DEFAULT_BASH_MAX_TIMEOUT_MS = 600_000;
 export const DEFAULT_BASH_BACKGROUND_TIMEOUT_MS = 1_800_000;
 export const DEFAULT_BASH_MAX_BACKGROUND_TIMEOUT_MS = 7_200_000;
+export const DEFAULT_BASH_DRAIN_IDLE_MS = 1000;
 export const DEFAULT_SEARCH_TIMEOUT_MS = 60_000;
 export const DEFAULT_OPERATION_TIMEOUT_MS = 120_000;
 export const DEFAULT_UPDATE_STALL_TIMEOUT_MS = 30_000;
@@ -92,6 +93,7 @@ export const defaultToolsSettings = (): ResolvedToolsSettings => ({
     onTimeout: 'background',
     backgroundTimeoutMs: DEFAULT_BASH_BACKGROUND_TIMEOUT_MS,
     maxBackgroundTimeoutMs: DEFAULT_BASH_MAX_BACKGROUND_TIMEOUT_MS,
+    drainIdleMs: DEFAULT_BASH_DRAIN_IDLE_MS,
   },
   search: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
   operations: { timeoutMs: DEFAULT_OPERATION_TIMEOUT_MS },

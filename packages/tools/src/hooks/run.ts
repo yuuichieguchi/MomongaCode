@@ -30,6 +30,7 @@ export type HookRunContext = {
   clock: Clock;
   signal: AbortSignal;
   deadlineAt: number;
+  drainIdleMs: number;
   started(start: HookStart): void;
   report(execution: HookExecution): void;
 };
@@ -91,6 +92,7 @@ const executeHook = async (
     clock: ctx.clock,
     signal: ctx.signal,
     timeoutMs,
+    drainIdleMs: ctx.drainIdleMs,
     stdin,
     ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
     inspector: ctx.inspector,

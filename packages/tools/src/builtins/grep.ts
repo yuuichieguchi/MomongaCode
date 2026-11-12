@@ -1,6 +1,7 @@
 import { EMPTY_PROTECTED_SET, groupRecordOutcome, mapAsync, homeLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import path from 'node:path';
 import type { SandboxExit, SandboxPolicy } from '@momonga/sandbox';
+import { CAPTURE_MAX_BYTES } from '../capture.ts';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { createReadAccessMatcher } from '../read-access.ts';
 import { ripgrepUnavailableMessage } from '../ripgrep-locator.ts';
@@ -33,7 +34,7 @@ type GrepInput = {
   multiline?: boolean;
 };
 
-type SearchResult = { entries: string[]; unreadable: boolean; partial?: true };
+type SearchResult = { entries: string[]; unreadable: boolean; partial?: 'time' | 'ceiling' };
 
 const UNREADABLE_NOTE = '(some paths could not be read)';
 
@@ -165,9 +166,18 @@ const ARGUMENT_FILE_MODE = 0o600;
 
 const argumentFileOf = (ctx: ToolContext): string => path.join(homeLayout(ctx.home).grepArguments, `${sha256Hex(ctx.idemKey)}.rgrc`);
 
-const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
+const collect = async (stream: AsyncIterable<Uint8Array>, maxBytes: number, onCeiling: () => void): Promise<string> => {
   const chunks: Buffer[] = [];
-  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  let size = 0;
+  for await (const chunk of stream) {
+    const taken = Buffer.from(chunk).subarray(0, maxBytes - size);
+    chunks.push(taken);
+    size += taken.length;
+    if (size >= maxBytes) {
+      onCeiling();
+      break;
+    }
+  }
   return Buffer.concat(chunks).toString('utf8');
 };
 
@@ -227,6 +237,8 @@ const GROUP_SEPARATOR = '--';
 
 const completeRecordsOf = (stdout: string, mode: OutputMode): string => stdout.slice(0, stdout.lastIndexOf(mode === 'files_with_matches' ? NUL : '\n') + 1);
 
+const ceilingNote = (maxBytes: number): string => `Search output passed ${maxBytes} bytes; the matches above are partial. Try a narrower path or pattern.`;
+
 export const partialSearchNote = (ms: number, found: 'matches' | 'entries'): string => `Search stopped after ${ms} ms; the ${found} above are partial. Try a narrower path or pattern.`;
 
 const grepPolicyOf = (ctx: ToolContext): SandboxPolicy => {
@@ -240,16 +252,18 @@ const reportedVersions = new WeakMap<RipgrepLocator, Map<string, Promise<string>
 
 type RipgrepCommand = { argv: string[]; cwd: string; env: Record<string, string> };
 
-type RipgrepRun = { stdout: string; stderr: string; exit: SandboxExit };
+type RipgrepRun = { stdout: string; stderr: string; exit: SandboxExit; ceilingReached: boolean };
 
 const runRipgrep = async (ctx: ToolContext, command: RipgrepCommand, policy: SandboxPolicy, notes: string[], stop: AbortSignal = ctx.signal): Promise<RipgrepRun> => {
   const { file, fd, settle } = await requireSpawnMarker(ctx, 'Grep');
-  const child = await ctx.sandbox.spawn({ ...command, markerFile: file }, policy, stop, { markerFd: fd });
+  const ceiling = new AbortController();
+  const child = await ctx.sandbox.spawn({ ...command, markerFile: file }, policy, AbortSignal.any([stop, ceiling.signal]), { markerFd: fd });
   const attached = groupRecordOutcome(ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() }), file);
-  const [stdout, stderr, exit, groupNotice] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited, attached]);
+  const stopAtCeiling = (): void => ceiling.abort();
+  const [stdout, stderr, exit, groupNotice] = await Promise.all([collect(child.stdout, CAPTURE_MAX_BYTES, stopAtCeiling), collect(child.stderr, CAPTURE_MAX_BYTES, stopAtCeiling), child.exited, attached]);
   if (groupNotice !== undefined) notes.push(groupNotice);
   notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
-  return { stdout, stderr, exit };
+  return { stdout, stderr, exit, ceilingReached: ceiling.signal.aborted };
 };
 
 const runVersion = async (ripgrep: string, ctx: ToolContext, notes: string[]): Promise<string> => {
@@ -331,8 +345,9 @@ const runSearch = async (
     }
     return shown;
   };
-  const { stdout, stderr, exit } = await runRipgrep(ctx, command, policy, notes, AbortSignal.any([ctx.signal, ctx.expired]));
-  if (ctx.expired.aborted) return { entries: await recordsOf(completeRecordsOf(stdout, mode), mode, input, visible, show), unreadable: false, partial: true };
+  const { stdout, stderr, exit, ceilingReached } = await runRipgrep(ctx, command, policy, notes, AbortSignal.any([ctx.signal, ctx.expired]));
+  if (ctx.expired.aborted) return { entries: await recordsOf(completeRecordsOf(stdout, mode), mode, input, visible, show), unreadable: false, partial: 'time' };
+  if (ceilingReached) return { entries: await recordsOf(completeRecordsOf(stdout, mode), mode, input, visible, show), unreadable: false, partial: 'ceiling' };
   if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };
   if (exit.code === 0) return { entries: await recordsOf(stdout, mode, input, visible, show), unreadable: false };
   if (exit.code === 2) {
@@ -419,7 +434,7 @@ export const grepTool = defineTool<GrepInput>({
     const skipped = ordered.slice(input.offset ?? 0);
     const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
     const lines = limited.length === 0 ? ['No matches found'] : limited;
-    const partial = found.partial === true ? [partialSearchNote(ctx.limits.search.timeoutMs, 'matches')] : [];
+    const partial = found.partial === 'time' ? [partialSearchNote(ctx.limits.search.timeoutMs, 'matches')] : found.partial === 'ceiling' ? [ceilingNote(CAPTURE_MAX_BYTES)] : [];
     return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : []), ...partial, ...notes].join('\n'), backend };
   },
 });

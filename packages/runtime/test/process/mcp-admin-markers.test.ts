@@ -14,7 +14,7 @@ describe('the MCP admin probe pool launches its servers with the MCP process mar
       created.push(options);
       return { sources: [], diagnostics: () => [], authState: async () => ({ state: 'authorized' }), authorize: async () => undefined, close: async () => undefined } as unknown as McpAuthorizingPool;
     };
-    const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH,
+    const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, hostParallelism: 8,
       kernelLock: testKernelLock(),
       lockCapability: testLocks().capability,
       version: '0.0.0-test',

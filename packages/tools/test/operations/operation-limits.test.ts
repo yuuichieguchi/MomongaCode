@@ -8,7 +8,7 @@ import { NO_FORGE, countingRunner } from './support.ts';
 const SPEC_DIR = path.resolve(import.meta.dirname, '../../src/operations/specs');
 
 const LIMITS: ToolLimits = {
-  bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000 },
+  bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000, drainIdleMs: 1000 },
   search: { timeoutMs: 60_000 },
   operations: { timeoutMs: 45_000 },
 };

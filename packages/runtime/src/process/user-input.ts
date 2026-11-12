@@ -17,7 +17,7 @@ export type UserInputOptions = {
   tools: Pick<ToolRuntimePort, 'envFor' | 'policyFor' | 'sandboxes' | 'sessionState' | 'shellHost'>;
   policy: UserPolicy;
   store: Pick<RuntimeStore, 'governing'>;
-  settings: Pick<SettingsPort, 'rules' | 'trusted'>;
+  settings: Pick<SettingsPort, 'rules' | 'trusted' | 'tools'>;
   clock: Clock;
   home: string;
   unsandboxed: ProtectionOnlySandbox;
@@ -105,6 +105,7 @@ export const createUserInputPort = ({ tools, policy, store, settings, clock, hom
           return unsandboxed.spawn(spawned, facts.sandboxPolicy, signal);
         },
         onOutput: io.onOutput,
+        drainIdleMs: (await settings.tools(session, io.signal)).bash.drainIdleMs,
       });
     },
   };
