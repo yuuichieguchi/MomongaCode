@@ -30,7 +30,7 @@ const runReadTask = async (settings: Readonly<Record<string, unknown>>) => {
   });
   const runtime = createRuntimeClient(home);
   try {
-    const { session } = await runtime.createSession();
+    const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const { run } = await runtime.createRun(session.id, 'Read notes.txt');
     const stream = runtime.events(run.id);
     await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
@@ -116,7 +116,7 @@ describe('OTLP export through real processes', () => {
     let sessionId: string;
     let report: CostReportView;
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       sessionId = session.id;
       runId = (await runtime.createRun(session.id, 'Read notes.txt')).run.id;
       const stream = runtime.events(runId);

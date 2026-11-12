@@ -61,13 +61,13 @@ describe('roles: a compaction role model', () => {
     const home = await createE2eHome();
     const script = [textReply('Hello.')];
     for (let index = 0; index < LONG_REQUESTS; index += 1) script.push(textReply(`Noted ${index + 1}.`));
-    const stack = await startStack({ home, sandbox: 'none', settings: roleSettings(home), script, routes: [summaryRoute(SUMMARY)] });
+    const stack = await startStack({ home, settings: roleSettings(home), script, routes: [summaryRoute(SUMMARY)] });
     const runtime = createRuntimeClient(home);
     let sessionId: string;
     const runIds: string[] = [];
     let requestTokens = 0;
     try {
-      const { session } = await runtime.createSession();
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       sessionId = session.id;
       const first = (await runtime.createRun(session.id, 'Say hello')).run;
       await runToEnd(runtime, first.id);

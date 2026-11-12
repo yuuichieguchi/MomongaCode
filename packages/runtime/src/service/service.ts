@@ -83,7 +83,7 @@ export type RunServiceOptions = {
   recomputeFacts: ReportRouteDeps['recomputeFacts'];
   mcp: McpAdminPort;
   role: RolePort;
-  work: { steps(): number; jobs(): number };
+  work: { runs(): readonly string[]; jobs(): readonly { id: string; command: string }[] };
   ignorableMarkerDirectories: (signal: AbortSignal) => Promise<readonly string[]>;
   files: FileSystem;
   onRequestEnd?: () => void;

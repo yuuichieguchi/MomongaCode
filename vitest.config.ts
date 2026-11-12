@@ -37,7 +37,7 @@ export default defineConfig({
           name: 'packaging',
           include: ['scripts/**/*.test.ts'],
           setupFiles: ['test/support/child-process-guard.ts', 'test/support/temp-entry-recorder.ts'],
-          globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts', 'test/support/lock-proof.ts'],
+          globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts', 'e2e/support/run-setup.ts', 'test/support/lock-proof.ts'],
           fileParallelism: false,
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
           testTimeout: DEFAULT_TEST_TIMEOUT_MS,

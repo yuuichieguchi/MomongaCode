@@ -1,12 +1,10 @@
 import { execFileSync } from '@momonga/testkit/child-process';
-import { randomBytes } from 'node:crypto';
 import { TEST_RUN_ENV } from '@momonga/testkit';
 import { E2E_CASES } from './support/cases.ts';
 import { CLI_FAKES_BUNDLE, CLI_FAKES_ENTRY } from './support/cli-bundles.ts';
 import { BUNDLE_SCRIPT } from './support/launcher.ts';
-import { E2E_RUN_ENV, e2eTmpRoot } from './support/run-env.ts';
+import { claimE2eRun } from './support/run-setup.ts';
 import { SANDBOX_ENV, encodeSandboxProbe, runSandboxProbe, sandboxLine } from './support/sandbox.ts';
-import { runE2eTeardown } from './support/teardown.ts';
 
 export const BOTH_PROJECTS_WARNING = 'e2e warning: both projects are selected; run e2e only through npm run test:e2e';
 
@@ -20,8 +18,7 @@ export const bothProjectsSelected = (argv: readonly string[]): boolean => {
 };
 
 export default function setup(): () => Promise<void> {
-  const run = randomBytes(2).toString('hex');
-  process.env[E2E_RUN_ENV] = run;
+  const { run, teardown } = claimE2eRun();
   process.env[TEST_RUN_ENV] = run;
   execFileSync(process.execPath, [BUNDLE_SCRIPT], { stdio: 'inherit' });
   execFileSync(process.execPath, [BUNDLE_SCRIPT, '--entry', CLI_FAKES_ENTRY, '--outfile', CLI_FAKES_BUNDLE], { stdio: 'inherit' });
@@ -29,6 +26,5 @@ export default function setup(): () => Promise<void> {
   process.env[SANDBOX_ENV] = encodeSandboxProbe(probe);
   console.log(sandboxLine(probe, E2E_CASES));
   if (bothProjectsSelected(process.argv)) console.warn(BOTH_PROJECTS_WARNING);
-  const tmpRoot = e2eTmpRoot();
-  return () => runE2eTeardown({ tmpRoot, run });
+  return teardown;
 }

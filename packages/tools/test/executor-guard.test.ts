@@ -7,12 +7,12 @@ import { LEAVER_PGID, markerOf, resultOf, runOne, world, writer } from './guard-
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 
-const SETTLED_PREFIX = (name: string) => `Not run: a process started by an earlier command (marker ${name}, unidentified) may still be running and could not be stopped. `;
-const IGNORE_SUFFIX = (name: string) => `If it can stay running, ask the person to run /markers ignore ${name}.`;
+const SETTLED_PREFIX = (name: string) => `Not run: a process started by an earlier command (marker ${name}) may still be running and could not be stopped. `;
+const REMEDY = (name: string) => `Ask the person to stop the process group ${LEAVER_PGID}, or, if it can stay running, to run /markers ignore ${name} in an interactive session.`;
 const COULD_NOT_CHECK = (name: string, reason: string) =>
   `Note: MomongaCode could not check whether a process started by an earlier command (marker ${name}) is still running (${reason}). The command ran. It will check again before the next command that runs a process or changes files in this session.`;
 const FINAL_NOTICE = (name: string) =>
-  `Note: a process started by an earlier command (marker ${name}) may still be running. MomongaCode has used its four retries and will not try again. If it can stay running, ask the person to run /markers ignore ${name}.`;
+  `Note: a process started by an earlier command (marker ${name}) may still be running. MomongaCode has used its four retries and will not try again. Ask the person to stop the process that holds it, or, if it can stay running, to run /markers ignore ${name} in an interactive session.`;
 
 describe('T8 the guard, by the sideEffect field', () => {
   it('a write call after a command left a held marker is refused with the settled-call text, and a read-only call passes', async () => {
@@ -24,7 +24,7 @@ describe('T8 the guard, by the sideEffect field', () => {
     expect(refused.status).toBe('failed');
     expect(refused.output.startsWith(SETTLED_PREFIX(name))).toBe(true);
     expect(refused.output).toContain('MomongaCode will try to stop it again at: ');
-    expect(refused.output.endsWith(`Stop it and retry. ${IGNORE_SUFFIX(name)}`)).toBe(true);
+    expect(refused.output.endsWith(`${REMEDY(name)} Then retry.`)).toBe(true);
     expect(resultOf(await runOne(h, 'Reader', 'third'))).toMatchObject({ status: 'completed', output: 'read' });
   });
 

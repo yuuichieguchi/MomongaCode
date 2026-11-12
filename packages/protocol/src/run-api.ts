@@ -1,4 +1,6 @@
 import type { Stored } from './stored-value.ts';
+import { INTERRUPTED_COMMAND_SHOWN_CHARS, INTERRUPTED_WORK_LISTED } from './supervisor-api.ts';
+import type { InterruptedWorkItem } from './supervisor-api.ts';
 import { anything, boolean, boundedInteger, closed, constant, enumOf, integer, nonNegativeInteger, nullable, root, storedEnumOf, string } from './schema-helpers.ts';
 import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
@@ -1427,6 +1429,7 @@ export type RunHealth = {
   role: 'starting' | 'serving' | 'retiring';
   steps: number;
   jobs: number;
+  interrupts: InterruptedWorkItem[];
   sandbox: 'seatbelt' | 'bubblewrap' | 'none';
 };
 
@@ -1622,9 +1625,19 @@ export const RUN_API_SCHEMAS = {
         role: enumOf(['starting', 'serving', 'retiring']),
         steps: integer,
         jobs: integer,
+        interrupts: {
+          type: 'array',
+          maxItems: INTERRUPTED_WORK_LISTED,
+          items: {
+            oneOf: [
+              closed({ kind: constant('run'), id: string }, ['kind', 'id']),
+              closed({ kind: constant('job'), id: string, command: { type: 'string', maxLength: INTERRUPTED_COMMAND_SHOWN_CHARS } }, ['kind', 'id', 'command']),
+            ],
+          },
+        },
         sandbox: enumOf(['seatbelt', 'bubblewrap', 'none']),
       },
-      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'role', 'steps', 'jobs', 'sandbox'],
+      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'role', 'steps', 'jobs', 'interrupts', 'sandbox'],
     ),
   ),
   SessionView: root(

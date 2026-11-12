@@ -180,7 +180,7 @@ type Phase = 'starting' | 'running' | 'draining' | 'aborting' | 'tearingDown' | 
 
 type StartedWorker = { id: string; worker: Worker };
 
-const DEFAULT_LEASE_MS = 30_000;
+export const DEFAULT_LEASE_MS = 30_000;
 const SPAWN_DIRECTORY_MODE = 0o700;
 
 const assertPositiveInteger = (name: string, value: number): void => {
@@ -239,7 +239,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   let service: RunService | undefined;
   let retireFrame: { current: DaemonCurrentFrame | undefined } | undefined;
   let onWorkEnded: () => void = () => undefined;
-  const stepsInFlight = (): number => workers.reduce((sum, { worker }) => sum + worker.claimsInFlight(), 0);
+  const runsInFlight = (): string[] => workers.flatMap(({ worker }) => worker.runsInFlight());
+  const stepsInFlight = (): number => runsInFlight().length;
 
   const abortOnLatchedFatal = (): void => {
     if (fatalError === undefined) return;
@@ -813,7 +814,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         mcp: toolRuntime.mcpAdmin,
         markerOwners: toolRuntime.owners,
         role: rolePort,
-        work: { steps: stepsInFlight, jobs: () => toolRuntime.jobs.liveCount() },
+        work: { runs: runsInFlight, jobs: () => toolRuntime.jobs.liveJobs() },
         ignorableMarkerDirectories,
         files: nodeFileSystem,
         onRequestEnd: () => onWorkEnded(),

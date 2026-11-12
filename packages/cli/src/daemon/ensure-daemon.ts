@@ -27,7 +27,7 @@ import {
 } from '@momonga/foundation';
 import type { CurrentGeneration, GenerationRef, HeldStart, KernelLockMechanism, MomongaPaths, StartTrigger, StopValues, EndpointScope } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
-import type { SupervisorHealth } from '@momonga/protocol';
+import type { InterruptedWorkItem, SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import type { SupervisorClient } from '../client/supervisor-client.ts';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
@@ -154,7 +154,7 @@ export const liveGenerationsUnderLock = async (ports: Pick<DaemonPorts, 'clock'>
     { boundMs, intervalMs: DAEMON_POLL_INTERVAL_MS, description: 'the generation lock to list the running daemons' },
   );
 
-export type InterruptedWork = { steps: number; jobs: number };
+export type InterruptedWork = { steps: number; jobs: number; items: readonly InterruptedWorkItem[] };
 
 export class DaemonStopTimeout extends PollTimeout {
   readonly remaining: readonly SupervisorHealth[];
@@ -215,7 +215,11 @@ export const stopDaemon = async (
   const snapshot = await liveGenerationsUnderLock(ports, paths, lock, bounds?.stopMs ?? STOP_WAIT_WHEN_UNKNOWN_MS);
   const probed = (await Promise.all(snapshot.map((generation) => stopCandidate(paths, generation, scope)))).filter((entry) => entry !== undefined);
   const candidates = probed.filter((entry) => 'health' in entry);
-  onInterrupting?.({ steps: sumOf(candidates.map((candidate) => candidate.health.steps)), jobs: sumOf(candidates.map((candidate) => candidate.health.jobs)) });
+  onInterrupting?.({
+    steps: sumOf(candidates.map((candidate) => candidate.health.steps)),
+    jobs: sumOf(candidates.map((candidate) => candidate.health.jobs)),
+    items: candidates.flatMap((candidate) => candidate.health.interrupts ?? []),
+  });
   let stopValues: Promise<StopValues> | undefined;
   const values = (): Promise<StopValues> => (stopValues ??= readStopValues(ports, onNotice));
   const requests = await Promise.all(candidates.map((candidate) => requestStop(paths, scope, candidate, values)));
