@@ -72,10 +72,21 @@ describe('install.ps1', () => {
     expect(fs.readFileSync(`${repoRoot}scripts/install.sh`, 'utf8')).toContain('sub(/^\\*/, "", name)');
   });
 
+  it('moves a running momonga.exe aside as a .momonga-update. entry before it moves the new one in, puts it back if the move in fails, and names the remedy when the move aside is refused', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    expect(source).not.toContain('Move-Item -Force -LiteralPath $candidate -Destination $target');
+    const aside = source.indexOf("'.momonga-update.'");
+    const moveIn = source.indexOf('Move-Item -LiteralPath $candidate -Destination $target');
+    expect(aside).toBeGreaterThan(-1);
+    expect(moveIn).toBeGreaterThan(aside);
+    expect(source).toContain('Move-Item -LiteralPath $aside -Destination $target');
+    expect(source).toContain('stop the daemon, then run the command again');
+  });
+
   it('runs the candidate with --version before it is moved into place, and refuses another version than the one asked for', () => {
     const source = fs.readFileSync(SCRIPT, 'utf8');
     const check = source.indexOf('$reported = & $candidate --version');
-    const move = source.indexOf('Move-Item -Force -LiteralPath $candidate');
+    const move = source.indexOf('Move-Item -LiteralPath $candidate -Destination $target');
     expect(check).toBeGreaterThan(0);
     expect(move).toBeGreaterThan(check);
     expect(source).toContain('version $($env:MOMONGA_VERSION) was asked for, but the downloaded executable reports version $reported; nothing was installed');

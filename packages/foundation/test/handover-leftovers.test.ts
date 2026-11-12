@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  claimNewEntry,
   handoverDirectoryOf,
   handoverLeftovers,
   handoverRecordFields,
@@ -18,6 +17,7 @@ import {
 } from '@momonga/foundation';
 import type { FileSystem, KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { handoverRecordReader } from '../src/handover-leftovers.ts';
+import { claimNewEntry } from '../src/platform/lock-form.ts';
 import type { HandoverLeftoverPorts } from '../src/handover-leftovers.ts';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
 import { expectedKernelLockOn, testKernelLock } from '@momonga/testkit';

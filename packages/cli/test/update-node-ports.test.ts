@@ -332,7 +332,9 @@ describe('publishing over a running executable', () => {
     const rename = async (): Promise<void> => {
       throw refusal('EACCES');
     };
-    await expect(nodeUpdateFs(testKernelLock(), rename).publish(staged, target)).rejects.toMatchObject({ code: 'EACCES' });
+    const outcome = nodeUpdateFs(testKernelLock(), rename).publish(staged, target);
+    await expect(outcome).rejects.toMatchObject({ code: 'EACCES' });
+    await expect(outcome).rejects.toThrow(/stop the daemon, then run the command again/);
     expect(fs.readFileSync(target, 'utf8')).toBe('old');
   });
 
