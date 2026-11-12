@@ -13,9 +13,12 @@ const mandates: DelegationPort = {
   chainBilling: async () => ({ metered: false, priced: true }),
 };
 
-const issues = {
-  read: async (url: string) => ({ reference: { url, repository: 'acme/widgets', number: 7 }, content: ISSUE_TEXT }),
+const locate = (url: string) => {
+  if (!url.endsWith('/issues/7')) throw new Error(`${url} is not the address of an issue`);
+  return { url, repository: 'acme/widgets', number: 7 };
 };
+
+const issues = { locate, read: async () => ISSUE_TEXT };
 
 const start = () => startService({ delegation: mandates, issues });
 
@@ -48,6 +51,27 @@ describe('a run started from an issue', () => {
     expect(again.status).toBe(409);
     expect(again.json.error.code).toBe('issue_already_started');
     expect(env.store.issueWatch.issueStartsOf(session.cwd).map((start) => [start.reference, start.startedRunId])).toEqual([[ISSUE_URL, first.id]]);
+  });
+});
+
+describe('an issue that cannot be read', () => {
+  it('is refused as a bad request when the address is not that of an issue, naming the field', async () => {
+    const env = await start();
+    const session = await env.createSession();
+    const response = await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'x', mandate: { profile: 'fix' }, issue: { url: 'https://forge.example/acme/widgets/pulls/7' } } });
+    expect(response.status).toBe(400);
+    expect(response.json.error.param).toBe('issue');
+    expect(response.json.error.message).toContain('is not the address of an issue');
+  });
+
+  it('answers that the forge could not give it, with the reason, and creates no run', async () => {
+    const env = await startService({ delegation: mandates, issues: { locate, read: async () => Promise.reject(new Error('the secret "forge" could not be read')) } });
+    const session = await env.createSession();
+    const response = await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'x', mandate: { profile: 'fix' }, issue: { url: ISSUE_URL } } });
+    expect(response.status).toBe(502);
+    expect(response.json.error.code).toBe('issue_unreadable');
+    expect(response.json.error.message).toContain(`the issue ${ISSUE_URL} could not be read from its forge: the secret "forge" could not be read`);
+    expect(env.store.listRuns(session.id)).toEqual([]);
   });
 });
 

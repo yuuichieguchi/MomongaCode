@@ -11,7 +11,7 @@ import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/f
 import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import { ISSUE_PIN } from './issues.ts';
 import type { IssuePort, IssueRead } from './issues.ts';
-import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
+import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
@@ -25,6 +25,7 @@ import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
   ApiError,
   conflict,
+  issueUnreadable,
   configError,
   contributionUnavailable,
   errorResponse,
@@ -492,12 +493,26 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (!(await capabilitiesOf(session, signal)).imageInput) throw imageInputUnsupported(displayIn((await gatewayListing(signal)).views, session.model));
   };
 
+  const locatedIssue = (url: string): IssueReference => {
+    try {
+      return deps.issues.locate(url);
+    } catch (error) {
+      throw invalidRequest(error instanceof Error ? error.message : String(error), 'issue');
+    }
+  };
+
   const issueOf = async (session: Session, body: CreateRunBody, signal: AbortSignal): Promise<IssueRead | undefined> => {
     if (body.issue === undefined) return undefined;
     if (body.mandate?.profile === undefined) {
       throw invalidRequest('a run from an issue runs under a named mandate: name one of the mandates declared under mandates in the user settings', 'mandate');
     }
-    return deps.issues.read(body.issue.url, signal);
+    const reference = locatedIssue(body.issue.url);
+    try {
+      return { reference, content: await deps.issues.read(reference, signal) };
+    } catch (error) {
+      signal.throwIfAborted();
+      throw issueUnreadable(reference.url, error instanceof Error ? error.message : String(error));
+    }
   };
 
   const attachedTo = async (session: Session, body: CreateRunBody, signal: AbortSignal): Promise<AttachedMentions> => {

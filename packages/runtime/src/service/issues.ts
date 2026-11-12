@@ -4,4 +4,4 @@ export const ISSUE_PIN = 'issue';
 
 export type IssueRead = { reference: IssueReference; content: string };
 
-export type IssuePort = { read(url: string, signal: AbortSignal): Promise<IssueRead> };
+export type IssuePort = { locate(url: string): IssueReference; read(reference: IssueReference, signal: AbortSignal): Promise<string> };

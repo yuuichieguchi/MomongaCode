@@ -89,6 +89,9 @@ export const idempotencyKeyReused = (): ApiError =>
     message: 'the Idempotency-Key was already used with a different request body',
   });
 
+export const issueUnreadable = (url: string, reason: string): ApiError =>
+  new ApiError({ status: 502, type: 'server_error', code: 'issue_unreadable', message: `the issue ${url} could not be read from its forge: ${reason}` });
+
 export const serviceUnavailable = (code: 'draining' | 'gateway_unavailable', message: string): ApiError =>
   new ApiError({ status: 503, type: 'server_error', code, message, headers: { 'retry-after': '1' } });
 

@@ -484,6 +484,9 @@ export type ServiceOverrides = {
 export type IssuePort = Parameters<typeof runtime.createRunService>[0]['issues'];
 
 const unusedIssues: IssuePort = {
+  locate: () => {
+    throw new Error('this test locates no issue');
+  },
   read: async () => {
     throw new Error('this test reads no issue');
   },

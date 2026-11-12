@@ -41,7 +41,7 @@ const world = async () => {
   const forge = await startFakeForge('hub', CREDENTIAL);
   onCleanup(() => forge.close());
   const access = accessTo(forge);
-  const env = await startService({ delegation: mandates, issues: { read: async (url, signal) => ({ reference: { ...parseIssueUrl(url) }, content: await readIssue(parseIssueUrl(url), { forge: access, signal, boundMs: BOUND_MS }) }) } });
+  const env = await startService({ delegation: mandates, issues: { locate: (url) => parseIssueUrl(url), read: (reference, signal) => readIssue(parseIssueUrl(reference.url), { forge: access, signal, boundMs: BOUND_MS }) } });
   return { forge, access, env };
 };
 

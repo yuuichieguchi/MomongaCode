@@ -9,10 +9,12 @@ export type IssueSourceOptions = {
 };
 
 export const createIssueSource = ({ userSnapshot, forgeOf }: IssueSourceOptions): IssuePort => ({
-  read: async (url, signal) => {
-    const snapshot = await userSnapshot(signal);
+  locate: (url) => {
     const location = parseIssueUrl(url);
-    const content = await readIssue(location, { forge: forgeOf(snapshot), signal, boundMs: snapshot.settings.tools.operations.timeoutMs });
-    return { reference: { url: location.url, repository: location.repository, number: location.number }, content };
+    return { url: location.url, repository: location.repository, number: location.number };
+  },
+  read: async (reference, signal) => {
+    const snapshot = await userSnapshot(signal);
+    return readIssue(parseIssueUrl(reference.url), { forge: forgeOf(snapshot), signal, boundMs: snapshot.settings.tools.operations.timeoutMs });
   },
 });
