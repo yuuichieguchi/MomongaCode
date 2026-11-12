@@ -69,6 +69,7 @@ const VIEW = filesIn(sectionOf('readers that start no new work', 'the kept copy'
 
 const ADMIT_CALL = /\badmitUserSnapshot\(/;
 const SESSION_CREATE_CALL = /\bsessionCreateSettings\(/;
+const IN_RUN_READ = /takeUserSnapshot\(\)|\.userSnapshot\(|loadSessionSettings\(|settings\.(rules|hooks|verification|memory|context|tools|trusted|approvedProjectAgents|appendRule|autoModeClassifier)\(/;
 const CACHE_CALL = /\bcache\.(snapshot|read|load|loadOrKeep)\(/;
 
 
@@ -80,7 +81,9 @@ describe('the code follows SettingsHealth.tla (one rule for every settings file)
       'runtime/src/process/start-runtime-process.ts',
       'runtime/src/service/app.ts',
     ]);
-    expect(IN_RUN.length).toBeGreaterThanOrEqual(12);
+    const codeReaders = filesMatching(IN_RUN_READ).filter((file) => file.startsWith('runtime/src/') && !ADMISSION.includes(file));
+    expect(codeReaders.length).toBeGreaterThan(0);
+    expect(codeReaders.filter((file) => !IN_RUN.includes(file))).toEqual([]);
     expect(BACKGROUND).toEqual(['runtime/src/process/start-runtime-process.ts']);
     expect(VIEW).toEqual(['runtime/src/service/app.ts']);
   });
