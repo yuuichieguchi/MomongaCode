@@ -13,6 +13,7 @@ import {
   fixedSocket,
   generationIsLive,
   generationLayout,
+  endpointScopeOf,
   generationOfDirectoryName,
   inspectProcessLock,
   listGenerations,
@@ -381,7 +382,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       await nodeFileSystem.mkdir(scoped.tmp.spawn, SPAWN_DIRECTORY_MODE);
       return scoped;
     });
-    const own = generationLayout(canonicalHome, options.generation);
+    const own = generationLayout(canonicalHome, options.generation, platform, await endpointScopeOf(sharedPaths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock }));
     const rolePort = options.role ?? createRolePort({ paths: sharedPaths, generation: options.generation, logger });
     await step('role', () => rolePort.refresh());
     const ignorableMarkerDirectories = async (signal: AbortSignal): Promise<string[]> => {
@@ -794,7 +795,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     service = runService;
     cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
-    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, timers, shellHost, env: process.env, clock });
+    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, locks: options.locks, timers, shellHost, env: process.env, clock });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
         const id = `runtime-${process.pid}-${startedAtMs}-${index}`;

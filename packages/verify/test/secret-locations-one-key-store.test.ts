@@ -45,7 +45,7 @@ describe('the platform key store named by the layout', () => {
     });
     expect(decision).toMatchObject({ kind: 'deny', reason: `reading ${key} is denied in every permission mode: it is inside the platform key store, a secret location` });
 
-    const context = await buildQueryContext(z3.engine().api, {
+    const context = await buildQueryContext(z3.engine().api, { unixSockets: { kind: 'limited', allowed: [] },
       signal: NEVER_CANCELLED,
       rules: [],
       roots,

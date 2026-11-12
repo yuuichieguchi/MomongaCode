@@ -1,7 +1,7 @@
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
 import type { AcceptedCheck } from './declared-checks.ts';
-import type { ContextSettings, MemorySettings, RipgrepSetting, ToolsSettings, VerificationSettings } from './settings.ts';
+import type { BashOnTimeout, ContextSettings, MemorySettings, RipgrepSetting, ToolsSettings, VerificationSettings } from './settings.ts';
 
 export type ResolvedMemorySettings = { reflection: { enabled: boolean; maxTokens?: number }; forgetAfterDays: number; repositoryFacts: boolean };
 
@@ -17,7 +17,24 @@ export type ResolvedContextSettings = {
   unboundedOutputReserve: boolean;
 };
 
-export type ResolvedToolsSettings = { deferral: boolean; conciseDescriptions: boolean; ripgrep: RipgrepSetting };
+export type ResolvedBashSettings = { defaultTimeoutMs: number; maxTimeoutMs: number; onTimeout: BashOnTimeout; backgroundTimeoutMs: number; maxBackgroundTimeoutMs: number };
+
+export type ResolvedToolsSettings = {
+  deferral: boolean;
+  conciseDescriptions: boolean;
+  ripgrep: RipgrepSetting;
+  bash: ResolvedBashSettings;
+  search: { timeoutMs: number };
+  operations: { timeoutMs: number };
+};
+
+export const DEFAULT_BASH_TIMEOUT_MS = 120_000;
+export const DEFAULT_BASH_MAX_TIMEOUT_MS = 600_000;
+export const DEFAULT_BASH_BACKGROUND_TIMEOUT_MS = 1_800_000;
+export const DEFAULT_BASH_MAX_BACKGROUND_TIMEOUT_MS = 7_200_000;
+export const DEFAULT_SEARCH_TIMEOUT_MS = 60_000;
+export const DEFAULT_OPERATION_TIMEOUT_MS = 120_000;
+export const DEFAULT_UPDATE_STALL_TIMEOUT_MS = 30_000;
 
 export const DEFAULT_FORGET_AFTER_DAYS = 90;
 
@@ -65,7 +82,20 @@ export const defaultContextSettings = (): ResolvedContextSettings => ({
   unboundedOutputReserve: true,
 });
 
-export const defaultToolsSettings = (): ResolvedToolsSettings => ({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
+export const defaultToolsSettings = (): ResolvedToolsSettings => ({
+  deferral: true,
+  conciseDescriptions: true,
+  ripgrep: 'bundled',
+  bash: {
+    defaultTimeoutMs: DEFAULT_BASH_TIMEOUT_MS,
+    maxTimeoutMs: DEFAULT_BASH_MAX_TIMEOUT_MS,
+    onTimeout: 'background',
+    backgroundTimeoutMs: DEFAULT_BASH_BACKGROUND_TIMEOUT_MS,
+    maxBackgroundTimeoutMs: DEFAULT_BASH_MAX_BACKGROUND_TIMEOUT_MS,
+  },
+  search: { timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS },
+  operations: { timeoutMs: DEFAULT_OPERATION_TIMEOUT_MS },
+});
 
 export const mergeMemorySettings = (base: ResolvedMemorySettings, layer: MemorySettings | undefined): ResolvedMemorySettings => {
   if (layer === undefined) return base;
@@ -102,7 +132,14 @@ export const mergeContextSettings = (base: ResolvedContextSettings, layer: Conte
 
 export const mergeToolsSettings = (base: ResolvedToolsSettings, layer: ToolsSettings | undefined): ResolvedToolsSettings => {
   if (layer === undefined) return base;
-  return { deferral: layer.deferral ?? base.deferral, conciseDescriptions: layer.conciseDescriptions ?? base.conciseDescriptions, ripgrep: layer.ripgrep ?? base.ripgrep };
+  return {
+    deferral: layer.deferral ?? base.deferral,
+    conciseDescriptions: layer.conciseDescriptions ?? base.conciseDescriptions,
+    ripgrep: layer.ripgrep ?? base.ripgrep,
+    bash: { ...base.bash, ...layer.bash },
+    search: { ...base.search, ...layer.search },
+    operations: { ...base.operations, ...layer.operations },
+  };
 };
 
 export const withCompletionConditions = (

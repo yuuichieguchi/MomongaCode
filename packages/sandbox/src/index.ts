@@ -13,7 +13,8 @@ export { bubblewrapPresent, childProtectionFor, protectionCommandOf } from './pr
 export type { ChildProtectionInput, ProtectionCommand, ProtectionCommandInput, SandboxSetting } from './protection.ts';
 export { SANDBOX_KILL_GRACE_MS, SANDBOX_STOP_BOUND_MS, SOCKET_FILTER_SLOT } from './process.ts';
 export { SANDBOX_NETWORK_SCOPES } from './types.ts';
-export type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxExit, SandboxNetwork, SandboxPolicy, SandboxedProcess } from './types.ts';
+export { STOP_NOT_CONFIRMED_NOTE } from './types.ts';
+export type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxExit, SandboxNetwork, SandboxPolicy, SandboxedProcess, StopOutcome } from './types.ts';
 export { DEFAULT_BWRAP_PATH, SOCKET_GUARD_CHANNEL_SLOT, bubblewrapCommandOf, bwrapProbeArguments, createBubblewrapSandbox, planProtection, nodeFilesystemPort, planBubblewrap, probeBubblewrap } from './bubblewrap.ts';
 export { createPlaceholderJournal, heldMountPoints, identityOf, isStillThePlaceholder, recoverPlaceholders } from './placeholder-journal.ts';
 export type { PlaceholderIdentity, PlaceholderJournal, PlaceholderRecord, ProcPort, RecoveryPorts, RecoveryResult } from './placeholder-journal.ts';

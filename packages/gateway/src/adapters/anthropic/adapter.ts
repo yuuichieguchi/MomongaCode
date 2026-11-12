@@ -1,11 +1,10 @@
-import { decodeSse } from '@momonga/foundation';
 import { EXACT_ERROR_SHAPE, anthropicVersionSamplingBound, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { ToolChoiceWire, AdapterCompactRequest, AdapterSampling, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, Capabilities, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { carryRefusalOfRender } from '../../core/unsupported-input.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { normalizeInput } from '../../core/input.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
-import { boundedSseBytes, readTextLimited } from '../shared/body-reading.ts';
+import { readTextLimited, upstreamSseEvents } from '../shared/body-reading.ts';
 import { sendAuthorized } from '../shared/auth.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
@@ -18,7 +17,7 @@ import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import { HTTP_TRANSPORT_VOCABULARY } from '../shared/vocabulary.ts';
-import { MAX_SSE_EVENT_BYTES, MAX_UNARY_BODY_BYTES } from '../shared/limits.ts';
+import { MAX_UNARY_BODY_BYTES } from '../shared/limits.ts';
 import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
@@ -78,7 +77,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
 
   async function* readSegment(response: CompletionResponse, watch: ContentWatch, driver: AnthropicStreamDriver, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     try {
-      for await (const message of decodeSse(boundedSseBytes(watch.source(response.body), MAX_SSE_EVENT_BYTES))) {
+      for await (const message of upstreamSseEvents(watch.source(response.body))) {
         ctx.signal.throwIfAborted();
         for (const event of driver.accept(parseAnthropicEvent(message.data))) {
           ctx.signal.throwIfAborted();

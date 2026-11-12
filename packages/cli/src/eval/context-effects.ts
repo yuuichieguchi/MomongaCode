@@ -133,7 +133,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism): 
     },
     makeDirectory: (directory) => ports.files.mkdir(directory),
     canonical: (directory) => ports.files.realpath(directory),
-    refuseUnfitSockets: refuseUnfitGenerationSocketsBeforeCreation,
+    refuseUnfitSockets: async (paths, generation) => refuseUnfitGenerationSocketsBeforeCreation(paths, generation, await ports.endpointScope(paths)),
     startDaemon: async (root, paths, env) => {
       await ensureCurrentDaemon({ ...ports, home: root, env }, paths, { lifeline: true });
     },

@@ -1,5 +1,6 @@
 import type { DecisionKind } from '@momonga/policy';
 import type { PermissionMode, RuleNote, RuleVerdictPhase } from '@momonga/protocol';
+import type { UnixSocketPolicy } from '@momonga/foundation';
 import type { Witness } from './decision-model.ts';
 
 export const PROPERTY_IDS = ['deny-precedence', 'secret-reach', 'rule-consistency', 'bash-admission', 'superseded-forms', 'mandate-holds'] as const;
@@ -51,6 +52,7 @@ export type VerificationReport = {
   mismatches: readonly ModelMismatch[];
   timings: readonly RuleVerdictPhase[];
   outsideProof: readonly string[];
+  unixSockets: UnixSocketPolicy;
   exitCode: 0 | 1;
 };
 

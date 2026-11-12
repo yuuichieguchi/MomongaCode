@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, firstOfferedEndpointForm, loadUserSettings, registeredServer, requireOfferedEndpointForm } from '@momonga/config';
-import { endpointFormsOfSocket, generationLayout, pipePathFor } from '@momonga/foundation';
-import { instanceSocketOf } from '@momonga/gateway';
+import { endpointFormsOfSocket, generationLayout } from '@momonga/foundation';
+import type { EndpointScope } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { makeHome, modelsOf, writeSettings } from '../gateway-process-helpers.ts';
@@ -20,11 +20,13 @@ const declaring = (endpoint: Record<string, unknown> | undefined) => ({
   ),
 });
 
+const PIPES: EndpointScope = { form: 'pipe', token: '0123456789abcdef0123456789abcdef' };
+
 describe('the endpoint forms of a managed server are data (design-update 18.2.6, 20.59)', () => {
   it('offers the form of the host socket flavour: unix for a filesystem path, pipe for a named pipe', () => {
     expect(endpointFormsOfSocket(generationLayout(HOME, 1, 'darwin').sockets.gateway)).toEqual(['unix']);
     expect(endpointFormsOfSocket(generationLayout(HOME, 1, 'linux').sockets.gateway)).toEqual(['unix']);
-    expect(endpointFormsOfSocket(generationLayout(WIN_HOME, 1, 'win32').sockets.gateway)).toEqual(['pipe']);
+    expect(endpointFormsOfSocket(generationLayout(WIN_HOME, 1, 'win32', PIPES).sockets.gateway)).toEqual(['pipe']);
   });
 
   it('uses the first form of the description that the host offers', () => {
@@ -39,13 +41,6 @@ describe('the endpoint forms of a managed server are data (design-update 18.2.6,
       'models.connections[0]: the server "loom" cannot be used on win32: it accepts only the socket forms [unix], and win32 offers [pipe]',
     );
     expect(() => requireOfferedEndpointForm(accepting(['unix', 'pipe']), { platform: 'linux', forms: [] }, 'models.connections[0]')).toThrow('it accepts only the socket forms [unix, pipe], and linux offers []');
-  });
-
-  it('places a pipe instance at pipePathFor(home, g<N>-managed-<stem>) and leaves a unix instance at its socket file', () => {
-    const unixSocket = path.join(HOME, '.momonga', 'run', 'g2', 'targets', 'apple-1.sock');
-    expect(instanceSocketOf('pipe', unixSocket, HOME, 2)).toBe(pipePathFor(HOME, 'g2-managed-apple-1'));
-    expect(instanceSocketOf('pipe', path.join(HOME, '.momonga', 'run', 'g2', 'targets', '_probe-apple.sock'), HOME, 2)).toBe(pipePathFor(HOME, 'g2-managed-_probe-apple'));
-    expect(instanceSocketOf('unix', unixSocket, HOME, 2)).toBe(unixSocket);
   });
 });
 

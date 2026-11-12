@@ -1,4 +1,4 @@
-import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, decodeSse, parseOutsideJson, parseRetryAfter } from '@momonga/foundation';
+import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, parseOutsideJson, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsClient, UdsResponse } from '@momonga/foundation';
 import {
   COMPACTION_RESULT_EVENT,
@@ -504,7 +504,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
 
   const compactFromStream = async (guard: Guard, response: UdsResponse): Promise<CompactResource> => {
     let resource: CompactResource | undefined;
-    for await (const frame of decodeSse(timedChunksOf(guard, response))) {
+    for await (const frame of decodeSse(timedChunksOf(guard, response), { maxEventBytes: SSE_EVENT_MAX_BYTES })) {
       const data = parsedReply(frame.data, 'a compact stream frame');
       if (frame.event === COMPACTION_RESULT_EVENT) {
         if (!isRecord(data)) throw invalidResponse('the compact reply is not an object');
@@ -539,7 +539,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       if (!isEventStream(response)) {
         throw transportError('unexpected_content_type', `expected text/event-stream but received "${response.headers['content-type'] ?? ''}"`);
       }
-      for await (const frame of decodeSse(timedChunksOf(guard, response))) {
+      for await (const frame of decodeSse(timedChunksOf(guard, response), { maxEventBytes: SSE_EVENT_MAX_BYTES })) {
         const event = parsedReply(frame.data, 'a stream frame');
         if (!isStreamEvent(event)) throw invalidResponse('a stream event has no string type');
         if (event.type === 'error' && event.status !== undefined) throw errorFromEvent(event);

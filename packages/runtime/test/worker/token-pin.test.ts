@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defaultToolsSettings } from '@momonga/config';
 import type { ResolvedContextSettings, ResolvedToolsSettings } from '@momonga/config';
 import type { RunEvent } from '@momonga/protocol';
 import type { Run, Session } from '@momonga/store';
@@ -11,7 +12,7 @@ import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 
 const OFF_CONTEXT: ResolvedContextSettings = { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false };
-const OFF_TOOLS: ResolvedToolsSettings = { deferral: false, conciseDescriptions: false, ripgrep: 'bundled' };
+const OFF_TOOLS: ResolvedToolsSettings = { ...defaultToolsSettings(), deferral: false, conciseDescriptions: false };
 
 const settingsOf = (context: ResolvedContextSettings, tools: ResolvedToolsSettings) => ({
   context: async () => context,
@@ -37,7 +38,7 @@ describe('the token pin of a root run', () => {
 
   it('pins each setting that is on', async () => {
     const context: ResolvedContextSettings = { ...OFF_CONTEXT, cachePrefix: true, outputFormatters: ['log', 'grep'], loopGuidance: true, observedCapacity: true };
-    const pin = await tokenPinFor({ signal: new AbortController().signal, store: storeWith([]), settings: settingsOf(context, { deferral: false, conciseDescriptions: true, ripgrep: 'bundled' }), session: SESSION, run: rootRun });
+    const pin = await tokenPinFor({ signal: new AbortController().signal, store: storeWith([]), settings: settingsOf(context, { ...defaultToolsSettings(), deferral: false, conciseDescriptions: true }), session: SESSION, run: rootRun });
     expect(pin).toEqual({ cachePrefix: true, conciseDescriptions: true, outputFormatters: ['log', 'grep'], loopGuidance: true, observedCapacity: true });
   });
 
@@ -52,7 +53,7 @@ describe('the token pin of a child run', () => {
     const parentPin: TokenPin = { cachePrefix: true, deferred: ['WebFetch'], outputFormatters: ['json'], observedCapacity: true };
     const store = storeWith([started({ ...BASE_PINS, token: parentPin })]);
     const context: ResolvedContextSettings = { ...OFF_CONTEXT, loopGuidance: true };
-    expect(await tokenPinFor({ signal: new AbortController().signal, store, settings: settingsOf(context, { deferral: true, conciseDescriptions: true, ripgrep: 'bundled' }), session: SESSION, run: childRun })).toEqual(parentPin);
+    expect(await tokenPinFor({ signal: new AbortController().signal, store, settings: settingsOf(context, { ...defaultToolsSettings(), deferral: true, conciseDescriptions: true }), session: SESSION, run: childRun })).toEqual(parentPin);
   });
 
   it('inherits an all-off pin from a parent that recorded none', async () => {

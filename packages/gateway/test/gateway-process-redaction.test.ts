@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, decodeSse, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -125,7 +125,7 @@ const sseFramesOf = async (client: UdsClient, payload: unknown): Promise<string[
   });
   expect(response.status).toBe(200);
   const frames: string[] = [];
-  for await (const frame of decodeSse(response.body)) frames.push(frame.data);
+  for await (const frame of decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES })) frames.push(frame.data);
   return frames;
 };
 

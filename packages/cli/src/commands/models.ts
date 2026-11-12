@@ -837,7 +837,7 @@ export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, progr
     paths,
     lock: locks.mechanism,
     inspector: layoutProcessInspector(locks.capability),
-    instance: cliProbeInstance(paths, program.id),
+    instance: await cliProbeInstance(ports, paths, description, program.id),
     description,
     target: program.id,
     binary: 'builtIn' in program ? description.binary.defaultPath : program.command,

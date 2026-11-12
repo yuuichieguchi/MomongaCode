@@ -1,6 +1,6 @@
 import type { PermissionRule } from '@momonga/config';
-import { verdictKey } from '@momonga/foundation';
-import type { RuleEnforcement } from '@momonga/foundation';
+import { unixSocketPolicyOf, verdictKey } from '@momonga/foundation';
+import type { RuleEnforcement, UnixSocketPolicy } from '@momonga/foundation';
 import { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, isFinalRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from '@momonga/protocol';
 import type { PinnedRuleVerdict, RuleVerdict, RunEventPayload, RunState } from '@momonga/protocol';
 import type { RunError } from '@momonga/store';
@@ -14,7 +14,7 @@ import type { WorkerOptions } from './types.ts';
 
 export type RuleVerdictSources = { options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier'>; control: Pick<ClaimControl, 'signal' | 'recordingRaised' | 'fail'> };
 
-export type RuleSetFacts = { rules: readonly PermissionRule[]; roots: readonly string[]; exemptDirectory: string; enforcement: RuleEnforcement };
+export type RuleSetFacts = { rules: readonly PermissionRule[]; roots: readonly string[]; exemptDirectory: string; enforcement: RuleEnforcement; unixSockets: UnixSocketPolicy };
 
 export const runRulesFor = async (
   options: Parameters<typeof permissionRulesFor>[0],
@@ -40,7 +40,7 @@ const NOT_NEEDED = { verdict: 'not-needed', refuted: [], unknown: [], notProved:
 export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, session: HeldSession, facts: RuleSetFacts): Promise<PinnedRuleVerdict> => {
   const verifier: RuleVerifierPort = options.ruleVerifier;
   const input = await verifier.inputOf(
-    { rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, exemptDirectory: facts.exemptDirectory, enforcement: facts.enforcement },
+    { rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, exemptDirectory: facts.exemptDirectory, enforcement: facts.enforcement, unixSockets: facts.unixSockets },
     control.signal,
   );
   const solver = await verifier.solverVersion();
@@ -83,7 +83,7 @@ export const ruleVerdictAtStart = async (sources: StartVerdictSources, session: 
   try {
     const rules = await runRulesFor(options, session, sources.delegation, control.signal);
     const policy = await options.tools.policyFor(session, { env: sources.env, rules, readableDirectories: sources.readableDirectories, ruleEnforcement: held.ruleEnforcement, signal: control.signal, discoverGitConfig: true });
-    return await ruleVerdictFor(sources, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement });
+    return await ruleVerdictFor(sources, session, { rules, roots: policy.roots, exemptDirectory: policy.tmpDir, enforcement: held.ruleEnforcement, unixSockets: unixSocketPolicyOf(held.sandbox.kind, policy.sandboxPolicy.unixSocketAllow ?? []) });
   } finally {
     held.done();
   }
@@ -101,6 +101,7 @@ const noticeLevelOf = (verdict: PinnedRuleVerdict): 'info' | 'warning' | 'error'
 
 export const laterVerdictNotice = (state: Pick<RunState, 'notes'>, pinnedFingerprint: string | undefined, verdict: PinnedRuleVerdict): RunEventPayload[] => {
   if (verdict.fingerprint === pinnedFingerprint) return [];
-  if (state.notes.some((note) => note.code === POLICY_VERDICT_NOTICE_CODE && note.message.includes(verdict.fingerprint))) return [];
-  return [{ type: 'notice', level: noticeLevelOf(verdict), code: POLICY_VERDICT_NOTICE_CODE, message: policyVerdictNotice(verdict) }];
+  const message = policyVerdictNotice(verdict);
+  if (state.notes.some((note) => note.code === POLICY_VERDICT_NOTICE_CODE && note.message === message)) return [];
+  return [{ type: 'notice', level: noticeLevelOf(verdict), code: POLICY_VERDICT_NOTICE_CODE, message }];
 };

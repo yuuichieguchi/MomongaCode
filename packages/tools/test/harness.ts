@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, nodeFileSystem, resolveCanonicalPath, sha256Hex, systemRandom, truncationMarker, validateUntrusted, momongaLayout } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
-import { unconfiguredNetworkOf, FAKE_LEASE, createFakeKernelLock, driveFakeTime, fakePolicyFilesystem, hostFilesystemOf, testPaths, testProcessInspector } from '@momonga/testkit';
+import { TEST_TOOL_LIMITS, unconfiguredNetworkOf, FAKE_LEASE, createFakeKernelLock, driveFakeTime, fakePolicyFilesystem, hostFilesystemOf, testPaths, testProcessInspector } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { approvalDescriptionOf, createHostRipgrepLocator, createToolExecutor, subjectDigestOf, createToolRegistry, defineTool, nodeShellHost, schemaIdentity } from '@momonga/tools';
@@ -162,6 +162,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
       ),
     ),
     toolSet,
+    limits: TEST_TOOL_LIMITS,
     fence: { runId: 'run-1', workerId: 'w1', leaseToken: 1 },
     runId: 'run-1',
     step: 1,

@@ -1,5 +1,6 @@
 import type { EventEmitter } from 'node:events';
 import type { Readable } from 'node:stream';
+import type { MarkerMode } from '@momonga/foundation';
 import type { JobView } from '@momonga/protocol';
 import type { SandboxedProcess } from '@momonga/sandbox';
 
@@ -84,6 +85,19 @@ export type BackgroundJobStart = {
   spawn(markerFile: string, signal: AbortSignal, markerFd?: number): SandboxedProcess | Promise<SandboxedProcess>;
 };
 
+export type AdoptedOutput = { seen: Uint8Array; follow(sink: (chunk: Buffer) => void): Promise<void> };
+
+export type BackgroundJobAdopt = {
+  runId: string;
+  callKey: string;
+  callId: string;
+  command: string;
+  timeoutMs: number;
+  process: SandboxedProcess;
+  marker: { file: string; mode: MarkerMode };
+  output: AdoptedOutput;
+};
+
 export type BackgroundJobRead = { job: JobView; output: string };
 
 export type BackgroundJobKill = { view: JobView; kill: 'stopped' | 'requested' };
@@ -99,6 +113,7 @@ export type LineFilter = (lines: readonly string[]) => Promise<readonly string[]
 
 export type BackgroundJobs = {
   start(request: BackgroundJobStart): Promise<{ jobId: string }>;
+  adopt(request: BackgroundJobAdopt): Promise<{ jobId: string }>;
   byCall(callKey: string): JobView | undefined;
   status(runId: string, jobId: string): JobView;
   read(runId: string, jobId: string, options: { call: string; keep?: LineFilter }): Promise<BackgroundJobRead>;

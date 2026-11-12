@@ -26,6 +26,8 @@ import type { GenerationLayout, GenerationStartFiles, KernelLockMechanism, Momon
 import type { FakeKernelLock } from '@momonga/testkit';
 import { createFakeKernelLock, prepareGenerationForTest, registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
 
+const UNIX_ENDPOINTS = { form: 'unix' } as const;
+
 const FOLD_VERSION = 1;
 
 type StartRecord = { version: string; foldVersion: number };
@@ -61,7 +63,7 @@ const publish = async (home: string, paths: Paths, generation: number, version: 
   publishCurrentGeneration(paths, { generation, version, sockets: generationLayout(home, generation).sockets }, { lock: testKernelLock() });
 
 const start = (paths: Paths, lock: KernelLockMechanism, version = '1.2.3', extra: Partial<Parameters<typeof beginGenerationStart>[1]> = {}): Promise<StartOutcome> =>
-  beginGenerationStart(paths, { version, foldVersion: FOLD_VERSION, lock, ...extra });
+  beginGenerationStart(paths, { version, foldVersion: FOLD_VERSION, lock, scope: UNIX_ENDPOINTS, ...extra });
 
 describe('the generation layout of the start flow (15.1, 15.2, 15.8)', () => {
   it('keeps the counter at run/generation.counter beside run/generation.lock', (context) => {

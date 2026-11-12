@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import type { EntryIo, MomongaPaths } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { memoryAdd } from '../src/commands/memory.ts';
@@ -13,7 +14,7 @@ const program = () => {
   const entry = async (): Promise<number> => 0;
   return buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }),
+    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }, testKernelLock()),
     entries: { supervise: entry, gateway: entry, runtime: entry },
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

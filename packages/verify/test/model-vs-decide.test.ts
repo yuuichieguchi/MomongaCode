@@ -161,7 +161,7 @@ describe('the model agrees with the decision code', () => {
       const fileSystem = makeFs();
       const roots = [layout.project];
       const rules = rulesOf(layout, specs, makeFs === caseInsensitiveFs ? 'user' : 'project');
-      const context = await buildQueryContext(z3.engine().api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
+      const context = await buildQueryContext(z3.engine().api, { unixSockets: { kind: 'limited', allowed: [] }, deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
         rules,
         roots,
         mode,

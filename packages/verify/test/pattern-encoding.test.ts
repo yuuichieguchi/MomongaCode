@@ -56,7 +56,7 @@ const modelMatches = async (layout: Layout, specifier: string, fileSystem: Polic
   const [base] = rulesOf(layout, [['deny', `Read(${specifier})`]], 'user');
   const rule = { ...(base as NonNullable<typeof base>), ...(exceptions.length > 0 ? { exceptions } : {}) };
   const roots = [layout.project];
-  const context = await buildQueryContext(z3.engine().api, { deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
+  const context = await buildQueryContext(z3.engine().api, { unixSockets: { kind: 'limited', allowed: [] }, deniedLocations: testSecretLocations(layout.home), signal: NEVER_CANCELLED,
     rules: [rule],
     roots,
     mode: 'manual',
