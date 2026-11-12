@@ -40,6 +40,7 @@ const prepareWrite = async (input: WriteInput, ctx: PreconditionContext): Promis
 
 export const writeTool = defineTool<WriteInput>({
   name: 'Write',
+  companionOf: 'Read',
   description:
     'Writes a file, creating missing parent directories. file_path may be absolute or relative; a relative path is resolved against the working directory. An existing file must have been read with Read first and must be unchanged since. Replaces the whole file; prefer Edit for partial changes.',
   conciseDescription:
