@@ -6,7 +6,7 @@ import { CORE_SETTING_KEYS } from '@momonga/config';
 import { POLICY_OVERLAY_SCHEMA } from '../packages/eval/src/context-policy.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+const REFERENCE = fs.readFileSync(path.join(ROOT, 'docs/reference.md'), 'utf8');
 const REGISTER = fs.readFileSync(path.join(ROOT, 'packages/cli/src/commands/register.ts'), 'utf8');
 
 type SchemaNode = { type?: string; properties?: Record<string, SchemaNode> };
@@ -33,8 +33,8 @@ describe('the documents name every core key (design core-on 3.5, test 10)', () =
     expect(leavesOf(POLICY_OVERLAY_SCHEMA as unknown as SchemaNode, '').sort()).toEqual([...CORE_SETTING_KEYS].sort());
   });
 
-  it('names every core key in the README settings table, and no row of a core key says it is off by default', () => {
-    const rows = tableRowsOf(README);
+  it('names every core key in the settings table of the reference, and no row of a core key says it is off by default', () => {
+    const rows = tableRowsOf(REFERENCE);
     const missing = CORE_SETTING_KEYS.filter((key: string) => !rows.some((row) => row.includes(`\`${key}\``)));
     const saysOff = rows.filter((row) => CORE_SETTING_KEYS.some((key: string) => row.includes(`\`${key}\``)) && /default `false`|off by default/i.test(row));
     expect(missing).toEqual([]);
