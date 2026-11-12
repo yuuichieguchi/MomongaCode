@@ -15,14 +15,14 @@ import { pinnedFailureFor, taskOf } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
 import { offeredInBody } from './tool-offer.ts';
 import type { OfferedInBody } from './tool-offer.ts';
-import { hasHeld, heldLinkOf, heldOutput, heldVerdictOf, quiesce } from './held-calls.ts';
+import { REJECTED_OUTPUT, hasHeld, heldLinkOf, heldOutput, heldVerdictOf, quiesce } from './held-calls.ts';
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
 import { laterVerdictNotice, policyRefusal, ruleVerdictFor, runRulesFor } from './rule-verdict.ts';
 import type { HeldSandbox } from './held-sandbox.ts';
 
-export const REJECTED_OUTPUT = 'The user rejected this tool call.';
+export { REJECTED_OUTPUT } from './held-calls.ts';
 
 export const REJECTED_AGAIN_OUTPUT = 'A person rejected this same call earlier in this run, so it was not run and not asked about again. Do not repeat it unchanged.';
 

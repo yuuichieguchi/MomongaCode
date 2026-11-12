@@ -179,6 +179,7 @@ export {
   storedModelRef,
   typedModelText,
   withDefaultTag,
+  sessionModelNotConfiguredText,
 } from './model-ref.ts';
 export type { ModelRefErrorCode, ModelView, ModelViews, StoredModelRef, TypedModelText, TypedResolution } from './model-ref.ts';
 export {

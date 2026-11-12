@@ -3,13 +3,13 @@ import type { RunMemory } from './claim-context.ts';
 import type { ClaimControl } from './claim-control.ts';
 import { runClaim } from './claim-runner.ts';
 import type { ClaimHost } from './claim-runner.ts';
+import { TERMINAL_STATUSES } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import { describeError } from './errors.ts';
 import { reportError } from './report.ts';
 import type { Worker, WorkerErrorContext, WorkerOptions } from './types.ts';
 
 const DEFAULT_IDLE_POLL_MS = 250;
-const TERMINAL_STATUSES: readonly string[] = ['COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED'];
 
 export const createWorker = (options: WorkerOptions): Worker => {
   const idlePollMs = options.idlePollMs ?? DEFAULT_IDLE_POLL_MS;
@@ -123,7 +123,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
     const now = options.clock.now();
     for (const [runId, memory] of memories) {
       const status = options.store.getRun(runId)?.status;
-      if (memory.deadlineAt <= now || status === undefined || TERMINAL_STATUSES.includes(status)) memories.delete(runId);
+      if (memory.deadlineAt <= now || status === undefined || TERMINAL_STATUSES.some((terminal) => terminal === status)) memories.delete(runId);
     }
   };
 
