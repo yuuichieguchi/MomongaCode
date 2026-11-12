@@ -247,3 +247,22 @@ describe('the newest tool whose output has hidden lines (P-186)', () => {
     expect(reads).toBe(0);
   });
 });
+
+describe('a withdrawn stream (model.stream.restarted)', () => {
+  const restarted = (itemIds: string[]) => ({ type: 'model.stream.restarted', step: 1, attempt: 0, itemIds });
+  const answer = (itemId: string, text: string) => ({ type: 'agent.message.delta', attempt: 0, itemId, text });
+  const thought = (itemId: string, text: string) => ({ type: 'agent.thought.delta', attempt: 0, itemId, text });
+
+  it('drops the half answer and the half thought it withdraws, and shows the second stream alone', () => {
+    const events = [thought('t1', 'half thinking'), answer('a1', 'half answer'), restarted(['t1', 'a1']), thought('t1', 'full thinking'), answer('a1', 'full answer')];
+    const entries = apply(events).entries;
+    expect(entries.filter((entry) => entry.kind === 'assistant').map((entry) => entry.kind === 'assistant' && entry.text)).toEqual(['full answer']);
+    expect(entries.filter((entry) => entry.kind === 'thought').map((entry) => entry.kind === 'thought' && entry.text)).toEqual(['full thinking']);
+  });
+
+  it('gives the same transcript when it is rebuilt from the same events', () => {
+    const events = [answer('a1', 'half'), restarted(['a1']), answer('a2', 'whole')];
+    expect(apply(events)).toEqual(apply(events));
+    expect(apply(events).entries.filter((entry) => entry.kind === 'assistant')).toHaveLength(1);
+  });
+});

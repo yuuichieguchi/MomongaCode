@@ -217,6 +217,15 @@ const retirePlan = (store: TranscriptStore, replacement: Entry): void => {
 
 const planText = (entries: readonly PlanEntry[]): string => entries.map((item) => `${item.status === 'completed' ? '[x]' : '[ ]'} ${item.content}`).join('\n');
 
+const withdraw = (store: TranscriptStore, key: string): void => {
+  if (store.byKey(key) === undefined) return;
+  store.change(key, () => ({ kind: 'retired' }));
+  store.forget(key);
+  if (store.open() === key) store.setOpen(undefined);
+  const { openThought, newestThought } = store.state();
+  if (openThought === key || newestThought === key) store.update({ ...(openThought === key ? { openThought: undefined } : {}), ...(newestThought === key ? { newestThought: undefined } : {}) });
+};
+
 const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
   const state = store.state();
   switch (event.type) {
@@ -245,6 +254,9 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       store.setOpen(key);
       return;
     }
+    case 'model.stream.restarted':
+      for (const itemId of event.itemIds) for (const key of [itemKey(itemId), thoughtKey(itemId)]) withdraw(store, key);
+      return;
     case 'tool.call':
       closeThought(store, event.createdAt);
       appendEntry(
