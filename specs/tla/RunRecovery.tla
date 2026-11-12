@@ -258,7 +258,7 @@ Reaped(k) ==
 
 LedgerFenced(w) == UnfencedEffect \/ Fence(w)
 
-LedgerPcs == {"begin", "authorise", "complete", "reconDone", "spawnExec"}
+LedgerPcs == {"begin", "authorise", "complete", "reconDone", "spawnExec", "verifyStart"}
 
 StaleLedger(w) ==
     /\ pc[w] \in LedgerPcs
@@ -296,14 +296,20 @@ YieldTx(w, to) ==
                 refund == to = "WAITING_TOOL"
             IN Change(S, r, target, <<>>, refund, TRUE)
 
-Leave(w, to) ==
-    /\ UNCHANGED <<serving, genLock, childGen, ownerDead, idem, idemRes, eff, dl, child, flags>>
+CheckAlive(r) ==
+    \E s \in Steps : Responded(r, s) /\ RespKind(r, s) = "none" /\ child[<<r, s>>]
+
+LeaveAs(w, to, stopConfirmed) ==
+    /\ UNCHANGED <<serving, genLock, childGen, ownerDead, idem, idemRes, eff, dl, child>>
+    /\ flags' = [flags EXCEPT !.cancelLeftCheck = @ \/ (stopConfirmed /\ Fence(w) /\ run[wr[w]].status = "CANCELLING" /\ CheckAlive(wr[w]))]
     /\ ToIdle(w)
     /\ \/ /\ Fence(w)
           /\ run[wr[w]].status = "CANCELLING" \/ to \in WorkerEdges[run[wr[w]].status]
           /\ SetStore(FinishTx(w, to))
        \/ /\ ~Fence(w)
           /\ KeepStore
+
+Leave(w, to) == LeaveAs(w, to, TRUE)
 
 LeaveYield(w, to) ==
     /\ UNCHANGED <<serving, genLock, childGen, ownerDead, idem, idemRes, eff, dl, child, flags>>
@@ -364,7 +370,7 @@ Init ==
     /\ genLock = [g \in Gens |-> g = 1]
     /\ childGen = [k \in Keys |-> 1]
     /\ ownerDead = [k \in Keys |-> FALSE]
-    /\ flags = [stale |-> FALSE, reissue |-> FALSE, retryUnknown |-> FALSE, killed |-> {}, reapedLive |-> FALSE]
+    /\ flags = [stale |-> FALSE, reissue |-> FALSE, retryUnknown |-> FALSE, killed |-> {}, reapedLive |-> FALSE, checkOverlap |-> FALSE, cancelLeftCheck |-> FALSE]
     /\ vstate \in RuleVerdicts
     /\ vref \in RefusingProps
     /\ stored = "none"
@@ -548,8 +554,72 @@ Decide(w) ==
            s == wstep[w]
            kind == RespKind(r, s)
        IN IF kind = "none"
-          THEN Leave(w, "COMPLETED")
+          THEN PcOnly(w, "verifyLock")
           ELSE AppendStep(w, <<E("tool.call", s, kind, "")>>, "settle")
+
+VerifyLock(w) ==
+    /\ pc[w] = "verifyLock"
+    /\ ~lost[w]
+    /\ NoCallLock \/ ~Held(KeyOf(w))
+    /\ wlock' = [wlock EXCEPT ![w] = ~NoCallLock]
+    /\ Goto(w, "verifyReap")
+    /\ UNCHANGED <<serving, genLock, childGen, ownerDead, run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+
+VerifyReap(w) ==
+    /\ pc[w] = "verifyReap"
+    /\ ~lost[w]
+    /\ \/ /\ child' = Reaped(KeyOf(w))
+          /\ flags' = [flags EXCEPT !.reapedLive = @ \/ (child[KeyOf(w)] /\ ~ownerDead[KeyOf(w)] /\ ~NoReapBeforeReconcile)]
+          /\ Goto(w, "verifyStart")
+          /\ UNCHANGED <<serving, genLock, childGen, ownerDead, run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep>>
+       \/ LeaveAs(w, "FAILED", FALSE)
+
+VerifyStart(w) ==
+    /\ pc[w] = "verifyStart"
+    /\ ~lost[w]
+    /\ LedgerFenced(w)
+    /\ child' = [child EXCEPT ![KeyOf(w)] = TRUE]
+    /\ childGen' = [childGen EXCEPT ![KeyOf(w)] = GenOfW(w)]
+    /\ ownerDead' = [ownerDead EXCEPT ![KeyOf(w)] = FALSE]
+    /\ flags' = [flags EXCEPT !.checkOverlap = @ \/ child[KeyOf(w)]]
+    /\ Goto(w, "verifyRun")
+    /\ UNCHANGED <<serving, genLock, run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep>>
+
+VerifyCancel(w) ==
+    /\ pc[w] \in {"verifyLock", "verifyReap", "verifyStart"}
+    /\ ~lost[w]
+    /\ wcancel[w]
+    /\ wlock' = [wlock EXCEPT ![w] = FALSE]
+    /\ Goto(w, "cancelRec")
+    /\ UNCHANGED <<serving, genLock, childGen, ownerDead, run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+
+VerifyKill(w) ==
+    /\ pc[w] = "verifyRun"
+    /\ ~lost[w]
+    /\ (wcancel[w] \/ dl[wr[w]])
+    /\ child' = [child EXCEPT ![KeyOf(w)] = FALSE]
+    /\ Goto(w, "verifyAbort")
+    /\ UNCHANGED <<serving, genLock, childGen, ownerDead, run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
+
+VerifyAbort(w) ==
+    /\ pc[w] = "verifyAbort"
+    /\ IF wcancel[w] THEN Leave(w, "CANCELLED") ELSE Leave(w, "STOPPED")
+
+VerifyDone(w) ==
+    /\ pc[w] = "verifyRun"
+    /\ ~lost[w]
+    /\ ~child[KeyOf(w)]
+    /\ \/ Leave(w, "COMPLETED")
+       \/ Leave(w, "STOPPED")
+       \/ /\ UNCHANGED <<serving, genLock, childGen, ownerDead, idem, idemRes, eff, dl, child, flags>>
+          /\ \/ /\ Fence(w)
+                /\ SetStore(AppendEvs(Snap, wr[w], <<E("user.message", 0, "", "")>>))
+                /\ Goto(w, "loop")
+                /\ wlock' = [wlock EXCEPT ![w] = FALSE]
+                /\ UNCHANGED <<wr, wt, ws, lost, wcancel, wresp, wretry, wstep>>
+             \/ /\ ~Fence(w)
+                /\ KeepStore
+                /\ ToIdle(w)
 
 Settle(w) ==
     /\ pc[w] = "settle"
@@ -611,9 +681,9 @@ LockCall(w) ==
     /\ UNCHANGED <<serving, genLock, childGen, ownerDead, run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
 
 LockWaitExpired(w) ==
-    /\ pc[w] \in {"lock", "reconLock"}
+    /\ pc[w] \in {"lock", "reconLock", "verifyLock"}
     /\ ~NoCallLock /\ Held(KeyOf(w))
-    /\ Leave(w, "FAILED")
+    /\ LeaveAs(w, "FAILED", FALSE)
 
 Authorise(w) ==
     /\ pc[w] = "authorise"
@@ -694,7 +764,7 @@ Reap(w) ==
           /\ flags' = [flags EXCEPT !.reapedLive = @ \/ (child[KeyOf(w)] /\ ~ownerDead[KeyOf(w)] /\ ~NoReapBeforeReconcile)]
           /\ Goto(w, "reconcile")
           /\ UNCHANGED <<serving, genLock, childGen, ownerDead, run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep>>
-       \/ Leave(w, "FAILED")
+       \/ LeaveAs(w, "FAILED", FALSE)
 
 Reconcile(w) ==
     /\ pc[w] = "reconcile"
@@ -780,7 +850,7 @@ CancelRec(w) ==
            kind == RespKind(r, s)
            open == s > 0 /\ Has(r, "tool.started", s) /\ ~CallDone(r, s)
        IN \/ /\ ~open
-             /\ PcOnly(w, "cancelFinish")
+             /\ PcOnly(w, "cancelReap")
           \/ /\ open /\ idem[k] = "COMPLETED"
              /\ PcOnly(w, "cancelJournal")
           \/ /\ open /\ idem[k] = "UNKNOWN"
@@ -810,6 +880,20 @@ CancelRec(w) ==
              /\ Goto(w, "cancelJournal")
              /\ UNCHANGED <<serving, genLock, childGen, ownerDead, run, ev, appr, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep>>
 
+CancelReap(w) ==
+    /\ pc[w] = "cancelReap"
+    /\ ~lost[w]
+    /\ LET r == wr[w]
+           s == CurStep(r)
+           isCheck == s > 0 /\ Responded(r, s) /\ RespKind(r, s) = "none"
+       IN IF isCheck
+          THEN /\ NoCallLock \/ ~Held(<<r, s>>)
+               /\ child' = [child EXCEPT ![<<r, s>>] = IF NoReapBeforeReconcile THEN @ ELSE FALSE]
+               /\ Goto(w, "cancelFinish")
+          ELSE /\ Goto(w, "cancelFinish")
+               /\ UNCHANGED child
+    /\ UNCHANGED <<serving, genLock, childGen, ownerDead, run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
+
 CancelJournal(w) ==
     /\ pc[w] = "cancelJournal"
     /\ AppendStep(w, <<OutcomeEvent(wr[w], wstep[w])>>, "cancelFinish")
@@ -822,6 +906,8 @@ Step(w) ==
     \/ Begin(w) \/ ExecStart(w) \/ LockCall(w) \/ LockWaitExpired(w) \/ Authorise(w)
     \/ DoEffect(w) \/ Complete(w) \/ JournalOut(w)
     \/ ReconLock(w) \/ Reap(w) \/ Reconcile(w) \/ ReconDone(w) \/ SpawnExec(w) \/ WaitAppend(w)
+    \/ VerifyLock(w) \/ VerifyReap(w) \/ VerifyStart(w) \/ VerifyCancel(w) \/ VerifyKill(w)
+    \/ VerifyAbort(w) \/ VerifyDone(w) \/ CancelReap(w)
     \/ CancelRec(w) \/ CancelJournal(w) \/ CancelFinish(w) \/ StaleLedger(w)
     \/ RetireYield(w) \/ AbortDone(w) \/ UnknownGate(w)
 
@@ -901,7 +987,8 @@ RuleVerify(w, from, next) ==
        IN /\ stored' = IF v # "unknown" THEN v ELSE stored
           /\ vflags' = [vflags EXCEPT !.refutedRan = @ \/ (~refuse /\ v = "refuted" /\ vref),
                                       !.noteRefused = @ \/ (refuse /\ ~(v = "refuted" /\ vref))]
-          /\ IF refuse THEN Leave(w, "FAILED") ELSE PcOnly(w, next)
+          /\ IF refuse /\ run[wr[w]].cancelReq THEN PcOnly(w, "cancelRec")
+             ELSE IF refuse THEN Leave(w, "FAILED") ELSE PcOnly(w, next)
     /\ UNCHANGED <<vstate, vref>>
 
 RuleVerifyStart(w) == RuleVerify(w, "ruleVerify", "started")
@@ -942,6 +1029,7 @@ WorkerStep(w) == KeepVerdict(Step(w)) \/ VerdictStep(w)
 
 Fairness ==
     /\ \A w \in Workers : WF_vars(KeepVerdict(Claim(w))) /\ WF_vars(KeepVerdict(ClaimNone(w))) /\ WF_vars(WorkerStep(w)) /\ WF_vars(KeepVerdict(HB(w))) /\ WF_vars(KeepVerdict(Abort(w)))
+    /\ \A k \in Keys : WF_vars(KeepVerdict(ChildExit(k)))
     /\ \A r \in Runs : WF_vars(KeepVerdict(ExpireDead(r))) /\ WF_vars(KeepVerdict(SweepQueued(r)))
                        /\ WF_vars(KeepVerdict(SweepHuman(r))) /\ WF_vars(KeepVerdict(SweepTool(r))) /\ WF_vars(KeepVerdict(FinishCancelled(r)))
 
@@ -1024,6 +1112,12 @@ LockIsExclusive ==
     \A w, x \in Workers : (w # x /\ wlock[w] /\ wlock[x]) => KeyOf(w) # KeyOf(x)
 
 UnknownNeverRetried == ~flags.retryUnknown
+
+ExclusiveCheck == ~flags.checkOverlap
+
+VerifyStartSeesStoppedCheck == \A w \in Workers : pc[w] = "verifyStart" => ~child[KeyOf(w)]
+
+CancelReapsCheck == ~flags.cancelLeftCheck
 
 KilledExecIsUnknown == \A k \in flags.killed : idem[k] = "COMPLETED" => idemRes[k] = "unknown"
 

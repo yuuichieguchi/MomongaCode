@@ -411,6 +411,23 @@ describe('verification.required', () => {
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
   });
 
+  it('does not complete a mandate run whose only change is a held call that ran late, after its approval: the late call is a mutation the gate counts', async () => {
+    const env = await makeEnv();
+    const file = path.join(env.project, 'late.txt');
+    env.gateway.script.push(callsStep([{ callId: 'call_w', name: 'Write', args: { file_path: file, content: 'late' } }]), textStep('Done except the write.'));
+    const run = await env.enqueue('Write', { mandate: { scope: { allow: ['Bash(ls:*)'], ask: [`Write(/${file})`] } } });
+    await env.runOnce(env.worker('worker-1'));
+    expect(env.ofType(run.id, 'tool.held')).toHaveLength(1);
+    env.gateway.script.push(textStep('All done.'));
+
+    await env.resolveApproval(run.id, 'allow_once');
+    await env.runOnce(env.worker('worker-2'));
+
+    expect(fs.readFileSync(file, 'utf8')).toBe('late');
+    expect(env.fold(run.id).lastMutationSeq).toBeGreaterThan(0);
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
+  });
+
   it('completes a run that wrote without a condition when required is off', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, [], false);
