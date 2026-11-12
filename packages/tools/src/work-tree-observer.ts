@@ -3,7 +3,7 @@ import path from 'node:path';
 import { OPEN_FLAGS, sha256Hex } from '@momonga/foundation';
 import type { FileSystem, ReadHandle } from '@momonga/foundation';
 import type { ToolFile } from '@momonga/protocol';
-import type { ChildPorts } from './ports.ts';
+import type { ChildLaunch, ChildPorts } from './ports.ts';
 
 export type WorkTreeMark = { readonly tree: string; readonly oversized: readonly string[] };
 
@@ -30,6 +30,7 @@ export type WorkTreeObserverPorts = {
   files: Pick<FileSystem, 'stat' | 'lstat' | 'mkdir'>;
   searchPath: string | undefined;
   processId: number;
+  launch: ChildLaunch;
 };
 
 export const OBSERVED_FILE_HASH_PAGE_BYTES = 1024 * 1024;
@@ -50,7 +51,7 @@ let observersCreated = 0;
 type GitRun = (args: readonly string[], signal: AbortSignal) => Promise<Buffer>;
 
 const gitRunOn =
-  (child: Pick<ChildPorts, 'spawn'>, cwd: string, env: Readonly<Record<string, string>>): GitRun =>
+  (child: Pick<ChildPorts, 'spawn'>, launch: ChildLaunch, store: string, cwd: string, env: Readonly<Record<string, string>>): GitRun =>
   (args, signal) =>
     new Promise((resolve, reject) => {
       if (signal.aborted) {
@@ -59,7 +60,8 @@ const gitRunOn =
       }
       const chunks: Buffer[] = [];
       const errors: Buffer[] = [];
-      const started = child.spawn('git', args, { cwd, env, signal });
+      const launched = launch.commandOf(['git', ...args], [store]);
+      const started = child.spawn(launched.file, launched.args, { cwd, env, signal });
       started.stderr?.on('data', (chunk: Buffer) => errors.push(chunk));
       started.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
       started.on('error', (error: Error) => reject(new WorkTreeObservationError(`git ${args[0]} could not run: ${error.message}`)));
@@ -111,7 +113,7 @@ export const workTreeObserverOn = (ports: WorkTreeObserverPorts, { storeRoot, cw
     const workTree = await repositoryRootOf(ports.files, cwd);
     if (workTree === undefined) return undefined;
     const storeDir = observerStoreOf(storeRoot, workTree);
-    const runGit = gitRunOn(ports.child, workTree, {
+    const runGit = gitRunOn(ports.child, ports.launch, storeDir, workTree, {
       ...(ports.searchPath === undefined ? {} : { PATH: ports.searchPath }),
       ...GIT_ENV,
       GIT_DIR: storeDir,

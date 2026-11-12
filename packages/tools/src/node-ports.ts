@@ -7,7 +7,7 @@ import type { ShellHost, ShellPorts } from './builtins/shell.ts';
 import { directoryEntriesOn, fileCandidatesOn } from './file-listing.ts';
 import type { FileListingOptions, FileListingPorts } from './file-listing.ts';
 import { policyFilesystemOn } from './policy-filesystem.ts';
-import type { ChildPorts } from './ports.ts';
+import type { ChildLaunch, ChildPorts } from './ports.ts';
 import { ripgrepLocatorOn } from './ripgrep-locator.ts';
 import type { HostRipgrepLocatorOptions, RipgrepLocator } from './ripgrep-locator.ts';
 import { workTreeObserverOn } from './work-tree-observer.ts';
@@ -33,11 +33,20 @@ export const createPolicyFilesystem = (
 
 export const createHostRipgrepLocator = (options: HostRipgrepLocatorOptions): RipgrepLocator => ripgrepLocatorOn(nodeFileSystem, options);
 
-export const createGitWorkTreeObserver = (options: GitWorkTreeObserverOptions): WorkTreeObserver =>
-  workTreeObserverOn({ child: nodeChildPorts(), files: nodeFileSystem, searchPath: process.env['PATH'], processId: process.pid }, options);
+export const createGitWorkTreeObserver = (options: GitWorkTreeObserverOptions, launch: ChildLaunch): WorkTreeObserver =>
+  workTreeObserverOn({ child: nodeChildPorts(), files: nodeFileSystem, searchPath: process.env['PATH'], processId: process.pid, launch }, options);
 
-const hostListing = (): FileListingPorts => ({ child: nodeChildPorts(), files: nodeFileSystem });
+const hostListing = (launch: ChildLaunch): FileListingPorts => ({ child: nodeChildPorts(), files: nodeFileSystem, launch });
 
-export const listFileCandidates = (options: FileListingOptions): Promise<FileCandidates> => fileCandidatesOn(hostListing(), options);
+export const listFileCandidates = (options: FileListingOptions, launch: ChildLaunch): Promise<FileCandidates> => fileCandidatesOn(hostListing(launch), options);
 
-export const listDirectoryEntries = (options: FileListingOptions): Promise<string[]> => directoryEntriesOn(hostListing(), options);
+export const listDirectoryEntries = (options: FileListingOptions, launch: ChildLaunch): Promise<string[]> => directoryEntriesOn(hostListing(launch), options);
+
+export const unprotectedLaunch = (reason: string): ChildLaunch => ({
+  protection: { kind: 'unprotected', reason },
+  commandOf: (argv) => {
+    const [file, ...args] = argv;
+    if (file === undefined) throw new Error('argv must not be empty');
+    return { file, args };
+  },
+});
