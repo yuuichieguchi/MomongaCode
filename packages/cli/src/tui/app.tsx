@@ -2,7 +2,7 @@ import { askTrustItems } from './project-items.ts';
 import { askProjectCheck } from './project-check.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
-import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
+import { DEFAULT_PERMISSION_MODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
 import type { ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -230,7 +230,7 @@ export function App(props: AppProps) {
   ]);
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
   const [editor, setEditor] = useState<EditorState>(emptyEditor());
-  const [mode, setModeState] = useState<PermissionMode>(props.initialMode ?? 'manual');
+  const [mode, setModeState] = useState<PermissionMode>(props.initialMode ?? DEFAULT_PERMISSION_MODE);
   const [bypassAllowed, setBypassAllowed] = useState(false);
   const [autoAvailable, setAutoAvailable] = useState(false);
   const [busy, setBusy] = useState(false);

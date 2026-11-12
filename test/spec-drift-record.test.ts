@@ -37,10 +37,21 @@ describe('RunRecord.tla against the implementation', () => {
     expect(stringsIn(definitionOf('ClaimSt')).sort()).toEqual([...CLAIM_STATUSES].sort());
   });
 
+  const modelEdges = (): Array<readonly [string, string]> => [...definitionOf('DeclaredEdges').matchAll(/<<"(\w+)", "(\w+)">>/g)].map((match) => [match[1] as string, match[2] as string] as const);
+
+  const collapse = (status: string): string => (WAITING_STATUSES.includes(status) ? 'WAITING' : status);
+
+  const codeEdges = (): Array<readonly [string, string]> =>
+    tables.flatMap((table) => Object.entries(table).flatMap(([from, targets]) => targets.map((to) => [collapse(from), collapse(to)] as const)));
+
   it('takes only status edges that a transition table of the store declares', () => {
-    const pairs = [...definitionOf('DeclaredEdges').matchAll(/<<"(\w+)", "(\w+)">>/g)].map((match) => [match[1] as string, match[2] as string] as const);
-    expect(pairs.length).toBeGreaterThan(0);
-    expect(pairs.filter(([from, to]) => !inSomeTable(from, to))).toEqual([]);
+    expect(modelEdges().length).toBeGreaterThan(0);
+    expect(modelEdges().filter(([from, to]) => !inSomeTable(from, to))).toEqual([]);
+  });
+
+  it('declares in the transition tables of the store only status edges the model takes', () => {
+    const declared = new Set(modelEdges().map(([from, to]) => `${from}->${to}`));
+    expect([...new Set(codeEdges().map(([from, to]) => `${from}->${to}`))].filter((edge) => !declared.has(edge)).sort()).toEqual([]);
   });
 
   it('maps every event kind of the model to a protocol event type', () => {

@@ -264,6 +264,8 @@ export {
   startDeadlineSignal,
   SHUTDOWN_SETTING_LIMITS,
   MCP_CONNECT_TIMEOUT_LIMITS,
+  MCP_TOOL_IDLE_TIMEOUT_MS,
+  MCP_TOOL_TOTAL_TIMEOUT_MS,
   mcpConnectTimeoutProblem,
   STOP_MESSAGE_MAX_BYTES,
   STOP_VALUE_NAMES,
@@ -439,7 +441,7 @@ export type {
 export { createNodeKeeperHost, hostCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
 export type { KeeperPreparation } from './platform/windows-keeper-host.ts';
 export { CONTROL_PLANE_LAUNCH } from './child-protection.ts';
-export type { ChildProtection, LaunchProtection } from './child-protection.ts';
+export type { ChildLaunch, ChildProtection, LaunchProtection } from './child-protection.ts';
 export { unixSocketPolicyOf } from './unix-socket-policy.ts';
 export type { UnixSocketPolicy } from './unix-socket-policy.ts';
 export { signalsOf } from './platform/signals.ts';

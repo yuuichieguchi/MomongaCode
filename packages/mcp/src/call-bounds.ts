@@ -1,10 +1,8 @@
+export { MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS } from '@momonga/foundation';
+
 export type McpTransportKind = 'stdio' | 'network';
 
-export const MCP_TOOL_IDLE_TIMEOUT_MS: Readonly<Record<McpTransportKind, number>> = { network: 5 * 60 * 1000, stdio: 30 * 60 * 1000 };
-
 export const MCP_IDLE_SETTING_KEYS: Readonly<Record<McpTransportKind, string>> = { network: 'mcp.toolIdleTimeoutNetworkMs', stdio: 'mcp.toolIdleTimeoutStdioMs' };
-
-export const MCP_TOOL_TOTAL_TIMEOUT_MS = 100_000_000;
 
 const UNITS: ReadonlyArray<readonly [ms: number, singular: string, plural: string]> = [
   [60 * 60 * 1000, 'hour', 'hours'],

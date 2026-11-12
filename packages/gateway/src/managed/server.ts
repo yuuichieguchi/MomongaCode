@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, settledOrAborted, startSharedCall } from '@momonga/foundation';
-import type { GenerationRole, ProcessLock, SharedCall, UdsClient, ProcessInspector, KernelLockMechanism } from '@momonga/foundation';
+import type { ChildLaunch, ChildProtection, GenerationRole, ProcessLock, SharedCall, UdsClient, ProcessInspector, KernelLockMechanism } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER, WORDS, messageOf } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
@@ -19,7 +19,7 @@ export interface ManagedChild {
   once(event: 'error', listener: (error: Error) => void): unknown;
 }
 
-export type SpawnFn = (file: string, args: readonly string[]) => Promise<ManagedChild>;
+export type SpawnFn = (file: string, args: readonly string[], protection: ChildProtection) => Promise<ManagedChild>;
 
 export interface ManagedServerTimers {
   setTimeout(callback: () => void, ms: number): unknown;
@@ -40,6 +40,7 @@ export type ManagedServerOptions = {
   readyTimeoutMs: number;
   env?: ChildEnv;
   exec?: ExecFn;
+  launch: ChildLaunch;
   spawn?: SpawnFn;
   timers: ManagedServerTimers;
   readStopGraceMs: () => number;
@@ -275,8 +276,13 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     }
   };
 
+  const spawnLaunched = (): Promise<ManagedChild> => {
+    const command = options.launch.commandOf([options.binary, ...argv], isPipePath(options.socketPath) ? [] : [path.dirname(options.socketPath)]);
+    return spawn(command.file, command.args, options.launch.protection);
+  };
+
   const launch = async (): Promise<RunningChild> => {
-    const managed: RunningChild = { process: await spawn(options.binary, argv), exited: false, error: undefined, exitWaiters: [], terminating: undefined };
+    const managed: RunningChild = { process: await spawnLaunched(), exited: false, error: undefined, exitWaiters: [], terminating: undefined };
     current = managed;
     managed.process.once('exit', () => onChildEnd(managed, undefined));
     managed.process.once('error', (error) => onChildEnd(managed, error));

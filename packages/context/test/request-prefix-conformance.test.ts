@@ -8,13 +8,14 @@ import type { InputItem } from '@momonga/protocol';
 import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, protectionRungsOf, shapeOf } from '../src/levels.ts';
 import { MODEL, argsCall, assistant, capabilitiesFor, fakeBlobs, fakeReader, inputFor, output, seeded, shapeCounter, sourcesWith, user } from './helpers.ts';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { cfgNames, type CfgNames } from '../../../test/formal/cfg-names.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const specsDir = path.resolve(import.meta.dirname, '..', '..', '..', 'specs', 'tla');
 const specText = fs.readFileSync(path.join(specsDir, 'RequestPrefix.tla'), 'utf8');
-const mainConfig = fs.readFileSync(path.join(specsDir, 'RequestPrefix.cfg'), 'utf8');
-const groupsConfig = fs.readFileSync(path.join(specsDir, 'RequestPrefix.groups.cfg'), 'utf8');
+const mainConfig = cfgNames(specsDir, 'RequestPrefix');
+const groupsConfig = cfgNames(specsDir, 'RequestPrefix.groups');
 
 const CASES = 60;
 const CAPABILITIES = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
@@ -121,19 +122,7 @@ const violations: Record<string, (seen: Observed) => string[]> = {
   },
 };
 
-const checkedIn = (config: string): string[] => {
-  const names: string[] = [];
-  let section: string | undefined;
-  for (const line of config.split('\n')) {
-    if (/^(INVARIANTS?|PROPERTIES|PROPERTY)\b/.test(line)) {
-      section = 'x';
-      continue;
-    }
-    if (/^\S/.test(line)) section = undefined;
-    if (section !== undefined && line.trim() !== '') names.push(line.trim());
-  }
-  return names;
-};
+const checkedIn = (config: CfgNames): string[] => [...config.invariants, ...config.properties];
 
 const runAll = async (): Promise<{ found: string[]; omittedBuilds: number; referenceBuilds: number; partialBuilds: number }> => {
   const found: string[] = [];

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createManagedServer } from '@momonga/gateway';
 import type { ManagedServer } from '@momonga/gateway';
 import { createGroupSpawn } from '../src/managed/fm-processes.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, LSOF_PATH, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, LSOF_PATH, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { REAL_FM_STOP_GRACE_MS, registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, isAlive, makeHome, pause, until } from './gateway-process-helpers.ts';
 import { FM_SERVER } from '@momonga/protocol';
@@ -53,6 +53,7 @@ const NO_RESTART_FM = { ...FM_SERVER, restart: { ...FM_SERVER.restart, backoffMs
 const serveOptions = (context: Setup, onWarning: ServeOptions['onWarning']): ServeOptions => ({
   timers: systemTiming,
   inspector: testProcessInspector(),
+  launch: TEST_UNPROTECTED_LAUNCH,
   lock: testKernelLock(),
   description: NO_RESTART_FM,
   target: 'fm',
@@ -71,6 +72,7 @@ const makeServe = (context: Setup, overrides: Partial<ServeOptions> = {}): Manag
   const warnings: string[] = [];
   const serve = createManagedServer({
     inspector: testProcessInspector(),
+    launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: FM_SERVER,
     target: 'fm',
@@ -253,7 +255,7 @@ describe('finalize of a spawned fm group', () => {
       "fs.writeFileSync(process.argv[1], 'ready\\n');",
       SLEEPER,
     ].join(' ');
-    const child = await createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: (message) => warnings.push(message) })(process.execPath, ['-e', source, readyFile]);
+    const child = await createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: (message) => warnings.push(message) })(process.execPath, ['-e', source, readyFile], TEST_UNPROTECTED_LAUNCH.protection);
     const [marker] = fs.readdirSync(markers);
     await until(() => fs.readFileSync(path.join(markers, marker ?? ''), 'utf8').includes('\ng'), 'the group line');
     const pid = (await readMarkerGroup(path.join(markers, marker ?? ''))) ?? 0;

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { probeManagedFm, startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerOwned, testProcessInspector, testLocks, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerOwned, testProcessInspector, testLocks, testKernelLock, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { onCleanup, writeUserSettings } from './helpers.ts';
 import { GATEWAY_VERSION, launchRuntime, makeRunHome, prepareGeneration, readDb, sessionEnvFor, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -41,6 +41,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   await probeManagedFm({
     timers: systemTiming,
     inspector: testProcessInspector(),
+    launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     platform: process.platform,
     paths: temp.paths,

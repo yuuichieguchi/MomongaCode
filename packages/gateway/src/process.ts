@@ -87,7 +87,7 @@ import type {
   StopValues,
   TextStream, EndpointScope } from '@momonga/foundation';
 import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, layoutProcessInspector, nodeFileSystem, outboundFetch, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
-import type { KernelLockMechanism, LayoutLocks, ProcessInspector } from '@momonga/foundation';
+import type { ChildLaunch, KernelLockMechanism, LayoutLocks, ProcessInspector } from '@momonga/foundation';
 import {
   definePriceTable,
   createTelemetry,
@@ -95,6 +95,7 @@ import {
   openTraceStore,
   pageBilledCalls,
   pageRunBodies,
+  pageRunSpans,
 } from '@momonga/observability';
 import type { PriceTable, Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, DialectId, HealthResult, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
@@ -145,6 +146,7 @@ import { invalidRequest, missingApiKeyError, secretUnavailableError } from './co
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { PreconditionFailedError } from './adapters/shared/failures.ts';
 import { createManagedServer } from './managed/server.ts';
+import { managedLaunchOf } from './managed-launch.ts';
 import type { ManagedServer, ManagedServerTimers, SpawnFn } from './managed/server.ts';
 import type { ExecFn } from './managed/preconditions.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
@@ -453,6 +455,7 @@ type ManagedAdapterWiring = {
   keySignal: AbortSignal;
   incarnation: number;
   userDialects: UserDialects;
+  launch: ChildLaunch;
   spawn?: SpawnFn;
   onWarning: (message: string) => void;
 };
@@ -494,6 +497,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     },
     onChildExit: () => managed?.childExited(),
     role: wiring.role,
+    launch: wiring.launch,
     ...spawnPort,
   });
   const measure = measureManagedServer({
@@ -514,6 +518,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     readStopGraceMs: wiring.readStopGraceMs,
     onWarning: wiring.onWarning,
     model: target.model,
+    launch: wiring.launch,
     ...spawnPort,
   });
   const subject = managedProbeSubject({
@@ -938,6 +943,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const endpointScope = await step('endpoint-scope', () => endpointScopeOf(paths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock }));
   const own = generationLayout(options.home, options.generation, platform, endpointScope);
   const inspector = layoutProcessInspector(options.locks.capability);
+  const managedLaunch = await step('managed-launch', () => managedLaunchOf({ home: options.home, platform, env: options.env, isUsableBinary: files.isUsableBinary }));
   const lock = await step('lock', () => (options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, { mechanism: kernelLock })))(own.locks.gateway));
   const cleanups: Array<(values: StopValues | undefined) => void | Promise<void>> = [() => lock.release()];
   const lifetime = new AbortController();
@@ -1324,6 +1330,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               incarnation: nextIncarnation(target.provider),
               generation: options.generation,
               userDialects,
+              launch: managedLaunch,
               onWarning: (message) => logger.warn(message),
               ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
             });
@@ -1548,6 +1555,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       traceContent: async (runId, after, limit, requestSignal) => {
         await flushTelemetry(requestSignal);
         return pageRunBodies(traceStore, runId, after, limit);
+      },
+      traceSpans: async (runId, after, limit, requestSignal) => {
+        await flushTelemetry(requestSignal);
+        return pageRunSpans(traceStore, runId, after, limit);
       },
       retentionPurge: async (runIds, cutoffMs, requestSignal) => {
         await flushTelemetry(requestSignal);

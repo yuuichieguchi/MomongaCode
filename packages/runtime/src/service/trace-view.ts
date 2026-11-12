@@ -1,13 +1,21 @@
-import { summarizeRun } from '@momonga/observability';
-import type { TraceStore } from '@momonga/observability';
+import { summarizeSpans } from '@momonga/observability';
+import type { SpanRecord, TraceStore } from '@momonga/observability';
 import type { RunTraceView } from '@momonga/protocol';
+import type { GatewayClient } from '../gateway-client.ts';
 
-export const runTraceOf = (store: TraceStore, runId: string): RunTraceView | undefined => {
-  const spans = store.spansForRun(runId);
+export type RunSpanSources = {
+  local: Pick<TraceStore, 'spansForRun'>;
+  gateway: Pick<GatewayClient, 'runSpans'>;
+};
+
+const byTime = (left: SpanRecord, right: SpanRecord): number => left.startMs - right.startMs || right.endMs - left.endMs;
+
+export const runTraceOf = async (sources: RunSpanSources, runId: string, signal: AbortSignal): Promise<RunTraceView | undefined> => {
+  const spans = [...sources.local.spansForRun(runId), ...(await sources.gateway.runSpans(runId, signal))].sort(byTime);
   if (spans.length === 0) return undefined;
   return {
     runId,
-    summary: summarizeRun(store, runId),
+    summary: summarizeSpans(spans),
     spans: spans.map((span) => ({
       traceId: span.traceId,
       spanId: span.spanId,

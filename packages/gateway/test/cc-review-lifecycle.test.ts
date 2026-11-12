@@ -6,7 +6,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createChatCompletionsAdapter, createManagedServer, createGateway, createManagedTarget, unauthenticatedSource } from '@momonga/gateway';
 import type { ExecResult, ManagedServer, ManagedServerTimers, ProviderAdapter } from '@momonga/gateway';
-import { createFakeClock, createFakeTimers, createScriptedAdapter, startFakeChatCompletions, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createScriptedAdapter, startFakeChatCompletions, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway, stateDbPath } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, TARGET } from './cc-support.ts';
@@ -72,6 +72,7 @@ const managedFm = async () => {
   const warnings: string[] = [];
   const fmServe: ManagedServer = createManagedServer({
     inspector: testProcessInspector(),
+    launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: FM_SERVER,
     target: 'scripted/system',

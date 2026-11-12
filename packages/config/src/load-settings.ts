@@ -31,7 +31,8 @@ import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_SUBJECT, checkRuleText, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { escapePointerSegment } from './json-file.ts';
-import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
+import { assertSettings } from './settings.ts';
+import { DEFAULT_AUTO_UPDATES, DEFAULT_PLAINTEXT_TOKEN_FILES, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
 import type { HookGroups, McpServerApproval, ProjectApprovalsSettings, ProjectChecksSettings, RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, IssuesSettings, OperationsSettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
@@ -235,7 +236,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
   const merged: ResolvedSettings = {
     permissions: { allow: [], ask: [], deny: [], additionalDirectories: [] },
     env: {},
-    credentials: { env: [], keep: [], valuePatterns: [], plaintextTokenFiles: false },
+    credentials: { env: [], keep: [], valuePatterns: [], plaintextTokenFiles: DEFAULT_PLAINTEXT_TOKEN_FILES },
     hooks: {},
     pendingHooks: [],
     enabledMcpjsonServers: [],
@@ -243,7 +244,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     mcpServers: {},
     mcp: {},
     models,
-    autoUpdates: true,
+    autoUpdates: DEFAULT_AUTO_UPDATES,
     update: { stallTimeoutMs: DEFAULT_UPDATE_STALL_TIMEOUT_MS },
     tui: defaultTuiSettings(),
     gateway: { closeGraceMs: DEFAULT_STOP_VALUES.closeGraceMs, managedServerStopGraceMs: DEFAULT_STOP_VALUES.managedServerStopGraceMs },

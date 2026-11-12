@@ -36,7 +36,7 @@ export type YieldArmReport = {
   costPerSuccess?: number;
   uncachedInputPerSuccess?: number;
   callsPerSuccess?: number;
-  memoryStaleRate: QualityCell;
+  memoryStaleRate?: QualityCell;
   fabricationRate: QualityCell;
 };
 
@@ -66,7 +66,7 @@ export type YieldArmMetrics = {
   costPerSuccess?: RatioMetric;
   uncachedInputPerSuccess?: RatioMetric;
   callsPerSuccess?: RatioMetric;
-  memoryStaleRate: QualityCell;
+  memoryStaleRate?: QualityCell;
   fabricationRate: QualityCell;
 };
 
@@ -99,7 +99,7 @@ const sumCells = (cells: readonly QualityCell[]): QualityCell => ({
   denominator: cells.reduce((sum, cell) => sum + cell.denominator, 0),
 });
 
-const armReportOf = (family: YieldFamily, transcript: Transcript): YieldArmReport => {
+const armReportOf = (family: YieldFamily, transcript: Transcript, arm: YieldArm): YieldArmReport => {
   const runs = [transcript.events, ...transcript.children.map((child) => child.events)];
   const passed = transcript.stopped === undefined && grade(family.reuse.graders, transcript).passed;
   const tokens = caseTotalsOf([tokenFactsOf(runs, { state: 'none' })]);
@@ -114,7 +114,7 @@ const armReportOf = (family: YieldFamily, transcript: Transcript): YieldArmRepor
     ...(passed && tokens.cost !== undefined ? { costPerSuccess: tokens.cost } : {}),
     ...(passed && uncached !== undefined ? { uncachedInputPerSuccess: uncached } : {}),
     ...(passed ? { callsPerSuccess: tokens.calls } : {}),
-    memoryStaleRate: { numerator: recalled.stale, denominator: recalled.recalled },
+    ...(arm === 'with' ? { memoryStaleRate: { numerator: recalled.stale, denominator: recalled.recalled } } : {}),
     fabricationRate: sumCells(compactions.map((facts) => ({ numerator: facts.fabricatedSummaries, denominator: facts.modelSummaries }))),
   };
 };
@@ -151,7 +151,7 @@ const recallOf = (run: YieldFamilyRun): Pick<YieldFamilyReport, 'recalledAccepte
 type Unsaved = Omit<YieldFamilyReport, 'saving' | 'breakEvenReuses'>;
 
 const familyOf = (family: YieldFamily, run: YieldFamilyRun): Unsaved => {
-  const without = armReportOf(family, run.without);
+  const without = armReportOf(family, run.without, 'without');
   return {
     id: family.id,
     learn: {
@@ -162,7 +162,7 @@ const familyOf = (family: YieldFamily, run: YieldFamilyRun): Unsaved => {
       accepted: run.accepted.length,
       rejected: run.candidates.length - run.accepted.length,
     },
-    reuse: { without, with: run.with === undefined ? without : armReportOf(family, run.with.transcript) },
+    reuse: { without, with: run.with === undefined ? without : armReportOf(family, run.with.transcript, 'with') },
     nothingAccepted: run.with === undefined,
     ...recallOf(run),
   };
@@ -181,7 +181,7 @@ const armMetricsOf = (families: readonly Unsaved[], arm: YieldArm, seed: number)
     ...(costPerSuccess === undefined ? {} : { costPerSuccess }),
     ...(uncachedInputPerSuccess === undefined ? {} : { uncachedInputPerSuccess }),
     ...(callsPerSuccess === undefined ? {} : { callsPerSuccess }),
-    memoryStaleRate: sumCells(arms.map((entry) => entry.memoryStaleRate)),
+    ...(arm === 'with' ? { memoryStaleRate: sumCells(arms.flatMap((entry) => (entry.memoryStaleRate === undefined ? [] : [entry.memoryStaleRate]))) } : {}),
     fabricationRate: sumCells(arms.map((entry) => entry.fabricationRate)),
   };
 };
@@ -283,7 +283,20 @@ const realModelCheck = (report: YieldReport): YieldCheck => {
 
 const rateOf = (cell: QualityCell): number => (cell.denominator === 0 ? 0 : cell.numerator / cell.denominator);
 
-const noWorseCheck = (name: 'memoryStaleRate' | 'fabricationRate', what: string, report: YieldReport, seed: number): YieldCheck => {
+const staleCheck = (report: YieldReport, seed: number): YieldCheck => {
+  const name = 'memoryStaleRate';
+  const rates = report.families.flatMap((family) => {
+    const cell = family.reuse.with.memoryStaleRate;
+    return cell === undefined || cell.denominator === 0 ? [] : [cell.numerator / cell.denominator];
+  });
+  if (rates.length < MINIMUM_PAIRS) {
+    return { name, passed: false, detail: `${NO_MEASURE}: the with arm recalled a memory in ${rates.length} of ${report.families.length} families, so the stale share of recalled memories is measured in ${rates.length}, and ${MINIMUM_PAIRS} are needed for a real interval` };
+  }
+  const interval = pairedBootstrap(rates, { seed });
+  return { name, passed: !(interval.low > 0), detail: `stale share of the memories the with arm recalled ${describeInterval(interval, 3)}; it fails only when the whole interval lies above 0` };
+};
+
+const noWorseCheck = (name: 'fabricationRate', what: string, report: YieldReport, seed: number): YieldCheck => {
   const differences = report.families.map((family) => rateOf(family.reuse.with[name]) - rateOf(family.reuse.without[name]));
   if (differences.length < MINIMUM_PAIRS) {
     return { name, passed: false, detail: `${NO_MEASURE}: ${differences.length} families measure ${name}, and ${MINIMUM_PAIRS} are needed for a real interval` };
@@ -314,7 +327,7 @@ export const judgeYield = (report: YieldReport, options: { seed: number }): Yiel
     realModelCheck(report),
     passRateCheck(pairCount, passRate, ARM_WORDS),
     primaryCheck(pairCount, primaryOf(report, seed), ARM_WORDS),
-    noWorseCheck('memoryStaleRate', 'no recalled memory', report, seed),
+    staleCheck(report, seed),
     noWorseCheck('fabricationRate', 'no summary the model produced', report, seed),
     measuredPairsCheck(report),
   ];
@@ -327,7 +340,7 @@ const numberOr = (value: number | undefined, digits: number): string => (value =
 
 const armLine = (report: YieldReport, arm: YieldArm): string => {
   const metrics = report.metrics[arm];
-  return `${arm}: pass rate ${describeProportion(metrics.passRate)}, ${report.primaryMetric} ${numberOr(metrics[report.primaryMetric]?.value, digitsOf(report.primaryMetric))}, callsPerSuccess ${numberOr(metrics.callsPerSuccess?.value, 3)}, stale recalled memories ${metrics.memoryStaleRate.numerator}/${metrics.memoryStaleRate.denominator}, fabricated summaries ${metrics.fabricationRate.numerator}/${metrics.fabricationRate.denominator}`;
+  return `${arm}: pass rate ${describeProportion(metrics.passRate)}, ${report.primaryMetric} ${numberOr(metrics[report.primaryMetric]?.value, digitsOf(report.primaryMetric))}, callsPerSuccess ${numberOr(metrics.callsPerSuccess?.value, 3)}, ${metrics.memoryStaleRate === undefined ? '' : `stale recalled memories ${metrics.memoryStaleRate.numerator}/${metrics.memoryStaleRate.denominator}, `}fabricated summaries ${metrics.fabricationRate.numerator}/${metrics.fabricationRate.denominator}`;
 };
 
 const familyLine = (report: YieldReport, family: YieldFamilyReport): string => {

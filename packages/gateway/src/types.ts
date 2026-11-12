@@ -4,7 +4,7 @@ import type { PlanApi } from './plan/api.ts';
 import type { GatewayEpochs } from './core/services.ts';
 import type { ReasoningOriginCodec } from './core/reasoning-origin.ts';
 import type { Redactor } from './core/redaction.ts';
-import type { BilledCallsCursorView, BilledCallsPageView, MomongaModelRoles, PlanAccountRef, ProviderAdapter, TargetAnswers, TargetBilling, TraceContentPage } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, MomongaModelRoles, PlanAccountRef, ProviderAdapter, TargetAnswers, TargetBilling, RunSpansPage, TraceContentPage } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
   kind: string;
@@ -72,6 +72,7 @@ export type GatewayCommonOptions = {
   lock: KernelLockMechanism;
   billedCalls?: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>;
   traceContent?: (runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>;
+  traceSpans?: (runId: string, after: number, limit: number, signal: AbortSignal) => Promise<RunSpansPage>;
   retentionPurge?: (runIds: readonly string[], cutoffMs: number, signal: AbortSignal) => Promise<void>;
   debugTcp?: DebugTcpOptions;
   random: () => number;

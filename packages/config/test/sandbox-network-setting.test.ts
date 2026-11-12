@@ -5,7 +5,7 @@ import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSetting
 describe('sandboxNetwork setting', () => {
   it('is declared in the settings schema as deny, ask or allow', () => {
     const properties = SETTINGS_SCHEMA.properties as Record<string, unknown>;
-    expect(properties['sandboxNetwork']).toEqual({ enum: ['deny', 'ask', 'allow'] });
+    expect(properties['sandboxNetwork']).toEqual({ enum: ['deny', 'ask', 'allow'], default: 'ask' });
   });
 
   it('defaults to ask', async () => {

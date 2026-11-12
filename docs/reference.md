@@ -639,177 +639,183 @@ momonga [options] [prompt]
 
 The layer column names the settings files that may set the key: the user file `~/.momonga/settings.json`, the project file `.momonga/settings.json` of a trusted folder, and the local file of the folder. A key that a project or local file sets outside its layer is discarded with a warning. `<name>` stands for a name you choose and `[]` for each entry of a list.
 
-| Key | Value | Layer |
-| --- | --- | --- |
-| `permissions` | object | user, project, local |
-| `permissions.defaultMode` | `"manual"` or `"acceptEdits"` or `"plan"` or `"auto"` or `"bypassPermissions"` | user, project, local (`bypassPermissions` and `auto`: user only) |
-| `permissions.allow` | array of string | user, project, local |
-| `permissions.ask` | array of string | user, project, local |
-| `permissions.deny` | array of string | user, project, local |
-| `permissions.additionalDirectories` | array of string | user, project, local |
-| `env` | map of string | user, project, local (project and local: only `NODE_ENV`, `RUST_LOG`, `RUST_BACKTRACE`, `LOG_LEVEL`, `DEBUG`, `TZ`, `LANG`, `LANGUAGE`, `CI`, `FORCE_COLOR`, `NO_COLOR`, `TERM` and `LC_*`) |
-| `credentials` | object | user |
-| `credentials.env` | array of string (not empty) | user |
-| `credentials.keep` | array of string (not empty) | user |
-| `credentials.valuePatterns` | array of string (not empty) | user |
-| `credentials.plaintextTokenFiles` | boolean | user |
-| `hooks` | map of array of object | user, project, local |
-| `autoMode` | object | user |
-| `autoMode.classifier` | string (not empty) | user |
-| `enabledMcpjsonServers` | array of string or object | user, project, local |
-| `disabledMcpjsonServers` | array of string | user, project, local |
-| `enableAllProjectMcpServers` | boolean | user, project, local |
-| `mcpServers` | map of object or object | user |
-| `mcp` | object | user |
-| `mcp.toolIdleTimeoutNetworkMs` | integer (at least 0) | user |
-| `mcp.toolIdleTimeoutStdioMs` | integer (at least 0) | user |
-| `mcp.toolTotalTimeoutMs` | integer (at least 1) | user |
-| `mcp.closeGraceMs` | integer (at least 0, at most 30000) | user |
-| `mcp.connectTimeoutMs` | integer (at least 1, at most 3600000) | user |
-| `models` | object | user |
-| `models.connections` | array of object or object or object or object or any value or any value or object | user |
-| `models.start` | string (not empty) | user |
-| `models.fallback` | array of string (not empty) | user |
-| `models.servers` | map of object | user |
-| `models.servers.<name>.command` | string (not empty) | user |
-| `models.servers.<name>.args` | array of string | user |
-| `models.servers.<name>.readyPath` | string | user |
-| `models.servers.<name>.endpoint` | object | user |
-| `models.servers.<name>.endpoint.forms` | array of `"unix"` or `"pipe"` (at least 1 entry) | user |
-| `models.dialects` | map of object | user |
-| `models.dialects.<name>.extends` | any value | user |
-| `models.dialects.<name>.rules` | array of any value | user |
-| `models.dialects.<name>.strictPerTool` | boolean | user |
-| `models.headersTimeoutMs` | integer (at least 1) | user |
-| `models.idleTimeoutMs` | integer (at least 1) | user |
-| `models.billingChanges` | array of object | user |
-| `models.billingChanges[].from` | `"metered"` or `"local"` or `"plan"` | user |
-| `models.billingChanges[].to` | `"metered"` or `"local"` or `"plan"` | user |
-| `models.billingChanges[].model` | string (not empty) | user |
-| `models.roles` | object | user |
-| `models.roles.compaction` | string (not empty) | user |
-| `models.roles.reflection` | string (not empty) | user |
-| `models.roles.analysis` | string (not empty) | user |
-| `memory` | object | user, project, local |
-| `memory.reflection` | object | user, project, local |
-| `memory.reflection.enabled` | boolean | user, project, local |
-| `memory.reflection.maxTokens` | integer (at least 16) | user, project, local |
-| `memory.forgetAfterDays` | integer (at least 1) | user, project, local |
-| `memory.repositoryFacts` | boolean | user, project, local |
-| `verification` | object | user, project, local |
-| `verification.commands` | array of string (not empty) | user, project, local |
-| `verification.manifests` | array of string (not empty) | user, project, local |
-| `verification.required` | boolean | user, project, local |
-| `context` | object | user, project, local |
-| `context.adaptiveBudget` | boolean | user, project, local |
-| `context.autoCompact` | boolean | user, project, local |
-| `context.cachePrefix` | boolean | user, project, local |
-| `context.outputFormatters` | array of `"log"` or `"json"` or `"grep"` or `"identicalOutput"` | user, project, local |
-| `context.loopGuidance` | boolean | user, project, local |
-| `context.observedCapacity` | boolean | user, project, local |
-| `context.unboundedOutputReserve` | boolean | user, project, local |
-| `tools` | object | user, project, local |
-| `tools.deferral` | boolean | user, project, local |
-| `tools.conciseDescriptions` | boolean | user, project, local |
-| `tools.ripgrep` | string (not empty) | user |
-| `tools.bash` | object | user, project, local |
-| `tools.bash.defaultTimeoutMs` | integer (at least 1) | user, project, local |
-| `tools.bash.maxTimeoutMs` | integer (at least 1) | user, project, local |
-| `tools.bash.onTimeout` | `"background"` or `"kill"` | user, project, local |
-| `tools.bash.backgroundTimeoutMs` | integer (at least 1) | user, project, local |
-| `tools.bash.maxBackgroundTimeoutMs` | integer (at least 1) | user, project, local |
-| `tools.search` | object | user, project, local |
-| `tools.search.timeoutMs` | integer (at least 1) | user, project, local |
-| `tools.operations` | object | user, project, local |
-| `tools.operations.timeoutMs` | integer (at least 1) | user, project, local |
-| `autoUpdates` | boolean | user |
-| `update` | object | user, project, local |
-| `update.stallTimeoutMs` | integer (at least 1) | user, project, local |
-| `tui` | object | user, project, local |
-| `tui.theme` | `"auto"` or `"dark"` or `"light"` or `"dark-colorblind"` or `"light-colorblind"` | user, project, local |
-| `tui.notify` | `"off"` or `"bell"` | user, project, local |
-| `tui.screenReader` | boolean | user, project, local |
-| `tui.reducedMotion` | boolean | user, project, local |
-| `tui.screen` | `"fullscreen"` or `"scrollback"` | user |
-| `tui.mouse` | boolean | user |
-| `tui.copyOnSelect` | boolean | user |
-| `tui.attachFileMentions` | boolean | user, project, local |
-| `gateway` | object | user |
-| `gateway.closeGraceMs` | integer (at least 0, at most 300000) | user |
-| `gateway.managedServerStopGraceMs` | integer (at least 0, at most 60000) | user |
-| `runtime` | object | user |
-| `runtime.drainTimeoutMs` | integer (at least 0, at most 300000) | user |
-| `network` | object | user |
-| `network.httpProxy` | string (not empty) | user |
-| `network.httpsProxy` | string (not empty) | user |
-| `network.noProxy` | string (not empty) | user |
-| `network.extraCaFiles` | array of string (not empty) | user |
-| `network.environment` | boolean | user |
-| `pricing` | array of object | user |
-| `pricing[].provider` | string | user |
-| `pricing[].model` | string (not empty) | user |
-| `pricing[].effectiveFrom` | string | user |
-| `pricing[].inputPerMTok` | number (at least 0) | user |
-| `pricing[].cachedInputPerMTok` | number (at least 0) | user |
-| `pricing[].cacheWritePerMTok` | number (at least 0) | user |
-| `pricing[].outputPerMTok` | number (at least 0) | user |
-| `pricing[].currency` | `"USD"` | user |
-| `limits` | object | user |
-| `limits.maxCostUsd` | number (at least 0, at most 1000000) | user |
-| `ceilings` | object | user |
-| `ceilings.costUsd` | number (at least 0, at most 1000000) | user |
-| `ceilings.tokens` | integer (at least 1, at most 100000000) | user |
-| `ceilings.timeMs` | integer (at least 1000, at most 604800000) | user |
-| `issues` | object | user |
-| `issues.watch` | array of object | user |
-| `issues.watch[].repository` | string | user |
-| `issues.watch[].folder` | string (not empty) | user |
-| `issues.watch[].forge` | string (not empty) | user |
-| `issues.watch[].labels` | array of string (not empty) | user |
-| `issues.watch[].authorAssociation` | array of `"OWNER"` or `"MEMBER"` or `"COLLABORATOR"` | user |
-| `issues.watch[].mandate` | string (not empty) | user |
-| `mandates` | map of object | user |
-| `mandates.<name>.allow` | array of string (not empty) | user |
-| `mandates.<name>.ask` | array of string (not empty) | user |
-| `mandates.<name>.deny` | array of string (not empty) | user |
-| `mandates.<name>.until` | array of string (not empty) | user |
-| `mandates.<name>.require` | array of string (not empty) | user |
-| `mandates.<name>.steps` | integer (at least 1, at most 1000) | user |
-| `mandates.<name>.tokens` | integer (at least 1, at most 100000000) | user |
-| `mandates.<name>.costUsd` | number (at least 0, at most 1000000) | user |
-| `mandates.<name>.timeMs` | integer (at least 1000, at most 604800000) | user |
-| `mandates.<name>.retries` | integer (at least 1, at most 100) | user |
-| `mandates.<name>.onQuiescent` | `"report"` or `"wait"` | user |
-| `forges` | array of object | user |
-| `forges[].id` | string (not empty) | user |
-| `forges[].descriptor` | string (not empty) | user |
-| `forges[].hosts` | array of string (not empty) (at least 1 entry) | user |
-| `forges[].apiBaseUrl` | string (not empty) | user |
-| `forges[].credential` | object | user |
-| `forges[].credential.env` | string | user |
-| `forges[].credential.secret` | string | user |
-| `operations` | object | user |
-| `operations.protectedRefs` | array of string (not empty) | user |
-| `operations.approval` | map of `"rule"` or `"always"` | user |
-| `sandbox` | `"seatbelt"` or `"bubblewrap"` or `"none"` | user |
-| `sandboxNetwork` | `"deny"` or `"ask"` or `"allow"` | user |
-| `sandboxUnixSockets` | object | user |
-| `sandboxUnixSockets.allow` | array of string (not empty) | user |
-| `telemetry` | object | user |
-| `telemetry.otlp` | object | user |
-| `telemetry.otlp.endpoint` | string | user |
-| `telemetry.otlp.headers` | map of string | user |
-| `telemetry.captureMessageContent` | boolean | user |
-| `projectApprovals` | map of object | user |
-| `projectApprovals.<name>.hooks` | array of string or object | user |
-| `projectApprovals.<name>.mandate` | string or object | user |
-| `projectApprovals.<name>.agents` | array of object | user |
-| `projectApprovals.<name>.agents[].name` | string (not empty) | user |
-| `projectApprovals.<name>.agents[].digest` | string | user |
-| `projectApprovals.<name>.agents[].text` | string | user |
-| `projectChecks` | map of object or object | user |
-| `retention` | object | user |
-| `retention.days` | integer (at least 1, at most 36500) | user |
+| Key | Value | Default | Unit | Layer |
+| --- | --- | --- | --- | --- |
+| `permissions` | object |  |  | user, project, local |
+| `permissions.defaultMode` | `"manual"` or `"acceptEdits"` or `"plan"` or `"auto"` or `"bypassPermissions"` | `"manual"` |  | user, project, local (`bypassPermissions` and `auto`: user only) |
+| `permissions.allow` | array of string |  |  | user, project, local |
+| `permissions.ask` | array of string |  |  | user, project, local |
+| `permissions.deny` | array of string |  |  | user, project, local |
+| `permissions.additionalDirectories` | array of string |  |  | user, project, local |
+| `env` | map of string |  |  | user, project, local (project and local: only `NODE_ENV`, `RUST_LOG`, `RUST_BACKTRACE`, `LOG_LEVEL`, `DEBUG`, `TZ`, `LANG`, `LANGUAGE`, `CI`, `FORCE_COLOR`, `NO_COLOR`, `TERM` and `LC_*`) |
+| `credentials` | object |  |  | user |
+| `credentials.env` | array of string (not empty) |  |  | user |
+| `credentials.keep` | array of string (not empty) |  |  | user |
+| `credentials.valuePatterns` | array of string (not empty) |  |  | user |
+| `credentials.plaintextTokenFiles` | boolean | `false` |  | user |
+| `hooks` | map of array of object |  |  | user, project, local |
+| `hooks.<name>[].matcher` | string |  |  | user, project, local |
+| `hooks.<name>[].hooks` | array of object (at least 1 entry) |  |  | user, project, local |
+| `hooks.<name>[].hooks[].type` | `"command"` |  |  | user, project, local |
+| `hooks.<name>[].hooks[].command` | string (not empty) |  |  | user, project, local |
+| `hooks.<name>[].hooks[].timeout` | integer (at least 1) | `600`; `UserPromptSubmit`: `30` | seconds | user, project, local |
+| `autoMode` | object |  |  | user |
+| `autoMode.classifier` | string (not empty) |  |  | user |
+| `enabledMcpjsonServers` | array of string or object |  |  | user, project, local |
+| `disabledMcpjsonServers` | array of string |  |  | user, project, local |
+| `enableAllProjectMcpServers` | boolean | `false` |  | user, project, local |
+| `mcpServers` | map of object or object |  |  | user |
+| `mcp` | object |  |  | user |
+| `mcp.toolIdleTimeoutNetworkMs` | integer (at least 0) | `300000` | milliseconds | user |
+| `mcp.toolIdleTimeoutStdioMs` | integer (at least 0) | `1800000` | milliseconds | user |
+| `mcp.toolTotalTimeoutMs` | integer (at least 1) | `100000000` | milliseconds | user |
+| `mcp.closeGraceMs` | integer (at least 0, at most 30000) | `1000` | milliseconds | user |
+| `mcp.connectTimeoutMs` | integer (at least 1, at most 3600000) | `30000` | milliseconds | user |
+| `models` | object |  |  | user |
+| `models.connections` | array of object or object or object or object or any value or any value or object |  |  | user |
+| `models.start` | string (not empty) |  |  | user |
+| `models.fallback` | array of string (not empty) |  |  | user |
+| `models.servers` | map of object |  |  | user |
+| `models.servers.<name>.command` | string (not empty) |  |  | user |
+| `models.servers.<name>.args` | array of string |  |  | user |
+| `models.servers.<name>.readyPath` | string |  |  | user |
+| `models.servers.<name>.endpoint` | object |  |  | user |
+| `models.servers.<name>.endpoint.forms` | array of `"unix"` or `"pipe"` (at least 1 entry) |  |  | user |
+| `models.dialects` | map of object |  |  | user |
+| `models.dialects.<name>.extends` | any value |  |  | user |
+| `models.dialects.<name>.rules` | array of any value |  |  | user |
+| `models.dialects.<name>.strictPerTool` | boolean |  |  | user |
+| `models.headersTimeoutMs` | integer (at least 1) | `300000` | milliseconds | user |
+| `models.idleTimeoutMs` | integer (at least 1) | `300000` | milliseconds | user |
+| `models.billingChanges` | array of object |  |  | user |
+| `models.billingChanges[].from` | `"metered"` or `"local"` or `"plan"` |  |  | user |
+| `models.billingChanges[].to` | `"metered"` or `"local"` or `"plan"` |  |  | user |
+| `models.billingChanges[].model` | string (not empty) |  |  | user |
+| `models.roles` | object |  |  | user |
+| `models.roles.compaction` | string (not empty) |  |  | user |
+| `models.roles.reflection` | string (not empty) |  |  | user |
+| `models.roles.analysis` | string (not empty) |  |  | user |
+| `memory` | object |  |  | user, project, local |
+| `memory.reflection` | object |  |  | user, project, local |
+| `memory.reflection.enabled` | boolean | `true` |  | user, project, local |
+| `memory.reflection.maxTokens` | integer (at least 16) |  |  | user, project, local |
+| `memory.forgetAfterDays` | integer (at least 1) | `90` | days | user, project, local |
+| `memory.repositoryFacts` | boolean | `true` |  | user, project, local |
+| `verification` | object |  |  | user, project, local |
+| `verification.commands` | array of string (not empty) | `["npm test","pnpm test","yarn test","cargo test","pytest","go test ./...","swift test","make test"]` |  | user, project, local |
+| `verification.manifests` | array of string (not empty) | `["package.json","pnpm-lock.yaml","Cargo.toml","pyproject.toml","go.mod","Package.swift","Makefile"]` |  | user, project, local |
+| `verification.required` | boolean | `false` |  | user, project, local |
+| `context` | object |  |  | user, project, local |
+| `context.adaptiveBudget` | boolean | `true` |  | user, project, local |
+| `context.autoCompact` | boolean | `true` |  | user, project, local |
+| `context.cachePrefix` | boolean | `true` |  | user, project, local |
+| `context.outputFormatters` | array of `"log"` or `"json"` or `"grep"` or `"identicalOutput"` | `["log","json","grep","identicalOutput"]` |  | user, project, local |
+| `context.loopGuidance` | boolean | `true` |  | user, project, local |
+| `context.observedCapacity` | boolean | `true` |  | user, project, local |
+| `context.unboundedOutputReserve` | boolean | `true` |  | user, project, local |
+| `tools` | object |  |  | user, project, local |
+| `tools.deferral` | boolean | `true` |  | user, project, local |
+| `tools.conciseDescriptions` | boolean | `true` |  | user, project, local |
+| `tools.ripgrep` | string (not empty) | `"bundled"` |  | user |
+| `tools.bash` | object |  |  | user, project, local |
+| `tools.bash.defaultTimeoutMs` | integer (at least 1) | `120000` | milliseconds | user, project, local |
+| `tools.bash.maxTimeoutMs` | integer (at least 1) | `600000` | milliseconds | user, project, local |
+| `tools.bash.onTimeout` | `"background"` or `"kill"` | `"background"` |  | user, project, local |
+| `tools.bash.backgroundTimeoutMs` | integer (at least 1) | `1800000` | milliseconds | user, project, local |
+| `tools.bash.maxBackgroundTimeoutMs` | integer (at least 1) | `7200000` | milliseconds | user, project, local |
+| `tools.bash.drainIdleMs` | integer (at least 1) | `1000` | milliseconds | user, project, local |
+| `tools.search` | object |  |  | user, project, local |
+| `tools.search.timeoutMs` | integer (at least 1) | `60000` | milliseconds | user, project, local |
+| `tools.operations` | object |  |  | user, project, local |
+| `tools.operations.timeoutMs` | integer (at least 1) | `120000` | milliseconds | user, project, local |
+| `autoUpdates` | boolean | `true` |  | user |
+| `update` | object |  |  | user, project, local |
+| `update.stallTimeoutMs` | integer (at least 1) | `30000` | milliseconds | user, project, local |
+| `tui` | object |  |  | user, project, local |
+| `tui.theme` | `"auto"` or `"dark"` or `"light"` or `"dark-colorblind"` or `"light-colorblind"` | `"auto"` |  | user, project, local |
+| `tui.notify` | `"off"` or `"bell"` | `"off"` |  | user, project, local |
+| `tui.screenReader` | boolean | `false` |  | user, project, local |
+| `tui.reducedMotion` | boolean | `false` |  | user, project, local |
+| `tui.screen` | `"fullscreen"` or `"scrollback"` | `"fullscreen"` |  | user |
+| `tui.mouse` | boolean | `true` |  | user |
+| `tui.copyOnSelect` | boolean | `true` |  | user |
+| `tui.attachFileMentions` | boolean | `true` |  | user, project, local |
+| `gateway` | object |  |  | user |
+| `gateway.closeGraceMs` | integer (at least 0, at most 300000) | `10000` | milliseconds | user |
+| `gateway.managedServerStopGraceMs` | integer (at least 0, at most 60000) | `3000` | milliseconds | user |
+| `runtime` | object |  |  | user |
+| `runtime.drainTimeoutMs` | integer (at least 0, at most 300000) | `30000` | milliseconds | user |
+| `network` | object |  |  | user |
+| `network.httpProxy` | string (not empty) |  |  | user |
+| `network.httpsProxy` | string (not empty) |  |  | user |
+| `network.noProxy` | string (not empty) |  |  | user |
+| `network.extraCaFiles` | array of string (not empty) |  |  | user |
+| `network.environment` | boolean | `true` |  | user |
+| `pricing` | array of object |  |  | user |
+| `pricing[].provider` | string |  |  | user |
+| `pricing[].model` | string (not empty) |  |  | user |
+| `pricing[].effectiveFrom` | string |  |  | user |
+| `pricing[].inputPerMTok` | number (at least 0) |  | USD per million tokens | user |
+| `pricing[].cachedInputPerMTok` | number (at least 0) |  | USD per million tokens | user |
+| `pricing[].cacheWritePerMTok` | number (at least 0) |  | USD per million tokens | user |
+| `pricing[].outputPerMTok` | number (at least 0) |  | USD per million tokens | user |
+| `pricing[].currency` | `"USD"` |  |  | user |
+| `limits` | object |  |  | user |
+| `limits.maxCostUsd` | number (at least 0, at most 1000000) |  | USD | user |
+| `ceilings` | object |  |  | user |
+| `ceilings.costUsd` | number (at least 0, at most 1000000) |  | USD | user |
+| `ceilings.tokens` | integer (at least 1, at most 100000000) |  |  | user |
+| `ceilings.timeMs` | integer (at least 1000, at most 604800000) |  | milliseconds | user |
+| `issues` | object |  |  | user |
+| `issues.watch` | array of object |  |  | user |
+| `issues.watch[].repository` | string |  |  | user |
+| `issues.watch[].folder` | string (not empty) |  |  | user |
+| `issues.watch[].forge` | string (not empty) |  |  | user |
+| `issues.watch[].labels` | array of string (not empty) |  |  | user |
+| `issues.watch[].authorAssociation` | array of `"OWNER"` or `"MEMBER"` or `"COLLABORATOR"` |  |  | user |
+| `issues.watch[].mandate` | string (not empty) |  |  | user |
+| `mandates` | map of object |  |  | user |
+| `mandates.<name>.allow` | array of string (not empty) |  |  | user |
+| `mandates.<name>.ask` | array of string (not empty) |  |  | user |
+| `mandates.<name>.deny` | array of string (not empty) |  |  | user |
+| `mandates.<name>.until` | array of string (not empty) |  |  | user |
+| `mandates.<name>.require` | array of string (not empty) |  |  | user |
+| `mandates.<name>.steps` | integer (at least 1, at most 1000) |  |  | user |
+| `mandates.<name>.tokens` | integer (at least 1, at most 100000000) |  |  | user |
+| `mandates.<name>.costUsd` | number (at least 0, at most 1000000) |  | USD | user |
+| `mandates.<name>.timeMs` | integer (at least 1000, at most 604800000) |  | milliseconds | user |
+| `mandates.<name>.retries` | integer (at least 1, at most 100) |  |  | user |
+| `mandates.<name>.onQuiescent` | `"report"` or `"wait"` |  |  | user |
+| `forges` | array of object |  |  | user |
+| `forges[].id` | string (not empty) |  |  | user |
+| `forges[].descriptor` | string (not empty) |  |  | user |
+| `forges[].hosts` | array of string (not empty) (at least 1 entry) |  |  | user |
+| `forges[].apiBaseUrl` | string (not empty) |  |  | user |
+| `forges[].credential` | object |  |  | user |
+| `forges[].credential.env` | string |  |  | user |
+| `forges[].credential.secret` | string |  |  | user |
+| `operations` | object |  |  | user |
+| `operations.protectedRefs` | array of string (not empty) |  |  | user |
+| `operations.approval` | map of `"rule"` or `"always"` |  |  | user |
+| `sandbox` | `"seatbelt"` or `"bubblewrap"` or `"none"` | `"seatbelt"` on darwin; `"bubblewrap"` on linux; `"none"` on win32 |  | user |
+| `sandboxNetwork` | `"deny"` or `"ask"` or `"allow"` | `"ask"` |  | user |
+| `sandboxUnixSockets` | object |  |  | user |
+| `sandboxUnixSockets.allow` | array of string (not empty) |  |  | user |
+| `telemetry` | object |  |  | user |
+| `telemetry.otlp` | object |  |  | user |
+| `telemetry.otlp.endpoint` | string |  |  | user |
+| `telemetry.otlp.headers` | map of string |  |  | user |
+| `telemetry.captureMessageContent` | boolean | `false` |  | user |
+| `projectApprovals` | map of object |  |  | user |
+| `projectApprovals.<name>.hooks` | array of string or object |  |  | user |
+| `projectApprovals.<name>.mandate` | string or object |  |  | user |
+| `projectApprovals.<name>.agents` | array of object |  |  | user |
+| `projectApprovals.<name>.agents[].name` | string (not empty) |  |  | user |
+| `projectApprovals.<name>.agents[].digest` | string |  |  | user |
+| `projectApprovals.<name>.agents[].text` | string |  |  | user |
+| `projectChecks` | map of object or object |  |  | user |
+| `retention` | object |  |  | user |
+| `retention.days` | integer (at least 1, at most 36500) | `30` | days | user |
 
 ## Environment variables
 

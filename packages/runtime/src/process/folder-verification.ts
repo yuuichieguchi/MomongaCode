@@ -2,7 +2,7 @@ import { parseRule } from '@momonga/config';
 import type { MandateProfileSettings, PermissionRule } from '@momonga/config';
 import { hostPaths, sessionRootsOf, verdictKey } from '@momonga/foundation';
 import type { RuleEnforcement, UnixSocketPolicy } from '@momonga/foundation';
-import { isFinalRuleVerdict } from '@momonga/protocol';
+import { DEFAULT_PERMISSION_MODE, isFinalRuleVerdict } from '@momonga/protocol';
 import type { Mandate, PermissionMode, PolicyVerifyResponse, RuleVerdict } from '@momonga/protocol';
 import type { OperationCatalogueFacts } from '@momonga/tools';
 import type { RuleVerifierPort } from '../ports.ts';
@@ -57,7 +57,7 @@ export const folderPolicyVerification =
       {
         rules: mandate?.profile === undefined ? facts.rules : [...facts.rules, ...mandateRulesOf(mandate.name, mandate.profile, context)],
         roots,
-        mode: request.mode ?? facts.defaultMode ?? 'manual',
+        mode: request.mode ?? facts.defaultMode ?? DEFAULT_PERMISSION_MODE,
         home: sources.home,
         cwd,
         exemptDirectory: sessionScratchRoleIn(sources.sessionsRoot),
