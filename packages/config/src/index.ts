@@ -51,14 +51,14 @@ export { MODEL_ROLES, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_THEMES } from './s
 export { editSettings, readSettingsSnapshot } from './edit-settings.ts';
 export type { EditSettingsOptions, SettingsLayer, SettingsLayerView, SettingsOperation, SettingsPath, SettingsPlace, SettingsSnapshot, SettingsSnapshotRequest } from './edit-settings.ts';
 export { writeTuiSetting } from './tui-settings.ts';
-export { defaultTuiSettings } from './settings.ts';
+export { DEFAULT_RETENTION_DAYS, FIVE_MINUTES_MS, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
 export { connectionAddressProblem, endpointKeyOf, probeRecordKeyOf, recordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
 export { ADAPTERS, isAdapterKind, isMeasuredBy, isProbeable, isProbedBy, measuringProbeIn, measuringProbeOf, probeRecordKeyIn, takesKey, takesKeyIn } from './adapters.ts';
 export type { AdapterKind, AdapterTable, AdapterTraits, MeasuredBy, ProbeKind, Probeable, ProbedBy, WireFacts } from './adapters.ts';
 export { PROBE_KEY_DIGEST_CHARS, knownKeyOf, managedServerDigest, probeKeyOf } from './probe-key.ts';
 export type { EndpointProbeKeyInput, KnownProbeKey, ManagedProbeKeyInput, ProbeKey, ProbeKeyInput, UnknownProbeKey } from './probe-key.ts';
 export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './probe-record-key.ts';
-export { FIVE_MINUTES_MS, chainOf, credentialEnvNames, outputBoundFieldOf, plainHttpWarningText, resolveModels } from './models.ts';
+export { chainOf, credentialEnvNames, outputBoundFieldOf, plainHttpWarningText, resolveModels } from './models.ts';
 export { PROJECT_MANDATE_FILE, PROJECT_MANDATE_USER_ONLY_KEYS, loadProjectMandate, parseProjectMandate, projectMandateState } from './project-mandate.ts';
 export type { ProjectMandate, ProjectMandateInput, ProjectMandateState, ProjectMandateStateInput } from './project-mandate.ts';
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
@@ -79,7 +79,7 @@ export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { CORE_SETTING_KEYS } from './core-settings.ts';
 export { telemetryWithReferences } from './expansion.ts';
 export type { CoreSettingKey } from './core-settings.ts';
-export { DEFAULT_RETENTION_DAYS, defaultSandboxSetting, resolveRetentionSettings, resolveTelemetrySettings } from './settings.ts';
+export { resolveRetentionSettings, resolveTelemetrySettings } from './settings.ts';
 export { MAX_RETENTION_DAYS, MIN_RETENTION_DAYS } from './settings-schema.ts';
 export { APPROVAL_DIGEST_PATTERN, approvalDigestOf, hookGroupApprovalDigestOf, projectAgentDigestOf } from './approval-digest.ts';
 export { DECLARED_CHECK_SOURCES, acceptedCheckOf, declaredChecksOf, recordProjectCheck } from './declared-checks.ts';
@@ -94,6 +94,7 @@ export {
   defaultContextSettings,
   defaultMemorySettings,
   defaultToolsSettings,
+  defaultVerificationSettings,
   mergeContextSettings,
   mergeMemorySettings,
   mergeToolsSettings,

@@ -31,7 +31,8 @@ import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, NETWORK_RULE_SUBJECT, checkRuleText, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { escapePointerSegment } from './json-file.ts';
-import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
+import { assertSettings } from './settings.ts';
+import { defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
 import type { HookGroups, McpServerApproval, ProjectApprovalsSettings, ProjectChecksSettings, RetentionSettings, AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings, CeilingsSettings, ForgeInstanceSettings, LimitsSettings, MandateProfileSettings, IssuesSettings, OperationsSettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
