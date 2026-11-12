@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createLockedEntry, sha256Hex, sweepLeftovers } from '@momonga/foundation';
+import { createLockedEntry, parseShippedManifest, sha256Hex, sweepLeftovers } from '@momonga/foundation';
 import type { FileSystem, KernelLockMechanism, LockedEntry } from '@momonga/foundation';
 
 export const RIPGREP_MANIFEST_ASSET = 'ripgrep-manifest.json';
@@ -68,7 +68,7 @@ const recordField = (record: Record<string, unknown>, key: string, what: string)
 };
 
 export const parseRipgrepManifest = (text: string): RipgrepManifest => {
-  const parsed: unknown = JSON.parse(text);
+  const parsed = parseShippedManifest(text, RIPGREP_MANIFEST_ASSET, (message) => new RipgrepDistributionError(message));
   if (!isRecord(parsed)) throw new RipgrepDistributionError('the ripgrep manifest is malformed');
   const binary = recordField(parsed, 'binary', 'binary entry');
   const notices = recordField(parsed, 'notices', 'notices entry');

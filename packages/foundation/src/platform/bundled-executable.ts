@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { sha256Hex } from '../canonical-json.ts';
-import { parseBoundedJson } from '../json.ts';
+import { parseShippedManifest } from '../json.ts';
 import { sweepLeftovers } from '../leftover-sweep.ts';
 import { createLockedEntry } from '../locked-entry.ts';
 import type { FileSystem } from '../node-file-system.ts';
@@ -40,12 +40,7 @@ const textField = (kind: BundledExecutableKind, record: Record<string, unknown>,
 };
 
 export const parseBundledExecutableManifest = (kind: BundledExecutableKind, text: string): BundledExecutableManifest => {
-  const bounded = parseBoundedJson(text);
-  if (bounded.kind === 'text') {
-    const why = bounded.reason === 'too_deep' ? 'nests deeper than the bound of a JSON value' : 'is not valid JSON';
-    throw kind.failure(`the ${kind.what} manifest ${kind.manifestAsset} ${why}: reinstall momonga`);
-  }
-  const parsed = bounded.value;
+  const parsed = parseShippedManifest(text, kind.manifestAsset, kind.failure);
   if (!isRecord(parsed)) throw kind.failure(`the ${kind.what} manifest is malformed`);
   const binary = parsed['binary'];
   if (!isRecord(binary)) throw kind.failure(`the ${kind.what} manifest has no binary entry`);
