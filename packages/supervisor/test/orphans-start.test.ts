@@ -474,7 +474,7 @@ describe('orphan reap at supervisor start', () => {
         lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: async () => ({ reaped: 0, kept: 1, unreaped: [] }) },
-      overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
+      overrides: { lockMechanism: lock },
     });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     expect(h.log.withMsg('orphans.reaped')).toEqual([expect.objectContaining({ reaped: 0, kept: 1, level: 'warn' })]);

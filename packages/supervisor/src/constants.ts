@@ -19,7 +19,6 @@ export const RESTART_MAX_MS = 30_000;
 export const RESTART_MIN_MS = 100;
 export const STABLE_AFTER_MS = 60_000;
 export const LOCK_WATCH_INTERVAL_MS = 500;
-export const LOCK_WAIT_DEADLINE_MS = 14_000;
 export const EXTERNAL_POLL_MS = 5000;
 export const ORPHAN_POLL_MS = 250;
 export const HELD_RETRY_MS = 300_000;

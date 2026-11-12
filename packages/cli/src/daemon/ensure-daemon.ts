@@ -6,6 +6,7 @@ import {
   HOST_READ_BOUND_MS,
   LIFELINE_FD,
   STARTUP_TIMEOUT_MS,
+  STDIO_FLUSH_MS,
   STOP_WAIT_WHEN_UNKNOWN_MS,
   beginGenerationStart,
   daemonStopBoundMs,
@@ -27,6 +28,7 @@ import {
 } from '@momonga/foundation';
 import type { CurrentGeneration, GenerationRef, HeldStart, KernelLockMechanism, MomongaPaths, StartTrigger, StopValues, EndpointScope } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
+import { DEFAULT_RESTART_POLICY, childRestartBoundMs, resolveStartTiming, supervisorStartBoundMs } from '@momonga/supervisor';
 import type { InterruptedWorkItem, SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import type { SupervisorClient } from '../client/supervisor-client.ts';
@@ -81,7 +83,8 @@ export const healthAt = async (socketPath: string): Promise<SupervisorHealth | u
 
 export type DaemonBounds = { readyMs: number; stopMs: number };
 
-export const daemonReadyBoundMs = async (): Promise<number> => STARTUP_TIMEOUT_MS;
+export const daemonReadyBoundMs = async (): Promise<number> =>
+  Math.max(supervisorStartBoundMs(resolveStartTiming({})), childRestartBoundMs({ policy: DEFAULT_RESTART_POLICY, startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS }));
 
 export { STOP_WAIT_WHEN_UNKNOWN_MS };
 

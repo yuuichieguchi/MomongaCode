@@ -14,7 +14,6 @@ export type LockWatchOptions = {
   role: ChildRole;
   lockPath: string;
   socketPath: string;
-  lockWaitMs: number;
   lockWatchIntervalMs: number;
   externalPollMs: number;
   timers: SupervisorTimers;
@@ -100,18 +99,15 @@ export const watchLock = (options: LockWatchOptions): LockWatch => {
   const inspect = options.inspect ?? inspectProcessLock;
   const probe = options.probe ?? probeExternalHealth;
   let stopped = false;
-  let deadlinePassed = false;
   let external = false;
   let pollTimer: unknown;
   let probeTimer: unknown;
-  let deadlineTimer: unknown;
 
   const stop = (): void => {
     stopped = true;
-    for (const handle of [pollTimer, probeTimer, deadlineTimer]) if (handle !== undefined) timers.clearTimeout(handle);
+    for (const handle of [pollTimer, probeTimer]) if (handle !== undefined) timers.clearTimeout(handle);
     pollTimer = undefined;
     probeTimer = undefined;
-    deadlineTimer = undefined;
   };
 
   const report = (error: unknown, source: string): void => {
@@ -182,17 +178,13 @@ export const watchLock = (options: LockWatchOptions): LockWatch => {
         options.onFree();
         return;
       }
-      if (deadlinePassed && !external) enterExternal(holderPidOf(inspection));
+      if (!external) enterExternal(holderPidOf(inspection));
     } catch (error) {
       options.onBackgroundError(error, 'lock-poll');
     }
     armPoll();
   };
 
-  deadlineTimer = timers.setTimeout(() => {
-    deadlineTimer = undefined;
-    deadlinePassed = true;
-  }, options.lockWaitMs);
   armPoll();
 
   return { stop };

@@ -250,7 +250,7 @@ describe('shutdown order and bounds', () => {
     const holder = spawnTracked(context, 'sleep', ['30']);
     const h = await running(context, {
       prepare: (_home, paths) => lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid),
-      overrides: { lockMechanism: lock, lockWaitMs: 1000 },
+      overrides: { lockMechanism: lock },
     });
     h.fake.latest('gateway').exit(78);
     h.fake.latest('runtime').exit(77);
@@ -358,7 +358,7 @@ describe('shutdown and marker reaps', () => {
     };
     const h = await running(context, {
       prepare: (_home, paths) => lock.holdExternally(firstGeneration(paths).locks.runtime, process.pid),
-      overrides: { lockWaitMs: 3_600_000, lockMechanism: inFlight },
+      overrides: { lockMechanism: inFlight },
     });
     h.fake.latest('runtime').exit(77);
     await pumpUntil(h.timers, () => polls === 1, { realWork: h.realWork, maxMs: 5000 });

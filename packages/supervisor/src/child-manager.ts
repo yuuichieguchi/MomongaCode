@@ -111,7 +111,6 @@ export type ChildManagerOptions = {
   intervals: SupervisorIntervals;
   startupTimeoutMs: number;
   heldRetryMs: number;
-  lockWaitMs: number;
   lockMechanism: KernelLockMechanism;
   inspector: ProcessInspector;
   markerPorts?: MarkerPorts;
@@ -310,7 +309,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       role,
       lockPath: options.endpoint.lockPath,
       socketPath: options.endpoint.socketPath,
-      lockWaitMs: options.lockWaitMs,
       lockWatchIntervalMs: options.intervals.lockWatchIntervalMs,
       externalPollMs: options.intervals.externalPollMs,
       timers,

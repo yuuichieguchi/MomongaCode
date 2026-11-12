@@ -53,7 +53,6 @@ const manager = createChildManager({
   intervals: DEFAULT_INTERVALS,
   startupTimeoutMs: STARTUP_TIMEOUT_MS,
   heldRetryMs: HELD_RETRY_MS,
-  lockWaitMs: 60_000,
   isDraining: () => false,
   onBackgroundError: (error) => {
     process.stderr.write(`${String(error)}\n`);

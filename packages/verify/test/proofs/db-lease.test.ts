@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, runtimeMaxCloseMs } from '@momonga/foundation';
 import { BUSY_WAIT_LIMIT_MS } from '@momonga/foundation/sqlite';
-import { LOCK_WAIT_DEADLINE_MS } from '@momonga/supervisor';
 import { proofArith } from '../support/proofs/arith.ts';
 import type { ProofArith } from '../support/proofs/arith.ts';
 import { expectRefuted, prove } from '../support/proofs/prove.ts';
@@ -21,7 +20,6 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
 
   it('reads today the constants the proofs start from', () => {
     expect(BUSY_WAIT_LIMIT_MS).toBe(5000);
-    expect(LOCK_WAIT_DEADLINE_MS).toBe(14_000);
     expect(RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS).toBe(18_050);
     expect(DEFAULT_LEASE_MS / Number(HEARTBEAT_DIVISOR)).toBe(10_000);
   });
@@ -72,19 +70,6 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
       expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 7, mcpCloseGraceMs: 0 })).toBe(28_182);
       expect(await satisfiable(arith)).toBe(true);
       expect(await prove(arith, close.ge(15_000))).toEqual({ status: 'proved' });
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
-
-  it(
-    'L2w refutes that the lock wait of 14000 ms covers the close of the previous generation, with the shortest drain d = 0 as the counter-example',
-    async () => {
-      const arith = proofArith(z3.engine().api, 'L2w');
-      const drain = arith.int('d');
-      arith.given(drain.ge(0));
-      const close = drain.add(RUNTIME_ABORT_BUDGET_MS).add(RUNTIME_TEARDOWN_BUDGET_MS);
-      const model = await expectRefuted(arith, close.le(LOCK_WAIT_DEADLINE_MS));
-      expect(BigInt(model.d as string)).toBeGreaterThanOrEqual(0n);
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

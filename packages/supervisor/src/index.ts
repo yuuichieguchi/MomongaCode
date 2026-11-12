@@ -9,7 +9,6 @@ export {
   HELD_RETRY_MS,
   KILL_CONFIRM_MS,
   LINE_MAX_BYTES,
-  LOCK_WAIT_DEADLINE_MS,
   LOCK_WATCH_INTERVAL_MS,
   ORPHAN_POLL_MS,
   OUTPUT_MAX_BYTES_PER_MINUTE,
@@ -32,7 +31,7 @@ export {
 export type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 export { omitUndefined } from './omit-undefined.ts';
 export type { OmitUndefined } from './omit-undefined.ts';
-export { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from './start-supervisor.ts';
+export { generationLockWaitBoundMs, resolveStartTiming, startSupervisor, supervisorStartBoundMs } from './start-supervisor.ts';
 export type { SupervisorCloseResult, SupervisorOptions, SupervisorProcess, SupervisorStartTiming } from './start-supervisor.ts';
 export { GENERATION_FLAG_USAGE, SUPERVISE_ENTRY_FLAGS, generationOfFlag, runSupervisorEntry } from './entry.ts';
 export type { SupervisorEntryDeps } from './entry.ts';

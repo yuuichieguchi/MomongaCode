@@ -201,7 +201,6 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     intervals: DEFAULT_INTERVALS,
     startupTimeoutMs: STARTUP_TIMEOUT_MS,
     heldRetryMs: HELD_RETRY_MS,
-    lockWaitMs: 3_600_000,
     lockMechanism: lock,
     onTransientError: (error, source) => {
       transients.push({ error, source });

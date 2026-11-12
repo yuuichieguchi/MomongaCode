@@ -145,7 +145,6 @@ const watchHarness = (overrides: Partial<LockWatchOptions> = {}) => {
     role: 'runtime',
     lockPath: '/fake/run/runtime.lock',
     socketPath: '/fake/run/runtime.sock',
-    lockWaitMs: 10_000,
     lockWatchIntervalMs: 500,
     externalPollMs: 5000,
     timers,
@@ -184,7 +183,7 @@ const watchHarness = (overrides: Partial<LockWatchOptions> = {}) => {
 
 describe('watchLock', () => {
   it('exit 77 waits on the lock and fires onFree when it frees', async () => {
-    const h = watchHarness({ lockWaitMs: 3_600_000 });
+    const h = watchHarness();
     await pump(h.timers, h.realWork, 5 * 60_000);
     expect(h.events.filter((event) => event.startsWith('free'))).toEqual([]);
     expect(h.scripted.inspections.length).toBeGreaterThanOrEqual(599);
@@ -199,17 +198,15 @@ describe('watchLock', () => {
     expect(h.timers.pending()).toEqual([]);
   });
 
-  it('lockWaitMs expiry gives external with the holder pid', async () => {
-    const h = watchHarness({ lockWaitMs: 2000 });
-    await pump(h.timers, h.realWork, 1950);
-    expect(h.events.filter((event) => event.startsWith('external'))).toEqual([]);
+  it('a held lock is external at its first inspection, with no wait before it', async () => {
+    const h = watchHarness();
     await pump(h.timers, h.realWork, 600);
-    expect(h.events.filter((event) => event.startsWith('external'))).toEqual([expect.stringMatching(/^external:4321@/)]);
+    expect(h.events.filter((event) => event.startsWith('external'))).toEqual(['external:4321@500']);
     h.watch.stop();
   });
 
   it('the first probe starts on entering external, then every EXTERNAL_POLL_MS', async () => {
-    const h = watchHarness({ lockWaitMs: 1000 });
+    const h = watchHarness();
     await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { realWork: h.realWork, maxMs: 5000 });
     const enteredAt = h.clock.now();
     await quiesce(h.realWork);
@@ -222,7 +219,7 @@ describe('watchLock', () => {
   });
 
   it('probe results are reported as they change', async () => {
-    const h = watchHarness({ lockWaitMs: 500 });
+    const h = watchHarness();
     h.setProbe('healthy');
     await pumpUntil(h.timers, () => h.events.includes('probe:healthy'), { realWork: h.realWork, maxMs: 5000 });
     h.setProbe('unhealthy');
@@ -231,7 +228,7 @@ describe('watchLock', () => {
   });
 
   it('external polls the lock at LOCK_WATCH_INTERVAL_MS', async () => {
-    const h = watchHarness({ lockWaitMs: 1000 });
+    const h = watchHarness();
     await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { realWork: h.realWork, maxMs: 5000 });
     await pump(h.timers, h.realWork, 1200);
     const freedAt = h.clock.now();
@@ -242,7 +239,7 @@ describe('watchLock', () => {
   });
 
   it('unreadable lock counts as held', async () => {
-    const h = watchHarness({ lockWaitMs: 2000 });
+    const h = watchHarness();
     h.scripted.next = { state: 'unreadable' };
     await pump(h.timers, h.realWork, 3000);
     expect(h.events.filter((event) => event.startsWith('free'))).toEqual([]);
@@ -252,7 +249,7 @@ describe('watchLock', () => {
 
   it('forwards the lock mechanism to every inspection', async () => {
     const mechanism = testKernelLock();
-    const h = watchHarness({ lockWaitMs: 3_600_000, mechanism });
+    const h = watchHarness({ mechanism });
     await pump(h.timers, h.realWork, 10_000);
     expect(h.scripted.inspections.length).toBeGreaterThanOrEqual(19);
     for (const inspection of h.scripted.inspections) expect(inspection?.mechanism).toBe(mechanism);
@@ -261,7 +258,7 @@ describe('watchLock', () => {
 
   it('a lock poll in flight when the watch stops does not fire onFree', async () => {
     let release: (value: ProcessLockInspection) => void = () => undefined;
-    const h = watchHarness({ lockWaitMs: 3_600_000 });
+    const h = watchHarness();
     h.scripted.next = () =>
       new Promise<ProcessLockInspection>((resolve) => {
         release = resolve;
@@ -275,7 +272,7 @@ describe('watchLock', () => {
   });
 
   it('a deterministic inspection failure is a background error, not an unhandled rejection', async () => {
-    const h = watchHarness({ lockWaitMs: 3_600_000 });
+    const h = watchHarness();
     const failure = Object.assign(new Error('lock read EACCES'), { code: 'EACCES' });
     h.scripted.next = () => Promise.reject(failure);
     await pump(h.timers, h.realWork, 1500);
@@ -287,7 +284,7 @@ describe('watchLock', () => {
   });
 
   it('a transient inspection failure is reported as transient, keeps polling and still sees the lock free', async () => {
-    const h = watchHarness({ lockWaitMs: 3_600_000 });
+    const h = watchHarness();
     const failure = Object.assign(new Error('lock read EMFILE'), { code: 'EMFILE' });
     h.scripted.next = () => Promise.reject(failure);
     await pump(h.timers, h.realWork, 1500);
@@ -302,7 +299,6 @@ describe('watchLock', () => {
   it('a transient probe failure is not an unreachable holder and the next probe still runs', async () => {
     const results: Array<ProbeOutcome | Error> = [new ProbeFailedError('probing', probeFailed({ kind: 'timeout', detail: 'slow' })), 'healthy'];
     const h = watchHarness({
-      lockWaitMs: 500,
       probe: async () => {
         const next = results.shift() ?? 'healthy';
         if (next instanceof Error) throw next;
@@ -318,7 +314,7 @@ describe('watchLock', () => {
 
   it('a deterministic probe failure is a background error', async () => {
     const failure = new Error('boom');
-    const h = watchHarness({ lockWaitMs: 500, probe: async () => Promise.reject(failure) });
+    const h = watchHarness({ probe: async () => Promise.reject(failure) });
     await pumpUntil(h.timers, () => h.backgroundErrors.length > 0, { realWork: h.realWork, maxMs: 20_000 });
     expect(h.backgroundErrors[0]).toEqual({ error: failure, source: 'external-probe' });
     h.watch.stop();
@@ -327,7 +323,6 @@ describe('watchLock', () => {
   it('never has two probes in flight: the next is armed only after the current one settled', async () => {
     const releases: Array<(outcome: ProbeOutcome) => void> = [];
     const h = watchHarness({
-      lockWaitMs: 500,
       probe: () => new Promise<ProbeOutcome>((resolve) => void releases.push(resolve)),
     });
     await pumpUntil(h.timers, () => releases.length === 1, { realWork: h.realWork, maxMs: 5000 });
@@ -338,9 +333,9 @@ describe('watchLock', () => {
     h.watch.stop();
   });
 
-  it('a slow inspection does not delay external past lockWaitMs', async () => {
+  it('a slow inspection gives external when it answers held', async () => {
     const releases: ((value: ProcessLockInspection) => void)[] = [];
-    const h = watchHarness({ lockWaitMs: 300, lockWatchIntervalMs: 100 });
+    const h = watchHarness({ lockWatchIntervalMs: 100 });
     h.scripted.next = () =>
       new Promise<ProcessLockInspection>((resolve) => {
         releases.push(resolve);
@@ -358,15 +353,15 @@ describe('watchLock', () => {
     expect(h.timers.pending()).toEqual([]);
   });
 
-  it('the lockWaitMs deadline timer is armed at construction and cleared by stop', () => {
-    const h = watchHarness({ lockWaitMs: 7777, lockWatchIntervalMs: 100 });
-    expect(h.timers.pending().map((timer) => timer.delayMs).sort((a, b) => a - b)).toEqual([100, 7777]);
+  it('only the poll timer is armed at construction and stop clears it', () => {
+    const h = watchHarness({ lockWatchIntervalMs: 100 });
+    expect(h.timers.pending().map((timer) => timer.delayMs)).toEqual([100]);
     h.watch.stop();
     expect(h.timers.pending()).toEqual([]);
   });
 
   it('stop clears every timer', async () => {
-    const h = watchHarness({ lockWaitMs: 500 });
+    const h = watchHarness();
     await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { realWork: h.realWork, maxMs: 5000 });
     h.watch.stop();
     expect(h.timers.pending()).toEqual([]);
@@ -385,7 +380,6 @@ const realWatch = (lockPath: string) => {
     role: 'runtime' as ChildRole,
     lockPath,
     socketPath: path.join(path.dirname(lockPath), 'runtime.sock'),
-    lockWaitMs: 3_600_000,
     lockWatchIntervalMs: 500,
     externalPollMs: 5000,
     timers,
@@ -399,38 +393,39 @@ const realWatch = (lockPath: string) => {
 };
 
 describe('watchLock with the real kernel lock', () => {
-  it('stays waiting while a real process holds the lock and sees it free the moment that process is SIGKILLed', async (context) => {
+  it('names a real process that holds the lock external at once and sees it free the moment that process is SIGKILLed', async (context) => {
     const lockPath = path.join(withTempDir(context), 'runtime.lock');
     const holder = await startLockHolder(context, lockPath);
     const h = realWatch(lockPath);
     context.onTestFinished(() => h.watch.stop());
     for (let tick = 0; tick < 20; tick += 1) {
-      h.timers.advance(500);
+      await h.timers.advanceAsync(500);
       await waitFor(() => h.timers.pending().some((timer) => timer.delayMs === 500), { description: `tick ${tick}` });
     }
-    expect(h.events).toEqual([]);
+    expect(h.events).toEqual(['external']);
     const exited = new Promise((resolve) => holder.once('exit', resolve));
     holder.kill('SIGKILL');
     await exited;
-    h.timers.advance(500);
+    await h.timers.advanceAsync(500);
     await waitFor(() => h.events.includes('free'), { description: 'free after the holder died' });
-    expect(h.events).toEqual(['free']);
+    expect(h.events).toEqual(['external', 'free']);
   });
 });
 
 describe('a held lock through the supervisor', () => {
   const EXTERNAL_PID = 4242;
 
-  it('on a platform without descriptor hand-off, exit 77 waits on the lock, is not a failure, and spawns when it frees', async (context) => {
+  it('on a platform without descriptor hand-off, exit 77 makes the holder external at once, is not a failure, and spawns when it frees', async (context) => {
     const lock = createFakeKernelLock({ inheritable: false });
-    const h = await startHarness(context, { overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 } });
+    const h = await startHarness(context, { overrides: { lockMechanism: lock } });
     await h.waitForState('runtime', 'ready');
     lock.holdExternally(firstGeneration(h.paths).locks.runtime, EXTERNAL_PID);
     h.fake.latest('runtime').exit(77);
     await h.waitForState('runtime', 'waiting-lock');
     await pump(h.timers, h.realWork, 5 * 60_000);
     expect(h.fake.spawnCount('runtime')).toBe(1);
-    expect(h.child('runtime')).toMatchObject({ state: 'waiting-lock', consecutiveFailures: 0 });
+    expect(h.child('runtime')).toMatchObject({ state: 'external', consecutiveFailures: 0 });
+    expect(h.child('runtime').external?.pid).toBe(EXTERNAL_PID);
     expect(h.child('runtime').lastExit).toMatchObject({ code: 77, reason: 'lock-held' });
     lock.releaseExternally(firstGeneration(h.paths).locks.runtime);
     await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, maxMs: 10_000, description: 'respawn after the lock frees' });
@@ -447,7 +442,7 @@ describe('a held lock through the supervisor', () => {
         fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
         lock.holdExternally(lockPath, EXTERNAL_PID);
       },
-      overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
+      overrides: { lockMechanism: lock },
     });
     await h.waitForState('runtime', 'waiting-lock');
     await h.waitForState('gateway', 'ready');
@@ -463,14 +458,14 @@ describe('a held lock through the supervisor', () => {
     expect(h.log.withMsg('child.spawn').filter((entry) => entry['child'] === 'runtime')).toEqual([expect.objectContaining({ reason: 'lock-free' })]);
   });
 
-  it('lockWaitMs expiry gives external and the holder is not signalled', async (context) => {
+  it('a lock held at start is external at its first inspection and the holder is not signalled', async (context) => {
     const lock = createFakeKernelLock({ inheritable: true });
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
         fs.mkdirSync(path.dirname(firstGeneration(paths).locks.runtime), { recursive: true, mode: 0o700 });
         lock.holdExternally(firstGeneration(paths).locks.runtime, EXTERNAL_PID);
       },
-      overrides: { lockMechanism: lock, lockWaitMs: 2000 },
+      overrides: { lockMechanism: lock },
     });
     await h.waitForState('runtime', 'external', 10_000);
     expect(h.child('runtime').external?.pid).toBe(EXTERNAL_PID);
@@ -494,7 +489,7 @@ describe('a held lock through the supervisor', () => {
         fs.mkdirSync(path.dirname(firstGeneration(paths).locks.runtime), { recursive: true, mode: 0o700 });
         lock.holdExternally(firstGeneration(paths).locks.runtime, EXTERNAL_PID);
       },
-      overrides: { lockMechanism: flaky, lockWaitMs: 3_600_000 },
+      overrides: { lockMechanism: flaky },
     });
     await h.waitForState('runtime', 'waiting-lock');
     await pump(h.timers, h.realWork, 3000);

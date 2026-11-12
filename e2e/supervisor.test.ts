@@ -44,7 +44,6 @@ import {
 } from './support/wait.ts';
 
 const S1C_PHASE1_ORPHAN_GRACE_MS = 30_000;
-const S7_LOCK_WAIT_MS = 1500;
 const KILLED_STACK_BOUND_MS = E2E_READY_DEADLINE_MS + E2E_MARGIN_MS;
 const S1_TIMEOUT_MS = e2eTestTimeoutMs(
   E2E_READY_DEADLINE_MS,
@@ -545,7 +544,7 @@ describe('supervisor cases', () => {
     const holderPid = await startLockHolderFixture(home, firstGeneration(home.paths).locks.runtime);
     expect(await inspectProcessLock(firstGeneration(home.paths).locks.runtime, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: holderPid });
 
-    const stack = await startStack({ home, deps: { lockWaitMs: S7_LOCK_WAIT_MS }, readiness: false, preparedGeneration: FIRST_GENERATION });
+    const stack = await startStack({ home, readiness: false, preparedGeneration: FIRST_GENERATION });
     const external = await stack.client.untilChild('runtime', (child) => child.state === 'external', E2E_RESTART_BOUND_MS);
     expect(external.restarts).toBe(0);
     expect(external.pid).toBeUndefined();

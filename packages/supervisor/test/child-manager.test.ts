@@ -324,22 +324,22 @@ describe('exit classification in the manager', () => {
     expect(harness.timers.pending()).toEqual([]);
   });
 
-  it('exit 77 does not respawn on a timer', async (context) => {
+  it('exit 77 does not respawn on a timer and makes the holder external at once', async (context) => {
     const harness = createManagerHarness(context);
     harness.lock.holdExternally(firstGeneration(harness.paths).locks.runtime, process.pid);
     await harness.spawnInitial();
     await exitAndWait(harness, 'waiting-lock', 77);
     for (let step = 0; step < 120; step += 1) {
-      harness.timers.advance(5000);
+      await harness.timers.advanceAsync(5000);
       await afterMicrotasks();
     }
     await afterMicrotasks();
     expect(harness.spawnCount()).toBe(1);
-    expect(harness.manager.state()).toBe('waiting-lock');
+    expect(harness.manager.state()).toBe('external');
     expect(harness.manager.health().consecutiveFailures).toBe(0);
     harness.lock.releaseExternally(firstGeneration(harness.paths).locks.runtime);
     await waitFor(() => harness.timers.pending().some((timer) => timer.delayMs === DEFAULT_INTERVALS.lockWatchIntervalMs), { description: 'the next lock poll is armed' });
-    harness.timers.advance(DEFAULT_INTERVALS.lockWatchIntervalMs);
+    await harness.timers.advanceAsync(DEFAULT_INTERVALS.lockWatchIntervalMs);
     await waitFor(() => harness.spawnCount() === 2, { description: 'spawn after the lock is released' });
     expect(spawnReasons(harness)).toEqual(['initial', 'lock-free']);
     expect(harness.manager.state()).toBe('starting');
