@@ -6596,6 +6596,45 @@
       "measuredSeconds": 1.98,
       "measuredCpuSeconds": 2.18,
       "budgetCpuSeconds": 8
+    },
+    {
+      "config": "BackgroundJob",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 629,
+      "measuredSeconds": 1.23,
+      "measuredCpuSeconds": 1.73,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
+    },
+    {
+      "config": "BackgroundJob.registerLate",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoOrphanWhileStarting",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 6,
+      "measuredSeconds": 1.95,
+      "measuredCpuSeconds": 1.47,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
+    },
+    {
+      "config": "BackgroundJob.deep",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 13167,
+      "measuredSeconds": 3.26,
+      "measuredCpuSeconds": 4.66,
+      "budgetCpuSeconds": 13,
+      "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
     }
   ]
 }
