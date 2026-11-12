@@ -1,5 +1,5 @@
 import { EMPTY_FILE_RULES, defaultProtectedPaths, momongaLayout, standardSecretLocations } from '@momonga/foundation';
-import { protectedSetWith, NEVER_CANCELLED } from '@momonga/testkit';
+import { TEST_TOOL_LIMITS, protectedSetWith, NEVER_CANCELLED } from '@momonga/testkit';
 import type { ProtectedSet } from '@momonga/foundation';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { buildSandboxPolicy, createBuiltinTools, createToolRegistry } from '@momonga/tools';
@@ -56,7 +56,7 @@ describe('createBuiltinTools', () => {
     const tools = createBuiltinTools();
     const summary = tools
       .filter((tool: AnyTool) => tool.name !== 'Bash')
-      .map((tool: AnyTool) => [tool.name, tool.kind, tool.sideEffect, tool.timeoutMs]);
+      .map((tool: AnyTool) => [tool.name, tool.kind, tool.sideEffect, typeof tool.timeoutMs === 'function' ? tool.timeoutMs({}, TEST_TOOL_LIMITS) : tool.timeoutMs]);
     expect(summary).toEqual([
       ['Read', 'read', 'read_only', 30_000],
       ['Write', 'edit', 'write', 30_000],
@@ -70,10 +70,10 @@ describe('createBuiltinTools', () => {
     ]);
     const bash = tools.find((tool: AnyTool) => tool.name === 'Bash');
     expect([bash?.kind, bash?.sideEffect]).toEqual(['execute', 'exec']);
-    const timeoutOf = bash?.timeoutMs as (input: unknown) => number;
+    const timeoutOf = (input: unknown): number => (bash?.timeoutMs as (input: unknown, limits: typeof TEST_TOOL_LIMITS) => number)(input, TEST_TOOL_LIMITS);
     expect(timeoutOf({ command: 'x' })).toBe(120_000);
     expect(timeoutOf({ command: 'x', timeout: 5000 })).toBe(5000);
-    expect(timeoutOf({ command: 'x', timeout: 600_000 })).toBe(600_000);
+    expect(timeoutOf({ command: 'x', timeout: 900_000 })).toBe(600_000);
     expect(timeoutOf({ command: 'x', timeout: 7_200_000, run_in_background: true })).toBe(120_000);
   });
 

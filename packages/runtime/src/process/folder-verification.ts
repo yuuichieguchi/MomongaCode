@@ -1,7 +1,7 @@
 import { parseRule } from '@momonga/config';
 import type { MandateProfileSettings, PermissionRule } from '@momonga/config';
 import { hostPaths, sessionRootsOf, verdictKey } from '@momonga/foundation';
-import type { RuleEnforcement } from '@momonga/foundation';
+import type { RuleEnforcement, UnixSocketPolicy } from '@momonga/foundation';
 import { isFinalRuleVerdict } from '@momonga/protocol';
 import type { PermissionMode, PolicyVerifyResponse, RuleVerdict } from '@momonga/protocol';
 import type { OperationCatalogueFacts } from '@momonga/tools';
@@ -12,7 +12,7 @@ export type FolderVerifyRequest = { cwd: string; mode?: PermissionMode; secrets:
 
 export type PolicyVerification = (request: FolderVerifyRequest, signal: AbortSignal) => Promise<PolicyVerifyResponse>;
 
-export type FolderPolicyFacts = { rules: readonly PermissionRule[]; defaultMode?: PermissionMode; additionalDirectories: readonly string[]; enforcement: RuleEnforcement };
+export type FolderPolicyFacts = { rules: readonly PermissionRule[]; defaultMode?: PermissionMode; additionalDirectories: readonly string[]; enforcement: RuleEnforcement; unixSockets: UnixSocketPolicy };
 
 export type FolderPolicySources = {
   verifier: RuleVerifierPort;
@@ -50,6 +50,7 @@ export const folderPolicyVerification =
         cwd,
         exemptDirectory: null,
         enforcement: facts.enforcement,
+        unixSockets: facts.unixSockets,
         secrets: request.secrets,
         ...(mandate === undefined ? {} : { mandateChecks: sources.catalogue() }),
       },

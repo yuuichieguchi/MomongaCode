@@ -14,6 +14,8 @@ import { RuleVerificationFailure } from '../../src/process/rule-verifier-thread-
 import { systemTimers } from '../../src/service/timers.ts';
 import { PROVED_THREAD_CODE } from './fake-rule-solver.ts';
 
+const SOCKETS = { kind: 'limited', allowed: [] } as const;
+
 const CATALOGUE = { supersededForms: [], alwaysOperations: ['git.push'] };
 
 const layoutIn = (context: Parameters<typeof withTempDir>[0]) => {
@@ -65,14 +67,14 @@ describe('the verification of the rules of a folder, done by the daemon', () => 
     const layout = layoutIn(context);
     const stored: Stored = new Map();
     const rules = [ruleIn(layout.home, layout.work, 'Read(src/**)')];
-    const { verifier, verify, seen } = verificationIn(layout, () => ({ rules, additionalDirectories: [`${layout.work}/extra`, `${layout.work}/extra`, `${layout.root}/linked-work/extra`], enforcement: 'exact-paths' }), stored);
+    const { verifier, verify, seen } = verificationIn(layout, () => ({ rules, additionalDirectories: [`${layout.work}/extra`, `${layout.work}/extra`, `${layout.root}/linked-work/extra`], enforcement: 'exact-paths', unixSockets: SOCKETS }), stored);
 
     const linked = await verify({ cwd: `${layout.root}/linked-work`, secrets: [] }, new AbortController().signal);
     const direct = await verify({ cwd: layout.work, secrets: [] }, new AbortController().signal);
 
     expect(seen).toEqual([layout.work, layout.work]);
     expect(linked.fingerprint).toBe(direct.fingerprint);
-    const input = await verifier.inputOf({ rules, roots: [layout.work, `${layout.work}/extra`], mode: 'manual', home: layout.home, cwd: layout.work, exemptDirectory: null, enforcement: 'exact-paths', secrets: [] }, new AbortController().signal);
+    const input = await verifier.inputOf({ rules, roots: [layout.work, `${layout.work}/extra`], mode: 'manual', home: layout.home, cwd: layout.work, exemptDirectory: null, enforcement: 'exact-paths', secrets: [], unixSockets: SOCKETS }, new AbortController().signal);
     expect(direct.fingerprint).toBe(verdictKey(input, await verifier.solverVersion()));
     expect(direct).toMatchObject({ stored: true, exitCode: 0 });
     expect(stored.get(direct.fingerprint)).toMatchObject({ verdict: 'proved' });
@@ -81,7 +83,7 @@ describe('the verification of the rules of a folder, done by the daemon', () => 
   it('takes the mode of the request before the default mode of the settings, and the named secret locations into the input', async (context) => {
     const layout = layoutIn(context);
     const stored: Stored = new Map();
-    const { verify } = verificationIn(layout, () => ({ rules: [], defaultMode: 'acceptEdits', additionalDirectories: [], enforcement: 'exact-paths' }), stored);
+    const { verify } = verificationIn(layout, () => ({ rules: [], defaultMode: 'acceptEdits', additionalDirectories: [], enforcement: 'exact-paths', unixSockets: SOCKETS }), stored);
     const byDefault = await verify({ cwd: layout.work, secrets: [] }, new AbortController().signal);
     const named = await verify({ cwd: layout.work, mode: 'acceptEdits', secrets: [] }, new AbortController().signal);
     const other = await verify({ cwd: layout.work, mode: 'manual', secrets: [] }, new AbortController().signal);
@@ -94,7 +96,7 @@ describe('the verification of the rules of a folder, done by the daemon', () => 
   it('verifies a mandate of the user settings with its checks, and stores nothing for it', async (context) => {
     const layout = layoutIn(context);
     const stored: Stored = new Map();
-    const { verify } = verificationIn(layout, () => ({ rules: [], additionalDirectories: [], enforcement: 'exact-paths' }), stored);
+    const { verify } = verificationIn(layout, () => ({ rules: [], additionalDirectories: [], enforcement: 'exact-paths', unixSockets: SOCKETS }), stored);
     const answer = await verify({ cwd: layout.work, secrets: [], mandate: 'release' }, new AbortController().signal);
     expect(answer.stored).toBe(false);
     expect(stored.size).toBe(0);
@@ -109,10 +111,10 @@ const { parentPort, workerData } = require('node:worker_threads');
 parentPort.postMessage({ entered: true });
 parentPort.postMessage({ ok: true, verdict: { verdict: 'unknown', solver: workerData.solverVersion, refuted: [], unknown: [{ property: 'bash-admission', reason: 'the budget was spent' }], notProved: [] }, report: 'unknown', findings: { exitCode: 2 } });
 `;
-    const undecided = verificationIn(layout, () => ({ rules: [], additionalDirectories: [], enforcement: 'exact-paths' }), stored, unknownThread);
+    const undecided = verificationIn(layout, () => ({ rules: [], additionalDirectories: [], enforcement: 'exact-paths', unixSockets: SOCKETS }), stored, unknownThread);
     expect(await undecided.verify({ cwd: layout.work, secrets: [] }, new AbortController().signal)).toMatchObject({ stored: false, exitCode: 2, text: 'unknown' });
     expect(stored.size).toBe(0);
-    const broken = verificationIn(layout, () => ({ rules: [], additionalDirectories: [], enforcement: 'exact-paths' }), stored, `throw new Error('the solver is broken')`);
+    const broken = verificationIn(layout, () => ({ rules: [], additionalDirectories: [], enforcement: 'exact-paths', unixSockets: SOCKETS }), stored, `throw new Error('the solver is broken')`);
     await expect(broken.verify({ cwd: layout.work, secrets: [] }, new AbortController().signal)).rejects.toBeInstanceOf(RuleVerificationFailure);
   });
 });

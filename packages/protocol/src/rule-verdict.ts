@@ -87,23 +87,52 @@ export const isRuleVerdict = (value: unknown): value is RuleVerdict =>
 
 export const isPinnedRuleVerdict = (value: unknown): value is PinnedRuleVerdict => isRuleVerdict(value) && typeof (value as Record<string, unknown>)['fingerprint'] === 'string';
 
+const RULE_PROPERTY_WORDS: Readonly<Record<string, string>> = {
+  'deny-precedence': 'a deny rule wins over every allow rule',
+  'secret-reach': 'no allow rule you wrote opens a secret location',
+  'rule-consistency': 'the rules agree with each other',
+  'bash-admission': 'a command is admitted only as the rules say',
+  'superseded-forms': 'a run under a mandate uses the dedicated operation instead of the command it replaces',
+  'mandate-holds': 'a run under a mandate stays inside it',
+};
+
+export const rulePropertyInWords = (property: string): string => {
+  const words = RULE_PROPERTY_WORDS[property];
+  if (words === undefined) throw new Error(`the rule property ${property} has no words`);
+  return words;
+};
+
 const refutationText = (refutation: RuleRefutation): string =>
-  `${refutation.property} (${refutation.subject}): ${refutation.message}${refutation.counterexample === undefined ? '' : `; counterexample: ${refutation.counterexample}`}`;
+  `The property that ${rulePropertyInWords(refutation.property)} is refuted for ${refutation.subject}: ${refutation.message}${refutation.counterexample === undefined ? '' : ` (for example ${refutation.counterexample})`}.`;
+
+const WAY_FORWARD = 'run "momonga policy verify" to see the full report.';
+
+const VERDICT_SUMMARY: Readonly<Record<RuleVerdictKind, string>> = {
+  proved: 'no rule is refuted',
+  refuted: 'a property is refuted',
+  unknown: 'not every property was decided',
+  failed: 'the verification did not finish',
+  'not-needed': 'no rule is refuted',
+};
 
 export const refusingRefutations = (verdict: Pick<RuleVerdict, 'refuted'>): RuleRefutation[] =>
   verdict.refuted.filter((refutation) => REFUSING_PROPERTIES.some((property) => property === refutation.property));
 
 export const policyRefutedMessage = (verdict: RuleVerdict): string =>
-  `The permission rules were refuted, so the run was refused: ${refusingRefutations(verdict).map(refutationText).join(' | ')}. Change the rules; "momonga policy verify" prints the full report.`;
+  [
+    'The run was not started because a permission rule breaks a protection.',
+    ...refusingRefutations(verdict).map(refutationText),
+    `Change that rule in the settings or the mandate, then ${WAY_FORWARD}`,
+  ].join(' ');
 
 export const policyVerdictNotice = (verdict: PinnedRuleVerdict): string => {
-  const head = `The permission rules changed during the run and were verified again (${verdict.solver}, fingerprint ${verdict.fingerprint}): ${verdict.verdict}.`;
-  const refuted = verdict.refuted.map(refutationText);
-  const unknown = verdict.unknown.map((entry) => `${entry.property}: ${entry.reason}`);
+  const unknown = verdict.unknown.map((entry) => `the property that ${rulePropertyInWords(entry.property)} (${entry.reason})`);
+  const settled = verdict.refuted.length === 0 && unknown.length === 0;
   return [
-    head,
-    ...(refuted.length === 0 ? [] : [`Refuted: ${refuted.join(' | ')}.`]),
-    ...(unknown.length === 0 ? [] : [`Not decided: ${unknown.join(' | ')}.`]),
-    `Not proved: ${verdict.notProved.join(' ')}`,
+    `The permission rules changed during the run and were verified again: ${VERDICT_SUMMARY[verdict.verdict]}.`,
+    ...verdict.refuted.map(refutationText),
+    ...(unknown.length === 0 ? [] : [`Not decided: ${unknown.join('; ')}.`]),
+    ...(verdict.notProved.length === 0 ? [] : [`Not proved: ${verdict.notProved.join(' ')}`]),
+    ...(settled ? [] : [`Run "momonga policy verify" to see the full report.`]),
   ].join(' ');
 };

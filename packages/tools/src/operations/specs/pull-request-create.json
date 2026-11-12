@@ -19,7 +19,6 @@
     "required": ["head", "base", "title", "body", "headSha"],
     "additionalProperties": false
   },
-  "timeoutMs": 60000,
   "observe": [
     { "id": "existing", "via": { "forge": "listPullRequests", "args": { "head": "{input.head}", "base": "{input.base}" }, "shape": "list" } },
     { "id": "headBranch", "via": { "forge": "getBranch", "args": { "branch": "{input.head}" }, "shape": "one" } }

@@ -12,12 +12,18 @@ export const parseBoundedJson = (text: string, parse: (text: string) => unknown 
   }
 };
 
-export const TOO_DEEP_PLACEHOLDER = `[arguments nest deeper than ${MAX_JSON_DEPTH} levels]`;
+export type JsonTextKind = 'arguments' | 'tool output' | 'text';
 
-export const spanValueOfJsonText = (text: string): unknown => {
+const TOO_DEEP_PLACEHOLDERS: Readonly<Record<JsonTextKind, string>> = {
+  arguments: `[arguments nest deeper than ${MAX_JSON_DEPTH} levels]`,
+  'tool output': `[tool output nests deeper than ${MAX_JSON_DEPTH} levels]`,
+  text: `[text nests deeper than ${MAX_JSON_DEPTH} levels]`,
+};
+
+export const spanValueOfJsonText = (text: string, kind: JsonTextKind): unknown => {
   const parsed = parseBoundedJson(text);
   if (parsed.kind === 'value') return parsed.value;
-  return parsed.reason === 'too_deep' ? TOO_DEEP_PLACEHOLDER : parsed.text;
+  return parsed.reason === 'too_deep' ? TOO_DEEP_PLACEHOLDERS[kind] : parsed.text;
 };
 
 export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

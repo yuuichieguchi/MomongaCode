@@ -28,7 +28,7 @@ parentPort.postMessage({ entered: true });
 parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] }, report: 'budget ' + workerData.budgetMs, findings: { exitCode: 0 } });
 `;
 
-export const provedRuleSolver: RuleSolverSource = () => ({
+export const provedRuleSolver = (): ReturnType<RuleSolverSource> => ({
   solverVersion: async () => FAKE_SOLVER_VERSION,
   loadVerifier: async () => provedVerifier,
   recipe: async () => ({ kind: 'installed', entry: '/nowhere/z3.js' }),

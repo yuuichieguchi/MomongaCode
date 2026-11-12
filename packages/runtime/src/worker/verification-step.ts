@@ -2,7 +2,7 @@ import path from 'node:path';
 import { newCallId, reapMarkedProcesses } from '@momonga/foundation';
 import { VERIFICATION_FEEDBACK_PREFIX, conditionOwed, failureBeforeRound, openRoundOf } from '@momonga/protocol';
 import type { ConditionResult, PinnedCondition, RunEventPayload, VerificationOutcome } from '@momonga/protocol';
-import { EarlierAttemptNotStoppedError, MAX_COMMAND_TIMEOUT_MS, runSandboxedCommand, verificationMarkerName } from '@momonga/tools';
+import { EarlierAttemptNotStoppedError, runSandboxedCommand, verificationMarkerName } from '@momonga/tools';
 import type { SandboxedCommandResult } from '@momonga/tools';
 import { MARKER_REAP_KILL_GRACE_MS } from '../process/constants.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
@@ -102,6 +102,7 @@ const runHeldCheck = async (
   closing: Closing,
 ): Promise<Checked | 'interrupted'> => {
   const { clock, tools } = ctx.options;
+  const { bash } = await ctx.options.settings.tools(commands.session, ctx.control.signal);
   const marker = path.join(tools.markerDir, checkName);
   await reapStaleCheck(ctx, marker);
   ctx.journal.append([{ type: 'verification.started', round, conditionId: condition.id, command: condition.command, mutationSeq, attempt }]);
@@ -115,7 +116,7 @@ const runHeldCheck = async (
     markerFile: marker,
     clock,
     signal: ctx.control.signal,
-    timeoutMs: Math.min(condition.timeoutMs ?? MAX_COMMAND_TIMEOUT_MS, ctx.run.deadlineAt - clock.now()),
+    timeoutMs: Math.min(condition.timeoutMs ?? bash.maxTimeoutMs, ctx.run.deadlineAt - clock.now()),
     tmpDir: commands.policy.tmpDir,
     inspector: tools.inspector,
     ...(tools.owners === undefined ? {} : { owners: tools.owners }),

@@ -593,7 +593,7 @@ export {
   hookTimeoutMs,
 } from './hooks.ts';
 export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
-export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from './rule-verdict.ts';
+export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations, rulePropertyInWords } from './rule-verdict.ts';
 export type { PinnedRuleVerdict, PolicyVerifyRequest, PolicyVerifyResponse, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind, RuleVerdictPhase } from './rule-verdict.ts';
 export {
   CONDITION_SOURCES,

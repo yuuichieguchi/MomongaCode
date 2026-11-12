@@ -20,6 +20,9 @@ type ReadingJobs = BackgroundJobs & { consumed: number };
 const jobsHolding = (output: string): ReadingJobs => {
   const jobs: ReadingJobs = {
     consumed: 0,
+    adopt: async () => {
+      throw new Error('this test moves no command to the background');
+    },
     start: async () => ({ jobId: JOB.id }),
     byCall: () => JOB,
     status: () => JOB,

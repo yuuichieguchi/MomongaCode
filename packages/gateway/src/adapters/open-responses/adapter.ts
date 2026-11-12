@@ -1,11 +1,10 @@
-import { decodeSse } from '@momonga/foundation';
 import { agentReadiness, isUnavailableCapabilities, readinessText, summaryTokenCapFor } from '@momonga/protocol';
 import type { ClassifiedError, ResponseError, Capabilities, ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { unavailableError } from '../../core/unavailable.ts';
 import { carryRefusalOfRender } from '../../core/unsupported-input.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
-import { boundedSseBytes } from '../shared/body-reading.ts';
+import { upstreamSseEvents } from '../shared/body-reading.ts';
 import { afterCredentialEffect, sendAuthorized } from '../shared/auth.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
@@ -16,7 +15,6 @@ import { createEndpointPool, routeReportOf } from '../shared/http-client.ts';
 import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { CHAT_COMPLETIONS_VOCABULARY } from '../chat-completions/vocabulary.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
-import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
@@ -100,7 +98,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: watch.touch, outputCeiling: gatewayOutputCeilingOf(capabilities), ...retryAfterHint(response, options.clock) });
       const driver = new OpenResponsesStreamDriver(emitter);
       try {
-        for await (const message of decodeSse(boundedSseBytes(watch.source(response.body), MAX_SSE_EVENT_BYTES))) {
+        for await (const message of upstreamSseEvents(watch.source(response.body))) {
           ctx.signal.throwIfAborted();
           if (message.data === SSE_DONE_MARKER) break;
           for (const event of driver.accept(parseOpenResponsesEvent(message.data))) {

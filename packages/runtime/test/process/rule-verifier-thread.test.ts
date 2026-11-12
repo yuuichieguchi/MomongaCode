@@ -11,7 +11,7 @@ vi.setConfig({ testTimeout: HANG_GUARD_MS });
 
 const runningWorkerCount = (): number => (process.report.getReport() as unknown as { workers: unknown[] }).workers.length;
 
-const job: RuleVerifyJob = {
+const job: RuleVerifyJob = { unixSockets: { kind: 'limited', allowed: [] },
   input: { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', deniedLocations: [], cwd: '/work', exemptDirectory: null, enforcement: 'exact-paths', protectedSet: {} as never, secretLocations: [] },
   solver: { kind: 'installed', entry: '/nowhere/z3.js' },
   solverVersion: 'z3 1',

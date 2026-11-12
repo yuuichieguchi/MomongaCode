@@ -5,7 +5,7 @@ import { withCurrentNames } from '@momonga/protocol';
 import { canonicalJson } from '@momonga/foundation';
 import type { StoredRenames } from '@momonga/protocol';
 import { ToolExecutionError, defineTool } from '../types.ts';
-import type { AnyTool, ApprovalContent, GateCall, GateFacts, OperationEffect, PreconditionContext, ReconcileContext, ReconcileResult, SubjectContext, ToolContext, ToolDefinition, ToolResult } from '../types.ts';
+import type { AnyTool, ApprovalContent, GateCall, GateFacts, OperationEffect, PreconditionContext, ReconcileContext, ReconcileResult, SubjectContext, ToolContext, ToolDefinition, ToolLimits, ToolResult } from '../types.ts';
 import type { ToolIdempotencyRecord } from '../ports.ts';
 import type { ForgeFields } from '../forge/http.ts';
 import type { ForgeAccess } from '../forge/instances.ts';
@@ -563,7 +563,7 @@ const toolOf = (spec: OperationSpec, deps: OperationDeps): AnyTool => {
     kind: spec.kind,
     tier: 'optional' as const,
     inputSchema: spec.input,
-    timeoutMs: spec.timeoutMs,
+    timeoutMs: (_input: Record<string, unknown>, limits: ToolLimits): number => limits.operations.timeoutMs,
     title: (input: Record<string, unknown>): string => titleOf(spec, input),
     approval: async (input: Record<string, unknown>, _ctx: PreconditionContext, gateFacts?: GateFacts): Promise<ApprovalContent> => {
       const effect = shownEffectOf(spec, input, gateFacts);

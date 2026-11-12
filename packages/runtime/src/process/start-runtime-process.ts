@@ -2,7 +2,7 @@ import path from 'node:path';
 import { loadProjectMandate, createPinnedDerivation, createStopValuesReader, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, stopValuesOfSettings, resolveRetentionSettings, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
 import { createSandboxOf, placeholderJournalDirectoryOf } from './sandbox-of.ts';
-import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs } from '@momonga/foundation';
+import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs, unixSocketPolicyOf } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -13,6 +13,7 @@ import {
   fixedSocket,
   generationIsLive,
   generationLayout,
+  endpointScopeOf,
   generationOfDirectoryName,
   inspectProcessLock,
   listGenerations,
@@ -383,7 +384,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       await nodeFileSystem.mkdir(scoped.tmp.spawn, SPAWN_DIRECTORY_MODE);
       return scoped;
     });
-    const own = generationLayout(canonicalHome, options.generation);
+    const own = generationLayout(canonicalHome, options.generation, platform, await endpointScopeOf(sharedPaths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock }));
     const rolePort = options.role ?? createRolePort({ paths: sharedPaths, generation: options.generation, logger });
     await step('role', () => rolePort.refresh());
     const ignorableMarkerDirectories = async (signal: AbortSignal): Promise<string[]> => {
@@ -693,7 +694,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'cancel-upstream', run: () => tracker.settle(CANCEL_UPSTREAM_SETTLE_MS) });
 
-    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, timers, shellHost, env: process.env, clock, budgetMs: RULE_VERIFY_BUDGET_MS });
+    const ruleVerifier = productRuleVerifier({ solver: options.ruleSolver, paths, locks: options.locks, timers, shellHost, env: process.env, clock, budgetMs: RULE_VERIFY_BUDGET_MS });
     const runService = await step('service', () =>
       createRunService({
         ...(signal === undefined ? {} : { startSignal: signal }),
@@ -747,9 +748,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             const { defaultMode, additionalDirectories } = await settingsComposition.sessionReadSettings(cwd, requestSignal);
             const rules = await permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, { cwd }, requestSignal);
             const lease = await sandboxes.acquire(requestSignal);
-            const { ruleEnforcement } = lease.value;
+            const { ruleEnforcement, sandbox } = lease.value;
             lease.release();
-            return { rules, additionalDirectories, enforcement: ruleEnforcement, ...(defaultMode === undefined ? {} : { defaultMode }) };
+            const { sandboxUnixSockets } = (await settingsComposition.userSnapshot(requestSignal)).settings;
+            return { rules, additionalDirectories, enforcement: ruleEnforcement, unixSockets: unixSocketPolicyOf(sandbox.kind, sandboxUnixSockets.allow), ...(defaultMode === undefined ? {} : { defaultMode }) };
           },
           mandates: async (requestSignal) => (await settingsComposition.userSnapshot(requestSignal)).settings.mandates,
           catalogue: operationCatalogueFacts,

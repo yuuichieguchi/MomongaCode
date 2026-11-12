@@ -1,4 +1,4 @@
-import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, defaultContextSettings, parseRule } from '@momonga/config';
+import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, defaultContextSettings, defaultToolsSettings, parseRule } from '@momonga/config';
 import type { PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
@@ -44,7 +44,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     verificationValue: { commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS], conditions: [], required: false },
     memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS, repositoryFacts: false },
     contextValue: defaultContextSettings(),
-    toolsValue: { deferral: false, conciseDescriptions: false, ripgrep: 'bundled' },
+    toolsValue: { ...defaultToolsSettings(), deferral: false, conciseDescriptions: false },
     classifierModel: undefined,
     hooks: async () => settings.hooksValue,
     verification: async () => settings.verificationValue,

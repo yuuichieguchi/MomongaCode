@@ -282,7 +282,7 @@ describe('credentials never leave the connection', () => {
     const result = await harness.resultOf(await registry.snapshot(), 'mcp__remote__reflect_auth', {});
     const [token] = oauth.issuedAccessTokens();
     expect(token).toBeDefined();
-    expect(result.output).toContain('[redacted]');
+    expect(result.output).toContain('[REDACTED]');
     expect(result.output).not.toContain(token as string);
   });
 
@@ -297,7 +297,7 @@ describe('credentials never leave the connection', () => {
     expect(failure).toBeInstanceOf(Error);
     expect(failure?.message).not.toContain(FAKE_STATIC_TOKEN);
     expect(JSON.stringify(connection.diagnostics())).not.toContain(FAKE_STATIC_TOKEN);
-    expect(connection.redact(`oops ${FAKE_STATIC_TOKEN}`)).toBe('oops [redacted]');
+    expect(connection.redact(`oops ${FAKE_STATIC_TOKEN}`)).toBe('oops [REDACTED]');
   });
 
   it('redacts the value of every configured header except the standard descriptive ones', async () => {
@@ -307,7 +307,7 @@ describe('credentials never leave the connection', () => {
       headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Api-Key': 'key-value-12345', 'X-Workspace': 'workspace-secret-678', Authorization: 'Bearer bearer-secret-9' },
     });
     expect(connection.redact('payload application/json end')).toBe('payload application/json end');
-    expect(connection.redact('a key-value-12345 b workspace-secret-678 c bearer-secret-9 d')).toBe('a [redacted] b [redacted] c [redacted] d');
+    expect(connection.redact('a key-value-12345 b workspace-secret-678 c bearer-secret-9 d')).toBe('a [REDACTED] b [REDACTED] c [REDACTED] d');
   });
 
   it('keeps the file credential store owner-only and holds tokens nowhere else', async () => {

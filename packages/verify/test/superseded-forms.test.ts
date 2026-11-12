@@ -33,6 +33,7 @@ const verifyWith = async (specs: readonly RuleSpec[]): Promise<VerificationRepor
     budgetMs: 120_000,
     supersededForms: SUPERSEDED,
     alwaysOperations: ['PullRequestMerge'],
+    unixSockets: { kind: 'limited', allowed: [] },
   } as VerifyRequest;
   return verifyPermissions(z3.engine().api, request);
 };

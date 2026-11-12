@@ -11,6 +11,7 @@ import {
   daemonStopBoundMs,
   fixedSocket,
   generationLayout,
+  generationSockets,
   resolveLayoutLocks,
   listGenerations,
   lockReadsHeld,
@@ -24,7 +25,7 @@ import {
   starterOutcome,
   stopWaitBoundMs as largestStopBoundMs,
 } from '@momonga/foundation';
-import type { CurrentGeneration, GenerationRef, HeldStart, KernelLockMechanism, MomongaPaths, StartTrigger, StopValues } from '@momonga/foundation';
+import type { CurrentGeneration, GenerationRef, HeldStart, KernelLockMechanism, MomongaPaths, StartTrigger, StopValues, EndpointScope } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -48,7 +49,7 @@ export class DaemonStartError extends Error {
   }
 }
 
-export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached' | 'exec' | 'timers'>;
+export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached' | 'exec' | 'timers' | 'endpointScope'>;
 
 export type DaemonConnection = { health: SupervisorHealth; clientIsOlder: boolean };
 
@@ -105,7 +106,7 @@ const readStopValues = async (ports: Pick<DaemonPorts, 'home'>, onNotice: StopNo
 
 const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
 
-const supervisorSocketOf = (paths: MomongaPaths, generation: number): string => generationLayout(homeOf(paths), generation).sockets.supervisor;
+const supervisorSocketOf = (paths: MomongaPaths, generation: number, scope: EndpointScope): string => generationSockets(homeOf(paths), generation, scope).supervisor;
 
 const supervisorLockOf = (paths: MomongaPaths, generation: number): string => generationLayout(homeOf(paths), generation).locks.supervisor;
 
@@ -177,18 +178,18 @@ const stopFailure = (generation: number, error: unknown): StopFailure => ({
   failure: `the daemon of generation ${generation} could not be asked to stop: ${error instanceof Error ? error.message : String(error)}`,
 });
 
-const stopCandidate = async (paths: MomongaPaths, generation: number): Promise<StopCandidate | StopFailure | undefined> => {
+const stopCandidate = async (paths: MomongaPaths, generation: number, scope: EndpointScope): Promise<StopCandidate | StopFailure | undefined> => {
   try {
-    const health = await healthAt(supervisorSocketOf(paths, generation));
+    const health = await healthAt(supervisorSocketOf(paths, generation, scope));
     return health === undefined ? undefined : { generation, health };
   } catch (error) {
     return stopFailure(generation, error);
   }
 };
 
-const requestStop = async (paths: MomongaPaths, candidate: StopCandidate, values: () => Promise<StopValues>): Promise<StopAsked | StopFailure> => {
+const requestStop = async (paths: MomongaPaths, scope: EndpointScope, candidate: StopCandidate, values: () => Promise<StopValues>): Promise<StopAsked | StopFailure> => {
   if (candidate.health.phase === 'draining') return { ...candidate, boundMs: stopWaitBoundMs([candidate.health]) };
-  const client = createSupervisorClient({ resolveSocket: fixedSocket(supervisorSocketOf(paths, candidate.generation)) });
+  const client = createSupervisorClient({ resolveSocket: fixedSocket(supervisorSocketOf(paths, candidate.generation, scope)) });
   try {
     const stopValues = await values();
     await client.shutdown(stopValues);
@@ -210,13 +211,14 @@ export const stopDaemon = async (
   lock: KernelLockMechanism = resolveLayoutLocks(paths).mechanism,
   onInterrupting?: (work: InterruptedWork) => void,
 ): Promise<{ stopped: boolean }> => {
+  const scope = await ports.endpointScope(paths);
   const snapshot = await liveGenerationsUnderLock(ports, paths, lock, bounds?.stopMs ?? STOP_WAIT_WHEN_UNKNOWN_MS);
-  const probed = (await Promise.all(snapshot.map((generation) => stopCandidate(paths, generation)))).filter((entry) => entry !== undefined);
+  const probed = (await Promise.all(snapshot.map((generation) => stopCandidate(paths, generation, scope)))).filter((entry) => entry !== undefined);
   const candidates = probed.filter((entry) => 'health' in entry);
   onInterrupting?.({ steps: sumOf(candidates.map((candidate) => candidate.health.steps)), jobs: sumOf(candidates.map((candidate) => candidate.health.jobs)) });
   let stopValues: Promise<StopValues> | undefined;
   const values = (): Promise<StopValues> => (stopValues ??= readStopValues(ports, onNotice));
-  const requests = await Promise.all(candidates.map((candidate) => requestStop(paths, candidate, values)));
+  const requests = await Promise.all(candidates.map((candidate) => requestStop(paths, scope, candidate, values)));
   const asked = requests.filter((request) => 'boundMs' in request);
   const failures = [...probed, ...requests].flatMap((entry) => ('failure' in entry ? [entry.failure] : []));
   if (asked.length > 0) {
@@ -396,6 +398,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
   signal?.throwIfAborted();
   const readyMs = options.bounds?.readyMs ?? (await daemonReadyBoundMs());
   const lock = options.lock ?? resolveLayoutLocks(paths).mechanism;
+  const scope = await ports.endpointScope(paths);
   const start: { own: OwnStart | undefined } = { own: undefined };
   let draining: number | undefined;
   let allocation: 'allowed' | 'withheld' = 'withheld';
@@ -405,6 +408,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
       version: ports.version,
       foldVersion: FIDELITY_FOLD_VERSION,
       lock,
+      scope,
       trigger: options.trigger ?? 'client',
       allocation,
       ...(draining === undefined ? {} : { draining }),
@@ -417,7 +421,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
         allocation = 'allowed';
         return decide();
       case 'serving': {
-        const health = await healthAt(supervisorSocketOf(paths, outcome.generation));
+        const health = await healthAt(supervisorSocketOf(paths, outcome.generation, scope));
         if (health === undefined) return undefined;
         if (health.phase === 'draining') {
           draining = outcome.generation;
@@ -467,7 +471,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
     });
     if (outcome === 'success' && currentHealth !== undefined) return { health: currentHealth, clientIsOlder: orderVersions(ports.version, currentHealth.version) === 'older' };
     if (outcome === 'failed') throw await startFailure(ports, paths, started, current, currentHeld, lock, signal);
-    const ownHealth = current?.generation === started.ref.generation ? currentHealth : await healthAt(supervisorSocketOf(paths, started.ref.generation));
+    const ownHealth = current?.generation === started.ref.generation ? currentHealth : await healthAt(supervisorSocketOf(paths, started.ref.generation, scope));
     if (ownHealth !== undefined) {
       started.sawSupervisor = true;
       const held = heldFailure(ownHealth);
@@ -520,7 +524,7 @@ export const ensureSessionDaemon = async (ports: DaemonPorts, paths: MomongaPath
   const newer = await newerVersionOf(ports, paths, daemonOptions);
   if (newer === undefined) return;
   await onNewer?.(newer);
-  const own = await resolveGenerationFor(paths, ports.version, { lock: options.lock ?? resolveLayoutLocks(paths).mechanism });
+  const own = await resolveGenerationFor(paths, ports.version, { lock: options.lock ?? resolveLayoutLocks(paths).mechanism, scope: await ports.endpointScope(paths) });
   if (own === undefined) throw new DaemonStartError(reopenSessionMessage(newer), paths.logFiles.supervisor, notPointingAtLog);
 };
 

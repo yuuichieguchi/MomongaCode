@@ -1,5 +1,5 @@
 import type { McpServerConfig } from '@momonga/config';
-import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
+import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
@@ -817,7 +817,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     });
     if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
     eventsOptions.onOpen?.();
-    for await (const event of decodeSse(response.body)) yield frameOf(event, description);
+    for await (const event of decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES })) yield frameOf(event, description);
   }
 
   async function* streamEvents(runId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> {
@@ -852,7 +852,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
       const description = `POST ${path}`;
       const response = await http.request({ method: 'POST', path, headers: { ...(await personHeaders()), ...JSON_HEADERS }, body: JSON.stringify({ command, include }) });
       if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
-      for await (const event of decodeSse(response.body)) {
+      for await (const event of decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES })) {
         const frame = checkUserShellFrame(parsed(event.data, description), description);
         if (frame.type === 'output') io.onOutput(frame.text);
         else if (frame.type === 'unprotected') io.onUnprotected(frame.reason);

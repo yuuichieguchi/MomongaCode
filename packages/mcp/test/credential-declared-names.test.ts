@@ -38,6 +38,6 @@ describe('a declared credential name in an MCP server env is a credential, as in
     const harness = makePool([entry('modern', modernConfig(makeRecordFile(), { [DECLARED]: 'opaque-value-1234' }))], { credentialNames: [DECLARED] });
     const set = await harness.snapshot();
     const result = await makeExecutor().resultOf(set, 'mcp__modern__echo', { text: 'a opaque-value-1234 b' });
-    expect(result.output).toBe('a [redacted] b');
+    expect(result.output).toBe('a [REDACTED] b');
   });
 });

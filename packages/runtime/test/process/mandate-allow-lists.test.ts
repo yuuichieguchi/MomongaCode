@@ -37,7 +37,7 @@ describe('a mandate whose allow list names tools that cover one another', () => 
     });
 
     const input = await verifier.inputOf(
-      { rules: delegation?.rules ?? [], roots: [cwd], mode: 'manual', home, cwd, exemptDirectory: `${home}/.momonga/tmp/sessions/s1`, enforcement: 'exact-paths', secrets: [] },
+      { unixSockets: { kind: 'limited', allowed: [] }, rules: delegation?.rules ?? [], roots: [cwd], mode: 'manual', home, cwd, exemptDirectory: `${home}/.momonga/tmp/sessions/s1`, enforcement: 'exact-paths', secrets: [] },
       NEVER_CANCELLED,
     );
     expect(delegation?.rules.map((rule) => rule.text)).toEqual(allow);
