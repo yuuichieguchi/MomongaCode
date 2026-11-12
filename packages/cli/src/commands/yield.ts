@@ -39,6 +39,6 @@ export const evaluateYield = async (
   const report = buildYieldReport({ dataset, runs, seed: CONTEXT_BOOTSTRAP_SEED });
   const gate = judgeYield(report, { seed: CONTEXT_BOOTSTRAP_SEED });
   ports.stdout.write(`${formatYieldReport(report, gate)}\n`);
-  await saveYieldReport(ports.files, reportFile, report);
+  await saveYieldReport(ports.files, reportFile, { ...report, gate });
   return exitOfMeasurement(gate.passed);
 };

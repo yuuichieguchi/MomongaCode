@@ -175,7 +175,7 @@ describe('a live yield run', () => {
     await runYieldLive(context.effects, input());
     expect(context.roots).toHaveLength(3 * FAMILY_IDS.length);
     const [learn, without, withArm] = context.roots.slice(0, 3).map(context.settingsOf);
-    expect(learn).toEqual({ models: liveSettingsFor(userModels(), [PINNED]).models, verification: { commands: ['node check-port.mjs'] } });
+    expect(learn).toEqual({ models: liveSettingsFor(userModels(), [PINNED]).models, memory: { repositoryFacts: false }, verification: { commands: ['node check-port.mjs'] } });
     expect(without).toEqual(learn);
     expect(withArm).toEqual(learn);
     expect(context.trusted.slice(0, 3)).toEqual(['/tmp/mc-y0/w', '/tmp/mc-y1/w', '/tmp/mc-y2/w']);

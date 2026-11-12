@@ -366,7 +366,7 @@ export const nodePorts = (version: string, interrupt: AbortSignal, home: string,
     probe: nodeWorkspaceProbeOf(nodeWorkspaceSandbox(settingsWorkspaceSandbox(home, process.cwd(), interrupt, (text) => streams.stderr.write(`${text}\n`))), hostProcessGroupPort()),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) }),
-    personCapability: () => personCapabilityOf({ files: nodeFileSystem, random: systemRandom, lock: lock() }, home),
+    personCapability: (of) => personCapabilityOf({ files: nodeFileSystem, random: systemRandom, lock: lock() }, of),
     endpointScope: (paths) => {
       const known = endpointScopes.get(paths.run);
       if (known !== undefined) return known;

@@ -13,7 +13,7 @@ import {
   typedModelText,
 } from '@momonga/protocol';
 import type { Capabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
-import { ADAPTERS, planModelsEdit, probeRecordKeyOf, registeredServer } from '@momonga/config';
+import { ADAPTERS, MODEL_ROLES, planModelsEdit, probeRecordKeyOf, registeredServer } from '@momonga/config';
 import type { ConnectionDraft, EndpointProbeKey, ModelEntry, ModelsOperation, ModelsOperations, ModelsSettings, OpenResponsesTarget, ResolvedModel, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
@@ -275,10 +275,16 @@ export const liveSettingsFor = (user: UserModels, models: readonly string[], rel
     operations.push(addOperation({ adapter: member.adapter, ...address, ...keyOf(member), ...apiVersion, ...sharedOf(member) }, entryOf(member, declaredCapabilitiesOf(member))));
   };
   for (const model of models) for (const member of chainMembersOf(resolved, model)) copyMember(member);
+  const roles = MODEL_ROLES.flatMap((job) => {
+    const canon = resolved.roles[job];
+    return canon === undefined ? [] : [{ job, canon }];
+  });
+  for (const { canon } of roles) for (const member of chainMembersOf(resolved, canon)) copyMember(member);
   const [start] = models;
   if (start !== undefined) operations.push({ kind: 'setStart', model: start });
   const fallback = resolved.fallback.filter((canon) => copied.has(canon));
   if (fallback.length > 0) operations.push({ kind: 'setFallback', models: fallback });
+  for (const { job, canon } of roles) operations.push({ kind: 'setRole', job, model: canon });
   for (const change of resolved.billingChanges) {
     if (change.model === undefined || copied.has(change.model)) operations.push({ kind: 'allowBillingChange', ...change });
   }
