@@ -130,10 +130,10 @@ describe('a markdown entry larger than one unit', () => {
     const turns = manualSchedule();
     const source = sourceOf(store, createRowCache(ROW_RENDERERS, turns.schedule), 60);
     const feed = createHistoryFeed();
-    expect(feed.next(source, 1)).toEqual([]);
-    expect(feed.pending(1)).toBe(true);
+    expect(feed.next(source, (index) => index < 1)).toEqual([]);
+    expect(feed.pending(source, (index) => index < 1)).toBe(true);
     turns.drain();
-    expect(feed.next(source, 1)[0]?.text).toBe('A heading with code');
+    expect(feed.next(source, (index) => index < 1)[0]?.text).toBe('A heading with code');
   });
 });
 

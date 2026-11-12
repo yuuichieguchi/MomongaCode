@@ -1,10 +1,10 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { findProgramOnPathSync, nodeFileSystemSync, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
+import type { TrustItemsView } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
-import { approveProjectItems, editProjectMandate, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
-import type { ProjectItemsApproval, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
-import type { ProjectItems } from './project-items.ts';
+import { approveProjectItems, editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import type { ApprovedItem, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
 import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
 import type { ModelsHost } from '../commands/models.ts';
 import { storeSecretValue } from '../commands/secret.ts';
@@ -64,8 +64,8 @@ export type TuiBackend = {
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
   trust(): Promise<TrustView>;
   clearTrust(): Promise<void>;
-  projectItems(): Promise<ProjectItems>;
-  approveProjectItems(approval: ProjectItemsApproval): Promise<void>;
+  trustItems(): Promise<TrustItemsView>;
+  approveProjectItems(approved: readonly ApprovedItem[]): Promise<void>;
   projectMandate(): Promise<ProjectMandateState>;
   writeProjectMandate(document: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
   openSession(model?: string, permissionMode?: PermissionMode): Promise<SessionView>;
@@ -220,12 +220,7 @@ export const createTuiBackend = (
       await runtime().setTrust(ports.cwd, decision);
     },
     trust: () => runtime().trust(ports.cwd),
-    projectItems: async () => {
-      if (!(await trustOracle.isTrusted(ports.cwd, closing.signal))) return { hooks: [] };
-      const loaded = await loadSettings({ home: paths.home, projectDir: ports.cwd, cli: {}, trust: trustOracle, signal: closing.signal });
-      const mandate = await projectMandateState({ projectDir: ports.cwd, approvals: loaded.settings.projectApprovals, signal: closing.signal });
-      return { hooks: loaded.settings.pendingHooks, ...(mandate.found && mandate.approval !== 'approved' ? { mandate } : {}) };
-    },
+    trustItems: () => runtime().trustItems(ports.cwd),
     approveProjectItems: (approval) => approveProjectItems(paths.home, ports.cwd, approval, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
     projectMandate: async () => projectMandateState({ projectDir: ports.cwd, approvals: (await loadUserSettings({ home: paths.home, signal: closing.signal })).settings.projectApprovals, signal: closing.signal }),
     writeProjectMandate: (document, signal) =>

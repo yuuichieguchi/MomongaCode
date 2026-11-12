@@ -129,7 +129,7 @@ describe('foldEvent', () => {
     const plan = { type: 'plan.updated', entries: [{ content: 'step one', priority: 'high', status: 'completed' }] };
     const live = storeOf([plan]);
     expect(live.at(0).entry).toMatchObject({ kind: 'plan' });
-    expect(live.settledCount()).toBe(0);
+    expect(live.settledAt(0)).toBe(false);
     const ended = apply([plan, { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }]);
     expect(ended.entries).toEqual([{ kind: 'info', text: '[x] step one' }]);
   });
@@ -139,12 +139,12 @@ describe('foldEvent', () => {
   });
 });
 
-describe('settledCount', () => {
-  it('counts the leading entries that can no longer change', () => {
+describe('settledAt', () => {
+  it('says of each entry whether it can no longer change', () => {
     const state = storeOf([call, { type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'x' }]);
-    expect(state.settledCount()).toBe(0);
+    expect([state.settledAt(0), state.settledAt(1)]).toEqual([false, false]);
     const done = storeOf([call, { type: 'tool.completed', callId: 'c1', status: 'completed', output: '' }, { type: 'agent.message.delta', attempt: 0, itemId: 'a', text: 'x' }]);
-    expect(done.settledCount()).toBe(1);
+    expect([done.settledAt(0), done.settledAt(1)]).toEqual([true, false]);
   });
 });
 
@@ -226,5 +226,43 @@ describe('waiting and subagent runs', () => {
     expect(state.entries).toMatchObject([{ kind: 'tool', callId: 'child/c1', title: 'reviewer: Edit /a', status: 'awaiting_approval' }]);
     expect(state.approval).toMatchObject({ approvalId: 'ap-1', callId: 'child/c1' });
     expect(state.runStatus).toBeUndefined();
+  });
+});
+
+describe('the newest tool whose output has hidden lines (P-186)', () => {
+  const callOf = (callId: string) => ({ ...call, callId, providerCallId: `p-${callId}` });
+  const completed = (callId: string, output: string) => ({ type: 'tool.completed', callId, status: 'completed', output });
+  const long = Array.from({ length: 20 }, (_, index) => `line ${index}`).join('\n');
+
+  it('is an index the reducer keeps, the newest by position, not found by a scan', () => {
+    const store = storeOf([callOf('a'), callOf('b'), callOf('c'), completed('b', long), completed('a', long), completed('c', 'short')]);
+    expect(store.state().newestExpandableTool).toBe('call:b');
+    let reads = 0;
+    const at = store.at.bind(store);
+    store.at = (index) => {
+      reads += 1;
+      return at(index);
+    };
+    expect(store.byKey(store.state().newestExpandableTool ?? '')?.entry).toMatchObject({ kind: 'tool', callId: 'b' });
+    expect(reads).toBe(0);
+  });
+});
+
+describe('a withdrawn stream (model.stream.restarted)', () => {
+  const restarted = (itemIds: string[]) => ({ type: 'model.stream.restarted', step: 1, attempt: 0, itemIds });
+  const answer = (itemId: string, text: string) => ({ type: 'agent.message.delta', attempt: 0, itemId, text });
+  const thought = (itemId: string, text: string) => ({ type: 'agent.thought.delta', attempt: 0, itemId, text });
+
+  it('drops the half answer and the half thought it withdraws, and shows the second stream alone', () => {
+    const events = [thought('t1', 'half thinking'), answer('a1', 'half answer'), restarted(['t1', 'a1']), thought('t1', 'full thinking'), answer('a1', 'full answer')];
+    const entries = apply(events).entries;
+    expect(entries.filter((entry) => entry.kind === 'assistant').map((entry) => entry.kind === 'assistant' && entry.text)).toEqual(['full answer']);
+    expect(entries.filter((entry) => entry.kind === 'thought').map((entry) => entry.kind === 'thought' && entry.text)).toEqual(['full thinking']);
+  });
+
+  it('gives the same transcript when it is rebuilt from the same events', () => {
+    const events = [answer('a1', 'half'), restarted(['a1']), answer('a2', 'whole')];
+    expect(apply(events)).toEqual(apply(events));
+    expect(apply(events).entries.filter((entry) => entry.kind === 'assistant')).toHaveLength(1);
   });
 });

@@ -1,4 +1,4 @@
-import { askProjectItems } from './project-items.ts';
+import { askTrustItems } from './project-items.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
 import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
@@ -46,7 +46,8 @@ import { AtList, AttachmentLines, heldAttachments } from './screen/attachments.t
 import type { Attachment } from './screen/attachments.tsx';
 import { contextPercentOf, Footer, newlineHintText, planRowFits } from './screen/footer.tsx';
 import { formatTokens } from '../format-tokens.ts';
-import { HistoryView } from './screen/history-view.tsx';
+import { HistoryView, useBackgroundAnswered } from './screen/history-view.tsx';
+import type { ViewSource } from './screen/viewport.ts';
 import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
 import { untilNextKey } from './screen/input.ts';
 import type { ScreenTerminal } from './screen/input.ts';
@@ -180,6 +181,7 @@ export function App(props: AppProps) {
   const { exit, waitUntilRenderFlush } = useApp();
   const { stdout, write: writeThroughInk } = useStdout();
   const terminalState = useSyncExternalStore(terminal.subscribe, terminal.state);
+  const scrollbackReady = useBackgroundAnswered(terminalState.negotiation, props.timers);
   const { columns, rows } = terminalState.size;
   applyAppearance(appearanceOf(props.colour ?? UNREPORTED_COLOUR_HOST, terminalState.backgroundColor));
   const tuiSettings = props.tuiSettings ?? UNSTORED_TUI_SETTINGS;
@@ -246,6 +248,7 @@ export function App(props: AppProps) {
   const { adoption, move } = props;
   const [feed, setFeed] = useState(() => createHistoryFeed(adoption?.record.printed ?? 0));
   const feedRef = useRef(feed);
+  const sourceRef = useRef<ViewSource | undefined>(undefined);
   const [erased, setErased] = useState(false);
   const phaseRef = useRef<Phase['kind']>('starting');
   const readingRef = useRef(false);
@@ -307,7 +310,7 @@ export function App(props: AppProps) {
       if (openedSession.current === undefined || phaseRef.current !== 'ready' || now.overlay) return false;
       if (readingRef.current || switchingRef.current || shellRunning.current || now.tasks.count() > 0) return false;
       if (state.approval !== undefined || state.elicitation !== undefined) return false;
-      return now.terminal.state().screen === 'fullscreen' || !feedRef.current.pending(store.settledCount());
+      return now.terminal.state().screen === 'fullscreen' || sourceRef.current === undefined || !feedRef.current.pending(sourceRef.current, store.settledAt);
     };
     const surface: TuiSurface = {
       session: () => openedSession.current?.id,
@@ -650,8 +653,10 @@ export function App(props: AppProps) {
   };
 
   const connectAtLaunch = async (): Promise<void> => {
-    const approval = await askProjectItems(await backend.projectItems(), overlayPorts.choose);
-    if (approval !== undefined) await backend.approveProjectItems(approval);
+    const pending = await backend.trustItems();
+    for (const sentence of pending.refused) append({ kind: 'notice', level: 'warning', text: sentence });
+    const approved = await askTrustItems(pending.items, overlayPorts.choose);
+    if (approved.length > 0) await backend.approveProjectItems(approved);
     const [entries, listed] = await Promise.all([backend.models(), backend.plan.accounts()]);
     rememberProfiles(listed);
     if (entries.length > 0) {
@@ -1588,6 +1593,7 @@ export function App(props: AppProps) {
   useEffect(() => {
     facts.current = { overlay: overlay !== undefined, position: view.position, tasks, terminal, flush: waitUntilRenderFlush };
     feedRef.current = feed;
+    sourceRef.current = view.source;
     move?.check();
   });
   useEffect(() => move?.attach(handover.surface), [move, handover]);
@@ -1653,7 +1659,7 @@ export function App(props: AppProps) {
         ) : fullscreen ? (
           <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : drawnTranscriptRows(allocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
         ) : (
-          <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} />
+          <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
         ),
         menu: !menuShown ? null : invitationInMenu && prompts.invitation !== undefined ? <InvitationLine invitation={prompts.invitation} keys={keys} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
         waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
@@ -1667,7 +1673,7 @@ export function App(props: AppProps) {
             ))}
           </>
         ) : null,
-        input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledCount()).length, rowRequests))} /> : null,
+        input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledAt).length, rowRequests))} /> : null,
         footer: (
           <>
             <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />

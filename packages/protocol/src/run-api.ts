@@ -894,6 +894,24 @@ const trustView = closed(
   ['path', 'decision'],
 );
 
+const trustItemChange: JsonSchema = { anyOf: [closed({ kind: constant('new') }, ['kind']), closed({ kind: constant('changed'), diff: closed(appliedDiffFields, []) }, ['kind', 'diff']), closed({ kind: constant('not-recorded') }, ['kind'])] };
+const trustItemsView = closed(
+  {
+    items: {
+      type: 'array',
+      items: {
+        anyOf: [
+          closed({ kind: constant('hook'), event: string, group: anything, digest: string, source: string, change: trustItemChange }, ['kind', 'event', 'group', 'digest', 'source', 'change']),
+          closed({ kind: constant('mandate'), document: anything, digest: string, source: string, change: trustItemChange }, ['kind', 'document', 'digest', 'source', 'change']),
+          closed({ kind: constant('mcp'), name: string, config: anything, digest: string, source: string, change: trustItemChange }, ['kind', 'name', 'config', 'digest', 'source', 'change']),
+        ],
+      },
+    },
+    refused: { type: 'array', items: string },
+  },
+  ['items', 'refused'],
+);
+
 const costTotalsProperties: Record<string, JsonSchema> = {
   calls: nonNegativeInteger,
   localCalls: nonNegativeInteger,
@@ -1631,6 +1649,7 @@ export const RUN_API_SCHEMAS = {
   ),
   TrustView: root(trustView),
   TrustResponse: root(closed({ trust: trustView }, ['trust'])),
+  TrustItemsResponse: root(trustItemsView),
   PutTrustRequest: root(closed({ path: { type: 'string', minLength: 1 }, decision: enumOf(['trusted', 'untrusted']) }, ['path', 'decision'])),
   McpFolderRequest: root(closed({ cwd: { type: 'string', minLength: 1 }, env: { type: 'object', additionalProperties: string } }, ['cwd', 'env'])),
   RunView: root(runView),

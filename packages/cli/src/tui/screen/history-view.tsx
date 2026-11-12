@@ -1,43 +1,53 @@
-import { Box, Static } from 'ink';
+import { Box, renderToString, useStdout } from 'ink';
 import { useEffect, useEffectEvent, useState } from 'react';
+import type { NegotiationState } from '../terminal/negotiation.ts';
 import type { HistoryFeed } from './history-feed.ts';
 import { RowText } from './row-text.tsx';
 import type { TranscriptStore } from './store.ts';
+import type { ScreenTimers } from './timers.ts';
 import type { ViewSource } from './viewport.ts';
 import type { Row } from './wrap.ts';
 
-const HANDED: readonly Row[] = [];
+export const BACKGROUND_ANSWER_WAIT_MS = 1000;
 
-export type HistoryViewProps = { store: Pick<TranscriptStore, 'settledCount'>; source: ViewSource; feed: HistoryFeed };
+const NEXT_TURN_MS = 0;
 
-export function HistoryView({ store, source, feed }: HistoryViewProps) {
-  const [chunks, setChunks] = useState<readonly (readonly Row[])[]>([]);
-  const settled = store.settledCount();
-  const pending = feed.pending(settled);
+export const useBackgroundAnswered = (negotiation: NegotiationState, timers: ScreenTimers): boolean => {
+  const [expired, setExpired] = useState(false);
+  const answered = negotiation !== 'unknown';
+  useEffect(() => {
+    if (answered || expired) return undefined;
+    const timer = timers.setTimeout(() => setExpired(true), BACKGROUND_ANSWER_WAIT_MS);
+    return () => timers.clearTimeout(timer);
+  }, [answered, expired, timers]);
+  return answered || expired;
+};
+
+function Rows({ rows }: { rows: readonly Row[] }) {
+  return (
+    <Box flexDirection="column">
+      {rows.map((row, index) => (
+        <RowText key={index} row={row} />
+      ))}
+    </Box>
+  );
+}
+
+export type HistoryViewProps = { store: Pick<TranscriptStore, 'settledAt'>; source: ViewSource; feed: HistoryFeed; ready: boolean; timers: ScreenTimers; columns: number };
+
+export function HistoryView({ store, source, feed, ready, timers, columns }: HistoryViewProps) {
+  const { write } = useStdout();
+  const [turns, setTurns] = useState(0);
+  const pending = ready && feed.pending(source, store.settledAt);
   const handNext = useEffectEvent((): void => {
-    const chunk = feed.next(source, store.settledCount());
-    if (chunk.length > 0) setChunks((handed) => [...handed.map(() => HANDED), chunk]);
+    const chunk = feed.next(source, store.settledAt);
+    if (chunk.length > 0) write(`${renderToString(<Rows rows={chunk} />, { columns })}\n`);
+    setTurns((count) => count + 1);
   });
   useEffect(() => {
     if (!pending) return undefined;
-    const turn = setImmediate(handNext);
-    return () => clearImmediate(turn);
-  }, [pending, settled, chunks.length, source]);
-  const live = feed.live(source, settled);
-  return (
-    <>
-      <Static items={[...chunks]}>
-        {(chunk, index) => (
-          <Box key={index} flexDirection="column">
-            {chunk.map((row, rowIndex) => (
-              <RowText key={rowIndex} row={row} />
-            ))}
-          </Box>
-        )}
-      </Static>
-      {live.map((row, index) => (
-        <RowText key={index} row={row} />
-      ))}
-    </>
-  );
+    const turn = timers.setTimeout(handNext, NEXT_TURN_MS);
+    return () => timers.clearTimeout(turn);
+  }, [pending, turns, source, timers]);
+  return <Rows rows={feed.live(source, store.settledAt)} />;
 }

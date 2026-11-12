@@ -15,7 +15,7 @@ import type { ScreenTerminal } from './input.ts';
 import { regionAt } from './layout.ts';
 import type { RowAllocation } from './layout.ts';
 import { MARKDOWN_UNIT_BYTES } from './markdown.ts';
-import { ELLIPSIS } from './output-tail.ts';
+import { byteLengthOf, ELLIPSIS, endWithinBytes } from './output-tail.ts';
 import type { OutputTail } from './output-tail.ts';
 import type { TranscriptStore } from './store.ts';
 import { every } from './timers.ts';
@@ -91,11 +91,6 @@ export const runningToolText = (entry: ToolEntry, a11y: A11y): string => {
   return `${a11y.reducedMotion ? STATIC_MARK : SPINNER_FRAMES[seconds % SPINNER_FRAMES.length]} ${entry.title} · ${seconds}s`;
 };
 
-export const hasHiddenLines = (entry: ToolEntry): boolean => {
-  if (entry.denial !== undefined) return false;
-  if (entry.diff !== undefined) return entry.diff.hunks !== undefined && diffRowCount(entry.diff.hunks) > DIFF_PREVIEW_ROWS;
-  return entry.tail !== undefined && entry.tail.hidden > 0;
-};
 
 export const hasOutput = (entry: ToolEntry): boolean => entry.denial === undefined && (entry.diff !== undefined || entry.tail !== undefined);
 
@@ -110,7 +105,7 @@ function* outputLines(output: string): Generator<ViewLine> {
     const stop = found === -1 || found > end ? end : found;
     let continued = false;
     do {
-      const to = Math.min(stop, from + VIEWER_UNIT_BYTES);
+      const to = endWithinBytes(output, from, stop, VIEWER_UNIT_BYTES);
       yield { prefix: '', text: output.slice(from, to), ...(continued ? { continued } : {}) };
       continued = true;
       from = to;
@@ -141,7 +136,7 @@ export const createPager = (lines: Iterator<ViewLine>, width: number): Pager => 
         return;
       }
       const line = next.value;
-      taken += line.text.length + 1;
+      taken += byteLengthOf(line.text) + 1;
       const wrapped = wrapLine(inertLine(line.text), width, { first: line.prefix, rest: ' '.repeat(displayWidth(line.prefix)), links: false, ...(line.token === undefined ? {} : { token: line.token }) });
       wrapped.forEach((row, index) => rows.push(index === 0 && line.continued === true ? { ...row, wrapped: true } : row));
     }
@@ -248,8 +243,10 @@ export const useToolView = (host: ToolViewHost): ToolView => {
   };
 
   const showNewest = (): void => {
-    const tool = findTool(store, store.count() - 1, -1, hasHiddenLines);
-    const { newestThought } = store.state();
+    const { newestThought, newestExpandableTool } = store.state();
+    const newest = newestExpandableTool === undefined ? undefined : store.byKey(newestExpandableTool);
+    const index = newest === undefined ? undefined : store.indexOfId(newest.id);
+    const tool = index === undefined || newest?.entry.kind !== 'tool' ? undefined : { index, entry: newest.entry };
     const thought = newestThought === undefined ? undefined : store.byKey(newestThought);
     if (tool !== undefined && (thought === undefined || store.at(tool.index).id > thought.id)) open(tool.index, tool.entry);
     else if (thought !== undefined) toggleNewestThought(store);

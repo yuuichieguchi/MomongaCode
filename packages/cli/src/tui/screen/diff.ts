@@ -33,6 +33,10 @@ const lastNumberOf = (hunk: DiffHunk): number => {
   return Math.max(old, fresh);
 };
 
+export type DiffRow = { text: string; token?: StyleToken; first: string };
+
+export const diffRows = (hunks: readonly DiffHunk[]): DiffRow[] => [...diffLines(hunks)].map((line) => ({ text: line.text, ...(line.token === undefined ? {} : { token: line.token }), first: line.prefix }));
+
 export function* diffLines(hunks: readonly DiffHunk[]): Generator<ViewLine> {
   const digits = String(hunks.reduce((highest, hunk) => Math.max(highest, lastNumberOf(hunk)), 1)).length;
   let first = true;
