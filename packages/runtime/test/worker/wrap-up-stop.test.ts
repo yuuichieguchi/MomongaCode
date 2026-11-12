@@ -284,6 +284,7 @@ describe('a crash during the wrap-up call', () => {
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'max_steps' });
     expect(env.run(run.id).error).toBeUndefined();
     expect(noticesOf(env, run.id).some((message) => message.includes(REJECTED.code) && message.includes(REJECTED.message))).toBe(rejected);
+    expect(noticesOf(env, run.id).some((message) => message.includes('The work of the run is kept'))).toBe(rejected);
     expect(env.toolbox.executions).toEqual([]);
   });
 });

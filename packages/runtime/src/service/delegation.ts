@@ -136,7 +136,7 @@ export const runTermsOf = async ({ request, defaults, settings, project, billing
       throw invalidRequest('a money limit is declared, but the model of this session, or a model it falls back to, has no price, so its cost cannot be counted; add its price under pricing, or run without a money limit', delegated ? 'mandate' : 'limits');
     }
     if (delegated && chain.metered && maxCostUsd === undefined) {
-      throw invalidRequest('a mandate on a model billed by use needs a money budget: declare budget.costUsd (costUsd of the mandate in the user settings)', 'mandate');
+      throw invalidRequest('a mandate on a model billed by use needs a money budget in USD: set budget.costUsd of the mandate in the user settings, or limits.maxCostUsd', 'mandate');
     }
   }
   const { budget: _budget, ...stored } = mandate ?? {};
