@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { fixedSocket } from '@momonga/foundation';
-import { TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, agentReadiness, readinessText } from '@momonga/protocol';
+import { TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, agentReadiness, measuringLineOf, measuringWireOf, readinessText } from '@momonga/protocol';
 import type { NotListedCapabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
 import { GatewayRequestError, ModelUnlistedError, createGatewayClient } from '@momonga/runtime';
 import { fakeClock, listedEntry, listingBody, makeClient, settle, startRawHttpFake } from '../gateway-client/fixtures.ts';
@@ -59,24 +59,23 @@ describe('a run created with an image answers by the readiness of its model (K5)
     expect(env.store.listRuns(session.id)).toEqual([]);
   });
 
-  it('refuses with 409 target_not_ready and the probing readiness text when the model is being measured', async () => {
+  it('refuses with 409 target_not_ready and the measuring state when the model is being measured', async () => {
     const { env, session, response } = await createRunWithImage(await capabilitiesThroughListing(PROBING));
 
     expect({ status: response.status, body: response.json }).toEqual({
       status: 409,
-      body: { error: { type: 'conflict', code: TARGET_NOT_READY, message: refusalTextOf(PROBING) } },
+      body: { error: { type: 'conflict', code: TARGET_NOT_READY, message: measuringLineOf(PROBING.toolCalling.measuring), measuring: measuringWireOf(PROBING.toolCalling.measuring) } },
     });
-    expect(refusalTextOf(PROBING)).toBe(TARGET_PROBING_MESSAGE);
     expect(response.headers['retry-after']).toBeUndefined();
     expect(env.errors).toEqual([]);
     expect(env.store.listRuns(session.id)).toEqual([]);
   });
 
-  it('refuses with 409 target_not_ready and the probing text when the gateway answers the listing itself with 503 target_probing', async () => {
+  it('refuses with 409 target_not_ready and the measuring state when the gateway answers the listing itself with 503 target_probing', async () => {
     const fake = await startRawHttpFake();
     fake.respond((_request, response) => {
       response.writeHead(503, { 'content-type': 'application/json', 'retry-after': '120' });
-      response.end(JSON.stringify({ error: { type: 'server_error', code: TARGET_PROBING, message: TARGET_PROBING_MESSAGE, param: null } }));
+      response.end(JSON.stringify({ error: { type: 'server_error', code: TARGET_PROBING, message: TARGET_PROBING_MESSAGE, param: null, measuring: measuringWireOf(PROBING.toolCalling.measuring) } }));
     });
     const client = makeClient(fake.socketPath, fakeClock());
     const raised = await settle(client.capabilities(MODEL_ID, { signal: new AbortController().signal }));
@@ -88,17 +87,17 @@ describe('a run created with an image answers by the readiness of its model (K5)
 
     expect({ status: response.status, body: response.json }).toEqual({
       status: 409,
-      body: { error: { type: 'conflict', code: TARGET_NOT_READY, message: TARGET_PROBING_MESSAGE } },
+      body: { error: { type: 'conflict', code: TARGET_NOT_READY, message: measuringLineOf(PROBING.toolCalling.measuring), measuring: measuringWireOf(PROBING.toolCalling.measuring) } },
     });
     expect(response.headers['retry-after']).toBeUndefined();
     expect(env.errors).toEqual([]);
     expect(env.store.listRuns(session.id)).toEqual([]);
   });
 
-  it('answers a failed measurement of the model with its own typed status, the cause the gateway names and when it measures again', async () => {
+  it('answers a failed measurement of the model with its own typed status and the cause the gateway names', async () => {
     const fake = await startRawHttpFake();
     fake.respond((_request, response) => {
-      response.writeHead(503, { 'content-type': 'application/json', 'retry-after': '75' });
+      response.writeHead(503, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ error: { type: 'server_error', code: TARGET_PROBE_FAILED, message: 'measuring this model failed: the oil ran dry', param: null } }));
     });
     const client = makeClient(fake.socketPath, fakeClock());
@@ -107,9 +106,9 @@ describe('a run created with an image answers by the readiness of its model (K5)
 
     expect({ status: response.status, body: response.json }).toEqual({
       status: 503,
-      body: { error: { type: 'server_error', code: TARGET_PROBE_FAILED, message: 'measuring this model failed: the oil ran dry; it is measured again in 75 seconds' } },
+      body: { error: { type: 'server_error', code: TARGET_PROBE_FAILED, message: 'measuring this model failed: the oil ran dry' } },
     });
-    expect(response.headers['retry-after']).toBe('75');
+    expect(response.headers['retry-after']).toBeUndefined();
     expect(env.errors).toEqual([]);
     expect(env.store.listRuns(session.id)).toEqual([]);
   });

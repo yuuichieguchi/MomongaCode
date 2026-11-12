@@ -14,9 +14,11 @@ import {
   isProbingCapabilities,
   isToolCallingState,
   isUnavailableCapabilities,
+  measuringOfWire,
   planAccountRefOf,
 } from '@momonga/protocol';
 import type {
+  Measuring,
   BilledCallsCursorView,
   BilledCallsPageView,
   Capabilities,
@@ -55,6 +57,7 @@ export type GatewayRequestErrorFields = {
   provenNotSent?: boolean;
   deferred?: boolean;
   plan?: PlanAccountRef;
+  measuring?: Measuring;
 };
 
 export class GatewayRequestError extends Error {
@@ -66,6 +69,7 @@ export class GatewayRequestError extends Error {
   readonly provenNotSent?: boolean;
   readonly deferred?: boolean;
   declare readonly plan?: PlanAccountRef;
+  declare readonly measuring?: Measuring;
 
   constructor(fields: GatewayRequestErrorFields) {
     super(fields.message);
@@ -78,6 +82,7 @@ export class GatewayRequestError extends Error {
     if (fields.provenNotSent !== undefined) this.provenNotSent = fields.provenNotSent;
     if (fields.deferred !== undefined) this.deferred = fields.deferred;
     if (fields.plan !== undefined) this.plan = fields.plan;
+    if (fields.measuring !== undefined) this.measuring = fields.measuring;
   }
 }
 
@@ -216,6 +221,7 @@ const errorFromBody = (response: UdsResponse, text: string, nowMs: number): Gate
   const body = isRecord(parsed) ? parsed['error'] : undefined;
   if (!isRecord(body) || typeof body['message'] !== 'string' || typeof body['code'] !== 'string' || !isErrorType(body['type'])) return fallback();
   const plan = planAccountRefOf(body['plan']);
+  const measuring = measuringOfWire(body['measuring']);
   return new GatewayRequestError({
     status: response.status,
     type: body['type'],
@@ -224,6 +230,7 @@ const errorFromBody = (response: UdsResponse, text: string, nowMs: number): Gate
     ...(typeof body['param'] === 'string' ? { param: body['param'] } : {}),
     ...retry,
     ...(plan === undefined ? {} : { plan }),
+    ...(measuring === undefined ? {} : { measuring }),
   });
 };
 
@@ -233,6 +240,7 @@ const errorFromEvent = (event: Extract<StreamEvent, { type: 'error' }>): Gateway
     throw invalidResponse('an error event does not carry a status, a typed error and a code');
   }
   const plan = planAccountRefOf(error.plan);
+  const measuring = measuringOfWire(error.measuring);
   return new GatewayRequestError({
     status: event.status,
     type: error.type,
@@ -242,6 +250,7 @@ const errorFromEvent = (event: Extract<StreamEvent, { type: 'error' }>): Gateway
     ...(event.retry_after_ms === undefined ? {} : { retryAfterMs: event.retry_after_ms }),
     ...(event.deferred === true ? { deferred: true } : {}),
     ...(plan === undefined ? {} : { plan }),
+    ...(measuring === undefined ? {} : { measuring }),
   });
 };
 
@@ -337,6 +346,7 @@ const unlistedErrorOf = (capabilities: Record<string, unknown>): ModelUnlistedEr
       code: TARGET_PROBING,
       message: listed.toolCalling.message,
       retryAfterMs: listed.toolCalling.retryAfterSeconds * MS_PER_SECOND,
+      measuring: listed.toolCalling.measuring,
     });
   }
   if (!isUnavailableCapabilities(listed)) return undefined;

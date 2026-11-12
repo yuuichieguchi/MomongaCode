@@ -6,7 +6,7 @@ import { fakeClock, listedEntry, listingBody, makeClient, startRawHttpFake } fro
 const MEASURED = 'apple/system';
 
 const RETRY_AFTER_SECONDS = 120;
-const PROBING = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: RETRY_AFTER_SECONDS }, source: 'unprobed' };
+const PROBING = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: RETRY_AFTER_SECONDS, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' };
 
 describe('a model listing in which the gateway is measuring one model', () => {
   it('rejects the capabilities of the measured model as a 503 target_probing with its Retry-After, and still answers the other model', async () => {
