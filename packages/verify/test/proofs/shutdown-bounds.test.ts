@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CHILD_STDIO_FLUSH_MS,
+  STDIO_FLUSH_MS,
   DEFAULT_STOP_VALUES,
   KILL_CONFIRM_MS,
   ENTRY_HARD_EXIT_MARGIN_MS,
@@ -50,7 +50,7 @@ const SUPERVISOR_FIXED_CLOSE_MS =
   SHUTDOWN_DRAIN_BOUND_MS +
   RUNTIME_CLOSE_FIXED_MS +
   SHUTDOWN_MARGIN_MS +
-  2 * (KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS) +
+  2 * (KILL_CONFIRM_MS + STDIO_FLUSH_MS) +
   MANAGED_STOP_FIXED_MS +
   SHUTDOWN_MARGIN_MS +
   MANAGED_REAP_FIXED_MS +
@@ -91,7 +91,7 @@ const gatewayStopOf = (arith: ProofArith, values: StopValues): ProofInt => gatew
 const gatewayAbortStopOf = (arith: ProofArith, values: StopValues): ProofInt => managedStopOf(arith, values).add(constant(arith, SHUTDOWN_MARGIN_MS));
 
 const supervisorCloseOf = (arith: ProofArith, values: StopValues): ProofInt => {
-  const killedChildSettle = constant(arith, KILL_CONFIRM_MS).add(constant(arith, CHILD_STDIO_FLUSH_MS));
+  const killedChildSettle = constant(arith, KILL_CONFIRM_MS).add(constant(arith, STDIO_FLUSH_MS));
   return sumOf(arith, [
     constant(arith, SHUTDOWN_DRAIN_BOUND_MS),
     runtimeCloseOf(arith, values).add(constant(arith, SHUTDOWN_MARGIN_MS)),

@@ -8,7 +8,7 @@ import {
   ENTRY_HARD_EXIT_MARGIN_MS,
   EntryUsageError,
   ProcessLockHeldError,
-  STDIO_EXIT_FLUSH_MS,
+  STDIO_FLUSH_MS,
   StartupCancelled,
   announceReady,
   exitCodeForStartError,
@@ -984,14 +984,14 @@ describe('nodeEntryIo', () => {
     expect(exit).toHaveBeenCalledWith(2);
   });
 
-  it('nodeEntryIo.exit gives up on the flush after STDIO_EXIT_FLUSH_MS', async () => {
+  it('nodeEntryIo.exit gives up on the flush after STDIO_FLUSH_MS', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { stderr, exit, asProcess } = fakeHost();
     stderr.hold();
     const io = nodeEntryIo(asProcess);
     io.exit(2);
     await waitFor(() => stderr.held() === 1, { description: 'the flush of stderr to be asked' });
-    vi.advanceTimersByTime(STDIO_EXIT_FLUSH_MS - 1);
+    vi.advanceTimersByTime(STDIO_FLUSH_MS - 1);
     expect(exit).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     await waitFor(() => exit.mock.calls.length > 0, { description: 'the exit after the flush gave up' });
