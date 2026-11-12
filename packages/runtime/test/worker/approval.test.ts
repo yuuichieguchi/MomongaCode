@@ -6,7 +6,7 @@ import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
-const REJECTED = 'The user rejected this tool call.';
+const REJECTED = 'A person rejected this call, so it was not run.';
 
 const askToWrite = async (env: Env, target = path.join(env.project, 'out.txt'), limits: Record<string, unknown> = {}) => {
   env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'approved' } }]));
