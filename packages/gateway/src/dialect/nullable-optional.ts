@@ -1,7 +1,7 @@
 import type { Segment } from '@momonga/protocol';
 import { childrenOf, escapePointerSegment, isRecord } from './schema.ts';
 import type { JsonObject } from './schema.ts';
-import { fail } from './state.ts';
+import { fail, guardWrittenKeys } from './state.ts';
 import type { NodeContext, RenderState } from './state.ts';
 
 const NULL_SCHEMA: JsonObject = { type: 'null' };
@@ -43,6 +43,7 @@ export const nullableOptional = (state: RenderState, root: JsonObject, _context:
     if (names.length > 0) {
       if (!aligned) fail(state, 'inverse-ambiguous', origin, 'an optional property below this keyword has no unambiguous inverse');
       if (PRESENCE_OBSERVERS.some((key) => key in node)) fail(state, 'dependency', origin, 'a keyword of this object observes which properties are present');
+      guardWrittenKeys(state, names, 'nullable-optional');
       const properties = node['properties'] as JsonObject;
       for (const name of names) {
         const wrapper: JsonObject = { anyOf: [properties[name], { ...NULL_SCHEMA }] };

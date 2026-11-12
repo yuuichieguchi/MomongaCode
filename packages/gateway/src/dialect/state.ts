@@ -1,4 +1,5 @@
 import type { DialectRule, SchemaNarrowing, WrapRecord } from '@momonga/protocol';
+import { isNarrowing } from './candidates.ts';
 import { SchemaRenderError } from './failure.ts';
 import type { RenderFailureReason } from './failure.ts';
 import type { RefIndex } from './references.ts';
@@ -31,7 +32,18 @@ export type RenderState = {
   readonly wrappers: WeakSet<object>;
   readonly narrowings: Map<string, SchemaNarrowing>;
   readonly wraps: WrapRecord[];
+  readonly writtenProperties: WeakSet<object>;
 };
+
+export class FreeFormObject extends Error {
+  readonly path: string;
+
+  constructor(path: string) {
+    super(`the object at ${path === '' ? 'the root' : path} accepts properties it does not name, which a closed schema cannot express`);
+    this.name = 'FreeFormObject';
+    this.path = path;
+  }
+}
 
 export const toolOf = (state: RenderState): string | undefined => (state.site.kind === 'tool-parameters' ? state.site.tool : undefined);
 
@@ -48,7 +60,8 @@ export const guardWrittenKeys = (state: RenderState, keys: readonly string[], op
   if (clash !== undefined) fail(state, 'written-key', '', `${op} writes "${clash}", which a $ref pointer passes through`);
 };
 
-export const reportNarrowing = (state: RenderState, context: NodeContext): void => {
+export const reportNarrowing = (state: RenderState, context: NodeContext, rule: DialectRule): void => {
+  if (!isNarrowing(rule)) throw new Error(`the dialect operation ${rule.op} is not in the list of narrowing operations, so it cannot record a narrowing`);
   const tool = toolOf(state);
   if (tool === undefined || context.absent) return;
   if (!state.narrowings.has(context.origin)) state.narrowings.set(context.origin, { tool, path: context.origin });

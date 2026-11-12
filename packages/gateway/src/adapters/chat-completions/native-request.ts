@@ -1,3 +1,4 @@
+import { strictPerToolOf } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ReasoningOrigin, SamplingField, ToolChoice } from '@momonga/protocol';
 import { allowedToolsModeOf } from '../../core/tool-choice.ts';
 import { carriedSamplingOf } from '../shared/sampling.ts';
@@ -30,13 +31,14 @@ export type ChatRequestBody = {
 };
 
 const toolOf = (tool: FunctionTool, dialect: ResolvedDialect, ledger: RenderLedger | undefined): unknown => {
-  const { schema: parameters } = renderToolParameters(tool, dialect, ledger);
+  const { schema: parameters, strict } = renderToolParameters(tool, dialect, ledger);
   return {
     type: 'function',
     function: {
       name: tool.name,
       ...(tool.description === undefined || tool.description === null ? {} : { description: tool.description }),
       ...(parameters === undefined ? {} : { parameters }),
+      ...(strictPerToolOf(dialect.definition) ? { strict } : {}),
     },
   };
 };

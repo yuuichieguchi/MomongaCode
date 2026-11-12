@@ -74,30 +74,24 @@ export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSu
   const messages: ChatMessage[] = [];
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
   messages.push(...plainHistoryOf(request.input, { envelopeReplies: envelopeActive, origin: origin }));
+  const envelopeSchema = envelopeActive
+    ? buildToolsEnvelope(
+        envelopeTools.map((tool) => ({ name: tool.name, parameters: tool.parameters })),
+        support,
+        requireToolCalls,
+        dialect,
+        shape,
+        ledger,
+      )
+    : undefined;
   const body: ChatRequestBody = {
     model: request.model,
     messages,
     stream: true,
     stream_options: { include_usage: true },
-    ...(envelopeActive
-      ? {
-          response_format: {
-            type: 'json_schema',
-            json_schema: {
-              name: ENVELOPE_SCHEMA_NAME,
-              strict: true,
-              schema: buildToolsEnvelope(
-                envelopeTools.map((tool) => ({ name: tool.name, parameters: tool.parameters })),
-                support,
-                requireToolCalls,
-                dialect,
-                shape,
-                ledger,
-              ),
-            },
-          },
-        }
-      : {}),
+    ...(envelopeSchema === undefined
+      ? {}
+      : { response_format: { type: 'json_schema', json_schema: { name: ENVELOPE_SCHEMA_NAME, strict: ledger.nonStrict.size === 0, schema: envelopeSchema } } }),
     ...samplingOf(request),
   };
   return {
