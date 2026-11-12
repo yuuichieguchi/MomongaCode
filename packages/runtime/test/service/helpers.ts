@@ -561,6 +561,7 @@ export const serviceOptions = (
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
   permissionRules: overrides.permissionRules ?? (async () => []),
   evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,
+  skillFiles: nodeFileSystem,
   mcp: overrides.mcp ?? unusedMcpAdmin,
   userInput: overrides.userInput ?? unusedUserInput,
   defaults: { model: MODEL_ID, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },

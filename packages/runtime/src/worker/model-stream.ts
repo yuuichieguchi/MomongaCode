@@ -4,6 +4,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { MODEL_COST_SCHEMA, carriesOutput, planAccountRefOf, reportedCachedTokensOf } from '@momonga/protocol';
 import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ClaimContext } from './claim-context.ts';
+import type { ServiceTimers } from '../service/timers.ts';
 import { streamAdmitted } from './admitted-request.ts';
 import type { AdmissionProof } from './admitted-request.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -28,15 +29,19 @@ type DeltaBuffer = {
 };
 
 const createDeltaBuffer = (
+  timers: Pick<ServiceTimers, 'setTimeout' | 'clearTimeout'>,
   append: (payloads: readonly RunEventPayload[]) => void,
   position: { step: number; attempt: number },
   onFailure: (error: unknown) => void,
 ): DeltaBuffer => {
   const pending = new Map<string, Pending>();
-  let timer: NodeJS.Timeout | undefined;
-  const flush = (): void => {
-    clearTimeout(timer);
+  let timer: unknown;
+  const stopTimer = (): void => {
+    if (timer !== undefined) timers.clearTimeout(timer);
     timer = undefined;
+  };
+  const flush = (): void => {
+    stopTimer();
     if (pending.size === 0) return;
     const payloads = [...pending.values()].map(
       (entry): RunEventPayload => ({ type: entry.type, step: position.step, attempt: position.attempt, itemId: entry.itemId, text: entry.text }),
@@ -54,7 +59,7 @@ const createDeltaBuffer = (
       if (Buffer.byteLength(entry.text) >= FLUSH_BYTES) {
         flush();
       } else if (timer === undefined) {
-        timer = setTimeout(() => {
+        timer = timers.setTimeout(() => {
           try {
             flush();
           } catch (error) {
@@ -64,10 +69,7 @@ const createDeltaBuffer = (
       }
     },
     flush,
-    dispose: () => {
-      clearTimeout(timer);
-      timer = undefined;
-    },
+    dispose: stopTimer,
   };
 };
 
@@ -138,10 +140,10 @@ export const streamModel = async (
   position: { step: number; attempt: number },
   proof: AdmissionProof,
 ): Promise<StreamedModel> => {
-  const buffer = createDeltaBuffer((payloads) => ctx.journal.append(payloads), position, (error) => ctx.control.fail(error));
+  const { timers } = ctx.options;
+  const buffer = createDeltaBuffer(timers, (payloads) => ctx.journal.append(payloads), position, (error) => ctx.control.fail(error));
   let terminal: ModelResult | undefined;
   let firstEventMs: number | undefined;
-  const { timers } = ctx.options;
   ctx.journal.verifyLease();
   ctx.control.inFlight.modelKey = idempotencyKey;
   const startedAt = timers.monotonicMs();
