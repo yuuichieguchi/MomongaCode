@@ -44,8 +44,9 @@ const EVERY_KEY: PolicyOverlay = {
 };
 
 describe('parsePolicyOverlay', () => {
-  it('accepts every token key and resolves the formatters sorted', () => {
-    expect(resolvePolicyOverlay(parsePolicyOverlay(JSON.stringify(EVERY_KEY), 'policy.json'))).toEqual(RESOLVED_ON_POLICY);
+  it('resolves every token key at its default, the formatters sorted, and refuses an overlay that restates them', () => {
+    expect(resolvePolicyOverlay({})).toEqual(RESOLVED_ON_POLICY);
+    expect(() => parsePolicyOverlay(JSON.stringify(EVERY_KEY), 'policy.json')).toThrow(/restate their defaults/);
   });
 
   it('accepts an empty overlay', () => {
