@@ -27,6 +27,7 @@ import { evaluateBench } from './bench.ts';
 import { reviewPermissions } from './review.ts';
 import type { ReviewOptions } from './review.ts';
 import { showStatus } from './runs.ts';
+import { projectCheckClear, projectCheckSet, projectCheckShow } from './project-check.ts';
 import { secretSet } from './secret.ts';
 import { TRUST_DECISIONS, trustFolder } from './trust.ts';
 import { exitOfMeasurement } from '../measurement-exit.ts';
@@ -680,6 +681,28 @@ const registerModels: CommandGroup = (program, deps) => {
   formOf(dialects.command('set').description('replace the declared schema dialects with the object of a JSON file').option('--file <path>', 'the JSON file').option(YES_FLAG, YES_HELP), deps, 'dialects set');
 };
 
+const registerProjectCheck: CommandGroup = (program, deps) => {
+  const check = program.command('project-check').description('the command that checks the work of the current folder, kept in the user settings (projectChecks)');
+  check
+    .command('show')
+    .description('print the check of the current folder')
+    .action(async () => {
+      deps.complete(await projectCheckShow(deps.ports, await pathsOf(deps.ports)));
+    });
+  check
+    .command('set <command>')
+    .description('make this command the check of the current folder')
+    .action(async (command: string) => {
+      deps.complete(await projectCheckSet(deps.ports, await pathsOf(deps.ports), command));
+    });
+  check
+    .command('clear')
+    .description('remove the check of the current folder')
+    .action(async () => {
+      deps.complete(await projectCheckClear(deps.ports, await pathsOf(deps.ports)));
+    });
+};
+
 const registerTrust: CommandGroup = (program, deps) => {
   program
     .command('trust [folder]')
@@ -729,7 +752,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerAuth, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerPermissions, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy, registerTrust];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerAuth, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerPermissions, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy, registerTrust, registerProjectCheck];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);
