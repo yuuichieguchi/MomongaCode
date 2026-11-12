@@ -1146,7 +1146,11 @@ export function App(props: AppProps) {
       return;
     }
     if (unconfiguredModel.current) {
+      replaceEditor(placeText(editorRef.current, text));
       await flows.modelPicker(sessionModel);
+      if (unconfiguredModel.current || editorRef.current.text !== text) return;
+      replaceEditor(placeText(editorRef.current, ''));
+      await runPrompt(text);
       return;
     }
     await runPrompt(text);
