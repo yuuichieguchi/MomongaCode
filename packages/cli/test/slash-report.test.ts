@@ -29,7 +29,7 @@ const REPORT: RunReport = {
 
 const runtime = vi.hoisted(() => ({ asked: [] as string[], report: undefined as unknown }));
 
-vi.mock('../src/daemon/ensure-daemon.ts', async (original) => ({ ...(await original<object>()), ensureDaemon: async () => undefined }));
+vi.mock('../src/daemon/ensure-daemon.ts', async (original) => ({ ...(await original<object>()), ensureDaemon: async () => undefined, ensureCurrentDaemon: async () => undefined }));
 vi.mock('../src/run/open-session.ts', async (original) => ({
   ...(await original<object>()),
   connectRuntime: () => ({
@@ -106,34 +106,21 @@ describe('/report', () => {
     expect(infos.join('\n')).toContain('/report');
   });
 
-  it('shows the report of the last run of this session, in the text momonga report prints', async () => {
-    const { context, infos } = slashContext([THIS_SESSION]);
+  it('without an id shows the folder\'s latest run, the same run momonga report shows, and needs no session', async () => {
+    const { context, infos } = slashContext([]);
     await run('/report', context);
-    expect(runtime.asked).toEqual(['run-2']);
+    expect(runtime.asked).toEqual(['run-of-another-session']);
     expect(infos).toEqual([renderReport(REPORT)]);
     expect(infos[0]).toContain('failed  npm test  (2 rounds, exit code 1)');
+    expect(createSlashRegistry(DEFAULT_SLASH_COMMANDS).find('report')?.needsSession).toBe(false);
   });
 
-  it('shows the report of the run that is working now', async () => {
-    const working: FakeConversation = { ...THIS_SESSION, runs: [{ id: 'run-1', frames: [] }, { id: 'run-2', status: 'RUNNING', frames: [] }] };
-    const { context } = slashContext([working]);
-    await run('/report', context);
-    expect(runtime.asked).toEqual(['run-2']);
-  });
-
-  it('shows the report of the run named, and the JSON of it with --json', async () => {
+  it('shows the report of the run named, and the JSON of the folder\'s latest with --json', async () => {
     const { context, infos } = slashContext([THIS_SESSION]);
     await run('/report run-1', context);
     expect(runtime.asked).toEqual(['run-1']);
     await run('/report --json', context);
-    expect(runtime.asked).toEqual(['run-1', 'run-2']);
+    expect(runtime.asked).toEqual(['run-1', 'run-of-another-session']);
     expect(infos[1]).toBe(JSON.stringify(REPORT));
-  });
-
-  it('says that the session has no run yet, and asks the runtime for no run of another session', async () => {
-    const { context, infos } = slashContext([]);
-    await run('/report', context);
-    expect(runtime.asked).toEqual([]);
-    expect(infos).toEqual(['This session has no run yet, so there is no report to show.']);
   });
 });
