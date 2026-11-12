@@ -706,6 +706,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.mutated === undefined ? {} : { mutated: result.mutated }),
       ...(result.command === undefined ? {} : { command: result.command }),
       ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
+      ...(result.outputIncomplete === undefined ? {} : { outputIncomplete: result.outputIncomplete }),
       ...(result.memories === undefined ? {} : { memories: result.memories }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...(result.backend === undefined ? {} : { backend: result.backend }),

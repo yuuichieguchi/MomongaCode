@@ -655,6 +655,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       mutated: { type: 'boolean', const: true },
       command: string,
       windowShared: { type: 'boolean', const: true },
+      outputIncomplete: constant('residue'),
       memories: { type: 'array', items: string },
       exitCode: integer,
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),

@@ -34,6 +34,7 @@ export type ToolResult = {
   mutated?: true;
   command?: string;
   windowShared?: true;
+  outputIncomplete?: 'residue';
   detached?: true;
   memories?: string[];
   exitCode?: number;

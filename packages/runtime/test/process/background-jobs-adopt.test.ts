@@ -8,6 +8,8 @@ import type { Run, RuntimeStore } from '@momonga/store';
 import { createFakeClock, createFakeTimers, createTempDir, sleepDrivenTiming, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import type { BackgroundJobRegistry } from '@momonga/runtime';
+import { pumpOutput } from '@momonga/tools';
+import type { AdoptedOutput, ToolTimers } from '@momonga/tools';
 import { MAX_RUNNING_JOBS_PER_SESSION } from '../../src/process/constants.ts';
 import { jobGenerationOptions } from './job-fixture.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
@@ -134,6 +136,7 @@ const setup = async (probes: Parameters<typeof createBackgroundJobs>[0]['probes'
       callId: callKey,
       command,
       timeoutMs,
+      drainIdleMs: 1000,
       spawn: (marker, signal) => {
         expect(fs.existsSync(marker)).toBe(true);
         const process = fakeProcess(4000 + spawned.length, signal);
@@ -148,12 +151,19 @@ const setup = async (probes: Parameters<typeof createBackgroundJobs>[0]['probes'
 
 const jobKeyOf = (callKey: string): string => sha256Hex(canonicalJson([callKey, 'background']));
 
-const followInto = (process: FakeProcess) => (sink: (chunk: Buffer) => void): Promise<void> =>
-  Promise.all(
-    [process.stdoutStream, process.stderrStream].map(async (stream) => {
-      for await (const chunk of stream) sink(Buffer.from(chunk));
-    }),
-  ).then(() => undefined);
+const adoptedOutputOf = (process: FakeProcess, timers: ToolTimers, seen: string): AdoptedOutput => {
+  let sink: ((chunk: Buffer) => void) | undefined;
+  const pump = pumpOutput([process.stdoutStream, process.stderrStream], (_index, chunk) => sink?.(chunk), timers);
+  return {
+    seen: Buffer.from(seen),
+    follow: (next) => {
+      sink = next;
+    },
+    drainAfterExit: pump.drainAfterExit,
+    close: pump.close,
+    failure: pump.failure,
+  };
+};
 
 const promotedCall = async (t: Awaited<ReturnType<typeof setup>>, callKey: string, pgid: number) => {
   const callSignal = new AbortController();
@@ -166,9 +176,10 @@ const promotedCall = async (t: Awaited<ReturnType<typeof setup>>, callKey: strin
     callId: callKey,
     command: 'sleep 30',
     timeoutMs: 60_000,
+    drainIdleMs: 1000,
     process,
     marker: { file: marker, mode: 'listed' },
-    output: { seen: Buffer.from('first\n'), follow: followInto(process) },
+    output: adoptedOutputOf(process, t.timers, 'first\n'),
   });
   return { ...adopted, process, callSignal, marker };
 };
@@ -202,7 +213,7 @@ describe('a running foreground command adopted as a background job', () => {
     const marker = path.join(t.markerDir, 'call-full');
     fs.writeFileSync(marker, '');
     await expect(
-      t.jobs.adopt({ runId: t.run.id, callKey: 'call-full', callId: 'call-full', command: 'sleep 30', timeoutMs: 60_000, process, marker: { file: marker, mode: 'listed' }, output: { seen: Buffer.from(''), follow: followInto(process) } }),
+      t.jobs.adopt({ runId: t.run.id, callKey: 'call-full', callId: 'call-full', command: 'sleep 30', timeoutMs: 60_000, drainIdleMs: 1000, process, marker: { file: marker, mode: 'listed' }, output: adoptedOutputOf(process, t.timers, '') }),
     ).rejects.toThrow(/already has 8 running background jobs/);
     expect(fs.existsSync(marker)).toBe(true);
     expect(t.jobs.byCall('call-full')).toBeUndefined();

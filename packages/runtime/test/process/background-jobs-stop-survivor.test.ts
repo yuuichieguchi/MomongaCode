@@ -74,6 +74,7 @@ const runJob = async (survives: boolean) => {
     callId: 'call-1',
     command: 'echo job-output',
     timeoutMs: 60_000,
+    drainIdleMs: 1000,
     spawn: (_marker, signal) => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();

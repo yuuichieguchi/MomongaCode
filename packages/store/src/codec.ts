@@ -212,6 +212,9 @@ const assertToolFacts = (identity: string, payload: Record<string, unknown>): vo
   if (payload['windowShared'] !== undefined && payload['windowShared'] !== true) {
     throw corrupt('events', identity, 'payload_json windowShared must be true');
   }
+  if (payload['outputIncomplete'] !== undefined && payload['outputIncomplete'] !== 'residue') {
+    throw corrupt('events', identity, 'payload_json outputIncomplete must be residue');
+  }
   if (payload['memories'] !== undefined && !(Array.isArray(payload['memories']) && payload['memories'].every((id) => typeof id === 'string'))) {
     throw corrupt('events', identity, 'payload_json memories must hold memory ids');
   }

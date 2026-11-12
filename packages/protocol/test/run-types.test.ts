@@ -265,6 +265,7 @@ describe('run event payloads', () => {
       mutated?: true;
       command?: string;
       windowShared?: true;
+      outputIncomplete?: 'residue';
       memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };

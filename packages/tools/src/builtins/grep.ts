@@ -188,13 +188,18 @@ const GROUP_SEPARATOR_LINE = '--\n';
 const COUNT_PAYLOAD = /^\d+$/;
 const CONTENT_PAYLOAD = /^(\d+)([:-])(.*)$/s;
 
-type RipgrepRecord = { recordPath: string; payload: string } | 'separator';
+type RipgrepRecord = { recordPath: string; payload: string } | { binaryPath: string } | 'separator';
+
+const BINARY_MATCH_LINE = /^(.*): binary file matches \(found "\\0" byte around offset \d+\)$/s;
 
 const malformedRecord = (recordPath: string): ToolExecutionError => new ToolExecutionError(`ripgrep produced a malformed record for ${recordPath}`);
 
 const nextRecord = (stdout: string, position: number, mode: OutputMode): { record: RipgrepRecord; next: number } => {
   if (mode === 'content' && stdout.startsWith(GROUP_SEPARATOR_LINE, position)) return { record: 'separator', next: position + GROUP_SEPARATOR_LINE.length };
   const nul = stdout.indexOf(NUL, position);
+  const newline = stdout.indexOf('\n', position);
+  const binary = mode === 'content' && newline !== -1 && (nul === -1 || newline < nul) ? BINARY_MATCH_LINE.exec(stdout.slice(position, newline)) : null;
+  if (binary !== null) return { record: { binaryPath: binary[1] as string }, next: newline + 1 };
   if (nul === -1) throw malformedRecord(stdout.slice(position).split('\n')[0] as string);
   const recordPath = stdout.slice(position, nul);
   if (mode === 'files_with_matches') return { record: { recordPath, payload: '' }, next: nul + 1 };
@@ -211,6 +216,10 @@ const recordsOf = async (stdout: string, mode: OutputMode, input: GrepInput, vis
     position = next;
     if (record === 'separator') {
       groups.push([]);
+      continue;
+    }
+    if ('binaryPath' in record) {
+      if (await visible(record.binaryPath)) (groups[groups.length - 1] as string[]).push(`${await show(record.binaryPath)}: binary file matches; its lines are not shown`);
       continue;
     }
     const { recordPath, payload } = record;
