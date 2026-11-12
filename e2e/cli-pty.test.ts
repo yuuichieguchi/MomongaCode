@@ -39,9 +39,9 @@ describe('cli: interactive TUI through a pty', () => {
     pty.write('change the greeting');
     await pty.waitFor('> change the greeting');
     pty.write(KEYS.enter);
-    await pty.waitFor('Permission requested');
-    await pty.waitFor('+ "hello, momonga"');
-    expect(pty.screen()).toContain('- "hello"');
+    await pty.waitFor('Permission requested: Edit config.toml');
+    await pty.waitForPrompt('+greeting = "hello, momonga"');
+    expect(pty.screen()).toContain('-greeting = "hello"');
     pty.write('1');
     await pty.waitFor('Edited the greeting.');
     expect(fs.readFileSync(target, 'utf8')).toBe('greeting = "hello, momonga"\n');
@@ -79,7 +79,7 @@ describe('cli: interactive TUI through a pty', () => {
     pty.write(KEYS.enter);
     await pty.waitFor('waiting for subagent editor');
     await pty.waitFor('Permission requested: editor: Edit');
-    await pty.waitFor('+ "hello, momonga"');
+    await pty.waitForPrompt('+greeting = "hello, momonga"');
     expect(fs.readFileSync(target, 'utf8')).toBe('greeting = "hello"\n');
     pty.write('1');
     await pty.waitFor('Edited the greeting.');
@@ -103,8 +103,12 @@ describe('cli: interactive TUI through a pty', () => {
     pty.write('/help');
     await pty.waitFor('> /help');
     pty.write(KEYS.enter);
+    await pty.waitFor('click on a menu row  complete it');
+    pty.write(KEYS.ctrlHome);
     await pty.waitFor('Commands');
-    for (const command of ['/help', '/clear', '/mode', '/exit']) expect(pty.sinceLastWrite()).toContain(command);
+    for (const command of ['/help', '/clear', '/mode', '/exit']) expect(pty.visible().join('\n')).toContain(command);
+    pty.write(KEYS.ctrlEnd);
+    await pty.waitFor('click on a menu row  complete it');
 
     pty.write('/mode plan');
     await pty.waitFor('> /mode plan');
@@ -120,7 +124,7 @@ describe('cli: interactive TUI through a pty', () => {
     pty.write('line two');
     await pty.waitFor('line two');
     pty.write(KEYS.enter);
-    await pty.waitFor('working (esc to cancel)');
+    await pty.waitFor(/\d+s · esc to cancel/);
     await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the upstream to receive the request' });
     expect(messagesOf(chatCompletions(fake)[0]).at(-1)?.content).toContain('line one\nline two');
 
@@ -151,7 +155,7 @@ describe('cli: interactive TUI through a pty', () => {
     await pty.waitFor('> a long task');
     pty.write(KEYS.enter);
     await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the upstream to receive the request' });
-    await pty.waitFor('working (esc to cancel)');
+    await pty.waitFor(/\d+s · esc to cancel/);
 
     pty.write('/exit');
     await pty.waitFor('> /exit');
