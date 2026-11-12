@@ -8,6 +8,7 @@ import type { RunCharge, RuntimeStore, SaveCandidateInput } from '@momonga/store
 import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { requestKey } from '../model-key.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
+import { elapsedMsSince } from '../service/timers.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { retireDecisionOf } from '../worker/gateway-policy.ts';
 import { readPins } from '../worker/pins.ts';
@@ -81,7 +82,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       role: 'reflection',
     });
     for await (const event of events) {
-      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = options.timers.monotonicMs() - startedAt;
+      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = elapsedMsSince(options.timers, startedAt);
       terminal = terminalResultOf(event) ?? terminal;
       if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
         usage = event.response.usage;
@@ -90,7 +91,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       }
     }
     if (terminal === undefined) throw new Error(`the reflection call of run ${runId} ended without a terminal event`);
-    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: options.timers.monotonicMs() - startedAt };
+    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: elapsedMsSince(options.timers, startedAt) };
     if (responseId === undefined) throw new Error(`the reflection call of run ${runId} ended without a response`);
     return { terminal, usage, detail: billedDetailOf(usage, extension, timing, responseId) };
   };

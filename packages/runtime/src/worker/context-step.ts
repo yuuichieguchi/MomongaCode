@@ -41,6 +41,7 @@ import type { WrapUpReason } from './wrap-up.ts';
 import { EXACT_MODEL } from './exact-model.ts';
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
+import { elapsedMsSince } from '../service/timers.ts';
 
 export type BuildOutcome =
   | { kind: 'built'; built: BuiltContext; wrapUp?: { reason: 'context'; notice: string } }
@@ -482,7 +483,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     inputTokens: resource.usage.input_tokens,
     outputTokens: resource.usage.output_tokens,
     totalTokens: resource.usage.total_tokens,
-    ...billedDetailOf(resource.usage, resource.momonga, { durationMs: options.timers.monotonicMs() - startedAt }, resource.id),
+    ...billedDetailOf(resource.usage, resource.momonga, { durationMs: elapsedMsSince(options.timers, startedAt) }, resource.id),
     ...(resource.momonga === undefined ? {} : { target: resource.momonga.target }),
   };
   const unreadableNotices =
