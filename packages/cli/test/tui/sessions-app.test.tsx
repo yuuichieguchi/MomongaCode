@@ -9,6 +9,7 @@ import { runStarted, start, type } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
 import { turnTimers } from './turn-timers.ts';
 import { SESSION } from '../fake-backend.ts';
+import { describeRunEnd } from '../../src/run/headless.ts';
 
 const NOW = 10_000_000_000;
 const HOUR = 3_600_000;
@@ -124,6 +125,13 @@ describe('reopening a session from the shell (9.1, 9.2)', () => {
     await vi.waitFor(() => expect(backend.followed).toContain('next-2'));
     backend.emit({ id: 1, event: 'user.message', data: { runId: 'next-2', sessionId: 's', step: 1, createdAt: 1000, id: 1, seq: 1, type: 'user.message', text: 'queued after', source: 'queue' } as PublicRunEvent });
     await untilOutput(app, '> queued after');
+    app.unmount();
+  });
+
+  it('shows the end of a past run that did not complete, from its record (P-215)', async () => {
+    const failed: FakeConversation = { session: { id: 'eeeeeeee55555555', createdAt: NOW }, firstPrompt: 'broken', runs: [{ id: 'failed-1', status: 'FAILED', frames: framesOf('failed-1', [{ type: 'user.message', text: 'broken' }]) }] };
+    const { app } = await start({ conversations: [failed] }, { reopen: { kind: 'id', id: 'eeeeeeee' }, now: () => NOW });
+    await untilFrame(app, describeRunEnd(runView({ id: 'failed-1', status: 'FAILED', lastSeq: 1 }), 'tui'));
     app.unmount();
   });
 });

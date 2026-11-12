@@ -117,7 +117,7 @@ export const viewOf = (position: Position, origins: Pick<Origins, 'keyOf'>): Han
 
 export const positionOf = (view: HandoverView, origins: Pick<Origins, 'entryOf'>): Position => {
   const entryId = view.key === null ? undefined : origins.entryOf(view.key);
-  if (entryId === undefined) return { anchor: undefined, following: view.key === null ? view.following : true };
+  if (entryId === undefined) return { anchor: undefined, following: view.following };
   return { anchor: { entryId, rowOffset: view.rowOffset }, following: view.following };
 };
 

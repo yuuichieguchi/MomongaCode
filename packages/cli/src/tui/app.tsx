@@ -762,6 +762,11 @@ export function App(props: AppProps) {
     });
   };
 
+  const showRunEnd = (run: RunView): void => {
+    if (run.status === 'CANCELLED') append({ kind: 'notice', level: 'info', text: describeRunEnd(run, 'tui') });
+    else if (run.status !== 'COMPLETED') append({ kind: 'error', text: describeRunEnd(run, 'tui') });
+  };
+
   const watchRun = async (runId: string, replay: Replay | undefined, resubmit: { text: string; options: StartRunOptions; sessionModel: string } | undefined): Promise<void> => {
     runIdRef.current = runId;
     const run = await follow(runId, replay);
@@ -773,8 +778,7 @@ export function App(props: AppProps) {
     const plan = stopped?.plan;
     if (stopped !== undefined && plan !== undefined && isUsageLimitCode(stopped.code)) runFlow(() => showUsageLimit(stopped.code, plan));
     else if (stopped !== undefined && plan !== undefined && PLAN_BLOCK_CODES.has(stopped.code)) runFlow(() => showPlanBlock(stopped, plan));
-    else if (run.status === 'CANCELLED') append({ kind: 'notice', level: 'info', text: describeRunEnd(run, 'tui') });
-    else if (run.status !== 'COMPLETED') append({ kind: 'error', text: describeRunEnd(run, 'tui') });
+    else showRunEnd(run);
   };
 
   const endReading = (): void => {
@@ -826,8 +830,11 @@ export function App(props: AppProps) {
       let before = 0;
       for (const run of runs) {
         if (isTerminalStatus(run.status)) {
-          await follow(run.id, { queue, before, notes });
-          queue.push(() => runLeft(store), before + run.lastSeq);
+          const ended = await follow(run.id, { queue, before, notes });
+          queue.push(() => {
+            runLeft(store);
+            showRunEnd(ended);
+          }, before + run.lastSeq);
         } else {
           store.update({ runId: run.id });
           await watchRun(run.id, { queue, before, notes }, undefined);
