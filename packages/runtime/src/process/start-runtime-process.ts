@@ -744,6 +744,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           verifier: ruleVerifier,
           ruleVerdicts: store.ruleVerdicts,
           home: canonicalHome,
+          sessionsRoot: paths.tmp.sessions,
           folder: async (cwd, requestSignal) => {
             const { defaultMode, additionalDirectories } = await settingsComposition.sessionReadSettings(cwd, requestSignal);
             const rules = await permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, { cwd }, requestSignal);

@@ -7,6 +7,7 @@ import type { PermissionMode, PolicyVerifyResponse, RuleVerdict } from '@momonga
 import type { OperationCatalogueFacts } from '@momonga/tools';
 import type { RuleVerifierPort } from '../ports.ts';
 import { invalidRequest } from '../service/errors.ts';
+import { sessionScratchRoleIn } from './session-scratch-role.ts';
 
 export type FolderVerifyRequest = { cwd: string; mode?: PermissionMode; secrets: readonly string[]; mandate?: string };
 
@@ -18,6 +19,7 @@ export type FolderPolicySources = {
   verifier: RuleVerifierPort;
   ruleVerdicts: { put(fingerprint: string, verdict: RuleVerdict): void };
   home: string;
+  sessionsRoot: string;
   folder: (cwd: string, signal: AbortSignal) => Promise<FolderPolicyFacts>;
   mandates: (signal: AbortSignal) => Promise<Readonly<Record<string, MandateProfileSettings>> | undefined>;
   catalogue: () => OperationCatalogueFacts;
@@ -48,7 +50,7 @@ export const folderPolicyVerification =
         mode: request.mode ?? facts.defaultMode ?? 'manual',
         home: sources.home,
         cwd,
-        exemptDirectory: null,
+        exemptDirectory: sessionScratchRoleIn(sources.sessionsRoot),
         enforcement: facts.enforcement,
         unixSockets: facts.unixSockets,
         secrets: request.secrets,

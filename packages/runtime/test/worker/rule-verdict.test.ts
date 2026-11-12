@@ -7,6 +7,9 @@ import type { Env, EnvOptions } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
 import { RuleVerificationFailure } from '../../src/process/rule-verifier-thread-client.ts';
+import { folderPolicyVerification } from '../../src/process/folder-verification.ts';
+import { ruleVerdictFor } from '../../src/worker/rule-verdict.ts';
+import { parseRule } from '@momonga/config';
 import type { FakeRuleVerifier } from './fake-rule-verifier.ts';
 
 const SOLVER = 'fake-solver 1';
@@ -164,7 +167,7 @@ describe('the verdict of the permission rules before a run, with a fake verifier
 
     await env.runOnce(env.worker());
 
-    expect(env.ruleVerifier.requests[0]?.exemptDirectory).toBe(env.sessionTmpDir);
+    expect(env.ruleVerifier.requests[0]?.exemptDirectory).toBe(path.join(path.dirname(env.sessionTmpDir), 'session-scratch'));
   });
 
   it('a second run with the same input reads the stored verdict and does not call the verifier', async () => {
@@ -298,6 +301,33 @@ describe('the verdict of the permission rules before a run, with a fake verifier
     await env.ruleVerifier.settled();
     expect(env.ruleVerifier.verified).toHaveLength(3);
     await vi.waitFor(() => expect(storedVerdicts(env, third.id)?.verdict).toEqual(proved));
+  });
+
+  it('a verdict stored by the verification of the folder is the one a run of that folder reads: the scratch folder of a session enters the key by its role', async () => {
+    const env = await makeEnv();
+    env.ruleVerifier.answer = () => proved;
+    const rules = [parseRule('Read(src/**)', { effect: 'allow', origin: 'user', source: 'settings.json', settingsRoot: env.project, home: env.home, cwd: env.project })];
+    const unixSockets = { kind: 'limited', allowed: [] } as const;
+    const verify = folderPolicyVerification({
+      verifier: env.ruleVerifier,
+      ruleVerdicts: env.store.ruleVerdicts,
+      home: env.home,
+      sessionsRoot: path.dirname(env.sessionTmpDir),
+      folder: async () => ({ rules, additionalDirectories: [], enforcement: 'exact-paths', unixSockets, defaultMode: 'manual' }),
+      mandates: async () => undefined,
+      catalogue: () => ({ supersededForms: [], alwaysOperations: [] }),
+    });
+    const verified = await verify({ cwd: env.project, secrets: [] }, new AbortController().signal);
+    expect(verified.stored).toBe(true);
+    env.ruleVerifier.answer = () => refuted;
+
+    const pinned = await ruleVerdictFor(
+      { options: { store: env.store, home: env.home, ruleVerifier: env.ruleVerifier }, control: { signal: new AbortController().signal, recordingRaised: <T>(pending: Promise<T>) => pending, fail: (error: unknown) => { throw error; } } as never },
+      { permissionMode: 'manual', cwd: env.project } as never,
+      { rules, roots: [env.project], exemptDirectory: env.sessionTmpDir, enforcement: 'exact-paths', unixSockets },
+    );
+    expect(pinned).toMatchObject({ fingerprint: verified.fingerprint, verdict: 'proved' });
+    expect(env.ruleVerifier.verified).toHaveLength(1);
   });
 
   it('a worker that stops during the verification loses nothing: the next claim verifies once and starts', async () => {

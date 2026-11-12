@@ -52,6 +52,7 @@ const verificationIn = (layout: { home: string; work: string }, facts: (cwd: str
     verifier,
     ruleVerdicts: { put: (fingerprint, verdict) => void stored.set(fingerprint, verdict) },
     home: layout.home,
+    sessionsRoot: `${layout.home}/.momonga/tmp/sessions`,
     folder: async (cwd) => {
       seen.push(cwd);
       return facts(cwd);
@@ -74,7 +75,7 @@ describe('the verification of the rules of a folder, done by the daemon', () => 
 
     expect(seen).toEqual([layout.work, layout.work]);
     expect(linked.fingerprint).toBe(direct.fingerprint);
-    const input = await verifier.inputOf({ rules, roots: [layout.work, `${layout.work}/extra`], mode: 'manual', home: layout.home, cwd: layout.work, exemptDirectory: null, enforcement: 'exact-paths', secrets: [], unixSockets: SOCKETS }, new AbortController().signal);
+    const input = await verifier.inputOf({ rules, roots: [layout.work, `${layout.work}/extra`], mode: 'manual', home: layout.home, cwd: layout.work, exemptDirectory: `${layout.home}/.momonga/tmp/sessions/session-scratch`, enforcement: 'exact-paths', secrets: [], unixSockets: SOCKETS }, new AbortController().signal);
     expect(direct.fingerprint).toBe(verdictKey(input, await verifier.solverVersion()));
     expect(direct).toMatchObject({ stored: true, exitCode: 0 });
     expect(stored.get(direct.fingerprint)).toMatchObject({ verdict: 'proved' });

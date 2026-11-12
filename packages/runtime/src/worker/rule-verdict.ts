@@ -7,6 +7,7 @@ import type { RunError } from '@momonga/store';
 import { permissionRulesFor } from '../governance/rules.ts';
 import type { RuleVerifierPort, ToolEnv } from '../ports.ts';
 import { RuleVerificationFailure } from '../process/rule-verifier-thread-client.ts';
+import { sessionScratchRoleOf } from '../process/session-scratch-role.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Delegation } from './held-calls.ts';
 import type { HeldSession } from './known.ts';
@@ -54,7 +55,7 @@ const verdictOrUnverified = async (verifying: Promise<RuleVerdict>, solver: stri
 export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, session: HeldSession, facts: RuleSetFacts): Promise<PinnedRuleVerdict> => {
   const verifier: RuleVerifierPort = options.ruleVerifier;
   const input = await verifier.inputOf(
-    { rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, exemptDirectory: facts.exemptDirectory, enforcement: facts.enforcement, secrets: [], unixSockets: facts.unixSockets },
+    { rules: facts.rules, roots: facts.roots, mode: session.permissionMode, home: options.home, cwd: session.cwd, exemptDirectory: sessionScratchRoleOf(facts.exemptDirectory), enforcement: facts.enforcement, secrets: [], unixSockets: facts.unixSockets },
     control.signal,
   );
   const solver = await verifier.solverVersion();
