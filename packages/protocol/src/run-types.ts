@@ -109,6 +109,10 @@ export const COMPACT_PIN_KEY = 'compact';
 export const NOTHING_TO_COMPACT_CODE = 'nothing_to_compact';
 export const NOTHING_TO_COMPACT_MESSAGE = 'Nothing to compact.';
 
+export const TOOL_RESULT_PAGE_BYTES = 64 * 1024;
+
+export type ToolResultPage = { text: string; offset: number; next: number | null; totalBytes: number };
+
 export type UserShellRecord = { command: string; exitCode: number | null; output: string; include: boolean };
 
 export const INBOX_DELIVERIES = ['steer', 'queue'] as const;

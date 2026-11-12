@@ -1550,6 +1550,7 @@ export function App(props: AppProps) {
     yielded: panel !== undefined || switching,
     window: fullscreen && !switching ? view.window : undefined,
     allocation,
+    readStoredResult: (stored, offset) => backend.toolResult(stored.runId, stored.callId, offset),
     reportError,
   });
   usePromptPointer({

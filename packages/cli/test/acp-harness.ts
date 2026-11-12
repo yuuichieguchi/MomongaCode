@@ -365,6 +365,7 @@ export const fakeRuntime = (): FakeRuntime => {
     runAnsweredBy: unexpected('runAnsweredBy'),
     costBreakdown: unexpected('costBreakdown'),
     costBreakdownText: unexpected('costBreakdownText'),
+    toolResult: unexpected('toolResult'),
     trust: unexpected('trust'),
     setTrust: unexpected('setTrust'),
     clearTrust: unexpected('clearTrust'),

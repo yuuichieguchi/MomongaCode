@@ -5,7 +5,8 @@ import type { SelectFrame, TextRow } from '../select.tsx';
 import type { KeyContext, KeyTable } from '../keys/table.ts';
 import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
 import { tickRunningTools, toggleNewestThought, toolOf } from '../transcript.ts';
-import type { ToolEntry } from '../transcript.ts';
+import type { StoredResult, ToolEntry } from '../transcript.ts';
+import type { ToolResultPage } from '@momonga/protocol';
 import { STATIC_MARK } from './a11y.ts';
 import type { A11y } from './a11y.ts';
 import { WHEEL_ROWS } from './constants.ts';
@@ -96,7 +97,7 @@ export const hasOutput = (entry: ToolEntry): boolean => entry.denial === undefin
 
 export const isExpandRow = (row: Row): boolean => row.prefixCols === BLOCK_INDENT.length && /^ {2}… \+\d+ lines/.test(row.text);
 
-function* outputLines(output: string): Generator<ViewLine> {
+export function* outputViewLines(output: string): Generator<ViewLine> {
   const end = output.endsWith('\n') ? output.length - 1 : output.length;
   if (end === 0) return;
   let from = 0;
@@ -121,7 +122,23 @@ function* diffViewLines(diff: NonNullable<ToolEntry['diff']>): Generator<ViewLin
   if (diff.omitted !== undefined) yield dimLine(omittedText(diff.omitted));
 }
 
-export const entryViewLines = (entry: ToolEntry): Iterator<ViewLine> => (entry.diff !== undefined ? diffViewLines(entry.diff) : outputLines(entry.output ?? ''));
+export const entryViewLines = (entry: ToolEntry): Iterator<ViewLine> => (entry.diff !== undefined ? diffViewLines(entry.diff) : outputViewLines(entry.output ?? ''));
+
+export type StoredResultReader = (stored: StoredResult, offset: number) => Promise<ToolResultPage>;
+
+export const storedOutputOf = async (read: StoredResultReader, stored: StoredResult): Promise<string> => {
+  const pages: string[] = [];
+  for (let offset: number | null = 0; offset !== null; ) {
+    const page: ToolResultPage = await read(stored, offset);
+    if (page.next !== null && page.next <= offset) throw new Error(`the stored result of ${stored.callId} did not advance past byte ${offset}`);
+    pages.push(page.text);
+    offset = page.next;
+  }
+  return pages.join('');
+};
+
+export const fullViewLines = async (entry: ToolEntry, read: StoredResultReader): Promise<Iterator<ViewLine>> =>
+  entry.diff !== undefined || entry.stored === undefined ? entryViewLines(entry) : outputViewLines(await storedOutputOf(read, entry.stored));
 
 export type Pager = { readonly rows: readonly Row[]; complete(): boolean; fillUnit(): void; fill(through: number): void };
 
@@ -167,12 +184,13 @@ export type ToolViewHost = {
   yielded: boolean;
   window: ViewWindow | undefined;
   allocation: RowAllocation;
+  readStoredResult: StoredResultReader;
   reportError(error: unknown): void;
 };
 
 export type ToolView = { shown: boolean; view: ReactNode; showNewest(): void; key(event: KeyEvent, keys: KeyTable): boolean };
 
-type Opened = { callId: string; index: number; width: number; pager: Pager; top: number };
+type Opened = { callId: string; index: number; width: number; lines: () => Iterator<ViewLine>; pager: Pager; top: number };
 
 const toolAt = (store: TranscriptStore, index: number): ToolEntry | undefined => {
   const { entry } = store.at(index);
@@ -204,9 +222,21 @@ export const useToolView = (host: ToolViewHost): ToolView => {
   };
 
   const open = (index: number, entry: ToolEntry): void => {
-    const next: Opened = { callId: entry.callId, index, width: host.frame.width, pager: createPager(entryViewLines(entry), host.frame.width), top: 0 };
+    const lines = (): Iterator<ViewLine> => entryViewLines(entry);
+    const next: Opened = { callId: entry.callId, index, width: host.frame.width, lines, pager: createPager(lines(), host.frame.width), top: 0 };
     opened.current = next;
     place(next, 0);
+    if (entry.diff !== undefined || entry.stored === undefined) return;
+    storedOutputOf(host.readStoredResult, entry.stored)
+      .then((full) => {
+        const shown = opened.current;
+        if (shown?.callId !== entry.callId || shown.index !== index) return;
+        const fullLines = (): Iterator<ViewLine> => outputViewLines(full);
+        const loaded: Opened = { ...shown, lines: fullLines, pager: createPager(fullLines(), shown.width) };
+        opened.current = loaded;
+        place(loaded, shown.top);
+      })
+      .catch(host.reportError);
   };
 
   const close = (): void => {
@@ -220,7 +250,7 @@ export const useToolView = (host: ToolViewHost): ToolView => {
     if (shown.width === host.frame.width) return shown;
     const entry = toolOf(store, shown.callId);
     if (entry === undefined) return undefined;
-    const rewrapped: Opened = { ...shown, width: host.frame.width, pager: createPager(entryViewLines(entry), host.frame.width), top: 0 };
+    const rewrapped: Opened = { ...shown, width: host.frame.width, pager: createPager(shown.lines(), host.frame.width), top: 0 };
     rewrapped.pager.fill(capacity() + 1);
     opened.current = rewrapped;
     return rewrapped;

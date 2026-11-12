@@ -2,7 +2,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { findProgramOnPathSync, nodeFileSystemSync, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { TrustItemsView } from '@momonga/protocol';
-import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
+import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage } from '@momonga/protocol';
 import { approveProjectItems, editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { ApprovedItem, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
 import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
@@ -73,6 +73,7 @@ export type TuiBackend = {
   continueSession(): Promise<SessionView>;
   sessions(): Promise<readonly SessionSummary[]>;
   runs(): Promise<readonly RunView[]>;
+  toolResult(runId: string, callId: string, offset: number): Promise<ToolResultPage>;
   setMode(mode: PermissionMode): Promise<SessionView>;
   models(): Promise<readonly MomongaModelEntry[]>;
   setModel(model: string): Promise<SessionView>;
@@ -247,6 +248,7 @@ export const createTuiBackend = (
     continueSession: async () => adopt(await reopenedAsTyped(runtime(), ports.cwd, { kind: 'newest' }, options)),
     sessions: () => listedSessions(runtime(), ports.cwd, session?.id, closing.signal),
     runs: () => conversationRuns(current().id),
+    toolResult: (runId, callId, offset) => runtime().toolResult(runId, callId, offset),
     setMode: async (mode) => {
       session = await runtime().setPermissionMode(current().id, mode);
       return session;

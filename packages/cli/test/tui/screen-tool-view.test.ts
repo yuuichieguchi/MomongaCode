@@ -3,7 +3,8 @@ import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { DIFF_PREVIEW_ROWS } from '../../src/tui/screen/diff.ts';
 import { rowsOfEntry as rowsOfEntryWith } from '../../src/tui/screen/entry-rows.ts';
 import { OUTPUT_TAIL_MAX_BYTES, tailOf } from '../../src/tui/screen/output-tail.ts';
-import { createPager, entryViewLines, VIEWER_UNIT_BYTES } from '../../src/tui/screen/tool-view.ts';
+import { createPager, entryViewLines, fullViewLines, outputViewLines, VIEWER_UNIT_BYTES } from '../../src/tui/screen/tool-view.ts';
+import type { StoredResultReader } from '../../src/tui/screen/tool-view.ts';
 import { hasHiddenLines } from '../../src/tui/transcript.ts';
 import { displayWidth, logicalText } from '../../src/tui/screen/wrap.ts';
 import type { Row } from '../../src/tui/screen/wrap.ts';
@@ -178,7 +179,7 @@ describe('the byte bounds of the tool output (P-191)', () => {
 describe('the viewer rows (7.2)', () => {
   it('wraps only as far as it is asked, in units of 16 KiB', () => {
     const output = Array.from({ length: 20_000 }, (_, index) => `row ${index}`).join('\n');
-    const pager = createPager(entryViewLines(toolOf([call, completed(output)])), 40);
+    const pager = createPager(outputViewLines(output), 40);
     pager.fill(10);
     expect(pager.complete()).toBe(false);
     expect(pager.rows.length).toBeGreaterThanOrEqual(10);
@@ -190,7 +191,7 @@ describe('the viewer rows (7.2)', () => {
   });
 
   it('handles one line larger than a unit in pieces and keeps hostile text inert', () => {
-    const pager = createPager(entryViewLines(toolOf([call, completed(`${'z'.repeat(40_000)}\n${HOSTILE}`)])), 100);
+    const pager = createPager(outputViewLines(`${'z'.repeat(40_000)}\n${HOSTILE}`), 100);
     pager.fillUnit();
     expect(pager.complete()).toBe(false);
     expect(pager.rows.length).toBeLessThanOrEqual(Math.ceil(VIEWER_UNIT_BYTES / 100));
@@ -280,5 +281,29 @@ describe('folding tool events', () => {
     storeOf(events.slice(2), live);
     expect(plainOf(live).entries).toEqual(plainOf(storeOf(events)).entries);
     expect(eventOf(call).type).toBe('tool.call');
+  });
+});
+
+describe('the viewer reads the full output from the store (cli-tui-22)', () => {
+  it('shows the full output of a call whose entry keeps only the tail', async () => {
+    const full = numbered(400_000);
+    const entry = toolOf([call, started, completed(full)]);
+    expect(entry.output).not.toBe(full);
+    const asked: { runId: string; callId: string; offset: number }[] = [];
+    const encoded = new TextEncoder().encode(full);
+    const read: StoredResultReader = async (stored, offset) => {
+      asked.push({ ...stored, offset });
+      const end = Math.min(encoded.length, offset + 64 * 1024);
+      return { text: new TextDecoder().decode(encoded.subarray(offset, end)), offset, next: end === encoded.length ? null : end, totalBytes: encoded.length };
+    };
+
+    const lines = await fullViewLines(entry, read);
+    const pager = createPager(lines, 200);
+    pager.fill(Number.MAX_SAFE_INTEGER);
+
+    expect(asked[0]).toEqual({ runId: 'r', callId: 'c1', offset: 0 });
+    expect(pager.rows[0]?.text).toBe('out 0');
+    expect(pager.rows.length).toBe(400_000);
+    expect(pager.rows.at(-1)?.text).toBe('out 399999');
   });
 });

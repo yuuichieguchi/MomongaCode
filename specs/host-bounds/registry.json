@@ -262,6 +262,7 @@
       {"name":"PROMPT_ENVELOPE_BYTES","file":"packages/protocol/src/run-api.ts","lacks":["row"]},
       {"name":"PROMPT_IMAGE_MAX_BYTES","file":"packages/protocol/src/run-api.ts","lacks":["row"]},
       {"name":"PROMPT_TEXT_MAX_CHARS","file":"packages/protocol/src/run-types.ts","lacks":["row"]},
+      {"name":"TOOL_RESULT_PAGE_BYTES","file":"packages/protocol/src/run-types.ts","lacks":["row"]},
       {"name":"USER_SHELL_COMMAND_CHARS","file":"packages/protocol/src/run-types.ts","lacks":["row"]},
       {"name":"USER_SHELL_HEAD_BYTES","file":"packages/protocol/src/run-types.ts","lacks":["row"]},
       {"name":"USER_SHELL_OUTPUT_BYTES","file":"packages/protocol/src/run-types.ts","lacks":["row"]},

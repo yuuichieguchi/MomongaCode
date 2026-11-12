@@ -3,7 +3,7 @@ import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, Mandate } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, ToolResultPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -47,6 +47,7 @@ import {
   checkSession,
   checkSkills,
   checkTrace,
+  checkToolResultPage,
   checkTrust,
   checkTrustItems,
 } from './contract.ts';
@@ -179,6 +180,7 @@ export type RuntimeClient = {
   pendingUserShell(sessionId: string): Promise<UserShellRecord[]>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
   trace(runId: string): Promise<RunTraceView>;
+  toolResult(runId: string, callId: string, offset: number): Promise<ToolResultPage>;
   approvals(runId: string): Promise<ApprovalView[]>;
   getApproval(id: string): Promise<ApprovalView>;
   resolveApproval(id: string, optionId: string): Promise<ResolvedApproval>;
@@ -513,6 +515,12 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     const path = `/v1/runs/${pathSegment(runId)}/trace`;
     const { body } = await send('GET', path, [200]);
     return checkTrace(body, `GET ${path}`);
+  };
+
+  const toolResult = async (runId: string, callId: string, offset: number): Promise<ToolResultPage> => {
+    const path = `/v1/runs/${pathSegment(runId)}/tool-results/${pathSegment(callId)}?offset=${offset}`;
+    const { body } = await send('GET', path, [200]);
+    return checkToolResultPage(body, `GET ${path}`);
   };
 
   const approvals = async (runId: string): Promise<ApprovalView[]> => {
@@ -929,6 +937,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     reportCost,
     reportRecompute,
     traceContent,
+    toolResult,
     cost,
     costText,
     costBreakdown,

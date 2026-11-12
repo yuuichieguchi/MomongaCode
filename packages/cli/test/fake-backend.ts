@@ -80,6 +80,7 @@ export type FakeBackend = TuiBackend & {
 };
 
 export type FakeBackendOptions = {
+  storedResults?: Readonly<Record<string, string>>;
   trust?: TrustView;
   trustItems?: TrustItemsView;
   session?: Partial<SessionView>;
@@ -350,6 +351,11 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
         .map((conversation) => ({ id: conversation.session.id, createdAt: viewOf(conversation).createdAt, runs: conversation.runs.length, firstPrompt: conversation.firstPrompt }))
         .sort((left, right) => right.createdAt - left.createdAt),
     runs: async () => (conversations.find((conversation) => conversation.session.id === session.id)?.runs ?? []).flatMap((run) => conversationRun(run.id)?.view ?? []),
+    toolResult: async (runId, callId, offset) => {
+      const text = options.storedResults?.[`${runId}/${callId}`];
+      if (text === undefined) throw new Error(`the fake holds no stored result for ${runId}/${callId}`);
+      return { text, offset, next: null, totalBytes: new TextEncoder().encode(text).length };
+    },
     autoModeAvailable: async () => options.autoModeAvailable ?? false,
     models: listedModels,
     modelList: async () => {

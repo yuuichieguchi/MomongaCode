@@ -1683,6 +1683,7 @@ export const RUN_API_SCHEMAS = {
   ),
   JobView: root(jobView),
   JobsResponse: root(closed({ jobs: { type: 'array', items: jobView } }, ['jobs'])),
+  ToolResultPage: root(closed({ text: string, offset: nonNegativeInteger, next: nullable(nonNegativeInteger), totalBytes: nonNegativeInteger }, ['text', 'offset', 'next', 'totalBytes'])),
   ChildRunsResponse: root(closed({ runs: { type: 'array', items: runView } }, ['runs'])),
   SkillsResponse: root(closed({ skills: { type: 'array', items: skillView }, warnings: { type: 'array', items: string } }, ['skills', 'warnings'])),
   AgentsResponse: root(closed({ agents: { type: 'array', items: agentView }, warnings: { type: 'array', items: string } }, ['agents', 'warnings'])),

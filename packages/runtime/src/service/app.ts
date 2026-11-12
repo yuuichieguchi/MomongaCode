@@ -17,6 +17,7 @@ import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { registerUserShellRoutes } from './user-shell-routes.ts';
+import { registerToolResultRoutes } from './tool-result-routes.ts';
 import type { UserCommandRegistry } from './user-shell-routes.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
@@ -846,6 +847,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/children', { GET: listChildRuns });
   route('/v1/runs/:id/cancel', { POST: cancelRun });
   route('/v1/runs/:id/trace', { GET: runTrace });
+  registerToolResultRoutes(route, { store });
   route('/v1/cost', { GET: cost });
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
