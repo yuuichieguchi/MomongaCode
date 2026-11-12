@@ -208,7 +208,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'urlOpenerFileFor',
   'valueOrThrow',
   'waitForGroupGone',
-  'waitUntil',
   'watchLifeline',
 ];
 

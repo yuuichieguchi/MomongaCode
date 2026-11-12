@@ -19,12 +19,13 @@ export interface ManagedChild {
   once(event: 'error', listener: (error: Error) => void): unknown;
 }
 
-export type SpawnFn = (file: string, args: readonly string[]) => ManagedChild;
+export type SpawnFn = (file: string, args: readonly string[]) => Promise<ManagedChild>;
 
 export interface ManagedServerTimers {
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
   now(): number;
+  monotonicMs(): number;
 }
 
 export type ManagedServerOptions = {
@@ -128,7 +129,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
   const spawn =
     options.spawn ??
     (options.markerDirectory === undefined
-      ? (): ManagedChild => {
+      ? async (): Promise<ManagedChild> => {
           throw new Error(aboutModel(target, 'the server has no marker directory, so it cannot be launched'));
         }
       : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning, inspector: options.inspector }));
@@ -274,8 +275,8 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     }
   };
 
-  const launch = (): RunningChild => {
-    const managed: RunningChild = { process: spawn(options.binary, argv), exited: false, error: undefined, exitWaiters: [], terminating: undefined };
+  const launch = async (): Promise<RunningChild> => {
+    const managed: RunningChild = { process: await spawn(options.binary, argv), exited: false, error: undefined, exitWaiters: [], terminating: undefined };
     current = managed;
     managed.process.once('exit', () => onChildEnd(managed, undefined));
     managed.process.once('error', (error) => onChildEnd(managed, error));
@@ -409,7 +410,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       childStartBegun = true;
       await options.onChildStart?.(signal);
       if (!isCurrent()) return undefined;
-      launched = launch();
+      launched = await launch();
       await waitUntilReady(launched, startClient, signal);
       return launched;
     } catch (error) {

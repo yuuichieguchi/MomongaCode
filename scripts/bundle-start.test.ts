@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -20,7 +19,7 @@ afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
 describe('the start of the single-file bundle', () => {
   it('draws the first frame of the interactive entry on a terminal', async () => {
-    const home = await createE2eHome({ run: randomBytes(2).toString('hex') });
+    const home = await createE2eHome();
 
     const pty = await spawnPty(home, [], {}, { bundle: outfile });
 

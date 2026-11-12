@@ -8,7 +8,8 @@ import type { OperationCatalogueFacts } from '@momonga/tools';
 import type { RuleVerifierPort } from '../ports.ts';
 import { invalidRequest } from '../service/errors.ts';
 import { delegationOf } from '../worker/held-calls.ts';
-import { RuleVerificationFailure } from './rule-verifier-thread-client.ts';
+import { verdictOfKey, verdictOrUnverified } from '../worker/rule-verdict.ts';
+import type { VerdictCache } from '../worker/rule-verdict.ts';
 import { sessionScratchRoleIn } from './session-scratch-role.ts';
 
 export type FolderVerifyRequest = { cwd: string; mode?: PermissionMode; secrets: readonly string[]; mandate?: string };
@@ -81,10 +82,10 @@ export type MandateRunRequest = { cwd: string; mode: PermissionMode; mandate: Ma
 export type MandateRunVerification = (request: MandateRunRequest, signal: AbortSignal) => Promise<RuleVerdict>;
 
 export type MandateRunSources = Omit<FolderPolicySources, 'mandates' | 'ruleVerdicts'> & {
-  ruleVerdicts: { get(fingerprint: string): { verdict: RuleVerdict } | undefined; put(fingerprint: string, verdict: RuleVerdict): void };
+  ruleVerdicts: VerdictCache;
+  retrySignal: AbortSignal;
+  onRetryFailure: (error: unknown) => void;
 };
-
-const WHOLE_VERIFICATION = 'verification';
 
 export const mandateRunVerification =
   (sources: MandateRunSources): MandateRunVerification =>
@@ -110,16 +111,13 @@ export const mandateRunVerification =
       },
       signal,
     );
-    const fingerprint = verdictKey(input, solver);
-    const stored = sources.ruleVerdicts.get(fingerprint);
-    if (stored !== undefined) return stored.verdict;
-    let verdict: RuleVerdict;
-    try {
-      verdict = await sources.verifier.verify(input, signal);
-    } catch (error) {
-      if (!(error instanceof RuleVerificationFailure)) throw error;
-      return { verdict: 'unknown', solver, refuted: [], unknown: [{ property: WHOLE_VERIFICATION, reason: error.message }], notProved: [] };
-    }
-    if (isFinalRuleVerdict(verdict)) sources.ruleVerdicts.put(fingerprint, verdict);
-    return verdict;
+    return verdictOfKey({
+      verifier: sources.verifier,
+      cache: sources.ruleVerdicts,
+      fingerprint: verdictKey(input, solver),
+      solver,
+      verify: () => verdictOrUnverified(sources.verifier.verify(input, signal), solver),
+      retry: () => sources.verifier.verify(input, sources.retrySignal),
+      onRetryFailure: sources.onRetryFailure,
+    });
   };

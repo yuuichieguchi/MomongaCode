@@ -15,6 +15,7 @@ const PRODUCED: RunHealth = {
   role: 'serving',
   steps: 0,
   jobs: 0,
+  interrupts: [],
   sandbox: 'seatbelt',
 };
 
@@ -23,7 +24,7 @@ describe('the health reply: every field the producer always sends is required', 
     expect(validate(PRODUCED)).toBe(true);
   });
 
-  it.each(['role', 'steps', 'jobs'] as const)('refuses a reply without %s', (field) => {
+  it.each(['role', 'steps', 'jobs', 'interrupts'] as const)('refuses a reply without %s', (field) => {
     const { [field]: _omitted, ...missing } = PRODUCED;
     expect(validate(missing)).toBe(false);
   });

@@ -1,9 +1,9 @@
-import { askProjectItems } from './project-items.ts';
+import { askTrustItems } from './project-items.ts';
 import { askProjectCheck } from './project-check.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
 import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
-import type { ChainCapabilities, ImageAttachment, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import type { ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
@@ -47,7 +47,8 @@ import { AtList, AttachmentLines, heldAttachments } from './screen/attachments.t
 import type { Attachment } from './screen/attachments.tsx';
 import { contextPercentOf, Footer, newlineHintText, planRowFits } from './screen/footer.tsx';
 import { formatTokens } from '../format-tokens.ts';
-import { HistoryView } from './screen/history-view.tsx';
+import { HistoryView, useBackgroundAnswered } from './screen/history-view.tsx';
+import type { ViewSource } from './screen/viewport.ts';
 import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
 import { untilNextKey } from './screen/input.ts';
 import type { ScreenTerminal } from './screen/input.ts';
@@ -181,6 +182,7 @@ export function App(props: AppProps) {
   const { exit, waitUntilRenderFlush } = useApp();
   const { stdout, write: writeThroughInk } = useStdout();
   const terminalState = useSyncExternalStore(terminal.subscribe, terminal.state);
+  const scrollbackReady = useBackgroundAnswered(terminalState.negotiation, props.timers);
   const { columns, rows } = terminalState.size;
   applyAppearance(appearanceOf(props.colour ?? UNREPORTED_COLOUR_HOST, terminalState.backgroundColor));
   const tuiSettings = props.tuiSettings ?? UNSTORED_TUI_SETTINGS;
@@ -239,7 +241,7 @@ export function App(props: AppProps) {
   const imageCount = useRef(0);
   const shellRunning = useRef(false);
   const [reconnectingSince, setReconnectingSince] = useState<number | undefined>(undefined);
-  const [measuringSince, setMeasuringSince] = useState<number | undefined>(undefined);
+  const [measuring, setMeasuring] = useState<{ since: number; state: Measuring } | undefined>(undefined);
   const [commands, setCommands] = useState<readonly WaitingPhase[]>([]);
   const stopMeasuring = useRef<(() => void) | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
@@ -247,6 +249,7 @@ export function App(props: AppProps) {
   const { adoption, move } = props;
   const [feed, setFeed] = useState(() => createHistoryFeed(adoption?.record.printed ?? 0));
   const feedRef = useRef(feed);
+  const sourceRef = useRef<ViewSource | undefined>(undefined);
   const [erased, setErased] = useState(false);
   const phaseRef = useRef<Phase['kind']>('starting');
   const readingRef = useRef(false);
@@ -308,7 +311,7 @@ export function App(props: AppProps) {
       if (openedSession.current === undefined || phaseRef.current !== 'ready' || now.overlay) return false;
       if (readingRef.current || switchingRef.current || shellRunning.current || now.tasks.count() > 0) return false;
       if (state.approval !== undefined || state.elicitation !== undefined) return false;
-      return now.terminal.state().screen === 'fullscreen' || !feedRef.current.pending(store.settledCount());
+      return now.terminal.state().screen === 'fullscreen' || sourceRef.current === undefined || !feedRef.current.pending(sourceRef.current, store.settledAt);
     };
     const surface: TuiSurface = {
       session: () => openedSession.current?.id,
@@ -454,7 +457,7 @@ export function App(props: AppProps) {
   const endMeasuring = (): void => {
     stopMeasuring.current?.();
     stopMeasuring.current = undefined;
-    setMeasuringSince(undefined);
+    setMeasuring(undefined);
   };
 
   const modelUnread = (error: unknown, announce = true): void => {
@@ -467,8 +470,14 @@ export function App(props: AppProps) {
     setModel(entry);
     const readiness = agentReadiness(entry.capabilities);
     if (readiness.state === 'probing') {
-      setMeasuringSince(now());
-      stopMeasuring.current = followMeasurement({ read: () => backend.model(), timers }, readiness.retryAfterSeconds, (measured) => showModel(measured), (error) => modelUnread(error));
+      setMeasuring({ since: now(), state: readiness.measuring });
+      stopMeasuring.current = followMeasurement(
+        { read: () => backend.model(), timers },
+        readiness.retryAfterSeconds,
+        (measured) => showModel(measured),
+        (error) => modelUnread(error),
+        (state) => setMeasuring((before) => (before === undefined ? undefined : { since: before.since, state })),
+      );
       return;
     }
     const text = readinessNoticeOf(readiness, 'tui');
@@ -651,8 +660,10 @@ export function App(props: AppProps) {
   };
 
   const connectAtLaunch = async (): Promise<void> => {
-    const approval = await askProjectItems(await backend.projectItems(), overlayPorts.choose);
-    if (approval !== undefined) await backend.approveProjectItems(approval);
+    const pending = await backend.trustItems();
+    for (const sentence of pending.refused) append({ kind: 'notice', level: 'warning', text: sentence });
+    const approved = await askTrustItems(pending.items, overlayPorts.choose);
+    if (approved.length > 0) await backend.approveProjectItems(approved);
     const proposal = await backend.checkProposal();
     const check = proposal.ask ? await askProjectCheck(proposal.checks, overlayPorts) : undefined;
     if (check !== undefined) await backend.answerCheck(check);
@@ -1505,7 +1516,7 @@ export function App(props: AppProps) {
     reconnectingSince: phase.kind === 'ready' ? reconnectingSince : undefined,
     run: phase.kind === 'ready' ? shownRunPhase(transcript) : undefined,
     command: commands.at(-1),
-    measuringSince: phase.kind === 'ready' ? measuringSince : undefined,
+    measuring: phase.kind === 'ready' ? measuring : undefined,
     panelOwnsEscape: overlay !== undefined,
     loading: phase.kind === 'ready' ? loading : undefined,
   });
@@ -1592,6 +1603,7 @@ export function App(props: AppProps) {
   useEffect(() => {
     facts.current = { overlay: overlay !== undefined, position: view.position, tasks, terminal, flush: waitUntilRenderFlush };
     feedRef.current = feed;
+    sourceRef.current = view.source;
     move?.check();
   });
   useEffect(() => move?.attach(handover.surface), [move, handover]);
@@ -1657,7 +1669,7 @@ export function App(props: AppProps) {
         ) : fullscreen ? (
           <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : drawnTranscriptRows(allocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
         ) : (
-          <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} />
+          <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
         ),
         menu: !menuShown ? null : invitationInMenu && prompts.invitation !== undefined ? <InvitationLine invitation={prompts.invitation} keys={keys} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
         waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
@@ -1671,7 +1683,7 @@ export function App(props: AppProps) {
             ))}
           </>
         ) : null,
-        input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledCount()).length, rowRequests))} /> : null,
+        input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledAt).length, rowRequests))} /> : null,
         footer: (
           <>
             <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />

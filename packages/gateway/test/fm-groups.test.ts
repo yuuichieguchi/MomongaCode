@@ -234,7 +234,7 @@ describe('stale fm marker reaping', () => {
     expect(isAlive(holder)).toBe(true);
     expect(fs.existsSync(planted.marker)).toBe(true);
     expect(warnings).toEqual([
-      'a managed server process (marker stale-marker) may still be running. MomongaCode has used its 4 retries and will not try again. If it can stay running, run /markers ignore stale-marker.',
+      'a managed server process (marker stale-marker) may still be running. MomongaCode has used its 4 retries and will not try again. Stop the process that holds it, or, if it can stay running, run /markers ignore stale-marker in an interactive session.',
     ]);
   });
 });
@@ -253,7 +253,7 @@ describe('finalize of a spawned fm group', () => {
       "fs.writeFileSync(process.argv[1], 'ready\\n');",
       SLEEPER,
     ].join(' ');
-    const child = createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: (message) => warnings.push(message) })(process.execPath, ['-e', source, readyFile]);
+    const child = await createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: (message) => warnings.push(message) })(process.execPath, ['-e', source, readyFile]);
     const [marker] = fs.readdirSync(markers);
     await until(() => fs.readFileSync(path.join(markers, marker ?? ''), 'utf8').includes('\ng'), 'the group line');
     const pid = (await readMarkerGroup(path.join(markers, marker ?? ''))) ?? 0;

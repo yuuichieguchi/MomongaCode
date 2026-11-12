@@ -1,6 +1,12 @@
 import path from 'node:path';
 import type { Context } from 'hono';
-import { hostPaths } from '@momonga/foundation';
+import { pendingProjectItems } from '@momonga/config';
+import type { PendingChange, PendingProjectItem, ProjectAgentsLister } from '@momonga/config';
+import { createAgentLoader } from '@momonga/agents';
+import { createNodeSkillFileSystem } from '@momonga/skills';
+import type { TrustItemChange, TrustItemsView } from '@momonga/protocol';
+import { diffOfContents } from '@momonga/tools';
+import { hostPaths, settledOrAborted } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
@@ -27,8 +33,24 @@ export const undecidedFolderNotice = async (
   };
 };
 
-export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<RuntimeStore, 'trust'>; maxBodyBytes: number }): void => {
+const shownContent = (value: unknown): string => (typeof value === 'string' ? value : `${JSON.stringify(value, null, 2)}\n`);
+
+const contentOf = (item: PendingProjectItem): unknown => {
+  if (item.kind === 'hook') return item.group;
+  if (item.kind === 'mandate') return item.document;
+  if (item.kind === 'agent') return item.text;
+  return item.config;
+};
+
+const NOTHING_APPROVED: ReadonlySet<string> = new Set();
+
+const shownChange = (change: PendingChange, now: unknown): TrustItemChange => (change.kind === 'changed' ? { kind: 'changed', diff: diffOfContents(shownContent(change.earlier), shownContent(now)) } : change);
+
+export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<RuntimeStore, 'trust'>; maxBodyBytes: number; home: string }): void => {
   const { store } = deps;
+  const agentLoader = createAgentLoader({ home: deps.home, fileSystem: createNodeSkillFileSystem() });
+  const projectAgents: ProjectAgentsLister = async (projectDir, signal) =>
+    (await settledOrAborted(agentLoader.load({ projectRoot: projectDir, trusted: true, approvedProjectAgents: NOTHING_APPROVED }), signal)).pendingApproval;
 
   const viewOf = async (canonical: string, signal: AbortSignal): Promise<Response> => json({ trust: { path: canonical, ...(await store.trust.decisionAsked(canonical, signal)) } }, 200);
 
@@ -60,5 +82,20 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
     return new Response(null, { status: 204 });
   };
 
+  const getItems: Handler = async (context) => {
+    const input = requiredPathQuery(context);
+    const signal = context.req.raw.signal;
+    const result = await hostPaths(signal).canonicalDirectory(input);
+    if (!result.ok) {
+      if (result.code === 'missing') throw notFound(`path ${input} ${result.reason}`);
+      throw invalidRequest(`path ${input} ${result.reason}`, 'path');
+    }
+    const trust = { isTrusted: async (folder: string, asked: AbortSignal): Promise<boolean> => (await store.trust.decisionAsked(folder, asked)).decision === 'trusted' };
+    const pending = await pendingProjectItems({ home: deps.home, projectDir: result.path, trust, agents: projectAgents, signal });
+    const view: TrustItemsView = { items: pending.items.map((item) => ({ ...item, change: shownChange(item.change, contentOf(item)) })), refused: pending.refused };
+    return json(view, 200);
+  };
+
   route('/v1/trust', { GET: getTrust, PUT: putTrust, DELETE: deleteTrust }, { person: ['PUT', 'DELETE'] });
+  route('/v1/trust/items', { GET: getItems });
 };

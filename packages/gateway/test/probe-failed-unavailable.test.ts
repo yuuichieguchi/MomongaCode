@@ -1,3 +1,4 @@
+import { createRedactor } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { TARGET_PROBE_FAILED, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Capabilities, ProviderAdapter } from '@momonga/protocol';
@@ -14,8 +15,8 @@ type LanternReport = { brightness: number };
 const KEY: LanternKey = { target: 'lantern', lamp: 'brass-7' };
 const RETRY_AFTER_MS = 120_000;
 const CAUSE = 'the lantern went out';
-const FAILED_MESSAGE = `measuring this model failed: ${CAUSE}`;
-const PROBING = { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 };
+const FAILED_MESSAGE = `measuring the model "lantern" failed: ${CAUSE}. It is not measured again until you ask: declare toolCalling, or run \`momonga gateway probe lantern\`.`;
+const PROBING = { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: expect.objectContaining({ fields: ['toolCalling'], declaration: 'declare toolCalling' }) };
 
 type Pending = { resolve: (report: LanternReport) => void; reject: (error: Error) => void };
 
@@ -23,6 +24,7 @@ const lantern = () => {
   const state = { measures: 0, saved: [] as LanternReport[], pending: [] as Pending[] };
   const subject: ProbeSubject<LanternKey, LanternReport> = {
     target: KEY.target,
+    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
     readKey: async () => KEY,
     precondition: { boundMs: 50, check: async () => ({ kind: 'met' }) },
     measure: () => {
@@ -39,7 +41,7 @@ const lantern = () => {
 const setupAuto = () => {
   const clock = createFakeClock(START_MS);
   const events: string[] = [];
-  const autoProbe = createAutoProbe({ lock: testKernelLock(), dir: makeDir(), clock, timers: createFakeTimers(clock), retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
+  const autoProbe = createAutoProbe({ redactor: createRedactor({ credentials: [] }), lock: testKernelLock(), dir: makeDir(), clock, timers: createFakeTimers(clock), retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
   return { clock, events, autoProbe, ...lantern() };
 };
 
@@ -65,48 +67,16 @@ describe('the automatic probe reports a failed measurement as its cause (design-
     expect(context.state.measures).toBe(1);
   });
 
-  it('throws 503 target_probe_failed with the cause and the remaining back-off during the back-off, and starts no measurement', async () => {
+  it('keeps the failed state with its cause, without a retry time, and starts no measurement again however late the next request comes', async () => {
     const context = setupAuto();
     await failFirstFlight(context, new Error(CAUSE));
 
     const atOnce = await thrownBy(() => context.autoProbe.ensure(context.subject, KEY));
-    expect(atOnce).toMatchObject({
-      status: 503,
-      body: { type: 'server_error', code: TARGET_PROBE_FAILED, message: FAILED_MESSAGE },
-      headers: { 'retry-after': '120' },
-    });
+    expect(atOnce).toMatchObject({ status: 503, body: { type: 'server_error', code: TARGET_PROBE_FAILED, message: FAILED_MESSAGE }, headers: {} });
 
-    context.clock.advance(45_000);
-    const later = await thrownBy(() => context.autoProbe.ensure(context.subject, KEY));
-    expect(later).toMatchObject({ status: 503, body: { code: TARGET_PROBE_FAILED, message: FAILED_MESSAGE }, headers: { 'retry-after': '75' } });
-
-    context.clock.advance(74_001);
-    expect(await thrownBy(() => context.autoProbe.ensure(context.subject, KEY))).toMatchObject({ headers: { 'retry-after': '1' } });
+    context.clock.advance(10 * RETRY_AFTER_MS);
+    expect(await thrownBy(() => context.autoProbe.ensure(context.subject, KEY))).toMatchObject({ body: { code: TARGET_PROBE_FAILED, message: FAILED_MESSAGE } });
     expect(context.state.measures).toBe(1);
-  });
-
-  it('starts a new measurement and answers probing once the back-off has passed', async () => {
-    const context = setupAuto();
-    await failFirstFlight(context, new Error(CAUSE));
-
-    context.clock.advance(RETRY_AFTER_MS);
-
-    expect(await context.autoProbe.ensure(context.subject, KEY)).toEqual(PROBING);
-    expect(context.state.measures).toBe(2);
-    expect(await context.autoProbe.ensure(context.subject, KEY)).toEqual(PROBING);
-  });
-
-  it('reports the cause of the latest failed measurement', async () => {
-    const context = setupAuto();
-    await failFirstFlight(context, new Error(CAUSE));
-    context.clock.advance(RETRY_AFTER_MS);
-    await context.autoProbe.ensure(context.subject, KEY);
-    context.state.pending[1]?.reject(new Error('the oil ran dry'));
-    await until(() => context.events.length === 2, 'the second failure is reported');
-
-    expect(await thrownBy(() => context.autoProbe.ensure(context.subject, KEY))).toMatchObject({
-      body: { code: TARGET_PROBE_FAILED, message: 'measuring this model failed: the oil ran dry' },
-    });
   });
 
   it('cleans the cause and keeps it at most 300 characters', async () => {
@@ -114,9 +84,9 @@ describe('the automatic probe reports a failed measurement as its cause (design-
     await failFirstFlight(context, new Error(`\u001b[31mwick\u0007 ${'x'.repeat(2000)}`));
 
     const failure = (await thrownBy(() => context.autoProbe.ensure(context.subject, KEY))) as { body: { message: string } };
-    const prefix = 'measuring this model failed: ';
+    const prefix = 'measuring the model "lantern" failed: ';
     expect(failure.body.message.startsWith(`${prefix}wick x`)).toBe(true);
-    expect(failure.body.message.length - prefix.length).toBeLessThanOrEqual(300);
+    expect(failure.body.message.slice(prefix.length, failure.body.message.indexOf('. It is not measured again')).length).toBeLessThanOrEqual(300);
   });
 });
 
@@ -124,9 +94,10 @@ const setupInstance = () => {
   const clock = createFakeClock(START_MS);
   const pending: Pending[] = [];
   const failures: unknown[] = [];
-  const probe = createInstanceProbe<LanternReport>({
+  const probe = createInstanceProbe<LanternReport>({ redactor: createRedactor({ credentials: [] }),
     target: 'lantern',
     unknown: { component: 'hostOsBuild', reason: 'sw_vers is not on PATH' },
+    ask: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
     dir: makeDir(),
     measure: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
     retryAfterMs: RETRY_AFTER_MS,
@@ -151,34 +122,17 @@ describe('the probe of an instance whose key cannot be read reports a failed mea
     expect(context.pending).toHaveLength(1);
   });
 
-  it('throws 503 target_probe_failed with the cause and the remaining back-off, and does not measure again on every poll', async () => {
+  it('keeps the failed state of its instance, and measures it no more however late the next poll comes', async () => {
     const context = setupInstance();
     await failInstanceFlight(context, 0, new Error(CAUSE));
 
-    expect(await thrownBy(() => context.probe.ensure())).toMatchObject({
-      status: 503,
-      body: { type: 'server_error', code: TARGET_PROBE_FAILED, message: FAILED_MESSAGE },
-      headers: { 'retry-after': '120' },
-    });
-    context.clock.advance(45_000);
-    expect(await thrownBy(() => context.probe.ensure())).toMatchObject({ body: { code: TARGET_PROBE_FAILED, message: FAILED_MESSAGE }, headers: { 'retry-after': '75' } });
+    expect(await thrownBy(() => context.probe.ensure())).toMatchObject({ status: 503, body: { type: 'server_error', code: TARGET_PROBE_FAILED, message: FAILED_MESSAGE } });
+    context.clock.advance(10 * RETRY_AFTER_MS);
+    expect(await thrownBy(() => context.probe.ensure())).toMatchObject({ body: { code: TARGET_PROBE_FAILED, message: FAILED_MESSAGE } });
     expect(context.pending).toHaveLength(1);
   });
 
-  it('measures again once the back-off has passed, and serves the result of a successful retry', async () => {
-    const context = setupInstance();
-    await failInstanceFlight(context, 0, new Error(CAUSE));
-    context.clock.advance(RETRY_AFTER_MS);
-
-    expect(await context.probe.ensure()).toEqual({ kind: 'probing', probing: PROBING });
-    expect(context.pending).toHaveLength(2);
-    context.pending[1]?.resolve({ brightness: 3 });
-    await until(async () => (await context.probe.ensure()).kind === 'measured', 'the retry is measured');
-
-    expect(await context.probe.ensure()).toEqual({ kind: 'measured', report: { brightness: 3 } });
-  });
-
-  it('measures a restarted instance at once: the back-off belongs to the instance whose measurement failed', async () => {
+  it('measures a restarted instance at once: the failed state belongs to the instance whose measurement failed', async () => {
     const context = setupInstance();
     await failInstanceFlight(context, 0, new Error(CAUSE));
 
@@ -218,10 +172,10 @@ const UNAVAILABLE = { toolCalling: { state: 'unavailable', status: 503, type: 's
 const LISTED_PROBING = { toolCalling: PROBING, source: 'unprobed' };
 
 describe('the models listing of a model whose measurement failed (design-screens 6.2, items 1 and 4)', () => {
-  it('lists it probing while measured, unavailable with the cause and code after the failure and during the back-off, probing at the retry and measured after it', async () => {
+  it('lists it probing while measured, then unavailable with the cause and code, and keeps it so', async () => {
     const clock = createFakeClock(START_MS);
     const events: string[] = [];
-    const autoProbe = createAutoProbe({ lock: testKernelLock(), dir: makeDir(), clock, timers: createFakeTimers(clock), retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
+    const autoProbe = createAutoProbe({ redactor: createRedactor({ credentials: [] }), lock: testKernelLock(), dir: makeDir(), clock, timers: createFakeTimers(clock), retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
     const { state, subject } = lantern();
     const measured: ProviderAdapter = {
       ...createScriptedAdapter({ calls: [], capabilities: AVAILABLE }),
@@ -255,20 +209,8 @@ describe('the models listing of a model whose measurement failed (design-screens
     expect(memberOf(mixed, MEASURED)).toEqual(UNAVAILABLE);
     expect(memberOf(mixed, MIXED)?.['contextWindow']).toBe(8192);
 
-    clock.advance(45_000);
+    clock.advance(10 * RETRY_AFTER_MS);
     expect((await listed(MEASURED)).capabilities).toEqual(UNAVAILABLE);
     expect(state.measures).toBe(1);
-
-    clock.advance(75_000);
-    expect((await listed(MEASURED)).capabilities).toEqual(LISTED_PROBING);
-    const retried = state.pending.length;
-    expect(state.measures).toBe(retried);
-    expect(retried).toBeGreaterThan(1);
-
-    state.pending[retried - 1]?.resolve({ brightness: 3 });
-    await until(() => state.saved.length === 1, 'the retry is saved');
-    const ready = await listed(MEASURED);
-    expect(ready.capabilities['contextWindow']).toBe(8192);
-    expect(ready.capabilities['toolCalling']).toBe('native');
   });
 });

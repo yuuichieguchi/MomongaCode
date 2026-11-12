@@ -43,7 +43,7 @@ export interface FakeChatCompletionsOptions {
   stallNativeSamples?: number[];
   stallMs?: number;
   healthy?: boolean;
-  script?: FakeScriptedReply[];
+  script?: FakeScriptEntry[];
   routes?: FakeRoute[];
   staticGets?: Readonly<Record<string, unknown>>;
 }
@@ -79,6 +79,10 @@ export type FakeScriptedReply =
   | { kind: 'keep-alive'; everyMs: number }
   | { kind: 'raw-sse'; events: string[] }
   | { kind: 'error-event'; body: unknown };
+
+export type FakeDeferredReply = { kind: 'deferred'; reply(): FakeScriptedReply };
+
+export type FakeScriptEntry = FakeScriptedReply | FakeDeferredReply;
 
 export interface RecordedRequest {
   method: string;
@@ -770,7 +774,8 @@ export const startFakeChatCompletions = async (
           await held.released;
           if (response.destroyed) return;
         }
-        const scripted = script.shift();
+        const queued = script.shift();
+        const scripted = queued?.kind === 'deferred' ? queued.reply() : queued;
         if (scripted !== undefined) {
           await serveScripted(scripted, response, body);
           return;

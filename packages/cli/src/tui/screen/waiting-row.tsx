@@ -1,12 +1,13 @@
 import { Text } from 'ink';
 import { useEffect, useState } from 'react';
-import { escapeTerminalLine } from '@momonga/protocol';
+import { escapeTerminalLine, measuringSkipOf, measuringStepOf } from '@momonga/protocol';
+import type { Measuring } from '@momonga/protocol';
 import type { ActionId, KeyTable } from '../keys/table.ts';
 import { STATIC_MARK } from './a11y.ts';
 import { every } from './timers.ts';
 import type { ScreenTimers } from './timers.ts';
 
-export type WaitingPhase = { text: string; startedAt: number };
+export type WaitingPhase = { text: string; startedAt: number; detail?: string };
 
 export type CancelKey = Extract<ActionId, 'run.stop' | 'prompt.interrupt'>;
 
@@ -20,7 +21,7 @@ export type WaitingFacts = {
   reconnectingSince: number | undefined;
   run: WaitingPhase | undefined;
   command: WaitingPhase | undefined;
-  measuringSince: number | undefined;
+  measuring: { since: number; state: Measuring } | undefined;
   panelOwnsEscape: boolean;
   loading: Loading | undefined;
 };
@@ -45,7 +46,7 @@ export const waitingOf = (facts: WaitingFacts): Waiting | undefined => {
   if (facts.loading !== undefined) return { phase: { text: loadingText(facts.loading.done, facts.loading.total), startedAt: facts.loading.startedAt }, cancelKey: undefined };
   if (facts.run !== undefined) return { phase: facts.run, cancelKey };
   if (facts.command !== undefined) return { phase: facts.command, cancelKey };
-  if (facts.measuringSince !== undefined) return { phase: { text: MEASURING_TEXT, startedAt: facts.measuringSince }, cancelKey: undefined };
+  if (facts.measuring !== undefined) return { phase: { text: measuringStepOf(facts.measuring.state), startedAt: facts.measuring.since, detail: measuringSkipOf(facts.measuring.state) }, cancelKey: undefined };
   return undefined;
 };
 
@@ -57,7 +58,8 @@ export const waitingRowText = (waiting: Waiting, mark: WaitingMark, now: number,
   const seconds = Math.max(0, Math.floor((now - waiting.phase.startedAt) / 1000));
   const key = waiting.cancelKey === undefined ? '' : keys.keyHint(waiting.cancelKey);
   const cancel = key === '' ? '' : ` · ${key} to cancel`;
-  return `${mark.kind === 'static' ? STATIC_MARK : SPINNER_FRAMES[mark.tick % SPINNER_FRAMES.length]} ${escapeTerminalLine(waiting.phase.text)} ${seconds}s${cancel}`;
+  const detail = waiting.phase.detail === undefined ? '' : ` · ${escapeTerminalLine(waiting.phase.detail)}`;
+  return `${mark.kind === 'static' ? STATIC_MARK : SPINNER_FRAMES[mark.tick % SPINNER_FRAMES.length]} ${escapeTerminalLine(waiting.phase.text)} ${seconds}s${cancel}${detail}`;
 };
 
 export type WaitingRowProps = { waiting: Waiting; now(): number; timers: ScreenTimers; keys: KeyTable; reducedMotion: boolean; onTick?: () => void };

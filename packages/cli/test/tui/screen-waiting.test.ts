@@ -30,6 +30,8 @@ const failed = { type: 'attempt.failed', attempt: 3, code: 'provider_unavailable
 
 const phaseAfter = (events: readonly Record<string, unknown>[]) => fold(events).phase;
 
+const MEASURING = { fields: ['toolCalling'], step: 'plain answer', elapsedSeconds: 4, declaration: 'declare toolCalling for the model "lab/qwen" in its settings' };
+
 describe('the phase of a run comes from its events (6.1)', () => {
   it('names each wait by the event that starts it and takes its start from that event', () => {
     expect(phaseAfter([at(7000, requested)])).toEqual({ kind: 'model', text: 'waiting for the model', startedAt: 7000 });
@@ -94,7 +96,7 @@ describe('the phase of a run comes from its events (6.1)', () => {
 });
 
 describe('the waiting row (6.1)', () => {
-  const none: WaitingFacts = { startingSince: undefined, prompting: false, reconnectingSince: undefined, run: undefined, command: undefined, measuringSince: undefined, panelOwnsEscape: false, loading: undefined };
+  const none: WaitingFacts = { startingSince: undefined, prompting: false, reconnectingSince: undefined, run: undefined, command: undefined, measuring: undefined, panelOwnsEscape: false, loading: undefined };
   const run = { text: 'thinking', startedAt: 1000 };
 
   it('writes the spinner frame, the phase, the whole seconds and the key that cancels', () => {
@@ -108,15 +110,15 @@ describe('the waiting row (6.1)', () => {
     expect(waitingOf(none)).toBeUndefined();
     expect(waitingOf({ ...none, startingSince: 5, run })).toEqual({ phase: { text: 'starting the momonga daemon', startedAt: 5 }, cancelKey: 'prompt.interrupt' });
     expect(waitingOf({ ...none, reconnectingSince: 7, run })).toEqual({ phase: { text: 'reconnecting to the daemon', startedAt: 7 }, cancelKey: 'run.stop' });
-    expect(waitingOf({ ...none, run, measuringSince: 3 })).toEqual({ phase: run, cancelKey: 'run.stop' });
+    expect(waitingOf({ ...none, run, measuring: { since: 3, state: MEASURING } })).toEqual({ phase: run, cancelKey: 'run.stop' });
     expect(waitingOf({ ...none, command: { text: 'running /gateway', startedAt: 9 } })).toEqual({ phase: { text: 'running /gateway', startedAt: 9 }, cancelKey: 'run.stop' });
     expect(waitingOf({ ...none, run, loading: { done: 500, total: 1200, startedAt: 4 } })).toEqual({ phase: { text: 'loading the conversation 500 of 1200 events', startedAt: 4 }, cancelKey: undefined });
-    expect(waitingOf({ ...none, measuringSince: 3 })).toEqual({ phase: { text: 'measuring this model (once per model and OS build)', startedAt: 3 }, cancelKey: undefined });
+    expect(waitingOf({ ...none, measuring: { since: 3, state: MEASURING } })).toEqual({ phase: { text: 'measuring toolCalling of this model, step "plain answer"', detail: 'to skip it, declare toolCalling for the model "lab/qwen" in its settings', startedAt: 3 }, cancelKey: undefined });
   });
 
   it('names ctrl+c while a panel owns Esc and is hidden while an approval is open', () => {
     expect(waitingOf({ ...none, run, panelOwnsEscape: true })?.cancelKey).toBe('prompt.interrupt');
-    expect(waitingOf({ ...none, run, measuringSince: 3, prompting: true })).toBeUndefined();
+    expect(waitingOf({ ...none, run, measuring: { since: 3, state: MEASURING }, prompting: true })).toBeUndefined();
   });
 });
 
@@ -188,7 +190,7 @@ describe('the measuring poll (6.2)', () => {
     const capabilities = { ...capabilitiesOf(), ...(toolCalling === undefined ? {} : { toolCalling }) };
     return listedEntryOf(SESSION.model, capabilities);
   };
-  const probing = (retryAfterSeconds: number): ToolCallingState => ({ state: 'probing', message: 'measuring', retryAfterSeconds });
+  const probing = (retryAfterSeconds: number): ToolCallingState => ({ state: 'probing', message: 'measuring', retryAfterSeconds, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } });
   const unavailable: ToolCallingState = { state: 'unavailable', status: 503, type: 'server_error', code: 'target_probe_failed', message: 'measuring this model failed: no answer' };
 
   const poll = (answers: (ToolCallingState | undefined)[], first: number) => {
@@ -208,6 +210,7 @@ describe('the measuring poll (6.2)', () => {
       (error) => {
         throw error;
       },
+      () => undefined,
     );
     return { clock, reads, settled, stop };
   };

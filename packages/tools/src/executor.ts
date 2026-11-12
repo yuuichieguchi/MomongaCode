@@ -517,8 +517,7 @@ const describeThrown = (toolName: string, error: unknown): string => {
 
 const hasUnknownEffects = (tool: AnyTool): boolean => tool.sideEffect !== 'read_only';
 
-const cancelledOutput = (tool: AnyTool): string =>
-  hasUnknownEffects(tool) ? `${tool.name} was cancelled. ${UNKNOWN_EFFECTS_NOTICE}` : `${tool.name} was cancelled`;
+const notAppliedOutput = (tool: AnyTool): string => `${tool.name} was cancelled before it changed anything; nothing changed.`;
 
 const interruptedOutput = (tool: AnyTool): string =>
   `An earlier attempt of ${tool.name} was interrupted before it reported a result. Its effect is unknown; inspect the current state before retrying.`;
@@ -1394,7 +1393,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (resumed.kind === 'outcome') return resumed.outcome;
       const reconcileOutcome = resumed.result;
       if (reconcileOutcome.outcome === 'not_applied') {
-        return scope.complete(await finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, fitOfCall(fit, call), batch.runId), 'not_applied');
+        return scope.complete(await finalizeResult({ status: 'failed', output: notAppliedOutput(tool) }, tool, fitOfCall(fit, call), batch.runId), 'not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
       return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output, ...(reconcileOutcome.effect === undefined ? {} : { effect: reconcileOutcome.effect }), ...diffFieldsOf(reconcileOutcome) }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);

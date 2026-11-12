@@ -67,6 +67,37 @@
       "paging": "link",
       "result": { "id": "id", "path": "path", "line": "line", "body": "body" }
     },
+    "getIssue": {
+      "method": "GET",
+      "path": "/repos/{owner}/{name}/issues/{number}",
+      "success": [200],
+      "result": { "number": "number", "url": "html_url", "title": "title", "body": "body", "state": "state", "author": "user.login", "authorAssociation": "author_association", "pullRequest": "pull_request.url" }
+    },
+    "listIssues": {
+      "method": "GET",
+      "path": "/repos/{owner}/{name}/issues",
+      "query": { "state": "open", "labels": "{labels}", "per_page": "100" },
+      "success": [200],
+      "items": "",
+      "paging": "link",
+      "result": { "number": "number", "url": "html_url", "title": "title", "author": "user.login", "authorAssociation": "author_association", "pullRequest": "pull_request.url" }
+    },
+    "listIssueComments": {
+      "method": "GET",
+      "path": "/repos/{owner}/{name}/issues/{number}/comments",
+      "query": { "per_page": "100" },
+      "success": [200],
+      "items": "",
+      "paging": "link",
+      "result": { "id": "id", "body": "body", "author": "user.login" }
+    },
+    "createIssueComment": {
+      "method": "POST",
+      "path": "/repos/{owner}/{name}/issues/{number}/comments",
+      "body": { "body": "{body}" },
+      "success": [201],
+      "result": { "id": "id" }
+    },
     "createComment": {
       "method": "POST",
       "path": "/repos/{owner}/{name}/issues/{number}/comments",

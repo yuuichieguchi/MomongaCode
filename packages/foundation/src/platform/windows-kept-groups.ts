@@ -38,7 +38,7 @@ export class GroupContainmentError extends Error {
 }
 
 export type KeptGroupControl = {
-  open<P extends KeptProcess>(request: KeptOpenRequest<P>): KeptOpening<P>;
+  open<P extends KeptProcess>(request: KeptOpenRequest<P>): Promise<KeptOpening<P>>;
   nameOf(pgid: number): string | undefined;
   recall(pgid: number, name: string): void;
   leads(pgid: number): boolean;
@@ -114,9 +114,9 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
     });
 
   return {
-    open: <P extends KeptProcess>({ command, marker, descriptors, start }: KeptOpenRequest<P>): KeptOpening<P> => {
+    open: async <P extends KeptProcess>({ command, marker, descriptors, start }: KeptOpenRequest<P>): Promise<KeptOpening<P>> => {
       const lifetime = new AbortController();
-      const opened = openKeptLaunch(host, { command, onOwnerLoss: 'terminate', marker, descriptors, start, signal: lifetime.signal });
+      const opened = await openKeptLaunch(host, { command, onOwnerLoss: 'terminate', marker, descriptors, start, signal: lifetime.signal });
       const entry: Entry = { job: opened.job, live: undefined, gone: false };
       const launchedCommand = opened.launched.then((launch) => {
         if (launch.kind === 'refused') throw new GroupContainmentError(launch.reason, launch.systemError);

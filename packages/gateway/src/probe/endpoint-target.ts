@@ -8,8 +8,12 @@ import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../ad
 import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
 import type { KeywordSupport } from '../dialect/keyword-support.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
-import { ProbeTimeoutError, createProbeClient } from './client.ts';
-import type { ProbePorts } from './client.ts';
+import { ProbeTimeoutError, createProbeClient, fixedStepBound } from './client.ts';
+import type { ProbeHostPorts } from './client.ts';
+import { PERSON_TRAFFIC } from './request-gate.ts';
+import type { MeasuringAsk } from './auto-probe.ts';
+import { measuringAskOf, sourcedCapabilities, unknownFieldsOf } from './sources.ts';
+import type { ReportedFields, ToolCallingDeclaration } from './sources.ts';
 import type { ProbeEndpoint } from './client.ts';
 import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import type { ProbeOutputPolicy } from './decide.ts';
@@ -32,11 +36,11 @@ export const probeEndpointOf = (upstream: UpstreamEndpoint, apiKey: string | und
 
 export const readModelsListing = async (
   endpoint: ProbeEndpoint,
-  ports: ProbePorts,
+  ports: ProbeHostPorts,
   signal: AbortSignal,
   timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
 ): Promise<unknown> => {
-  const client = createProbeClient(endpoint, signal, timeoutMs, ports.timers);
+  const client = createProbeClient(endpoint, { signal, bound: fixedStepBound(timeoutMs), timers: ports.timers, gate: PERSON_TRAFFIC });
   try {
     const result = await client.get('models');
     if (result.status !== 200) throw new UpstreamHttpError(result.status, null, 'the model listing was refused', undefined, false);
@@ -55,7 +59,7 @@ export const readEndpointIdentity = async (
   endpoint: ProbeEndpoint,
   model: string,
   fields: readonly string[],
-  ports: ProbePorts,
+  ports: ProbeHostPorts,
   signal: AbortSignal,
   timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
 ): Promise<string> => endpointIdentityOf(await readModelsListing(endpoint, ports, signal, timeoutMs), model, fields);
@@ -100,9 +104,11 @@ export type ProbedEndpointTargetOptions = {
   endpoint: string;
   model: string;
   declared: DeclaredCapabilities;
+  toolCalling: ToolCallingDeclaration;
   record: EndpointRecord | null;
   readRecord: () => Promise<EndpointRecord | null>;
-  startProbe: () => Promise<Probing>;
+  readReported: () => Promise<ReportedFields>;
+  startProbe: (ask: MeasuringAsk) => Promise<Probing>;
   readIdentity: (fields: readonly string[], signal: AbortSignal) => Promise<string>;
   saveRecord: (record: EndpointRecord) => Promise<void>;
   outputPolicy?: () => ProbeOutputPolicy;
@@ -136,6 +142,13 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
 
   let currentIdentity: string | undefined;
 
+  const fromSources = async (): Promise<Capabilities> => {
+    const reported = await options.readReported();
+    const served = sourcedCapabilities(declared, options.toolCalling, reported);
+    if (served !== undefined) return served;
+    throw targetProbingError(await options.startProbe(measuringAskOf(targetName, unknownFieldsOf({ toolCalling: options.toolCalling }, reported))));
+  };
+
   const usable = (found: EndpointRecord | null): EndpointRecord | null =>
     found === null || currentIdentity === undefined ? found : recordForIdentity(found, { identity: found.identity }, { identity: currentIdentity });
 
@@ -144,7 +157,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     currentIdentity = undefined;
     if (found !== null) currentIdentity = await options.readIdentity(found.identityFields, signal);
     record = usable(found);
-    if (record === null) throw targetProbingError(await options.startProbe());
+    if (record === null) await fromSources();
   };
 
   const verify = memoizedVerification(verifyOnce);
@@ -173,7 +186,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     raiseHeadroom,
     capabilities: async () => {
       record = usable(await options.readRecord());
-      if (record === null) throw targetProbingError(await options.startProbe());
+      if (record === null) return fromSources();
       const refusal = declaredDialectRefusal(targetName, declared.schemaDialect, record.report.schemaDialect, `the server at ${endpoint} for model ${model}`);
       const decision = decideToolCalling(record.report);
       const { toolCalling, structuredOutput, jsonMode, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(

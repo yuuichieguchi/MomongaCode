@@ -20,7 +20,7 @@ import { fenceBoundaryIn } from '@momonga/testkit';
 const ORIGINAL = 'greeting = "hello"\n';
 const EDITED = 'greeting = "hello, momonga"\n';
 const FINAL_TEXT = 'Updated the greeting in config.toml.';
-const REJECTED_OUTPUT = 'The user rejected this tool call.';
+import { REJECTED_OUTPUT } from '../packages/runtime/src/worker/held-calls.ts';
 const SKILL_BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
 
 type Prepared = { home: E2eHome; project: string; target: string; fake: Awaited<ReturnType<typeof startUpstream>> };
@@ -330,7 +330,7 @@ describe('acp: momonga acp', () => {
     const skillDirectory = path.join(project, '.agents', 'skills', 'pdf');
     fs.mkdirSync(skillDirectory, { recursive: true });
     fs.writeFileSync(path.join(skillDirectory, 'SKILL.md'), `---\nname: pdf\ndescription: Extract PDF text\n---\n# PDF\n\n${SKILL_BODY_MARKER}\n`);
-    const stack = await startStack({ home, sandbox: 'none', script: [textReply('Started with the skill.')], version: cliPackage.version });
+    const stack = await startStack({ home, script: [textReply('Started with the skill.')], version: cliPackage.version });
     const runtime = createRuntimeClient(home);
     try {
       expect((await runtime.json('PUT', '/v1/trust', { path: project, decision: 'trusted' })).status).toBe(200);

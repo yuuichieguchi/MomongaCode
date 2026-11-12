@@ -8,7 +8,7 @@ export const REJECTED_OUTPUT = 'A person rejected this call, so it was not run.'
 
 const MANDATE_SOURCE = 'the mandate of this run';
 
-export type Delegation = { rules: readonly PermissionRule[]; notice: string; onQuiescent?: QuiescentBehaviour };
+export type Delegation = { rules: readonly PermissionRule[]; scope: PinnedDelegation['scope']; notice: string; onQuiescent?: QuiescentBehaviour };
 
 export type MandateCatalogue = { alwaysOperations: readonly string[]; supersededForms: ReadonlyArray<{ operation: string; argv: readonly string[] }> };
 
@@ -37,7 +37,7 @@ export const delegationOf = (pins: Record<string, unknown>, place: { home: strin
   const rules = (['deny', 'ask', 'allow'] as const).flatMap((effect) =>
     pinned.scope[effect].map((text) => parseRule(text, { effect, origin: 'cli', source: MANDATE_SOURCE, settingsRoot: place.cwd, home: place.home, cwd: place.cwd })),
   );
-  return { delegation: { rules, notice: mandateNotice(pinned, catalogue), ...(pinned.hold?.onQuiescent === undefined ? {} : { onQuiescent: pinned.hold.onQuiescent }) } };
+  return { delegation: { rules, scope: pinned.scope, notice: mandateNotice(pinned, catalogue), ...(pinned.hold?.onQuiescent === undefined ? {} : { onQuiescent: pinned.hold.onQuiescent }) } };
 };
 
 export const heldOutput = (approvalId: string): string =>

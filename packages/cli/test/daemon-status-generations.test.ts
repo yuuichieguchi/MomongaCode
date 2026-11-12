@@ -13,7 +13,7 @@ describe('momonga daemon status over the live generations (20.71)', () => {
     await start({ version: '1.2.4', generation: 2, pid: 4002 });
     await start({ version: '1.2.5', generation: 3, pid: 4003, publishes: false });
 
-    const exitCode = await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths);
+    const exitCode = await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths, { json: false });
 
     expect(exitCode).toBe(0);
     expect(stdout.chunks.join('')).toBe(
@@ -29,7 +29,7 @@ describe('momonga daemon status over the live generations (20.71)', () => {
     const ended = await start({ version: '1.2.4', generation: 2, pid: 4002 });
     await ended.stop();
 
-    const exitCode = await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths);
+    const exitCode = await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths, { json: false });
 
     expect(exitCode).toBe(1);
     expect(stdout.chunks.join('')).toBe('momonga daemon is not running\nv1.2.3 retiring (pid 4001): 1 steps in flight, 0 background jobs, 0 model calls in flight\n');
@@ -38,7 +38,7 @@ describe('momonga daemon status over the live generations (20.71)', () => {
   it('says not running and nothing else when no generation is live', async (context) => {
     const { paths, ports, stdout } = await setupGenerations(context, '1.2.4');
 
-    expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths)).toBe(1);
+    expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths, { json: false })).toBe(1);
     expect(stdout.chunks.join('')).toBe('momonga daemon is not running\n');
   });
 });

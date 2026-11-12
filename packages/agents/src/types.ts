@@ -1,5 +1,6 @@
 import type { Mandate, RunReport } from '@momonga/protocol';
 import type { AnyTool } from '@momonga/tools';
+import type { ProjectAgentFile } from '@momonga/config';
 
 export type AgentScope = 'project' | 'user';
 
@@ -44,11 +45,12 @@ export type ChildRuns = ChildRunSpawner & { outcomeOf(runId: string): Promise<Ch
 
 export type AgentSet = {
   agents: readonly AgentDefinition[];
+  pendingApproval: readonly ProjectAgentFile[];
   warnings: readonly string[];
   tool(runs: ChildRunSpawner): AnyTool | undefined;
 };
 
-export type AgentLoadRequest = { projectRoot: string; trusted: boolean };
+export type AgentLoadRequest = { projectRoot: string; trusted: boolean; approvedProjectAgents: Pick<ReadonlySet<string>, 'has'> };
 
 export type AgentLoader = { load(request: AgentLoadRequest): Promise<AgentSet> };
 

@@ -2,7 +2,7 @@ import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, 
 import type { HelperSelf, MomongaPaths, ProcessInspector, SecretStore } from '@momonga/foundation';
 import type { PolicyHostPorts } from '@momonga/policy';
 import { createForgeAccess, createOperationTools, createSandboxedArgvRunner, loadForgeDescriptors } from '@momonga/tools';
-import type { AnyTool, ForgeCredentialReference, ForgeFetch, MarkerOwners, ProbeContext, ReconcileSandbox, ShellHost } from '@momonga/tools';
+import type { AnyTool, ForgeAccess, ForgeCredentialReference, ForgeFetch, MarkerOwners, ProbeContext, ReconcileSandbox, ShellHost } from '@momonga/tools';
 import type { SandboxBindings } from '../ports.ts';
 import type { NetworkOf } from './network-derivation.ts';
 import { toolSandboxPolicyOf } from './tool-policy.ts';
@@ -67,7 +67,9 @@ export const forgeCredentialReader =
     return value;
   };
 
-export const createOperationToolSource = (options: OperationToolsOptions): ((snapshot: UserSnapshot) => AnyTool[]) => {
+export type OperationToolSource = { tools(snapshot: UserSnapshot): AnyTool[]; forge(snapshot: UserSnapshot): ForgeAccess };
+
+export const createOperationToolSource = (options: OperationToolsOptions): OperationToolSource => {
   const secretStore = options.secretStore ?? (() => createGivenSecretStore(createExecWithStdin({ ...minimalChildEnv(process.env), ...givenSecretStoreChildEnv(process.env) }), process.env));
 
   const reconcileSandbox = createReconcileSandbox(options);
@@ -87,17 +89,10 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
   const fetch = options.forgeFetch ?? outboundForgeFetch(options.network);
   const descriptors = loadForgeDescriptors();
 
-  return (snapshot) => {
-    const { forges, operations } = snapshot.settings;
-    return createOperationTools({
-      runArgv,
-      forge: createForgeAccess({
-        descriptors,
-        instances: forges ?? [],
-        readCredential,
-        fetch,
-      }),
-      settings: operations ?? {},
-    });
+  const forge = (snapshot: UserSnapshot): ForgeAccess => createForgeAccess({ descriptors, instances: snapshot.settings.forges ?? [], readCredential, fetch });
+
+  return {
+    forge,
+    tools: (snapshot) => createOperationTools({ runArgv, forge: forge(snapshot), settings: snapshot.settings.operations ?? {} }),
   };
 };

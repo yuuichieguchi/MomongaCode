@@ -1,3 +1,4 @@
+import type { TrustItemsView } from '@momonga/protocol';
 import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { REPORT_SCHEMAS, RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
@@ -25,6 +26,7 @@ export const checkSession = guard<SessionView>(RUN_API_SCHEMAS.SessionView);
 export const checkRun = guard<RunView>(RUN_API_SCHEMAS.RunView);
 export const checkApproval = guard<ApprovalView>(RUN_API_SCHEMAS.ApprovalView);
 export const checkTrust = guard<TrustView>(RUN_API_SCHEMAS.TrustView);
+export const checkTrustItems = guard<TrustItemsView>(RUN_API_SCHEMAS.TrustItemsResponse);
 export const checkErrorBody = guard<ErrorBody>(RUN_API_SCHEMAS.ErrorBody);
 export const checkHealth = guard<RunHealth>(RUN_API_SCHEMAS.Health);
 export const checkRunEvent = guard<PublicStreamEvent>(RUN_API_SCHEMAS.PublicRunEvent);

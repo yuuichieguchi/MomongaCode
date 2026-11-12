@@ -1,4 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest';
+import type { Measuring } from '../src/measuring.ts';
 import type {
   AdapterSampling,
   ConstructSupport,
@@ -26,7 +27,7 @@ describe('protocol capability types', () => {
         promptCache?: { kind: 'breakpoints'; maxBreakpoints: number } | { kind: 'key' } | { kind: 'automatic' } | { kind: 'none' };
         contextWindow: number;
         maxOutputTokens: number;
-        toolCalling: ToolCallingMode | { state: 'needs_probe'; message: string; evidence: string; remedy: string } | { state: 'probing'; message: string; retryAfterSeconds: number } | Unavailable;
+        toolCalling: ToolCallingMode | { state: 'needs_probe'; message: string; evidence: string; remedy: string } | { state: 'probing'; message: string; retryAfterSeconds: number; measuring: Measuring } | Unavailable;
         structuredOutput: 'json_schema' | 'none';
         jsonMode?: 'json_object' | 'none';
         streaming: boolean;
@@ -46,7 +47,7 @@ describe('protocol capability types', () => {
         tokenErrorRatio?: number;
         usageReported: boolean;
         maxConcurrency: number;
-        source: 'declared' | 'probed' | 'config' | 'unprobed';
+        source: 'declared' | 'reported' | 'probed' | 'config' | 'unprobed';
         probedAt?: string;
         sampling?: { accepts: 'none' } | { accepts: 'without_thinking'; topP: { min: number; max: number } } | { accepts: 'free' };
         reasoning?:
@@ -128,6 +129,7 @@ describe('run api types', () => {
       role: 'starting' | 'serving' | 'retiring';
       steps: number;
       jobs: number;
+      interrupts: ({ kind: 'run'; id: string } | { kind: 'job'; id: string; command: string })[];
       sandbox: 'seatbelt' | 'bubblewrap' | 'none';
     }>();
   });

@@ -20,7 +20,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
   let unsubscribeWake: (() => void) | undefined;
   let aborted = false;
   const controls = new Set<ClaimControl>();
-  const inFlight = new Set<Promise<unknown>>();
+  const inFlight = new Map<Promise<unknown>, string>();
   const memories = new Map<string, RunMemory>();
 
   const host: ClaimHost = {
@@ -71,7 +71,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
     if (claim === null) return 'idle';
     onClaim?.(claim);
     const running = runClaim(options, claim, host);
-    inFlight.add(running);
+    inFlight.set(running, claim.runId);
     try {
       await running;
     } finally {
@@ -154,10 +154,10 @@ export const createWorker = (options: WorkerOptions): Worker => {
       const running = loop;
       loop = undefined;
       if (running !== undefined) await running;
-      await Promise.allSettled([...inFlight]);
+      await Promise.allSettled([...inFlight.keys()]);
     },
     memorySize: () => memories.size,
-    claimsInFlight: () => inFlight.size,
+    runsInFlight: () => [...inFlight.values()],
     abort: async () => {
       aborted = true;
       stopping = true;
@@ -168,7 +168,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
       const running = loop;
       loop = undefined;
       if (running !== undefined) await running;
-      await Promise.allSettled([...inFlight]);
+      await Promise.allSettled([...inFlight.keys()]);
     },
   };
 };

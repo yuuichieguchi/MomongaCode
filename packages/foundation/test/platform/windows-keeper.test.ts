@@ -17,6 +17,7 @@ import {
   stopKeptGroup,
 } from '../../src/platform/windows-keeper.ts';
 import { KEEPER_EXIT_CODES, keeperExitName } from '../../src/process-contract.ts';
+import { openKeptLaunch } from '../../src/platform/windows-keeper.ts';
 import type { KeeperConnection, KeeperHost, KeeperRun } from '../../src/platform/windows-keeper.ts';
 
 const turn = async (): Promise<void> => {
@@ -97,7 +98,7 @@ const fakeKeeper = (): FakeKeeper => {
     exit: (code) => exited?.(code),
     start,
     host: {
-      executable: () => 'C:\\cache\\momonga-keeper.exe',
+      executable: async () => 'C:\\cache\\momonga-keeper.exe',
       commandInterpreter: () => 'C:\\Windows\\System32\\cmd.exe',
       listen: (name) => {
         listened.push(name);
@@ -203,21 +204,22 @@ describe('launching through the keeper', () => {
     expect(keeper.listenerClosed()).toBe(true);
   });
 
-  const startsOf = (command: { file: string; args: string[] }) => {
+  const startsOf = async (command: { file: string; args: string[] }) => {
     const keeper = fakeKeeper();
-    void launchKept(keeper.host, { command, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() }).catch(() => undefined);
+    const opened = await openKeptLaunch(keeper.host, { command, onOwnerLoss: 'terminate', marker: undefined, descriptors: [], start: keeper.start, signal: live() });
+    void opened.launched.catch(() => undefined);
     return keeper.starts;
   };
 
-  it('runs a command script through the command interpreter by the one quoting rule, its words given verbatim', () => {
-    const starts = startsOf({ file: 'C:\\Program Files\\nodejs\\npx.cmd', args: ['-y', 'some server'] });
+  it('runs a command script through the command interpreter by the one quoting rule, its words given verbatim', async () => {
+    const starts = await startsOf({ file: 'C:\\Program Files\\nodejs\\npx.cmd', args: ['-y', 'some server'] });
     expect(starts).toHaveLength(1);
     expect(starts[0]?.verbatim).toBe(true);
     expect(starts[0]?.args.slice(6)).toEqual(['--', '"C:\\Windows\\System32\\cmd.exe"', '/d', '/s', '/c', '""C:\\Program Files\\nodejs\\npx.cmd" "-y" "some server""']);
   });
 
-  it('gives a program its words as they are, not verbatim', () => {
-    const starts = startsOf({ file: 'C:\\node\\node.exe', args: ['a b'] });
+  it('gives a program its words as they are, not verbatim', async () => {
+    const starts = await startsOf({ file: 'C:\\node\\node.exe', args: ['a b'] });
     expect(starts[0]?.verbatim).toBeUndefined();
     expect(starts[0]?.args.slice(6)).toEqual(['--', 'C:\\node\\node.exe', 'a b']);
   });

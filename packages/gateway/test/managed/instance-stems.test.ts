@@ -32,7 +32,7 @@ describe('the instance of a managed server is named by its server name (design-m
       readyTimeoutMs: 1000,
       env: {},
       exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
-      timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout), now: () => Date.now() },
+      timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout), now: () => Date.now(), monotonicMs: () => performance.now() },
       readStopGraceMs: () => 1000,
       onWarning: () => undefined,
     });

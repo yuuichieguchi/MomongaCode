@@ -29,7 +29,7 @@ describe('momonga models', () => {
   it('prints the window a measured model is configured with', async (context) => {
     const at = homeWith(context, S2);
     const listed = listingOf(at.home);
-    const measuring = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' } as const;
+    const measuring = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' } as const;
     const harness = shellOf(at, { listing: () => ({ ...listed, data: listed.data.map((entry) => (entry.provider === 'lmstudio' ? { ...entry, capabilities: measuring } : entry)) }) });
 
     await listModels(harness.shell, { json: false });
@@ -43,7 +43,7 @@ describe('momonga models', () => {
     await listModels(harness.shell, { json: true });
 
     expect(harness.out()).toBe(
-      `${'{"start":"ollama/gemma-3-4b:latest","roles":{},"models":[{"model":"ollama/gemma-3-4b:latest","name":"ollama/gemma-3-4b","provider":"ollama","address":"http://127.0.0.1:11434","billing":"local","contextWindow":32768,"health":"available","fallback":[],"state":"ready"},{"model":"lmstudio/gemma-3-4b","name":"lmstudio/gemma-3-4b","provider":"lmstudio","address":"http://127.0.0.1:1234/v1","billing":"local","contextWindow":4096,"health":"available","fallback":[],"state":"ready"}]}'}\n`,
+      `${'{"start":"ollama/gemma-3-4b:latest","roles":{},"models":[{"model":"ollama/gemma-3-4b:latest","name":"ollama/gemma-3-4b","provider":"ollama","address":"http://127.0.0.1:11434","billing":"local","contextWindow":32768,"fallback":[],"state":"ready"},{"model":"lmstudio/gemma-3-4b","name":"lmstudio/gemma-3-4b","provider":"lmstudio","address":"http://127.0.0.1:1234/v1","billing":"local","contextWindow":4096,"fallback":[],"state":"ready"}]}'}\n`,
     );
   });
 

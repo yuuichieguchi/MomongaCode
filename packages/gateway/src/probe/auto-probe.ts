@@ -1,21 +1,20 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { POLL_INTERVAL_MS, ProcessLockHeldError, acquireProcessLock, canonicalJson, cleanFailureMessage, settledOrAborted, sleep } from '@momonga/foundation';
-import type { GenerationRole, ProcessLock, KernelLockMechanism } from '@momonga/foundation';
-import { SERVICE_UNAVAILABLE_STATUS, TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing } from '@momonga/protocol';
-import type { Probing } from '@momonga/protocol';
+import { POLL_INTERVAL_MS, ProcessLockHeldError, acquireProcessLock, canonicalJson, cleanFailureMessage, settledOrAborted, waitUntil } from '@momonga/foundation';
+import type { GenerationRole, ProcessLock, KernelLockMechanism, Redactor, Timing } from '@momonga/foundation';
+import { SERVICE_UNAVAILABLE_STATUS, TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing, measuringOfWire, measuringWireOf } from '@momonga/protocol';
+import type { Measuring, Probing } from '@momonga/protocol';
 import { GatewayError } from '../core/errors.ts';
 import type { GatewayTimers } from '../types.ts';
-import type { ProbeTimers } from './client.ts';
+import type { MeasurementProgress } from './client.ts';
 import { ensurePrivateProbeDirectory } from './record.ts';
-import { DEFAULT_STEP_TIMEOUT_MS, MS_PER_SECOND } from './run-probe.ts';
+import { measurementCauseOf, measurementFailedText } from './remedy.ts';
 
-const KEY_LOCK_POLL_INTERVAL_MS = POLL_INTERVAL_MS;
 const LOCK_DIGEST_CHARS = 16;
 
-export const PROBE_RETRY_AFTER_MS = Math.ceil(DEFAULT_STEP_TIMEOUT_MS / MS_PER_SECOND) * MS_PER_SECOND;
+const MS_PER_SECOND = 1000;
 
-export const PROBE_RETRY_AFTER_SECONDS = PROBE_RETRY_AFTER_MS / MS_PER_SECOND;
+export const NO_PROGRESS_LISTENER: MeasurementProgress = { step: () => undefined };
 
 export type ProbeLockKey = Readonly<Record<string, string | null>>;
 
@@ -54,11 +53,16 @@ export type PreconditionVerdict = { kind: 'met' } | { kind: 'refused'; message: 
 
 export type ProbePrecondition = { boundMs: number; check(signal: AbortSignal): Promise<PreconditionVerdict> };
 
+export type MeasuringAsk = { readonly fields: readonly string[]; readonly declaration: string };
+
+export type MeasureRequest<Key> = { key: Key; signal: AbortSignal; progress: MeasurementProgress };
+
 export type ProbeSubject<Key extends ProbeLockKey, Report> = {
   target: string;
+  unknown: MeasuringAsk;
   readKey(): Promise<Key>;
   precondition: ProbePrecondition;
-  measure(request: { key: Key; signal: AbortSignal }): Promise<Report>;
+  measure(request: MeasureRequest<Key>): Promise<Report>;
   save(key: Key, report: Report): Promise<void>;
 };
 
@@ -66,21 +70,28 @@ export type MeasureProbe<Key extends ProbeLockKey, Report> = ProbeSubject<Key, R
 
 const sameKey = (left: ProbeLockKey, right: ProbeLockKey): boolean => identityOf(left) === identityOf(right);
 
-const holdProbeLock = async (dir: string, key: ProbeLockKey, target: string, lock: KernelLockMechanism, timers: ProbeTimers, signal: AbortSignal): Promise<ProcessLock> => {
-  for (;;) {
-    signal.throwIfAborted();
+const holdProbeLock = async (dir: string, key: ProbeLockKey, target: string, lock: KernelLockMechanism, timing: LockWaitTiming, signal: AbortSignal, waitMs: number): Promise<ProcessLock> => {
+  const take = async (): Promise<ProcessLock | undefined> => {
     try {
       return await acquireProbeLock(dir, key, target, lock);
     } catch (error) {
-      if (!(error instanceof ProbeInProgressError)) throw error;
+      if (error instanceof ProbeInProgressError) return undefined;
+      throw error;
     }
-    await sleep(timers, KEY_LOCK_POLL_INTERVAL_MS, signal);
-  }
+  };
+  const outcome = await waitUntil(timing, take, { intervalMs: POLL_INTERVAL_MS, deadline: timing.monotonicMs() + waitMs, signal });
+  if (outcome.kind === 'found') return outcome.value;
+  signal.throwIfAborted();
+  throw new ProbeInProgressError(target);
 };
 
-const measureAndRecord = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, dir: string, kernelLock: KernelLockMechanism, timers: ProbeTimers, key: Key, signal: AbortSignal): Promise<Report> => {
-  const report = await settledOrAborted(subject.measure({ key, signal }), signal);
-  const lock = await holdProbeLock(dir, key, subject.target, kernelLock, timers, signal);
+export type LockWaitTiming = Timing;
+
+type Recording = { dir: string; lock: KernelLockMechanism; timing: LockWaitTiming; lockWaitMs: number };
+
+const measureAndRecord = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, recording: Recording, key: Key, signal: AbortSignal, progress: MeasurementProgress): Promise<Report> => {
+  const report = await settledOrAborted(subject.measure({ key, signal, progress }), signal);
+  const lock = await holdProbeLock(recording.dir, key, subject.target, recording.lock, recording.timing, signal, recording.lockWaitMs);
   try {
     const after = await subject.readKey();
     if (!sameKey(key, after)) throw new ProbeKeyChangedError(subject.target, key, after);
@@ -91,9 +102,16 @@ const measureAndRecord = async <Key extends ProbeLockKey, Report>(subject: Probe
   }
 };
 
-export const recordProbe = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, dir: string, lock: KernelLockMechanism, timers: ProbeTimers, signal: AbortSignal): Promise<{ key: Key; report: Report }> => {
+export const recordProbe = async <Key extends ProbeLockKey, Report>(
+  subject: ProbeSubject<Key, Report>,
+  dir: string,
+  lock: KernelLockMechanism,
+  timing: LockWaitTiming,
+  signal: AbortSignal,
+  lockWaitMs: number,
+): Promise<{ key: Key; report: Report }> => {
   const key = await subject.readKey();
-  return { key, report: await measureAndRecord(subject, dir, lock, timers, key, signal) };
+  return { key, report: await measureAndRecord(subject, { dir, lock, timing, lockWaitMs }, key, signal, NO_PROGRESS_LISTENER) };
 };
 
 export const targetProbingError = (probing: Probing): GatewayError =>
@@ -103,24 +121,32 @@ export const targetProbingError = (probing: Probing): GatewayError =>
     code: TARGET_PROBING,
     message: probing.message,
     headers: { 'retry-after': String(probing.retryAfterSeconds) },
+    measuring: measuringWireOf(probing.measuring),
   });
 
-export type ProbeBackoff = { until: number; cause: string };
+export type ProbeFailure = { cause: string; target: string; declaration: string };
 
-export const probeBackoffOf = (error: unknown, until: number): ProbeBackoff => ({ until, cause: cleanFailureMessage(error instanceof Error ? error.message : String(error)) });
+export const probeFailureOf = (error: unknown, target: string, ask: MeasuringAsk, redactor: Pick<Redactor, 'text'>): ProbeFailure => ({
+  cause: redactor.text(cleanFailureMessage(measurementCauseOf(error))),
+  target,
+  declaration: ask.declaration,
+});
 
-export const targetProbeFailedError = (backoff: ProbeBackoff, remainingMs: number): GatewayError =>
+export const targetProbeFailedError = (failure: ProbeFailure): GatewayError =>
   new GatewayError({
     status: SERVICE_UNAVAILABLE_STATUS,
     type: 'server_error',
     code: TARGET_PROBE_FAILED,
-    message: `measuring this model failed: ${backoff.cause}`,
-    headers: { 'retry-after': String(Math.ceil(remainingMs / MS_PER_SECOND)) },
+    message: measurementFailedText(failure.target, failure.cause, failure.declaration),
   });
 
 export const isTargetProbingError = (error: unknown): error is GatewayError => error instanceof GatewayError && isTargetProbing({ status: error.status, code: error.body.code });
 
-export const probingOf = (error: GatewayError): Probing => ({ state: 'probing', message: error.body.message, retryAfterSeconds: Number(error.headers['retry-after']) });
+export const probingOf = (error: GatewayError): Probing => {
+  const measuring = measuringOfWire(error.body.measuring);
+  if (measuring === undefined) throw new Error(`the answer ${TARGET_PROBING} carries no measuring state`);
+  return { state: 'probing', message: error.body.message, retryAfterSeconds: Number(error.headers['retry-after']), measuring };
+};
 
 export const targetNotReadyError = (target: string, refusal: Extract<PreconditionVerdict, { kind: 'refused' }>): GatewayError =>
   new GatewayError({
@@ -133,9 +159,10 @@ export const targetNotReadyError = (target: string, refusal: Extract<Preconditio
 export type ProbeEvent = { kind: 'failed' | 'stopped'; target: string; error: Error };
 
 export type AutoProbeOptions = {
+  redactor: Pick<Redactor, 'text'>;
   dir: string;
   lock: KernelLockMechanism;
-  clock: { now(): number };
+  clock: Pick<Timing, 'now' | 'monotonicMs'>;
   timers: GatewayTimers;
   retryAfterMs: number;
   onEvent(event: ProbeEvent): void;
@@ -152,12 +179,26 @@ const errorOf = (error: unknown): Error => (error instanceof Error ? error : new
 
 const BOUND_EXPIRED = Symbol('bound expired');
 
+type Flight = { done: Promise<void>; startedMs: number; ask: MeasuringAsk; step: { name: string; boundMs: number } | null };
+
 export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
-  const inFlight = new Map<string, Promise<void>>();
+  const flights = new Map<string, Flight>();
   const starting = new Map<string, Promise<void>>();
-  const backoffs = new Map<string, ProbeBackoff>();
+  const failures = new Map<string, ProbeFailure>();
   const stop = new AbortController();
-  const probing = (retryAfterMs: number): Probing => ({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: Math.ceil(retryAfterMs / MS_PER_SECOND) });
+
+  const measuringOf = (flight: Flight | undefined, ask: MeasuringAsk): Measuring => ({
+    fields: [...ask.fields],
+    step: flight?.step?.name ?? null,
+    elapsedSeconds: flight === undefined ? 0 : Math.floor((options.clock.monotonicMs() - flight.startedMs) / MS_PER_SECOND),
+    declaration: ask.declaration,
+  });
+
+  const probingFor = (flightName: string, ask: MeasuringAsk): Probing => {
+    const flight = flights.get(flightName);
+    const boundMs = flight?.step?.boundMs ?? options.retryAfterMs;
+    return { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: Math.ceil(boundMs / MS_PER_SECOND), measuring: measuringOf(flight, ask) };
+  };
 
   const verdictWithin = async (precondition: ProbePrecondition): Promise<PreconditionVerdict | typeof BOUND_EXPIRED> => {
     const bound = options.timers.timeoutSignal(precondition.boundMs);
@@ -170,61 +211,62 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
     }
   };
 
-  const startFlight = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, key: Key, flight: string): Promise<void> => {
+  const startFlight = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, key: Key, name: string): Promise<void> => {
     await ensurePrivateProbeDirectory(options.dir);
-    const recorded = measureAndRecord(subject, options.dir, options.lock, options.timers, key, stop.signal).then(
+    const flight: Flight = { done: Promise.resolve(), startedMs: options.clock.monotonicMs(), ask: subject.unknown, step: null };
+    const progress: MeasurementProgress = {
+      step: (stepName, boundMs) => {
+        flight.step = { name: stepName, boundMs };
+      },
+    };
+    const timing: LockWaitTiming = { now: () => options.clock.now(), monotonicMs: () => options.clock.monotonicMs(), setTimeout: options.timers.setTimeout, clearTimeout: options.timers.clearTimeout };
+    const recorded = measureAndRecord(subject, { dir: options.dir, lock: options.lock, timing, lockWaitMs: options.retryAfterMs }, key, stop.signal, progress).then(
       () => undefined,
       (error: unknown) => {
         if (stop.signal.aborted) {
           options.onEvent({ kind: 'stopped', target: subject.target, error: errorOf(error) });
           return;
         }
-        backoffs.set(flight, probeBackoffOf(error, options.clock.now() + options.retryAfterMs));
+        failures.set(name, probeFailureOf(error, subject.target, subject.unknown, options.redactor));
         options.onEvent({ kind: 'failed', target: subject.target, error: errorOf(error) });
       },
     );
-    inFlight.set(
-      flight,
-      recorded.finally(() => {
-        inFlight.delete(flight);
-      }),
-    );
+    flight.done = recorded.finally(() => {
+      flights.delete(name);
+    });
+    flights.set(name, flight);
   };
 
   return {
     ensure: async (subject, key) => {
-      const flight = identityOf(key);
-      const backoff = backoffs.get(flight);
-      if (backoff !== undefined) {
-        const remaining = backoff.until - options.clock.now();
-        if (remaining > 0) throw targetProbeFailedError(backoff, remaining);
-        backoffs.delete(flight);
-      }
-      if (inFlight.has(flight) || stop.signal.aborted || options.role?.current() === 'retiring') return probing(options.retryAfterMs);
-      const pending = starting.get(flight);
+      const name = identityOf(key);
+      if (flights.has(name) || stop.signal.aborted || options.role?.current() === 'retiring') return probingFor(name, subject.unknown);
+      const pending = starting.get(name);
       if (pending !== undefined) {
         await pending;
-        return probing(options.retryAfterMs);
+        return probingFor(name, subject.unknown);
       }
       const verdict = await verdictWithin(subject.precondition);
       if (verdict !== BOUND_EXPIRED && verdict.kind === 'refused') throw targetNotReadyError(subject.target, verdict);
-      if (inFlight.has(flight)) return probing(options.retryAfterMs);
-      const already = starting.get(flight);
+      const failure = failures.get(name);
+      if (failure !== undefined) throw targetProbeFailedError(failure);
+      if (flights.has(name)) return probingFor(name, subject.unknown);
+      const already = starting.get(name);
       if (already !== undefined) {
         await already;
-        return probing(options.retryAfterMs);
+        return probingFor(name, subject.unknown);
       }
-      const begun = startFlight(subject, key, flight).finally(() => {
-        starting.delete(flight);
+      const begun = startFlight(subject, key, name).finally(() => {
+        starting.delete(name);
       });
-      starting.set(flight, begun);
+      starting.set(name, begun);
       await begun;
-      return probing(options.retryAfterMs);
+      return probingFor(name, subject.unknown);
     },
-    openFlights: () => new Set([...starting.keys(), ...inFlight.keys()]).size,
+    openFlights: () => new Set([...starting.keys(), ...flights.keys()]).size,
     close: async () => {
       stop.abort();
-      await Promise.all([...starting.values(), ...inFlight.values()]);
+      await Promise.all([...starting.values(), ...[...flights.values()].map((flight) => flight.done)]);
     },
   };
 };

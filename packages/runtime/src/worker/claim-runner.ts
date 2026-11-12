@@ -46,7 +46,7 @@ import { offerFor, offeredRecordFor } from './tool-offer.ts';
 import type { ToolOffer } from './tool-offer.ts';
 import { settleCalls, settleHeld } from './tool-step.ts';
 import { unknownGate } from './unknown-gate.ts';
-import { laterVerdictNotice, policyRefusal, ruleVerdictAtStart } from './rule-verdict.ts';
+import { laterVerdictNotice, mandateRefusal, policyRefusal, ruleVerdictAtStart } from './rule-verdict.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TracerPort, TraceSpan } from '../ports.ts';
 import { MODEL_ROLES } from '@momonga/config';
@@ -419,7 +419,7 @@ const drive = async (
   const completionPin = pinning?.pin;
   const { delegation } = delegationOf((pinned ?? completionPin ?? {}) as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts());
   const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories, delegation }, session);
-  const startRefusal = policyRefusal(startVerdict);
+  const startRefusal = policyRefusal(startVerdict) ?? (await mandateRefusal(options, session, delegation, control.signal));
   if (startRefusal !== undefined) {
     await terminals.finish('FAILED', { error: startRefusal });
     return;

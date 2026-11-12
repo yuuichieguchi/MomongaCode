@@ -6,17 +6,16 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BASE_ENTRY_FLAGS, EntryUsageError, parseFlags } from '@momonga/foundation';
-import { createTempDir, productTestEnv, registerCleanup, spawnTracked, startFakeChatCompletions, testHostPath, withTempDir } from '@momonga/testkit';
+import { createTempDir, productTestEnv, registerCleanup, spawnTracked, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { STDERR_FLOOD_BYTES } from './fixtures/stderr-flood-supervisor.ts';
 import type { StackParentReport, StackParentRequest } from './fixtures/stack-parent.ts';
 import { createE2eHome, registerE2eCleanup } from './home.ts';
 import { supervisorLog } from './log-reader.ts';
 import { isAlive } from './process.ts';
-import { E2E_RUN_ENV } from './run-env.ts';
+import { E2E_RUN_ENV, e2eEntryPrefix } from './run-env.ts';
 import { resolveSandbox } from './sandbox.ts';
 import {
-  DEFAULT_E2E_DEPS,
   STDERR_TAIL_BYTES,
   SUPERVISOR_ENV_PATH,
   SUPERVISOR_MAIN_PATH,
@@ -64,11 +63,17 @@ const runMain = (context: CleanupContext, home: string, env: Record<string, stri
   );
 };
 
+const GUARDED_ROOT_SUFFIX = 'guards';
+
 const manualE2eRoot = (context: CleanupContext): string => {
-  const root = createTempDir({ asHome: true });
+  const holder = createTempDir({ asHome: true });
   registerCleanup(context, () => {
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(holder, { recursive: true, force: true });
   });
+  const run = process.env[E2E_RUN_ENV];
+  if (run === undefined) throw new Error(`${E2E_RUN_ENV} is not set; the e2e global setup did not run`);
+  const root = path.join(holder, `${e2eEntryPrefix(run)}${GUARDED_ROOT_SUFFIX}`);
+  fs.mkdirSync(root, { mode: 0o700 });
   return root;
 };
 
@@ -164,21 +169,23 @@ describe('supervisor argv and env', () => {
   it('is an explicit minimal env that never inherits process.env', async () => {
     const home = await createE2eHome();
     const depsFile = path.join(home.root, 'deps-1.json');
-    expect(supervisorEnv(home, depsFile)).toEqual({
-      PATH: testHostPath('/usr/bin:/bin:/usr/sbin:/sbin'),
-      HOME: home.home,
-      TMPDIR: home.root,
-      LANG: 'C',
-      MOMONGA_E2E_RUN: home.run,
-      MOMONGA_E2E_DEPS: depsFile,
-    });
+    expect(supervisorEnv(home, depsFile)).toEqual(
+      productTestEnv({
+        PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+        HOME: home.home,
+        TMPDIR: home.root,
+        LANG: 'C',
+        MOMONGA_E2E_RUN: home.run,
+        MOMONGA_E2E_DEPS: depsFile,
+      }),
+    );
   });
 });
 
 describe('supervisor-main lifeline and pipes', () => {
   it('drains both pipes and ends the supervisor with sigterm when its stdin reaches EOF', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home });
+    const stack = await startStack({ home, deps: {} });
     expect(stack.supervisor.child.stdout.listenerCount('data')).toBeGreaterThan(0);
     expect(stack.supervisor.child.stderr.listenerCount('data')).toBeGreaterThan(0);
     stack.supervisor.child.stdin.end();
@@ -191,7 +198,7 @@ describe('supervisor-main lifeline and pipes', () => {
   it('a supervisor that writes more than 64 KiB to stderr is not blocked', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     expect(STDERR_FLOOD_BYTES).toBeGreaterThan(64 * 1024);
-    const supervisor = spawnSupervisor({ home, deps: DEFAULT_E2E_DEPS, script: STDERR_FLOOD_PATH });
+    const supervisor = spawnSupervisor({ home, entry: { kind: 'test', deps: {}, script: STDERR_FLOOD_PATH } });
     const ready = await supervisor.ready();
     expect(ready).toMatchObject({ service: 'supervisor', pid: supervisor.pid });
     expect(supervisor.stderrTail().length).toBeGreaterThan(0);
@@ -206,7 +213,7 @@ describe('supervisor-main lifeline and pipes', () => {
     registerE2eCleanup(() => fake.close());
     const resolution = resolveSandbox({ needsBash: false });
     writeSettingsFile(home, baseSettings(home, resolution.kind === 'skip' ? 'none' : resolution.kind));
-    const depsFile = writeDepsFile(home, DEFAULT_E2E_DEPS, 1);
+    const depsFile = writeDepsFile(home, {}, 1);
     const request: StackParentRequest = { args: [SUPERVISOR_MAIN_PATH, ...supervisorArgv(home)], env: supervisorEnv(home, depsFile) };
     const parent = spawnTracked(context, process.execPath, [STACK_PARENT_PATH, JSON.stringify(request)], { stdio: ['ignore', 'pipe', 'ignore'] });
     const report = JSON.parse(await firstLine(parent.stdout as NodeJS.ReadableStream)) as StackParentReport;

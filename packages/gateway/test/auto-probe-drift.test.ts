@@ -162,6 +162,7 @@ const subjectOf = (world: World, keys: readonly Key[], outcome: 'ok' | 'fail'): 
   let reads = 0;
   return {
     target: 'm',
+    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling for the model "m" in its settings' },
     readKey: async () => keys[Math.min(reads++, keys.length - 1)] as Key,
     precondition: { boundMs: 1000, check: async () => ({ kind: 'met' }) },
     measure: async ({ key }) => {
@@ -192,27 +193,27 @@ describe('the probe runner does what AutoProbe.tla states, on the cases of the m
   it('measures without the key lock and saves under it (SaveLock, RecordUnderLock)', async () => {
     expect(spec).toMatch(/^Locks == SaveLock$/m);
     const world = worldOf();
-    await recordProbe(subjectOf(world, [one], 'ok'), world.dir, world.lock, systemTiming, new AbortController().signal);
+    await recordProbe(subjectOf(world, [one], 'ok'), world.dir, world.lock, systemTiming, new AbortController().signal, 1000);
     expect(world.heldDuringMeasure).toEqual([false]);
     expect(world.saves).toEqual([{ key: one, heldAtSave: true }]);
   });
 
   it('refuses the save of a measurement whose key changed meanwhile, under the lock (TaintCheck, RecordIsClean)', async () => {
     const world = worldOf();
-    await expect(recordProbe(subjectOf(world, [one, two], 'ok'), world.dir, world.lock, systemTiming, new AbortController().signal)).rejects.toBeInstanceOf(ProbeKeyChangedError);
+    await expect(recordProbe(subjectOf(world, [one, two], 'ok'), world.dir, world.lock, systemTiming, new AbortController().signal, 1000)).rejects.toBeInstanceOf(ProbeKeyChangedError);
     expect(world.saves).toEqual([]);
   });
 
   it('answers target_probing with no record and target_probe_failed inside the back-off of a failed probe (Request, Waits)', async () => {
     expect(definitionOf('Request')).toContain('IF Waits THEN "target_probe_failed" ELSE "target_probing"');
     const world = worldOf();
-    const probe = createAutoProbe({ dir: world.dir, lock: world.lock, clock: { now: () => 0 }, timers: realTimers, retryAfterMs: 60_000, onEvent: () => undefined });
+    const probe = createAutoProbe({ redactor: { text: (text) => text }, dir: world.dir, lock: world.lock, clock: { now: () => 0, monotonicMs: () => 0 }, timers: realTimers, retryAfterMs: 60_000, onEvent: () => undefined });
     const subject = subjectOf(world, [one], 'fail');
     const first = await probe.ensure(subject, one);
     expect(first.state).toBe('probing');
     expect(targetProbingError(first).body.code).toBe(TARGET_PROBING);
     await probe.close();
-    const again = createAutoProbe({ dir: world.dir, lock: world.lock, clock: { now: () => 0 }, timers: realTimers, retryAfterMs: 60_000, onEvent: () => undefined });
+    const again = createAutoProbe({ redactor: { text: (text) => text }, dir: world.dir, lock: world.lock, clock: { now: () => 0, monotonicMs: () => 0 }, timers: realTimers, retryAfterMs: 60_000, onEvent: () => undefined });
     await again.ensure(subject, one);
     for (let tries = 0; again.openFlights() > 0 && tries < 100; tries += 1) await new Promise((resolve) => setImmediate(resolve));
     expect(await codeOf(again.ensure(subject, one))).toBe(TARGET_PROBE_FAILED);
@@ -221,7 +222,7 @@ describe('the probe runner does what AutoProbe.tla states, on the cases of the m
 
   it('starts one gateway flight per key while one runs (SingleProbePerKey)', async () => {
     const world = worldOf();
-    const probe = createAutoProbe({ dir: world.dir, lock: world.lock, clock: { now: () => 0 }, timers: realTimers, retryAfterMs: 60_000, onEvent: () => undefined });
+    const probe = createAutoProbe({ redactor: { text: (text) => text }, dir: world.dir, lock: world.lock, clock: { now: () => 0, monotonicMs: () => 0 }, timers: realTimers, retryAfterMs: 60_000, onEvent: () => undefined });
     const subject = subjectOf(world, [one], 'ok');
     await Promise.all([probe.ensure(subject, one), probe.ensure(subject, one)]);
     expect(probe.openFlights()).toBeLessThanOrEqual(1);

@@ -406,6 +406,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
       ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }),
       ...(plan.focus === undefined ? {} : { instructions: plan.focus }),
       ...EXACT_MODEL,
+      fence: journal.state.fence,
     },
   };
   const guidelineVersion = ctx.guideline?.version ?? NO_ADOPTED_GUIDELINE;

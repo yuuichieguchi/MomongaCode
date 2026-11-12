@@ -456,7 +456,7 @@ export const SETTINGS_SCHEMA = {
       items: {
         oneOf: [
           { type: 'string' },
-          { type: 'object', properties: { name: { type: 'string', minLength: 1 }, digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN } }, required: ['name', 'digest'], additionalProperties: false },
+          { type: 'object', properties: { name: { type: 'string', minLength: 1 }, digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN }, config: {} }, required: ['name', 'digest'], additionalProperties: false },
         ],
       },
     },
@@ -640,11 +640,13 @@ export const SETTINGS_SCHEMA = {
             type: 'object',
             properties: {
               repository: { type: 'string', pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' },
+              folder: { type: 'string', minLength: 1 },
+              forge: { type: 'string', minLength: 1 },
               labels: NON_EMPTY_STRING_ARRAY,
               authorAssociation: { type: 'array', items: { enum: [...ISSUE_AUTHOR_ASSOCIATIONS] } },
               mandate: { type: 'string', minLength: 1 },
             },
-            required: ['repository', 'mandate'],
+            required: ['repository', 'folder', 'forge', 'mandate'],
             additionalProperties: false,
           },
         },
@@ -724,8 +726,25 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: {
         type: 'object',
         properties: {
-          hooks: { type: 'array', items: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN } },
-          mandate: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN },
+          hooks: {
+            type: 'array',
+            items: {
+              oneOf: [
+                { type: 'string', pattern: APPROVAL_DIGEST_PATTERN },
+                { type: 'object', properties: { digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN }, event: { type: 'string', minLength: 1 }, group: {} }, required: ['digest', 'event', 'group'], additionalProperties: false },
+              ],
+            },
+          },
+          mandate: {
+            oneOf: [
+              { type: 'string', pattern: APPROVAL_DIGEST_PATTERN },
+              { type: 'object', properties: { digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN }, document: {} }, required: ['digest', 'document'], additionalProperties: false },
+            ],
+          },
+          agents: {
+            type: 'array',
+            items: { type: 'object', properties: { name: { type: 'string', minLength: 1 }, digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN }, text: { type: 'string' } }, required: ['name', 'digest', 'text'], additionalProperties: false },
+          },
         },
         additionalProperties: false,
       },

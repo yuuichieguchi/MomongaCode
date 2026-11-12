@@ -116,7 +116,7 @@ describe('the routes only a retiring runtime refuses (20.42)', () => {
 describe('health by role (17.1, 20.2, 20.45)', () => {
   it('reports state running with role starting, then serving, then state retiring; draining wins over retiring', async () => {
     const state = mutableRole('starting');
-    const env = await startService({ fakeTimers: true, role: state.port, work: { steps: () => 2, jobs: () => 1 } });
+    const env = await startService({ fakeTimers: true, role: state.port, work: { runs: () => ['run-1', 'run-2'], jobs: () => [{ id: 'job-1', command: 'sleep 100' }] } });
 
     expect((await env.http('GET', '/v1/health')).json).toMatchObject({ state: 'running', role: 'starting', steps: 2, jobs: 1 });
     state.set('serving');

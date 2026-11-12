@@ -22,12 +22,12 @@ const reportsError = (result: HttpResult | ChatResult): boolean => 'reply' in re
 
 export const expectStatus = (result: HttpResult | ChatResult, allowed: readonly number[], what: string): void => {
   if (!allowed.includes(result.status) || (result.status < 400 && reportsError(result))) {
-    throw new Error(`Probe step "${what}" failed with HTTP ${result.status}: ${result.text.slice(0, 500)}`);
+    throw new Error(`Probe step "${what}" failed with HTTP ${result.status}`);
   }
 };
 
 export const failProbeStep = (result: HttpResult, what: string): never => {
-  throw new Error(`Probe step "${what}" failed with HTTP ${result.status}: ${result.text.slice(0, 500)}`);
+  throw new Error(`Probe step "${what}" failed with HTTP ${result.status}`);
 };
 
 export const isAcceptedOrRejected = (result: ChatResult, what: string): boolean => {

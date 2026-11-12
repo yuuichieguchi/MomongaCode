@@ -13,8 +13,9 @@ import { createRedactor } from '../core/redaction.ts';
 import { createRouter } from '../core/router.ts';
 import type { GatewayEpoch, GatewayEpochs, GatewayServices } from '../core/services.ts';
 import { openGatewayStore } from '../core/store.ts';
+import { STORE_WORKER_CODE } from '../core/store-worker-code.generated.ts';
 import { createUnaryService } from '../core/unary.ts';
-import { createRequestValidator, createStoredDataChecks } from '../core/validation.ts';
+import { createRequestValidator } from '../core/validation.ts';
 import type { DerivedModelsOptions, FixedModelsOptions, Gateway, GatewayEpochsShared, GatewayOptions } from '../types.ts';
 import { createErrorExit } from './error-exit.ts';
 import { createApp } from './app.ts';
@@ -123,10 +124,10 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
   const limits = limitsOf(options);
   const { clock, timers } = options;
   const validator = createRequestValidator();
-  const store = openGatewayStore(options.dbPath, createStoredDataChecks());
   const servers: http.Server[] = [];
   const closeController = new AbortController();
   const forceCloseController = new AbortController();
+  const store = await openGatewayStore({ dbPath: options.dbPath, code: STORE_WORKER_CODE, signal: forceCloseController.signal });
   try {
     const shared: GatewayEpochsShared =
       'epochs' in options
@@ -230,7 +231,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         try {
           await source.close(values);
         } finally {
-          store.close();
+          await store.close(forceCloseController.signal);
         }
       })();
       return closing;
@@ -256,7 +257,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     };
   } catch (error) {
     await Promise.all(servers.map((server) => closeServer(server)));
-    store.close();
+    await store.close(forceCloseController.signal);
     throw error;
   }
 };

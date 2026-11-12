@@ -46,6 +46,7 @@ describe('gateway stream liveness before the first upstream event', () => {
     expect(response.headers['content-type']).toMatch(/^text\/event-stream/);
     const chunks = response.body[Symbol.asyncIterator]();
     expect(await nextText(chunks)).toMatch(/^:/);
+    await waitFor(() => primary.calls.length === 1, { description: 'the call to the primary' });
     await waitFor(() => timers.pending().some((timer) => timer.delayMs === 1000), { description: 'the keep-alive timer' });
     timers.advance(1000);
     expect(await nextText(chunks)).toMatch(/^:/);
@@ -67,6 +68,7 @@ describe('gateway stream liveness before the first upstream event', () => {
 
     const chunks = response.body[Symbol.asyncIterator]();
     await nextText(chunks);
+    await waitFor(() => primary.calls.length === 1, { description: 'the call to the primary' });
     await waitFor(() => timers.pending().some((timer) => timer.delayMs === 2500), { description: 'the keep-alive timer' });
     timers.advance(2500);
     expect(await nextText(chunks)).toMatch(/^:/);
@@ -104,6 +106,7 @@ describe('gateway stream liveness before the first upstream event', () => {
     const response = await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' });
     const chunks = response.body[Symbol.asyncIterator]();
     expect(await nextText(chunks)).toMatch(/^:/);
+    await waitFor(() => timers.pending().some((timer) => timer.delayMs === 3500), { description: 'the primary failure timer' });
     for (let round = 0; round < 3; round += 1) {
       await waitFor(() => timers.pending().some((timer) => timer.delayMs === 1000), { description: 'the keep-alive timer' });
       timers.advance(1000);

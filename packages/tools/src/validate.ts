@@ -79,7 +79,7 @@ const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult 
     }
     return { ok: true, value: parseOutsideJson(rawArguments) };
   } catch (error) {
-    if (error instanceof JsonDepthError) return { ok: false, reason: 'invalid', message: `Invalid input for ${tool.name}: ${error.message}` };
+    if (error instanceof JsonDepthError) return { ok: false, reason: 'invalid', message: `Invalid input for ${tool.name}: the arguments nest deeper than ${error.maxDepth} levels` };
     if (error instanceof SyntaxError) {
       return { ok: false, reason: 'invalid', message: `Invalid JSON arguments for ${tool.name}: ${error.message}\nReceived: ${String(rawArguments)}` };
     }

@@ -2,12 +2,14 @@ import type { DialectId } from './dialect.ts';
 import { ERROR_TYPES } from './open-responses.ts';
 import type { ErrorType } from './open-responses.ts';
 import { CAPABILITIES_UNKNOWN_CODE, PLAN_STORE_STATES, SIGN_IN_REQUIRED_CODE } from './plan-api.ts';
+import { isMeasuring } from './measuring.ts';
+import type { Measuring } from './measuring.ts';
 
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
 
 export type NeedsProbe = { state: 'needs_probe'; message: string; evidence: string; remedy: string };
 
-export type Probing = { state: 'probing'; message: string; retryAfterSeconds: number };
+export type Probing = { state: 'probing'; message: string; retryAfterSeconds: number; measuring: Measuring };
 
 export type Unavailable = { state: 'unavailable'; status: number; type: ErrorType; code: string; message: string; param?: string };
 
@@ -220,7 +222,7 @@ export type CapabilitiesCore = {
   tokenErrorRatio?: number;
   usageReported: boolean;
   maxConcurrency: number;
-  source: 'declared' | 'probed' | 'config' | 'unprobed';
+  source: 'declared' | 'reported' | 'probed' | 'config' | 'unprobed';
   probedAt?: string;
 };
 
@@ -267,7 +269,7 @@ export const isToolCallingState = (value: unknown): value is ToolCallingState =>
   if (typeof value === 'string') return TOOL_CALLING_MODES.some((mode) => mode === value);
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Record<string, unknown>;
-  if (record['state'] === 'probing') return typeof record['message'] === 'string' && typeof record['retryAfterSeconds'] === 'number';
+  if (record['state'] === 'probing') return typeof record['message'] === 'string' && typeof record['retryAfterSeconds'] === 'number' && isMeasuring(record['measuring']);
   if (record['state'] === 'unavailable') return isUnavailableFields(record);
   return record['state'] === 'needs_probe' && typeof record['message'] === 'string' && typeof record['evidence'] === 'string' && typeof record['remedy'] === 'string';
 };
@@ -309,7 +311,7 @@ export function agentReadiness(input: ReadinessInput): Readiness {
   if (input.unavailable !== undefined) return { state: 'unavailable', message: input.unavailable };
   const { toolCalling } = input;
   if (typeof toolCalling !== 'string') {
-    if (toolCalling.state === 'probing') return { state: 'probing', message: toolCalling.message, retryAfterSeconds: toolCalling.retryAfterSeconds };
+    if (toolCalling.state === 'probing') return { state: 'probing', message: toolCalling.message, retryAfterSeconds: toolCalling.retryAfterSeconds, measuring: toolCalling.measuring };
     if (toolCalling.state === 'unavailable') return { state: 'unavailable', message: toolCalling.message };
     return { state: 'needs_probe', message: toolCalling.message, evidence: toolCalling.evidence, remedy: toolCalling.remedy };
   }

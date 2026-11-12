@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, WINDOWS_KEEPER_MANIFEST_ASSET, sha256Hex } from '@momonga/foundation';
+import type { KeeperPreparation } from '@momonga/foundation';
 import { provideEmbeddedWindowsKeeper } from '../src/keeper/host.ts';
 import { nodeSourceKeeperFiles } from '../src/node-ports.ts';
 import { sourceBuiltWindowsKeeper } from '../src/keeper/source.ts';
@@ -116,22 +117,18 @@ describe('a from-source run builds the keeper on first need and checks it like t
 });
 
 describe('outside a single executable the composition root provides the keeper built from source', () => {
-  it('provides it lazily: nothing is built at start', async () => {
-    const home = rootOf();
-    const provided: Array<() => string> = [];
-    const embedded: string[] = [];
-    await provideEmbeddedWindowsKeeper({ env: {}, home, platform: process.platform, interrupt: new AbortController().signal }, undefined, (file) => void embedded.push(file), (executable) => void provided.push(executable), () => true);
-    expect(embedded).toEqual([]);
+  it('provides it lazily: nothing is built at start', () => {
+    const provided: KeeperPreparation[] = [];
+    provideEmbeddedWindowsKeeper({ env: {}, home: rootOf(), platform: process.platform, interrupt: new AbortController().signal }, undefined, (prepare) => void provided.push(prepare), () => true);
     expect(provided).toHaveLength(1);
   });
 
-  it('provides nothing from source in a single executable that carries no keeper', async () => {
-    const provided: Array<() => string> = [];
-    await provideEmbeddedWindowsKeeper(
+  it('provides nothing from source in a single executable that carries no keeper', () => {
+    const provided: KeeperPreparation[] = [];
+    provideEmbeddedWindowsKeeper(
       { env: {}, home: rootOf(), platform: process.platform, interrupt: new AbortController().signal },
       { present: () => false, raw: () => new Uint8Array() },
-      () => undefined,
-      (executable) => void provided.push(executable),
+      (prepare) => void provided.push(prepare),
       () => true,
     );
     expect(provided).toEqual([]);

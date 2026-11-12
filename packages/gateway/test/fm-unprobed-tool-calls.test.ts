@@ -72,8 +72,8 @@ describe('every other auto target with a probe and no probe record', () => {
     expect(completionRequests(fake)).toEqual([]);
   });
 
-  it('answers an ollama target 503 target_probing and sends no chat', async () => {
-    const fake = await startFakeOllama({ chat: [] });
+  it('answers an ollama target whose server reports no tool support 503 target_probing and sends no chat', async () => {
+    const fake = await startFakeOllama({ chat: [], show: { model_info: {} } });
     const home = makeHome();
     writeSettings(home, {
       models: modelsOf({ local: { adapter: 'ollama', model: OLLAMA_LISTED, baseUrl: fake.origin, capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } } }),

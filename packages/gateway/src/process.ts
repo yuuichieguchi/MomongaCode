@@ -102,15 +102,16 @@ import { NO_USER_DIALECTS } from './dialect/choice.ts';
 import type { UserDialects } from './dialect/choice.ts';
 import type { DialectCurrency } from './dialect/candidates.ts';
 import { resolveDialectId } from './dialect/resolve-id.ts';
-import { DEFAULT_SAMPLES, PROBE_METHOD_VERSION } from './probe/run-probe.ts';
+import { DEFAULT_SAMPLES, DEFAULT_STEP_TIMEOUT_MS, PROBE_METHOD_VERSION } from './probe/run-probe.ts';
 import { chatRecordOf, loadEndpointRecord, ollamaRecordOf, saveEndpointRecord } from './probe/endpoint-record.ts';
 import type { DeclaredCapabilities } from './probe/decide.ts';
 import { withImageDefault } from './probe/decide.ts';
-import type { ProbePorts } from './probe/client.ts';
+import type { ProbeHostPorts, ProbePorts } from './probe/client.ts';
 import { isMeteredTarget, meteredPrecondition } from './probe/consent.ts';
-import { createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
-import { answersAsOllama, readOllamaDigest } from './probe/ollama.ts';
+import { IDENTITY_READ_TIMEOUT_MS, createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
+import { answersAsOllama, readOllamaDigest, readOllamaReported } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
+import { DeclaredWindowAboveReportedError, reportedWindowAt } from './probe/declared-window.ts';
 import { keyReadLimitOf } from './key-read-limit.ts';
 import type { KeyReadLimit } from './key-read-limit.ts';
 import { createSecretResolver } from './secrets.ts';
@@ -146,7 +147,10 @@ import { createManagedServer } from './managed/server.ts';
 import type { ManagedServer, ManagedServerTimers, SpawnFn } from './managed/server.ts';
 import type { ExecFn } from './managed/preconditions.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
-import { PROBE_RETRY_AFTER_MS, createAutoProbe } from './probe/auto-probe.ts';
+import { createAutoProbe } from './probe/auto-probe.ts';
+import { createRequestGates, personGatedAdapter } from './probe/request-gate.ts';
+import type { RequestGates } from './probe/request-gate.ts';
+import { NOTHING_REPORTED, measuringAskOf } from './probe/sources.ts';
 import type { AutoProbe, MeasureProbe } from './probe/auto-probe.ts';
 import { createInstanceProbe } from './probe/instance-probe.ts';
 import { loadProbeRecord } from './probe/record.ts';
@@ -166,6 +170,7 @@ import { checkModels } from './server/config-check.ts';
 import { createRouter } from './core/router.ts';
 import { createReasoningOriginCodec } from './core/reasoning-origin.ts';
 import { createRedactor } from './core/redaction.ts';
+import type { Redactor } from './core/redaction.ts';
 import type { GatewayEpoch, GatewayEpochs } from './core/services.ts';
 import { systemProcessPorts } from './process-ports.ts';
 import type { ProcessFilePorts } from './process-ports.ts';
@@ -176,7 +181,7 @@ export type StartGatewayProcessOptions = {
   generation: number;
   env: Readonly<Record<string, string | undefined>>;
   version: string;
-  clock?: Clock;
+  clock?: MonotonicClock;
   timers?: GatewayTimers;
   random?: () => number;
   files?: ProcessFilePorts;
@@ -205,6 +210,8 @@ export type StartGatewayProcessOptions = {
 export type RuntimeStanding = 'gone' | 'idle' | 'busy';
 
 export const GATEWAY_STATE_IN_MODEL = { running: 'serving', retiring: 'retiring', draining: 'serving' } as const satisfies Record<GatewayHealth['state'], 'serving' | 'retiring'>;
+
+export type MonotonicClock = Clock & { monotonicMs(): number };
 
 export type RuntimeHealthProbe = (signal: AbortSignal) => Promise<RuntimeStanding>;
 
@@ -394,7 +401,8 @@ type MeasureEndpointPort<Measurement> = (request: { key: EndpointKey; signal: Ab
 type ProbeWiring = {
   autoProbe: AutoProbe;
   lock: KernelLockMechanism;
-  ports: ProbePorts;
+  ports: ProbeHostPorts;
+  gates: RequestGates;
   outputPolicy: () => ProbeOutputPolicy;
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
@@ -404,6 +412,8 @@ const onRecordKey =
   <Measurement>(port: MeasureEndpointPort<Measurement>): MeasureProbe<EndpointLockKey, Measurement> =>
   ({ key, signal }) =>
     port({ key: endpointKeyOfLock(key), signal });
+
+const measuringPorts = (probes: ProbeWiring, server: string): ProbePorts => ({ ...probes.ports, gate: probes.gates.of(server) });
 
 const SAMPLING_OF: Record<ManagedServerDescription['sampling'], { renders: [] }> = { none: { renders: [] } };
 
@@ -427,6 +437,8 @@ type ManagedAdapterWiring = {
   hashes: BinaryHashCache;
   files: ProcessFilePorts;
   autoProbe: AutoProbe;
+  gates: RequestGates;
+  redactor: Pick<Redactor, 'text'>;
   probeServers: Set<ManagedServer>;
   timers: ManagedServerTimers;
   timeoutSignal: GatewayTimers['timeoutSignal'];
@@ -497,6 +509,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     userDialects: wiring.userDialects,
     servers: wiring.probeServers,
     timers: wiring.timers,
+    gate: wiring.gates.of(provider),
     readStopGraceMs: wiring.readStopGraceMs,
     onWarning: wiring.onWarning,
     model: target.model,
@@ -524,14 +537,16 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     isUsableBinary: wiring.files.isUsableBinary,
     readKey,
     onInstanceEnd: () => host.release(),
-    startProbe: (key) => wiring.autoProbe.ensure(subject, lockKeyOf(key)),
+    startProbe: (key, ask) => wiring.autoProbe.ensure({ ...subject, unknown: ask }, lockKeyOf(key)),
     instanceProbe: (unknown) =>
       createInstanceProbe({
         target: name,
         unknown,
+        ask: measuringAskOf(name, ['toolCalling', 'contextWindow']),
         dir: paths.probe,
-        measure: (signal) => measure({ key: {}, signal }),
-        retryAfterMs: PROBE_RETRY_AFTER_MS,
+        measure: (signal, progress) => measure({ key: {}, signal, progress }),
+        retryAfterMs: DEFAULT_STEP_TIMEOUT_MS,
+        redactor: wiring.redactor,
         clock: wiring.timers,
         onNotice: wiring.onWarning,
         onFailure: (error) => wiring.onWarning(aboutModel(name, `the measurement failed: ${error instanceof Error ? error.message : String(error)}`)),
@@ -591,7 +606,7 @@ const createAutoChatCompletionsAdapter = async (
       (probes.measureEndpoint === undefined ? undefined : onRecordKey(probes.measureEndpoint)) ??
       (async (request) =>
         measureEndpoint({
-          ports: probes.ports,
+          ports: measuringPorts(probes, endpoint),
           ...(metered === undefined ? {} : { metered: meteredGateOf(probeRecordDir, key, metered, DEFAULT_SAMPLES) }),
           upstream,
           model: target.model,
@@ -607,9 +622,11 @@ const createAutoChatCompletionsAdapter = async (
     endpoint,
     model: target.model,
     declared: declaredCapabilitiesOf(target, 'native'),
+    toolCalling: target.toolCalling,
     record: loaded,
     readRecord,
-    startProbe: () => probes.autoProbe.ensure(subject, endpointLockKeyOf(key)),
+    readReported: async () => NOTHING_REPORTED,
+    startProbe: (ask) => probes.autoProbe.ensure({ ...subject, unknown: ask }, endpointLockKeyOf(key)),
     readIdentity: async (fields, signal) => {
       const apiKey = await readKey(adapterTarget, signal);
       return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, probes.ports, signal);
@@ -617,7 +634,7 @@ const createAutoChatCompletionsAdapter = async (
     saveRecord: (record) =>
       saveEndpointRecord(probeRecordDir, key, record.identity, record.identityFields, record.report, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects), probes.lock),
   });
-  const adapter = createChatCompletionsAdapter({
+  const adapter = personGatedAdapter(createChatCompletionsAdapter({
     resolveEndpoint: async (_target, signal) => {
       await identify(signal);
       await probed.verify(signal);
@@ -633,7 +650,7 @@ const createAutoChatCompletionsAdapter = async (
     clock,
     userDialects,
     liveness,
-  });
+  }), probes.gates.of(endpoint));
   return { adapter, upstreamIdentity: loaded?.identity };
 };
 
@@ -662,7 +679,7 @@ const createProbedOllamaAdapter = async (
     measure:
       (probes.measureOllama === undefined ? undefined : onRecordKey(probes.measureOllama)) ??
       measureOllama({
-        ports: probes.ports,
+        ports: measuringPorts(probes, endpoint),
         upstream,
         model: target.model,
         contextWindow: target.capabilities.contextWindow,
@@ -676,12 +693,14 @@ const createProbedOllamaAdapter = async (
     endpoint,
     model: target.model,
     declared: declaredCapabilitiesOf(target, 'native'),
+    toolCalling: 'auto',
     record: loaded,
     readRecord,
-    startProbe: () => probes.autoProbe.ensure(subject, endpointLockKeyOf(key)),
+    readReported: () => readOllamaReported(upstream, probes.ports, target.model),
+    startProbe: (ask) => probes.autoProbe.ensure({ ...subject, unknown: ask }, endpointLockKeyOf(key)),
     readDigest: (signal) => readOllamaDigest(upstream, probes.ports, target.model, signal),
   });
-  const adapter = createOllamaAdapter({
+  const adapter = personGatedAdapter(createOllamaAdapter({
     resolveEndpoint: async (_target, signal) => {
       await probed.verify(signal);
       return upstream;
@@ -690,15 +709,28 @@ const createProbedOllamaAdapter = async (
     clock,
     userDialects,
     liveness,
-  });
+  }), probes.gates.of(endpoint));
   return { adapter, upstreamIdentity: loaded?.identity };
+};
+
+const refuseDeclaredWindowAboveReported = async (display: string, target: RemoteTarget, network: OutboundNetwork, timers: GatewayTimers, signal: AbortSignal): Promise<void> => {
+  const endpoint = upstreamEndpointOf(target);
+  const declared = target.capabilities?.contextWindow;
+  if (endpoint.kind !== 'tcp' || declared === undefined || isMeteredTarget(target)) return;
+  const dispatcher = createOutboundDispatcher(network, { connectReplyTimeoutMs: IDENTITY_READ_TIMEOUT_MS });
+  try {
+    const reported = await reportedWindowAt({ address: endpoint.baseUrl, model: target.model, fetch: outboundFetch(dispatcher), signal: AbortSignal.any([signal, timers.timeoutSignal(IDENTITY_READ_TIMEOUT_MS)]) });
+    if (reported !== undefined && declared > reported) throw new DeclaredWindowAboveReportedError(display, declared, reported, endpoint.baseUrl);
+  } finally {
+    await dispatcher.close();
+  }
 };
 
 type Identification = (signal: AbortSignal) => Promise<void>;
 
 const UNIDENTIFIED = Symbol('unidentified');
 
-const ollamaIdentificationOf = (display: string, target: OllamaDetectable, network: OutboundNetwork, ports: ProbePorts): Identification => {
+const ollamaIdentificationOf = (display: string, target: OllamaDetectable, network: OutboundNetwork, ports: ProbeHostPorts): Identification => {
   let refusal: PreconditionFailedError | null | typeof UNIDENTIFIED = UNIDENTIFIED;
   return async (signal) => {
     if (refusal === UNIDENTIFIED) {
@@ -711,7 +743,7 @@ const ollamaIdentificationOf = (display: string, target: OllamaDetectable, netwo
 
 const NO_IDENTIFICATION: Identification = async () => undefined;
 
-const identificationOf = (display: string, target: ServedTarget, network: OutboundNetwork, ports: ProbePorts): Identification =>
+const identificationOf = (display: string, target: ServedTarget, network: OutboundNetwork, ports: ProbeHostPorts): Identification =>
   (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined ? ollamaIdentificationOf(display, target, network, ports) : NO_IDENTIFICATION;
 
 const DEBUG_TCP_HOST = '127.0.0.1';
@@ -1045,12 +1077,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const childEnv = minimalChildEnv(options.env);
     const exec = options.exec ?? createExecFn(childEnv);
 
+    const redactor = createRedactor({ credentials: [] });
     const autoProbe = createAutoProbe({
+      redactor,
       dir: paths.probe,
       lock: kernelLock,
       clock,
       timers,
-      retryAfterMs: PROBE_RETRY_AFTER_MS,
+      retryAfterMs: DEFAULT_STEP_TIMEOUT_MS,
       role,
       onEvent: (event) => {
         if (event.kind === 'stopped') logger.info(`the automatic probe of the model ${event.target} was stopped`);
@@ -1062,22 +1096,25 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       await Promise.all([autoProbe.close(), ...[...probeServers].map((server) => server.stop(values === undefined ? undefined : { stopGraceMs: values.managedServerStopGraceMs }))]);
     };
     cleanups.push(closeProbes);
+    const probeTimers: ProbeHostPorts['timers'] = { now: () => clock.now(), monotonicMs: () => clock.monotonicMs(), setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout };
+    const gates = createRequestGates();
     const probePorts: Omit<ProbeWiring, 'outputPolicy'> = {
       autoProbe,
       lock: kernelLock,
-      ports: { clock, timers },
+      gates,
+      ports: { clock, timers: probeTimers },
       ...(options.measureEndpoint === undefined ? {} : { measureEndpoint: options.measureEndpoint }),
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
     const readStopGraceMs = (): number => stopValues.read().managedServerStopGraceMs;
-    const managedTimers: ManagedServerTimers = { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() };
+    const managedTimers: ManagedServerTimers = { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now(), monotonicMs: () => clock.monotonicMs() };
     const hashes = createBinaryHashCache();
     const execWithStdin = options.execWithStdin ?? createExecWithStdin(childEnv);
     signal?.throwIfAborted();
     const codeDigest = await codeDigestOfRunningProcess();
     const secretStore =
       options.secretStore ?? createGivenSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env);
-    const shared: GatewayEpochsShared = { redactor: createRedactor({ credentials: [] }), reasoningOrigin: createReasoningOriginCodec(hmacKey) };
+    const shared: GatewayEpochsShared = { redactor, reasoningOrigin: createReasoningOriginCodec(hmacKey) };
     type HeldPlanScope = PlanScope & { close(): Promise<void> };
     const planScopes = createPinnedDerivation<HeldPlanScope>({
       cache,
@@ -1279,6 +1316,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               hashes,
               files,
               autoProbe,
+              gates,
+              redactor,
               probeServers,
               timers: managedTimers,
               timeoutSignal: timers.timeoutSignal,
@@ -1299,7 +1338,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             return { key: keys.core, ...built, closable: { close: (values) => built.managed.close(values) } };
           })());
         const { close: _stopsTheServer, ...serving } = core.managed;
-        const adapter = createChatCompletionsAdapter({
+        const adapter = personGatedAdapter(createChatCompletionsAdapter({
           ...serving,
           capabilities: (adapterTarget) => serving.capabilities(adapterTarget, outputPolicy),
           authSource: unauthenticatedSource,
@@ -1307,7 +1346,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           clock,
           userDialects,
           liveness,
-        });
+        }), gates.of(target.provider));
         return {
           key: keys.part,
           adapter,
@@ -1316,6 +1355,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           closables: [adapterClosable(adapter), core.closable],
         };
       }
+      await refuseDeclaredWindowAboveReported(display, target, outbound, timers, keySignal);
       if (isMeasuredBy(target, 'ollama-wire')) {
         const probed = await createProbedOllamaAdapter(display, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));

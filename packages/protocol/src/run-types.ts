@@ -97,7 +97,11 @@ export type AttachedFilePart = { type: 'attached_file'; path: string; content: s
 
 export type AttachmentNotePart = { type: 'attachment_note'; path: string; text: string; shown: string };
 
-export type MessageAttachment = AttachedFilePart | AttachmentNotePart;
+export type ForgeIssuePart = { type: 'forge_issue'; issue: string; content: string };
+
+export type MessageAttachment = AttachedFilePart | AttachmentNotePart | ForgeIssuePart;
+
+export type IssueReference = { url: string; repository: string; number: number };
 
 export const USER_SHELL_OUTPUT_BYTES = 64 * 1024;
 export const USER_SHELL_HEAD_BYTES = 16 * 1024;
@@ -216,6 +220,16 @@ export const diffFieldsOf = ({ hunks, added, removed, diffOmitted }: AppliedDiff
   ...(removed === undefined ? {} : { removed }),
   ...(diffOmitted === undefined ? {} : { diffOmitted }),
 });
+
+export type TrustItemChange = { kind: 'new' } | { kind: 'changed'; diff: AppliedDiffFields } | { kind: 'not-recorded' };
+
+export type TrustItem =
+  | { kind: 'hook'; event: string; group: unknown; digest: string; source: string; change: TrustItemChange }
+  | { kind: 'mandate'; document: unknown; digest: string; source: string; change: TrustItemChange }
+  | { kind: 'mcp'; name: string; config: unknown; digest: string; source: string; change: TrustItemChange }
+  | { kind: 'agent'; name: string; text: string; digest: string; source: string; change: TrustItemChange };
+
+export type TrustItemsView = { items: TrustItem[]; refused: string[] };
 
 export type HeldLink = { approvalId: string };
 

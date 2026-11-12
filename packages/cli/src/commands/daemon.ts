@@ -1,8 +1,8 @@
-import path from 'node:path';
-import { readUserStopValues } from '@momonga/config';
+import { readUserStopValuesOrDefault } from '@momonga/config';
 import { STOP_VALUE_NAMES, generationLayout, readStopRecord } from '@momonga/foundation';
 import type { MomongaPaths, StopValueName, StopValues } from '@momonga/foundation';
-import type { SupervisorHealth } from '@momonga/protocol';
+import { INTERRUPTED_WORK_LISTED } from '@momonga/protocol';
+import type { InterruptedWorkItem, SupervisorHealth } from '@momonga/protocol';
 import { ensureCurrentDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import type { DaemonPorts, InterruptedWork } from '../daemon/ensure-daemon.ts';
 import { listLiveGenerations } from '../daemon/generations.ts';
@@ -42,13 +42,21 @@ export const lastStopLines = (lastStop: StopValues, settingsNow: StopValues): st
   return [`  last stop: ${last}`, ...(now === last ? [] : [`  settings now: ${now}`])];
 };
 
-export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'clock' | 'home' | 'interrupt' | 'endpointScope'>, paths: MomongaPaths): Promise<number> => {
+const generationDocumentOf = (entry: LiveGeneration, lastStop: StopValues | undefined) => ({ role: entry.role, generation: entry.generation, ...entry.health, lastStop: lastStop ?? null });
+
+export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'stderr' | 'clock' | 'interrupt' | 'endpointScope'>, paths: MomongaPaths, options: { json: boolean }): Promise<number> => {
   const live = await listLiveGenerations(ports, paths);
   const serving = live.find((entry) => entry.role === 'serving');
   const others = live.filter((entry) => entry !== serving);
-  const home = path.dirname(paths.root);
-  const lastStops = new Map(await Promise.all(live.map(async (entry) => [entry, await readStopRecord(generationLayout(home, entry.generation).stopRecord)] as const)));
-  const settingsNow = [...lastStops.values()].some((values) => values !== undefined) ? await readUserStopValues(ports.home, ports.interrupt) : undefined;
+  const lastStops = new Map(await Promise.all(live.map(async (entry) => [entry, await readStopRecord(generationLayout(paths.home, entry.generation).stopRecord)] as const)));
+  const settingsNow = [...lastStops.values()].some((values) => values !== undefined)
+    ? await readUserStopValuesOrDefault({ home: paths.home, signal: ports.interrupt, onNotice: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`) })
+    : undefined;
+  if (options.json) {
+    const ordered = [...(serving === undefined ? [] : [serving]), ...others];
+    ports.stdout.write(`${JSON.stringify({ running: serving !== undefined, generations: ordered.map((entry) => generationDocumentOf(entry, lastStops.get(entry))), settingsNow: settingsNow ?? null })}\n`);
+    return serving === undefined ? 1 : 0;
+  }
   const lastStopOf = (entry: LiveGeneration): string[] => {
     const lastStop = lastStops.get(entry);
     return lastStop === undefined || settingsNow === undefined ? [] : lastStopLines(lastStop, settingsNow);
@@ -67,18 +75,19 @@ export const daemonStart = async (ports: CliPorts & DaemonPorts, paths: MomongaP
   return 0;
 };
 
-const LISTED_ITEMS = 5;
+const interruptedItemText = (item: InterruptedWorkItem): string => (item.kind === 'run' ? `run ${item.id}` : `job ${item.id} (${item.command})`);
 
-export const stoppingText = (work: InterruptedWork & { items: readonly string[] }): string => {
-  const shown = work.items.slice(0, LISTED_ITEMS).join(', ');
-  const more = work.items.length > LISTED_ITEMS ? ` and ${work.items.length - LISTED_ITEMS} more` : '';
-  const list = work.items.length === 0 ? '' : `: ${shown}${more}`;
+export const stoppingText = (work: InterruptedWork): string => {
+  const shown = work.items.slice(0, INTERRUPTED_WORK_LISTED);
+  const rest = work.steps + work.jobs - shown.length;
+  const more = rest > 0 ? ` and ${rest} more` : '';
+  const list = shown.length === 0 ? '' : `: ${shown.map(interruptedItemText).join(', ')}${more}`;
   return escapedLines([`Stopping the daemon. This interrupts ${work.steps} running steps and ${work.jobs} background jobs${list}. Interrupted runs resume when the daemon starts again.`]);
 };
 
 export const daemonStop = async (ports: CliPorts & DaemonPorts, paths: MomongaPaths): Promise<number> => {
   const { stopped } = await stopDaemon(ports, paths, undefined, stderrStopNotice(ports), undefined, (work) => {
-    if (work.steps + work.jobs > 0) ports.stdout.write(`${stoppingText({ ...work, items: [] })}\n`);
+    if (work.steps + work.jobs > 0) ports.stdout.write(`${stoppingText(work)}\n`);
   });
   ports.stdout.write(stopped ? 'momonga daemon stopped\n' : `${NOT_RUNNING_TEXT}\n`);
   return 0;

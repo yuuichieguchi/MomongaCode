@@ -11,7 +11,7 @@ import { describeRetryWait } from '../retry-wait.ts';
 import { asChildEvent } from '../run/child-events.ts';
 import { isTerminalStatus } from '../run/follow.ts';
 import { isRecord } from '@momonga/foundation';
-import { appliedDiffOf } from './screen/diff.ts';
+import { appliedDiffOf, DIFF_PREVIEW_ROWS, diffRowCount } from './screen/diff.ts';
 import type { AppliedDiff, DiffFields } from './screen/diff.ts';
 import { EMPTY_USAGE } from './screen/store.ts';
 import { formatTokens } from '../format-tokens.ts';
@@ -117,8 +117,20 @@ export const setThoughtWindow = (store: TranscriptStore, window: number): void =
   if (state.openThought !== undefined) store.change(state.openThought, (entry) => (entry.kind === 'thought' ? { ...entry, window } : entry));
 };
 
+export const hasHiddenLines = (entry: ToolEntry): boolean => {
+  if (entry.denial !== undefined) return false;
+  if (entry.diff !== undefined) return entry.diff.hunks !== undefined && diffRowCount(entry.diff.hunks) > DIFF_PREVIEW_ROWS;
+  return entry.tail !== undefined && entry.tail.hidden > 0;
+};
+
 const updateTool = (store: TranscriptStore, callId: string, change: (tool: ToolEntry) => ToolEntry): void => {
-  store.change(callKey(callId), (entry) => (entry.kind === 'tool' ? change(entry) : entry));
+  const key = callKey(callId);
+  store.change(key, (entry) => (entry.kind === 'tool' ? change(entry) : entry));
+  const changed = store.byKey(key);
+  if (changed === undefined || changed.entry.kind !== 'tool' || !hasHiddenLines(changed.entry)) return;
+  const newest = store.state().newestExpandableTool;
+  const held = newest === undefined ? undefined : store.byKey(newest);
+  if (held === undefined || held.id < changed.id) store.update({ newestExpandableTool: key });
 };
 
 const withOutput = (tool: ToolEntry, output: string, shownAt: number): ToolEntry => {
@@ -205,6 +217,15 @@ const retirePlan = (store: TranscriptStore, replacement: Entry): void => {
 
 const planText = (entries: readonly PlanEntry[]): string => entries.map((item) => `${item.status === 'completed' ? '[x]' : '[ ]'} ${item.content}`).join('\n');
 
+const withdraw = (store: TranscriptStore, key: string): void => {
+  if (store.byKey(key) === undefined) return;
+  store.change(key, () => ({ kind: 'retired' }));
+  store.forget(key);
+  if (store.open() === key) store.setOpen(undefined);
+  const { openThought, newestThought } = store.state();
+  if (openThought === key || newestThought === key) store.update({ ...(openThought === key ? { openThought: undefined } : {}), ...(newestThought === key ? { newestThought: undefined } : {}) });
+};
+
 const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
   const state = store.state();
   switch (event.type) {
@@ -233,6 +254,9 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       store.setOpen(key);
       return;
     }
+    case 'model.stream.restarted':
+      for (const itemId of event.itemIds) for (const key of [itemKey(itemId), thoughtKey(itemId)]) withdraw(store, key);
+      return;
     case 'tool.call':
       closeThought(store, event.createdAt);
       appendEntry(
@@ -474,6 +498,7 @@ export type { PromptEvent };
 const appendAttachments = (store: TranscriptStore, event: PromptEvent): void => {
   for (const part of event.attachments ?? []) {
     if (part.type === 'attached_file') appendEntry(store, { kind: 'info', text: attachedRow(part) });
+    else if (part.type === 'forge_issue') appendEntry(store, { kind: 'info', text: `issue ${part.issue}` });
     else appendEntry(store, { kind: 'notice', level: 'warning', text: part.shown });
   }
 };

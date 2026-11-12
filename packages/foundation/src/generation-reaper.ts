@@ -16,7 +16,7 @@ import {
 import type { GenerationLayout, GenerationMember, MarkerKind, MomongaPaths } from './momonga-paths.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { claimPathOf, sidecarSuffixOf } from './platform/lock-form.ts';
-import { readAttemptRecord } from './platform/marker-record.ts';
+import { readAttemptRecord, readMarkerGroup } from './platform/marker-record.ts';
 import type { RetryKind } from './platform/marker-record.ts';
 import { survivorNoticeText } from './process-markers.ts';
 import { nodeFileSystem } from './node-file-system.ts';
@@ -214,7 +214,7 @@ const survivorWarning = async (marker: string, kind: MarkerKind): Promise<string
     throw error;
   }
   if (record.ignored) return undefined;
-  return record.spent[GENERATION_REAPER_OCCASION] ? survivorNoticeText(GENERATION_MARKER_LABELS[kind], path.basename(marker)) : keptMessage(marker, NOT_STOPPED);
+  return record.spent[GENERATION_REAPER_OCCASION] ? survivorNoticeText(GENERATION_MARKER_LABELS[kind], path.basename(marker), await readMarkerGroup(marker)) : keptMessage(marker, NOT_STOPPED);
 };
 
 const reapMarkers: StepRunner = async (pass, work) => {

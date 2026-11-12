@@ -151,10 +151,27 @@ const templatedValueOf = (source: unknown, template: string): unknown => {
   return holder[key];
 };
 
-const toolSupportOf = (details: unknown, field: string): LocalServerToolSupport => {
-  const capabilities = isRecord(details) ? details[field] : undefined;
-  if (!Array.isArray(capabilities)) return 'unknown';
-  return capabilities.includes('tools') ? 'yes' : 'no';
+type ServerDetailsRead = NonNullable<NonNullable<ServerKind['read']>['details']>;
+
+export type DetailsAsk = (method: ServerDetailsRead['method'], path: string, body: unknown) => Promise<unknown>;
+
+export type ModelDetails = { window?: number; tools: LocalServerToolSupport; capabilities?: readonly string[] };
+
+const capabilitiesIn = (answer: unknown, field: string): readonly string[] | undefined => {
+  const listed = isRecord(answer) ? answer[field] : undefined;
+  return Array.isArray(listed) && listed.every((entry): entry is string => typeof entry === 'string') ? listed : undefined;
+};
+
+export const readModelDetails = async (ask: DetailsAsk, details: ServerDetailsRead, modelId: string): Promise<ModelDetails | undefined> => {
+  const answer = await ask(details.method, details.path, { model: modelId });
+  if (answer === NO_ANSWER) return undefined;
+  const window = countOf(templatedValueOf(answer, details.ceilingTemplate));
+  const capabilities = capabilitiesIn(answer, details.tools);
+  return {
+    ...(window === undefined ? {} : { window }),
+    tools: capabilities === undefined ? 'unknown' : capabilities.includes('tools') ? 'yes' : 'no',
+    ...(capabilities === undefined ? {} : { capabilities }),
+  };
 };
 
 export const describeModel = async (options: DescribeModelOptions): Promise<DetectedModel> => {
@@ -163,17 +180,16 @@ export const describeModel = async (options: DescribeModelOptions): Promise<Dete
   const details = kind?.read?.details;
   if (kind === undefined || details === undefined) return model;
   const ask = askerOf(rootOf(server.address, kind.baseUrlSuffix), options.fetch, options.signal);
-  let answer: unknown;
+  let read: ModelDetails | undefined;
   try {
-    answer = await ask(details.method, details.path, { model: model.id });
+    read = await readModelDetails(ask, details, model.id);
   } catch (error) {
     if (!(error instanceof CandidateSilent)) throw error;
     return model;
   }
-  if (answer === NO_ANSWER) return model;
-  const ceiling = countOf(templatedValueOf(answer, details.ceilingTemplate));
+  if (read === undefined) return model;
   const { ceiling: _listedCeiling, ...listed } = model;
-  return { ...listed, tools: toolSupportOf(answer, details.tools), ...(ceiling === undefined ? {} : { ceiling }) };
+  return { ...listed, tools: read.tools, ...(read.window === undefined ? {} : { ceiling: read.window }) };
 };
 
 class PreconditionUnrunnable extends Error {}

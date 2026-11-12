@@ -12,7 +12,7 @@ import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
 import type { UserShellRecord } from '@momonga/protocol';
 import { editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
-import type { ProjectItems } from '../src/tui/project-items.ts';
+import type { TrustItemsView } from '@momonga/protocol';
 import { momongaLayout } from '@momonga/foundation';
 import type { DetectRequest } from '../src/commands/models.ts';
 import { freshHome } from './fresh-home.ts';
@@ -82,7 +82,7 @@ export type FakeBackend = TuiBackend & {
 
 export type FakeBackendOptions = {
   trust?: TrustView;
-  projectItems?: ProjectItems;
+  trustItems?: TrustItemsView;
   checkProposal?: CheckProposal;
   session?: Partial<SessionView>;
   contextWindow?: number;
@@ -177,13 +177,50 @@ const promptFrame = (runId: string, sessionId: string, text: string): RunEventFr
 
 export const FAKE_INIT_INSTRUCTION = 'Read this repository, then write AGENTS.md.';
 
+export type FolderTrustFakeOptions = {
+  settingsPlace: () => { home: string; projectDir: string };
+  trust: TrustView | undefined;
+  trustItems: TrustItemsView | undefined;
+  cwd: () => string;
+  record: (call: string) => void;
+};
+
+export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record }: FolderTrustFakeOptions): Pick<TuiBackend, 'decideTrust' | 'trust' | 'clearTrust' | 'trustItems' | 'approveProjectItems' | 'projectMandate' | 'writeProjectMandate'> => {
+  let trustNow: TrustView | undefined;
+  return {
+    decideTrust: async (decision) => {
+      record(`trust:${decision}`);
+      trustNow = { path: cwd(), decision };
+    },
+    trust: async () => trustNow ?? trust ?? { path: cwd(), decision: 'trusted' },
+    clearTrust: async () => {
+      record('trust:clear');
+      trustNow = { path: cwd(), decision: null };
+    },
+    trustItems: async () => trustItems ?? { items: [], refused: [] },
+    approveProjectItems: async (approval) => {
+      record(`approve:${JSON.stringify(approval)}`);
+    },
+    projectMandate: async () => projectMandateState({ projectDir: settingsPlace().projectDir, approvals: (await loadUserSettings({ home: settingsPlace().home, signal: new AbortController().signal })).settings.projectApprovals, signal: new AbortController().signal }),
+    writeProjectMandate: (document, signal) =>
+      editProjectMandate(
+        settingsPlace().projectDir,
+        (current) => {
+          for (const key of Object.keys(current)) delete current[key];
+          Object.assign(current, document);
+          return true;
+        },
+        { home: settingsPlace().home, trust: { isTrusted: () => (trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) },
+      ),
+  };
+};
+
 export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const settingsPlace = (): { home: string; projectDir: string } => {
     if (options.settingsPlace === undefined) throw new Error('the fake backend was given no settings place');
     return options.settingsPlace;
   };
   const calls: string[] = [];
-  let trustNow: TrustView | undefined;
   const started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[] = [];
   const elicitationAnswers: FakeBackend['elicitationAnswers'] = [];
   const openedUrls: string[] = [];
@@ -294,29 +331,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record('boot');
       return options.trust ?? { path: session.cwd, decision: 'trusted' };
     },
-    decideTrust: async (decision) => {
-      record(`trust:${decision}`);
-      trustNow = { path: session.cwd, decision };
-    },
-    projectItems: async () => options.projectItems ?? { hooks: [] },
-    approveProjectItems: async (approval) => {
-      record(`approve:${JSON.stringify(approval)}`);
-    },
+    ...folderTrustFakes({ settingsPlace, trust: options.trust, trustItems: options.trustItems, cwd: () => session.cwd, record }),
     checkProposal: async () => options.checkProposal ?? { ask: false },
     answerCheck: async (answer) => {
       record(`check:${JSON.stringify(answer)}`);
-    },
-    projectMandate: async () => projectMandateState({ projectDir: settingsPlace().projectDir, approvals: (await loadUserSettings({ home: settingsPlace().home, signal: new AbortController().signal })).settings.projectApprovals, signal: new AbortController().signal }),
-    writeProjectMandate: (document, signal) =>
-      editProjectMandate(settingsPlace().projectDir, (current) => {
-        for (const key of Object.keys(current)) delete current[key];
-        Object.assign(current, document);
-        return true;
-      }, { home: settingsPlace().home, trust: { isTrusted: () => (options.trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) }),
-    trust: async () => trustNow ?? options.trust ?? { path: session.cwd, decision: 'trusted' },
-    clearTrust: async () => {
-      record('trust:clear');
-      trustNow = { path: session.cwd, decision: null };
     },
     openSession: async (model, permissionMode) => {
       record('openSession');

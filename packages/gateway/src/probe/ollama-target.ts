@@ -8,15 +8,20 @@ import { jsonModeCapabilityOf } from './json-mode.ts';
 import type { DeclaredCapabilities } from './decide.ts';
 import { memoizedVerification } from './endpoint-target.ts';
 import { recordForIdentity } from './record.ts';
+import type { MeasuringAsk } from './auto-probe.ts';
+import { measuringAskOf, sourcedCapabilities, unknownFieldsOf } from './sources.ts';
+import type { ReportedFields, ToolCallingDeclaration } from './sources.ts';
 
 export type ProbedOllamaTargetOptions = {
   targetName: string;
   endpoint: string;
   model: string;
   declared: DeclaredCapabilities;
+  toolCalling: ToolCallingDeclaration;
   record: OllamaEndpointRecord | null;
   readRecord: () => Promise<OllamaEndpointRecord | null>;
-  startProbe: () => Promise<Probing>;
+  readReported: () => Promise<ReportedFields>;
+  startProbe: (ask: MeasuringAsk) => Promise<Probing>;
   readDigest: (signal: AbortSignal) => Promise<string | undefined>;
 };
 
@@ -34,19 +39,28 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
   const usable = (found: OllamaEndpointRecord | null): OllamaEndpointRecord | null =>
     found === null || !currentDigest.known ? found : recordForIdentity(found, { identity: found.identity }, { identity: currentDigest.digest });
 
+  let reportedOnce: ReportedFields | undefined;
+  const fromSources = async (): Promise<Capabilities> => {
+    reportedOnce ??= await options.readReported();
+    const reported = reportedOnce;
+    const served = sourcedCapabilities(declared, options.toolCalling, reported);
+    if (served !== undefined) return served;
+    throw targetProbingError(await options.startProbe(measuringAskOf(options.targetName, unknownFieldsOf({ toolCalling: options.toolCalling }, reported))));
+  };
+
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {
     const found = await options.readRecord();
     currentDigest = { known: false };
     if (found !== null) currentDigest = { known: true, digest: await options.readDigest(signal) };
     record = usable(found);
-    if (record === null) throw targetProbingError(await options.startProbe());
+    if (record === null) await fromSources();
   };
 
   return {
     verify: memoizedVerification(verifyOnce),
     capabilities: async () => {
       record = usable(await options.readRecord());
-      if (record === null) throw targetProbingError(await options.startProbe());
+      if (record === null) return fromSources();
       const { report } = record;
       return mergeCapabilities({
         defaults: { ...declaredParts.core, schemaDialect: resolveDialectId(declared.schemaDialect, report) },

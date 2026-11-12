@@ -1,3 +1,4 @@
+import { createRedactor } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -25,6 +26,7 @@ const lantern = (dir: string) => {
   };
   const subject: ProbeSubject<LanternKey, LanternReport> = {
     target: KEY.target,
+    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
     readKey: async () => KEY,
     precondition: {
       boundMs: 50,
@@ -50,7 +52,7 @@ const setup = () => {
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
   const events: Array<{ kind: string; target: string }> = [];
-  const autoProbe = createAutoProbe({ lock: testKernelLock(), dir, clock, timers, retryAfterMs: 120_000, onEvent: (event) => events.push({ kind: event.kind, target: event.target }) });
+  const autoProbe = createAutoProbe({ redactor: createRedactor({ credentials: [] }), lock: testKernelLock(), dir, clock, timers, retryAfterMs: 120_000, onEvent: (event) => events.push({ kind: event.kind, target: event.target }) });
   const { state, subject } = lantern(dir);
   return { dir, clock, timers, events, autoProbe, state, subject };
 };
@@ -67,7 +69,7 @@ describe('the automatic probe through its one interface, with an adapter no othe
     expect(state.measures).toBe(0);
 
     state.verdict = { kind: 'met' };
-    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
+    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling' } });
     expect(state.measures).toBe(1);
   });
 
@@ -82,24 +84,18 @@ describe('the automatic probe through its one interface, with an adapter no othe
     expect(state.measures).toBe(1);
   });
 
-  it('starts no probe of a key for one Retry-After interval after a started probe failed, answering 503 target_probe_failed with the cause and the remaining interval', async () => {
+  it('keeps a failed measurement of a key as its state, answering 503 target_probe_failed with the cause and the way forward, and starts it no more', async () => {
     const { autoProbe, clock, events, state, subject } = setup();
     await autoProbe.ensure(subject, KEY);
     state.pending[0]?.reject(new Error('the lantern went out'));
     await until(() => events.some((event) => event.kind === 'failed'), 'the failure is reported');
 
-    clock.advance(45_000);
+    clock.advance(10 * 120_000);
     const failed = await autoProbe.ensure(subject, KEY).catch((error: unknown) => error);
-    expect(failed).toMatchObject({
-      status: 503,
-      body: { type: 'server_error', code: 'target_probe_failed', message: 'measuring this model failed: the lantern went out' },
-      headers: { 'retry-after': '75' },
-    });
+    expect(failed).toMatchObject({ status: 503, body: { type: 'server_error', code: 'target_probe_failed' } });
+    expect((failed as Error).message).toContain('the lantern went out');
+    expect((failed as Error).message).toContain('momonga gateway probe lantern');
     expect(state.measures).toBe(1);
-
-    clock.advance(75_000);
-    await autoProbe.ensure(subject, KEY);
-    expect(state.measures).toBe(2);
   });
 
   it('saves the measurement while it holds the lock of the key, and reports success', async () => {
@@ -139,9 +135,9 @@ describe('the automatic probe through its one interface, with an adapter no othe
   it('starts no flight while its gateway is retiring', async () => {
     const dir = makeDir();
     const { state, subject } = lantern(dir);
-    const autoProbe = createAutoProbe({ lock: testKernelLock(), dir, clock: createFakeClock(START_MS), timers: hostTimers, retryAfterMs: 120_000, onEvent: () => undefined, role: { current: () => 'retiring' } });
+    const autoProbe = createAutoProbe({ redactor: createRedactor({ credentials: [] }), lock: testKernelLock(), dir, clock: createFakeClock(START_MS), timers: hostTimers, retryAfterMs: 120_000, onEvent: () => undefined, role: { current: () => 'retiring' } });
 
-    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
+    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling' } });
 
     expect(state.measures).toBe(0);
     expect(autoProbe.openFlights()).toBe(0);
@@ -151,7 +147,7 @@ describe('the automatic probe through its one interface, with an adapter no othe
     const dir = makeDir();
     const first = lantern(dir);
     const second = lantern(dir);
-    const probes = [first, second].map(() => createAutoProbe({ lock: testKernelLock(), dir, clock: createFakeClock(START_MS), timers: hostTimers, retryAfterMs: 120_000, onEvent: () => undefined }));
+    const probes = [first, second].map(() => createAutoProbe({ redactor: createRedactor({ credentials: [] }), lock: testKernelLock(), dir, clock: createFakeClock(START_MS), timers: hostTimers, retryAfterMs: 120_000, onEvent: () => undefined }));
 
     await probes[0]?.ensure(first.subject, KEY);
     await probes[1]?.ensure(second.subject, KEY);

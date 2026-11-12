@@ -72,7 +72,7 @@ export type ChildHandle = {
   killGroup(stop?: AbortSignal): Promise<void>;
 };
 
-export type SpawnPort = (command: string, args: readonly string[], options: SpawnPortOptions) => ChildHandle;
+export type SpawnPort = (command: string, args: readonly string[], options: SpawnPortOptions) => Promise<ChildHandle>;
 
 export type ChildState = SupervisorChildState;
 
@@ -127,7 +127,7 @@ export type ChildManager = {
   readonly role: ChildRole;
   state(): ChildState;
   health(): SupervisorChildHealth;
-  spawnWith(snapshot: UserSettingsSnapshot, reason: SpawnReason): void;
+  spawnWith(snapshot: UserSettingsSnapshot, reason: SpawnReason): Promise<void>;
   spawnFresh(reason: SpawnReason): void;
   failWithoutProcess(reason: 'settings-read-failed'): void;
   retryHeld(): void;
@@ -386,10 +386,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     recordFailureWithoutProcess(reason, stopReason);
   };
 
-  const spawnProcess = (
+  const spawnProcess = async (
     snapshot: Extract<UserSettingsSnapshot, { settings: unknown }>,
     handoff: LockHandoff | undefined,
-  ): { marker: DaemonMarker; handle: ChildHandle; capability: string | undefined } => {
+  ): Promise<{ marker: DaemonMarker; handle: ChildHandle; capability: string | undefined }> => {
     const skippedNames: string[] = [];
     const resolved = resolveLaunch({
       role,
@@ -407,7 +407,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     const spawnCapability = role === 'gateway' ? randomBytes(CAPABILITY_BYTES).toString('hex') : undefined;
     const marker = openDaemonMarker(options.paths.markers.daemons, role, options.markerPorts?.files);
     try {
-      const handle = options.spawn(resolved.command, resolved.args, {
+      const handle = await options.spawn(resolved.command, resolved.args, {
         cwd: options.home,
         env: { ...resolved.env, [SETTINGS_APPLIED_ENV]: generationLayout(options.home, options.generation).settingsApplied, ...(handoff === undefined ? {} : handoff.env), ...(spawnCapability === undefined ? {} : { [CREDENTIAL_CAPABILITY_ENV]: spawnCapability }) },
         markerFile: marker.path,
@@ -611,7 +611,20 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     handleExit(life, exit).catch((error: unknown) => options.onBackgroundError(error, 'exit-handler'));
   };
 
-  const launch = (snapshot: UserSettingsSnapshot, reason: SpawnReason): void => {
+  let spawning: Promise<void> | undefined;
+
+  const launch = async (snapshot: UserSettingsSnapshot, reason: SpawnReason): Promise<void> => {
+    const settled = Promise.withResolvers<void>();
+    spawning = settled.promise;
+    try {
+      await launchSpawning(snapshot, reason);
+    } finally {
+      if (spawning === settled.promise) spawning = undefined;
+      settled.resolve();
+    }
+  };
+
+  const launchSpawning = async (snapshot: UserSettingsSnapshot, reason: SpawnReason): Promise<void> => {
     if (startsNothing()) return;
     beginAttempt();
     if ('error' in snapshot) {
@@ -636,7 +649,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     readyAt = undefined;
     let started: { marker: DaemonMarker; handle: ChildHandle; capability: string | undefined };
     try {
-      started = spawnProcess(snapshot, handoff);
+      started = await spawnProcess(snapshot, handoff);
     } catch (error) {
       handoff?.closeParentCopy();
       failWithoutProcess('spawn-failed', error);
@@ -694,7 +707,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       .load(options.signal)
       .then(
         (snapshot) => {
-          if (!overtaken()) launch(snapshot, reason);
+          if (!overtaken()) return launch(snapshot, reason);
+          return undefined;
         },
         (error: unknown) => {
           if (overtaken()) return;
@@ -771,6 +785,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
 
   function stop(reason: StopReason, mode: StopMode, values?: StopValues): Promise<ChildStopResult> {
     const life = liveLife();
+    if (life === undefined && spawning !== undefined) return spawning.then(() => stop(reason, mode, values));
     if (life === undefined) return Promise.resolve(stopWithoutProcess(reason));
     if (life.exited) return Promise.resolve({ killed: life.groupKilled, leaked: false });
     if (life.stopReason !== undefined) {

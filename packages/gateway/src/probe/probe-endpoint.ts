@@ -5,13 +5,14 @@ import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { decideToolCalling } from './decide.ts';
 import type { DialectCurrency } from '../dialect/candidates.ts';
 import { recordProbe } from './auto-probe.ts';
+import { measuringAskOf } from './sources.ts';
 import type { MeasureProbe, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
 import { endpointIdentityOf, endpointKeyOfLock, endpointLockKeyOf, requireListedEntry, saveEndpointRecord, stableIdentityFieldsOf } from './endpoint-record.ts';
 import { listedEntryOf } from './reply.ts';
 import type { EndpointKey, EndpointLockKey } from './endpoint-record.ts';
 import { IDENTITY_READ_TIMEOUT_MS, probeEndpointOf, readModelsListing } from './endpoint-target.ts';
-import { DEFAULT_SAMPLES, PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
-import type { ProbePorts } from './client.ts';
+import { DEFAULT_SAMPLES, DEFAULT_STEP_TIMEOUT_MS, PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
+import type { ProbeHostPorts, ProbePorts } from './client.ts';
 import { requireMeasurementConsent } from './consent.ts';
 import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';
@@ -48,7 +49,7 @@ export type MeasureEndpointOptions = Omit<ProbeEndpointTargetOptions, 'probeReco
 
 export const measureEndpoint =
   (options: MeasureEndpointOptions): MeasureProbe<EndpointLockKey, EndpointMeasurement> =>
-  async ({ signal }) => {
+  async ({ signal, progress }) => {
     const metered = options.metered === undefined ? undefined : { measurement: options.metered.measurement, bound: await options.metered.consented() };
     const endpoint = probeEndpointOf(options.upstream, options.apiKey);
     const firstListing = await readModelsListing(endpoint, options.ports, signal);
@@ -59,6 +60,7 @@ export const measureEndpoint =
       ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
       ports: options.ports,
+      progress,
       ...(metered === undefined ? {} : { metered }),
       ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
       signal,
@@ -74,7 +76,7 @@ export const meteredGateOf = (probeRecordDir: string, key: EndpointKey, measurem
   consented: () => requireMeasurementConsent(probeRecordDir, key, measurement, samples),
 });
 
-export const endpointPrecondition = (target: string, upstream: UpstreamEndpoint, ports: ProbePorts, model: string, apiKey: (signal: AbortSignal) => Promise<string | undefined>): ProbePrecondition => ({
+export const endpointPrecondition = (target: string, upstream: UpstreamEndpoint, ports: ProbeHostPorts, model: string, apiKey: (signal: AbortSignal) => Promise<string | undefined>): ProbePrecondition => ({
   boundMs: IDENTITY_READ_TIMEOUT_MS,
   check: async (signal) => {
     const listing = await readModelsListing(probeEndpointOf(upstream, await apiKey(signal)), ports, signal);
@@ -100,6 +102,7 @@ export type EndpointProbeSubjectOptions = {
 
 export const endpointProbeSubject = (options: EndpointProbeSubjectOptions): ProbeSubject<EndpointLockKey, EndpointMeasurement> => ({
   target: options.target,
+  unknown: measuringAskOf(options.target, ['toolCalling']),
   readKey: async () => endpointLockKeyOf(options.key),
   precondition: options.precondition,
   measure: options.measure,
@@ -125,6 +128,6 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
       ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
     },
   });
-  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.ports.timers, options.signal ?? new AbortController().signal);
+  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.lock, options.ports.timers, options.signal ?? new AbortController().signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
   return { report: measured.report, toolCalling: decideToolCalling(measured.report).mode, key: options.key, identity: measured.identity, identityFields: measured.identityFields };
 };

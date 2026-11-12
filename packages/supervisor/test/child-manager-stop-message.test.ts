@@ -31,16 +31,16 @@ const holdLifelineWrites = (child: FakeChild): HeldWrite => {
   };
 };
 
-const gatewayHarness = (context: Parameters<typeof createManagerHarness>[0], options: ManagerHarnessOptions = {}): { harness: ManagerHarness; child: FakeChild; write: HeldWrite } => {
+const gatewayHarness = async (context: Parameters<typeof createManagerHarness>[0], options: ManagerHarnessOptions = {}): Promise<{ harness: ManagerHarness; child: FakeChild; write: HeldWrite }> => {
   const harness = createManagerHarness(context, { role: 'gateway', ...options });
-  harness.spawnInitial();
+  await harness.spawnInitial();
   const child = harness.port.last();
   return { harness, child, write: holdLifelineWrites(child) };
 };
 
 describe('the gateway stop carries its values on the lifeline', () => {
   it('writes one stop line with the values and sends SIGTERM only when the write completes', async (context) => {
-    const { harness, child, write } = gatewayHarness(context);
+    const { harness, child, write } = await gatewayHarness(context);
     void harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     expect(write.chunks).toEqual([formatStopMessage(VALUES)]);
@@ -51,7 +51,7 @@ describe('the gateway stop carries its values on the lifeline', () => {
   });
 
   it('arms the stop deadline when the stop begins, before the write: a write not done by the deadline forces the kill then, with no SIGTERM', async (context) => {
-    const { harness, child } = gatewayHarness(context);
+    const { harness, child } = await gatewayHarness(context);
     void harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     harness.timers.advance(TERM_BUDGET_MS - 1);
@@ -62,7 +62,7 @@ describe('the gateway stop carries its values on the lifeline', () => {
   });
 
   it('counts the deadline from the begin of the stop, not from the late signal', async (context) => {
-    const { harness, child, write } = gatewayHarness(context);
+    const { harness, child, write } = await gatewayHarness(context);
     void harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     harness.timers.advance(3000);
@@ -76,7 +76,7 @@ describe('the gateway stop carries its values on the lifeline', () => {
   });
 
   it('a failed write forces the kill at once, with no SIGTERM, confirmed within KILL_CONFIRM_MS', async (context) => {
-    const { harness, child, write } = gatewayHarness(context);
+    const { harness, child, write } = await gatewayHarness(context);
     const stopped = harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     write.complete(new Error('EPIPE'));
@@ -90,7 +90,7 @@ describe('the gateway stop carries its values on the lifeline', () => {
   });
 
   it('bounds an aborting gateway by gatewayAbortBudgetMs of its values, not the fixed 10000', async (context) => {
-    const { harness, child, write } = gatewayHarness(context);
+    const { harness, child, write } = await gatewayHarness(context);
     void harness.manager.stop('shutdown', 'int', VALUES);
     await afterMicrotasks();
     write.complete();
@@ -103,7 +103,7 @@ describe('the gateway stop carries its values on the lifeline', () => {
   });
 
   it('re-arms the budget at min(abort budget, time left) when a term stop switches to int', async (context) => {
-    const early = gatewayHarness(context);
+    const early = await gatewayHarness(context);
     void early.harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     early.write.complete();
@@ -115,7 +115,7 @@ describe('the gateway stop carries its values on the lifeline', () => {
     early.harness.timers.advance(1);
     expect(early.child.groupKills).toBe(1);
 
-    const late = gatewayHarness(context);
+    const late = await gatewayHarness(context);
     void late.harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     late.write.complete();
@@ -131,11 +131,11 @@ describe('the gateway stop carries its values on the lifeline', () => {
 
 type ReapDirectoryCall = { dir: string; killGraceMs: number };
 
-const reapingHarness = (context: Parameters<typeof createManagerHarness>[0]) => {
+const reapingHarness = async (context: Parameters<typeof createManagerHarness>[0]) => {
   const calls: ReapDirectoryCall[] = [];
   const signals: AbortSignal[] = [];
   const pending = Promise.withResolvers<ReapMarkerDirectoryResult>();
-  const setup = gatewayHarness(context, {
+  const setup = await gatewayHarness(context, {
     overrides: {
       markerPorts: {
         reapMarkedProcesses: async () => ({ removed: true }),
@@ -165,7 +165,7 @@ describe('a gone gateway child has its managed servers reaped before it counts a
     ['closed by itself', 'closed'],
     ['cut during an abort', 'abort'],
   ] as const)('when it was %s', async ([, path], testContext) => {
-    const { harness, child, write, calls, finishReap } = reapingHarness(testContext);
+    const { harness, child, write, calls, finishReap } = await reapingHarness(testContext);
     const mode = path === 'abort' ? 'int' : 'term';
     const stopped = harness.manager.stop('shutdown', mode, VALUES);
     const flag = settledFlag(stopped);
@@ -190,7 +190,7 @@ describe('a gone gateway child has its managed servers reaped before it counts a
 
 describe('the reap of the managed servers of a gone gateway child is bounded by the term the stop formula reserves for it', () => {
   it('passes a signal that aborts when the managed server reap bound has passed', async (testContext) => {
-    const { harness, child, write, signals, finishReap } = reapingHarness(testContext);
+    const { harness, child, write, signals, finishReap } = await reapingHarness(testContext);
     const stopped = harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     write.complete();
@@ -223,7 +223,7 @@ describe('a reap of the managed servers that fails does not end the exit handlin
     });
 
   it('a gateway that crashed is still recorded and restarted', async (testContext) => {
-    const { harness, child } = failingReapHarness(testContext);
+    const { harness, child } = await failingReapHarness(testContext);
     child.exit(1, null);
     await waitFor(() => harness.manager.state() === 'backoff', { description: 'the crashed gateway to wait for its restart' });
     expect(harness.manager.health().lastExit).toMatchObject({ code: 1, reason: 'failure' });
@@ -234,7 +234,7 @@ describe('a reap of the managed servers that fails does not end the exit handlin
   });
 
   it('a stop of the gateway still settles', async (testContext) => {
-    const { harness, child, write } = failingReapHarness(testContext);
+    const { harness, child, write } = await failingReapHarness(testContext);
     const stopped = harness.manager.stop('shutdown', 'term', VALUES);
     await afterMicrotasks();
     write.complete();

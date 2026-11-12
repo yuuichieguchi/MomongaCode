@@ -4,6 +4,7 @@ import { AGENT_TOOL_NAME, ChildRunError, agentSystemPrompt, childToolResultOf, c
 import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
 import type { ToolContext } from '@momonga/tools';
 import { testPaths } from '@momonga/testkit';
+import { projectAgentDigestOf } from '@momonga/config';
 import type { RunReport } from '@momonga/protocol';
 
 const HOME = '/home/u';
@@ -22,7 +23,29 @@ const fileSystemOf = (files: Readonly<Record<string, string>>): SkillFileSystem 
 
 const agentFile = (name: string, description: string, extra = '', body = 'Do the work.') => `---\nname: ${name}\ndescription: ${description}\n${extra}---\n${body}\n`;
 
-const load = (files: Record<string, string>, trusted = true) => createAgentLoader({ home: HOME, fileSystem: fileSystemOf(files) }).load({ projectRoot: PROJECT, trusted });
+const load = (files: Record<string, string>, trusted = true) => createAgentLoader({ home: HOME, fileSystem: fileSystemOf(files) }).load({ projectRoot: PROJECT, trusted, approvedProjectAgents: { has: () => true } });
+
+describe('a project agent runs only as the person approved it', () => {
+  const TEXT = agentFile('reviewer', 'Reviews', 'tools: Read, Bash\n');
+  const CHANGED = agentFile('reviewer', 'Reviews', 'tools: Read, Bash, Write\n');
+  const loadApproved = (text: string, approved: readonly string[]) =>
+    createAgentLoader({ home: HOME, fileSystem: fileSystemOf({ [`${PROJECT}/.momonga/agents/reviewer.md`]: text, [`${HOME}/.momonga/agents/writer.md`]: agentFile('writer', 'Writes') }) }).load({ projectRoot: PROJECT, trusted: true, approvedProjectAgents: new Set(approved) });
+
+  it('does not offer or spawn a changed project agent with tools until its current file is approved, and lists it for the question', async () => {
+    const set = await loadApproved(CHANGED, [projectAgentDigestOf('reviewer', TEXT)]);
+    expect(set.agents.map((agent) => agent.name)).toEqual(['writer']);
+    expect(set.pendingApproval).toEqual([{ name: 'reviewer', text: CHANGED, source: `${PROJECT}/.momonga/agents/reviewer.md` }]);
+    expect(set.warnings).toEqual([`Agent "reviewer" at ${PROJECT}/.momonga/agents/reviewer.md is not run until it is approved: it is new, or changed since it was approved`]);
+    const approved = await loadApproved(CHANGED, [projectAgentDigestOf('reviewer', CHANGED)]);
+    expect(approved.agents.map((agent) => agent.name)).toEqual(['reviewer', 'writer']);
+    expect(approved.pendingApproval).toEqual([]);
+  });
+
+  it('does not let a user agent of the same name stand in for a project agent that waits for its approval', async () => {
+    const set = await createAgentLoader({ home: HOME, fileSystem: fileSystemOf({ [`${PROJECT}/.momonga/agents/a.md`]: agentFile('a', 'project one'), [`${HOME}/.momonga/agents/a.md`]: agentFile('a', 'user one') }) }).load({ projectRoot: PROJECT, trusted: true, approvedProjectAgents: new Set() });
+    expect(set.agents).toEqual([]);
+  });
+});
 
 describe('agent definitions', () => {
   it('reads name, description, tools and model from both scopes', async () => {

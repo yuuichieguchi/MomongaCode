@@ -174,7 +174,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
       expect(listing.status).toBe(200);
       const entries = (listing.body as { data: Array<Record<string, unknown>> }).data;
       const probing = entries.find((entry) => entry['id'] === 'fm/system');
-      expect(probing?.['capabilities']).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' });
+      expect(probing?.['capabilities']).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: expect.objectContaining({ fields: ['toolCalling', 'contextWindow'] }) }, source: 'unprobed' });
       expect(probing).not.toHaveProperty('probing');
       expect(entries.map((entry) => entry['id']).sort()).toEqual(['fm/system', 'spare/system']);
     });
@@ -262,7 +262,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
   });
 
   describe('P5 FailedWritesNothing and P9 NoProbeInBackoff', () => {
-    it('writes no record when the probe fails, answers 503 target_probe_failed with the cause and the remaining interval inside it, and starts the next probe only after one Retry-After interval', async () => {
+    it('writes no record when the probe fails, answers 503 target_probe_failed with the cause and the way forward, and starts no probe again however late the next request comes', async () => {
       const clock = createFakeClock(START_MS);
       const gateway = await setup({ clock, probe: 'fail' });
       expectProbing(await gateway.send(false));
@@ -274,14 +274,14 @@ describe('the automatic probe of an fm target with no probe record', () => {
       const failed = await readJson(inside);
       expect(failed.status).toBe(503);
       expect(failed.body.error.code).toBe('target_probe_failed');
-      expect(failed.body.error.message).toMatch(/^measuring this model failed: \S/);
-      expect(inside.headers['retry-after']).toBe('90');
+      expect(failed.body.error.message).toMatch(/^measuring the model ".+" failed: \S.*momonga gateway probe /);
+      expect(inside.headers['retry-after']).toBeUndefined();
       expect(gateway.probes()).toHaveLength(1);
       expect(gateway.anyRecord()).toBe(false);
 
-      clock.advance(90_000);
-      expectProbing(await gateway.send(false));
-      await probeStarted(gateway, 2);
+      clock.advance(10 * 120_000);
+      expect((await readJson(await gateway.sendRaw(false))).body.error.code).toBe('target_probe_failed');
+      expect(gateway.probes()).toHaveLength(1);
     });
   });
 
@@ -397,7 +397,9 @@ type InstanceProbeOptions = {
   dir: string;
   measure: (signal: AbortSignal) => Promise<Report>;
   retryAfterMs: number;
-  clock: { now(): number };
+  clock: { now(): number; monotonicMs(): number };
+  ask: { fields: readonly string[]; declaration: string };
+  redactor: { text(input: string): string };
   onNotice: (text: string) => void;
 };
 
@@ -433,7 +435,9 @@ const setupInstance = () => {
       return next.promise;
     },
     retryAfterMs: RETRY_AFTER_MS,
-    clock: { now: () => 0 },
+    clock: { now: () => 0, monotonicMs: () => 0 },
+    ask: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
+    redactor: { text: (input) => input },
     onNotice: (text) => notices.push(text),
   });
   return { probe, notices, pending, dir };
@@ -453,7 +457,7 @@ describe('P11 NoRecordUnderUnknown and P12 MemoryIsThisInstance: a probe key com
 
   it('answers the first request with the D5 probing answer and starts one measurement of the running instance', async () => {
     const { probe, pending } = setupInstance();
-    expect(await probe.ensure()).toEqual({ kind: 'probing', probing: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 } });
+    expect(await probe.ensure()).toEqual({ kind: 'probing', probing: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling' } } });
     expect(pending).toHaveLength(1);
   });
 

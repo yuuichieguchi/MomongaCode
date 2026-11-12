@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { appendPermissionRule, autoFitKeyOf, readClassifierProbeKeys, ConfigError, systemFileLockPorts, credentialNamesOf, loadSettings, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
-import { createBinaryHashCache, createHeldHostReadings, createHostExec, settledOrAborted } from '@momonga/foundation';
+import { createBinaryHashCache, createHeldHostReadings, createHostExec, hostPaths, settledOrAborted } from '@momonga/foundation';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
@@ -132,6 +132,11 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
     appendRule: (session, { effect, rule }, signal) => appendPermissionRule({ lock, ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect, signal }),
     trusted: async (session, signal) => (await settledOrAborted(store.trust.decisionAsked(session.cwd, signal), signal)).decision === 'trusted',
+    approvedProjectAgents: async (session, signal) => {
+      const { settings: userSettings } = await userSnapshot(signal);
+      const folder = await hostPaths(signal).canonicalPath(session.cwd);
+      return new Set((userSettings.projectApprovals?.[folder]?.agents ?? []).map((approval) => approval.digest));
+    },
   };
 
   return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, referenceEnvFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle, admitted };

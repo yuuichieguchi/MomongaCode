@@ -64,6 +64,8 @@ const FORGE_FORM: readonly FormField[] = [
 
 const ISSUE_WATCH_FORM: readonly FormField[] = [
   { name: 'repository', label: 'Repository (owner/name)', kind: 'text', required: true },
+  { name: 'forge', label: 'Forge it is on (the id of an entry under forges)', kind: 'text', required: true },
+  { name: 'folder', label: 'Folder of the clone the run acts in (absolute path)', kind: 'text', required: true },
   { name: 'labels', label: 'Labels an issue must carry, separated by commas', kind: 'list', required: false },
   { name: 'authorAssociation', label: 'Authors it takes (OWNER, MEMBER, COLLABORATOR), separated by commas', kind: 'list', required: false },
   { name: 'mandate', label: 'Mandate of the run it starts', kind: 'text', required: true },
@@ -75,7 +77,7 @@ const priceLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['provider'])}/${String(entry['model'])}  from ${String(entry['effectiveFrom'])}  input ${String(entry['inputPerMTok'])}  output ${String(entry['outputPerMTok'])}`;
 
 const issueWatchLine = (entry: Readonly<Record<string, unknown>>): string =>
-  `${String(entry['repository'])}  under ${String(entry['mandate'])}${Array.isArray(entry['labels']) ? `  labels ${entry['labels'].map(String).join(', ')}` : ''}${Array.isArray(entry['authorAssociation']) ? `  authors ${entry['authorAssociation'].map(String).join(', ')}` : ''}`;
+  `${String(entry['repository'])} on ${String(entry['forge'])} in ${String(entry['folder'])}  under ${String(entry['mandate'])}${Array.isArray(entry['labels']) ? `  labels ${entry['labels'].map(String).join(', ')}` : ''}${Array.isArray(entry['authorAssociation']) ? `  authors ${entry['authorAssociation'].map(String).join(', ')}` : ''}`;
 
 const forgeLine = (entry: Readonly<Record<string, unknown>>): string =>
   `${String(entry['id'])}  ${String(entry['descriptor'])}  ${Array.isArray(entry['hosts']) ? entry['hosts'].map(String).join(', ') : ''}  ${String(entry['apiBaseUrl'])}`;

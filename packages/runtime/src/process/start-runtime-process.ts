@@ -96,6 +96,7 @@ import {
   SESSION_STATE_SWEEP_MS,
   SESSION_TMP_SWEEP_MS,
   STORE_IDENTITY_CHECK_MS,
+  ISSUE_WATCH_POLL_MS,
   STORE_MAX_ATTEMPTS,
   STORE_MAX_TOTAL_ATTEMPTS,
   TOOL_MARKER_SWEEP_MS,
@@ -103,6 +104,9 @@ import {
 import { RUNTIME_DEFAULTS } from './defaults.ts';
 import { RuntimeAlreadyRunningError } from './errors.ts';
 import { startPeriodic } from './periodic.ts';
+import { createIssueSource } from './issue-source.ts';
+import { sweepIssueWatch } from './issue-watch.ts';
+import type { IssueWatchOptions } from './issue-watch.ts';
 import type { Periodic } from './periodic.ts';
 import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
@@ -180,7 +184,7 @@ type Phase = 'starting' | 'running' | 'draining' | 'aborting' | 'tearingDown' | 
 
 type StartedWorker = { id: string; worker: Worker };
 
-const DEFAULT_LEASE_MS = 30_000;
+export const DEFAULT_LEASE_MS = 30_000;
 const SPAWN_DIRECTORY_MODE = 0o700;
 
 const assertPositiveInteger = (name: string, value: number): void => {
@@ -239,7 +243,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   let service: RunService | undefined;
   let retireFrame: { current: DaemonCurrentFrame | undefined } | undefined;
   let onWorkEnded: () => void = () => undefined;
-  const stepsInFlight = (): number => workers.reduce((sum, { worker }) => sum + worker.claimsInFlight(), 0);
+  const runsInFlight = (): string[] => workers.flatMap(({ worker }) => worker.runsInFlight());
+  const stepsInFlight = (): number => runsInFlight().length;
 
   const abortOnLatchedFatal = (): void => {
     if (fatalError === undefined) return;
@@ -713,7 +718,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         return { rules, additionalDirectories, enforcement: ruleEnforcement, unixSockets: unixSocketPolicyOf(sandbox.kind, sandboxUnixSockets.allow), ...(defaultMode === undefined ? {} : { defaultMode }) };
       },
       catalogue: operationCatalogueFacts,
+      retrySignal: lifetime.signal,
+      onRetryFailure: report,
     };
+    const mandateVerification = mandateRunVerification(verificationSources);
     const runService = await step('service', () =>
       createRunService({
         ...(signal === undefined ? {} : { startSignal: signal }),
@@ -734,6 +742,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         },
         protectedRootAreas: protectedRootAreasOf(paths),
         notifier,
+        issues: createIssueSource({ userSnapshot: (requestSignal) => settingsComposition.userSnapshot(requestSignal), forgeOf: toolRuntime.forgeOf }),
         modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
         delegation: {
           settings: async (requestSignal) => {
@@ -760,7 +769,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         permissionRules: (session, requestSignal) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session, requestSignal),
         gatewayStanding: supervisedGatewayStanding(fixedSocket(own.sockets.supervisor)),
         policyVerification: folderPolicyVerification({ ...verificationSources, mandates: async (requestSignal) => (await settingsComposition.userSnapshot(requestSignal)).settings.mandates }),
-        mandateVerification: mandateRunVerification(verificationSources),
+        mandateVerification,
         userInput: createUserInputPort({
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,
@@ -810,7 +819,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         mcp: toolRuntime.mcpAdmin,
         markerOwners: toolRuntime.owners,
         role: rolePort,
-        work: { steps: stepsInFlight, jobs: () => toolRuntime.jobs.liveCount() },
+        work: { runs: runsInFlight, jobs: () => toolRuntime.jobs.liveJobs() },
         ignorableMarkerDirectories,
         files: nodeFileSystem,
         onRequestEnd: () => onWorkEnded(),
@@ -835,6 +844,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           agents: agentsPort,
           tools: toolRuntime.port,
           ruleVerifier,
+          mandateVerification,
           tracers,
           clock,
           workerId: id,
@@ -918,6 +928,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         onSkipped: (project) => logger.warn(`memory upkeep skipped the project ${project}: the folder no longer exists`),
       });
       const sweepStop = new AbortController();
+      const issueWatch: IssueWatchOptions = {
+        view: async (viewSignal) => {
+          const snapshot = await settingsComposition.userSnapshot(viewSignal);
+          const { issues, forges, tools } = snapshot.settings;
+          return { entries: issues?.watch ?? [], forges: forges ?? [], forge: toolRuntime.forgeOf(snapshot), boundMs: tools.operations.timeoutMs };
+        },
+        startedOf: (folder) => store.issueWatch.issueStartsOf(folder),
+        ask: (method, requestPath, body, askSignal) => requireService().askAsPerson(method, requestPath, body, askSignal),
+        env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+      };
       const servingTasks = createServingTasks({
         clock,
         report,
@@ -1083,6 +1103,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             toolRuntime.sessionStates.evictIdle(clock.now());
           }, timers, report }),
         startPeriodic({ intervalMs: STORE_IDENTITY_CHECK_MS, run: () => store.checkIdentity(), timers, report }),
+        startPeriodic({
+          intervalMs: ISSUE_WATCH_POLL_MS,
+          run: async () => {
+            if (rolePort.current() !== 'serving') return;
+            await sweepIssueWatch(issueWatch, sweepStop.signal);
+          },
+          timers,
+          report,
+        }),
       );
       cleanups.push({
         name: 'timers',

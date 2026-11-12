@@ -95,7 +95,7 @@ describe('a run with no adopted guideline', () => {
     const today: CompactRequest = {
       model: request.model,
       ...(request.input === undefined ? {} : { input: request.input }),
-      momonga: { max_summary_tokens: request.momonga?.max_summary_tokens as number, retains_user_request: true, exact_model: true },
+      momonga: { max_summary_tokens: request.momonga?.max_summary_tokens as number, retains_user_request: true, exact_model: true, fence: env.session.fenceNonce },
     };
     expect(JSON.stringify(request)).toBe(JSON.stringify(today));
     expect(compact?.idempotencyKey).toBe(keyOf(run.id, today));

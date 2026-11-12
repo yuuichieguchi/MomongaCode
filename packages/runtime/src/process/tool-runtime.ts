@@ -26,13 +26,14 @@ import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { holdSandbox } from '../worker/held-sandbox.ts';
 import { createBuiltinTools, offeredBashOf, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { BuiltinToolOffer, BundledRipgrepResolver, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
+import type { BuiltinToolOffer, BundledRipgrepResolver, ForgeAccess, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolEnv, ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { createBackgroundJobs } from './background-jobs.ts';
 import { createOperationToolSource } from './operation-tools.ts';
+import type { UserSnapshot } from './settings-port.ts';
 import { createNodeJobMarkerFiles } from './job-marker-files.ts';
 import type { BackgroundJobRegistry } from './background-jobs.ts';
 import { SANDBOX_KILL_GRACE_MS } from './constants.ts';
@@ -96,6 +97,7 @@ export type ToolRuntime = {
   jobs: BackgroundJobRegistry;
   owners: MarkerOwners;
   inspector: ProcessInspector;
+  forgeOf(snapshot: UserSnapshot): ForgeAccess;
 };
 
 const dedupe = (notices: readonly string[]): string[] => [...new Set(notices)];
@@ -272,7 +274,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
       const registry = createToolRegistry();
       for (const tool of createBuiltinTools(await builtinOfferOf(session, env, signal))) registry.register(tool);
-      if (trust === 'trusted') for (const tool of operationTools(snapshot)) registry.register(tool);
+      if (trust === 'trusted') for (const tool of operationTools.tools(snapshot)) registry.register(tool);
       for (const tool of additionalTools ?? []) registry.register(tool);
       for (const source of sources) registry.addSource(source);
       const set = await registry.snapshot({ signal, ...(only === undefined ? {} : { only }) });
@@ -294,7 +296,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const recoveryToolSet: ToolRuntimePort['recoveryToolSet'] = async ({ signal, session, env, additionalTools }) => {
     const registry = createToolRegistry();
     for (const tool of createBuiltinTools(await builtinOfferOf(session, env, signal))) registry.register(tool);
-    for (const tool of operationTools(await settings.userSnapshot(signal))) registry.register(tool);
+    for (const tool of operationTools.tools(await settings.userSnapshot(signal))) registry.register(tool);
     for (const tool of additionalTools ?? []) registry.register(tool);
     return registry.snapshot({ signal });
   };
@@ -331,5 +333,5 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     },
   };
 
-  return { port, userPolicy: executor, mcpPools, mcpAdmin, sessionStates, jobs, owners, inspector };
+  return { port, userPolicy: executor, mcpPools, mcpAdmin, sessionStates, jobs, owners, inspector, forgeOf: operationTools.forge };
 };

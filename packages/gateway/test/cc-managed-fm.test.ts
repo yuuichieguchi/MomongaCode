@@ -85,6 +85,7 @@ const pollingTimers = (clock: FakeClock): ManagedServerTimers => ({
   },
   clearTimeout: () => undefined,
   now: () => clock.now(),
+  monotonicMs: () => clock.monotonicMs(),
 });
 
 type Setup = {
@@ -108,7 +109,7 @@ const setup = async (config: Setup = {}) => {
   };
   const clock = createFakeClock(START_MS);
   const children: FakeManagedChild[] = [];
-  const spawn = vi.fn((_file: string, _args: readonly string[]) => {
+  const spawn = vi.fn(async (_file: string, _args: readonly string[]) => {
     const child = new FakeManagedChild(socketPath);
     children.push(child);
     return child;

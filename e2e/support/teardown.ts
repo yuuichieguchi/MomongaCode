@@ -5,7 +5,7 @@ import { OWNER_FILE, ROOT_PREFIX, parseEvalOwner } from '../../packages/cli/src/
 import { defaultLedgerPorts, killSelectedGroups, parsePidsFile, selectGroupsToSignal } from './ledger.ts';
 import type { LedgerPorts } from './ledger.ts';
 import { removeTree } from './remove-tree.ts';
-import { LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eEntryPrefix, harnessFilePath, readHarnessFile, sharedTempBase } from './run-env.ts';
+import { KEPT_HOME_FILE_NAME, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eEntryPrefix, harnessFilePath, readHarnessFile, sharedTempBase } from './run-env.ts';
 
 export type TeardownPorts = Pick<LedgerPorts, 'startTimeOf' | 'groupAlive' | 'pidAlive' | 'killGroups'>;
 
@@ -62,9 +62,15 @@ export const evalRootsOfRun = (base: string, tmpRoot: string, run: string): stri
 export const runE2eTeardown = async (options: E2eTeardownOptions): Promise<void> => {
   const { tmpRoot, run, ports = defaultLedgerPorts, report = (line: string) => console.error(line), evalBase = sharedTempBase(), sharedBase = sharedTempBase() } = options;
   const killed = await killListedGroups(harnessFilePath(tmpRoot, run, PIDS_FILE_SUFFIX), ports);
-  const leaked = leftoverEntries(fs.readdirSync(tmpRoot), run).map((entry) => path.join(tmpRoot, entry));
+  const left = leftoverEntries(fs.readdirSync(tmpRoot), run).map((entry) => path.join(tmpRoot, entry));
+  const keptTests = new Map(left.flatMap((directory) => {
+    const file = path.join(directory, KEPT_HOME_FILE_NAME);
+    return fs.existsSync(file) ? [[directory, fs.readFileSync(file, 'utf8').trim()] as const] : [];
+  }));
+  const leaked = left.filter((directory) => !keptTests.has(directory));
   const leakedEval = evalRootsOfRun(evalBase, tmpRoot, run);
   const leakedTestkit = leakedTestkitEntries(fs.readdirSync(sharedBase), run).map((entry) => path.join(sharedBase, entry));
+  for (const [directory, test] of keptTests) report(`e2e teardown: kept the home of the failed test ${test} at ${directory}`);
   if (killed.length > 0) report(`e2e teardown: killed process groups left by run ${run}: ${killed.join(', ')}`);
   for (const directory of [...leaked, ...leakedEval]) report(`e2e teardown: leaked directory ${directory}`);
   for (const directory of leakedTestkit) report(`e2e teardown: leaked testkit directory ${directory}, left in place outside the private e2e directory`);
