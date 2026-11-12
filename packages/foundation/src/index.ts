@@ -308,7 +308,7 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { EventPayload, JsonLogger, LogFields, LogLevel, LogValue, ReadyFields, ReservedLogKey, StopValueName, StopValues, TextStream } from './process-contract.ts';
-export { findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export { findHolders, holderGroups, markerReapClockBoundMs, markerRemedyText, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
 export type { ReapMarkerDirectoryResult } from './process-markers.ts';
 export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';

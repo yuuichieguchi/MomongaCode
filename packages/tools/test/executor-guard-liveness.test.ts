@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { keyFor } from './helpers.ts';
 import { LEAVER_PGID, markerOf, resultOf, runOne, world } from './guard-world.ts';
 
-const SETTLED_PREFIX = (name: string) => `Not run: a process started by an earlier command (marker ${name}, unidentified) may still be running and could not be stopped. `;
+const SETTLED_PREFIX = (name: string) => `Not run: a process started by an earlier command (marker ${name}) may still be running and could not be stopped. `;
 const FINAL_NOTICE_END = (name: string) =>
-  `MomongaCode has used its four retries and will not try again. Stop it and retry. If it can stay running, ask the person to run /markers ignore ${name}.`;
+  `MomongaCode has used its four retries and will not try again. Ask the person to stop the process group ${LEAVER_PGID}, or, if it can stay running, to run /markers ignore ${name} in an interactive session. Then retry.`;
 const HELD_FINAL_NOTICE = (name: string) =>
-  `Note: a process started by an earlier command (marker ${name}) may still be running. MomongaCode has used its four retries and will not try again. If it can stay running, ask the person to run /markers ignore ${name}.`;
+  `Note: a process started by an earlier command (marker ${name}) may still be running. MomongaCode has used its four retries and will not try again. Ask the person to stop the process that holds it, or, if it can stay running, to run /markers ignore ${name} in an interactive session.`;
 const COULD_NOT_CHECK = (name: string, reason: string) =>
   `Note: MomongaCode could not check whether a process started by an earlier command (marker ${name}) is still running (${reason}). The command ran. It will check again before the next command that runs a process or changes files in this session.`;
 
