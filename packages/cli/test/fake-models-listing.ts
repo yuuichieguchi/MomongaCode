@@ -67,6 +67,7 @@ export const listingEntry = (id: string, memberCapabilities: Record<string, unkn
     ownName: named.ownName,
     billing: 'plan',
     capabilities: Object.values(memberCapabilities)[0],
+    state: 'available',
     chain: Object.entries(memberCapabilities).map(([model, capabilities], index) => ({
       model,
       counter: String(index + 1).repeat(64),
