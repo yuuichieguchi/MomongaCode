@@ -3208,10 +3208,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 7134052,
-      "measuredSeconds": 40.72,
-      "measuredCpuSeconds": 203.39,
-      "budgetCpuSeconds": 410
+      "distinctStates": 11291918,
+      "measuredSeconds": 93.41,
+      "measuredCpuSeconds": 358.27,
+      "budgetCpuSeconds": 720,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 5.22 at start)"
     },
     {
       "config": "AutoProbe.twoProbes",
@@ -3222,24 +3223,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 47,
-      "measuredSeconds": 1.1,
-      "measuredCpuSeconds": 1.43,
-      "budgetCpuSeconds": 6
-    },
-    {
-      "config": "AutoProbe.processLock",
-      "role": "evidence",
-      "expect": {
-        "violates": "SingleProbePerKey",
-        "exitCode": 12
-      },
-      "args": [],
-      "tier": "every-run",
-      "distinctStates": 36,
-      "measuredSeconds": 1.1,
-      "measuredCpuSeconds": 1.44,
-      "budgetCpuSeconds": 6
+      "distinctStates": 28,
+      "measuredSeconds": 0.84,
+      "measuredCpuSeconds": 0.92,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
     },
     {
       "config": "AutoProbe.guess",
@@ -3251,9 +3239,10 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 4,
-      "measuredSeconds": 1.17,
-      "measuredCpuSeconds": 1.56,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 0.82,
+      "measuredCpuSeconds": 0.89,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
     },
     {
       "config": "AutoProbe.reject412",
@@ -3265,9 +3254,10 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 4,
-      "measuredSeconds": 1.07,
-      "measuredCpuSeconds": 1.41,
-      "budgetCpuSeconds": 6
+      "measuredSeconds": 0.83,
+      "measuredCpuSeconds": 0.88,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
     },
     {
       "config": "AutoProbe.cachedRecord",
@@ -3278,10 +3268,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 126,
-      "measuredSeconds": 1.09,
-      "measuredCpuSeconds": 1.46,
-      "budgetCpuSeconds": 6
+      "distinctStates": 153,
+      "measuredSeconds": 1.01,
+      "measuredCpuSeconds": 1.08,
+      "budgetCpuSeconds": 6,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 5.22 at start)"
     },
     {
       "config": "AutoProbe.failWrites",
@@ -3292,10 +3283,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 47,
-      "measuredSeconds": 1.11,
-      "measuredCpuSeconds": 1.45,
-      "budgetCpuSeconds": 6
+      "distinctStates": 28,
+      "measuredSeconds": 0.83,
+      "measuredCpuSeconds": 0.91,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.93 at start)"
     },
     {
       "config": "AutoProbe.keyAtStart",
@@ -3306,10 +3298,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 345,
-      "measuredSeconds": 1.15,
-      "measuredCpuSeconds": 1.62,
-      "budgetCpuSeconds": 7
+      "distinctStates": 464,
+      "measuredSeconds": 0.89,
+      "measuredCpuSeconds": 1.11,
+      "budgetCpuSeconds": 6,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
     },
     {
       "config": "AutoProbe.keyAtStartAsk",
@@ -3320,10 +3313,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 102,
-      "measuredSeconds": 1.13,
-      "measuredCpuSeconds": 1.51,
-      "budgetCpuSeconds": 7
+      "distinctStates": 92,
+      "measuredSeconds": 0.84,
+      "measuredCpuSeconds": 0.96,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
     },
     {
       "config": "AutoProbe.noTaintCheck",
@@ -3334,10 +3328,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 194,
-      "measuredSeconds": 1.12,
-      "measuredCpuSeconds": 1.54,
-      "budgetCpuSeconds": 7
+      "distinctStates": 171,
+      "measuredSeconds": 0.91,
+      "measuredCpuSeconds": 1.07,
+      "budgetCpuSeconds": 6,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
     },
     {
       "config": "AutoProbe.endpoint",
@@ -3345,10 +3340,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1266624,
-      "measuredSeconds": 7.39,
-      "measuredCpuSeconds": 34.93,
-      "budgetCpuSeconds": 73
+      "distinctStates": 2797292,
+      "measuredSeconds": 21.03,
+      "measuredCpuSeconds": 85.49,
+      "budgetCpuSeconds": 174,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 7.25 at start)"
     },
     {
       "config": "AutoProbe.reprobeRefused",
@@ -3359,10 +3355,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 122,
-      "measuredSeconds": 1.1,
-      "measuredCpuSeconds": 1.47,
-      "budgetCpuSeconds": 6
+      "distinctStates": 100,
+      "measuredSeconds": 0.84,
+      "measuredCpuSeconds": 0.91,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
     },
     {
       "config": "AutoProbe.reprobeInBackoff",
@@ -3373,10 +3370,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 168,
-      "measuredSeconds": 1.13,
-      "measuredCpuSeconds": 1.54,
-      "budgetCpuSeconds": 7
+      "distinctStates": 166,
+      "measuredSeconds": 0.85,
+      "measuredCpuSeconds": 0.97,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
     },
     {
       "config": "AutoProbe.endpointUnlocked",
@@ -3387,10 +3385,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 47,
-      "measuredSeconds": 1.11,
-      "measuredCpuSeconds": 1.51,
-      "budgetCpuSeconds": 7
+      "distinctStates": 24,
+      "measuredSeconds": 0.83,
+      "measuredCpuSeconds": 0.89,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.93 at start)"
     },
     {
       "config": "AutoProbe.rejectStale",
@@ -3401,10 +3400,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 380,
-      "measuredSeconds": 1.16,
-      "measuredCpuSeconds": 1.7,
-      "budgetCpuSeconds": 7
+      "distinctStates": 587,
+      "measuredSeconds": 0.88,
+      "measuredCpuSeconds": 1.15,
+      "budgetCpuSeconds": 6,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
     },
     {
       "config": "RipgrepExtract",
@@ -4240,10 +4240,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 82,
-      "measuredSeconds": 1.11,
-      "measuredCpuSeconds": 1.52,
-      "budgetCpuSeconds": 7
+      "distinctStates": 68,
+      "measuredSeconds": 0.86,
+      "measuredCpuSeconds": 0.96,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
     },
     {
       "config": "AutoProbe.unknownTaint",
@@ -4254,10 +4255,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 96,
-      "measuredSeconds": 1.11,
-      "measuredCpuSeconds": 1.49,
-      "budgetCpuSeconds": 6
+      "distinctStates": 88,
+      "measuredSeconds": 0.84,
+      "measuredCpuSeconds": 0.94,
+      "budgetCpuSeconds": 5,
+      "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
     },
     {
       "config": "ManagedServer",
