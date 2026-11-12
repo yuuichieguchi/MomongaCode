@@ -221,6 +221,52 @@ describe('startup timeout', () => {
   });
 });
 
+describe('start-up stall limit', () => {
+  const progressLine = (pid: number, step: string): string => JSON.stringify({ event: 'progress', service: 'runtime', pid, step });
+  const PROGRESS_EVERY_MS = 50_000;
+  const TOTAL_MS = 180_000;
+
+  it('a child that reports progress every 50 s for three minutes is not stopped', async (context) => {
+    const harness = createManagerHarness(context);
+    await harness.spawnInitial();
+    for (let elapsed = 0; elapsed < TOTAL_MS; elapsed += PROGRESS_EVERY_MS) {
+      await harness.timers.advanceAsync(PROGRESS_EVERY_MS);
+      harness.port.last().stdoutLine(progressLine(41_000, `step-${elapsed}`));
+      await afterMicrotasks();
+    }
+    expect(harness.port.last().signals).toEqual([]);
+    expect(harness.manager.state()).toBe('starting');
+    harness.port.last().ready();
+    await waitFor(() => harness.manager.state() === 'ready');
+  });
+
+  it('a child silent for the stall limit after its last progress is stopped with startup-timeout', async (context) => {
+    const harness = createManagerHarness(context);
+    await harness.spawnInitial();
+    await harness.timers.advanceAsync(PROGRESS_EVERY_MS);
+    harness.port.last().stdoutLine(progressLine(41_000, 'store'));
+    await afterMicrotasks();
+    await harness.timers.advanceAsync(STARTUP_TIMEOUT_MS - 1);
+    expect(harness.port.last().signals).toEqual([]);
+    await harness.timers.advanceAsync(1);
+    await stopLineWritten();
+    expect(harness.port.last().signals).toEqual(['SIGTERM']);
+    await exitAndWait(harness, 'backoff', 0);
+    expect(harness.manager.health().lastExit?.reason).toBe('startup-timeout');
+  });
+
+  it('progress of another process does not re-arm the limit', async (context) => {
+    const harness = createManagerHarness(context);
+    await harness.spawnInitial();
+    await harness.timers.advanceAsync(PROGRESS_EVERY_MS);
+    harness.port.last().stdoutLine(progressLine(999_999, 'store'));
+    await afterMicrotasks();
+    await harness.timers.advanceAsync(STARTUP_TIMEOUT_MS - PROGRESS_EVERY_MS);
+    await stopLineWritten();
+    expect(harness.port.last().signals).toEqual(['SIGTERM']);
+  });
+});
+
 describe('exit classification in the manager', () => {
   it('exit 1 restarts after backoff', async (context) => {
     const harness = createManagerHarness(context);

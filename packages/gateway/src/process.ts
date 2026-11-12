@@ -35,6 +35,7 @@ import {
   StoreCallEndedError,
   operationLimit,
   announceReady,
+  startupSteps,
   createJsonLogger,
   createGivenSecretStore,
   givenSecretStoreChildEnv,
@@ -930,15 +931,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, platform, options.env), generation: options.generation, logger });
   const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
+  const step = startupSteps({ service: 'gateway', pid, stream: stdout, logger, signal });
   const paths = momongaPaths(options.home, platform, options.env);
-  signal?.throwIfAborted();
-  await requireGenerationDirs(paths, options.generation);
-  signal?.throwIfAborted();
+  await step('dirs', () => requireGenerationDirs(paths, options.generation));
   const kernelLock = options.locks.mechanism;
-  const endpointScope = await endpointScopeOf(paths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock });
+  const endpointScope = await step('endpoint-scope', () => endpointScopeOf(paths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock }));
   const own = generationLayout(options.home, options.generation, platform, endpointScope);
   const inspector = layoutProcessInspector(options.locks.capability);
-  const lock = await (options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, { mechanism: kernelLock })))(own.locks.gateway);
+  const lock = await step('lock', () => (options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, { mechanism: kernelLock })))(own.locks.gateway));
   const cleanups: Array<(values: StopValues | undefined) => void | Promise<void>> = [() => lock.release()];
   const lifetime = new AbortController();
   const unwind = async (values: StopValues | undefined): Promise<Error[]> => {
@@ -1022,7 +1022,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       planProfiles,
       onLoaded: (loaded) => stopValues.remember(stopValuesOfSettings(loaded.settings)),
     });
-    const started = await cache.load(startSignal);
+    const started = await step('settings', () => cache.load(startSignal));
     if ('error' in started) throw started.error;
     const { settings } = started;
     const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal | undefined): Promise<OutboundNetwork> => {
@@ -1031,8 +1031,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       for (const failure of outbound.trust.failures) logger.warn(trustFailureText(failure));
       return outbound;
     };
-    signal?.throwIfAborted();
-    await sweepLeftovers({ directories: leftoverDirectories(paths, { files: nodeFileSystem, namespace: await pidNamespaceOf(nodeFileSystem), alive: (pid) => isProcessAlive(pid) }), lock: kernelLock, warn: (message) => logger.warn(message) });
+    await step('leftovers', async () => sweepLeftovers({ directories: leftoverDirectories(paths, { files: nodeFileSystem, namespace: await pidNamespaceOf(nodeFileSystem), alive: (pid) => isProcessAlive(pid) }), lock: kernelLock, warn: (message) => logger.warn(message) }));
     const hmacKey = createSecretKeyFile(nodeFileSystemSync, systemRandom, kernelLock)(paths.gatewayKey, {
       mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
@@ -1063,7 +1062,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       onWarning: (message) => logger.warn(message),
     });
     cleanups.push(() => telemetries.retireAll());
-    (await telemetries.admit(startSignal)).release();
+    (await step('telemetry', () => telemetries.admit(startSignal))).release();
     const contentRetentionMs = resolveRetentionSettings(settings.retention).days * DAY_MS;
 
     signal?.throwIfAborted();
@@ -1127,7 +1126,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       onWarning: (message) => logger.warn(message),
     });
     cleanups.push(() => planScopes.retireAll());
-    (await planScopes.admit(startSignal)).release();
+    (await step('plan-scopes', () => planScopes.admit(startSignal))).release();
     const withOutboundNetwork: PlanOutbound = async (operationSignal, use) => {
       const lease = await planScopes.acquire(operationSignal);
       try {
@@ -1150,7 +1149,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       keyOfPlaintext: planRecordKeyOfPlaintext,
       lock: kernelLock,
     });
-    const sessions = await openPlanSessions({
+    const sessions = await step('plan-sessions', () => openPlanSessions({
       profiles: planProfiles,
       paths: { sessions: paths.planSessions, host: paths.planHost, active: paths.planActive },
       store: options.planStore === undefined ? planRecordStore : options.planStore(planRecordStore),
@@ -1167,7 +1166,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       events: planEvents,
       redact: (key, values) => shared.redactor.set(key, values),
       warn: (message) => logger.warn(message),
-    });
+    }));
     cleanups.push(() => sessions.close());
     const catalog = createPlanCatalog({ store: createFileCredentialStore(paths.planCatalog, { lock: kernelLock }), clock, outbound: withOutboundNetwork, sleep: planSleep, events: planEvents });
     const planApi = createPlanApi({
@@ -1496,7 +1495,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     const retireEpochsAtFailedStart = (): Promise<void> => derivation.retireAll();
     cleanups.push(retireEpochsAtFailedStart);
-    (await derivation.admit(startSignal)).release();
+    (await step('models', () => derivation.admit(startSignal))).release();
     const epochs: GatewayEpochs = {
       acquire: async (requestSignal) => {
         const lease = await derivation.acquire(requestSignal);
@@ -1524,9 +1523,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         traced.release();
       }
     };
-    signal?.throwIfAborted();
-    await role.refresh();
-    const gateway = await createGateway({
+    await step('role', () => role.refresh());
+    const gateway = await step('gateway', () => createGateway({
       startSignal,
       limits: GATEWAY_CONFIG_DEFAULTS,
       epochs,
@@ -1560,7 +1558,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
       onFatal: latchFatal,
       plan: planApi,
-    });
+    }));
     if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
     cleanups.splice(cleanups.indexOf(closeProbes), 1);
     cleanups.splice(cleanups.indexOf(retireEpochsAtFailedStart), 1);

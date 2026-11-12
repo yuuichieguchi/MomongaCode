@@ -8,6 +8,7 @@ import {
   gatewayAbortBudgetMs,
   gatewayStopBudgetMs,
   managedServerReapBoundMs,
+  parseProgressLine,
   parseReadyLine,
   reapMarkerDirectory,
   runtimeAbortStopBudgetMs,
@@ -31,6 +32,7 @@ import {
   childExternal,
   childHeld,
   childReady,
+  childProgress,
   childReadyIgnored,
   childReadyMismatch,
   childSpawn,
@@ -421,6 +423,14 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     }
   };
 
+  const armStartupTimer = (life: Life): void => {
+    clearLifeTimer(life, 'startup');
+    life.timers.startup = schedule('startup-timer', options.startupTimeoutMs, () => {
+      life.timers.startup = undefined;
+      if (current === life && state === 'starting') void stop('startup-timeout', 'term');
+    });
+  };
+
   const becomeReady = (life: Life, fields: ReadyFields): void => {
     clearLifeTimer(life, 'startup');
     setState('ready');
@@ -443,6 +453,13 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       return true;
     }
     if (state !== 'starting') return false;
+    const progress = parseProgressLine(line);
+    if (progress !== undefined) {
+      if (progress.service !== role || progress.pid !== life.commandPid) return false;
+      armStartupTimer(life);
+      log(childProgress({ child: role, childPid: progress.pid, startupStep: progress.step }));
+      return true;
+    }
     const fields = parseReadyLine(line);
     if (fields === undefined) return false;
     if (fields.service === role && fields.pid === life.commandPid) {
@@ -690,10 +707,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       life.commandPid = pid;
       startCaptures(life, pid);
     });
-    life.timers.startup = schedule('startup-timer', options.startupTimeoutMs, () => {
-      life.timers.startup = undefined;
-      if (current === life && state === 'starting') void stop('startup-timeout', 'term');
-    });
+    armStartupTimer(life);
     log(childSpawn({ child: role, childPid: life.commandPid ?? null, restarts: Math.max(0, launches - 1), reason }));
   };
 

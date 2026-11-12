@@ -43,7 +43,7 @@ const tokenFile = (aux: string, mode = 0o600, contents = `${TOKEN}\n`): string =
 describe('gateway entry debug listener flags', () => {
   it('opens the loopback listener on the requested port, logs the bound port and demands the token', async (context) => {
     const { io } = await launch(context, (_home, aux) => ['--debug-tcp-port=0', `--debug-tcp-token-file=${tokenFile(aux)}`]);
-    await until(() => io.stdoutLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
+    await until(() => io.announcedLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
     expect(io.exits).toEqual([]);
     const listener = parseJsonLines(io.stderrLines()).find((line) => line['msg'] === 'gateway.debug_listener');
     expect(listener).toMatchObject({ level: 'info', host: '127.0.0.1' });
@@ -59,7 +59,7 @@ describe('gateway entry debug listener flags', () => {
 
   it('opens no TCP listener without the flags', async (context) => {
     const { io, home } = await launch(context, () => []);
-    await until(() => io.stdoutLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
+    await until(() => io.announcedLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
     expect(parseJsonLines(io.stderrLines()).some((line) => line['msg'] === 'gateway.debug_listener')).toBe(false);
     expect(fs.existsSync(generationLayout(home, FIRST_GENERATION).sockets.gateway)).toBe(true);
   });
@@ -73,6 +73,6 @@ describe('gateway entry debug listener flags', () => {
   ])('exits 78 for $name', async ({ flags }, context) => {
     const { exit, io } = await launch(context, (_home, aux) => flags(aux));
     expect(await exit).toBe(78);
-    expect(io.stdoutText()).toBe('');
+    expect(io.announcedLines()).toEqual([]);
   });
 });

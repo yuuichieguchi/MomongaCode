@@ -1,4 +1,4 @@
-import { hostPaths, systemClock } from '@momonga/foundation';
+import { hostPaths, parseProgressLine, systemClock } from '@momonga/foundation';
 import type { Clock, EntryIo, KernelLockMechanism, EntrySignal, RotatingLogFile } from '@momonga/foundation';
 import { testLocks } from './test-locks.ts';
 
@@ -12,6 +12,7 @@ export type FakeEntryIo = EntryIo & {
   readonly lifecycle: readonly string[];
   stdoutText(): string;
   stdoutLines(): string[];
+  announcedLines(): string[];
   stderrLines(): string[];
   logLines(path: string): string[];
   signal(name: EntrySignal): void;
@@ -130,6 +131,7 @@ export const createFakeEntryIo = (options: FakeEntryIoOptions): FakeEntryIo => {
     lifecycle,
     stdoutText: () => stdout,
     stdoutLines: () => linesOf(stdout),
+    announcedLines: () => linesOf(stdout).filter((line) => parseProgressLine(line) === undefined),
     stderrLines: () => linesOf(stderr),
     logLines: (path) => [...(logFiles.get(path) ?? [])],
     signal: (name) => {

@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock, FIRST_GENERATION, fixedSocket, fixedRolePort } from '@momonga/foundation';
+import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock, FIRST_GENERATION, fixedSocket, fixedRolePort, parseProgressLine } from '@momonga/foundation';
 import type { TextStream } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createGateway, startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -74,7 +74,7 @@ const capture = (): Capture => {
       chunks.push(chunk);
       return true;
     },
-    lines: () => chunks.join('').split('\n').filter((line) => line !== ''),
+    lines: () => chunks.join('').split('\n').filter((line) => line !== '' && parseProgressLine(line) === undefined),
   };
 };
 

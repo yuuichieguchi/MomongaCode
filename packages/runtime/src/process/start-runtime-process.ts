@@ -7,6 +7,7 @@ import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector
 import {
   acquireProcessLock,
   announceReady,
+  startupSteps,
   createJsonLogger,
   createRedactor,
   createRolePort,
@@ -375,11 +376,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     return lifecycle;
   };
 
-  const step = async <T>(name: string, run: () => T | Promise<T>): Promise<T> => {
-    signal?.throwIfAborted();
-    logger.debug('startup.step', { step: name });
-    return run();
-  };
+  const step = startupSteps({ service: 'runtime', pid: process.pid, stream: stdout, logger, signal });
 
   const { capability: lockCapability, mechanism: kernelLock } = options.locks;
   const inspector = layoutProcessInspector(lockCapability);

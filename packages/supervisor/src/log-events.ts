@@ -36,6 +36,7 @@ export const childSpawn = defineEvent<ChildRef & { restarts: number; reason: Spa
 export const childReady = defineEvent<ChildRef & { version: string; socketPath: string; startedAt: string }>('child.ready', 'info');
 export const childReadyMismatch = defineEvent<ChildRef & { readyService: string; readyPid: number }>('child.ready.mismatch', 'error');
 export const childReadyIgnored = defineEvent<ChildRef>('child.ready.ignored', 'info');
+export const childProgress = defineEvent<ChildRef & { startupStep: string }>('child.progress', 'debug');
 export const childVersionMismatch = defineEvent<ChildRef & { childVersion: string; supervisorVersion: string }>('child.version.mismatch', 'error');
 export const childStop = defineEvent<ChildRef & { stop: StopReason; mode: StopMode; superseded?: StopReason }>('child.stop', 'info');
 export const childExit = defineEvent<ChildRef & { code: number | null; signal: string | null; reason: SupervisorExitReason; restarts: number }>('child.exit', 'info');
@@ -80,6 +81,7 @@ export const SUPERVISOR_EVENTS = {
   'child.ready': childReady,
   'child.ready.mismatch': childReadyMismatch,
   'child.ready.ignored': childReadyIgnored,
+  'child.progress': childProgress,
   'child.version.mismatch': childVersionMismatch,
   'child.stop': childStop,
   'child.exit': childExit,
