@@ -29,6 +29,8 @@ import { UNPRICED_CODES } from './token-anatomy.ts';
 import type { BilledDetail, NewBilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
 
 const DAY_MS = 86_400_000;
+
+export const MAX_RUN_TIMEOUT_MS = 7 * DAY_MS;
 const operationEffect: JsonSchema = closed({ operation: string, target: string, outcome: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['operation', 'target', 'outcome']);
 const appliedDiffFields = {
   hunks: { type: 'array', items: closed({ oldStart: integer, newStart: integer, lines: { type: 'array', items: string } }, ['oldStart', 'newStart', 'lines']) },
@@ -1532,7 +1534,7 @@ export const RUN_API_SCHEMAS = {
       {
         input: PROMPT_TEXT,
         limits: runLimits,
-        timeoutMs: boundedInteger(1000, 7 * DAY_MS),
+        timeoutMs: boundedInteger(1000, MAX_RUN_TIMEOUT_MS),
         history: historyMode,
         skill: { type: 'string', minLength: 1 },
         images: { type: 'array', items: imageAttachment },

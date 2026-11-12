@@ -8,7 +8,7 @@ import type { MarkerSettle } from './marker-settle.ts';
 import type { Awaitable, Clock, FileRuleProvenance, FileSystem, KernelLockMechanism, MarkerHandle, NetworkScope, OutboundNetwork, PathProbes, PathResolver, ProcessGroupPort, ProcessInspector, Random, ReapReport, Timing, SandboxNetworkSetting, SignalSender, UninspectableRegistry, MomongaPaths } from '@momonga/foundation';
 import { absoluteFrom, askedBy, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule, suggestNetworkRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool, CoveredProgram, SupersededForm } from '@momonga/policy';
-import { diffFieldsOf, permissionDeniedOutput } from '@momonga/protocol';
+import { MAX_RUN_TIMEOUT_MS, diffFieldsOf, permissionDeniedOutput } from '@momonga/protocol';
 import type { ApprovalBasis, ApprovalShown, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import { SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -39,16 +39,15 @@ import { cleanFailureMessage, groupPortOf } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
 
-const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const IDEMPOTENCY_TTL_MS = MAX_RUN_TIMEOUT_MS;
 const HANDLE_LENGTH = 64;
 const HANDLE_PATTERN = new RegExp(`^[0-9a-f]{${HANDLE_LENGTH}}$`);
 const OUTPUT_MEDIA_TYPE = 'text/plain; charset=utf-8';
-const DEFAULT_MAX_PARALLEL = 8;
 const DEFAULT_READ_ONLY_RETRY = { attempts: 3, baseMs: 200, maxMs: 2000 } as const;
 
 export const heldCallWaitMs = (heartbeatMs: number): number => heartbeatMs + ABORT_SETTLE_LIMIT_MS + SANDBOX_STOP_BOUND_MS;
 
-const DEFAULT_RECONCILE_GRACE_MS = 2000;
+const DEFAULT_RECONCILE_GRACE_MS = ABORT_SETTLE_LIMIT_MS;
 const DEFAULT_RECONCILE_CAP_MS = 30_000;
 const UNKNOWN_EFFECTS_NOTICE = 'Its side effects are unknown; inspect the current state before retrying.';
 
@@ -168,6 +167,7 @@ export type ToolExecutorOptions = {
   idempotencyTtlMs?: number;
   readOnlyRetry?: { attempts: number; baseMs: number; maxMs: number };
   maxParallel?: number;
+  hostParallelism: number;
   jobs?: BackgroundJobs;
   processMarkerDir: string;
   earlierMarkerDirs?: () => Promise<readonly string[]>;
@@ -585,9 +585,9 @@ const NO_SANDBOX_REASON = 'no sandbox is available: file deny rules are checked 
 export const createToolExecutor = (options: ToolExecutorOptions): InspectableToolExecutor => {
   const { idempotency, blobs, clock } = options;
   const timers: ToolTimers = options.shellHost.child;
-  const ttlMs = options.idempotencyTtlMs ?? DEFAULT_IDEMPOTENCY_TTL_MS;
+  const ttlMs = options.idempotencyTtlMs ?? IDEMPOTENCY_TTL_MS;
   const retry = options.readOnlyRetry ?? DEFAULT_READ_ONLY_RETRY;
-  const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
+  const maxParallel = options.maxParallel ?? Math.max(1, options.hostParallelism);
   const reconcileCapMs = options.reconcileCapMs ?? DEFAULT_RECONCILE_CAP_MS;
   const reconcileGraceMs = options.reconcileGraceMs ?? DEFAULT_RECONCILE_GRACE_MS;
   const reapTiming = options.reap.timing ?? systemWaitTiming;

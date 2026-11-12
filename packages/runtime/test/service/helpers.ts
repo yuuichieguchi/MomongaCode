@@ -806,6 +806,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executor = createToolExecutor({
+    hostParallelism: 8,
     layout: momongaLayout(env.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),

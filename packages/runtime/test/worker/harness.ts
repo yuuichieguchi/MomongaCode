@@ -261,6 +261,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const executorWarnings: string[] = [];
   const layout = momongaLayout(home, process.platform, process.env);
   const realExecutor = createToolExecutor({
+    hostParallelism: 8,
     layout,
     reap: { inspector: testProcessInspector() },
     shellHost: nodeShellHost(),

@@ -15,6 +15,7 @@ const KEY = keyFor('run-1', 1, 'c1');
 
 const boundedExecutor = (harness: Harness, capMs: number, graceMs: number, timers?: FakeTimers) =>
   createToolExecutor({
+    hostParallelism: 8,
     layout: momongaLayout(harness.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
     shellHost: timers === undefined ? nodeShellHost() : fakeTimedShellHost(timers),
