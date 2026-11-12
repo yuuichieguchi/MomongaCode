@@ -66,7 +66,7 @@ describe('a model that the gateway is measuring', () => {
     ]);
   });
 
-  it('ends the run with the declaration that makes the measurement unnecessary when the state does not move for a bounded number of waits', async () => {
+  it('ends the run with the declaration that makes the measurement unnecessary when the measurement does not move on (same step, no elapsed time gained) for a bounded number of waits', async () => {
     const env = await makeEnv();
     const stuck = stateAt('tool call', 20);
     env.gateway.capabilitiesHook = async () => {
@@ -86,6 +86,30 @@ describe('a model that the gateway is measuring', () => {
     expect(ended.status).toBe('FAILED');
     expect(ended.error?.code).toBe(TARGET_PROBING);
     expect(ended.error?.message).toContain(measuringSkipOf(stuck));
+  });
+
+  it('keeps waiting while one step of many requests goes on, as long as the elapsed time of the measurement grows', async () => {
+    const env = await makeEnv();
+    const states = Array.from({ length: MEASURING_SAME_STATE_WAITS + 3 }, (_, wait) => stateAt('context window', 10 + wait * 30));
+    let index = 0;
+    env.gateway.capabilitiesHook = async () => {
+      const state = states[index];
+      index += 1;
+      if (state !== undefined) throw probing(state);
+    };
+    env.gateway.script.push(textStep('Measured and done.'));
+    const run = await env.enqueue('Work');
+    const worker = env.worker();
+
+    for (let wait = 0; wait < states.length; wait += 1) {
+      expect(await env.runOnce(worker)).toBe('yielded');
+      expect(env.run(run.id).status).toBe('QUEUED');
+      env.clock.set(env.run(run.id).availableAt);
+    }
+    expect(await env.runOnce(worker)).toBe('yielded');
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.events(run.id).filter((event) => event.type === 'notice' && event.code === TARGET_PROBING)).toHaveLength(1);
   });
 
   it('never waits or retries on a failed measurement: the run ends with the cause the gateway names', async () => {

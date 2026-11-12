@@ -261,8 +261,11 @@ const requeueOrStop = async (
   }
   if (disposition.kind === 'wait') {
     const state = measuringStateOf(disposition.measuring);
-    const waits = memory.measuring?.state === state ? memory.measuring.waits + 1 : 1;
-    if (waits > MEASURING_SAME_STATE_WAITS) {
+    const elapsedSeconds = disposition.measuring.elapsedSeconds;
+    const previous = memory.measuring;
+    const shown = previous?.state === state;
+    const stalls = shown && elapsedSeconds <= previous.elapsedSeconds ? previous.stalls + 1 : 0;
+    if (stalls >= MEASURING_SAME_STATE_WAITS) {
       await terminals.finish('FAILED', { error: { code: disposition.code, message: measuringStalledText(disposition.measuring) } });
       return;
     }
@@ -272,8 +275,8 @@ const requeueOrStop = async (
       await terminals.finish('STOPPED', { stopReason: 'timeout' });
       return;
     }
-    if (waits === 1) journal.append([{ type: 'notice', level: 'info', message: measuringLineOf(disposition.measuring), code: disposition.code }]);
-    memory.measuring = { state, waits };
+    if (!shown) journal.append([{ type: 'notice', level: 'info', message: measuringLineOf(disposition.measuring), code: disposition.code }]);
+    memory.measuring = { state, elapsedSeconds, stalls };
     await terminals.yieldTo('QUEUED', availableAt, { refundAttempt: true });
     return;
   }
