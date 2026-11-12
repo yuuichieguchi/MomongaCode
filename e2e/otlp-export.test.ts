@@ -4,13 +4,15 @@ import { describe, expect, it } from 'vitest';
 import { GENAI_SEMCONV } from '@momonga/observability';
 import type { CostReportView } from '@momonga/protocol';
 import { OTLP_SPAN_KIND, decodeOtlpSpans, modelSettings, startOtlpCollector } from '@momonga/testkit';
-import type { DecodedOtlpSpan, OtlpCollector } from '@momonga/testkit';
+import type { DecodedOtlpSpan, FakeUsageOfRequest, OtlpCollector } from '@momonga/testkit';
+
+type UsageOverride = { readonly usage?: FakeUsageOfRequest };
 import { titleOf } from './support/cases.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { shutdownBarrier, startStack } from './support/stack.ts';
 import { UPSTREAM_MODEL } from './support/stack.ts';
-import { chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
+import { cacheReadUnreportedUsage, chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const startCollector = async (): Promise<OtlpCollector> => {
@@ -97,13 +99,14 @@ describe('OTLP export through real processes', () => {
 
   const UPSTREAM_PRICES = [{ provider: 'apple', model: UPSTREAM_MODEL, effectiveFrom: '1970-01-01', inputPerMTok: 0, outputPerMTok: 0, currency: 'USD' as const }];
 
-  it(titleOf('cost-report'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  const costReportOfRun = async (replies: readonly [UsageOverride, UsageOverride]) => {
     const home = await createE2eHome();
     const file = path.join(home.project, 'notes.txt');
     fs.writeFileSync(file, 'cost notes\n');
+    const [readReply, finalReply] = replies;
     const stack = await startStack({
       home,
-      script: [toolCallReply('Read', { file_path: file }), textReply('read it')],
+      script: [{ ...toolCallReply('Read', { file_path: file }), ...readReply }, { ...textReply('read it'), ...finalReply }],
       settings: {
         ...modelSettings({
           models: [{ adapter: 'chat-completions', provider: 'apple', id: UPSTREAM_MODEL, socketPath: home.upstreamSocket, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }],
@@ -112,31 +115,50 @@ describe('OTLP export through real processes', () => {
       },
     });
     const runtime = createRuntimeClient(home);
-    let runId: string;
-    let sessionId: string;
-    let report: CostReportView;
-    try {
-      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
-      sessionId = session.id;
-      runId = (await runtime.createRun(session.id, 'Read notes.txt')).run.id;
-      const stream = runtime.events(runId);
-      await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
-      await stream.close();
-      const answered = await runtime.json('GET', `/v1/cost?run=${runId}`);
-      expect(answered.status).toBe(200);
-      report = answered.body as CostReportView;
-    } finally {
-      await runtime.close();
-    }
+    const observed = await (async () => {
+      try {
+        const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
+        const runId = (await runtime.createRun(session.id, 'Read notes.txt')).run.id;
+        const stream = runtime.events(runId);
+        await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
+        await stream.close();
+        const answered = await runtime.json('GET', `/v1/cost?run=${runId}`);
+        expect(answered.status).toBe(200);
+        return { report: answered.body as CostReportView, runId, sessionId: session.id };
+      } finally {
+        await runtime.close();
+      }
+    })();
     await shutdownBarrier(stack);
+    return { ...observed, inputTokens: chatCompletions(stack.fake).reduce((sum, request) => sum + reportedTokensOfRequest(request.body), 0) };
+  };
 
+  it(titleOf('cost-report'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { report, runId, sessionId, inputTokens } = await costReportOfRun([{}, {}]);
     expect(report.runs).toHaveLength(1);
     expect(report.sessions).toMatchObject([{ sessionId, runIds: [runId], calls: 2 }]);
     expect(report.total).toMatchObject({
       calls: 2,
+      unpricedCalls: 0,
+      priceNotRecordedCalls: 0,
+      inputTokens,
+      outputTokens: 10,
+      cachedInputTokens: 0,
+      cacheReadNotReportedCalls: 0,
+      unpriced: {},
+      amount: 0,
+      currency: 'USD',
+      priceVersions: ['1970-01-01'],
+    });
+  });
+
+  it(titleOf('cost-report-cache-not-reported'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { report, inputTokens } = await costReportOfRun([{ usage: cacheReadUnreportedUsage }, { usage: cacheReadUnreportedUsage }]);
+    expect(report.total).toMatchObject({
+      calls: 2,
       unpricedCalls: 2,
       priceNotRecordedCalls: 0,
-      inputTokens: chatCompletions(stack.fake).reduce((sum, request) => sum + reportedTokensOfRequest(request.body), 0),
+      inputTokens,
       outputTokens: 10,
       cachedInputTokens: null,
       cacheReadNotReportedCalls: 2,

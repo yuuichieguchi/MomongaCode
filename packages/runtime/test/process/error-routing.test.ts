@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import { HOUR_MS, entriesNamed, launchRuntime, passServingTime, settledState, startStack } from './run-helpers.ts';
 
@@ -112,7 +112,7 @@ const poolCheckSource = async (launched: Awaited<ReturnType<typeof launchFake>>,
   const hold = launched.stack.hold();
   const session = await launched.createSession();
   await launched.createRun(session.id);
-  await hold.waitForRequest();
+  await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
   control.getRun = { error, frame: 'mcp-pool-cache' };
   await passServingTime(launched.timers, POOL_REFERENCE_AUDIT_MS, () => control.injected > 0, 'the pool reference audit to reach getRun');
   await afterMicrotasks();

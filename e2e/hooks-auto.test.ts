@@ -15,7 +15,7 @@ import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
 import { baseSettings, startStack, upstreamModelRef, withClassifierModel } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '../packages/runtime/src/memory/reflection-bound.ts';
-import { E2E_REFLECTION_ATTEMPTS_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, abortableWait } from './support/wait.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, abortableWait } from './support/wait.ts';
 import { firstGeneration } from '@momonga/testkit';
 import { fixedSocket } from '@momonga/foundation';
 
@@ -183,11 +183,11 @@ describe('hooks and auto mode against real processes', () => {
     try {
       const api = goldenRunApi(client, undefined, {
         pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
-        attemptBoundMs: E2E_REFLECTION_ATTEMPTS_BOUND_MS,
+        attemptBoundMs: E2E_RUN_COMPLETED_BOUND_MS,
         pollMs: REFLECTION_POLL_MS,
         now: () => Date.now(),
         wait: abortableWait,
-      }, { clock: nodeClock, random: () => 0, reconnectBoundMs: E2E_REFLECTION_ATTEMPTS_BOUND_MS, restoreConnection: async () => undefined });
+      }, { clock: nodeClock, random: () => 0, reconnectBoundMs: E2E_RUN_COMPLETED_BOUND_MS, restoreConnection: async () => undefined });
       const report = await runDataset(dataset, {
         open: async (golden, runIndex) => {
           const cwd = workspaceOf(golden, runIndex);

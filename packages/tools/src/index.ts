@@ -24,7 +24,7 @@ export type {
   ToolExecutorOptions,
   WaitingOutcome,
 } from './executor.ts';
-export type { AutoClassifier, AutoClassifierRequest, ChildPorts, ChildSpawnOptions, LineFilter, PortChild, ToolTimers } from './ports.ts';
+export type { AutoClassifier, AutoClassifierRequest, ChildLaunch, ChildPorts, ChildSpawnOptions, LineFilter, PortChild, ToolTimers } from './ports.ts';
 export { createLineFilter } from './builtins/jobs.ts';
 export { createToolHooks, runSessionStart, runStop, runUserPromptSubmit, hasStopHooks, resolvePreToolUse } from './hooks/events.ts';
 export type { PostToolHookResult, PreToolHookVerdict, PromptHookResult, SessionStartHookResult, StopHookResult, ToolHookCall, ToolHooks } from './hooks/events.ts';
@@ -105,6 +105,7 @@ export {
   createPolicyFilesystem,
   listDirectoryEntries,
   listFileCandidates,
+  unprotectedLaunch,
   nodeChildPorts,
   nodeShellHost,
   nodeShellPorts,
@@ -178,6 +179,7 @@ export { createForgeAccess } from './forge/instances.ts';
 export { ISSUE_URL_FORM, hasFilter, issueLocationOf, listMatchingIssues, parseIssueUrl, readIssue } from './forge/issues.ts';
 export type { IssueAsk, IssueFilter, IssueLocation } from './forge/issues.ts';
 export type { ForgeAccess, ForgeAccessOptions, ForgeCredentialReference, ForgeInstance, ForgeRequest } from './forge/instances.ts';
+export { MAX_FORGE_RESPONSE_BYTES } from './forge/http.ts';
 export type { ForgeFetch } from './forge/http.ts';
 export { EMPTY_FOOTPRINT, blockedByHeldText, blockerOf, footprintOf, footprintsConflict } from './footprint.ts';
 export type { Footprint, HeldFootprint } from './footprint.ts';

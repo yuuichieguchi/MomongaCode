@@ -1,7 +1,9 @@
 import http from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it } from 'vitest';
 import { FAKE_DETERMINISTIC_REPLY, startFakeChatCompletions } from '@momonga/testkit';
-import type { FakeChatCompletionsServer } from '@momonga/testkit';
+import type { FakeChatCompletionsServer, FakeResponseHold } from '@momonga/testkit';
+
+const HOLD_WAIT = { timeoutMs: 5000, description: 'the held completion' } as const;
 
 const servers: FakeChatCompletionsServer[] = [];
 
@@ -34,7 +36,7 @@ describe('fake chat completions response hold', () => {
     servers.push(fake);
     const hold = fake.hold();
     const response = complete(fake.socketPath);
-    const arrived = await hold.waitForRequest();
+    const arrived = await hold.waitForRequest(HOLD_WAIT);
     expect(arrived).toMatchObject({ method: 'POST', path: '/v1/chat/completions' });
     expect(fake.requests).toHaveLength(1);
     expect(await settled(response)).toBe(false);
@@ -49,7 +51,7 @@ describe('fake chat completions response hold', () => {
     servers.push(fake);
     const first = fake.hold();
     const held = complete(fake.socketPath);
-    await first.waitForRequest();
+    await first.waitForRequest(HOLD_WAIT);
     expect((await complete(fake.socketPath)).status).toBe(200);
     expect(await settled(held)).toBe(false);
     first.release();
@@ -60,8 +62,20 @@ describe('fake chat completions response hold', () => {
     const fake = await startFakeChatCompletions({ scenario: 'none' });
     const hold = fake.hold();
     const response = complete(fake.socketPath).catch((error: unknown) => error);
-    await hold.waitForRequest();
+    await hold.waitForRequest(HOLD_WAIT);
     await fake.close();
     await response;
+  });
+
+  it('names its bound and description in every wait for the held request', () => {
+    expectTypeOf<Parameters<FakeResponseHold['waitForRequest']>>().toEqualTypeOf<[{ readonly timeoutMs: number; readonly description: string }]>();
+  });
+
+  it('fails a wait for a request that does not come within its bound with its description', async () => {
+    const fake = await startFakeChatCompletions({ scenario: 'none' });
+    servers.push(fake);
+    const hold = fake.hold();
+    await expect(hold.waitForRequest({ timeoutMs: 20, description: 'the request that never comes' })).rejects.toThrow('the request that never comes did not happen within 20 ms');
+    hold.release();
   });
 });

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { FILE_CANDIDATE_LIMIT, directoryEntriesOf, findProgramOnPath } from '@momonga/foundation';
 import type { FileCandidates, FileSystem } from '@momonga/foundation';
-import type { ChildPorts } from './ports.ts';
+import type { ChildLaunch, ChildPorts } from './ports.ts';
 import { readOnlyEnvironment } from './read-only-call.ts';
 
 export type FileListingOptions = {
@@ -12,7 +12,7 @@ export type FileListingOptions = {
   limit?: number;
 };
 
-export type FileListingPorts = { child: Pick<ChildPorts, 'spawn'>; files: Pick<FileSystem, 'readdirEntries' | 'stat' | 'access'> };
+export type FileListingPorts = { child: Pick<ChildPorts, 'spawn'>; files: Pick<FileSystem, 'readdirEntries' | 'stat' | 'access'>; launch: ChildLaunch };
 
 const GIT_LISTING = ['ls-files', '--cached', '--others', '--exclude-standard', '-z'];
 const NUL = '\0';
@@ -25,7 +25,8 @@ const gitFor = async (ports: FileListingPorts, options: FileListingOptions): Pro
 const tracked = (ports: FileListingPorts, git: string, { root, env, signal, limit = FILE_CANDIDATE_LIMIT }: FileListingOptions): Promise<FileCandidates | undefined> =>
   new Promise((resolve, reject) => {
     const full = new AbortController();
-    const child = ports.child.spawn(git, ['-C', root, ...GIT_LISTING], { env: readOnlyEnvironment(definedOf(env)), signal: AbortSignal.any([signal, full.signal]) });
+    const launched = ports.launch.commandOf([git, '-C', root, ...GIT_LISTING], []);
+    const child = ports.child.spawn(launched.file, launched.args, { env: readOnlyEnvironment(definedOf(env)), signal: AbortSignal.any([signal, full.signal]) });
     const entries: string[] = [];
     let rest = '';
     let truncated = false;

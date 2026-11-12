@@ -40,6 +40,7 @@ export type SandboxedRunnerPorts = {
   shellHost: ShellHost;
   outboundNetwork(signal: AbortSignal): Promise<OutboundNetwork>;
   markerDir: string;
+  drainIdleMs(): number;
   credentialRoot: string;
   credentialHelper?: HelperSelf;
   owners?: MarkerOwners;
@@ -123,6 +124,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
       clock: context.clock,
       signal: options.signal,
       timeoutMs: Math.max(0, context.deadlineAt - context.clock.now()),
+      drainIdleMs: ports.drainIdleMs(),
       ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
       ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }),
       inspector: ports.inspector,
@@ -158,10 +160,11 @@ const runEffect = async (ports: SandboxedRunnerPorts, argv: readonly string[], o
     try {
       const [exit] = await Promise.all([child.exited, attached]);
       await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: options.signal });
-      await pump.settle();
+      const drained = await pump.drainAfterExit(context.limits.bash.drainIdleMs);
       const failure = pump.failure();
       if (failure !== undefined) throw failure.error;
-      return { exitCode: exit.code ?? 1, stdout: redact(captures[0].text()), stderr: redact(captures[1].text()) };
+      const stderr = redact(captures[1].text());
+      return { exitCode: exit.code ?? 1, stdout: redact(captures[0].text()), stderr: drained.complete ? stderr : `${stderr}${stderr === '' ? '' : '\n'}${drained.note}` };
     } finally {
       await pump.close();
     }

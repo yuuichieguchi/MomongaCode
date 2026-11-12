@@ -101,3 +101,24 @@ describe('a failed operation in a headless run', () => {
     expect(run.stderr.join('')).toBe('momonga: tool Bash npm test failed\n');
   });
 });
+
+describe('a completed operation in a headless run', () => {
+  const create = eventFrame(1, { type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'PullRequestCreate', kind: 'other', title: 'Open a pull request from fix-7 into main', rawInput: {} });
+  const created = eventFrame(2, {
+    type: 'tool.completed',
+    callId: 'c1',
+    status: 'completed',
+    output: 'Pull request #12 is open for fix-7 into main: https://github.com/acme/widgets/pull/12\n',
+    effect: { operation: 'PullRequestCreate', target: 'fix-7', outcome: 'applied' },
+  });
+  const comment = eventFrame(3, { type: 'tool.call', callId: 'c2', providerCallId: 'p2', name: 'IssueComment', kind: 'other', title: 'Comment on issue #7', rawInput: {} });
+  const commented = eventFrame(4, { type: 'tool.completed', callId: 'c2', status: 'completed', output: 'Comment posted on issue #7.\n', effect: { operation: 'IssueComment', target: '7', outcome: 'applied' } });
+
+  it('reports what it did on standard error, so an issue run names its pull request and its comment', async (context) => {
+    const run = watched(context, [create, created, comment, commented], runView({ id: 'run-1', status: 'COMPLETED' }));
+
+    await watch(run, 'text');
+
+    expect(run.stderr.join('')).toBe('momonga: Pull request #12 is open for fix-7 into main: https://github.com/acme/widgets/pull/12\nmomonga: Comment posted on issue #7.\n');
+  });
+});

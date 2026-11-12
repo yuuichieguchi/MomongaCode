@@ -406,7 +406,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     const f = await makeRuntimeFixture();
     let error: unknown;
     try {
-      runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH,
+      runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: runtime.unprotectedLaunch('the tests of the runtime start git without the protection of the home'), hostParallelism: 8,
         kernelLock: testKernelLock(),
         lockCapability: testLocks().capability,
         version: '0.0.0-test',

@@ -73,6 +73,7 @@ const UNITS: readonly [string, string][] = [
   ['tools.bash.maxTimeoutMs', 'milliseconds'],
   ['tools.bash.backgroundTimeoutMs', 'milliseconds'],
   ['tools.bash.maxBackgroundTimeoutMs', 'milliseconds'],
+  ['tools.bash.drainIdleMs', 'milliseconds'],
   ['tools.search.timeoutMs', 'milliseconds'],
   ['tools.operations.timeoutMs', 'milliseconds'],
   ['update.stallTimeoutMs', 'milliseconds'],

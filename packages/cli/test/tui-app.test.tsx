@@ -48,7 +48,7 @@ describe('App startup', () => {
   it('sends an initial prompt once the session is ready', async () => {
     const { backend, app } = await start({}, { initialPrompt: 'list the files' });
     await untilOutput(app, '> list the files');
-    expect(backend.started).toEqual([{ text: 'list the files', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: 'list the files' }]);
     app.unmount();
   });
 });
@@ -268,7 +268,7 @@ describe('App input', () => {
     await untilFrame(app, 'third');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, '> first');
-    expect(backend.started).toEqual([{ text: 'first\nsecond\nthird', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: 'first\nsecond\nthird' }]);
     app.unmount();
   });
 
@@ -390,7 +390,7 @@ describe('App slash commands', () => {
     app.stdin.write(KEYS.enter);
     await backend.called('openSession');
     await untilOutput(app, '> again');
-    expect(backend.started).toEqual([{ text: 'again', history: 'inherit' }]);
+    expect(backend.started).toEqual([{ text: 'again' }]);
     expect(backend.opened.length).toBe(2);
     app.unmount();
   });

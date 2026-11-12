@@ -99,7 +99,7 @@ describe('multi-turn sessions', () => {
       hold.current = stack.fake.hold();
       const runA = (await runtime.createRun(other.id, 'Count to one')).run;
       const runB = (await runtime.createRun(other.id, 'Count to two')).run;
-      await hold.current.waitForRequest();
+      await hold.current.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
       expect((await runtime.getRun(runB.id)).run.status).toBe('QUEUED');
       hold.current.release();
       await untilStatus(runtime, runA.id, 'COMPLETED');
@@ -171,7 +171,7 @@ describe('multi-turn sessions', () => {
       await untilStatus(runtime, first.id, 'COMPLETED');
       hold = stack.fake.hold();
       const second = (await runtime.createRun(session.id, 'And again')).run;
-      await hold.waitForRequest();
+      await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
       const before = await until(
         () => {
           const rows = eventRows(home, second.id, ['context.inherited', 'model.requested']);

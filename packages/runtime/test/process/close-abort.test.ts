@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runtimeMaxCloseMs, runtimeTeardownBudgetMs } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import type { GatewayClient, GatewayClientOptions, Worker, WorkerOptions } from '@momonga/runtime';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, createFakeTimers, waitFor, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { START_MS, trackGroup } from './helpers.ts';
 import {
   ABORT_BUDGET_MS,
@@ -123,7 +123,7 @@ const runningRequest = async (stack: Awaited<ReturnType<typeof startStack>>, lau
   const hold = stack.hold();
   const session = await launched.createSession();
   const run = (await launched.createRun(session.id)) as { id: string };
-  await hold.waitForRequest();
+  await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
   return { id: run.id, hold };
 };
 
@@ -135,7 +135,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     const hold = stack.hold();
     const session = await first.createSession();
     const run = await first.createRun(session.id, { input: 'Read the notes' });
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     const closing = first.handle.close();
     await waitForTimer(first.timers, DRAIN_MS, 'the drain timer');
     hold.release();

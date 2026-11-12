@@ -146,11 +146,11 @@ describe('momonga eval context live', () => {
       LONG_STEPS,
       'LONG_STEPS cannot be derived from the window: it only has to exceed the steps the context builder protects (DEFAULT_KEEP_RECENT_STEPS), so that some steps fall outside the protection and can be compacted',
     ).toBeGreaterThan(DEFAULT_KEEP_RECENT_STEPS);
-    const stepTokens = await stepTokensToOverflowTheRoom(measured.capabilities, sizing, LONG_STEPS);
+    const stepTokens = await stepTokensToOverflowTheRoom(measured.pins, sizing, LONG_STEPS);
     expect(
       sizing.pinned + LONG_STEPS * stepTokens,
       'the walk must exceed what fits after the report of the step before it, so that the case without compaction cannot fit it',
-    ).toBeGreaterThan(await fitLimitAfterReport(measured.capabilities, sizing.pinned + (LONG_STEPS - 1) * stepTokens));
+    ).toBeGreaterThan(await fitLimitAfterReport(measured.pins, sizing.pinned + (LONG_STEPS - 1) * stepTokens));
     expect(
       compactableTokens(LONG_STEPS, DEFAULT_KEEP_RECENT_STEPS, stepTokens),
       'the steps older than the protected recent steps must be worth a compaction (the gain rule of the context builder)',

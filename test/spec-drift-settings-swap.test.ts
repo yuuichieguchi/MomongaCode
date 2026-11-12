@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import * as config from '@momonga/config';
 import * as foundationModule from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
+import { cfgNames } from './formal/cfg-names.ts';
+import type { CfgNames } from './formal/cfg-names.ts';
 
 const specDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
 const spec = fs.readFileSync(path.join(specDir, 'SettingsSwap.tla'), 'utf8');
@@ -20,16 +22,13 @@ const variants = (): string[] => {
   return [...(line[1] as string).matchAll(/"([^"]+)"/g)].map((match) => match[1] as string).sort();
 };
 
-const configOf = (name: string): string => fs.readFileSync(path.join(specDir, `${name}.cfg`), 'utf8');
-const constantOf = (cfg: string, name: string): string => {
-  const match = new RegExp(`^\\s*${name}\\s*=\\s*(.+?)\\s*$`, 'm').exec(cfg);
-  if (match === null) throw new Error(`${name} is not set`);
-  return match[1] as string;
+const configOf = (name: string): CfgNames => cfgNames(specDir, name);
+const constantOf = (cfg: CfgNames, name: string): string => {
+  const value = cfg.constants[name];
+  if (value === undefined) throw new Error(`${name} is not set`);
+  return value;
 };
-const invariantsOf = (cfg: string): string[] => {
-  const block = /INVARIANTS\s+([\s\S]*)$/.exec(cfg);
-  return block === null ? [] : (block[1] as string).split(/\s+/).filter((word) => word.length > 0);
-};
+const invariantsOf = (cfg: CfgNames): readonly string[] => cfg.invariants;
 
 const DESIGN_PROPERTIES = ['PinStable', 'FreshStart', 'LastValidWins', 'NoRollbackAfterApply', 'AbortIsolated', 'NoCut', 'InvalidKeepsRunning', 'NoRetireInUse', 'NoSweepWhileHeld', 'RetireOnce', 'CarryOverByIdentity', 'SingleDerivation'];
 

@@ -25,6 +25,7 @@ export type E2eCaseFile =
   | 'mcp-remote.test.ts'
   | 'cli.test.ts'
   | 'cli-pty.test.ts'
+  | 'tui-negotiation-pty.test.ts'
   | 'product-cli.test.ts'
   | 'product-pty.test.ts'
   | 'memory.test.ts'
@@ -106,7 +107,8 @@ export const E2E_CASES = [
   { id: 'eval-yield-live', file: 'eval-yield.test.ts', title: 'eval yield: a live run through the real stack reflects on the verified learn session, seeds the candidate that holds the anchor in the with arm only, whose request carries the recalled memory, and reports both arms and the reflection charge', needsBash: true },
   { id: 'eval-context-kill', file: 'eval-context-kill.test.ts', title: 'eval context: a case daemon stops when the CLI that started it is killed with SIGKILL, and the next eval context removes the home it left', needsBash: false },
   { id: 'otlp-export', file: 'otlp-export.test.ts', title: 'otlp: a run exports GenAI spans from the gateway and the runtime to a loopback collector when settings opt in', needsBash: false },
-  { id: 'cost-report', file: 'otlp-export.test.ts', title: 'cost: per-run and per-session cost comes from the charged usage the run journal recorded, joined to the calls of the gateway trace', needsBash: false },
+  { id: 'cost-report', file: 'otlp-export.test.ts', title: 'cost: per-run and per-session cost comes from the charged usage the run journal recorded, joined to the calls of the gateway trace, priced when the upstream reports its cache reads', needsBash: false },
+  { id: 'cost-report-cache-not-reported', file: 'otlp-export.test.ts', title: 'cost: a call whose upstream reports no cache-read count stays unpriced with the reason cache_read_not_reported', needsBash: false },
   { id: 'open-responses-compliance', file: 'open-responses-compliance.test.ts', title: 'open responses: the official compliance suite runs against the gateway TCP debug listener and matches the declared support matrix', needsBash: false },
   { id: 'providers-anthropic', file: 'providers.test.ts', title: 'providers: a run with a tool call completes through the Anthropic adapter with a stored secret', needsBash: false },
   { id: 'providers-open-responses', file: 'providers.test.ts', title: 'providers: a run with a tool call completes through the Open Responses relay with a stored secret', needsBash: false },
@@ -130,6 +132,7 @@ export const E2E_CASES = [
   { id: 'cli-race', file: 'cli.test.ts', title: 'cli: two commands started together share one daemon', needsBash: false },
   { id: 'cli-interrupt', file: 'cli.test.ts', title: 'cli: ctrl+c during -p cancels the run and exits 130', needsBash: false },
   { id: 'cli-pty-exit-running', file: 'cli-pty.test.ts', title: 'cli pty: /exit while a task runs leaves the terminal at once and the task continues in the daemon', needsBash: false },
+  { id: 'tui-negotiation-pty', file: 'tui-negotiation-pty.test.ts', title: 'tui pty: the terminal answers the query batch of the interactive screen as a terminal does, and the start screen shows the art, the version line and the model line', needsBash: false },
   { id: 'cli-pty-approval', file: 'cli-pty.test.ts', title: 'cli pty: first-run trust prompt, Edit approval with a diff, mode cycling and a clean exit through a real pty', needsBash: false },
   { id: 'cli-pty-child-approval', file: 'cli-pty.test.ts', title: 'cli pty: an approval raised inside a subagent run is shown in the terminal with the waiting status, and answering it lets the parent finish', needsBash: false },
   { id: 'cli-pty-session', file: 'cli-pty.test.ts', title: 'cli pty: slash commands, multi-line input, esc cancels a running task, history recall and /exit through a real pty', needsBash: false },
@@ -151,8 +154,8 @@ export const E2E_CASES = [
   { id: 'bg-kill', file: 'agents.test.ts', title: 'background bash: KillBash stops the job and its process group', needsBash: true },
   { id: 'bg-runtime-kill', file: 'agents.test.ts', title: 'background bash: the runtime killed while a run waits on a job leaves the job unknown, kills its process group and wakes the run', needsBash: true },
   { id: 'cli-job-list', file: 'agents.test.ts', title: 'cli: momonga jobs lists a running background job and then its exit, and momonga status shows the run waiting on it', needsBash: true },
-  { id: 'first-run-headless-empty-home', file: 'first-run.test.ts', title: 'first run: momonga -p on an empty HOME says no model target is set up, shows how to set one up, starts no probe and exits non-zero', needsBash: false },
-  { id: 'first-run-headless-json', file: 'first-run.test.ts', title: 'first run: momonga -p --output-format json on an empty HOME reports target_not_ready and exits non-zero', needsBash: false },
+  { id: 'first-run-headless-empty-home', file: 'first-run.test.ts', title: 'first run: momonga -p on an empty HOME says no model target is set up, shows how to set one up, starts no probe and exits with the failure exit code', needsBash: false },
+  { id: 'first-run-headless-json', file: 'first-run.test.ts', title: 'first run: momonga -p --output-format json on an empty HOME reports target_not_ready and exits with the failure exit code', needsBash: false },
   { id: 'cli-models', file: 'product-cli.test.ts', title: 'cli: momonga models lists the models by server with the window the gateway declares, as text and as JSON', needsBash: false },
   { id: 'cli-policy-verify', file: 'product-cli.test.ts', title: 'cli: momonga policy verify proves a clean rule set and states what it does not prove, and exits non-zero with a counterexample when an allow rule admits a denied subcommand or reaches a secret', needsBash: false },
   { id: 'cli-cost', file: 'product-cli.test.ts', title: 'cli: momonga cost reports the calls and tokens of a run, of its session and of the folder, as text and as JSON', needsBash: false },

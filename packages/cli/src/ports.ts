@@ -72,7 +72,7 @@ export type CliPorts = {
   probe(env: Readonly<Record<string, string>>): WorkspaceProbe;
   openUrl: OpenUrl;
   secretStore(): SecretStore;
-  personCapability(): Promise<string>;
+  personCapability(home: string): Promise<string>;
   endpointScope(paths: Pick<MomongaPaths, 'run'>): Promise<EndpointScope>;
   acpStdio?: () => AcpStdio;
   handover?: HandoverHost;

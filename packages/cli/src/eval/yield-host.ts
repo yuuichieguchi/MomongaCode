@@ -1,4 +1,5 @@
 import type { UserModels } from '@momonga/config';
+import { isRecord } from '@momonga/foundation';
 import { caseSettingsFor, failedWithCleanup, runYieldDataset } from '@momonga/eval';
 import type { PolicyOverlay, YieldCandidate, YieldDataset, YieldFamily, YieldFamilyRun, YieldPorts } from '@momonga/eval';
 import type { MemoryView } from '@momonga/protocol';
@@ -24,10 +25,19 @@ export type YieldLiveInput = {
   planRelaySocket?(): Promise<string>;
 };
 
-export const familySettingsFor = (base: Readonly<Record<string, unknown>>, family: YieldFamily): Record<string, unknown> => ({
-  ...caseSettingsFor(base, { policy: YIELD_POLICY }),
-  verification: { commands: [family.learn.verification] },
-});
+const memoryOf = (settings: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+  const memory = settings['memory'];
+  return isRecord(memory) ? memory : {};
+};
+
+export const familySettingsFor = (base: Readonly<Record<string, unknown>>, family: YieldFamily): Record<string, unknown> => {
+  const settings = caseSettingsFor(base, { policy: YIELD_POLICY });
+  return {
+    ...settings,
+    memory: { ...memoryOf(settings), repositoryFacts: false },
+    verification: { commands: [family.learn.verification] },
+  };
+};
 
 export const candidatesOfRun = (memories: readonly MemoryView[], runId: string): YieldCandidate[] =>
   memories

@@ -575,6 +575,7 @@ export const SETTINGS_SCHEMA = {
             onTimeout: { enum: [...BASH_ON_TIMEOUT], default: TOOLS_DEFAULTS.bash.onTimeout },
             backgroundTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.backgroundTimeoutMs)),
             maxBackgroundTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.maxBackgroundTimeoutMs)),
+            drainIdleMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.drainIdleMs)),
           },
           additionalProperties: false,
         },

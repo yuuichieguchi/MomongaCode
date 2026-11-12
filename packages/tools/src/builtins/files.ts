@@ -4,6 +4,7 @@ import { OPEN_FLAGS, sha256Hex, writeFileAtomically as writeFileAtomicallyThroug
 import type { AtomicWriteFileSystem, FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
 import type { ToolSessionState } from '../types.ts';
 import { ToolExecutionError } from '../types.ts';
+import { MAX_LINE_CHARS } from './format.ts';
 import { shownPath } from './paths.ts';
 import type { PathScope } from './paths.ts';
 
@@ -84,6 +85,8 @@ export const sha256OfFile = async (files: PagedFiles, file: string): Promise<str
 
 export type LineScan = { sha256: string; totalLines: number };
 
+const KEPT_LINE_CHARS = MAX_LINE_CHARS + 1;
+
 export const scanLines = async (
   files: PagedFiles,
   file: string,
@@ -94,16 +97,19 @@ export const scanLines = async (
   const decoder = utf8Decoder();
   let pending = '';
   let lineNumber = 0;
+  const keep = (segment: string): void => {
+    if (pending.length < KEPT_LINE_CHARS) pending += segment.slice(0, KEPT_LINE_CHARS - pending.length);
+  };
   const feed = (text: string): void => {
-    pending += text;
     let start = 0;
-    for (let newline = pending.indexOf('\n', start); newline !== -1; newline = pending.indexOf('\n', start)) {
+    for (let newline = text.indexOf('\n', start); newline !== -1; newline = text.indexOf('\n', start)) {
+      keep(text.slice(start, newline));
       lineNumber += 1;
-      const line = pending.slice(start, newline);
-      onLine(line.endsWith('\r') ? line.slice(0, -1) : line, lineNumber);
+      onLine(pending.endsWith('\r') ? pending.slice(0, -1) : pending, lineNumber);
+      pending = '';
       start = newline + 1;
     }
-    pending = pending.slice(start);
+    keep(text.slice(start));
   };
   for await (const page of pagesOf(files, file)) {
     signal.throwIfAborted();

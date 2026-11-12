@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { writeInvalidUserSettings } from './helpers.ts';
 import { launchRuntime, sessionEnvFor, startStack, waitForStatus } from './run-helpers.ts';
 
@@ -31,7 +31,7 @@ describe('fail-closed user settings under a running runtime (system timers, in-p
     const hold = stack.hold();
     const session = await launched.createSession();
     const run = await launched.createRun(session.id);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
     writeInvalidUserSettings(stack.temp.home);
     expect((await launched.http('POST', `/v1/runs/${run.id}/cancel`)).status).toBeLessThan(300);
     hold.release();

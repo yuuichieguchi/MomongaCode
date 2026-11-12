@@ -7,7 +7,7 @@ import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock, FIR
 import type { TextStream } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createGateway, startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir, registerOwned, testLocks, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir, registerOwned, testLocks, testKernelLock, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { HMAC_KEY, PRIMARY, START_MS, TEST_VERSION, buildConfig, postJson, userInput } from './gateway-helpers.ts';
@@ -127,7 +127,7 @@ const heldRequest = async (context: CleanupContext, fake: Awaited<ReturnType<typ
     async (response) => response.status,
     () => 'failed' as const,
   );
-  await hold.waitForRequest();
+  await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
   return { settled: request };
 };
 

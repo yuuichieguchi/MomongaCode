@@ -141,9 +141,9 @@ describe('followRun', () => {
     await expect(followRun(options(client, []))).rejects.toThrow('the server answered 400');
   });
 
-  it('measures a second outage from its own start when the first reconnect delivered no event', async () => {
+  it('counts a stream that opens and breaks before any event as still lost, so the outage is measured from the first failure (wire-02)', async () => {
     const clock = virtualClock();
-    const { client, opened } = clientOf(
+    const { client } = clientOf(
       [
         { frames: [1], thenThrow: errno('ECONNRESET') },
         { frames: [], thenThrow: errno('ECONNRESET'), idle: () => void clock.sleep(20_000) },
@@ -152,10 +152,27 @@ describe('followRun', () => {
       [runView({ status: 'COMPLETED' })],
     );
 
-    const run = await followRun(options(client, [], { clock, reconnectBoundMs: 10_000 }));
+    await expect(followRun(options(client, [], { clock, reconnectBoundMs: 10_000 }))).rejects.toBeInstanceOf(ReconnectBoundExceeded);
+  });
 
-    expect(run.status).toBe('COMPLETED');
-    expect(opened).toEqual([undefined, 1, 1]);
+  it('gives up on a stream that answers and then breaks before its first event every time, instead of reconnecting for ever (wire-02)', async () => {
+    const { client } = clientOf(Array.from({ length: 50 }, () => ({ frames: [], thenThrow: errno('UND_ERR_SOCKET') })), []);
+
+    await expect(followRun(options(client, [], { reconnectBoundMs: 2000 }))).rejects.toBeInstanceOf(ReconnectBoundExceeded);
+  });
+
+  it('starts the outage again after an event was delivered', async () => {
+    const clock = virtualClock();
+    const { client } = clientOf(
+      [
+        { frames: [1], thenThrow: errno('ECONNRESET'), idle: () => void clock.sleep(8_000) },
+        { frames: [2], thenThrow: errno('ECONNRESET'), idle: () => void clock.sleep(8_000) },
+        { frames: [3] },
+      ],
+      [runView({ status: 'COMPLETED' })],
+    );
+
+    expect((await followRun(options(client, [], { clock, reconnectBoundMs: 10_000 }))).status).toBe('COMPLETED');
   });
 
   it('gives up when the stream cannot be restored within the bound', async () => {

@@ -1,5 +1,5 @@
 export { editUserSettings } from './edit-user-settings.ts';
-export { approveProjectItems, editProjectMandate } from './edit-project-file.ts';
+export { approveProjectItems, editProjectMandate, writeProjectMcpServer } from './edit-project-file.ts';
 export { pendingProjectItems } from './pending-items.ts';
 export type { PendingChange, PendingItemsInput, PendingProjectItem, PendingProjectItems, ProjectAgentFile, ProjectAgentsLister } from './pending-items.ts';
 export type { ApprovedItem, EditProjectMandateOptions, ProjectMandateEdit } from './edit-project-file.ts';
@@ -83,6 +83,7 @@ export { resolveRetentionSettings, resolveTelemetrySettings } from './settings.t
 export { MAX_RETENTION_DAYS, MIN_RETENTION_DAYS } from './settings-schema.ts';
 export { APPROVAL_DIGEST_PATTERN, approvalDigestOf, hookGroupApprovalDigestOf, projectAgentDigestOf } from './approval-digest.ts';
 export { DECLARED_CHECK_SOURCES, acceptedCheckOf, declaredChecksOf, recordProjectCheck } from './declared-checks.ts';
+export { forgetProjectCheck, readProjectCheck } from './project-checks.ts';
 export type { AcceptedCheck, DeclaredCheck, DeclaredCheckSource } from './declared-checks.ts';
 export { resolveNetwork, resolveNetworkSources } from './network.ts';
 export type { NetworkEnvironment, NetworkSources, ShownNetworkValue } from './network.ts';

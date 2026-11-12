@@ -45,7 +45,7 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
       authState: async () => ({ state: 'required' }),
       close: async () => undefined,
     }) as unknown as McpAuthorizingPool;
-  const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH,
+  const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: runtime.unprotectedLaunch('the tests of the runtime start git without the protection of the home'), hostParallelism: 8,
     kernelLock: testKernelLock(),
     lockCapability: testLocks().capability,
     version: '0.0.0-test',

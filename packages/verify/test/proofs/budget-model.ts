@@ -172,3 +172,35 @@ export const chainWindowOf = (arith: ProofArith, options: { readonly loadRule: b
   const I0 = named(arith, 'I0', arith.max(ctx.Int.val(0), W.sub(U).sub(margin)));
   return { W, maxOutput: U, R: U, margin, I0, members };
 };
+
+export type Ledger = {
+  readonly limit: ProofInt;
+  readonly spent: ProofInt;
+  readonly reserved: ProofInt;
+  readonly others: ProofInt;
+  readonly cost: ProofInt;
+  readonly admitted: ProofInt;
+};
+
+export const ledgerOf = (arith: ProofArith): Ledger => {
+  const limit = arith.int('limit');
+  const spent = arith.int('spent');
+  const reserved = arith.int('reserved');
+  const others = arith.int('others');
+  const cost = arith.int('cost');
+  const admitted = arith.int('admitted');
+  arith.given(spent.ge(0), reserved.ge(0), others.ge(0), cost.ge(0), admitted.ge(0), cost.le(reserved), spent.add(reserved).add(others).le(limit));
+  return { limit, spent, reserved, others, cost, admitted };
+};
+
+export const settledAtomically = (arith: ProofArith, ledger: Ledger): ProofBool => {
+  const { limit, spent, reserved, others, cost, admitted } = ledger;
+  arith.given(spent.add(reserved).add(others).add(admitted).le(limit));
+  return spent.add(cost).add(others).add(admitted).le(limit);
+};
+
+export const releasedBeforeAppend = (arith: ProofArith, ledger: Ledger): ProofBool => {
+  const { limit, spent, others, cost, admitted } = ledger;
+  arith.given(spent.add(others).add(admitted).le(limit));
+  return spent.add(cost).add(others).add(admitted).le(limit);
+};

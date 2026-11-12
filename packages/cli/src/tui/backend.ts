@@ -7,7 +7,7 @@ import type { TrustItemsView } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
 import { createFromTemplate } from './file-templates.ts';
 import type { CreatedFile, TemplateKind } from './file-templates.ts';
-import { approveProjectItems, editProjectMandate, recordProjectCheck, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import { approveProjectItems, editProjectMandate, writeProjectMcpServer, recordProjectCheck, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { AcceptedCheck, ApprovedItem, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
 import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
@@ -70,12 +70,13 @@ export type TuiBackend = {
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
   trust(): Promise<TrustView>;
   clearTrust(): Promise<void>;
-  trustItems(): Promise<TrustItemsView>;
+  trustItems(server?: string): Promise<TrustItemsView>;
   approveProjectItems(approved: readonly ApprovedItem[]): Promise<void>;
   checkProposal(): Promise<CheckProposal>;
   answerCheck(answer: AcceptedCheck): Promise<void>;
   projectMandate(): Promise<ProjectMandateState>;
   writeProjectMandate(document: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
+  writeProjectMcpServer(name: string, server: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
   openSession(model?: string, permissionMode?: PermissionMode): Promise<SessionView>;
   resumeSession(id: string): Promise<SessionView>;
   continueSession(): Promise<SessionView>;
@@ -86,7 +87,7 @@ export type TuiBackend = {
   models(): Promise<readonly MomongaModelEntry[]>;
   setModel(model: string): Promise<SessionView>;
   autoModeAvailable(): Promise<boolean>;
-  startRun(text: string, history: 'inherit' | 'fresh', options?: StartRunOptions): Promise<RunView>;
+  startRun(text: string, options?: StartRunOptions): Promise<RunView>;
   compact(instructions?: string): Promise<RunView>;
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
   cancel(runId: string): Promise<void>;
@@ -232,14 +233,14 @@ export const createTuiBackend = (
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
     boot: async () => {
       await ensureSessionDaemon(ports, paths, { signal: closing.signal, ...(onNewer === undefined ? {} : { onNewer }) });
-      client = connectSessionRuntime(ports, paths, onNewer);
+      client = connectSessionRuntime(ports, paths, onNewer, () => restoreDaemon(ports, paths, onNewer)(closing.signal));
       return client.trust(ports.cwd);
     },
     decideTrust: async (decision) => {
       await runtime().setTrust(ports.cwd, decision);
     },
     trust: () => runtime().trust(ports.cwd),
-    trustItems: () => runtime().trustItems(ports.cwd),
+    trustItems: (server) => runtime().trustItems(ports.cwd, server),
     approveProjectItems: (approval) => approveProjectItems(paths.home, ports.cwd, approval, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
     checkProposal: async () => {
       const trusted = await trustOracle.isTrusted(ports.cwd, closing.signal);
@@ -249,6 +250,8 @@ export const createTuiBackend = (
     },
     answerCheck: (answer) => recordProjectCheck(paths.home, ports.cwd, answer, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
     projectMandate: async () => projectMandateState({ projectDir: ports.cwd, approvals: (await loadUserSettings({ home: paths.home, signal: closing.signal })).settings.projectApprovals, signal: closing.signal }),
+    writeProjectMcpServer: (name, server, signal) =>
+      writeProjectMcpServer(ports.cwd, name, server, { home: paths.home, trust: trustOracle, ...settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: AbortSignal.any([closing.signal, signal]) }) }),
     writeProjectMandate: (document, signal) =>
       editProjectMandate(ports.cwd, replacedBy(document), { home: paths.home, trust: trustOracle, ...settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: AbortSignal.any([closing.signal, signal]) }) }),
     clearTrust: async () => {
@@ -284,8 +287,7 @@ export const createTuiBackend = (
       return session;
     },
     autoModeAvailable: () => autoModeConfigured(ports, closing.signal),
-    startRun: async (text, history, runOptions = {}) =>
-      (await runtime().createRun(current().id, text, { history, ...runBoundsOf(options), ...runOptions })).run,
+    startRun: async (text, runOptions = {}) => (await runtime().createRun(current().id, text, { history: 'inherit', ...runBoundsOf(options), ...runOptions })).run,
     compact: (instructions) => runtime().compact(current().id, instructions),
     follow: async (runId, handlers) =>
       followRun({
@@ -313,8 +315,8 @@ export const createTuiBackend = (
     },
     userInput: {
       fileCandidates: async (signal) => {
-        const { listFileCandidates } = await import('@momonga/runtime');
-        return listFileCandidates({ root: ports.cwd, env: ports.env, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal });
+        const { listFileCandidates, unprotectedLaunch } = await import('@momonga/runtime');
+        return listFileCandidates({ root: ports.cwd, env: ports.env, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal }, unprotectedLaunch('the file list of the terminal UI starts git without the protection of the home'));
       },
       shell: (command, include, io) => runtime().userShell(current().id, command, include, io),
       stopShell: () => runtime().stopUserShell(current().id),

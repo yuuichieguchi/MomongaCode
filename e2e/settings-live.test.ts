@@ -11,7 +11,7 @@ import { createRuntimeClient } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { startStack, upstreamModelRef, withUpstreamEntry, writeSettingsFile } from './support/stack.ts';
 import { pidOf } from './support/supervisor-client.ts';
-import { E2E_RECOVERY_BOUND_MS, E2E_SETTINGS_SEEN_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RECOVERY_BOUND_MS, E2E_SETTINGS_SEEN_BOUND_MS, E2E_TEST_TIMEOUT_MS, until, E2E_RUN_COMPLETED_BOUND_MS } from './support/wait.ts';
 
 const CHANGED_MODEL = 'system-changed';
 
@@ -43,7 +43,7 @@ describe('decision 76: a settings edit during a held run applies in place (desig
     try {
       const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run: held } = await runtime.createRun(session.id, 'Say hello');
-      await hold.waitForRequest();
+      await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
       writeSettingsFile(home, withChangedModel(home));
       await until(() => named(supervisorLog(home.paths, stack.ready.pid), 'settings.changed').length > 0, {
         deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS,

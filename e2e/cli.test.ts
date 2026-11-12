@@ -8,7 +8,7 @@ import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { CLI_FAKES_BUNDLE, runCli, runCliWithFakes, setFakeCliVersion, startCli } from './support/cli.ts';
 import { readDb } from './support/db.ts';
-import { supervisorLog } from './support/log-reader.ts';
+import { supervisorLog, supervisorPidsOf } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
@@ -260,6 +260,7 @@ describe('cli: momonga -p', () => {
     expect([first.code, second.code]).toEqual([0, 0]);
     expect([first.stdout, second.stdout].sort()).toEqual(['one\n', 'two\n']);
     const supervisorPid = Number(/pid (\d+)/.exec((await runCli(home, ['daemon', 'status'])).stdout)?.[1]);
+    expect(supervisorPidsOf(home.paths), 'every supervisor this home ever had').toEqual([supervisorPid]);
     const spawns = supervisorLog(home.paths, supervisorPid).filter((record) => record.msg === 'child.spawn');
     expect(spawns.map((record) => record['child']).sort()).toEqual(['gateway', 'runtime']);
   });
@@ -314,7 +315,7 @@ describe('cli: momonga -p', () => {
     const runtime = createRuntimeClient(home);
     const session = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const held = (await runtime.createRun(session.session.id, 'work in progress')).run;
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
     const oldPid = stack.supervisor.pid;
     const heldStatus = (): string | undefined => readDb<{ status: string }>(home.paths.databases.runtime, 'SELECT status FROM runs WHERE id = ?', held.id)[0]?.status;
 
@@ -366,7 +367,7 @@ describe('cli: momonga -p', () => {
     const runtime = createRuntimeClient(home);
     const session = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     await runtime.createRun(session.session.id, 'work in progress');
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
     const oldPid = stack.supervisor.pid;
     setFakeCliVersion(home, '2.0.0');
     expect((await runCliWithFakes(home, ['-p', 'another'], { boundMs: NEWER_CLIENT_RUN_BOUND_MS })).code).toBe(0);
@@ -405,7 +406,7 @@ describe('cli: momonga -p', () => {
     const hold = stack.fake.hold();
 
     const running = startCli(home, ['-p', 'Say hello', '--output-format', 'stream-json']);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
     const oldRuntime = pidOf(await stack.client.health(), 'runtime');
     process.kill(oldRuntime, 'SIGKILL');
     await stack.client.untilChild('runtime', (child) => child.state === 'ready' && child.pid !== undefined && child.pid !== oldRuntime, E2E_RESTART_BOUND_MS);

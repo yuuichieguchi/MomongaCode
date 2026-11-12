@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
-import type { Capabilities } from '@momonga/protocol';
-import { isCompactionRequest, journalOfRows, ofType, overflowStepRange, summaryRoute, wireTokensOfBody } from './support/budget.ts';
+import { isCompactionRequest, journalOfRows, ofType, overflowStepRange, stackPinsOf, summaryRoute, wireTokensOfBody } from './support/budget.ts';
 import type { JournalEvent } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
@@ -72,9 +71,9 @@ describe('roles: a compaction role model', () => {
       const first = (await runtime.createRun(session.id, 'Say hello')).run;
       await runToEnd(runtime, first.id);
       runIds.push(first.id);
-      const capabilities = (ofType(journalOf(home, first.id), 'run.started')[0]?.data['pins'] as { capabilities: Capabilities }).capabilities;
+      const pins = stackPinsOf(ofType(journalOf(home, first.id), 'run.started')[0]?.data['pins']);
       const prefix = wireTokensOfBody(chatCompletions(stack.fake)[0]?.body);
-      const range = await overflowStepRange(capabilities, prefix, LONG_REQUESTS);
+      const range = await overflowStepRange(pins, prefix, LONG_REQUESTS);
       requestTokens = range.lowest;
       const longRequestChars = ESTIMATED_CHARACTERS_PER_TOKEN * requestTokens;
       for (let index = 0; index < LONG_REQUESTS; index += 1) {

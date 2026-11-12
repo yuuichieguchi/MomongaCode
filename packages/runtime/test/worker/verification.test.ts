@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as protocol from '@momonga/protocol';
 import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { fixedSandboxBindings } from '@momonga/runtime';
+import { NO_CHECK_DECLARED_CODE, fixedSandboxBindings } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { Run } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
@@ -411,6 +411,23 @@ describe('verification.required', () => {
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
   });
 
+  it('does not complete a mandate run whose only change is a held call that ran late, after its approval: the late call is a mutation the gate counts', async () => {
+    const env = await makeEnv();
+    const file = path.join(env.project, 'late.txt');
+    env.gateway.script.push(callsStep([{ callId: 'call_w', name: 'Write', args: { file_path: file, content: 'late' } }]), textStep('Done except the write.'));
+    const run = await env.enqueue('Write', { mandate: { scope: { allow: ['Bash(ls:*)'], ask: [`Write(/${file})`] } } });
+    await env.runOnce(env.worker('worker-1'));
+    expect(env.ofType(run.id, 'tool.held')).toHaveLength(1);
+    env.gateway.script.push(textStep('All done.'));
+
+    await env.resolveApproval(run.id, 'allow_once');
+    await env.runOnce(env.worker('worker-2'));
+
+    expect(fs.readFileSync(file, 'utf8')).toBe('late');
+    expect(env.fold(run.id).lastMutationSeq).toBeGreaterThan(0);
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'conditions_unmet' });
+  });
+
   it('completes a run that wrote without a condition when required is off', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, [], false);
@@ -420,6 +437,19 @@ describe('verification.required', () => {
     await env.runOnce(workerOf(env));
 
     expect(env.run(run.id).status).toBe('COMPLETED');
+  });
+
+  it('completes a run with no declared check that changed something unverified, with one notice that says so', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    standing(env, [], false);
+    env.gateway.script.push(write('call_w_1', path.join(env.project, 'a.txt')), write('call_w_2', path.join(env.project, 'b.txt')), textStep('Done.'));
+    const run = await enqueueWith(env, 'edit', undefined);
+
+    await env.runOnce(workerOf(env));
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(starts(env, run.id)).toEqual([]);
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.code === NO_CHECK_DECLARED_CODE)).toHaveLength(1);
   });
 });
 

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { EXIT_ALREADY_RUNNING, FIRST_GENERATION, createUdsClient, inspectProcessLock, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, runGatewayEntry } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration, testKernelLock, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -137,7 +137,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway), { connectTimeoutMs: 0 });
     registerCleanup(context, () => client.close());
     const request = postJson(client, '/v1/responses', { model: 'primary/system', input: userInput('hold me') }, { 'idempotency-key': 'entry-held' }).catch(() => undefined);
-    await hold.waitForRequest();
+    await hold.waitForRequest({ timeoutMs: REAL_PROCESS_WAIT_MS, description: 'the held model request' });
 
     launched.io.signal('SIGTERM');
     await until(() => stderrJson(launched.io).some((line) => line.msg === 'entry.signal'), 'the first signal to be logged');

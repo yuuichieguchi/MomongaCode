@@ -43,7 +43,7 @@ const fakeTimers = (): { port: ChildPorts; armed: Map<number, Armed>; fire(ms: n
 const SEARCH_MS = 7_000;
 
 const LIMITS: ToolLimits = {
-  bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000 },
+  bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000, drainIdleMs: 1000 },
   search: { timeoutMs: SEARCH_MS },
   operations: { timeoutMs: 120_000 },
 };

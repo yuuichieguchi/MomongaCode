@@ -14,7 +14,7 @@ export type ProjectAgentFile = { name: string; text: string; source: string };
 
 export type ProjectAgentsLister = (projectDir: string, signal: AbortSignal) => Promise<readonly ProjectAgentFile[]>;
 
-export type PendingItemsInput = { home: string; projectDir: string; trust: TrustOracle; agents: ProjectAgentsLister; signal: AbortSignal };
+export type PendingItemsInput = { home: string; projectDir: string; trust: TrustOracle; agents: ProjectAgentsLister; signal: AbortSignal; askedServer?: string };
 
 export type PendingChange = { kind: 'new' } | { kind: 'changed'; earlier: unknown } | { kind: 'not-recorded' };
 
@@ -60,7 +60,7 @@ const agentChange = (name: string, held: readonly AgentApproval[]): PendingChang
   return earlier === undefined ? { kind: 'new' } : { kind: 'changed', earlier: earlier.text };
 };
 
-export const pendingProjectItems = async ({ home, projectDir, trust, agents, signal }: PendingItemsInput): Promise<PendingProjectItems> => {
+export const pendingProjectItems = async ({ home, projectDir, trust, agents, signal, askedServer }: PendingItemsInput): Promise<PendingProjectItems> => {
   if (!(await trust.isTrusted(projectDir, signal))) return { items: [], refused: [] };
   const refused: string[] = [];
   const items: PendingProjectItem[] = [];
@@ -78,8 +78,9 @@ export const pendingProjectItems = async ({ home, projectDir, trust, agents, sig
   const serverApprovals = loaded?.settings.enabledMcpjsonServers ?? [];
   const mcpJson = path.join(projectDir, '.mcp.json');
   for (const pending of servers?.pendingApproval ?? []) {
-    if (!disabled.has(pending.name)) items.push({ kind: 'mcp', name: pending.name, config: pending.config, digest: pending.digest, source: mcpJson, change: serverChange(pending.name, serverApprovals) });
+    if (askedServer === undefined ? !disabled.has(pending.name) : pending.name === askedServer) items.push({ kind: 'mcp', name: pending.name, config: pending.config, digest: pending.digest, source: mcpJson, change: serverChange(pending.name, serverApprovals) });
   }
+  if (askedServer !== undefined) return { items: items.filter((item) => item.kind === 'mcp'), refused };
   const heldAgents = folderApprovals?.agents ?? [];
   for (const agent of await agents(projectDir, signal)) {
     const digest = projectAgentDigestOf(agent.name, agent.text);

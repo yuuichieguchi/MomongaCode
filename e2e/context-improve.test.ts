@@ -265,9 +265,9 @@ describe('momonga context improve', () => {
     expect(
       measured.benchmark.pinned + STEPS * benchmarkStepCost,
       'the case without compaction must still fit the whole walk after the report of the step before the last',
-    ).toBeLessThanOrEqual(await fitLimitAfterReport(measured.capabilities, measured.benchmark.pinned + (STEPS - 1) * benchmarkStepCost));
+    ).toBeLessThanOrEqual(await fitLimitAfterReport(measured.pins, measured.benchmark.pinned + (STEPS - 1) * benchmarkStepCost));
     benchmarkStepText = fillerOfTokens(benchmarkStepTokens);
-    const followUpStepTokens = await stepTokensToOverflowTheRoom(measured.capabilities, measured.person, STEPS);
+    const followUpStepTokens = await stepTokensToOverflowTheRoom(measured.pins, measured.person, STEPS);
     expect(
       compactableTokens(STEPS, DEFAULT_KEEP_RECENT_STEPS, followUpStepTokens),
       'the steps older than the protected recent steps must be worth a compaction (the gain rule of the context builder)',
