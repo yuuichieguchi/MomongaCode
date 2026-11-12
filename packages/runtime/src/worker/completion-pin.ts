@@ -51,7 +51,7 @@ export const completionPinFor = async (input: {
   run: Run;
   session: Session;
   settings: Pick<SettingsPort, 'verification'>;
-  rules: readonly PermissionRule[];
+  rules: () => Promise<readonly PermissionRule[]>;
   mode: PermissionMode;
   signal: AbortSignal;
 }): Promise<CompletionPinOutcome> => {
@@ -76,7 +76,7 @@ export const completionPinFor = async (input: {
     }
     if (layer.declaration.inherit === false) break;
   }
-  const denied = deniedConditionOf(input.rules, input.mode, conditions);
+  const denied = conditions.length === 0 ? undefined : deniedConditionOf(await input.rules(), input.mode, conditions);
   if (denied !== undefined) return { kind: 'denied', denied };
   const hasMandate = request !== undefined || profile !== undefined;
   const declared = hasMandate || conditions.length > 0 || requirements.length > 0;

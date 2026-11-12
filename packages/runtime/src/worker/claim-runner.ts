@@ -410,7 +410,7 @@ const drive = async (
   }
   const pinning =
     pinned === undefined
-      ? await completionPinFor({ run, session, settings: options.settings, rules: await permissionRulesFor(options, session, control.signal), mode: session.permissionMode, signal: control.signal })
+      ? await completionPinFor({ run, session, settings: options.settings, rules: () => permissionRulesFor(options, session, control.signal), mode: session.permissionMode, signal: control.signal })
       : undefined;
   if (pinning?.kind === 'denied') {
     await terminals.finish('FAILED', { error: { code: COMPLETION_CONDITION_DENIED_CODE, message: deniedConditionText(pinning.denied) } });
