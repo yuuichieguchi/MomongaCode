@@ -6901,6 +6901,75 @@
       "measuredCpuSeconds": 1.44,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W7 (workers 1, 1-minute load 4 to 5)"
+    },
+    {
+      "config": "BudgetLedger",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 348,
+      "measuredSeconds": 1.43,
+      "measuredCpuSeconds": 1.55,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "BudgetLedger.threeRuns",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 12939,
+      "measuredSeconds": 1.46,
+      "measuredCpuSeconds": 2.22,
+      "budgetCpuSeconds": 8,
+      "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "BudgetLedger.releaseBeforeAppend",
+      "role": "evidence",
+      "expect": {
+        "violates": "B2",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 50,
+      "measuredSeconds": 1.15,
+      "measuredCpuSeconds": 1.35,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "BudgetLedger.resendNoReserve",
+      "role": "evidence",
+      "expect": {
+        "violates": "B4",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 30,
+      "measuredSeconds": 1.11,
+      "measuredCpuSeconds": 1.3,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "BudgetLedger.sweepBeforeChildDone",
+      "role": "evidence",
+      "expect": {
+        "violates": "B7",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 124,
+      "measuredSeconds": 1.19,
+      "measuredCpuSeconds": 1.4,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
     }
   ]
 }
