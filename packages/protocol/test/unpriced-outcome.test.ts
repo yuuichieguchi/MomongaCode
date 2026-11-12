@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
-import { RUN_API_SCHEMAS, UNPRICED_CODES } from '@momonga/protocol';
+import { RUN_API_SCHEMAS, UNPRICED_CODES, recordedCostOf } from '@momonga/protocol';
 
 const ajv = new Ajv2020.default({ strict: true, allErrors: true });
 addFormats.default(ajv);
@@ -9,7 +9,7 @@ const acceptsEvent = ajv.compile(RUN_API_SCHEMAS.PublicRunEvent);
 
 const ENVELOPE = { id: 7, runId: 'r1', sessionId: 's1', seq: 4, step: 1, createdAt: 1_800_000_000_000 };
 const CHARGED = { ...ENVELOPE, type: 'usage.charged', purpose: 'compaction', inputTokens: 5, outputTokens: 1, totalTokens: 6 };
-const COST = { amount: 0.25, currency: 'USD', priceVersion: '2026-01-01' };
+const COST = { amount: 0.25, units: '250000000000000', currency: 'USD', priceVersion: '2026-01-01' };
 const OLD_LINE =
   '{"id":7,"runId":"r1","sessionId":"s1","seq":4,"step":1,"createdAt":1800000000000,"type":"usage.charged","purpose":"compaction","inputTokens":5,"outputTokens":1,"totalTokens":6,"cost":{"amount":0.25,"currency":"USD","priceVersion":"2026-01-01"}}';
 
@@ -43,7 +43,10 @@ describe('usage.charged carries the price outcome', () => {
   it('decodes an old journal line with neither field or with cost only, beside a line written after the change', () => {
     expect(acceptsEvent({ ...CHARGED, unpriced: { code: 'unknown_billing', reason: 'the billing of the target is unknown' } })).toBe(true);
     expect(acceptsEvent(CHARGED)).toBe(true);
-    expect(acceptsEvent(JSON.parse(OLD_LINE))).toBe(true);
+    const old = JSON.parse(OLD_LINE);
+    const decoded = { ...old, cost: recordedCostOf(old.cost) };
+    expect(decoded.cost.units).toBeNull();
+    expect(acceptsEvent(decoded)).toBe(true);
   });
 
   it('round-trips a usage.charged journaled from an estimated usage with the code usage_not_reported', () => {
