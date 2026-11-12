@@ -71,7 +71,7 @@ The routes that require it:
 - `POST /v1/markers/:name/ignore`
 - `POST /v1/guidelines`, `POST /v1/guidelines/:version/rollback`
 - `POST /v1/memories`, `DELETE /v1/memories/:id`, `POST /v1/memories/:id/accept`, `POST /v1/memories/:id/reject`, `POST /v1/memories/:id/restore`, `POST /v1/memories/:id/promote`
-- `POST /v1/rules`, `POST /v1/rules/:id/retire`, `PUT /v1/policy/verdicts/:fingerprint`
+- `POST /v1/rules`, `POST /v1/rules/:id/retire`, `POST /v1/policy/verify`
 - `PUT /v1/trust`, `DELETE /v1/trust`
 
 ## Other processes of the same account
