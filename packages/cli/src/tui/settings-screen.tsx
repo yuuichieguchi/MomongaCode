@@ -1,6 +1,7 @@
 import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, editModelsSettings } from '@momonga/config';
-import type { SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
+import type { ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
+import { openInEditor } from './external-editor.ts';
 import type { PickRow } from './picker.tsx';
 import { switchWordOf } from './screen/a11y.ts';
 import { settingsFileLine } from './models/texts.ts';
@@ -8,6 +9,10 @@ import type { SlashContext } from './slash.ts';
 
 export const SETTINGS_TITLE = 'Settings';
 export const OPEN_SETTINGS_FILE_ROW = 'Open the settings file';
+export const MANDATE_ROW = "This folder's mandate";
+export const MANDATE_NOT_APPROVED = 'not approved: new runs are refused';
+export const MANDATE_OBJECT = 'The mandate is a JSON object.';
+export const OPEN_FILE_TITLE = 'Open which file in $EDITOR?';
 export const SAVE_TO_TITLE = 'Save to:';
 export const SAVING_SETTING = 'saving the setting';
 export const APPLIES_NOW = 'applies now';
@@ -94,6 +99,13 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'tools.deferral': { label: 'Tool deferral', section: 'Tools', appliesNow: true },
   'tools.conciseDescriptions': { label: 'Concise tool descriptions', section: 'Tools', appliesNow: true },
   'tools.ripgrep': { label: 'ripgrep program', section: 'Tools', appliesNow: false },
+  'tools.bash.defaultTimeoutMs': { label: 'Time a shell command may run when the model names none (ms)', section: 'Tools', appliesNow: false },
+  'tools.bash.maxTimeoutMs': { label: 'Longest time the model may give a shell command (ms)', section: 'Tools', appliesNow: false },
+  'tools.bash.onTimeout': { label: 'What happens to a shell command at its time', section: 'Tools', appliesNow: false },
+  'tools.bash.backgroundTimeoutMs': { label: 'Time a background shell command may run when the model names none (ms)', section: 'Tools', appliesNow: false },
+  'tools.bash.maxBackgroundTimeoutMs': { label: 'Longest time the model may give a background shell command (ms)', section: 'Tools', appliesNow: false },
+  'tools.search.timeoutMs': { label: 'Time a file search may run (ms)', section: 'Tools', appliesNow: false },
+  'tools.operations.timeoutMs': { label: 'Time a Git or forge operation may run (ms)', section: 'Tools', appliesNow: false },
   'memory.reflection.enabled': { label: 'Reflection', section: 'Memory', appliesNow: false },
   'memory.reflection.maxTokens': { label: 'Reflection token limit', section: 'Memory', appliesNow: false },
   'memory.forgetAfterDays': { label: 'Forget after (days)', section: 'Memory', appliesNow: false },
@@ -137,6 +149,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'operations.protectedRefs': { label: 'Protected branches (a push always asks you)', section: 'Git and pull requests', appliesNow: false },
   'operations.approval': { label: 'Approval class by operation (rule or always)', section: 'Git and pull requests', appliesNow: false },
   autoUpdates: { label: 'Automatic updates', section: 'Updates', appliesNow: false },
+  'update.stallTimeoutMs': { label: 'Time an update transfer may wait for an answer or for data (ms)', section: 'Updates', appliesNow: false },
   'gateway.closeGraceMs': { label: 'Close grace (ms)', section: 'Shutdown', appliesNow: false },
   'gateway.managedServerStopGraceMs': { label: 'Managed server stop grace (ms)', section: 'Shutdown', appliesNow: false },
   'runtime.drainTimeoutMs': { label: 'Run drain timeout (ms)', section: 'Shutdown', appliesNow: false },
@@ -245,9 +258,9 @@ export const shownValue = (value: unknown): string => {
 export const settingRowLabel = (label: string, value: unknown, source: SettingSource, applied?: boolean): string =>
   [label, shownValue(value), source, ...(applied === undefined ? [] : [applied ? APPLIES_NOW : APPLIES_NEXT_SESSION])].join('  ');
 
-type Listed = { readonly kind: 'heading' } | { readonly kind: 'open' } | { readonly kind: 'setting'; readonly leaf: SettingLeaf; readonly presentation: SettingPresentation } | { readonly kind: 'command'; readonly command: string };
+type Listed = { readonly kind: 'heading' } | { readonly kind: 'open' } | { readonly kind: 'mandate' } | { readonly kind: 'setting'; readonly leaf: SettingLeaf; readonly presentation: SettingPresentation } | { readonly kind: 'command'; readonly command: string };
 
-export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { readonly name: string }[], written: string | undefined): { rows: PickRow[]; listed: Listed[] } => {
+export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { readonly name: string }[], written: string | undefined, mandate?: ProjectMandateState): { rows: PickRow[]; listed: Listed[] } => {
   const leaves = settingLeaves();
   const rows: PickRow[] = [{ label: OPEN_SETTINGS_FILE_ROW }];
   const listed: Listed[] = [{ kind: 'open' }];
@@ -270,11 +283,24 @@ export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { re
       rows.push({ label: settingRowLabel(presentation.label, value, source, written === leaf.key ? presentation.appliesNow : undefined) });
       listed.push({ kind: 'setting', leaf, presentation });
     }
+    if (section === MANDATE_SECTION && mandate !== undefined) {
+      rows.push({ label: mandateRowLabel(mandate) });
+      listed.push({ kind: 'mandate' });
+    }
   }
   return { rows, listed };
 };
 
 export const settingsFileLines = (snapshot: SettingsSnapshot): string[] => [...snapshot.layers.map((view) => (view.layer === 'user' ? settingsFileLine(view.file) : `${view.layer}: ${view.file}`)), ...(snapshot.mcpFile === undefined ? [] : [`.mcp.json: ${snapshot.mcpFile}`])];
+
+export const settingsFiles = (snapshot: SettingsSnapshot): { name: string; file: string }[] => [...snapshot.layers.map((view) => ({ name: view.layer, file: view.file })), ...(snapshot.mcpFile === undefined ? [] : [{ name: '.mcp.json', file: snapshot.mcpFile }])];
+
+const openSettingsFile = async (context: SlashContext, snapshot: SettingsSnapshot): Promise<void> => {
+  const files = settingsFiles(snapshot);
+  const choice = await context.overlays.choose({ title: OPEN_FILE_TITLE, lines: settingsFileLines(snapshot), rows: files.map(({ name }) => ({ label: name })), initial: 0, decideOn: 'enter', escape: 'back', filter: false });
+  const file = choice === undefined ? undefined : files[choice.index]?.file;
+  if (file !== undefined) await openInEditor(context.externalEditor, file, (text) => context.info(text));
+};
 
 export type Refusal = { readonly refused: string };
 
@@ -660,6 +686,38 @@ const editStructured = async (context: SlashContext, snapshot: SettingsSnapshot,
   }
 };
 
+const MANDATE_SECTION: SettingSection = 'Budget and delegation';
+
+const shownEntry = (value: unknown): string => (Array.isArray(value) ? value.map(String).join(', ') : String(value));
+
+export const mandateRowLabel = (mandate: ProjectMandateState): string => {
+  if (!mandate.found) return `${MANDATE_ROW}  ${NOT_SET}`;
+  const entries = isRecord(mandate.document) ? Object.entries(mandate.document).map(([key, value]) => `${key} ${shownEntry(value)}`) : [];
+  return [MANDATE_ROW, entries.length === 0 ? NONE : entries.join('; '), ...(mandate.approval === 'approved' ? [] : [MANDATE_NOT_APPROVED])].join('  ');
+};
+
+const editMandate = async (context: SlashContext, mandate: ProjectMandateState): Promise<Outcome> => {
+  let draft = JSON.stringify(mandate.found ? mandate.document : {}, null, 2);
+  let sentence: string | undefined;
+  for (;;) {
+    const text = await context.overlays.promptText({ title: MANDATE_ROW, lines: [mandate.file, ...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, structured: true, validate: jsonProblem });
+    if (text === undefined) return LEFT;
+    draft = text;
+    const value: unknown = JSON.parse(text);
+    if (!isRecord(value)) {
+      sentence = MANDATE_OBJECT;
+      continue;
+    }
+    try {
+      await context.background(SAVING_SETTING, (signal) => context.backend.writeProjectMandate(value, signal));
+      return { kind: 'written' };
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
+      sentence = error.message;
+    }
+  }
+};
+
 export const DIALECTS_KEY = 'models.dialects';
 
 const writeDialects = async (context: SlashContext, dialects: object): Promise<Refusal | undefined> => {
@@ -709,14 +767,21 @@ export const runSettingsScreen = async (context: SlashContext, live: readonly Li
   let sentence: string | undefined;
   for (;;) {
     const snapshot = await context.backend.settings();
-    const { rows, listed } = settingsRows(snapshot, context.commands, written);
+    const mandate = snapshot.targets.includes('project') ? await context.backend.projectMandate() : undefined;
+    const { rows, listed } = settingsRows(snapshot, context.commands, written, mandate);
     const choice = await context.overlays.choose({ title: SETTINGS_TITLE, lines: sentence === undefined ? [] : [sentence], rows, initial: at, decideOn: 'enter', escape: 'back', filter: true });
     const chosen = choice === undefined ? undefined : listed[choice.index];
     if (choice === undefined || chosen === undefined || chosen.kind === 'heading') return;
     at = choice.index;
     if (chosen.kind === 'open') {
-      context.info(settingsFileLines(snapshot).join('\n'));
-      return;
+      await openSettingsFile(context, snapshot);
+      continue;
+    }
+    if (chosen.kind === 'mandate') {
+      const outcome = mandate === undefined ? LEFT : await editMandate(context, mandate);
+      written = undefined;
+      sentence = outcome.kind === 'refused' ? outcome.sentence : undefined;
+      continue;
     }
     if (chosen.kind === 'command') {
       await context.commands.find((command) => command.name === chosen.command)?.run('', context);
