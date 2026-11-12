@@ -860,7 +860,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const operationNetwork = callNetworkOf({ requested: reached, granted: reached, sandbox: batch.sandbox.kind, unkeptHosts: setting });
       if (operationNetwork.kind === 'refused') return deniedOutcome(call.callId, { source: 'sandbox', reason: operationNetwork.reason });
       if (operationNetwork.unlimited === true) {
-        const unlimited = `${tool.name} runs without a network limit: the sandbox in use (${batch.sandbox.kind}) cannot hold it to ${describeNetworkScope(reached)}`;
+        const unlimited = `${tool.name} runs with unrestricted network access: the sandbox in use (${batch.sandbox.kind}) cannot hold it to ${describeNetworkScope(reached)}`;
         if (decision.kind === 'ask') decision = { ...decision, reason: `${decision.reason}; ${unlimited}` };
         else if (decision.kind === 'allow' && setting === 'ask' && batch.mode !== 'bypassPermissions') decision = { kind: 'ask', source: 'mode', reason: unlimited };
       }

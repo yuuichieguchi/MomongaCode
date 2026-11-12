@@ -106,10 +106,10 @@ describe('the permission of GitPush to a remote reached over the network under t
     return outcome;
   };
 
-  it('asks the person and says the operation runs without a network limit under ask', async () => {
+  it('asks the person and says the operation runs with unrestricted network access under ask', async () => {
     const outcome = await push('ask');
     expect(outcome?.kind).toBe('needs_approval');
-    expect(outcome?.kind === 'needs_approval' ? outcome.decision.reason : '').toContain('without a network limit');
+    expect(outcome?.kind === 'needs_approval' ? outcome.decision.reason : '').toContain('runs with unrestricted network access');
   });
 
   it('is refused under deny, naming the forms the sandbox accepts', async () => {
