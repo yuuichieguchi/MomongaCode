@@ -43,9 +43,9 @@ const factText = (command: string): string => {
 const NPM_TEST_FACT = 'Run `npm test` to verify a change in this repository.';
 const LINT_FACT = 'Run `npm run lint` to verify a change in this repository.';
 
-type Options = { enabled?: boolean; facts?: boolean; trusted?: boolean };
+type Options = { enabled?: boolean; facts?: boolean; trusted?: boolean; accepted?: readonly string[] };
 
-const setup = async ({ enabled = false, facts = true, trusted = true }: Options = {}) => {
+const setup = async ({ enabled = false, facts = true, trusted = true, accepted = COMMANDS }: Options = {}) => {
   const opened = harness();
   const { clock } = opened;
   const store = withInProcessFacts(opened.store, opened.dbPath);
@@ -55,7 +55,7 @@ const setup = async ({ enabled = false, facts = true, trusted = true }: Options 
   const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
   const settings = {
     trusted: async (target: { cwd: string }) => (await store.trust.decisionAsked(target.cwd, NEVER_CANCELLED)).decision === 'trusted',
-    verification: async () => ({ commands: [...COMMANDS], manifests: [...MANIFESTS] }),
+    verification: async () => ({ commands: [...COMMANDS], conditions: [...accepted], manifests: [...MANIFESTS], required: false }),
     memory: async () => ({ reflection: { enabled }, forgetAfterDays: 90, repositoryFacts: facts }),
   };
   const reflector = (): Reflector =>
@@ -107,6 +107,20 @@ describe('repository fact text', () => {
 });
 
 describe('repository facts with reflection off', () => {
+  it('learns a fact only from the check the folder accepted, never from another passing command', async () => {
+    const env = await setup({ enabled: false, facts: true, accepted: ['npm test'] });
+    const run = await env.finishedRun(VERIFIED_TWICE(env.project));
+    await env.reflector().runOne(SIGNAL);
+    expect((await candidatesOf(env, (await run).id)).map((candidate) => candidate.text)).toEqual([NPM_TEST_FACT]);
+  });
+
+  it('learns nothing in a folder with no accepted check', async () => {
+    const env = await setup({ enabled: false, facts: true, accepted: [] });
+    const run = await env.finishedRun(VERIFIED_TWICE(env.project));
+    await env.reflector().runOne(SIGNAL);
+    expect(await candidatesOf(env, (await run).id)).toEqual([]);
+  });
+
   it('saves one procedure candidate per passing verification command, with no model call and no charge', async () => {
     const env = await setup({ enabled: false, facts: true });
     const run = await env.finishedRun(VERIFIED_TWICE(env.project));

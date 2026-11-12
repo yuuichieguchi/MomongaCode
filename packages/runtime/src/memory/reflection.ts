@@ -113,7 +113,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       return;
     }
     const verification = await settings.verification(session, signal);
-    const verdict = await store.journalFacts.verdict({ runId, commands: verification.commands, manifests: verification.manifests }, signal);
+    const verdict = await store.journalFacts.verdict({ runId, commands: verification.conditions, manifests: verification.manifests }, signal);
     const { verified } = verdict;
     const trusted = await settings.trusted(session, signal);
     const knownTexts = (): Set<string> =>

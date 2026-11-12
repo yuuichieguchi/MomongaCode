@@ -2,9 +2,10 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { findProgramOnPathSync, nodeFileSystemSync, resolveLayoutLocks } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
-import { approveProjectItems, editProjectMandate, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
-import type { ProjectItemsApproval, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
+import { approveProjectItems, editProjectMandate, recordProjectCheck, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import type { AcceptedCheck, ProjectItemsApproval, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
 import type { ProjectItems } from './project-items.ts';
+import type { CheckProposal } from '@momonga/runtime';
 import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
 import type { ModelsHost } from '../commands/models.ts';
 import { storeSecretValue } from '../commands/secret.ts';
@@ -66,6 +67,8 @@ export type TuiBackend = {
   clearTrust(): Promise<void>;
   projectItems(): Promise<ProjectItems>;
   approveProjectItems(approval: ProjectItemsApproval): Promise<void>;
+  checkProposal(): Promise<CheckProposal>;
+  answerCheck(answer: AcceptedCheck): Promise<void>;
   projectMandate(): Promise<ProjectMandateState>;
   writeProjectMandate(document: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
   openSession(model?: string, permissionMode?: PermissionMode): Promise<SessionView>;
@@ -227,6 +230,13 @@ export const createTuiBackend = (
       return { hooks: loaded.settings.pendingHooks, ...(mandate.found && mandate.approval !== 'approved' ? { mandate } : {}) };
     },
     approveProjectItems: (approval) => approveProjectItems(paths.home, ports.cwd, approval, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
+    checkProposal: async () => {
+      const trusted = await trustOracle.isTrusted(ports.cwd, closing.signal);
+      const loaded = await loadSettings({ home: paths.home, projectDir: ports.cwd, cli: {}, trust: trustOracle, signal: closing.signal });
+      const { checkProposalOf } = await import('@momonga/runtime');
+      return checkProposalOf({ projectDir: ports.cwd, trusted, settings: loaded.settings, signal: closing.signal });
+    },
+    answerCheck: (answer) => recordProjectCheck(paths.home, ports.cwd, answer, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
     projectMandate: async () => projectMandateState({ projectDir: ports.cwd, approvals: (await loadUserSettings({ home: paths.home, signal: closing.signal })).settings.projectApprovals, signal: closing.signal }),
     writeProjectMandate: (document, signal) =>
       editProjectMandate(ports.cwd, replacedBy(document), { home: paths.home, trust: trustOracle, ...settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: AbortSignal.any([closing.signal, signal]) }) }),

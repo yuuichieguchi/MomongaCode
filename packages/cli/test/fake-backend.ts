@@ -11,6 +11,7 @@ import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } fr
 import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
 import type { UserShellRecord } from '@momonga/protocol';
 import { editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import type { CheckProposal } from '@momonga/runtime';
 import type { ProjectItems } from '../src/tui/project-items.ts';
 import { momongaLayout } from '@momonga/foundation';
 import type { DetectRequest } from '../src/commands/models.ts';
@@ -82,6 +83,7 @@ export type FakeBackend = TuiBackend & {
 export type FakeBackendOptions = {
   trust?: TrustView;
   projectItems?: ProjectItems;
+  checkProposal?: CheckProposal;
   session?: Partial<SessionView>;
   contextWindow?: number;
   imageInput?: boolean;
@@ -299,6 +301,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     projectItems: async () => options.projectItems ?? { hooks: [] },
     approveProjectItems: async (approval) => {
       record(`approve:${JSON.stringify(approval)}`);
+    },
+    checkProposal: async () => options.checkProposal ?? { ask: false },
+    answerCheck: async (answer) => {
+      record(`check:${JSON.stringify(answer)}`);
     },
     projectMandate: async () => projectMandateState({ projectDir: settingsPlace().projectDir, approvals: (await loadUserSettings({ home: settingsPlace().home, signal: new AbortController().signal })).settings.projectApprovals, signal: new AbortController().signal }),
     writeProjectMandate: (document, signal) =>

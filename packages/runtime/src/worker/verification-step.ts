@@ -147,13 +147,24 @@ const runHeldCheck = async (
   return checked;
 };
 
+export const NO_CHECK_DECLARED_CODE = 'no_check_declared';
+
+const NO_CHECK_DECLARED_NOTICE =
+  'The run changed the workspace and no check is declared for this folder, so the run is unverified and nothing is learned from it. To declare one, accept the check the terminal UI proposes when it starts in this folder, or set verification.commands in the settings.';
+
 type Decision = 'proceed' | 'timeout' | 'unmet' | 'continue';
 
 const verifyCompletion = async (ctx: ClaimContext): Promise<'proceed' | Flow> => {
   const { conditions, required } = ctx.completion;
   const { lastMutationSeq } = ctx.journal.state;
   if (conditions.length === 0) {
-    if (!required || lastMutationSeq === 0) return 'proceed';
+    if (lastMutationSeq === 0) return 'proceed';
+    if (!required) {
+      if (!ctx.journal.state.notes.some((note) => note.code === NO_CHECK_DECLARED_CODE)) {
+        ctx.journal.append([{ type: 'notice', level: 'info', message: NO_CHECK_DECLARED_NOTICE, code: NO_CHECK_DECLARED_CODE }]);
+      }
+      return 'proceed';
+    }
     ctx.journal.append([
       {
         type: 'notice',
