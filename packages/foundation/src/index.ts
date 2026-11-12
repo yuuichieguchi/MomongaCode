@@ -10,7 +10,7 @@ export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
-export { isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
+export { isRecord, parseBoundedJson, parseShippedManifest, spanValueOfJsonText } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
 export type { JsonReplyInput } from './json-reply.ts';

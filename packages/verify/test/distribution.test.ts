@@ -122,3 +122,12 @@ describe('the embedded Z3 distribution', () => {
     expect(() => parseZ3Manifest(JSON.stringify({ ...manifestFor(), wasm: { asset: 1 } }))).toThrow('solver binary');
   });
 });
+
+describe('the Z3 manifest is read through the one bounded JSON parser', () => {
+  it('refuses a manifest that is not valid JSON or nests beyond the bound, naming the file and the way forward', () => {
+    for (const text of ['{ not json', `${'['.repeat(10000)}${']'.repeat(10000)}`]) {
+      expect(() => parseZ3Manifest(text)).toThrow(Z3DistributionError);
+      expect(() => parseZ3Manifest(text)).toThrow(/z3-manifest\.json .*reinstall momonga/);
+    }
+  });
+});
