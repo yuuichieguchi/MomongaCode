@@ -7,7 +7,7 @@ import type { TrustItemsView } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
 import { createFromTemplate } from './file-templates.ts';
 import type { CreatedFile, TemplateKind } from './file-templates.ts';
-import { approveProjectItems, editProjectMandate, recordProjectCheck, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import { approveProjectItems, editProjectMandate, writeProjectMcpServer, recordProjectCheck, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { AcceptedCheck, ApprovedItem, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
 import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
@@ -76,6 +76,7 @@ export type TuiBackend = {
   answerCheck(answer: AcceptedCheck): Promise<void>;
   projectMandate(): Promise<ProjectMandateState>;
   writeProjectMandate(document: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
+  writeProjectMcpServer(name: string, server: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
   openSession(model?: string, permissionMode?: PermissionMode): Promise<SessionView>;
   resumeSession(id: string): Promise<SessionView>;
   continueSession(): Promise<SessionView>;
@@ -249,6 +250,8 @@ export const createTuiBackend = (
     },
     answerCheck: (answer) => recordProjectCheck(paths.home, ports.cwd, answer, settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: closing.signal })),
     projectMandate: async () => projectMandateState({ projectDir: ports.cwd, approvals: (await loadUserSettings({ home: paths.home, signal: closing.signal })).settings.projectApprovals, signal: closing.signal }),
+    writeProjectMcpServer: (name, server, signal) =>
+      writeProjectMcpServer(ports.cwd, name, server, { home: paths.home, trust: trustOracle, ...settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: AbortSignal.any([closing.signal, signal]) }) }),
     writeProjectMandate: (document, signal) =>
       editProjectMandate(ports.cwd, replacedBy(document), { home: paths.home, trust: trustOracle, ...settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: AbortSignal.any([closing.signal, signal]) }) }),
     clearTrust: async () => {

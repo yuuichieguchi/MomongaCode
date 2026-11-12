@@ -10,7 +10,7 @@ import { continuedSession, resolveSession } from '../src/run/resolve-session.ts'
 import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } from '../src/tui/backend.ts';
 import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
 import type { UserShellRecord } from '@momonga/protocol';
-import { editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import { editProjectMandate, writeProjectMcpServer, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
 import type { TrustItemsView } from '@momonga/protocol';
 import { momongaLayout } from '@momonga/foundation';
@@ -199,7 +199,7 @@ export type FolderTrustFakeOptions = {
   record: (call: string) => void;
 };
 
-export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record }: FolderTrustFakeOptions): Pick<TuiBackend, 'decideTrust' | 'trust' | 'clearTrust' | 'trustItems' | 'approveProjectItems' | 'projectMandate' | 'writeProjectMandate'> => {
+export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record }: FolderTrustFakeOptions): Pick<TuiBackend, 'decideTrust' | 'trust' | 'clearTrust' | 'trustItems' | 'approveProjectItems' | 'projectMandate' | 'writeProjectMandate' | 'writeProjectMcpServer'> => {
   let trustNow: TrustView | undefined;
   return {
     decideTrust: async (decision) => {
@@ -229,6 +229,8 @@ export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record
         },
         { home: settingsPlace().home, trust: { isTrusted: () => (trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) },
       ),
+    writeProjectMcpServer: (name, server, signal) =>
+      writeProjectMcpServer(settingsPlace().projectDir, name, server, { home: settingsPlace().home, trust: { isTrusted: () => (trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) }),
   };
 };
 

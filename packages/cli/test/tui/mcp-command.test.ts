@@ -16,7 +16,7 @@ describe('/mcp: a credential of a server is a reference (product-surface-21)', (
     const place = freshPlace();
     const { context, recorded } = contextOf(
       {},
-      { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: SERVERS },
+      { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: SERVERS, trust: { path: place.project, decision: 'untrusted' } },
       { choices: [{ index: ADD_STDIO_INDEX, alt: false }], texts: ['github', 'npx', '-y github-server', 'GITHUB_HOST', 'GITHUB_TOKEN=github-token'] },
     );
     await runSlash('mcp', '', context);
@@ -47,7 +47,7 @@ describe('/mcp: a credential of a server is a reference (product-surface-21)', (
 describe('/mcp needs no session for the settings (product-surface-26)', () => {
   it('lists the servers of the folder and adds one with no session open', async () => {
     const place = freshPlace();
-    const { context, recorded, backend } = contextOf({ model: undefined }, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: SERVERS }, { choices: [{ index: ADD_HTTP_INDEX, alt: false }], texts: ['tracker', 'https://tracker.example/mcp'] });
+    const { context, recorded, backend } = contextOf({ model: undefined }, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: SERVERS, trust: { path: place.project, decision: 'untrusted' } }, { choices: [{ index: ADD_HTTP_INDEX, alt: false }], texts: ['tracker', 'https://tracker.example/mcp'] });
     await runSlash('mcp', '', context);
     expect(recorded.infos).toEqual([]);
     expect(recorded.prompts).toContain(MCP_ADDRESS_TITLE);

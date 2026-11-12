@@ -323,6 +323,7 @@ describe('/mcp', () => {
     await typeInto(started, 'npx', MCP_ARGUMENTS_TITLE);
     await typeInto(started, '-y files-server', MCP_ENVIRONMENT_TITLE);
     await typeInto(started, 'FILES_ROOT', MCP_SECRETS_TITLE);
+    await press(started, KEYS.enter, SAVE_TO_TITLE);
     await press(started, KEYS.enter, APPLIES_NEXT_SESSION);
     expect(stored(place.userFile)).toEqual({ mcpServers: { files: { type: 'stdio', command: 'npx', args: ['-y', 'files-server'], env: { FILES_ROOT: '${FILES_ROOT}' } } } });
     started.app.unmount();
@@ -335,7 +336,8 @@ describe('/mcp', () => {
     await press(started, '2', `› 2. ${ADD_HTTP_ROW}`);
     await press(started, KEYS.enter, MCP_NAME_TITLE);
     await typeInto(started, 'tracker', MCP_ADDRESS_TITLE);
-    await typeInto(started, 'https://tracker.example/mcp', APPLIES_NEXT_SESSION);
+    await typeInto(started, 'https://tracker.example/mcp', SAVE_TO_TITLE);
+    await press(started, KEYS.enter, APPLIES_NEXT_SESSION);
     expect(stored(place.userFile)).toEqual({ mcpServers: { tracker: { type: 'http', url: 'https://tracker.example/mcp' } } });
     await press(started, KEYS.enter, MCP_NAME_TITLE);
     await typeInto(started, 'bad name', 'invalid MCP server name "bad name"; use letters, digits, "-" and single "_" only');

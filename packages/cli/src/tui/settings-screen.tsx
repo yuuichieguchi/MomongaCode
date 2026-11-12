@@ -306,9 +306,12 @@ const openSettingsFile = async (context: SlashContext, snapshot: SettingsSnapsho
 
 export type Refusal = { readonly refused: string };
 
-export const writeSetting = async (context: SlashContext, layer: SettingsLayer, operation: SettingsOperation): Promise<Refusal | undefined> => {
+export const writeSetting = (context: SlashContext, layer: SettingsLayer, operation: SettingsOperation): Promise<Refusal | undefined> =>
+  savedOrRefused(context, (signal) => context.backend.editSettings(layer, operation, signal));
+
+export const savedOrRefused = async (context: SlashContext, write: (signal: AbortSignal) => Promise<void>): Promise<Refusal | undefined> => {
   try {
-    await context.background(SAVING_SETTING, (signal) => context.backend.editSettings(layer, operation, signal));
+    await context.background(SAVING_SETTING, write);
     return undefined;
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;

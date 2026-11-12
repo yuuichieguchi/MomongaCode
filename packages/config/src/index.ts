@@ -1,5 +1,5 @@
 export { editUserSettings } from './edit-user-settings.ts';
-export { approveProjectItems, editProjectMandate } from './edit-project-file.ts';
+export { approveProjectItems, editProjectMandate, writeProjectMcpServer } from './edit-project-file.ts';
 export { pendingProjectItems } from './pending-items.ts';
 export type { PendingChange, PendingItemsInput, PendingProjectItem, PendingProjectItems, ProjectAgentFile, ProjectAgentsLister } from './pending-items.ts';
 export type { ApprovedItem, EditProjectMandateOptions, ProjectMandateEdit } from './edit-project-file.ts';
