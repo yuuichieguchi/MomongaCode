@@ -1,3 +1,4 @@
+import { NO_COLOR_ENV } from '@momonga/foundation';
 import { TUI_THEMES } from '@momonga/config';
 import type { TuiTheme } from '@momonga/config';
 
@@ -102,7 +103,7 @@ export type Appearance = ColourHost & { background: Background };
 export const UNREPORTED_COLOUR_HOST: ColourHost = { noColor: false, level: 1 };
 
 export const noColorAsked = (env: Readonly<Record<string, string | undefined>>): boolean => {
-  const value = env['NO_COLOR'];
+  const value = env[NO_COLOR_ENV];
   return value !== undefined && value !== '';
 };
 
