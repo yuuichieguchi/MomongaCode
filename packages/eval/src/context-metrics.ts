@@ -143,7 +143,7 @@ export const compactionFactsOf = (events: readonly PublicRunEvent[]): Compaction
   const produced = compactions.flatMap((event) => (event.fidelity === undefined ? [] : [{ source: event.source, fidelity: event.fidelity }]));
   const accepted = produced.filter((summary) => summary.source === 'model');
   return {
-    compactions: compactions.length,
+    compactions: compactions.length + eventsOfType(events, 'context.inherited_compacted').length,
     modelSummaries: produced.length,
     fabricatedSummaries: produced.filter((summary) => summary.fidelity.fabricated.length > 0).length,
     identifiers: accepted.reduce((sum, summary) => sum + summary.fidelity.identifiers, 0),

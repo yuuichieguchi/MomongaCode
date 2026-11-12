@@ -3,10 +3,10 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup, systemRandom } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_TOOL_LIMITS, testPaths, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createMarkerSettle, nodeShellHost } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
-import { bashTool } from '../../src/builtins/bash.ts';
+import { bashToolFor } from '../../src/builtins/bash.ts';
 import { makeClock, makeLayout } from '../helpers.ts';
 import { trackGroup, trackPid, waitFor } from './fixtures.ts';
 
@@ -72,11 +72,14 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
       update: () => undefined,
       checkpoint: () => undefined,
       reportProgress: () => undefined,
+      limits: TEST_TOOL_LIMITS,
+      expired: new AbortController().signal,
+      stopForTimeout: () => undefined,
     } as unknown as ToolContext;
 
     const ready = path.join(layout.project, 'escaped');
     const command = `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 30' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.05; done; echo "pid:$!"; echo finished`;
-    const result = await bashTool.execute({ command }, ctx, undefined);
+    const result = await bashToolFor(TEST_BUILTIN_TOOL_OFFER).execute({ command }, ctx, undefined);
 
     const output = (result as { output: string }).output;
     const outlived = Number(/pid:(\d+)/.exec(output)?.[1]);

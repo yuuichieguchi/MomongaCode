@@ -1,8 +1,7 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, NEVER_CANCELLED } from '@momonga/testkit';
+import { createTempDir, NEVER_CANCELLED, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { sha256Hex } from '@momonga/foundation';
 import type { CompactionInputItem, InputItem } from '@momonga/protocol';
 import { PrefixChangedError, buildContext, createFsInstructionReader } from '@momonga/context';
@@ -37,7 +36,7 @@ afterEach(() => {
 });
 
 const makeDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-ctx-review-')));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };

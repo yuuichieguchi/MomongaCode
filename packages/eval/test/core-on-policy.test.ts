@@ -99,14 +99,15 @@ describe('parsing and resolving a policy overlay (design core-on 3.2, test 7)', 
     expect(resolvePolicyOverlay(parsePolicyOverlay(text, CORE_OFF_FILE))).toEqual(CORE_OFF_RESOLVED);
   });
 
-  it('accepts an overlay that restates every default, which is the candidate of the gate', () => {
+  it('refuses an overlay that restates every default: the candidate of the gate is the run with no overlay', () => {
     const { autoCompact: _setByEachCase, ...context } = RESOLVED_ON.context;
     const restated = JSON.stringify({ ...RESOLVED_ON, context: { ...context, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'] } });
-    expect(resolvePolicyOverlay(parsePolicyOverlay(restated, 'policy.json'))).toEqual(RESOLVED_ON);
+    expect(() => parsePolicyOverlay(restated, 'policy.json')).toThrow(/restate their defaults/);
   });
 
-  it('keeps a key equal to its default instead of dropping it', () => {
-    expect(parsePolicyOverlay(JSON.stringify({ tools: { deferral: false, conciseDescriptions: true } }), 'policy.json')).toEqual({ tools: { deferral: false, conciseDescriptions: true } });
+  it('refuses a key equal to its default by name, and keeps a key that differs from it', () => {
+    expect(() => parsePolicyOverlay(JSON.stringify({ tools: { deferral: false, conciseDescriptions: true } }), 'policy.json')).toThrow(/policy\.json: tools\.conciseDescriptions restates its default/);
+    expect(parsePolicyOverlay(JSON.stringify({ tools: { deferral: false } }), 'policy.json')).toEqual({ tools: { deferral: false } });
   });
 
   it('turns off exactly the key an overlay turns off', () => {

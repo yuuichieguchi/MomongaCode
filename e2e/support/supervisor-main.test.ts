@@ -6,14 +6,14 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BASE_ENTRY_FLAGS, EntryUsageError, parseFlags } from '@momonga/foundation';
-import { productTestEnv, registerCleanup, spawnTracked, startFakeChatCompletions, testHostPath, withTempDir } from '@momonga/testkit';
+import { createTempDir, productTestEnv, registerCleanup, spawnTracked, startFakeChatCompletions, testHostPath, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { STDERR_FLOOD_BYTES } from './fixtures/stderr-flood-supervisor.ts';
 import type { StackParentReport, StackParentRequest } from './fixtures/stack-parent.ts';
 import { createE2eHome, registerE2eCleanup } from './home.ts';
 import { supervisorLog } from './log-reader.ts';
 import { isAlive } from './process.ts';
-import { E2E_RUN_ENV, e2eTmpRoot } from './run-env.ts';
+import { E2E_RUN_ENV } from './run-env.ts';
 import { resolveSandbox } from './sandbox.ts';
 import {
   DEFAULT_E2E_DEPS,
@@ -65,7 +65,7 @@ const runMain = (context: CleanupContext, home: string, env: Record<string, stri
 };
 
 const manualE2eRoot = (context: CleanupContext): string => {
-  const root = fs.mkdtempSync(path.join(e2eTmpRoot(), `mme-${runToken()}-`));
+  const root = createTempDir({ asHome: true });
   registerCleanup(context, () => {
     fs.rmSync(root, { recursive: true, force: true });
   });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TEST_BUILTIN_TOOL_OFFER } from '@momonga/testkit';
 import type { FunctionTool } from '@momonga/protocol';
 import { createBuiltinTools, createGovernanceTools, createHistoryTools, createMemoryTools, createToolRegistry, defineTool } from '@momonga/tools';
 import type { AnyTool, ToolSet } from '@momonga/tools';
@@ -13,7 +14,7 @@ const agent = (name: string, description: string): AgentDefinition => ({ name, d
 const AGENTS = [agent('explorer', 'Explores the repository and reports the files that matter for a question.'), agent('reviewer', 'Reviews a diff for defects and names each one.')];
 
 const everyProductTool = (): AnyTool[] => [
-  ...createBuiltinTools(),
+  ...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER),
   ...createMemoryTools({ port: {} as never, trusted: true }),
   ...createHistoryTools({ port: {} as never, trusted: true, project: '/work/a' }),
   ...createGovernanceTools({ port: {} as never, trusted: true }),

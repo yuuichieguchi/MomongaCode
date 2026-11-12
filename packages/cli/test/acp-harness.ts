@@ -348,7 +348,7 @@ export const fakeRuntime = (): FakeRuntime => {
     ignoreMarker: unexpected('ignoreMarker'),
     ruleHistory: unexpected('ruleHistory'),
     policyGovernance: unexpected('policyGovernance'),
-    putRuleVerdict: unexpected('putRuleVerdict'),
+    policyVerify: unexpected('policyVerify'),
     guidelines: unexpected('guidelines'),
     adoptGuideline: unexpected('adoptGuideline'),
     rollbackGuideline: unexpected('rollbackGuideline'),

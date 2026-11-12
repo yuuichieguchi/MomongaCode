@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import tls from 'node:tls';
 import type { AddressInfo } from 'node:net';
@@ -20,6 +19,7 @@ import { DEFAULT_SIGNATURE } from './fake-release-server.ts';
 import { mintServerCertificate } from './minted-certificates.ts';
 import { NEW_BINARY, OLD_BINARY, REPO, setupUpdate } from './update-harness.ts';
 import type { UpdateHarness } from './update-harness.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const RELEASE_HOST = 'release.example.test';
 const UNSPECIFIED_ADDRESS = '0.0.0.0';
@@ -54,7 +54,7 @@ let scratch = '';
 
 beforeAll(() => {
   originalTrust = tls.getCACertificates('default');
-  scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-update-net-'));
+  scratch = createTempDir();
 });
 
 afterAll(() => {

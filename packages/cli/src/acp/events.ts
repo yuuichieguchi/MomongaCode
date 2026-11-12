@@ -35,11 +35,12 @@ export type MapperState = {
   readonly firstSeq: Map<string, number>;
   readonly held: Map<string, { approvalId: string; reason: string }>;
   readonly opaqueTypes: Set<string>;
+  readonly answers: Map<string, { readonly runId: string; readonly sessionUpdate: 'agent_message_chunk' | 'agent_thought_chunk'; text: string }>;
   contextTokens: number | undefined;
   lastFailure: Extract<PublicRunEvent, { type: 'attempt.failed' }> | undefined;
 };
 
-export const createMapperState = (): MapperState => ({ calls: new Map(), found: new Map(), firstSeq: new Map(), held: new Map(), opaqueTypes: new Set(), contextTokens: undefined, lastFailure: undefined });
+export const createMapperState = (): MapperState => ({ calls: new Map(), found: new Map(), firstSeq: new Map(), held: new Map(), opaqueTypes: new Set(), answers: new Map(), contextTokens: undefined, lastFailure: undefined });
 
 export class UnsupportedToolContent extends Error {
   constructor(detail: string) {
@@ -132,6 +133,23 @@ export const mapRunEvent = (event: PublicStreamEvent, phase: Phase, state: Mappe
   return mapKnownEvent(event, phase, state, features);
 };
 
+const hold = (state: MapperState, runId: string, sessionUpdate: 'agent_message_chunk' | 'agent_thought_chunk', messageId: string, text: string): Effect[] => {
+  const held = state.answers.get(messageId);
+  if (held === undefined) state.answers.set(messageId, { runId, sessionUpdate, text });
+  else held.text += text;
+  return [];
+};
+
+const completedAnswers = (state: MapperState, runId: string): Effect[] => {
+  const effects: Effect[] = [];
+  for (const [messageId, answer] of state.answers) {
+    if (answer.runId !== runId) continue;
+    state.answers.delete(messageId);
+    effects.push(message(answer.sessionUpdate, messageId, answer.text));
+  }
+  return effects;
+};
+
 const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, features: ClientFeatures): Effect[] => {
   if ('seq' in event && !state.firstSeq.has(event.runId)) state.firstSeq.set(event.runId, event.seq);
   const ended = heldEndOf(event);
@@ -140,9 +158,12 @@ const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, 
     case 'user.message':
       return phase === 'history' && isPrompt(event, state.firstSeq.get(event.runId)) ? [message('user_message_chunk', messageIdOf(event.runId, 'user'), event.text)] : [];
     case 'agent.message.delta':
-      return [message('agent_message_chunk', messageIdOf(event.runId, event.itemId), event.text)];
+      return hold(state, event.runId, 'agent_message_chunk', messageIdOf(event.runId, event.itemId), event.text);
     case 'agent.thought.delta':
-      return [message('agent_thought_chunk', messageIdOf(event.runId, event.itemId), event.text)];
+      return hold(state, event.runId, 'agent_thought_chunk', messageIdOf(event.runId, event.itemId), event.text);
+    case 'model.stream.restarted':
+      for (const itemId of event.itemIds) state.answers.delete(messageIdOf(event.runId, itemId));
+      return [];
     case 'tool.call': {
       const toolCallId = toolCallIdOf(event.runId, event.callId);
       const locations = event.locations?.map(({ path, line }) => (line === undefined ? { path } : { path, line }));
@@ -235,7 +256,7 @@ const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, 
       return [{ kind: 'update', update: { sessionUpdate: 'plan', entries: event.entries.map(({ content, priority, status }) => ({ content, priority, status })) } }];
     case 'model.responded':
       state.contextTokens = event.response.usage.total_tokens;
-      return [];
+      return completedAnswers(state, event.runId);
     case 'usage.updated': {
       if (state.contextTokens === undefined) throw new Error(`run ${event.runId} reported usage before any model response`);
       return [{ kind: 'usage', used: state.contextTokens }];
@@ -288,7 +309,6 @@ const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, 
         : [];
     case 'run.started':
     case 'model.requested':
-    case 'model.stream.restarted':
     case 'context.inherited':
     case 'context.truncated':
     case 'instructions.loaded':

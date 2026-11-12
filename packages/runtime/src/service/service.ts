@@ -4,6 +4,8 @@ import { getRequestListener } from '@hono/node-server';
 import { SWEEP_INTERVAL_MS, encodeSse, hostPaths, listenUnix, startDeadlineSignal, systemRandom, personCapabilityOf } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
 import type { MarkerOwners } from '@momonga/tools';
+import type { PolicyVerification } from '../process/folder-verification.ts';
+import type { GatewayStanding } from '../process/supervised-gateway.ts';
 import type { Clock, FileSystem, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
@@ -56,6 +58,8 @@ export type RunServiceOptions = {
   skills: SkillsPort;
   agents: AgentCatalogPort;
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
+  policyVerification: PolicyVerification;
+  gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   skillFiles: SkillFileSystem;
@@ -156,6 +160,8 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     skills: options.skills,
     agents: options.agents,
     permissionRules: options.permissionRules,
+    policyVerification: options.policyVerification,
+    gatewayStanding: options.gatewayStanding,
     userInput: options.userInput,
     evidenceRun: options.evidenceRun,
     skillFiles: options.skillFiles,

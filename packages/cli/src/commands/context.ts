@@ -14,7 +14,7 @@ import {
   parseOutcomeFile,
   refuseExistingOutput,
 } from '@momonga/eval';
-import type { BenchmarkResult, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
+import type { BenchmarkResult, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, ImproveOutcome, Transcript } from '@momonga/eval';
 import { codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths, KernelLockMechanism } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
@@ -200,7 +200,7 @@ export const contextImprove = async (
           ? 'nothing was adopted\n'
           : `nothing was adopted: read the text of the winner above, then store exactly that text with: momonga context guideline adopt ${outcomeFile}\n`,
       );
-      return outcome.status === 'winner' || outcome.status === 'empty' ? 0 : 1;
+      return exitOfImproveOutcome(outcome);
     } finally {
       await completer.close();
     }
@@ -209,6 +209,8 @@ export const contextImprove = async (
     await gatewayInfo.close();
   }
 };
+
+export const exitOfImproveOutcome = (outcome: Pick<ImproveOutcome, 'status'>): number => (outcome.status === 'winner' ? 0 : 1);
 
 const formatGuideline = (row: GuidelineView, current: boolean): string =>
   [`version ${row.version}${current ? ' (current)' : ''}, parent ${row.parent ?? 'none'}, adopted ${new Date(row.adoptedAt).toISOString()}`, formatGuidelineText(row.text)].join('\n');

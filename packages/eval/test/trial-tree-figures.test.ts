@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeWorkspaceFiles, runBenchmark } from '@momonga/eval';
 import type { BenchRunApi, BenchRunView } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ADD_FIXED, benchmarkDir, nodeProbe } from './bench-fixtures.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const T0 = 1_800_000_000_000;
 const ROOT_TOKENS = 30;
@@ -45,7 +45,6 @@ const delegatingApi = (): BenchRunApi => {
       agent: child ? 'explore' : 'main',
       mode: 'acceptEdits',
       model: 'fake/system',
-      declared: false,
     };
   };
   return {
@@ -78,7 +77,7 @@ const delegatingApi = (): BenchRunApi => {
 const run = async (maxTotalTokens: number) => {
   const dir = await benchmarkDir([{ id: 'fix', reference: { 'src/add.js': ADD_FIXED } }]);
   withBudget(dir, maxTotalTokens);
-  const at = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-trial-tree-'));
+  const at = createTempDir();
   scratches.push(at);
   const api = delegatingApi();
   return runBenchmark(path.join(dir, 'benchmark.json'), {

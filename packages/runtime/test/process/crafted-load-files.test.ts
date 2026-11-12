@@ -1,17 +1,16 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSkillLoader, createNodeSkillFileSystem } from '@momonga/skills';
 import { createAgentsPort, createSkillsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
-import { NEVER_CANCELLED } from '@momonga/testkit';
+import { NEVER_CANCELLED, createTempDir } from '@momonga/testkit';
 import { TEST_FENCE } from '@momonga/testkit';
 
 const roots: string[] = [];
 
 const tempRoot = (): string => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'crafted-load-')));
+  const root = createTempDir();
   roots.push(root);
   return root;
 };

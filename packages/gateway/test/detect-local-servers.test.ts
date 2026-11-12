@@ -1,10 +1,8 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import os from 'node:os';
-import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { afterMicrotasks } from '@momonga/testkit';
+import { afterMicrotasks, createTempDir } from '@momonga/testkit';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import type { LocalServerDetection } from '@momonga/protocol';
 import { detectLocalServers } from '../src/index.ts';
@@ -184,7 +182,7 @@ describe('detecting a local model server is a measurement that writes nothing', 
   });
 
   it('writes nothing under HOME', async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-detect-home-'));
+    const home = createTempDir();
     const previous = process.env['HOME'];
     process.env['HOME'] = home;
     try {

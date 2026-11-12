@@ -72,7 +72,13 @@
       "graderFiles": {
         "test/hidden-add.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { add } = require('../src/index.js');\ntest('adds negatives', () => assert.strictEqual(add(-1, 1), 0));\ntest('adds fractions', () => assert.strictEqual(add(0.5, 0.25), 0.75));\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "tests",
@@ -121,7 +127,13 @@
       "graderFiles": {
         "test/hidden-clamp.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { clamp } = require('../src/clamp.js');\ntest('lowers a high value', () => assert.strictEqual(clamp(11, 0, 10), 10));\ntest('accepts an empty range', () => assert.strictEqual(clamp(5, 5, 5), 5));\ntest('keeps the bounds', () => assert.deepStrictEqual([clamp(0, 0, 10), clamp(10, 0, 10)], [0, 10]));\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "tests",
@@ -170,7 +182,13 @@
       "graderFiles": {
         "test/hidden-duration.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { parseDuration } = require('../src/duration.js');\ntest('reads every unit', () => assert.strictEqual(parseDuration('1h30m15s500ms'), 5415500));\ntest('reads units in any order', () => assert.strictEqual(parseDuration('15s1h'), 3615000));\ntest('rejects a unit given twice', () => assert.throws(() => parseDuration('1h1h'), /invalid duration/));\ntest('rejects trailing text', () => assert.throws(() => parseDuration('1h30'), /invalid duration/));\ntest('rejects empty text', () => assert.throws(() => parseDuration(''), /invalid duration/));\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "tests",
@@ -219,7 +237,13 @@
       "graderFiles": {
         "test/hidden-dedupe.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { dedupe } = require('../src/dedupe.js');\ntest('leaves the input alone', () => { const input = [2, 1, 2]; dedupe(input); assert.deepStrictEqual(input, [2, 1, 2]); });\ntest('treats distinct keys as distinct', () => assert.deepStrictEqual(dedupe(['a', 'A', 'b'], (text) => text.toLowerCase()), ['a', 'b']));\ntest('handles an empty list', () => assert.deepStrictEqual(dedupe([]), []));\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "tests",
@@ -268,7 +292,13 @@
       "graderFiles": {
         "grader/mutation-check.js": "const { spawnSync } = require('node:child_process');\nconst fs = require('node:fs');\nconst os = require('node:os');\nconst path = require('node:path');\nconst moduleFile = \"src/slugify.js\";\nconst testFile = \"test/slugify.test.js\";\nconst mutants = [[\".toLowerCase()\",\"\"],[\"[^a-z0-9]+\",\"[^a-z0-9]\"],[\"/^-+|-+$/g\",\"/^$/g\"],[\"[^a-z0-9]+\",\"[^a-z]+\"]];\nconst root = process.cwd();\nconst run = (dir) => spawnSync(process.execPath, ['--test', testFile], { cwd: dir, stdio: 'ignore' }).status;\nif (!fs.existsSync(path.join(root, testFile))) { console.error('missing ' + testFile); process.exit(1); }\nif (run(root) !== 0) { console.error('the tests fail on the real module'); process.exit(1); }\nconst source = fs.readFileSync(path.join(root, moduleFile), 'utf8');\nlet survived = 0;\nfor (const [from, to] of mutants) {\n  if (!source.includes(from)) { console.error('mutant not applicable: ' + from); process.exit(2); }\n  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mutant-'));\n  fs.cpSync(root, dir, { recursive: true });\n  fs.writeFileSync(path.join(dir, moduleFile), source.replace(from, to));\n  if (run(dir) === 0) { console.error('survived: ' + from); survived += 1; }\n  fs.rmSync(dir, { recursive: true, force: true });\n}\nprocess.exit(survived === 0 ? 0 : 1);\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-tests",
+          "command": "node --test test/slugify.test.js",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "mutants",
@@ -317,7 +347,13 @@
       "graderFiles": {
         "grader/mutation-check.js": "const { spawnSync } = require('node:child_process');\nconst fs = require('node:fs');\nconst os = require('node:os');\nconst path = require('node:path');\nconst moduleFile = \"src/stack.js\";\nconst testFile = \"test/stack.test.js\";\nconst mutants = [[\"return this.#items.pop();\",\"return this.#items.shift();\"],[\"this.#items.push(item);\\n    return this;\",\"this.#items.push(item);\\n    return undefined;\"],[\"this.#items[this.#items.length - 1]\",\"this.#items[0]\"],[\"if (this.#items.length === 0) throw new RangeError('stack is empty');\\n    return this.#items.pop();\",\"return this.#items.pop();\"],[\"if (this.#items.length === 0) throw new RangeError('stack is empty');\\n    return this.#items[\",\"return this.#items[\"],[\"return this.#items.length;\",\"return this.#items.length + 1;\"]];\nconst root = process.cwd();\nconst run = (dir) => spawnSync(process.execPath, ['--test', testFile], { cwd: dir, stdio: 'ignore' }).status;\nif (!fs.existsSync(path.join(root, testFile))) { console.error('missing ' + testFile); process.exit(1); }\nif (run(root) !== 0) { console.error('the tests fail on the real module'); process.exit(1); }\nconst source = fs.readFileSync(path.join(root, moduleFile), 'utf8');\nlet survived = 0;\nfor (const [from, to] of mutants) {\n  if (!source.includes(from)) { console.error('mutant not applicable: ' + from); process.exit(2); }\n  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mutant-'));\n  fs.cpSync(root, dir, { recursive: true });\n  fs.writeFileSync(path.join(dir, moduleFile), source.replace(from, to));\n  if (run(dir) === 0) { console.error('survived: ' + from); survived += 1; }\n  fs.rmSync(dir, { recursive: true, force: true });\n}\nprocess.exit(survived === 0 ? 0 : 1);\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-tests",
+          "command": "node --test test/stack.test.js",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "mutants",
@@ -364,7 +400,18 @@
       "runs": 3,
       "setup": [],
       "graderFiles": {},
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-lint",
+          "command": "node scripts/lint.js",
+          "when": "always"
+        },
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "lint",
@@ -421,7 +468,18 @@
       "runs": 3,
       "setup": [],
       "graderFiles": {},
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-lint",
+          "command": "node scripts/lint.js",
+          "when": "always"
+        },
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "lint",
@@ -480,7 +538,18 @@
       "graderFiles": {
         "grader/docs-check.js": "const fs = require('node:fs');\nconst readme = fs.readFileSync('README.md', 'utf8');\nconst names = Object.keys(require(process.cwd() + '/src/index.js'));\nconst missing = names.filter((name) => !readme.includes(`### \\`${name}\\``));\nif (missing.length > 0) { console.error('README.md has no section for: ' + missing.join(', ')); process.exit(1); }\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-docs",
+          "command": "node -e \"const readme = require('node:fs').readFileSync('README.md', 'utf8'); process.exit(Object.keys(require('./src/index.js')).every((name) => readme.includes('### \\x60' + name + '\\x60')) ? 0 : 1)\"",
+          "when": "always"
+        },
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "documented",
@@ -531,7 +600,18 @@
       "graderFiles": {
         "grader/docs-check.js": "const fs = require('node:fs');\nconst readme = fs.readFileSync('README.md', 'utf8').split('\\n');\nconst { DEFAULTS } = require(process.cwd() + '/src/truncate.js');\nconst missing = Object.entries(DEFAULTS).filter(([key, value]) => !readme.some((line) => line.startsWith(`| \\`${key}\\` |`) && line.includes(`\\`${JSON.stringify(value)}\\``)));\nif (missing.length > 0) { console.error('README.md has no table row with the default of: ' + missing.map(([key]) => key).join(', ')); process.exit(1); }\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-docs",
+          "command": "node -e \"const readme = require('node:fs').readFileSync('README.md', 'utf8'); process.exit(['maxLength', 'ellipsis', 'wordBoundary'].every((name) => readme.includes('| \\x60' + name + '\\x60 |')) ? 0 : 1)\"",
+          "when": "always"
+        },
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "documented",
@@ -582,7 +662,18 @@
       "graderFiles": {
         "test/hidden-ticket.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { ticketNumber } = require('../src/ticket.js');\ntest('pads a number', () => assert.strictEqual(ticketNumber(42), '000042'));\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-vendored-version",
+          "command": "node -e \"process.exit(require('./package.json').vendored['pad-left'] === '1.2.0' ? 0 : 1)\"",
+          "when": "always"
+        },
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "tests",
@@ -633,7 +724,18 @@
       "graderFiles": {
         "test/hidden-sessions.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst fs = require('node:fs');\nconst manifest = require('../package.json');\ntest('declares the new version', () => assert.strictEqual(manifest.vendored['kv-store'], '1.5.0'));\ntest('no longer calls the removed callback form', () => { for (const file of ['session.js', 'counter.js']) assert.doesNotMatch(fs.readFileSync(`${__dirname}/../src/${file}`, 'utf8'), /\\.get\\(/); });\n"
       },
-      "declaration": [],
+      "declaration": [
+        {
+          "id": "task-own-vendored-version",
+          "command": "node -e \"process.exit(require('./package.json').vendored['kv-store'] === '1.5.0' ? 0 : 1)\"",
+          "when": "always"
+        },
+        {
+          "id": "task-own-tests",
+          "command": "node --test",
+          "when": "always"
+        }
+      ],
       "oracle": [
         {
           "id": "tests",

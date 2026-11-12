@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ResolvedModel, UserModels } from '@momonga/config';
@@ -9,6 +8,7 @@ import { nodeFiles } from '../src/node-ports.ts';
 import { copyEndpointProbeRecord } from '../src/eval/context-effects.ts';
 import { liveSettingsFor } from '../src/eval/context-host.ts';
 import { firstModelOf, userModelsOf } from './user-models.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const capabilities = { contextWindow: 8192, maxOutputTokens: 1024 };
 
@@ -56,7 +56,7 @@ describe('the probe records a case home receives', () => {
 const directories: string[] = [];
 
 const temporary = (): string => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-ollama-probe-'));
+  const directory = createTempDir();
   directories.push(directory);
   return directory;
 };

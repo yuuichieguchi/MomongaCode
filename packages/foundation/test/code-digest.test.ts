@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { codeDigestOf, codeDigestOfRunningProcess } from '@momonga/foundation';
+import { createTempDir } from '@momonga/testkit';
 
 const foundationSource = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'code-digest.ts');
 
@@ -24,7 +24,7 @@ const SOURCES: Readonly<Record<string, string>> = {
 };
 
 const sourceTree = (files: Readonly<Record<string, string>> = SOURCES): string => {
-  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-code-digest-')));
+  const root = createTempDir();
   trees.push(root);
   for (const [name, content] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });

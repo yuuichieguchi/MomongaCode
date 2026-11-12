@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { containsByComponents } from '@momonga/foundation';
 import { syncPaths } from '../src/index.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const directories: string[] = [];
 
@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 const workspace = (): string => {
-  const directory = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-locate-')));
+  const directory = createTempDir();
   directories.push(directory);
   return directory;
 };

@@ -55,6 +55,7 @@ describe('a tool parameter the dialect narrowed', () => {
     expect(notices[0]?.message).toContain('ConfigureWidget');
     expect(notices[0]?.message).toContain('/properties/options');
     expect(notices[0]?.message).not.toContain('\n');
+    expect(notices[0]?.message).not.toMatch(/\btarget/);
   });
 
   it('tells the person again for another path of the same tool', async () => {

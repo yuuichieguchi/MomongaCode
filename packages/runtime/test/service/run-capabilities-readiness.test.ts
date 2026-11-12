@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { fixedSocket } from '@momonga/foundation';
-import { TARGET_NOT_READY, TARGET_PROBING, TARGET_PROBING_MESSAGE, agentReadiness, readinessText } from '@momonga/protocol';
+import { TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, agentReadiness, readinessText } from '@momonga/protocol';
 import type { NotListedCapabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
 import { GatewayRequestError, ModelUnlistedError, createGatewayClient } from '@momonga/runtime';
 import { fakeClock, listedEntry, listingBody, makeClient, settle, startRawHttpFake } from '../gateway-client/fixtures.ts';
@@ -91,6 +91,25 @@ describe('a run created with an image answers by the readiness of its model (K5)
       body: { error: { type: 'conflict', code: TARGET_NOT_READY, message: TARGET_PROBING_MESSAGE } },
     });
     expect(response.headers['retry-after']).toBeUndefined();
+    expect(env.errors).toEqual([]);
+    expect(env.store.listRuns(session.id)).toEqual([]);
+  });
+
+  it('answers a failed measurement of the model with its own typed status, the cause the gateway names and when it measures again', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(503, { 'content-type': 'application/json', 'retry-after': '75' });
+      response.end(JSON.stringify({ error: { type: 'server_error', code: TARGET_PROBE_FAILED, message: 'measuring this model failed: the oil ran dry', param: null } }));
+    });
+    const client = makeClient(fake.socketPath, fakeClock());
+
+    const { env, session, response } = await createRunWithImage((model) => client.capabilities(model, { signal: new AbortController().signal }));
+
+    expect({ status: response.status, body: response.json }).toEqual({
+      status: 503,
+      body: { error: { type: 'server_error', code: TARGET_PROBE_FAILED, message: 'measuring this model failed: the oil ran dry; it is measured again in 75 seconds' } },
+    });
+    expect(response.headers['retry-after']).toBe('75');
     expect(env.errors).toEqual([]);
     expect(env.store.listRuns(session.id)).toEqual([]);
   });

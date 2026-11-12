@@ -1,18 +1,17 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { GATE_NAMES, nodeWorkspaceFiles } from '@momonga/eval';
 import type { WorkspaceFiles } from '@momonga/eval';
 import { ADD_FIXED, ADD_TEST, CHEATING_TEST, benchmarkDir, exported, nodeProbe } from './bench-fixtures.ts';
 import type { WorkspaceProbe } from './bench-fixtures.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, systemTempRoot, testKernelLock } from '@momonga/testkit';
 import type { KernelLockMechanism } from '@momonga/foundation';
 
 type Validation = { tasks: { id: string; problems: string[] }[] };
 
 const validate = (file: string, probe: WorkspaceProbe): Promise<Validation> =>
-  exported<(benchmarkFile: string, ports: { probe: WorkspaceProbe; files: WorkspaceFiles; tmpdir: string; lock: KernelLockMechanism }) => Promise<Validation>>('validateBenchmark')(file, { probe, files: nodeWorkspaceFiles, tmpdir: os.tmpdir(), lock: testKernelLock() });
+  exported<(benchmarkFile: string, ports: { probe: WorkspaceProbe; files: WorkspaceFiles; tmpdir: string; lock: KernelLockMechanism }) => Promise<Validation>>('validateBenchmark')(file, { probe, files: nodeWorkspaceFiles, tmpdir: systemTempRoot(), lock: testKernelLock() });
 
 const problemsOf = async (dir: string): Promise<Record<string, string[]>> =>
   Object.fromEntries((await validate(path.join(dir, 'benchmark.json'), nodeProbe)).tasks.map((task) => [task.id, task.problems]));
@@ -91,7 +90,7 @@ describe('grading a trial whose model step edited a protected path (3.2, 3.3 ste
       (input: { task: unknown; workspace: string; base: string; probe: typeof nodeProbe; files: WorkspaceFiles }) => Promise<{ met: boolean; checks: { id: string; passed: boolean }[] }>
     >('gradeTrial');
     const benchmark = parse(fs.readFileSync(path.join(dir, 'benchmark.json'), 'utf8'), 'benchmark.json');
-    const workspace = fs.mkdtempSync(path.join(dir, 'workspace-'));
+    const workspace = createTempDir({ parent: dir });
     fs.cpSync(path.join(dir, 'repos', 'cheat'), workspace, { recursive: true });
     fs.writeFileSync(path.join(workspace, 'test', 'add.test.js'), CHEATING_TEST);
     const graded = await gradeTrial({ task: benchmark.tasks[0], workspace, base: path.join(dir, 'repos', 'cheat'), probe: nodeProbe, files: nodeWorkspaceFiles });

@@ -31,6 +31,7 @@ describe('supervisor.log and role logs with real children', () => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home, process.platform, {});
     writeSettings(home, validSettings());
+    fs.mkdirSync(paths.logs, { recursive: true, mode: 0o700 });
     const sink = createRotatingLogFile({ path: paths.logFiles.supervisor, maxBytes: LOG_MAX_BYTES, keep: LOG_KEEP, mode: 0o600 });
     registerCleanup(context, () => sink.close());
     const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, stream: { write: (chunk) => (sink.write(chunk), true) } });

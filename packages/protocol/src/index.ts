@@ -426,7 +426,7 @@ export type {
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES, SPAN_ATTRIBUTE_RENAMES } from './trace-attributes.ts';
 export { EVENT_PAYLOAD_RENAMES, withCurrentNames } from './stored-names.ts';
 export type { StoredRenames } from './stored-names.ts';
-export { PERSON_CAPABILITY_HEADER, COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, SESSION_SANDBOX_NETWORKS, base64ByteLength, isOpaqueEvent, PATTERN_RULES, runApiSchemaName, toPublicRunEvent, MODEL_COST_SCHEMA } from './run-api.ts';
+export { PERSON_CAPABILITY_HEADER, COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, SESSION_SANDBOX_NETWORKS, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, isOpaqueEvent, PATTERN_RULES, runApiSchemaName, toPublicRunEvent, MODEL_COST_SCHEMA } from './run-api.ts';
 export type { DaemonCurrentFrame, StreamFailedFrame } from './run-api.ts';
 export { INBOX_WITHDRAW_OUTCOMES, MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, attachmentSummaryOf, modelKindOf } from './run-api.ts';
 export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest, CompactSessionRequest } from './run-api.ts';
@@ -593,8 +593,8 @@ export {
   hookTimeoutMs,
 } from './hooks.ts';
 export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
-export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_FINGERPRINT_PATTERN, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations, rulePropertyInWords } from './rule-verdict.ts';
-export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind, RuleVerdictPhase } from './rule-verdict.ts';
+export { FINAL_RULE_VERDICTS, POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, REFUSING_PROPERTIES, RULE_NOTE_KINDS, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isFinalRuleVerdict, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations, rulePropertyInWords } from './rule-verdict.ts';
+export type { PinnedRuleVerdict, PolicyVerifyRequest, PolicyVerifyResponse, RuleNote, RuleNoteKind, RuleNoteRule, RuleRefutation, RuleVerdict, RuleVerdictKind, RuleVerdictPhase } from './rule-verdict.ts';
 export {
   CONDITION_SOURCES,
   CONDITION_STATES,
@@ -765,7 +765,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing } from './gateway-api.ts';
+export { MOMONGA_EVENT_PREFIX, SERVICE_UNAVAILABLE_STATUS, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbeFailed, isTargetProbing } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,

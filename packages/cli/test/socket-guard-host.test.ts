@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LINUX_SOCKET_GUARD_BINARY_ASSET, LINUX_SOCKET_GUARD_MANIFEST_ASSET, LinuxSocketGuardDistributionError, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, sha256Hex } from '@momonga/foundation';
@@ -8,6 +7,7 @@ import { hostExtractedLinuxSocketGuard, nodeSourceKeeperFiles } from '../src/nod
 import { sourceBuiltLinuxSocketGuard } from '../src/keeper/source.ts';
 import type { SourceKeeperPorts } from '../src/keeper/source.ts';
 import { socketGuardSourceOf } from '../src/socket-guard/host.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const dirs: string[] = [];
 
@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 const rootOf = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-socket-guard-')));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };

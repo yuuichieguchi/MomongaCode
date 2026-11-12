@@ -1,6 +1,6 @@
 import { GIT_APPROVED_SUBCOMMANDS } from '@momonga/policy';
-import type { NetworkScope } from '@momonga/foundation';
 import type { SandboxNetwork, SandboxPolicy } from '@momonga/sandbox';
+import type { AdmittedNetwork } from './network-scope.ts';
 import type { ToolContext } from './types.ts';
 import { isHttpDestination, overridesOf, productSetEntriesOf } from './git-config-table.ts';
 import type { ConfigEntry, UrlRewrite } from './git-config-table.ts';
@@ -84,10 +84,10 @@ export const readOnlySandboxPolicy = (policy: SandboxPolicy): SandboxPolicy => (
 
 export const withNetwork = (policy: SandboxPolicy, network: SandboxNetwork): SandboxPolicy => (policy.network === network ? policy : { ...policy, network });
 
-export const contextWithNetwork = (context: ToolContext, scope: NetworkScope): ToolContext => ({
+export const contextWithNetwork = (context: ToolContext, network: AdmittedNetwork): ToolContext => ({
   ...context,
-  network: scope,
-  sandboxPolicy: withNetwork(context.sandboxPolicy, scope.kind === 'open' ? 'allow' : 'deny'),
+  network: network.scope,
+  sandboxPolicy: withNetwork(context.sandboxPolicy, network.sandboxNetwork),
 });
 
 export const readOnlyContextOf = (context: ToolContext): ToolContext => {

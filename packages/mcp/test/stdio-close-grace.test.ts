@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMcpPool, createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
 import { KILL_CONFIRM_MS, groupAlive, hostProcessGroupPort, terminateGroup, nodeFileSystem } from '@momonga/foundation';
 import type { ProcessGroupPort, Timing } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killGroupsForCleanup, waitFor, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers, createTempDir, killGroupsForCleanup, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_STDIO_LAUNCH, waitFor } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { BASE_ENV, entry, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
@@ -24,7 +23,7 @@ afterEach(async () => {
 });
 
 const projectDir = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-grace-')));
+  const dir = createTempDir();
   dirs.push(dir);
   return dir;
 };

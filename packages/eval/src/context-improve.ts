@@ -140,8 +140,8 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
     return [{ scenario: entry.scenario, off, on }];
   });
   contrastive = cases.map((entry) => entry.scenario);
-  if (cases.length === 0) return outcome('empty');
   if (reached()) return stopped();
+  if (cases.length === 0) return outcome('empty');
 
   const analyses: { scenario: string; analysis: GuidelineAnalysis }[] = [];
   for (const entry of cases) {

@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeUpdateFs } from '../src/update/node-ports.ts';
 import type { StagedFile } from '../src/update/ports.ts';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 
 const created: string[] = [];
 const open: StagedFile[] = [];
@@ -15,7 +14,7 @@ afterEach(async () => {
 });
 
 const installDirectory = (): string => {
-  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-update-leftover-')));
+  const directory = createTempDir();
   created.push(directory);
   return directory;
 };

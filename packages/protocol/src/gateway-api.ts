@@ -64,6 +64,8 @@ export const SERVICE_UNAVAILABLE_STATUS = 503;
 
 export const isTargetProbing = (answer: { status: number; code: string | null }): boolean => answer.status === SERVICE_UNAVAILABLE_STATUS && answer.code === TARGET_PROBING;
 
+export const isTargetProbeFailed = (answer: { status: number; code: string | null }): boolean => answer.status === SERVICE_UNAVAILABLE_STATUS && answer.code === TARGET_PROBE_FAILED;
+
 export const TARGET_PROBING_MESSAGE = 'measuring this model (once per model and OS build)';
 
 export type ChainMemberEntry = {

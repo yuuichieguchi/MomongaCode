@@ -12,6 +12,8 @@ export const TEMP_DIR_PREFIX = 'mmt-';
 export const TEST_HEARTBEAT_MS = 10_000;
 export const REAL_PROCESS_TEST_TIMEOUT_MS = 90_000;
 
+export const SOURCE_SCAN_TEST_TIMEOUT_MS = REAL_PROCESS_TEST_TIMEOUT_MS;
+
 export const SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
 export const SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS = 6 * REAL_PROCESS_TEST_TIMEOUT_MS;
 export const SOLVER_ENCODING_SWEEP_TEST_TIMEOUT_MS = 10 * REAL_PROCESS_TEST_TIMEOUT_MS;
@@ -91,9 +93,11 @@ const removeDirectoryTree = (dir: string): void => {
   if (fs.existsSync(dir)) throw new Error(`test temp dir ${dir} still exists after cleanup`);
 };
 
-export type TempDirOptions = { asHome?: boolean };
+export type TempDirOptions = { asHome?: boolean; parent?: string };
 
-const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform) : os.tmpdir());
+export const systemTempRoot = (): string => fs.realpathSync(os.tmpdir());
+
+const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform, os.tmpdir()) : systemTempRoot());
 
 export const testTempBases = (): string[] => [...new Set([tempDirBase(true), tempDirBase(false)].map((base) => fs.realpathSync(base)))];
 
@@ -103,7 +107,7 @@ const createdHomes = new Set<string>();
 
 export const createTempDir = (options: TempDirOptions = {}): string => {
   const asHome = options.asHome === true;
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(tempDirBase(asHome), tempDirPrefixFor(testRunToken()))));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(options.parent ?? tempDirBase(asHome), tempDirPrefixFor(testRunToken()))));
   fs.chmodSync(dir, 0o700);
   if (!asHome) return dir;
   createdHomes.add(dir);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TEST_BUILTIN_TOOL_OFFER } from '@momonga/testkit';
 import { REFERENCE_KINDS } from '@momonga/protocol';
 import { createBuiltinTools, createHistoryTools, createToolRegistry } from '@momonga/tools';
 import type { AnyTool, HistoryStorePort } from '@momonga/tools';
@@ -7,7 +8,7 @@ const historyTools = (): AnyTool[] => createHistoryTools({ port: {} as HistorySt
 
 const declaredReads = (tool: AnyTool): string | undefined => (tool as AnyTool & { reads?: string }).reads;
 
-const everyBuiltin = (): AnyTool[] => [...createBuiltinTools(), ...historyTools()];
+const everyBuiltin = (): AnyTool[] => [...createBuiltinTools(TEST_BUILTIN_TOOL_OFFER), ...historyTools()];
 
 describe('one reader per reference kind', () => {
   it('lists the two reference kinds', () => {
@@ -35,7 +36,7 @@ describe('one reader per reference kind', () => {
 
   it('answers undefined for a kind whose reader is not in the set', async () => {
     const registry = createToolRegistry();
-    for (const tool of createBuiltinTools()) registry.register(tool);
+    for (const tool of createBuiltinTools(TEST_BUILTIN_TOOL_OFFER)) registry.register(tool);
     const set = (await registry.snapshot()) as Awaited<ReturnType<typeof registry.snapshot>> & { readerOf(kind: string): string | undefined };
     expect(set.readerOf('history_range')).toBeUndefined();
   });

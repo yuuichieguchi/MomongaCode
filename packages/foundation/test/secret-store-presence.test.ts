@@ -1,11 +1,11 @@
 import type { SecretHost } from '@momonga/foundation/secret-store';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPlatformSecretStore } from '@momonga/foundation';
 import type { SecretProcessPort } from '@momonga/foundation';
 import type { SecretStoreFiles } from '@momonga/foundation/secret-store';
+import { createTempDir } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 const binDirWith = (...programs: string[]): string => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-secret-bin-')));
+  const dir = createTempDir();
   tempDirs.push(dir);
   for (const program of programs) fs.writeFileSync(path.join(dir, program), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   return dir;

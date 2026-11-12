@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
@@ -27,6 +26,7 @@ import { publicEventsOf } from './fixtures.ts';
 import { RECORDED_IDENTITY } from './fixtures.ts';
 import { compacted, contextCase, fidelity, governing, recorded } from './context-fixtures.ts';
 import { REAL_TARGET, buildReportAs } from './answered-fixtures.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const pair = (scenario: string, extra: Record<string, unknown> = {}) => [
   { ...contextCase(`${scenario}-on`, scenario, 'on'), ...extra },
@@ -339,7 +339,7 @@ describe('caseSettingsFor', () => {
 describe('applyWorkspaceStep', () => {
   const roots: string[] = [];
   const temporary = (): string => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-eval-test-'));
+    const root = createTempDir();
     roots.push(root);
     return root;
   };

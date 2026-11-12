@@ -144,7 +144,7 @@ export const recordPrefix = (ctx: ClaimContext, built: BuiltContext, wrapUp: boo
         type: 'notice',
         level: 'info',
         code: 'prefix_unexplained',
-        message: `The request keeps ${relation.preservedItems} leading items of the previous one, fewer than the ${allowed} that the named events (${causes.length === 0 ? 'none' : causes.join(', ')}) allow`,
+        message: `The prompt cache of the model could not be fully reused: the request keeps ${relation.preservedItems} leading items of the previous one, fewer than the ${allowed} expected${causes.length === 0 ? ' with no change recorded between them' : ` after ${causes.join(', ')}`}. Nothing needs to be done; the run goes on.`,
       },
     ],
   };

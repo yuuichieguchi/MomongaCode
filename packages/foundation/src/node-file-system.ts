@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, DescriptorWriter, DescriptorWriterSync, FileContent } from './atomic-file.ts';
 import { PRIVATE_MODE, assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
@@ -8,6 +9,7 @@ export const OPEN_FLAGS = {
   writeOnly: fs.constants.O_WRONLY,
   create: fs.constants.O_CREAT,
   exclusive: fs.constants.O_EXCL,
+  truncate: fs.constants.O_TRUNC,
   nonBlocking: fs.constants.O_NONBLOCK,
   noFollow: noFollowFlag(),
 } as const;
@@ -49,6 +51,7 @@ export interface FileSystem extends AtomicWriteFileSystem {
   mkdtemp(prefix: string): Promise<string>;
   openThenClose(file: string, flags: number): Promise<void>;
   writeByteAt(file: string, position: number, byte: string): Promise<void>;
+  identity(file: string): Promise<DirectoryIdentity>;
 }
 
 export interface FileSystemSync extends AtomicWriteFileSystemSync<number> {
@@ -65,6 +68,16 @@ export interface FileSystemSync extends AtomicWriteFileSystemSync<number> {
   mkdirSync(directory: string, mode: number): void;
   readlinkSync(file: string): string;
   realpathSync(file: string): string;
+  readAtSync(handle: number, page: Uint8Array, position: number): number;
+  truncateSync(handle: number, length: number): void;
+  writeTextAtSync(handle: number, text: string, position: number): void;
+  lstatBigIntSync(file: string): fs.BigIntStats;
+  fstatBigIntSync(handle: number): fs.BigIntStats;
+  unlinkSync(file: string): void;
+  readTextFileSync(file: string): string;
+  makeDirectorySync(directory: string, mode: number): void;
+  removeTreeSync(directory: string): void;
+  temporaryDirectorySync(): string;
 }
 
 const ACCESS_MODES: Readonly<Record<AccessCheck, number>> = { exists: fs.constants.F_OK, execute: fs.constants.X_OK, list: fs.constants.R_OK | fs.constants.X_OK };
@@ -215,6 +228,10 @@ export const nodeFileSystem: FileSystem = {
       await handle.close();
     }
   },
+  identity: async (file) => {
+    const stat = await fs.promises.stat(file, { bigint: true });
+    return { dev: stat.dev, ino: stat.ino };
+  },
 };
 
 export const nodeFileSystemSync: FileSystemSync = {
@@ -246,6 +263,16 @@ export const nodeFileSystemSync: FileSystemSync = {
   renameSync: (from, to) => fs.renameSync(from, to),
   linkSync: (from, to) => fs.linkSync(from, to),
   rmSync: (file) => fs.rmSync(file, { force: true }),
+  readAtSync: (handle, page, position) => fs.readSync(handle, page, 0, page.length, position),
+  truncateSync: (handle, length) => fs.ftruncateSync(handle, length),
+  writeTextAtSync: (handle, text, position) => void fs.writeSync(handle, text, position),
+  lstatBigIntSync: (file) => fs.lstatSync(file, { bigint: true }),
+  fstatBigIntSync: (handle) => fs.fstatSync(handle, { bigint: true }),
+  unlinkSync: (file) => fs.unlinkSync(file),
+  readTextFileSync: (file) => fs.readFileSync(file, 'utf8'),
+  makeDirectorySync: (directory, mode) => void fs.mkdirSync(directory, { mode }),
+  removeTreeSync: (directory) => fs.rmSync(directory, { recursive: true, force: true }),
+  temporaryDirectorySync: () => os.tmpdir(),
 };
 
 export const readFileBytesSync = (file: string): Uint8Array => fs.readFileSync(file);

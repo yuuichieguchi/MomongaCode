@@ -110,7 +110,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
     expect(result.stdout.trim()).toBe(mine);
   });
 
-  it('lets node realpathSync resolve os.tmpdir()', async () => {
+  it('lets node realpathSync resolve the system temporary folder', async () => {
     const script = "process.stdout.write(require('fs').realpathSync(require('os').tmpdir()))";
     const result = await run(await sh(`'${process.execPath}' -e "${script}"`));
     expect(fs.existsSync(marker)).toBe(true);

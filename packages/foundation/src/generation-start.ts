@@ -1,3 +1,4 @@
+import type { FileSystem } from './node-file-system.ts';
 import path from 'node:path';
 import { writeFileAtomically } from './atomic-file.ts';
 import type { AtomicWriteFileSystem } from './atomic-file.ts';
@@ -117,11 +118,10 @@ export class CurrentGenerationUnreadableError extends Error {
   }
 }
 
-export type GenerationStartFiles = {
+export type GenerationStartFiles = Pick<FileSystem, 'readdir'> & {
   readonly atomic: AtomicWriteFileSystem;
   isRegularFile(file: string): Promise<boolean | undefined>;
   readHead(file: string, maxBytes: number): Promise<Uint8Array>;
-  readdir(directory: string): Promise<string[]>;
   createGenerationDirs(paths: MomongaPaths, generation: number): Promise<void>;
 };
 

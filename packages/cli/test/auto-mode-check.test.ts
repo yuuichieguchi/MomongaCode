@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, expectTypeOf, vi } from 'vitest';
 import type { UserModels, ResolvedChatCompletionsTarget } from '@momonga/config';
 import { autoFitDirectoryOf } from '@momonga/config';
 import { momongaPaths, nodeFileSystem, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { createFakeKernelLock } from '@momonga/testkit';
+import { createFakeKernelLock, createTempDir } from '@momonga/testkit';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '@momonga/runtime';
 import { autoModeCheck } from '../src/commands/auto-mode.ts';
@@ -161,7 +160,7 @@ afterEach(() => {
 });
 
 const portsFor = (effects: ContextHostEffects): { ports: AutoModeCheckPorts; output: string[]; home: string } => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-check-')));
+  const home = createTempDir();
   homes.push(home);
   const output: string[] = [];
   const ports: AutoModeCheckPorts = {

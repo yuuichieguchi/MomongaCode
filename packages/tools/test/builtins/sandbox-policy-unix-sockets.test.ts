@@ -1,16 +1,15 @@
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import { buildSandboxPolicy } from '@momonga/tools';
-import { NEVER_CANCELLED } from '@momonga/testkit';
+import { createTempDir, NEVER_CANCELLED } from '@momonga/testkit';
 
 const created: string[] = [];
 
 const makeHome = (): { home: string; project: string } => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sock-')));
+  const root = createTempDir();
   created.push(root);
   const home = path.join(root, 'home');
   const project = path.join(root, 'project');

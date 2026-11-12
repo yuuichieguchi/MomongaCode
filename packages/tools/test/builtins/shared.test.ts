@@ -1,5 +1,5 @@
 import { EMPTY_FILE_RULES, defaultProtectedPaths, momongaLayout, standardSecretLocations } from '@momonga/foundation';
-import { TEST_TOOL_LIMITS, protectedSetWith, NEVER_CANCELLED } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, TEST_TOOL_LIMITS, protectedSetWith, NEVER_CANCELLED } from '@momonga/testkit';
 import type { ProtectedSet } from '@momonga/foundation';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { buildSandboxPolicy, createBuiltinTools, createToolRegistry } from '@momonga/tools';
@@ -49,11 +49,11 @@ describe('the subject a tool declares', () => {
 
 describe('createBuiltinTools', () => {
   it('returns the ten tools in order', () => {
-    expect(createBuiltinTools().map((tool: AnyTool) => tool.name)).toEqual(NAMES);
+    expect(createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).map((tool: AnyTool) => tool.name)).toEqual(NAMES);
   });
 
   it('declares kinds, side effects and timeouts', () => {
-    const tools = createBuiltinTools();
+    const tools = createBuiltinTools(TEST_BUILTIN_TOOL_OFFER);
     const summary = tools
       .filter((tool: AnyTool) => tool.name !== 'Bash')
       .map((tool: AnyTool) => [tool.name, tool.kind, tool.sideEffect, typeof tool.timeoutMs === 'function' ? tool.timeoutMs({}, TEST_TOOL_LIMITS) : tool.timeoutMs]);
@@ -79,7 +79,7 @@ describe('createBuiltinTools', () => {
 
   it('registers every schema under the strict registry', async () => {
     const registry = createToolRegistry();
-    for (const tool of createBuiltinTools()) registry.register(tool);
+    for (const tool of createBuiltinTools(TEST_BUILTIN_TOOL_OFFER)) registry.register(tool);
     const toolSet = await registry.snapshot();
     expect(toolSet.tools.map((tool: AnyTool) => tool.name)).toEqual(OFFERED);
     expect(toolSet.forModel({ mode: 'manual', rules: [] }).map((tool) => tool.name)).toEqual(OFFERED);
@@ -89,7 +89,7 @@ describe('createBuiltinTools', () => {
     const JOB_TOOLS = ['BashOutput', 'KillBash'];
     const snapshot = async () => {
       const registry = createToolRegistry();
-      for (const tool of createBuiltinTools()) registry.register(tool);
+      for (const tool of createBuiltinTools(TEST_BUILTIN_TOOL_OFFER)) registry.register(tool);
       return registry.snapshot();
     };
     const offered = async (mode: 'manual' | 'plan', rules: PermissionRule[]): Promise<string[]> =>
@@ -119,7 +119,7 @@ describe('createBuiltinTools', () => {
 
   it('uses Claude Code input property names', () => {
     const properties = Object.fromEntries(
-      createBuiltinTools().map((tool: AnyTool) => [tool.name, Object.keys((tool.inputSchema['properties'] ?? {}) as Record<string, unknown>).sort()]),
+      createBuiltinTools(TEST_BUILTIN_TOOL_OFFER).map((tool: AnyTool) => [tool.name, Object.keys((tool.inputSchema['properties'] ?? {}) as Record<string, unknown>).sort()]),
     );
     expect(properties).toEqual({
       Read: ['file_path', 'limit', 'offset'],

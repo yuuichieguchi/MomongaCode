@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { Context } from 'hono';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -10,6 +9,7 @@ import { ensureJobOutputDirectory, openJobOutputFile, readJobFileWindow, removeJ
 import { mentionTargetOf, readMentionFile } from '../../src/process/user-input.ts';
 import { registerMarkerRoutes } from '../../src/service/markers.ts';
 import type { RouteRegistrar } from '../../src/service/app.ts';
+import { createTempDir } from '@momonga/testkit';
 
 type Call = { method: string; file: string };
 
@@ -35,7 +35,7 @@ const silent = (base: FileSystem, methods: readonly string[]): FileSystem =>
 const roots: string[] = [];
 
 const tempRoot = (): string => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-file-ports-')));
+  const root = createTempDir();
   roots.push(root);
   return root;
 };

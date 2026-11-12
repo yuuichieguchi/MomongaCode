@@ -13,7 +13,7 @@ const ON_CONTEXT = {
   observedCapacity: true,
   unboundedOutputReserve: true,
 };
-const ON_TOOLS = { deferral: true, conciseDescriptions: true, ripgrep: 'bundled' };
+const ON_TOOLS = { deferral: true, conciseDescriptions: true, ripgrep: 'bundled', bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000 }, search: { timeoutMs: 60_000 }, operations: { timeoutMs: 120_000 } };
 const ON_MEMORY = { reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true };
 
 describe('the defaults of the two core areas are on (design core-on 1, test 1)', () => {

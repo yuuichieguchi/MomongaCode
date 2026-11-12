@@ -1,6 +1,5 @@
-import { sleepDrivenTiming, afterMicrotasks } from '@momonga/testkit';
+import { afterMicrotasks, createTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { KILL_CONFIRM_MS, POLL_INTERVAL_MS, markerReapClockBoundMs, reapMarkedProcesses } from '@momonga/foundation';
@@ -18,7 +17,7 @@ afterEach(() => {
 });
 
 const writeMarker = (): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mkw-')));
+  const dir = createTempDir();
   dirs.push(dir);
   const marker = path.join(dir, 'marker');
   fs.writeFileSync(marker, `${RECORDED_GROUP}\n`, { mode: 0o600 });

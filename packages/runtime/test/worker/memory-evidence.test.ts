@@ -1,9 +1,8 @@
 import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { RunEvent, ToolFile } from '@momonga/protocol';
 import { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead, runFactsOf } from '@momonga/runtime';
@@ -181,7 +180,7 @@ afterEach(() => {
 });
 
 const tempProject = (): { root: string; project: string } => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-evidence-')));
+  const root = createTempDir();
   tempRoots.push(root);
   const project = path.join(root, 'project');
   fs.mkdirSync(project);

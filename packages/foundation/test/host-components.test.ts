@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as foundation from '@momonga/foundation';
+import { createTempDir, systemTempRoot } from '@momonga/testkit';
 
 type ExecCall = { file: string; args: readonly string[]; signal: AbortSignal | undefined };
 type ExecAnswer = { exitCode: number; stdout: string; stderr: string };
@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 const binaryWith = (bytes: string): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-host-'));
+  const dir = createTempDir();
   dirs.push(dir);
   const file = path.join(dir, 'server');
   fs.writeFileSync(file, bytes, { mode: 0o755 });
@@ -71,7 +71,7 @@ describe('one reader per probe key component (design-managed-servers section 6.2
   });
 
   it('reports a missing binary as unreadable, naming its path', async () => {
-    const binary = path.join(os.tmpdir(), 'mm-host-absent', 'server');
+    const binary = path.join(systemTempRoot(), 'mm-host-absent', 'server');
     const { exec } = recordingExec({ exitCode: 0, stdout: '25A354\n', stderr: '' });
     const readings = await readProbeKeyComponents({ identity: FM_IDENTITY, binary, platform: 'darwin', exec, signal: new AbortController().signal });
     expect(readings['binarySha256']?.kind).toBe('unreadable');
