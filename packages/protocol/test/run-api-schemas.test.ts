@@ -610,7 +610,7 @@ describe('PublicRunEvent projection', () => {
   });
 
   it('counts calls of unknown billing in every cost total', () => {
-    const totals = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 1, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { unknown_billing: 1 }, roles: {} };
+    const totals = { calls: 1, retries: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 1, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { unknown_billing: 1 }, roles: {} };
     const { unknownBillingCalls: _unknownBillingCalls, ...withoutUnknown } = totals;
     const report = (entry: typeof withoutUnknown) => ({
       runs: [{ runId: 'r', sessionId: 's', ...entry }],
@@ -623,7 +623,7 @@ describe('PublicRunEvent projection', () => {
   });
 
   it('counts the plan calls and their tokens in every cost total', () => {
-    const totals = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 1, planInputTokens: 2, planOutputTokens: 3, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { plan: 1 }, roles: {} };
+    const totals = { calls: 1, retries: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 1, planInputTokens: 2, planOutputTokens: 3, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { plan: 1 }, roles: {} };
     const { planCalls: _planCalls, ...withoutPlan } = totals;
     const report = (entry: object) => ({
       runs: [{ runId: 'r', sessionId: 's', ...entry }],
@@ -636,7 +636,7 @@ describe('PublicRunEvent projection', () => {
   });
 
   it('carries the model calls made for context purposes beside the cost totals', () => {
-    const totals = { calls: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: 0, currency: 'USD', priceVersions: [], unpriced: {}, roles: {} };
+    const totals = { calls: 0, retries: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, legacyPrecisionCalls: 0, amount: 0, currency: 'USD', priceVersions: [], unpriced: {}, roles: {} };
     const charge = { id: 1, purpose: 'reflection', runId: null, project: '/work/a', model: 'fm', inputTokens: 100, outputTokens: 20, totalTokens: 120, createdAt: 1 };
     const report = (contextCharges: unknown) => ({ runs: [], sessions: [], total: totals, contextCharges });
     expect(accepts('CostReport', report({ charges: [charge], totalTokens: 120 }))).toBe(true);
