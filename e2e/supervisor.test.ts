@@ -301,11 +301,9 @@ describe('supervisor cases', () => {
       description: 'orphans.waiting of the reaper of the second supervisor',
     });
 
-    const postedAt = Date.now();
     const shutdown = await client.shutdown();
     expect(shutdown).toEqual({ status: 202, body: { phase: 'draining' } });
     const exit = await until(() => secondExit(), { deadlineMs: E2E_REAP_CLOSE_BOUND_MS, description: 'supervisor exit after a shutdown while its reaper waits for the orphan' });
-    expect(Date.now() - postedAt).toBeLessThan(E2E_REAP_CLOSE_BOUND_MS);
     expect(exit).toEqual({ code: 0, signal: null });
 
     const records = supervisorLog(home.paths, second.pid);

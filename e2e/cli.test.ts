@@ -8,7 +8,7 @@ import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { CLI_FAKES_BUNDLE, runCli, runCliWithFakes, setFakeCliVersion, startCli } from './support/cli.ts';
 import { readDb } from './support/db.ts';
-import { supervisorLog } from './support/log-reader.ts';
+import { supervisorLog, supervisorPidsOf } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
@@ -260,6 +260,7 @@ describe('cli: momonga -p', () => {
     expect([first.code, second.code]).toEqual([0, 0]);
     expect([first.stdout, second.stdout].sort()).toEqual(['one\n', 'two\n']);
     const supervisorPid = Number(/pid (\d+)/.exec((await runCli(home, ['daemon', 'status'])).stdout)?.[1]);
+    expect(supervisorPidsOf(home.paths), 'every supervisor this home ever had').toEqual([supervisorPid]);
     const spawns = supervisorLog(home.paths, supervisorPid).filter((record) => record.msg === 'child.spawn');
     expect(spawns.map((record) => record['child']).sort()).toEqual(['gateway', 'runtime']);
   });

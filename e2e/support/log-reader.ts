@@ -42,5 +42,9 @@ export const readLog = (file: string): LogRecord[] => {
   return lines.filter((line) => line !== '').map((line) => parseLine(file, line));
 };
 
+export const supervisorPidsOf = (paths: MomongaPaths): number[] => [
+  ...new Set([...readLog(rotatedLogPath(paths.logFiles.supervisor, 1)), ...readLog(paths.logFiles.supervisor)].map((record) => Number(record.pid))),
+];
+
 export const supervisorLog = (paths: MomongaPaths, supervisorPid: number): LogRecord[] =>
   [...readLog(rotatedLogPath(paths.logFiles.supervisor, 1)), ...readLog(paths.logFiles.supervisor)].filter((record) => record.pid === supervisorPid);
