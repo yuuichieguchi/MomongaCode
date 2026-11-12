@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { announceProgress, parseProgressLine, startupSteps } from '@momonga/foundation';
+import { parseProgressLine, startupSteps } from '@momonga/foundation';
 import type { JsonLogger, LogFields } from '@momonga/foundation';
 
 const captureStream = (): { chunks: string[]; stream: { write(chunk: string): boolean } } => {
@@ -14,9 +14,9 @@ const recordingLogger = (): { logger: JsonLogger; debug: Array<{ msg: string; fi
 };
 
 describe('the start-up progress line', () => {
-  it('writes one line on the channel of ready and reads it back', () => {
+  it('writes one line on the channel of ready and reads it back', async () => {
     const capture = captureStream();
-    announceProgress({ service: 'runtime', pid: 4242, step: 'store' }, capture.stream);
+    await startupSteps({ service: 'runtime', pid: 4242, stream: capture.stream, logger: recordingLogger().logger, signal: undefined })('store', () => undefined);
     expect(capture.chunks.join('')).toBe('{"event":"progress","service":"runtime","pid":4242,"step":"store"}\n');
     expect(parseProgressLine(capture.chunks.join(''))).toEqual({ service: 'runtime', pid: 4242, step: 'store' });
   });

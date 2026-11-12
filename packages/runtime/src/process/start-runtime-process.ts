@@ -7,6 +7,7 @@ import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector
 import {
   acquireProcessLock,
   announceReady,
+  rotatedLogsPurge,
   startupSteps,
   createJsonLogger,
   createRedactor,
@@ -1063,6 +1064,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                     },
                     (runIds, cutoffMs, purgeSignal) => gatewayClient.retentionPurge(runIds, cutoffMs, purgeSignal),
                     (_runIds, cutoffMs, purgeSignal) => pruneGitObserverStores({ storeRoot: observerStoreRoot(paths), cutoffMs }, childLaunch, purgeSignal),
+                    rotatedLogsPurge(nodeFileSystem, Object.values(sharedPaths.logFiles)),
                   ],
                 },
                 sweepStop.signal,
