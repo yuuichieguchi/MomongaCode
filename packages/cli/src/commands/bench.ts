@@ -88,7 +88,6 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
         agent: run.agent ?? MAIN_AGENT,
         mode: session.permissionMode,
         model: session.model,
-        declared: run.report.declaration !== null && run.report.declaration.conditions.length > 0,
       };
     },
     answeredBy: async (runId) => (await client.runAnsweredBy(runId)).answeredBy,

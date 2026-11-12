@@ -45,7 +45,6 @@ const delegatingApi = (): BenchRunApi => {
       agent: child ? 'explore' : 'main',
       mode: 'acceptEdits',
       model: 'fake/system',
-      declared: false,
     };
   };
   return {

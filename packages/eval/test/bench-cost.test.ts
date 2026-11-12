@@ -37,7 +37,7 @@ const pricedApi = (asked: string[][]): BenchRunApi => {
     },
     runOf: async (runId): Promise<BenchRunView> => {
       const run = runs.get(runId) as { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } };
-      return { sessionId: run.sessionId, status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + run.timeoutMs, limits: run.limits, step: 1, tokensTotal: 10, origin: 'trusted', agent: 'main', mode: 'acceptEdits', model: 'fake/system', declared: true };
+      return { sessionId: run.sessionId, status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + run.timeoutMs, limits: run.limits, step: 1, tokensTotal: 10, origin: 'trusted', agent: 'main', mode: 'acceptEdits', model: 'fake/system'};
     },
     costs: async (runIds) => {
       asked.push([...runIds]);

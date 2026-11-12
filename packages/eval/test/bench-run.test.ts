@@ -241,13 +241,13 @@ describe('momonga eval bench: the trials of a benchmark (3.3)', () => {
     expect(report.total.completion).toEqual({ k: 1, n: 3, undeclared: 0 });
   });
 
-  it('leaves a trial whose run pinned no condition out of the rate, and one whose run pinned a standing condition of the settings in it, whatever the task file declares', async () => {
+  it('counts a trial as declared by the declaration of its task alone: a standing condition of the settings does not declare a task that declares nothing', async () => {
     const nothingPinned = fakeApi({ edit: fixTheBug, pinned: () => false });
-    const none = await runBenchmark(await declaring([{ id: 'tests', command: 'node --test', when: 'always' }]), nothingPinned.api, scratch());
-    expect(none.report.total.completion).toEqual({ k: 0, n: 0, undeclared: 3 });
+    const declared = await runBenchmark(await declaring([{ id: 'tests', command: 'node --test', when: 'always' }]), nothingPinned.api, scratch());
+    expect(declared.report.total.completion).toEqual({ k: 3, n: 3, undeclared: 0 });
     const standing = fakeApi({ edit: fixTheBug, pinned: () => true });
     const settings = await runBenchmark(await declaring([]), standing.api, scratch());
-    expect(settings.report.total.completion).toEqual({ k: 3, n: 3, undeclared: 0 });
+    expect(settings.report.total.completion).toEqual({ k: 0, n: 0, undeclared: 3 });
   });
 
   it('answers an ask with the option the task names and counts the trial as needing a person', async () => {
