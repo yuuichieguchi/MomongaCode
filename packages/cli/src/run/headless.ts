@@ -47,6 +47,7 @@ export type HeadlessOptions = {
   skill?: string;
   images?: readonly string[];
   mandate?: Mandate;
+  issue?: string;
   limits?: { maxCostUsd?: number };
   verbose: boolean;
   interrupt: AbortSignal;
@@ -646,6 +647,7 @@ const startedRun = async (ports: CliPorts, session: CliSession, options: Headles
     ...(invocation.skill === undefined ? {} : { skill: invocation.skill }),
     ...(images.length === 0 ? {} : { images }),
     ...(options.mandate === undefined ? {} : { mandate: options.mandate }),
+    ...(options.issue === undefined ? {} : { issue: options.issue }),
     ...(options.limits === undefined ? {} : { limits: options.limits }),
   });
   if (options.format === 'stream-json') {

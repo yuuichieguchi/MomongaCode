@@ -560,6 +560,7 @@ export type {
 } from './governance.ts';
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
+export { issueRunInput } from './issue-run.ts';
 export { ATTACHED_FILE_TAG, FORGE_ISSUE_TAG, TOOL_OUTPUT_TAG, USER_SHELL_TAG, attachedFileText, attachmentText, fenceUntrusted, imageDataUrl, includedShellTexts, sessionFenceOf, userMessageContent, userShellText } from './user-content.ts';
 export type { UserMessageExtras } from './user-content.ts';
 export { imageMediaTypeOf } from './image-media.ts';
