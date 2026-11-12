@@ -97,7 +97,11 @@ export type AttachedFilePart = { type: 'attached_file'; path: string; content: s
 
 export type AttachmentNotePart = { type: 'attachment_note'; path: string; text: string; shown: string };
 
-export type MessageAttachment = AttachedFilePart | AttachmentNotePart;
+export type ForgeIssuePart = { type: 'forge_issue'; issue: string; content: string };
+
+export type MessageAttachment = AttachedFilePart | AttachmentNotePart | ForgeIssuePart;
+
+export type IssueReference = { url: string; repository: string; number: number };
 
 export const USER_SHELL_OUTPUT_BYTES = 64 * 1024;
 export const USER_SHELL_HEAD_BYTES = 16 * 1024;

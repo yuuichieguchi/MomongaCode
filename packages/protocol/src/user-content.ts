@@ -8,6 +8,8 @@ export const ATTACHED_FILE_TAG = 'attached_file';
 
 export const USER_SHELL_TAG = 'user_shell_command';
 
+export const FORGE_ISSUE_TAG = 'forge_issue';
+
 const LONGER_BOUNDARY_STEP = 8;
 
 export const sessionFenceOf = (session: { fenceNonce: string }): string => session.fenceNonce;
@@ -35,7 +37,11 @@ export const userShellText = (record: Pick<UserShellRecord, 'command' | 'exitCod
 
 export const attachedFileText = (part: AttachedFilePart, sessionBoundary: string): string => fenceUntrusted(ATTACHED_FILE_TAG, { path: part.path }, part.content, sessionBoundary);
 
-export const attachmentText = (part: MessageAttachment, sessionBoundary: string): string => (part.type === 'attached_file' ? attachedFileText(part, sessionBoundary) : part.text);
+export const attachmentText = (part: MessageAttachment, sessionBoundary: string): string => {
+  if (part.type === 'attached_file') return attachedFileText(part, sessionBoundary);
+  if (part.type === 'forge_issue') return fenceUntrusted(FORGE_ISSUE_TAG, { issue: part.issue }, part.content, sessionBoundary);
+  return part.text;
+};
 
 export type UserMessageExtras = { attachments?: readonly MessageAttachment[] | undefined };
 

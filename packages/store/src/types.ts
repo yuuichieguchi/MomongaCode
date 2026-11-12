@@ -193,6 +193,7 @@ export type InboxStore = {
 };
 
 export type CreateRunResult = { kind: 'created' | 'existing'; run: Run } | NotFound | { kind: 'key_reused' };
+export type CreateIssueRunResult = CreateRunResult | { kind: 'already_started'; runId: string };
 export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | { kind: 'status_unknown'; run: Run } | NotFound;
 export type SetPermissionModeResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
 
@@ -634,6 +635,7 @@ export type RuntimeStore = {
   getListedSession(id: string): ListedSession | undefined;
   listSessions(request: SessionPageRequest): SessionPage;
   createRunAndEnqueue(sessionId: string, input: CreateRunInput): Promise<CreateRunResult>;
+  createIssueRunAndEnqueue(sessionId: string, input: CreateRunInput, issue: string): Promise<CreateIssueRunResult>;
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;
   sessionActivity(sessionId: string): { lastActivityAt: number; hasActiveRun: boolean } | undefined;
   checkIdentity(): Promise<void>;

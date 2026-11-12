@@ -21,7 +21,7 @@ import type { GitOriginCredential } from './git-credential.ts';
 import { OPERATION_SPECS } from './catalogue.ts';
 import { FORGE_REMOTE_INPUT, asksForge, describeClause, evaluateClauses, failedClauses } from './spec.ts';
 import type { ArgvCall, ArgvItem, ForgeArgument, ForgeCall, Network, OperationSpec, PrePushHook, Probe } from './spec.ts';
-import { isTruthy, lookup, lookupList, referencesIn, renderShown, renderTemplate } from './template.ts';
+import { isTruthy, lookup, lookupList, referencesIn, renderShown, renderTemplate, shownLine } from './template.ts';
 import type { Scope } from './template.ts';
 
 export type OperationSettings = { readonly protectedRefs?: readonly string[]; readonly approval?: Readonly<Record<string, 'rule' | 'always'>> };
@@ -193,13 +193,7 @@ const observeEach = async (runtime: Runtime, via: Extract<Probe['via'], { argv: 
   return new Set(values).size === 1 ? (values[0] as string) : AGREEMENT_LOST;
 };
 
-const lineOf = (runtime: Runtime, probe: string, forms: readonly string[], item: ForgeFields): string => {
-  const form = forms.find((candidate) => referencesIn(candidate).every((reference) => lookup({ item }, reference) !== undefined));
-  if (form === undefined) {
-    throw new ToolExecutionError(`${runtime.spec.name} could not show an entry of ${probe}: the forge gave only ${Object.keys(item).join(', ') || 'no field'}, which fits none of the forms ${forms.join(' | ')}`);
-  }
-  return renderTemplate(form, { item });
-};
+const lineOf = (runtime: Runtime, probe: string, forms: readonly string[], item: ForgeFields): string => shownLine(runtime.spec.name, probe, forms, item);
 
 const observeProbe = async (runtime: Runtime, probe: Probe, ctx: ReconcileContext, scope: Scope, repoRoot: string): Promise<unknown> => {
   const via = probe.via;

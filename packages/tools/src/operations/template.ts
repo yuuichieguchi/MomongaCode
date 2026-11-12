@@ -1,3 +1,5 @@
+import { ToolExecutionError } from '../types.ts';
+
 export type Scope = Readonly<Record<string, unknown>>;
 
 export class TemplateError extends Error {
@@ -40,6 +42,19 @@ export const renderTemplate = (template: string, scope: Scope): string =>
     if (value === undefined) throw new TemplateError(`${reference} has no value`);
     return value;
   });
+
+export const fittingLine = (forms: readonly string[], scope: Scope): string | undefined => {
+  const form = forms.find((candidate) => referencesIn(candidate).every((reference) => lookup(scope, reference) !== undefined));
+  return form === undefined ? undefined : renderTemplate(form, scope);
+};
+
+export const shownLine = (operation: string, probe: string, forms: readonly string[], item: Readonly<Record<string, string>>): string => {
+  const line = fittingLine(forms, { item });
+  if (line === undefined) {
+    throw new ToolExecutionError(`${operation} could not show an entry of ${probe}: the forge gave only ${Object.keys(item).join(', ') || 'no field'}, which fits none of the forms ${forms.join(' | ')}`);
+  }
+  return line;
+};
 
 export const renderShown = (template: string, scope: Scope): string =>
   template.replace(REFERENCE, (match, reference: string) => lookup(scope, reference) ?? match);

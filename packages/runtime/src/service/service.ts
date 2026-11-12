@@ -18,6 +18,7 @@ import type { EvidenceRun } from '../memory/evidence.ts';
 import type { SkillFileSystem } from '../memory/skill-promotion.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { createRunApp } from './app.ts';
+import type { IssuePort } from './issues.ts';
 import type { ModelListing, RunLimitDefaults, SessionCreateSettings } from './app.ts';
 import type { DelegationPort } from './delegation.ts';
 import type { McpAdminPort } from './input-routes.ts';
@@ -62,6 +63,7 @@ export type RunServiceOptions = {
   gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
+  issues: IssuePort;
   skillFiles: SkillFileSystem;
   platform: NodeJS.Platform;
   defaults: { runTimeoutMs?: number; limits: RunLimitDefaults };
@@ -164,6 +166,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     gatewayStanding: options.gatewayStanding,
     userInput: options.userInput,
     evidenceRun: options.evidenceRun,
+    issues: options.issues,
     skillFiles: options.skillFiles,
     platform: options.platform,
     isDraining: () => draining,

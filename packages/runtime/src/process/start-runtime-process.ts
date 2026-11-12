@@ -102,6 +102,7 @@ import {
 import { RUNTIME_DEFAULTS } from './defaults.ts';
 import { RuntimeAlreadyRunningError } from './errors.ts';
 import { startPeriodic } from './periodic.ts';
+import { createIssueSource } from './issue-source.ts';
 import type { Periodic } from './periodic.ts';
 import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
@@ -715,6 +716,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         },
         protectedRootAreas: protectedRootAreasOf(paths),
         notifier,
+        issues: createIssueSource({ userSnapshot: (requestSignal) => settingsComposition.userSnapshot(requestSignal), forgeOf: toolRuntime.forgeOf }),
         modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
         delegation: {
           settings: async (requestSignal) => {
