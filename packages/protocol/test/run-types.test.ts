@@ -516,7 +516,7 @@ describe('RunState', () => {
       loadedTools: string[];
       offeredTools?: string[];
       loopWarned?: { signature: string };
-      streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
+      streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[]; thoughtIds: string[] };
       mode?: PermissionMode;
       loopGroups: { signature: string; outputSignature?: string }[];
       loopOpen?: { calls: [string, unknown][]; callIds: string[]; outputs: Record<string, string> };

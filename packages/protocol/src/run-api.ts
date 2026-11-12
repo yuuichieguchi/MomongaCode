@@ -536,8 +536,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['step', 'attempt', 'itemId', 'text'],
   },
   'model.stream.restarted': {
-    properties: { step: nonNegativeInteger, attempt: integer },
-    required: ['step', 'attempt'],
+    properties: { step: nonNegativeInteger, attempt: integer, itemIds: { type: 'array', items: string } },
+    required: ['step', 'attempt', 'itemIds'],
   },
   'tool.call': {
     properties: {
