@@ -6,7 +6,7 @@ export const BUDGET_CAUSES = ['limit', 'unpriced', 'cap_too_small'] as const;
 
 export type BudgetCause = (typeof BUDGET_CAUSES)[number];
 
-export type BudgetExhausted = { dimension: BudgetDimension; cause: BudgetCause; spent: number; limit: number };
+export type BudgetExhausted = { dimension: BudgetDimension; cause: BudgetCause; spent: number; limit: number; admitsAt?: number };
 
 export const NANO_PER_USD = 1_000_000_000;
 
@@ -112,7 +112,8 @@ export type Admission =
 
 const safeNumber = (value: bigint): number => (value > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(value));
 
-const refusalOf = (dimension: BudgetDimension, spent: number, limit: number): Admission => ({ kind: 'refused', dimension, cause: spent >= limit ? 'limit' : 'cap_too_small', spent, limit });
+const refusalOf = (dimension: BudgetDimension, spent: number, limit: number, admitsAt: number): Admission =>
+  spent >= limit ? { kind: 'refused', dimension, cause: 'limit', spent, limit } : { kind: 'refused', dimension, cause: 'cap_too_small', spent, limit, admitsAt };
 
 export const admitRequest = (ask: AdmissionAsk, spend: TreeSpend): Admission => {
   const floor = Math.min(ask.outputWanted, ask.outputFloor);
@@ -120,20 +121,21 @@ export const admitRequest = (ask: AdmissionAsk, spend: TreeSpend): Admission => 
   if (ask.limits.tokens !== undefined) {
     const held = spend.totalTokens + spend.reservedTokens;
     const room = ask.limits.tokens - held - ask.inputUpper;
-    if (room < floor) return refusalOf('tokens', held, ask.limits.tokens);
+    if (room < floor) return refusalOf('tokens', held, ask.limits.tokens, held + ask.inputUpper + floor);
     cap = Math.min(cap, room);
   }
   let reservedNano = 0;
   if (ask.limits.costNano !== undefined) {
     if (ask.price === undefined) return { kind: 'refused', dimension: 'cost', cause: 'unpriced', spent: spend.costNano + spend.reservedNano, limit: ask.limits.costNano };
     const held = spend.costNano + spend.reservedNano;
+    const admitsAt = held + safeNumber(ceilDiv(worstCaseUnits(ask.inputUpper, floor, ask.price), PRICE_UNITS_PER_NANO));
     const availableUnits = BigInt(ask.limits.costNano - held) * PRICE_UNITS_PER_NANO;
     const inputUnits = BigInt(ask.inputUpper) * ask.price.inUnits;
     const outputRoom = availableUnits - inputUnits;
-    if (outputRoom < 0n) return refusalOf('cost', held, ask.limits.costNano);
+    if (outputRoom < 0n) return refusalOf('cost', held, ask.limits.costNano, admitsAt);
     if (ask.price.outUnits > 0n) {
       const fitting = safeNumber(outputRoom / ask.price.outUnits);
-      if (fitting < floor) return refusalOf('cost', held, ask.limits.costNano);
+      if (fitting < floor) return refusalOf('cost', held, ask.limits.costNano, admitsAt);
       cap = Math.min(cap, fitting);
     }
     reservedNano = Number(ceilDiv(worstCaseUnits(ask.inputUpper, cap, ask.price), PRICE_UNITS_PER_NANO));

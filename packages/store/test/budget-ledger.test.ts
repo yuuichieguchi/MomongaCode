@@ -89,7 +89,7 @@ describe('admission of a model request is one transaction over the run tree', ()
     expect(h.store.admitModelRequest(parentClaim, ask({ limits }))).toMatchObject({ kind: 'admitted', reservedNano: 63_000 });
     const second = h.store.admitModelRequest(childClaim, ask({ limits }));
     expect(second).toMatchObject({ kind: 'admitted', maxOutputTokens: 2266, reservedNano: 36_990 });
-    expect(h.store.admitModelRequest(childClaim, ask({ limits: { costNano: 66_000 } }))).toEqual({ kind: 'refused', dimension: 'cost', cause: 'cap_too_small', spent: 63_000, limit: 66_000 });
+    expect(h.store.admitModelRequest(childClaim, ask({ limits: { costNano: 66_000 } }))).toEqual({ kind: 'refused', dimension: 'cost', cause: 'cap_too_small', spent: 63_000, limit: 66_000, admitsAt: 69_840 });
     const spend = h.store.treeSpend(parent.id);
     expect(spend.costNano + spend.reservedNano).toBeLessThanOrEqual(100_000);
     expect(spend.runsRead).toBe(2);
