@@ -1,6 +1,8 @@
 export { editUserSettings } from './edit-user-settings.ts';
 export { approveProjectItems, editProjectMandate } from './edit-project-file.ts';
-export type { EditProjectMandateOptions, ProjectItemsApproval, ProjectMandateEdit } from './edit-project-file.ts';
+export { pendingProjectItems } from './pending-items.ts';
+export type { PendingItemsInput } from './pending-items.ts';
+export type { ApprovedItem, EditProjectMandateOptions, ProjectMandateEdit } from './edit-project-file.ts';
 export type { EditUserSettingsOptions, SettingsEdit } from './edit-user-settings.ts';
 export { settingsFileLock, settingsWriterPorts } from './file-lock.ts';
 export type { SettingsFileLockOptions, SettingsLockPort, SettingsWriterOptions, SettingsWriterPorts } from './file-lock.ts';

@@ -217,6 +217,14 @@ export const diffFieldsOf = ({ hunks, added, removed, diffOmitted }: AppliedDiff
   ...(diffOmitted === undefined ? {} : { diffOmitted }),
 });
 
+export type TrustItemChange = { kind: 'new' } | { kind: 'changed' };
+
+export type TrustItem =
+  | { kind: 'hook'; event: string; group: unknown; digest: string; source: string; change: TrustItemChange }
+  | { kind: 'mandate'; document: unknown; digest: string; source: string; change: TrustItemChange };
+
+export type TrustItemsView = { items: TrustItem[]; refused: string[] };
+
 export type HeldLink = { approvalId: string };
 
 export type HeldEnd = { callId: string; approvalId: string; outcome: HeldOutcome; status: 'completed' | 'failed' };

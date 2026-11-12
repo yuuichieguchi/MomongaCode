@@ -11,7 +11,7 @@ import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } fr
 import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
 import type { UserShellRecord } from '@momonga/protocol';
 import { editProjectMandate, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
-import type { ProjectItems } from '../src/tui/project-items.ts';
+import type { TrustItemsView } from '@momonga/protocol';
 import { momongaLayout } from '@momonga/foundation';
 import type { DetectRequest } from '../src/commands/models.ts';
 import { freshHome } from './fresh-home.ts';
@@ -81,7 +81,7 @@ export type FakeBackend = TuiBackend & {
 
 export type FakeBackendOptions = {
   trust?: TrustView;
-  projectItems?: ProjectItems;
+  trustItems?: TrustItemsView;
   session?: Partial<SessionView>;
   contextWindow?: number;
   imageInput?: boolean;
@@ -295,7 +295,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record(`trust:${decision}`);
       trustNow = { path: session.cwd, decision };
     },
-    projectItems: async () => options.projectItems ?? { hooks: [] },
+    trustItems: async () => options.trustItems ?? { items: [], refused: [] },
     approveProjectItems: async (approval) => {
       record(`approve:${JSON.stringify(approval)}`);
     },

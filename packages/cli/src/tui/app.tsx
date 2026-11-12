@@ -1,4 +1,4 @@
-import { askProjectItems } from './project-items.ts';
+import { askTrustItems } from './project-items.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
 import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
@@ -650,8 +650,10 @@ export function App(props: AppProps) {
   };
 
   const connectAtLaunch = async (): Promise<void> => {
-    const approval = await askProjectItems(await backend.projectItems(), overlayPorts.choose);
-    if (approval !== undefined) await backend.approveProjectItems(approval);
+    const pending = await backend.trustItems();
+    for (const sentence of pending.refused) append({ kind: 'notice', level: 'warning', text: sentence });
+    const approved = await askTrustItems(pending.items, overlayPorts.choose);
+    if (approved.length > 0) await backend.approveProjectItems(approved);
     const [entries, listed] = await Promise.all([backend.models(), backend.plan.accounts()]);
     rememberProfiles(listed);
     if (entries.length > 0) {
