@@ -162,6 +162,22 @@ describe('the viewport on the screen', () => {
     app.unmount();
   });
 
+  it('follows the end again after /clear, with no jump marker, when the view was scrolled', async () => {
+    const { app, terminal, backend } = await startWith({ columns: 60, rows: 12 }, numbered(40));
+    terminal.emit(named('pageup'));
+    await untilFrame(app, JUMP_TO_BOTTOM);
+    app.stdin.write('/clear');
+    await untilFrame(app, '> /clear');
+    app.stdin.write(KEYS.enter);
+    await backend.called('openSession');
+    await untilFrame(app, (shown) => !shown.includes('line 28'));
+    await runStarted(backend, app, 'again');
+    backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm2', text: numbered(30, 'fresh') }));
+    await untilFrame(app, 'fresh 29');
+    expect(app.lastFrame()).not.toContain(JUMP_TO_BOTTOM);
+    app.unmount();
+  });
+
   it('stays where it was scrolled to while the transcript grows, and follows the end again after the jump marker is clicked', async () => {
     const { app, terminal, backend } = await startWith({ columns: 60, rows: 12 }, numbered(40));
     terminal.emit(named('pageup'));
