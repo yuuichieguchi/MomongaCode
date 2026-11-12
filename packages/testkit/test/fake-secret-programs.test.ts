@@ -2,7 +2,8 @@ import { execFileSync, spawn, spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { SECRET_STORE_SEARCHED_PROGRAMS, createExecWithStdin, createSecretServiceStore, findProgramOnPathSync, nodeFileSystemSync } from '@momonga/foundation';
+import { SECRET_STORE_SEARCHED_PROGRAMS, createExecWithStdin, createSecretServiceStore, nodeFileSystemSync } from '@momonga/foundation';
+import { findProgramOnPathSync } from '@momonga/foundation/program-search';
 import {
   createFakePrograms,
   fakeSecretProgramsBin,

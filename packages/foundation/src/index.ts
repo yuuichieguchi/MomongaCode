@@ -24,7 +24,7 @@ export type { DatabaseFileIdentity, Migration } from './sqlite.ts';
 export { SSE_EVENT_MAX_BYTES, SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, SseEventTooLargeError, decodeSse, encodeSse } from './sse.ts';
 export { URL_OPENER_PROGRAMS, createBrowserOpener, openCommandFor, urlOpenerFileFor } from './open-browser.ts';
 export type { LaunchProgram, OpenUrl, ProgramEnd } from './open-browser.ts';
-export { findProgramOnPath, findProgramOnPathSync } from './program-search.ts';
+export { findProgramOnPath } from './program-search.ts';
 export { FILE_CANDIDATE_LIMIT, directoryEntriesOf } from './file-candidates.ts';
 export type { FileCandidates } from './file-candidates.ts';
 export type { SseEvent } from './sse.ts';

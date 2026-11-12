@@ -4,6 +4,7 @@ import { APPLIES_NEXT_SESSION, confirmed, writeSetting } from '../settings-scree
 import type { Refusal } from '../settings-screen.tsx';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 import { shellFormOf } from './shell-commands.ts';
+import { askTrustItems } from '../project-items.ts';
 
 export const MCP_TITLE = 'MCP servers';
 export const ADD_STDIO_ROW = 'Add a stdio server';
@@ -84,10 +85,18 @@ const switchProjectServer = async (context: SlashContext, server: McpServerView)
   const choice = await context.overlays.choose({ title: server.name, rows: PROJECT_SERVER_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
   if (choice === undefined) return 'left';
   if (PROJECT_SERVER_ACTIONS[choice.index] === 'Enable') {
-    const pending = await context.backend.pendingProjectServer(server.name);
-    if (pending === undefined) return 'left';
-    await context.background(APPROVING_SERVER, () => context.backend.approveProjectItems([pending]));
-    return undefined;
+    const undisabled = await writeSetting(context, 'user', { kind: 'update', path: ['disabledMcpjsonServers'], update: withoutName(server.name) });
+    if (undisabled !== undefined) return undisabled;
+    for (;;) {
+      const item = (await context.backend.trustItems()).items.find((pending) => pending.kind === 'mcp' && pending.name === server.name);
+      if (item === undefined) return undefined;
+      const [approved] = await askTrustItems([item], context.overlays.choose);
+      if (approved === undefined) return 'left';
+      const current = await context.backend.pendingProjectServer(server.name);
+      if (current?.digest !== approved.digest) continue;
+      await context.background(APPROVING_SERVER, () => context.backend.approveProjectItems([approved]));
+      return undefined;
+    }
   }
   const refusal = await writeSetting(context, 'user', { kind: 'update', path: ['enabledMcpjsonServers'], update: withoutName(server.name) });
   return refusal ?? writeSetting(context, 'user', { kind: 'update', path: ['disabledMcpjsonServers'], update: withEntry(server.name, server.name) });

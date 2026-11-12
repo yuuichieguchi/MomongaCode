@@ -57,19 +57,40 @@ describe('/mcp needs no session for the settings (product-surface-26)', () => {
   });
 });
 
-describe('/mcp Enable records what the person approved (DECISION-6)', () => {
-  it('records { name, digest, config } through the approval writer, the same entry the trust question writes', async () => {
+describe('/mcp Enable asks the item question and approves exactly what was shown (DECISION-6, R5)', () => {
+  const config = { type: 'http', url: 'https://tracker.example/mcp' };
+  const servers: readonly McpServerView[] = [{ name: 'tracker', scope: 'project', transport: 'http', url: config.url, auth: 'required', approval: { digest: 'a'.repeat(64), changed: false } }];
+
+  const placeWith = (written: unknown) => {
     const place = freshPlace();
-    const config = { type: 'http', url: 'https://tracker.example/mcp' };
-    fs.writeFileSync(path.join(place.project, '.mcp.json'), JSON.stringify({ mcpServers: { tracker: config } }));
+    fs.writeFileSync(path.join(place.project, '.mcp.json'), JSON.stringify({ mcpServers: { tracker: written } }));
     writeSettings(place.userFile, { disabledMcpjsonServers: ['tracker'] });
-    const servers: readonly McpServerView[] = [{ name: 'tracker', scope: 'project', transport: 'http', url: config.url, auth: 'required', approval: { digest: 'a'.repeat(64), changed: false } }];
-    const { context, backend } = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: servers }, { choices: [{ index: 0, alt: false }, { index: 0, alt: false }] });
+    return place;
+  };
+
+  const shownItem = async (place: { home: string; project: string }) => {
+    const { context } = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project } });
+    const pending = await context.backend.pendingProjectServer('tracker');
+    if (pending?.kind !== 'mcp') throw new Error('the server is not pending');
+    return { kind: 'mcp' as const, name: 'tracker', config: pending.config, digest: pending.digest, source: path.join(place.project, '.mcp.json'), change: { kind: 'new' as const } };
+  };
+
+  it('shows the item question with the content and approves the shown item with its digest', async () => {
+    const place = placeWith(config);
+    const item = await shownItem(place);
+    const { context, backend, recorded } = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: servers, trustItems: { items: [item], refused: [] } }, { choices: [{ index: 0, alt: false }, { index: 0, alt: false }, { index: 0, alt: false }] });
     await runSlash('mcp', '', context);
-    const approved = backend.calls.find((call) => call.startsWith('approve:'));
-    expect(approved).toBeDefined();
-    const [item] = JSON.parse((approved ?? '').slice('approve:'.length)) as { kind: string; name: string; config: unknown; digest: string }[];
-    expect(item).toMatchObject({ kind: 'mcp', name: 'tracker', config });
-    expect(item?.digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(recorded.picks.map((pick) => pick.title)).toContain('The MCP server tracker of this folder is new');
+    expect(backend.calls.filter((call) => call.startsWith('approve:'))).toEqual([`approve:${JSON.stringify([{ kind: 'mcp', name: 'tracker', config: item.config, digest: item.digest }])}`]);
+  });
+
+  it('approves nothing when the file changed between the question and the approval, and asks again', async () => {
+    const place = placeWith(config);
+    const item = await shownItem(place);
+    fs.writeFileSync(path.join(place.project, '.mcp.json'), JSON.stringify({ mcpServers: { tracker: { type: 'http', url: 'https://evil.example/mcp' } } }));
+    const { context, backend, recorded } = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project }, mcpServers: servers, trustItems: { items: [item], refused: [] } }, { choices: [{ index: 0, alt: false }, { index: 0, alt: false }, { index: 0, alt: false }] });
+    await runSlash('mcp', '', context);
+    expect(backend.calls.filter((call) => call.startsWith('approve:'))).toEqual([]);
+    expect(recorded.picks.filter((pick) => pick.title === 'The MCP server tracker of this folder is new')).toHaveLength(2);
   });
 });

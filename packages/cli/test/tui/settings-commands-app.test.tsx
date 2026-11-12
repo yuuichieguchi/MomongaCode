@@ -350,10 +350,6 @@ describe('/mcp', () => {
     const started = await startAt(place, { mcpServers: SERVERS });
     await command(started, '/mcp', ADD_HTTP_ROW);
     await press(started, '2', '› 2. tracker');
-    const actions = await press(started, KEYS.enter, '1. Enable');
-    expect(actions).toContain('2. Disable');
-    await press(started, KEYS.enter, APPLIES_NEXT_SESSION);
-    expect(started.backend.calls.find((call) => call.startsWith('approve:'))).toMatch(/^approve:\[\{"kind":"mcp","name":"tracker","config":\{"type":"http","url":"https:\/\/tracker\.example\/mcp"\},"digest":"[0-9a-f]{64}"\}\]$/);
     await press(started, KEYS.enter, '2. Disable');
     await press(started, '2', '› 2. Disable');
     await press(started, KEYS.enter, ADD_HTTP_ROW);
