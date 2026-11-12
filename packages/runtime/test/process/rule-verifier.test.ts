@@ -28,7 +28,7 @@ describe('the rule verifier of the runtime process', () => {
     const { secrets, unixSockets, ...subject } = request;
     expect(unixSockets).toEqual({ kind: 'limited', allowed: [] });
     expect(secrets).toEqual([]);
-    expect(await verifier.inputOf(request, NEVER_CANCELLED)).toEqual({ ...subject, secretLocations: [{ label: 'ssh', directory: '/home/u/.ssh' }], deniedLocations: [{ label: 'ssh', directory: '/home/u/.ssh' }], protectedSet: expect.any(Object) });
+    expect(await verifier.inputOf(request, NEVER_CANCELLED)).toEqual({ ...subject, unixSockets, secretLocations: [{ label: 'ssh', directory: '/home/u/.ssh' }], deniedLocations: [{ label: 'ssh', directory: '/home/u/.ssh' }], protectedSet: expect.any(Object) });
   });
 
   it('verifies in a thread that runs the code of its host, with the version of the solver, under one timer that bounds only the start of the thread', async () => {

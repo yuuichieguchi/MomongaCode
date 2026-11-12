@@ -3,7 +3,7 @@ import http from 'node:http';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { GoverningFactView, MemoryView, PolicyGovernanceResponse } from '@momonga/protocol';
-import { registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
+import { registerCleanup, testEndpointScope, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { memoryHistory } from '../src/commands/memory.ts';
@@ -94,6 +94,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     stderr: { write: (text: string) => void err.push(text) },
     interrupt: new AbortController().signal,
     personCapability: async () => 'f'.repeat(32),
+    endpointScope: testEndpointScope,
   } as unknown as CliPorts;
   return { paths, ports: terminalPorts(ports), project, seen, out, err };
 };
