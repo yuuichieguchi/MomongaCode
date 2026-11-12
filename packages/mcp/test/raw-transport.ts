@@ -4,10 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { groupAlive, groupTerminationBoundMs } from '@momonga/foundation';
+import { groupAlive, groupTerminationBoundMs, nodeFileSystem } from '@momonga/foundation';
 import { createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
-import { LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup, testProcessInspector, pollUntil } from '@momonga/testkit';
+import { LSOF_PATH, TEST_STDIO_LAUNCH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup, testProcessInspector, pollUntil } from '@momonga/testkit';
 import { closeGraceOf } from '../src/stdio-transport.ts';
 
 export const transportCloseBoundMs = (closeGraceMs: number): number => closeGraceMs + groupTerminationBoundMs(closeGraceMs) + closeGraceMs + 2 * closeGraceMs;
@@ -98,10 +98,12 @@ export const createTransport = (options: {
     config: options.config,
     projectDir: options.projectDir ?? makeDir(),
     baseEnv: options.baseEnv ?? BASE_ENV,
+    files: nodeFileSystem,
+    launch: TEST_STDIO_LAUNCH,
     ...(options.closeGraceMs === undefined ? {} : { closeGraceMs: options.closeGraceMs }),
     ...(options.markers === undefined ? {} : { markers: { inspector: testProcessInspector(), ...options.markers } }),
     ...(options.terminate === undefined ? {} : { terminate: options.terminate }),
-  } as StdioTransportOptions);
+  });
   onCleanup(async () => {
     const pgid = transport.pgid;
     await transport.close().catch(() => undefined);
