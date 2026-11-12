@@ -212,6 +212,10 @@ const assertToolFacts = (identity: string, payload: Record<string, unknown>): vo
   if (payload['windowShared'] !== undefined && payload['windowShared'] !== true) {
     throw corrupt('events', identity, 'payload_json windowShared must be true');
   }
+  const trees = payload['observedTrees'];
+  if (trees !== undefined && !(isRecord(trees) && typeof trees['from'] === 'string' && typeof trees['to'] === 'string')) {
+    throw corrupt('events', identity, 'payload_json observedTrees must hold the tree ids from and to');
+  }
   if (payload['outputIncomplete'] !== undefined && payload['outputIncomplete'] !== 'residue') {
     throw corrupt('events', identity, 'payload_json outputIncomplete must be residue');
   }

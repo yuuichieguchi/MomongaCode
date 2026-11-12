@@ -340,6 +340,7 @@ export type RunEventPayload =
       mutated?: true;
       command?: string;
       windowShared?: true;
+      observedTrees?: { from: string; to: string };
       outputIncomplete?: 'residue';
       memories?: string[];
       exitCode?: number;

@@ -21,6 +21,8 @@ export type SkillActivation = { name: string; content: string };
 
 export type ToolBackend = { source: string; version: string };
 
+export type ObservedTrees = { from: string; to: string };
+
 export type ToolResult = {
   status: 'completed' | 'failed';
   output: string;
@@ -34,6 +36,7 @@ export type ToolResult = {
   mutated?: true;
   command?: string;
   windowShared?: true;
+  observedTrees?: ObservedTrees;
   outputIncomplete?: 'residue';
   detached?: true;
   memories?: string[];
