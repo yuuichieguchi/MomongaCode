@@ -24,7 +24,7 @@ import type { ConnectionTransport } from './remote-transport.ts';
 import { mcpToolIdentity } from './tool-identity.ts';
 import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
-import type { StdioLaunch } from './stdio-transport.ts';
+import type { StdioLaunch, StdioTransportExit } from './stdio-transport.ts';
 import { createStoreScope, runInStoreScope, storeCallSignal, storeCallsSettled, storeUnderCallSignals } from './store-scope.ts';
 import type { StoreScope } from './store-scope.ts';
 import { closeGraceOf } from './stdio-transport.ts';
@@ -64,6 +64,7 @@ export type McpServerDiagnostics = {
   protocolVersion: string | undefined;
   lastError: string | null;
   stderrTail: string;
+  exit: StdioTransportExit | null;
   route?: 'direct' | 'proxy' | 'bypass';
   proxyHost?: string;
 };
@@ -309,6 +310,7 @@ class ManagedConnection implements McpServerConnection {
       protocolVersion: this.protocolVersion,
       lastError: this.lastError === null ? null : this.redact(this.lastError),
       stderrTail: transport === undefined ? '' : this.redact(transport.diagnostics().stderrTail),
+      exit: transport === undefined ? null : transport.diagnostics().exit,
       ...this.lastRoute,
     };
   }

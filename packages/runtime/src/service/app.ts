@@ -8,7 +8,7 @@ import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, TARGET_PROBING_MESSAGE, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
 import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
@@ -41,6 +41,7 @@ import {
   starting,
   targetNotReady,
   targetProbeFailed,
+  imageTooLarge,
   unknownSkill,
 } from './errors.ts';
 import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
@@ -200,6 +201,11 @@ const gatewayReadFailure = (error: unknown): unknown => {
   return error;
 };
 
+const refuseOversizeImages = (images: readonly { data: string }[] | undefined): void => {
+  const oversize = (images ?? []).map((image) => base64ByteLength(image.data)).find((byteLength) => byteLength > PROMPT_IMAGE_MAX_BYTES);
+  if (oversize !== undefined) throw imageTooLarge(oversize, PROMPT_IMAGE_MAX_BYTES);
+};
+
 const requestedModelOf = (text: string, views: ModelViews): string => {
   const resolution = resolveTypedModelRef(typedModelText(text), views);
   if (resolution.kind === 'found') return resolution.model.canon;
@@ -232,11 +238,13 @@ const keyedMcpServers = (servers: Record<string, Record<string, unknown>>): Reco
 
 const checkedMcpServers = (given: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> => {
   const servers = keyedMcpServers(given);
-  try {
-    assertSessionMcpServers(servers);
-  } catch (error) {
-    if (error instanceof Error) throw invalidRequest(error.message, 'mcpServers');
-    throw error;
+  for (const [name, server] of Object.entries(servers)) {
+    try {
+      assertSessionMcpServers({ [name]: server });
+    } catch (error) {
+      if (error instanceof Error) throw invalidRequest(`the MCP server ${JSON.stringify(name)} is refused: ${error.message}`, 'mcpServers');
+      throw error;
+    }
   }
   return servers;
 };
@@ -549,8 +557,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
     const idempotencyKey = parseIdempotencyKey(context.req.header('idempotency-key') ?? null);
-    const parsed = await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes);
+    const parsed = await readJson(context.req.raw, JSON_MEDIA_TYPES, PROMPT_BODY_MAX_BYTES);
     const body = validateBody<CreateRunBody>('CreateRunRequest', parsed);
+    refuseOversizeImages(body.images);
     const idempotency = idempotencyKey === undefined ? undefined : { idempotencyKey, requestDigest: sha256Hex(canonicalJson(parsed)) };
     const replay = async (): Promise<Response | undefined> => {
       const found = idempotency === undefined ? undefined : store.findRunByIdempotencyKey(session.id, idempotency.idempotencyKey);
@@ -631,7 +640,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
     refuseRunStartedByInbox(session);
-    const body = validateBody<AddInboxBody>('AddInboxRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    const body = validateBody<AddInboxBody>('AddInboxRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, PROMPT_BODY_MAX_BYTES));
+    refuseOversizeImages(body.images);
     await requireImageInput(session, body.images, context.req.raw.signal);
     const terms = await admittedTermsOf(session, {}, context.req.raw.signal);
     refuseRunStartedByInbox(session);
@@ -868,6 +878,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (isAbortOf(error, context.req.raw.signal)) return new Response(null, { status: CLIENT_CLOSED_REQUEST_STATUS });
     if (error instanceof ApiError) return errorResponse(error);
     if (error instanceof JournalThreadError) return errorResponse(contributionUnavailable(error.message));
+    if (error instanceof GatewayRequestError && error.status >= 400 && error.status < 600) return errorResponse(gatewayAnswer({ status: error.status, type: error.type, code: error.code, message: error.message }));
     deps.onError(error);
     return internalErrorResponse();
   });

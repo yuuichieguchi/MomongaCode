@@ -247,12 +247,14 @@ describe('session create validation (fake timers)', () => {
     expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });
 
-  it('500 for a 4xx from the model listing', async () => {
+  it('a 4xx from the model listing keeps its status, code and text', async () => {
     const env = await startService({ fakeTimers: true });
     const failure = new GatewayRequestError({ status: 400, type: 'invalid_request', code: 'invalid_request', message: 'bad request' });
     env.ports.listingFailure.error = failure;
-    expectError(await post(env, { cwd: env.layout.project }), 500, 'internal_error');
-    expect(env.errors).toEqual([failure]);
+    const response = await post(env, { cwd: env.layout.project });
+    expectError(response, 400, 'invalid_request');
+    expect(response.json.error.message).toBe('bad request');
+    expect(env.errors).toEqual([]);
   });
 
   it('the session view carries additionalDirectories and validates against RUN_API_SCHEMAS.SessionView', async () => {

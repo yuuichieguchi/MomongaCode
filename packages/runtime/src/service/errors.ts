@@ -67,6 +67,9 @@ export const targetProbeFailed = (message: string, retryAfterMs: number | undefi
   return new ApiError({ status: 503, type: 'server_error', code: TARGET_PROBE_FAILED, message: `${message}; it is measured again in ${seconds} seconds`, headers: { 'retry-after': String(seconds) } });
 };
 
+export const imageTooLarge = (byteLength: number, maxBytes: number): ApiError =>
+  new ApiError({ status: 413, type: 'invalid_request', code: 'body_too_large', message: `an image of the prompt holds ${byteLength} bytes, more than the ${maxBytes} bytes a pasted image may hold`, param: 'images' });
+
 export const bodyTooLarge = (maxBytes: number): ApiError =>
   new ApiError({ status: 413, type: 'invalid_request', code: 'body_too_large', message: `the request body exceeds the limit of ${maxBytes} bytes` });
 

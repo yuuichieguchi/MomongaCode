@@ -120,6 +120,16 @@ export const base64ByteLength = (data: string): number => {
   return Math.floor(((data.length - padding) * 3) / 4);
 };
 
+export const PROMPT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+const JSON_ESCAPE_WIDTH = 6;
+
+const PROMPT_ENVELOPE_BYTES = 64 * 1024;
+
+const base64LengthOf = (bytes: number): number => Math.ceil(bytes / 3) * 4;
+
+export const PROMPT_BODY_MAX_BYTES = PROMPT_TEXT_MAX_CHARS * JSON_ESCAPE_WIDTH + base64LengthOf(PROMPT_IMAGE_MAX_BYTES) + PROMPT_ENVELOPE_BYTES;
+
 const elicitationRequest = {
   oneOf: [
     closed({ key: string, mode: constant('form'), message: string, requestedSchema: { type: 'object' } }, ['key', 'mode', 'message', 'requestedSchema']),
@@ -1280,6 +1290,8 @@ export type McpServerView = {
   detail?: string;
   authorization?: McpAuthorizationView;
   approval?: { digest: string; changed: boolean };
+  stderrTail?: string;
+  exit?: { code: number | null; signal: string | null };
 };
 
 export type JobView = {
@@ -1552,6 +1564,8 @@ export const RUN_API_SCHEMAS = {
               detail: string,
               authorization: { type: 'object' },
               approval: closed({ digest: string, changed: { type: 'boolean' } }, ['digest', 'changed']),
+              stderrTail: string,
+              exit: closed({ code: nullable(integer), signal: nullable(string) }, ['code', 'signal']),
             },
             ['name', 'scope', 'transport', 'auth'],
           ),
