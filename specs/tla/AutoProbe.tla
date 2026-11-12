@@ -23,17 +23,19 @@
 (*       managed/fm-record-key.ts (the binary sha256 and the OS build).    *)
 (*       KeyView = "perRequest"                                            *)
 (*   the probe runner: gateway/src/probe/auto-probe.ts (createAutoProbe,   *)
-(*       recordProbe): the probe lock of the key, the measurement          *)
+(*       recordProbe, measureAndRecord): the measurement without a lock    *)
 (*       (probe-fm.ts measureManagedFm, which owns its fm serve child),    *)
-(*       the key read again, and saveProbeRecord only when it is unchanged *)
-(*       (TaintCheck); a failure saves nothing                             *)
+(*       then the probe lock of the key, the key read again, and           *)
+(*       saveProbeRecord only when it is unchanged (TaintCheck, otherwise  *)
+(*       ProbeKeyChangedError); a failure saves nothing. SaveLock          *)
 (*   a second writer: the command momonga gateway probe, packages/cli/src/ *)
 (*       commands/gateway.ts (probeFm), runs probeManagedFm in the CLI     *)
-(*       process, which goes through the same recordProbe and the same     *)
-(*       probe lock (acquireProbeLock: one kernel file lock per record key *)
-(*       beside the records, held per open file, so it also excludes a     *)
-(*       second holder in the same process). It is the actor Manual, and   *)
-(*       SingleFlight = "shared"                                           *)
+(*       process through the same recordProbe: it measures beside a        *)
+(*       gateway flight of the same key and takes the same probe lock      *)
+(*       (acquireProbeLock: one kernel file lock per record key) only      *)
+(*       around its key check and save. It is the actor Manual. The single *)
+(*       flight is the gateway's own map (inFlight, starting):             *)
+(*       SingleFlight = "gateway"                                          *)
 (*   the endpoint writers: packages/gateway/src/probe/probe-endpoint.ts    *)
 (*       (endpointProbeSubject, the CLI probeEndpointTarget) and           *)
 (*       probe/ollama.ts (ollamaProbeSubject, probeOllamaTarget) go        *)
@@ -72,10 +74,8 @@
 (*                                                                         *)
 (* Switches. The configuration AutoProbe is the design the model holds.    *)
 (*   SingleFlight  who may start a probe while a probe for the key runs.   *)
-(*                 "shared": nobody, the guard is visible to the gateway   *)
-(*                 and to the CLI (a lock in the file system). "gateway":  *)
-(*                 the gateway checks its own probes, the CLI does not     *)
-(*                 (an in-process map). "none": nobody checks              *)
+(*                 "gateway": the gateway checks its own probes, the CLI   *)
+(*                 does not (an in-process map). "none": nobody checks     *)
 (*   KeyView       the key a request asks for. "perRequest": the key now.  *)
 (*                 "atStart": the key read when the gateway started        *)
 (*   ReadRecord    "fresh": a request reads the record. "cached": it reads *)
@@ -89,8 +89,9 @@
 (*                 OS build): an OS update changes the key. FALSE is an     *)
 (*                 endpoint key (the settings' endpoint and model, with     *)
 (*                 the record matched to the identity the server reports)   *)
-(*   LockAll       every probe flight takes the probe lock of its key;      *)
-(*                 one rule for every key kind                              *)
+(*   SaveLock      every probe takes the probe lock of its key around its   *)
+(*                 key check and save, never over the measurement; one     *)
+(*                 rule for every key kind                                  *)
 (*   PreconditionCheck a request checks the preconditions first, and a     *)
 (*                 definite refusal answers 412 with the remedy at once    *)
 (*   RejectStale   a request whose record was measured under another key   *)
@@ -98,6 +99,7 @@
 (*                 or digest) is answered 412, no probe                    *)
 (*   Backoff       after a probe that started and failed, the gateway      *)
 (*                 starts no probe of that key for one Retry-After interval *)
+(*                 and answers 503 target_probe_failed in it               *)
 (*   Unreadable    a key component may be unreadable (the binary missing,  *)
 (*                 the OS build reader failing, a platform with no reader) *)
 (*   UnknownWrites a result measured under an unknown key is written to    *)
@@ -185,7 +187,7 @@ CONSTANTS
     TaintCheck,
     Manual,
     HostKeyed,
-    LockAll,
+    SaveLock,
     PreconditionCheck,
     RejectStale,
     Backoff,
@@ -199,7 +201,7 @@ ASSUME /\ Cardinality(Keys) >= 2
        /\ MaxKeyChanges \in Nat
        /\ MaxCrashes \in Nat
        /\ MaxCancels \in Nat
-       /\ SingleFlight \in {"shared", "gateway", "none"}
+       /\ SingleFlight \in {"gateway", "none"}
        /\ KeyView \in {"perRequest", "atStart"}
        /\ ReadRecord \in {"fresh", "cached"}
        /\ Guess \in BOOLEAN
@@ -208,7 +210,7 @@ ASSUME /\ Cardinality(Keys) >= 2
        /\ TaintCheck \in BOOLEAN
        /\ Manual \in BOOLEAN
        /\ HostKeyed \in BOOLEAN
-       /\ LockAll \in BOOLEAN
+       /\ SaveLock \in BOOLEAN
        /\ PreconditionCheck \in BOOLEAN
        /\ RejectStale \in BOOLEAN
        /\ Backoff \in BOOLEAN
@@ -245,7 +247,7 @@ vars == <<worldKey, gwKey, rec, recSrc, view, probes, started, gwUp,
 
 Probe == [id : 1..MaxProbes, key : KeySpace, owner : Owners, tainted : BOOLEAN, locked : BOOLEAN]
 
-Locks == LockAll
+Locks == SaveLock
 
 TypeOK ==
     /\ worldKey \in KeySpace /\ gwKey \in KeySpace
@@ -279,11 +281,7 @@ HasProbe(k) == \E p \in probes : p.key = k
 
 GatewayFlight(k, owner) == owner = "gw" /\ \E p \in probes : p.key = k /\ p.owner = "gw"
 
-Blocked(k, owner) ==
-    CASE SingleFlight = "none" -> FALSE
-      [] k = UnknownKey -> GatewayFlight(k, owner)
-      [] SingleFlight = "shared" -> Locks /\ \E p \in probes : p.key = k /\ p.locked
-      [] OTHER -> GatewayFlight(k, owner)
+Blocked(k, owner) == SingleFlight # "none" /\ GatewayFlight(k, owner)
 
 NewProbe(owner) ==
     [id |-> started + 1, key |-> worldKey, owner |-> owner, tainted |-> FALSE, locked |-> Locks /\ worldKey # UnknownKey]
@@ -318,6 +316,7 @@ Request ==
           /\ started' = IF startIt THEN started + 1 ELSE started
           /\ respLog' = respLog \cup
                {[kind |-> kind,
+                 code |-> IF kind # "503" THEN "none" ELSE IF Waits THEN "target_probe_failed" ELSE "target_probing",
                  src |-> src,
                  recordPresent |-> present,
                  memoryPresent |-> Unknown /\ mem,
@@ -434,8 +433,8 @@ Next ==
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Restart)
 
-(* P1: at most one probe per record key at a time (one kernel lock per key, shared by gateway and CLI) *)
-SingleProbePerKey == \A p, q \in probes : p.key = q.key /\ (p.key # UnknownKey \/ (UnknownFlight(p) /\ UnknownFlight(q))) => p = q
+(* P1: at most one gateway flight per record key at a time (the gateway's map); a CLI probe may measure beside it *)
+SingleProbePerKey == \A p, q \in probes : p.key = q.key /\ p.owner = "gw" /\ q.owner = "gw" => p = q
 
 (* P2: no response is built from a guessed capability *)
 NoGuessedAnswer == \A x \in respLog : x.kind = "200" => x.src \in {"record", "memory"}
