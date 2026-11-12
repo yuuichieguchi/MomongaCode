@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import type { RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '@momonga/runtime';
 import { deferred } from './deferred.ts';
@@ -35,6 +36,7 @@ const responded = (step: number, text: string): RunEventPayload => ({
 describe('worker gateway cancel wiring', () => {
   it('cancels the live model key upstream before the CANCELLED transition', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const blocked = gated(textStep('never finished', { chunks: ['partial ', 'answer'] }), 4);
     env.gateway.script.push(blocked);
     const run = await env.enqueue('Long answer');
@@ -53,6 +55,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('cancels the live compaction key upstream when the cancel lands while compacting', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Task one');
     await env.seed(
       run.id,
@@ -88,6 +91,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('cancels the folded in-flight model key on a CANCELLING claim', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Work');
     await seedInFlightRequest(env, run.id);
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
@@ -103,6 +107,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('does not cancel upstream on a CANCELLING claim with no in-flight model request', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Work');
     await env.seed(run.id, [], 'crash');
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
@@ -115,6 +120,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('reaches CANCELLED with a notice when the upstream cancel rejects', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Work');
     await seedInFlightRequest(env, run.id);
     await env.cancel(run.id);
@@ -133,6 +139,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('leaves the bound of the upstream cancel to the gateway client and aborts it only with the claim', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const run = await env.enqueue('Work');
     await seedInFlightRequest(env, run.id);
     await env.cancel(run.id);
@@ -151,6 +158,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('does not cancel upstream after a fatal gateway failure', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push({ events: [], error: new GatewayRequestError({ status: 401, type: 'invalid_request', code: 'authentication_failed', message: 'rejected' }) });
     const run = await env.enqueue('Work');
 
@@ -162,6 +170,7 @@ describe('worker gateway cancel wiring', () => {
 
   it('does not cancel upstream after losing the lease', async () => {
     const env = await makeEnv();
+    env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     const blocked = gated(textStep('late answer', { chunks: ['late ', 'answer'] }), 4);
     env.gateway.script.push(blocked);
     const run = await env.enqueue('Work');
