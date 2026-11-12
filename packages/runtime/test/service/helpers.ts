@@ -48,7 +48,6 @@ export const DEFAULT_TIMEOUT_MS = 6 * HOUR_MS;
 export const DEFAULT_TTL_MS = 30 * 60 * 1000;
 export const FORMER_APPROVAL_LIMIT_MS = DEFAULT_TTL_MS;
 export const DEFAULT_LIMITS = { maxSteps: 50, maxTotalTokens: 1_000_000, approvalTtlMs: DEFAULT_TTL_MS, loopThreshold: 3 };
-export const SOCKET_PATH_LIMIT = 104;
 export const SERVICE_PID = 424_242;
 export const STARTED_AT = new Date(START_MS).toISOString();
 
@@ -86,7 +85,6 @@ export const makeLayout = (): Layout => {
   const project = path.join(root, 'p');
   fs.mkdirSync(project);
   const socketPath = path.join(runDir, 'r.sock');
-  if (Buffer.byteLength(socketPath) >= SOCKET_PATH_LIMIT - 4) throw new Error(`test socket path is too long: ${socketPath}`);
   return { root, home, momonga, runDir, project, projectReal: fs.realpathSync(project), socketPath, dbPath: path.join(root, 's.db') };
 };
 

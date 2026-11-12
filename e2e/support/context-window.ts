@@ -6,8 +6,9 @@ import { initialRunState } from '@momonga/store';
 import { HISTORY_READ_TOOL_NAME } from '@momonga/tools';
 import type { Capabilities, RunState } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeRoute } from '@momonga/testkit';
-import { sizingFor, overflowStepRange, wireTokensOfBody } from './budget.ts';
-import type { Sizing } from './budget.ts';
+import { journalOfRows, ofType, sizingFor, overflowStepRange, stackPinsOf, wireTokensOfBody } from './budget.ts';
+import type { Sizing, StackPins } from './budget.ts';
+import { readDb } from './db.ts';
 import { runCli } from './cli.ts';
 import { E2E_MODEL, createGatewayCountClient } from './gateway-count.ts';
 import type { GatewayCountClient } from './gateway-count.ts';
@@ -49,7 +50,7 @@ export const calibrationRoute: FakeRoute = {
   },
 };
 
-export type MeasuredWindow = { capabilities: Capabilities; person: Sizing; benchmark: Sizing; readFixedTokens: number; factlessWorkingStateTokens: number };
+export type MeasuredWindow = { pins: StackPins; capabilities: Capabilities; person: Sizing; benchmark: Sizing; readFixedTokens: number; factlessWorkingStateTokens: number };
 
 const widestFactlessWorkingStateText = (capabilities: Capabilities): string => {
   const state: RunState = {
@@ -121,7 +122,11 @@ export const measureWindow = async (home: E2eHome, fake: Pick<FakeChatCompletion
   const readLineTokens = (growth(large) - growth(small)) / (large.lines - small.lines);
   const client = createGatewayCountClient(firstGeneration(home.paths).sockets.gateway);
   const capabilities = await client.capabilities();
+  const pins = stackPinsOf(
+    ofType(journalOfRows(readDb<{ seq: number; type: string; payload_json: string }>(home.paths.databases.runtime, "SELECT seq, type, payload_json FROM events WHERE type = 'run.started' ORDER BY rowid LIMIT 1")), 'run.started')[0]?.data['pins'],
+  );
   return {
+    pins,
     capabilities,
     factlessWorkingStateTokens: await factlessWorkingStateTokensOf(client, capabilities),
     person: sizingFor(capabilities, wireTokensOfBody(personRequest.body)),
@@ -132,7 +137,7 @@ export const measureWindow = async (home: E2eHome, fake: Pick<FakeChatCompletion
 
 export const fillerOfTokens = (tokens: number): string => 'w'.repeat(tokens * ESTIMATED_CHARACTERS_PER_TOKEN);
 
-export const stepTokensToOverflowTheRoom = async (capabilities: Capabilities, sizing: Sizing, steps: number): Promise<number> =>
-  (await overflowStepRange(capabilities, sizing.pinned, steps)).lowest;
+export const stepTokensToOverflowTheRoom = async (pins: StackPins, sizing: Sizing, steps: number): Promise<number> =>
+  (await overflowStepRange(pins, sizing.pinned, steps)).lowest;
 
 export const compactableTokens = (steps: number, protectedSteps: number, stepTokens: number): number => Math.max(0, steps - protectedSteps) * stepTokens;

@@ -7,10 +7,9 @@ export const E2E_IMAGE_TOKENS = { pixelsPerToken: 750, maxTokens: 1600, minToken
 
 export const wireTokensOfRequest = (body: unknown): number => wireTokensOf(wireOf(body as Parameters<typeof wireOf>[0]) as ChatWire, E2E_IMAGE_TOKENS);
 
-export const reportedTokensOfRequest = (body: unknown): number => {
-  const estimated = wireTokensOfRequest(body);
-  return estimated - Math.floor((ESTIMATED_ERROR_BOUND_RATIO * estimated) / 2);
-};
+export const reportedTokensOf = (estimated: number): number => estimated - Math.floor((ESTIMATED_ERROR_BOUND_RATIO * estimated) / 2);
+
+export const reportedTokensOfRequest = (body: unknown): number => reportedTokensOf(wireTokensOfRequest(body));
 
 const SCRIPTED_COMPLETION_TOKENS = 5;
 
