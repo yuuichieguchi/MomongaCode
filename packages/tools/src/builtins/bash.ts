@@ -37,7 +37,7 @@ const extractCwd = (output: string, nonce: string): { output: string; cwd: strin
 
 const bashPathFor = (shellHost: ShellHost, env: Readonly<Record<string, string>>): Promise<string> => resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env });
 
-const bashEnvOf = (env: Readonly<Record<string, string>>): Record<string, string> => ({ ...env, CDPATH: '', GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' });
+export const bashEnvOf = (env: Readonly<Record<string, string>>): Record<string, string> => ({ ...env, CDPATH: '', GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' });
 
 const networkRequestOf = (network: NetworkRequest): NetworkRequest => {
   if (network === 'open') return network;
