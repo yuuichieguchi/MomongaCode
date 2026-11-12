@@ -20,7 +20,7 @@ import type { ArgvRunner, RenderedNetwork } from './argv.ts';
 import type { GitOriginCredential } from './git-credential.ts';
 import { OPERATION_SPECS } from './catalogue.ts';
 import { FORGE_REMOTE_INPUT, asksForge, describeClause, evaluateClauses, failedClauses } from './spec.ts';
-import type { ArgvCall, ArgvItem, ForgeCall, Network, OperationSpec, PrePushHook, Probe } from './spec.ts';
+import type { ArgvCall, ArgvItem, ForgeArgument, ForgeCall, Network, OperationSpec, PrePushHook, Probe } from './spec.ts';
 import { isTruthy, lookup, lookupList, referencesIn, renderShown, renderTemplate } from './template.ts';
 import type { Scope } from './template.ts';
 
@@ -86,8 +86,14 @@ const credentialsFor = async (runtime: Runtime, network: RenderedNetwork, signal
 
 const stringList = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((item): item is string => typeof item === 'string') ? value : undefined);
 
-const renderArgs = (args: Readonly<Record<string, string>>, scope: Scope): Record<string, string> =>
-  Object.fromEntries(Object.entries(args).map(([key, template]) => [key, renderTemplate(template, scope)]));
+const chosenArgument = (argument: ForgeArgument, scope: Scope): string => {
+  if (typeof argument === 'string') return argument;
+  const given = lookup(scope, argument.ifObserved);
+  return given === undefined || given === '' ? argument.else : argument.then;
+};
+
+const renderArgs = (args: Readonly<Record<string, ForgeArgument>>, scope: Scope): Record<string, string> =>
+  Object.fromEntries(Object.entries(args).map(([key, argument]) => [key, renderTemplate(chosenArgument(argument, scope), scope)]));
 
 const settingOf = (settings: OperationSettings, name: string): { approval?: 'rule' | 'always' } => {
   const approval = settings.approval?.[name];
@@ -207,6 +213,7 @@ const observeProbe = async (runtime: Runtime, probe: Probe, ctx: ReconcileContex
   });
   if (via.shape === 'one') return { ...answer.fields };
   if (via.shape === 'list') return { count: String(answer.items.length), ...(answer.items[0] ?? {}) };
+  if (via.shape === 'shown') return { ...answer.fields, text: lineOf(runtime, probe.id, via.lines, answer.fields) };
   if (via.shape === 'lines') return { count: String(answer.items.length), text: answer.items.map((item) => lineOf(runtime, probe.id, via.lines, item)).join('\n') };
   const contains = via.contains;
   if (contains === undefined) throw new ToolExecutionError(`${runtime.spec.name} counts without a contains filter`);
@@ -504,7 +511,7 @@ const shownEffectOf = (spec: OperationSpec, input: Record<string, unknown>, gate
     const destinations = effect.network === undefined || effect.network === 'none' ? [] : (stringList(gateFacts?.[DESTINATIONS]) ?? []);
     return [command, ...destinations.map((destination) => `to ${destination}`)].join('\n');
   }
-  const args = Object.fromEntries(Object.entries(effect.args).map(([key, template]) => [key, renderShown(template, scope)]));
+  const args = Object.fromEntries(Object.entries(effect.args).map(([key, argument]) => [key, renderShown(chosenArgument(argument, scope), scope)]));
   const forgeRemote = gateFacts?.[FORGE_REMOTE];
   const location = typeof forgeRemote === 'string' ? parseRemoteUrl(forgeRemote) : undefined;
   const place = location === undefined ? '' : `\non ${location.host}/${location.repo}`;
