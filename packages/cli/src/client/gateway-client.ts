@@ -171,7 +171,7 @@ export const ENTRY_UNREADABLE_CODE = 'model_entry_unreadable';
 const unreadableEntryOf = (entry: Record<string, unknown>, index: number, field: string): MomongaModelEntry => {
   const id = isString(entry['id']) ? entry['id'] : `entry ${index + 1}`;
   const provider = isString(entry['provider']) ? entry['provider'] : id;
-  const message = `the gateway listed ${id} with a ${field} this version cannot read`;
+  const message = `the model list holds ${id} with a ${field} this version cannot read`;
   return {
     id,
     object: 'model',
