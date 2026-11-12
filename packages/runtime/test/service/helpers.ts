@@ -20,7 +20,7 @@ import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, ContributionPreparer, RuntimeStore, Session } from '@momonga/store';
 import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, pollUntil, removeTempDir, testProbes, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
-import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
+import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost, unprotectedLaunch } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AnyTool, ToolSessionState } from '@momonga/tools';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
@@ -838,7 +838,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   };
   const tools: ToolRuntimePort = {
     inspector: testProcessInspector(),
-    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeRoot: path.join(env.layout.root, 'observer'), cwd: target.cwd, trusted: false }),
+    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeRoot: path.join(env.layout.root, 'observer'), cwd: target.cwd, trusted: false }, unprotectedLaunch('the tests of the runtime start git without the protection of the home')),
     envFor: (target: Session) => ({ ...target.env }),
     toolSet: async (_runId: string, toolSetOptions: { additionalTools?: readonly AnyTool[]; only?: readonly string[] }) =>
       snapshotToolbox(toolSetOptions.additionalTools, toolSetOptions.only),

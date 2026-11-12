@@ -3,7 +3,9 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync } from '@momonga/testkit/child-process';
 import { createTempDir, testHostPath } from '@momonga/testkit';
-import { listDirectoryEntries, listFileCandidates } from '@momonga/tools';
+import { listDirectoryEntries, listFileCandidates, unprotectedLaunch } from '@momonga/tools';
+
+const TEST_LAUNCH = unprotectedLaunch('the tests of the file list start git without the protection of the home');
 
 const made: string[] = [];
 
@@ -27,21 +29,21 @@ const never = new AbortController().signal;
 describe('the candidate list of a directory that is not a git work tree', () => {
   it('walks the directory and lists every file with its path from the root', async () => {
     const root = treeOf({ 'a.txt': '', 'src/b.ts': '', 'src/deep/c.ts': '', '.hidden': '' });
-    const listed = await listFileCandidates({ root, env: NO_PROGRAMS, trusted: true, signal: never });
+    const listed = await listFileCandidates({ root, env: NO_PROGRAMS, trusted: true, signal: never }, TEST_LAUNCH);
     expect(listed.truncated).toBe(false);
     expect(listed.entries.toSorted()).toEqual(['.hidden', 'a.txt', 'src/b.ts', 'src/deep/c.ts']);
   });
 
   it('stops at the entry limit', async () => {
     const root = treeOf({ 'a.txt': '', 'b.txt': '', 'c.txt': '' });
-    const listed = await listFileCandidates({ root, env: NO_PROGRAMS, trusted: true, signal: never, limit: 2 });
+    const listed = await listFileCandidates({ root, env: NO_PROGRAMS, trusted: true, signal: never, limit: 2 }, TEST_LAUNCH);
     expect(listed.truncated).toBe(true);
     expect(listed.entries).toHaveLength(2);
   });
 
   it('lists the entries of one directory with a trailing slash on directories', async () => {
     const root = treeOf({ 'a.txt': '', 'src/b.ts': '' });
-    expect(await listDirectoryEntries({ root, env: NO_PROGRAMS, trusted: true, signal: never })).toEqual(['a.txt', 'src/']);
+    expect(await listDirectoryEntries({ root, env: NO_PROGRAMS, trusted: true, signal: never }, TEST_LAUNCH)).toEqual(['a.txt', 'src/']);
   });
 });
 
@@ -51,15 +53,15 @@ describe('the candidate list inside a git work tree', () => {
   it('leaves out what .gitignore names and keeps untracked files', async () => {
     const root = treeOf({ '.gitignore': 'ignored.txt\nbuild/\n', 'kept.txt': '', 'ignored.txt': '', 'build/out.js': '', 'src/new.ts': '' });
     execFileSync('git', ['init', '--quiet', root], { env });
-    const listed = await listFileCandidates({ root, env, trusted: true, signal: never });
+    const listed = await listFileCandidates({ root, env, trusted: true, signal: never }, TEST_LAUNCH);
     expect(listed.entries.toSorted()).toEqual(['.gitignore', 'kept.txt', 'src/new.ts']);
-    expect(await listDirectoryEntries({ root, env, trusted: true, signal: never })).toEqual(['.gitignore', 'kept.txt', 'src/']);
+    expect(await listDirectoryEntries({ root, env, trusted: true, signal: never }, TEST_LAUNCH)).toEqual(['.gitignore', 'kept.txt', 'src/']);
   });
 
   it('stops at the entry limit', async () => {
     const root = treeOf({ 'a.txt': '', 'b.txt': '', 'c.txt': '' });
     execFileSync('git', ['init', '--quiet', root], { env });
-    const listed = await listFileCandidates({ root, env, trusted: true, signal: never, limit: 2 });
+    const listed = await listFileCandidates({ root, env, trusted: true, signal: never, limit: 2 }, TEST_LAUNCH);
     expect(listed).toEqual({ entries: expect.any(Array), truncated: true });
     expect(listed.entries).toHaveLength(2);
   });
@@ -94,7 +96,7 @@ describe('the git call of the candidate list', () => {
   it.skipIf(process.platform === 'win32')('carries the hardened settings in a trusted folder', async () => {
     const root = treeOf({ 'a.txt': '' });
     const git = recordingGit();
-    const listed = await listFileCandidates({ root, env: git.env, trusted: true, signal: never });
+    const listed = await listFileCandidates({ root, env: git.env, trusted: true, signal: never }, TEST_LAUNCH);
     expect(listed.entries).toEqual(['listed.txt']);
     const settings = settingsOf(git.log);
     expect(settings.get('core.fsmonitor')).toBe('false');
@@ -106,9 +108,9 @@ describe('the git call of the candidate list', () => {
   it.skipIf(process.platform === 'win32')('does not start git in an untrusted folder and walks the directory', async () => {
     const root = treeOf({ 'a.txt': '', 'src/b.ts': '' });
     const git = recordingGit();
-    const listed = await listFileCandidates({ root, env: git.env, trusted: false, signal: never });
+    const listed = await listFileCandidates({ root, env: git.env, trusted: false, signal: never }, TEST_LAUNCH);
     expect(listed.entries.toSorted()).toEqual(['a.txt', 'src/b.ts']);
-    expect(await listDirectoryEntries({ root, env: git.env, trusted: false, signal: never })).toEqual(['a.txt', 'src/']);
+    expect(await listDirectoryEntries({ root, env: git.env, trusted: false, signal: never }, TEST_LAUNCH)).toEqual(['a.txt', 'src/']);
     expect(fs.existsSync(git.log)).toBe(false);
   });
 });

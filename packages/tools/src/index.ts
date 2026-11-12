@@ -24,7 +24,7 @@ export type {
   ToolExecutorOptions,
   WaitingOutcome,
 } from './executor.ts';
-export type { AutoClassifier, AutoClassifierRequest, ChildPorts, ChildSpawnOptions, LineFilter, PortChild, ToolTimers } from './ports.ts';
+export type { AutoClassifier, AutoClassifierRequest, ChildLaunch, ChildPorts, ChildSpawnOptions, LineFilter, PortChild, ToolTimers } from './ports.ts';
 export { createLineFilter } from './builtins/jobs.ts';
 export { createToolHooks, runSessionStart, runStop, runUserPromptSubmit, hasStopHooks, resolvePreToolUse } from './hooks/events.ts';
 export type { PostToolHookResult, PreToolHookVerdict, PromptHookResult, SessionStartHookResult, StopHookResult, ToolHookCall, ToolHooks } from './hooks/events.ts';
@@ -105,6 +105,7 @@ export {
   createPolicyFilesystem,
   listDirectoryEntries,
   listFileCandidates,
+  unprotectedLaunch,
   nodeChildPorts,
   nodeShellHost,
   nodeShellPorts,
