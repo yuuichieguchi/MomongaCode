@@ -55,3 +55,18 @@ describe('the generated reference', () => {
     expect([...listed].sort()).toEqual([...names.userOnlySettings].sort());
   });
 });
+
+describe('the settings table of the reference', () => {
+  const rowOf = (markdown: string, key: string): string => markdown.split('\n').find((line) => line.startsWith(`| \`${key}\` |`)) ?? '';
+
+  it('states the default and the unit the schema holds for each key', async () => {
+    const reference = await renderReference();
+    expect(reference).toContain('| Key | Value | Default | Unit | Layer |');
+    expect(rowOf(reference, 'memory.forgetAfterDays')).toMatch(/\| `90` \| days \|/);
+    expect(rowOf(reference, 'sandboxNetwork')).toContain('`"ask"`');
+    expect(rowOf(reference, 'context.autoCompact')).toContain('| `true` |');
+    expect(rowOf(reference, 'sandbox')).toContain('`"seatbelt"` on darwin');
+    expect(rowOf(reference, 'hooks.<name>[].hooks[].timeout')).toMatch(/\| `600`; `UserPromptSubmit`: `30` \| seconds \|/);
+    expect(rowOf(reference, 'limits.maxCostUsd')).toContain('| USD |');
+  });
+});

@@ -1,6 +1,8 @@
-import { MCP_CONNECT_TIMEOUT_LIMITS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
-import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
+import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
+import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, HOOK_DEFAULT_TIMEOUT_SECONDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
 import { APPROVAL_DIGEST_PATTERN } from './approval-digest.ts';
+import { DEFAULT_UPDATE_STALL_TIMEOUT_MS, defaultContextSettings, defaultMemorySettings, defaultToolsSettings, defaultVerificationSettings } from './context-settings.ts';
+import { DEFAULT_RETENTION_DAYS, FIVE_MINUTES_MS, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -13,6 +15,21 @@ export const TUI_SCREEN_MODES = ['fullscreen', 'scrollback'] as const;
 export const ISSUE_AUTHOR_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'] as const;
 
 export const TUI_SETTING_VALUES = { theme: TUI_THEMES, notify: TUI_NOTIFY_MODES, screen: TUI_SCREEN_MODES } as const;
+
+export const SETTING_UNITS = { milliseconds: 'milliseconds', seconds: 'seconds', days: 'days', usd: 'USD', usdPerMillionTokens: 'USD per million tokens' } as const;
+
+export const SANDBOX_DEFAULT_PLATFORMS = ['darwin', 'linux', 'win32'] as const satisfies readonly NodeJS.Platform[];
+
+const MEMORY_DEFAULTS = defaultMemorySettings();
+const VERIFICATION_DEFAULTS = defaultVerificationSettings();
+const CONTEXT_DEFAULTS = defaultContextSettings();
+const TOOLS_DEFAULTS = defaultToolsSettings();
+const TUI_DEFAULTS = defaultTuiSettings();
+const { default: HOOK_TIMEOUT_DEFAULT_SECONDS, ...HOOK_TIMEOUT_SECONDS_BY_EVENT } = HOOK_DEFAULT_TIMEOUT_SECONDS;
+
+const milliseconds = <S extends object>(schema: S) => ({ ...schema, unit: SETTING_UNITS.milliseconds }) as const;
+const usd = <S extends object>(schema: S) => ({ ...schema, unit: SETTING_UNITS.usd }) as const;
+const withDefault = <S extends object, D>(schema: S, value: D) => ({ ...schema, default: value }) as const;
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
@@ -408,7 +425,7 @@ const HOOK_COMMAND_SCHEMA = {
   properties: {
     type: { const: HOOK_COMMAND_TYPE },
     command: { type: 'string', minLength: 1 },
-    timeout: POSITIVE_INTEGER,
+    timeout: { ...POSITIVE_INTEGER, default: HOOK_TIMEOUT_DEFAULT_SECONDS, defaultsBy: { by: 'event', values: HOOK_TIMEOUT_SECONDS_BY_EVENT }, unit: SETTING_UNITS.seconds },
   },
   required: ['type', 'command'],
   additionalProperties: false,
@@ -466,11 +483,11 @@ export const SETTINGS_SCHEMA = {
     mcp: {
       type: 'object',
       properties: {
-        toolIdleTimeoutNetworkMs: NON_NEGATIVE_INTEGER,
-        toolIdleTimeoutStdioMs: NON_NEGATIVE_INTEGER,
-        toolTotalTimeoutMs: POSITIVE_INTEGER,
-        closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.max },
-        connectTimeoutMs: { type: 'integer', minimum: MCP_CONNECT_TIMEOUT_LIMITS.min, maximum: MCP_CONNECT_TIMEOUT_LIMITS.max },
+        toolIdleTimeoutNetworkMs: milliseconds(withDefault(NON_NEGATIVE_INTEGER, MCP_TOOL_IDLE_TIMEOUT_MS.network)),
+        toolIdleTimeoutStdioMs: milliseconds(withDefault(NON_NEGATIVE_INTEGER, MCP_TOOL_IDLE_TIMEOUT_MS.stdio)),
+        toolTotalTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, MCP_TOOL_TOTAL_TIMEOUT_MS)),
+        closeGraceMs: milliseconds({ type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.max, default: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.default }),
+        connectTimeoutMs: milliseconds({ type: 'integer', minimum: MCP_CONNECT_TIMEOUT_LIMITS.min, maximum: MCP_CONNECT_TIMEOUT_LIMITS.max, default: MCP_CONNECT_TIMEOUT_LIMITS.default }),
       },
       additionalProperties: false,
     },
@@ -486,8 +503,8 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: DECLARED_SERVER_SCHEMA,
         },
         dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
-        headersTimeoutMs: POSITIVE_INTEGER,
-        idleTimeoutMs: POSITIVE_INTEGER,
+        headersTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, FIVE_MINUTES_MS)),
+        idleTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, FIVE_MINUTES_MS)),
         billingChanges: {
           type: 'array',
           items: {
@@ -514,78 +531,87 @@ export const SETTINGS_SCHEMA = {
       properties: {
         reflection: {
           type: 'object',
-          properties: { enabled: { type: 'boolean' }, maxTokens: OUTPUT_TOKEN_BOUND },
+          properties: { enabled: { type: 'boolean', default: MEMORY_DEFAULTS.reflection.enabled }, maxTokens: OUTPUT_TOKEN_BOUND },
           additionalProperties: false,
         },
-        forgetAfterDays: POSITIVE_INTEGER,
-        repositoryFacts: { type: 'boolean' },
+        forgetAfterDays: { ...POSITIVE_INTEGER, default: MEMORY_DEFAULTS.forgetAfterDays, unit: SETTING_UNITS.days },
+        repositoryFacts: { type: 'boolean', default: MEMORY_DEFAULTS.repositoryFacts },
       },
       additionalProperties: false,
     },
     verification: {
       type: 'object',
       properties: {
-        commands: NON_EMPTY_STRING_ARRAY,
-        manifests: NON_EMPTY_STRING_ARRAY,
-        required: { type: 'boolean' },
+        commands: withDefault(NON_EMPTY_STRING_ARRAY, VERIFICATION_DEFAULTS.commands),
+        manifests: withDefault(NON_EMPTY_STRING_ARRAY, VERIFICATION_DEFAULTS.manifests),
+        required: { type: 'boolean', default: VERIFICATION_DEFAULTS.required },
       },
       additionalProperties: false,
     },
     context: {
       type: 'object',
       properties: {
-        adaptiveBudget: { type: 'boolean' },
-        autoCompact: { type: 'boolean' },
-        cachePrefix: { type: 'boolean' },
-        outputFormatters: { type: 'array', items: { enum: [...OUTPUT_FORMATTERS] } },
-        loopGuidance: { type: 'boolean' },
-        observedCapacity: { type: 'boolean' },
-        unboundedOutputReserve: { type: 'boolean' },
+        adaptiveBudget: { type: 'boolean', default: CONTEXT_DEFAULTS.adaptiveBudget },
+        autoCompact: { type: 'boolean', default: CONTEXT_DEFAULTS.autoCompact },
+        cachePrefix: { type: 'boolean', default: CONTEXT_DEFAULTS.cachePrefix },
+        outputFormatters: { type: 'array', items: { enum: [...OUTPUT_FORMATTERS] }, default: CONTEXT_DEFAULTS.outputFormatters },
+        loopGuidance: { type: 'boolean', default: CONTEXT_DEFAULTS.loopGuidance },
+        observedCapacity: { type: 'boolean', default: CONTEXT_DEFAULTS.observedCapacity },
+        unboundedOutputReserve: { type: 'boolean', default: CONTEXT_DEFAULTS.unboundedOutputReserve },
       },
       additionalProperties: false,
     },
     tools: {
       type: 'object',
       properties: {
-        deferral: { type: 'boolean' },
-        conciseDescriptions: { type: 'boolean' },
-        ripgrep: { type: 'string', minLength: 1 },
+        deferral: { type: 'boolean', default: TOOLS_DEFAULTS.deferral },
+        conciseDescriptions: { type: 'boolean', default: TOOLS_DEFAULTS.conciseDescriptions },
+        ripgrep: { type: 'string', minLength: 1, default: TOOLS_DEFAULTS.ripgrep },
         bash: {
           type: 'object',
           properties: {
-            defaultTimeoutMs: { type: 'integer', minimum: 1 },
-            maxTimeoutMs: { type: 'integer', minimum: 1 },
-            onTimeout: { enum: [...BASH_ON_TIMEOUT] },
-            backgroundTimeoutMs: { type: 'integer', minimum: 1 },
-            maxBackgroundTimeoutMs: { type: 'integer', minimum: 1 },
-            drainIdleMs: { type: 'integer', minimum: 1 },
+            defaultTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.defaultTimeoutMs)),
+            maxTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.maxTimeoutMs)),
+            onTimeout: { enum: [...BASH_ON_TIMEOUT], default: TOOLS_DEFAULTS.bash.onTimeout },
+            backgroundTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.backgroundTimeoutMs)),
+            maxBackgroundTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.maxBackgroundTimeoutMs)),
+            drainIdleMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.drainIdleMs)),
           },
           additionalProperties: false,
         },
-        search: { type: 'object', properties: { timeoutMs: { type: 'integer', minimum: 1 } }, additionalProperties: false },
-        operations: { type: 'object', properties: { timeoutMs: { type: 'integer', minimum: 1 } }, additionalProperties: false },
+        search: { type: 'object', properties: { timeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.search.timeoutMs)) }, additionalProperties: false },
+        operations: { type: 'object', properties: { timeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.operations.timeoutMs)) }, additionalProperties: false },
       },
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
-    update: { type: 'object', properties: { stallTimeoutMs: { type: 'integer', minimum: 1 } }, additionalProperties: false },
+    update: { type: 'object', properties: { stallTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, DEFAULT_UPDATE_STALL_TIMEOUT_MS)) }, additionalProperties: false },
     tui: {
       type: 'object',
-      properties: { theme: { enum: [...TUI_THEMES] }, notify: { enum: [...TUI_NOTIFY_MODES] }, screenReader: { type: 'boolean' }, reducedMotion: { type: 'boolean' }, screen: { enum: [...TUI_SCREEN_MODES] }, mouse: { type: 'boolean' }, copyOnSelect: { type: 'boolean' }, attachFileMentions: { type: 'boolean' } },
+      properties: {
+        theme: { enum: [...TUI_THEMES], default: TUI_DEFAULTS.theme },
+        notify: { enum: [...TUI_NOTIFY_MODES], default: TUI_DEFAULTS.notify },
+        screenReader: { type: 'boolean', default: TUI_DEFAULTS.screenReader },
+        reducedMotion: { type: 'boolean', default: TUI_DEFAULTS.reducedMotion },
+        screen: { enum: [...TUI_SCREEN_MODES], default: TUI_DEFAULTS.screen },
+        mouse: { type: 'boolean', default: TUI_DEFAULTS.mouse },
+        copyOnSelect: { type: 'boolean', default: TUI_DEFAULTS.copyOnSelect },
+        attachFileMentions: { type: 'boolean', default: TUI_DEFAULTS.attachFileMentions },
+      },
       additionalProperties: false,
     },
     gateway: {
       type: 'object',
       properties: {
-        closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max },
-        managedServerStopGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max },
+        closeGraceMs: milliseconds({ type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max, default: SHUTDOWN_SETTING_LIMITS.closeGraceMs.default }),
+        managedServerStopGraceMs: milliseconds({ type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max, default: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.default }),
       },
       additionalProperties: false,
     },
     runtime: {
       type: 'object',
       properties: {
-        drainTimeoutMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.min, maximum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.max },
+        drainTimeoutMs: milliseconds({ type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.min, maximum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.max, default: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.default }),
       },
       additionalProperties: false,
     },
@@ -608,10 +634,10 @@ export const SETTINGS_SCHEMA = {
           provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN_SOURCE },
           model: { type: 'string', minLength: 1 },
           effectiveFrom: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
-          inputPerMTok: { type: 'number', minimum: 0 },
-          cachedInputPerMTok: { type: 'number', minimum: 0 },
-          cacheWritePerMTok: { type: 'number', minimum: 0 },
-          outputPerMTok: { type: 'number', minimum: 0 },
+          inputPerMTok: { type: 'number', minimum: 0, unit: SETTING_UNITS.usdPerMillionTokens },
+          cachedInputPerMTok: { type: 'number', minimum: 0, unit: SETTING_UNITS.usdPerMillionTokens },
+          cacheWritePerMTok: { type: 'number', minimum: 0, unit: SETTING_UNITS.usdPerMillionTokens },
+          outputPerMTok: { type: 'number', minimum: 0, unit: SETTING_UNITS.usdPerMillionTokens },
           currency: { const: 'USD' },
         },
         required: ['provider', 'model', 'effectiveFrom', 'inputPerMTok', 'outputPerMTok', 'currency'],
@@ -620,15 +646,15 @@ export const SETTINGS_SCHEMA = {
     },
     limits: {
       type: 'object',
-      properties: { maxCostUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD } },
+      properties: { maxCostUsd: usd({ type: 'number', minimum: 0, maximum: MAX_COST_USD }) },
       additionalProperties: false,
     },
     ceilings: {
       type: 'object',
       properties: {
-        costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
+        costUsd: usd({ type: 'number', minimum: 0, maximum: MAX_COST_USD }),
         tokens: { type: 'integer', minimum: 1, maximum: 100_000_000 },
-        timeMs: { type: 'integer', minimum: 1000, maximum: 604_800_000 },
+        timeMs: milliseconds({ type: 'integer', minimum: 1000, maximum: 604_800_000 }),
       },
       additionalProperties: false,
     },
@@ -666,8 +692,8 @@ export const SETTINGS_SCHEMA = {
           require: NON_EMPTY_STRING_ARRAY,
           steps: { type: 'integer', minimum: 1, maximum: 1000 },
           tokens: { type: 'integer', minimum: 1, maximum: 100_000_000 },
-          costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
-          timeMs: { type: 'integer', minimum: 1000, maximum: 604_800_000 },
+          costUsd: usd({ type: 'number', minimum: 0, maximum: MAX_COST_USD }),
+          timeMs: milliseconds({ type: 'integer', minimum: 1000, maximum: 604_800_000 }),
           retries: { type: 'integer', minimum: 1, maximum: 100 },
           onQuiescent: { enum: [...QUIESCENT_BEHAVIOURS] },
         },
@@ -703,8 +729,8 @@ export const SETTINGS_SCHEMA = {
       },
       additionalProperties: false,
     },
-    sandbox: { enum: ['seatbelt', 'bubblewrap', 'none'] },
-    sandboxNetwork: { enum: [...SANDBOX_NETWORK_SETTINGS] },
+    sandbox: { enum: ['seatbelt', 'bubblewrap', 'none'], defaultsBy: { by: 'platform', values: Object.fromEntries(SANDBOX_DEFAULT_PLATFORMS.map((platform) => [platform, defaultSandboxSetting(platform)])) } },
+    sandboxNetwork: { enum: [...SANDBOX_NETWORK_SETTINGS], default: DEFAULT_SANDBOX_NETWORK },
     sandboxUnixSockets: { type: 'object', properties: { allow: { type: 'array', items: { type: 'string', minLength: 1 } } }, additionalProperties: false },
     telemetry: {
       type: 'object',
@@ -761,7 +787,7 @@ export const SETTINGS_SCHEMA = {
     },
     retention: {
       type: 'object',
-      properties: { days: { type: 'integer', minimum: MIN_RETENTION_DAYS, maximum: MAX_RETENTION_DAYS } },
+      properties: { days: { type: 'integer', minimum: MIN_RETENTION_DAYS, maximum: MAX_RETENTION_DAYS, default: DEFAULT_RETENTION_DAYS, unit: SETTING_UNITS.days } },
       additionalProperties: false,
     },
   },
