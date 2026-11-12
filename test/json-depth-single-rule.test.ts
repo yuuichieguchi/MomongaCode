@@ -47,7 +47,7 @@ type InternalParse = { calls: number; reason: string };
 const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/store/src/rows.ts': { calls: 1, reason: 'rows the runtime store wrote to its own SQLite database' },
   'packages/store/src/search.ts': { calls: 1, reason: 'a round trip of an event the store already holds, through the redactor' },
-  'packages/gateway/src/core/store.ts': { calls: 1, reason: 'records the gateway wrote to its own store' },
+  'packages/gateway/src/core/store-database.ts': { calls: 1, reason: 'records the gateway store thread wrote to its own SQLite database' },
   'packages/protocol/src/envelope-grammar.ts': {
     calls: 1,
     reason: 'a payload the gateway minted, parsed in the gateway only after its HMAC verifies and in the runtime only from its own gateway\'s output',
@@ -66,9 +66,6 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/sandbox/src/placeholder-journal.ts': { calls: 1, reason: 'the placeholder journal the sandbox writes' },
   'packages/foundation/src/process-contract.ts': { calls: 1, reason: 'the ready line of a child process the product started' },
   'packages/supervisor/src/lock-watch.ts': { calls: 1, reason: 'health answers of the product\'s own child services' },
-  'packages/verify/src/z3-distribution.ts': { calls: 1, reason: 'the Z3 manifest the product builds and ships' },
-  'packages/tools/src/ripgrep-distribution.ts': { calls: 1, reason: 'the ripgrep manifest the product builds and ships' },
-  'packages/foundation/src/platform/bundled-executable.ts': { calls: 1, reason: 'the manifest of a helper executable (the Windows keeper, the Linux socket guard) the product builds and ships' },
   'packages/foundation/src/oauth-provider.ts': { calls: 1, reason: 'the OAuth credential store the product writes' },
   'packages/cli/src/tui/terminal/handover.ts': { calls: 1, reason: 'the terminal state the product hands to its own next process' },
   'packages/cli/src/tui/dismissed-notices.ts': { calls: 1, reason: 'the dismissed notices file the product writes in its state directory' },
