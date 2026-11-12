@@ -12,7 +12,7 @@ vi.hoisted(() => {
 
 const COLORED = /\u001b\[(?:3[0-7]|9[0-7]|38;)/;
 
-const config = (overrides: Partial<StartupConfig> = {}): StartupConfig => ({ version: '1.2.3', home: '/Users/ada', color: true, ...overrides });
+const config = (overrides: Partial<StartupConfig> = {}): StartupConfig => ({ version: '1.2.3', home: '/Users/ada', ...overrides });
 
 const figureRowsOf = (output: string): string[] => output.split('\n').filter((row) => /[∩•░┬]/.test(row));
 
@@ -44,7 +44,7 @@ const CENTRE_COLUMN = 7;
 
 const TAIL_ROW = FIGURE.length - 1;
 
-const drawnBanner = (color: boolean): Row[] => bannerRows({ config: config({ color }), model: 'scripted-model', cwd: '/Users/ada/p', notices: [] }, 80);
+const drawnBanner = (): Row[] => bannerRows({ config: config(), model: 'scripted-model', cwd: '/Users/ada/p', notices: [] }, 80);
 
 const figureOf = (rows: readonly Row[]): string[] => rows.slice(1, -1).map((row) => row.text.slice(FIGURE_LEFT, FIGURE_LEFT + ART_WIDTH).trimEnd());
 
@@ -99,18 +99,18 @@ describe('startup screen', () => {
   });
 
   it('draws the gliding momonga in exactly seven rows inside a box of nine rows', () => {
-    const rows = drawnBanner(true);
+    const rows = drawnBanner();
     expect(figureOf(rows)).toEqual(FIGURE);
     expect(rows).toHaveLength(FIGURE.length + 2);
     expect(ART_WIDTH).toBe(15);
   });
 
   it('paints the ears, the parentheses of the head, the tail joint and the tail as fur, the face as face and the outline and the membrane as membrane', () => {
-    expect(figureTokensOf(drawnBanner(true))).toEqual(FIGURE_TOKENS);
+    expect(figureTokensOf(drawnBanner())).toEqual(FIGURE_TOKENS);
   });
 
   it('keeps the shape of a glide: the body tapers around one centre column down to the tail and no row has more than one gap', () => {
-    const figure = figureOf(drawnBanner(false));
+    const figure = figureOf(drawnBanner());
     const extents = figure.map(extentOf);
     for (let index = 2; index < figure.length; index += 1) {
       expect(extents[index]?.width).toBeLessThanOrEqual(extents[index - 1]?.width ?? 0);
@@ -169,7 +169,7 @@ describe('startup screen', () => {
     expect(figureRowsOf(coloured.app.frames.join('\n')).join('\n')).toMatch(COLORED);
     coloured.app.unmount();
 
-    const plain = await start({}, { startup: config({ color: false }) });
+    const plain = await start({}, { startup: config(), colour: { noColor: true, level: 3 } });
     await untilFrame(plain.app, 'MomongaCode v1.2.3');
     expect(figureRowsOf(plain.app.frames.join('\n')).join('\n')).not.toMatch(COLORED);
     plain.app.unmount();

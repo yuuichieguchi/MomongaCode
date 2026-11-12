@@ -1,4 +1,4 @@
-import { nodeBoundedCommandRunner, nodeEntryIo } from '@momonga/foundation';
+import { nodeBoundedCommandRunner, nodeEntryIo, resolveLayoutLocks } from '@momonga/foundation';
 import { daemonEntries } from '../../../packages/cli/src/daemon/entries.ts';
 import { nodeHelperHost, nodePorts } from '../../../packages/cli/src/node-ports.ts';
 import { buildProgram, exitOfFailure, pathsOf } from '../../../packages/cli/src/program.ts';
@@ -19,7 +19,10 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
   const wiring = nodeUpdateWiring(ports, await pathsOf(ports));
   const program = buildProgram({
     ports,
-    policyVerify: async () => nodePolicyVerifyHost(ports, await pathsOf(ports)),
+    policyVerify: async () => {
+      const paths = await pathsOf(ports);
+      return nodePolicyVerifyHost(ports, paths, resolveLayoutLocks(paths).mechanism);
+    },
     entries: daemonEntries(ports.self, ports.version, ports.spawnDetached),
     helper: { helpers: async () => ({}), call: undefined, host: nodeHelperHost() },
     update: () => ({

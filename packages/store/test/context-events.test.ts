@@ -3,6 +3,7 @@ import type { RunEvent, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem } from '@momonga/testkit';
 import { SNAPSHOT_STATE_VERSION, decodeEvent } from '../src/codec.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const ENVELOPE = { id: 9, runId: 'r1', sessionId: 's1', seq: 5, step: 1, leaseToken: 1, createdAt: 10 };
 
@@ -19,7 +20,7 @@ const row = (payload: Record<string, unknown>): never =>
     payload_json: JSON.stringify(payload),
   }) as never;
 
-const start = (): RunState => initialRunState({ runId: 'r1', sessionId: 's1' });
+const start = (): RunState => initialRunState({ runId: 'r1', sessionId: 's1', fence: TEST_FENCE });
 const item = fixtureCompactionItem('cmp-1', 'so far');
 const messageItem = { type: 'message', role: 'user', content: '<conversation_summary>\nso far\n</conversation_summary>' };
 

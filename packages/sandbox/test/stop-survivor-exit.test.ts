@@ -14,7 +14,7 @@ const FAKE_PID = 9_999_993;
 const KILL_GRACE_MS = 300;
 
 describe('a group member that survives the stop after the leader exits is reported in the exit, not thrown', () => {
-  it('exited resolves with the leader exit and groupNotStopped when SIGTERM and SIGKILL leave a runnable member', async () => {
+  it('exited resolves with the leader exit and a not confirmed stop when SIGTERM and SIGKILL leave a runnable member', async () => {
     const timing = virtualTiming();
     const signals: string[] = [];
     const groupPort: ProcessGroupPort = {
@@ -37,12 +37,12 @@ describe('a group member that survives the stop after the leader exits is report
     const exited = settlementOf(launched.exited);
     child.emit('exit', 0, null);
     await driveUntilSettled(timing, exited, 2 * groupTerminationBoundMs(KILL_GRACE_MS));
-    expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null, groupNotStopped: true } });
+    expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null, stop: 'not_confirmed' } });
     expect(signals[0]).toBe('SIGTERM');
     expect(signals).toContain('SIGKILL');
   });
 
-  it('exited carries no groupNotStopped when the members stop', async () => {
+  it('exited carries a confirmed stop when the members stop', async () => {
     const timing = virtualTiming();
     let alive = true;
     const groupPort: ProcessGroupPort = {
@@ -67,10 +67,10 @@ describe('a group member that survives the stop after the leader exits is report
     const exited = settlementOf(launched.exited);
     child.emit('exit', 0, null);
     await driveUntilSettled(timing, exited, 10 * KILL_GRACE_MS);
-    expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null } });
+    expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null, stop: 'confirmed' } });
   });
 
-  it('with a marker whose holder left the group, exited carries no groupNotStopped once the group ended, and the stop asks no holder listing', async () => {
+  it('with a marker whose holder left the group, exited carries a confirmed stop once the group ended, and the stop asks no holder listing', async () => {
     const timing = virtualTiming();
     let alive = true;
     const groupPort: ProcessGroupPort = {
@@ -120,7 +120,7 @@ describe('a group member that survives the stop after the leader exits is report
       const exited = settlementOf(launched.exited);
       child.emit('exit', 0, null);
       await driveUntilSettled(timing, exited, 10 * KILL_GRACE_MS);
-      expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null } });
+      expect(exited.current()).toEqual({ state: 'resolved', value: { code: 0, signal: null, stop: 'confirmed' } });
       expect(asked).toEqual([]);
     } finally {
       fs.rmSync(markerDir, { recursive: true, force: true });

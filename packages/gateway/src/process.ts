@@ -51,7 +51,7 @@ import {
   codeDigestOfRunningProcess,
   createBinaryHashCache,
   createHeldHostReadings,
-  managedInstancePaths,
+  managedInstanceIn,
   momongaPaths,
   createSecretKeyFile,
   sweepLeftovers,
@@ -62,7 +62,7 @@ import {
   generationLayout,
   createRolePort,
   endpointFormsOfSocket,
-  pipePathFor,
+  endpointScopeOf,
   CONTROL_REQUEST_TIMEOUT_MS,
   EXIT_RETIRED,
   SWEEP_INTERVAL_MS,
@@ -77,7 +77,6 @@ import type {
   GenerationRole,
   JsonLogger,
   ListableCredentialStore,
-  ManagedInstancePaths,
   MomongaPaths,
   NetworkConfig,
   OutboundNetwork,
@@ -86,8 +85,7 @@ import type {
   RolePort,
   SecretStore,
   StopValues,
-  TextStream,
-} from '@momonga/foundation';
+  TextStream, EndpointScope } from '@momonga/foundation';
 import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, layoutProcessInspector, nodeFileSystem, outboundFetch, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import type { KernelLockMechanism, LayoutLocks, ProcessInspector } from '@momonga/foundation';
 import {
@@ -436,6 +434,7 @@ type ManagedAdapterWiring = {
   platform: NodeJS.Platform;
   role: RolePort;
   home: string;
+  endpointScope: EndpointScope;
   hostForms: readonly EndpointForm[];
   readStopGraceMs: () => number;
   requestLimitMs: number;
@@ -446,11 +445,6 @@ type ManagedAdapterWiring = {
   onWarning: (message: string) => void;
 };
 
-const INSTANCE_SOCKET_SUFFIX = '.sock';
-
-export const instanceSocketOf = (form: EndpointForm, unixSocketPath: string, home: string, generation: number): string =>
-  form === 'pipe' ? pipePathFor(home, `g${generation}-managed-${path.basename(unixSocketPath, INSTANCE_SOCKET_SUFFIX)}`) : unixSocketPath;
-
 type ManagedCore = { managed: ManagedTarget; probeKey: string | undefined };
 
 const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedCore> => {
@@ -458,9 +452,9 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   const { provider } = target;
   const name = managedModelName(provider, { declared: target.model });
   const form = requireOfferedEndpointForm(description, { platform: wiring.platform, forms: wiring.hostForms }, wiring.connectionPlace);
-  const inForm = (instance: ManagedInstancePaths): ManagedInstancePaths => ({ ...instance, socketPath: instanceSocketOf(form, instance.socketPath, wiring.home, wiring.generation) });
-  const serving = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }));
-  const probing = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }));
+  const socket = { form, scope: wiring.endpointScope };
+  const serving = managedInstanceIn(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }, socket);
+  const probing = managedInstanceIn(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }, socket);
   const host = createHeldHostReadings();
   const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: wiring.platform, hashes: wiring.hashes, host });
   const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: wiring.platform, hashes: wiring.hashes });
@@ -913,10 +907,11 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const stdout = options.stdout ?? process.stdout;
   const paths = momongaPaths(options.home, platform, options.env);
   signal?.throwIfAborted();
-  const own = generationLayout(options.home, options.generation);
   await requireGenerationDirs(paths, options.generation);
   signal?.throwIfAborted();
   const kernelLock = options.locks.mechanism;
+  const endpointScope = await endpointScopeOf(paths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock });
+  const own = generationLayout(options.home, options.generation, platform, endpointScope);
   const inspector = layoutProcessInspector(options.locks.capability);
   const lock = await (options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, { mechanism: kernelLock })))(own.locks.gateway);
   const cleanups: Array<(values: StopValues | undefined) => void | Promise<void>> = [() => lock.release()];
@@ -1297,6 +1292,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               platform,
               role,
               home: options.home,
+              endpointScope,
               hostForms: endpointFormsOfSocket(own.sockets.gateway),
               readStopGraceMs,
               requestLimitMs: current.models.headersTimeoutMs,
@@ -1496,7 +1492,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const flushTelemetry = async (requestSignal: AbortSignal): Promise<void> => {
       const traced = await telemetries.acquire(requestSignal);
       try {
-        await traced.value.forceFlush();
+        await traced.value.flushLocal();
       } finally {
         traced.release();
       }

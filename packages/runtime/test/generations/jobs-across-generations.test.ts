@@ -65,8 +65,8 @@ const fakeProcess = (pgid: number, signal: AbortSignal): FakeProcess => {
     err.end();
     finish(result);
   };
-  signal.addEventListener('abort', () => exit({ code: null, signal: 'SIGTERM', killedBy: 'abort' }), { once: true });
-  return { pid: pgid, pgid, stdout: out, stderr: err, exited, out, exit, signal };
+  signal.addEventListener('abort', () => exit({ code: null, signal: 'SIGTERM', killedBy: 'abort', stop: 'confirmed' }), { once: true });
+  return { pid: pgid, pgid, rebind: () => undefined, stdout: out, stderr: err, exited, out, exit, signal };
 };
 
 const roots: string[] = [];
@@ -169,7 +169,7 @@ describe('the owner of a background job (17.3, 20.38)', () => {
     expect(path.isAbsolute(job?.outputPath ?? '')).toBe(true);
     expect(fs.statSync(fileOf(w, 2, jobId)).mode & 0o777).toBe(0o600);
     expect(owner.jobs.liveCount()).toBe(1);
-    owner.spawned[0]?.exit({ code: 0, signal: null });
+    owner.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await owner.jobs.finalized(jobId);
     expect(owner.jobs.liveCount()).toBe(0);
     expect(owner.settled.count).toBe(1);
@@ -214,7 +214,7 @@ describe('the owner of a background job (17.3, 20.38)', () => {
     await process.out.write('three\n');
     await flushed(fileOf(w, 1, jobId), 14);
     expect(fs.readFileSync(fileOf(w, 1, jobId), 'utf8')).toBe('one\ntwo\nthree\n');
-    process.exit({ code: 0, signal: null });
+    process.exit({ code: 0, signal: null, stop: 'confirmed' });
     await owner.jobs.finalized(jobId);
 
     expect(fs.existsSync(fileOf(w, 1, jobId))).toBe(false);
@@ -253,7 +253,7 @@ describe('BashOutput from another generation (17.3 "Read from any generation")',
     await flushed(fileOf(w, 1, jobId), 17);
     expect((await reader.jobs.read(w.runId, jobId, { call: 'read-2' })).output).toBe('gamma');
     expect(w.store.jobs.get(jobId)?.readOffset).toBe(17);
-    process.exit({ code: 0, signal: null });
+    process.exit({ code: 0, signal: null, stop: 'confirmed' });
     await owner.jobs.finalized(jobId);
   });
 
@@ -270,7 +270,7 @@ describe('BashOutput from another generation (17.3 "Read from any generation")',
 
     expect((await reader.jobs.read(w.runId, jobId, { call: 'read-1' })).output).toBe('');
 
-    process.exit({ code: 0, signal: null });
+    process.exit({ code: 0, signal: null, stop: 'confirmed' });
     await owner.jobs.finalized(jobId);
     expect((await reader.jobs.read(w.runId, jobId, { call: 'read-2' })).output).toBe('kept');
   });
@@ -299,7 +299,7 @@ describe('KillBash from another generation (17.3 "Kill", 17.9, 20.39)', () => {
     expect(owner.spawned[0]?.signal.aborted).toBe(true);
     expect(owner.spawned[1]?.signal.aborted).toBe(false);
     expect(w.store.jobs.get(untouched.jobId)?.status).toBe('running');
-    owner.spawned[1]?.exit({ code: 0, signal: null });
+    owner.spawned[1]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await owner.jobs.finalized(untouched.jobId);
   });
 
@@ -319,7 +319,7 @@ describe('KillBash from another generation (17.3 "Kill", 17.9, 20.39)', () => {
     const firstRequest = w.store.jobs.get(jobId)?.killRequestedAt;
     await other.jobs.kill(w.runId, jobId);
     expect(w.store.jobs.get(jobId)?.killRequestedAt).toBe(firstRequest);
-    owner.spawned[0]?.exit({ code: 0, signal: null });
+    owner.spawned[0]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await owner.jobs.finalized(jobId);
   });
 
@@ -401,7 +401,7 @@ describe('the owner-dead reconcile (17.3, 20.36, 20.40)', () => {
 
     expect(w.store.jobs.get(flagged.jobId)?.status).toBe('killed');
     expect(w.store.jobs.get(other.jobId)?.status).toBe('running');
-    owner.spawned[1]?.exit({ code: 0, signal: null });
+    owner.spawned[1]?.exit({ code: 0, signal: null, stop: 'confirmed' });
     await owner.jobs.finalized(other.jobId);
   });
 });

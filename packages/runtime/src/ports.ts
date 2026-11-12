@@ -1,5 +1,5 @@
 import type { Lease, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
-import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement, SandboxNetworkSetting, VerdictSubject } from '@momonga/foundation';
+import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement, SandboxNetworkSetting, UnixSocketPolicy, VerdictSubject } from '@momonga/foundation';
 import type {
   Capabilities,
   CompactRequest,
@@ -127,6 +127,7 @@ export type RuleVerifyRequest = {
   cwd: string;
   exemptDirectory: string | null;
   enforcement: RuleEnforcement;
+  unixSockets: UnixSocketPolicy;
 };
 
 export type RuleVerification = { verdict: RuleVerdict; report: string };

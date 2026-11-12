@@ -20,7 +20,7 @@ const sandboxAnswering = (stdout: string, code: number | null) => {
     spawn: (command, policy, signal, descriptors) => {
       spawned.push({ command, policy, signal });
       if (descriptors?.markerFd !== undefined) closeMarkerDescriptor(descriptors.markerFd);
-      return { pid: 999_989, pgid: 999_989, stdout: bytes(stdout), stderr: bytes('ignored'), exited: Promise.resolve({ code, signal: null }) };
+      return { pid: 999_989, pgid: 999_989, rebind: () => undefined, stdout: bytes(stdout), stderr: bytes('ignored'), exited: Promise.resolve({ code, signal: null, stop: 'confirmed' }) };
     },
   };
   return { sandbox, spawned };
@@ -177,13 +177,13 @@ describe('the evidence runner', () => {
       kind: 'none',
       spawn: () => ({
         pid: 1,
-        pgid: 1,
+        pgid: 1, rebind: () => undefined,
         stdout: (async function* (): AsyncGenerator<Uint8Array> {
           yield new TextEncoder().encode('partial');
           throw new TypeError('reading the output failed');
         })(),
         stderr: bytes(''),
-        exited: Promise.resolve({ code: 0, signal: null }),
+        exited: Promise.resolve({ code: 0, signal: null, stop: 'confirmed' }),
       }),
     };
     const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {} })(project);
@@ -206,7 +206,7 @@ describe('the evidence runner', () => {
       kind: 'none',
       spawn: (_command, _policy, _signal, descriptors) => {
         if (descriptors?.markerFd !== undefined) closeMarkerDescriptor(descriptors.markerFd);
-        return { pid: 999_988, pgid: 999_988, stdout: flood('a'), stderr: flood('e'), exited: Promise.resolve({ code: 0, signal: null }) };
+        return { pid: 999_988, pgid: 999_988, rebind: () => undefined, stdout: flood('a'), stderr: flood('e'), exited: Promise.resolve({ code: 0, signal: null, stop: 'confirmed' }) };
       },
     };
     const run = createEvidenceRunner({ reap: { inspector: testProcessInspector() }, paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: {}, outputWindowBytes: windowBytes })(project);

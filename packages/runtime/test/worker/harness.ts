@@ -15,7 +15,7 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
-import { createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, driveFakeTime, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, testKernelLock, testPaths, testProbes, testProcessInspector, unconfiguredNetworkOf } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testLocks, testProcessInspector, createTempDir } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -364,7 +364,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
   });
 
-  const ruleVerifier: RuleVerifierPort = options.ruleVerifier ?? productRuleVerifier({ solver: () => ruleSolverHost, paths: layout, timers: systemTimers, shellHost: nodeShellHost(), env: process.env, clock });
+  const ruleVerifier: RuleVerifierPort = options.ruleVerifier ?? productRuleVerifier({ solver: () => ruleSolverHost, paths: layout, locks: testLocks(), timers: systemTimers, shellHost: nodeShellHost(), env: process.env, clock });
 
   const worker = (workerId = 'worker-1', overrides: WorkerOverrides = {}): Worker => {
     const { tools: toolOverrides, toolList, ...rest } = overrides;
@@ -469,7 +469,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const fold = (runId: string): RunState => {
     const run = store.getRun(runId);
     if (run === undefined) throw new Error(`unknown run ${runId}`);
-    return events(runId).reduce(foldRunState, initialRunState({ runId, sessionId: run.sessionId }));
+    return events(runId).reduce(foldRunState, initialRunState({ runId, sessionId: run.sessionId, fence: store.getSession(run.sessionId)?.fenceNonce ?? '' }));
   };
 
   const run = (runId: string): Run => {

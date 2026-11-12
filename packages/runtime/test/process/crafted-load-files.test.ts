@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createSkillLoader, createNodeSkillFileSystem } from '@momonga/skills';
 import { createAgentsPort, createSkillsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
-import { createTempDir, NEVER_CANCELLED } from '@momonga/testkit';
+import { NEVER_CANCELLED, createTempDir } from '@momonga/testkit';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const roots: string[] = [];
 
@@ -36,6 +37,7 @@ const ALIAS_BOMB = [
 
 const sessionAt = (cwd: string): Session => ({
   id: 'session',
+  fenceNonce: TEST_FENCE,
   cwd,
   env: {},
   permissionMode: 'manual',

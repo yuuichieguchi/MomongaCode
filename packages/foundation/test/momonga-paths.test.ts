@@ -4,8 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import util from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { FIRST_GENERATION, MomongaDirectoryError, SocketPathUnsupportedError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, listenUnix, momongaPaths, rotatedLogPath, setSocketBind } from '@momonga/foundation';
-import { createTempDir, realProcessTestSignal, testKernelLock } from '@momonga/testkit';
+import { FIRST_GENERATION, MomongaDirectoryError, SocketPathUnsupportedError, ensureMomongaDirs, generationLayout, listenUnix, momongaPaths, refuseUnfitGenerationSocketsBeforeCreation, rotatedLogPath, setSocketBind } from '@momonga/foundation';
+import { realProcessTestSignal, testKernelLock, createTempDir } from '@momonga/testkit';
+
+const UNIX_ENDPOINTS = { form: 'unix' } as const;
 
 const HOME = '/Users/alice';
 
@@ -143,7 +145,7 @@ describe('ensureMomongaDirs', () => {
       setSocketBind(async () => {
         throw Object.assign(new Error('bind: ENAMETOOLONG'), { code: 'ENAMETOOLONG' });
       });
-      const error = await ensureGenerationDirs(paths, FIRST_GENERATION).catch((caught: unknown) => caught);
+      const error = await refuseUnfitGenerationSocketsBeforeCreation(paths, FIRST_GENERATION, UNIX_ENDPOINTS).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(SocketPathUnsupportedError);
       expect((error as Error).message).toMatch(/^Unix socket path .* must be shorter than \d+ bytes/);
       expect(fs.existsSync(path.join(base, 'home'))).toBe(false);
@@ -155,7 +157,7 @@ describe('ensureMomongaDirs', () => {
 
   it('reports a home too long for a socket path with the measured refusal even when its directories cannot be created', async () => {
     const home = `/${'h'.repeat(200)}`;
-    const error = await ensureGenerationDirs(momongaPaths(home, process.platform, {}), FIRST_GENERATION).catch((caught: unknown) => caught);
+    const error = await refuseUnfitGenerationSocketsBeforeCreation(momongaPaths(home, process.platform, {}), FIRST_GENERATION, UNIX_ENDPOINTS).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(SocketPathUnsupportedError);
     expect((error as Error).message).toContain(generationLayout(home, FIRST_GENERATION).dir);
     expect((error as Error).message).toMatch(/must be shorter than \d+ bytes/);

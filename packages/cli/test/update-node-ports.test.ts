@@ -2,13 +2,18 @@ import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { registerCleanup, withTempDir, testKernelLock } from '@momonga/testkit';
+import type { Readable, Writable } from 'node:stream';
+import { ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarOf, systemTiming } from '@momonga/foundation';
+import type { OutboundNetwork } from '@momonga/foundation';
+import { registerCleanup, spawnTracked, testEndpointScope, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { daemonReadyBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { MAX_REDIRECTS, STAGING_PREFIX, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, undiciUpdateHttp } from '../src/update/node-ports.ts';
+import { MAX_REDIRECTS, STAGING_PREFIX, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, transferOptionsOf } from '../src/update/node-ports.ts';
+import { DEFAULT_UPDATE_STALL_TIMEOUT_MS } from '@momonga/config';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+
+const ASIDE_ENTRY = path.join(import.meta.dirname, 'update-aside-entry.ts');
 
 const unusedPort = (name: string): never =>
   new Proxy(() => undefined, {
@@ -44,6 +49,7 @@ const cliPortsFor = (home: string): CliPorts =>
     probe: unusedPort('probe'),
     secretStore: unusedPort('secretStore'),
     personCapability: unusedPort('personCapability'),
+    endpointScope: testEndpointScope,
   }) satisfies CliPorts;
 
 describe('autoUpdates', () => {
@@ -137,7 +143,7 @@ describe('daemon probe', () => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home, process.platform, process.env);
     fs.mkdirSync(paths.run, { recursive: true, mode: 0o700 });
-    const probe = nodeDaemonProbe(paths, virtualClock(), testKernelLock());
+    const probe = nodeDaemonProbe(paths, { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock());
     expect(await probe.running()).toBe(false);
 
     const supervisor = await startFakeSupervisor({ paths, version: '1.0.0', children: readyChildren() });
@@ -154,7 +160,7 @@ describe('daemon probe', () => {
     const ended = await startFakeSupervisor({ paths, version: '1.1.0', generation: 2, children: readyChildren() });
     await ended.stop();
 
-    expect(await nodeDaemonProbe(paths, virtualClock(), testKernelLock()).running()).toBe(true);
+    expect(await nodeDaemonProbe(paths, { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock()).running()).toBe(true);
   });
 
   it('sums the work of the live generations below the serving one, with their versions (20.72)', async (context) => {
@@ -166,18 +172,22 @@ describe('daemon probe', () => {
       registerCleanup(context, () => supervisor.stop());
     }
 
-    expect(await nodeDaemonProbe(paths, virtualClock(), testKernelLock()).retiring()).toEqual({ steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'] });
+    expect(await nodeDaemonProbe(paths, { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock()).retiring()).toEqual({ steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'] });
   });
 
   it('gives the ready bound of the daemon as the wait of the start after an install (20.72)', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    expect(await nodeDaemonProbe(momongaPaths(home, process.platform, process.env), virtualClock(), testKernelLock()).readyBoundMs()).toBe(await daemonReadyBoundMs());
+    expect(await nodeDaemonProbe(momongaPaths(home, process.platform, process.env), { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock()).readyBoundMs()).toBe(await daemonReadyBoundMs());
   });
 });
 
-const DIRECT_NETWORK = Promise.resolve({ config: { caFiles: [] }, trust: { sources: [], failures: [] } });
+const DIRECT_NETWORK: OutboundNetwork = { config: { caFiles: [] }, trust: { sources: [], failures: [] } };
 
-describe('undici update http', () => {
+const closeFailures: unknown[] = [];
+
+const directHttp = leasedUpdateHttp((_signal, use) => use(DIRECT_NETWORK), transferOptionsOf(DEFAULT_UPDATE_STALL_TIMEOUT_MS), (error) => void closeFailures.push(error));
+
+describe('update http', () => {
   const serve = async (context: Parameters<typeof withTempDir>[0], handler: http.RequestListener): Promise<string> => {
     const server = http.createServer(handler);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -201,9 +211,30 @@ describe('undici update http', () => {
     });
     const signal = new AbortController().signal;
 
-    await expect(undiciUpdateHttp(DIRECT_NETWORK).get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
-    const response = await undiciUpdateHttp(DIRECT_NETWORK).get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
+    await expect(directHttp.get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
+    const response = await directHttp.get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
     expect(response.status).toBe(200);
+    expect(closeFailures).toEqual([]);
+  });
+
+  it('is the http port of the update ports the product composes', async (context) => {
+    const origin = await serve(context, (request, response) => {
+      const hop = Number(request.url?.slice(1));
+      if (hop < MAX_REDIRECTS + 2) {
+        response.writeHead(302, { location: `/${hop + 1}` });
+        response.end();
+        return;
+      }
+      response.end('arrived');
+    });
+    const home = withTempDir(context, { asHome: true });
+    const http = nodeUpdatePorts({ ...cliPortsFor(home), timers: systemTiming }, momongaPaths(home, process.platform, process.env), testKernelLock()).http;
+    const signal = new AbortController().signal;
+
+    await expect(http.get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
+    const response = await http.get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
+    expect(response.status).toBe(200);
+    for await (const chunk of response.body) expect(chunk).toBeDefined();
   });
 
   it('sends the given headers', async (context) => {
@@ -213,7 +244,7 @@ describe('undici update http', () => {
       response.end('ok');
     });
 
-    await undiciUpdateHttp(DIRECT_NETWORK).get(origin, { headers: { 'user-agent': 'momonga/1.0.0', accept: 'x/y' }, signal: new AbortController().signal });
+    await directHttp.get(origin, { headers: { 'user-agent': 'momonga/1.0.0', accept: 'x/y' }, signal: new AbortController().signal });
 
     expect(seen['user-agent']).toBe('momonga/1.0.0');
     expect(seen['accept']).toBe('x/y');
@@ -250,13 +281,39 @@ describe('publishing over a running executable', () => {
     const { directory, target, staged } = await setup(context);
     await nodeUpdateFs(testKernelLock(), runningImageRename(target)).publish(staged, target);
     expect(fs.readFileSync(target, 'utf8')).toBe('new');
-    const leftovers = fs.readdirSync(directory).filter((name) => name !== 'momonga.exe');
-    expect(leftovers).toHaveLength(1);
-    expect(leftovers[0]?.startsWith(STAGING_PREFIX)).toBe(true);
-    expect(fs.readFileSync(path.join(directory, leftovers[0] as string), 'utf8')).toBe('old');
-    await nodeUpdateFs(testKernelLock()).removeLeftovers(directory);
-    expect(fs.readdirSync(directory)).toEqual(['momonga.exe']);
+    const lock = testKernelLock();
+    const asides = fs.readdirSync(directory).filter((name) => name !== 'momonga.exe' && !name.endsWith(sidecarOf(lock, '')));
+    expect(asides).toHaveLength(1);
+    expect(asides[0]?.startsWith(STAGING_PREFIX)).toBe(true);
+    expect(fs.readFileSync(path.join(directory, asides[0] as string), 'utf8')).toBe('old');
   });
+
+  for (const mechanism of ['file-lock', 'sqlite-lock'] as const) {
+    it(`names the aside of the running file as a locked entry that the sweep keeps while its process runs and removes after it ends (${mechanism})`, async (context) => {
+      const { directory, target, staged } = await setup(context);
+      const child = spawnTracked(context, process.execPath, [ASIDE_ENTRY, mechanism, target, staged], { stdio: ['pipe', 'pipe', 'pipe'] });
+      const exited = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
+      let stderr = '';
+      (child.stderr as Readable).on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
+      await new Promise<void>((resolve, reject) => {
+        (child.stdout as Readable).on('data', (chunk: Buffer) => {
+          if (chunk.toString('utf8').includes('published')) resolve();
+        });
+        child.once('exit', () => reject(new Error(`the publishing process ended before it published: ${stderr}`)));
+      });
+      const asideOf = (): string[] => fs.readdirSync(directory).filter((name) => name.startsWith(STAGING_PREFIX) && !name.slice(STAGING_PREFIX.length).includes('.'));
+      expect(fs.readFileSync(target, 'utf8')).toBe('new');
+      expect(asideOf()).toHaveLength(1);
+
+      await nodeUpdateFs(kernelLockNamed(mechanism)).removeLeftovers(directory);
+      expect(asideOf()).toHaveLength(1);
+
+      (child.stdin as Writable).end();
+      expect(await exited).toBe(0);
+      await nodeUpdateFs(kernelLockNamed(mechanism)).removeLeftovers(directory);
+      expect(fs.readdirSync(directory)).toEqual(['momonga.exe']);
+    });
+  }
 
   it('puts the old file back when the new one cannot be moved in', async (context) => {
     const { directory, target, staged } = await setup(context);

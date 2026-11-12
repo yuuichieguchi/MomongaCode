@@ -12,6 +12,7 @@ import { START_MS, TIMEOUT_MS, makeStoreDir, mustClaim, mustRun, newSession, noJ
 import { assistantItem, callItem } from '../inherit-fixtures.ts';
 import type { InheritedEvent } from '../inherit-fixtures.ts';
 import type { Random } from './seeded.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 export const LONG_LEASE_MS = 10 * TIMEOUT_MS;
 export const UNBOUNDED_WINDOW = 1_000_000_000;
@@ -147,7 +148,7 @@ const payloadOfEvent = (event: RunEvent): RunEventPayload => {
   return payload as unknown as RunEventPayload;
 };
 
-export const foldEvents = (run: Run, events: readonly RunEvent[]): RunState => events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
+export const foldEvents = (run: Run, events: readonly RunEvent[]): RunState => events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: TEST_FENCE }));
 
 export const outcomeOf = (run: Run): InheritanceOutcome => ({
   status: run.status as InheritanceOutcome['status'],

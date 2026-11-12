@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, SocketPathUnsupportedError, beginGenerationStart, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import { createTempDir, firstRefusedSocketPathBytes, testKernelLock } from '@momonga/testkit';
 
+const UNIX_ENDPOINTS = { form: 'unix' } as const;
+
 const SUPERVISOR_SOCKET_SUFFIX = Buffer.byteLength(path.join('.momonga', 'run', `g${FIRST_GENERATION}`, 'supervisor.sock')) + 1;
 
 const homeWhoseFirstSupervisorSocketIs = async (fromFirstRefused: number): Promise<{ home: string; byteLength: number }> => {
@@ -21,7 +23,7 @@ describe.skipIf(process.platform === 'win32')('the start of a generation measure
       expect(Buffer.byteLength(supervisorSocket)).toBe(byteLength);
       const paths = momongaPaths(home, process.platform, {});
       await ensureMomongaDirs(paths);
-      const error = await beginGenerationStart(paths, { version: '1.2.3', foldVersion: 1, lock: testKernelLock() }).catch((caught: unknown) => caught);
+      const error = await beginGenerationStart(paths, { version: '1.2.3', foldVersion: 1, lock: testKernelLock() , scope: UNIX_ENDPOINTS}).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(SocketPathUnsupportedError);
       expect((error as Error).message).toMatch(/^Unix socket path .* must be shorter than \d+ bytes/);
       expect((error as Error).message).toContain(supervisorSocket);
@@ -38,7 +40,7 @@ describe.skipIf(process.platform === 'win32')('the start of a generation measure
     try {
       const paths = momongaPaths(home, process.platform, {});
       await ensureMomongaDirs(paths);
-      const outcome = await beginGenerationStart(paths, { version: '1.2.3', foldVersion: 1, lock: testKernelLock() });
+      const outcome = await beginGenerationStart(paths, { version: '1.2.3', foldVersion: 1, lock: testKernelLock() , scope: UNIX_ENDPOINTS});
       expect(outcome).toMatchObject({ kind: 'allocated', generation: FIRST_GENERATION });
       if (outcome.kind === 'allocated') outcome.starting.release();
     } finally {

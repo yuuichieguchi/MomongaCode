@@ -15,7 +15,6 @@
     "required": ["remote", "branch"],
     "additionalProperties": false
   },
-  "timeoutMs": 60000,
   "observe": [
     { "id": "head", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "HEAD"], "extract": "trim", "emptyOnFailure": true } },
     { "id": "behind", "via": { "argv": ["git", "rev-list", "--count", "HEAD..refs/remotes/{input.remote}/{input.branch}"], "extract": "trim" } }

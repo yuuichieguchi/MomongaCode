@@ -4,7 +4,7 @@ import { signalUntil } from '../memory/deadline-signal.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
-import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
+import { REFERENCE_KINDS, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { JournalThreadError, UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
@@ -370,7 +370,7 @@ const drive = async (
   }
   const toolLess = readiness.state === 'no_tools';
   const agentPin = readAgentPin(run.pins);
-  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform, ...(toolLess ? { tools: 'none' as const } : {}) });
+  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform, fence: sessionFenceOf(session), ...(toolLess ? { tools: 'none' as const } : {}) });
   const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
   const systemPromptDigest = sha256Hex(systemPrompt);
   const env = await tools.envFor(session, control.signal);
@@ -572,7 +572,7 @@ const drive = async (
     windowShared: () => jobRunningNow() || childRunLive(),
     companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost() }),
     systemPrompt,
-    outputFit: meteredOutputFit({ meter: chainMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap, harnessTools: new Set(harnessOutputToolsOf(offeredSet.tools)) }),
+    outputFit: meteredOutputFit({ meter: chainMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap, harnessTools: new Set(harnessOutputToolsOf(offeredSet.tools)), fence: sessionFenceOf(session) }),
     reconcileFit: reconcileOutputFit(pins.capabilities),
     journal,
     control,

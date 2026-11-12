@@ -16,7 +16,7 @@ import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/
 
 
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { createFakeClock, createFakeKernelLock, createTempDir, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, pollUntil, TEST_STDIO_LAUNCH, testProcessInspector, type FakeClock, type ModernFixtureRecord, UNBOUNDED_OUTPUT_FIT, unconfiguredNetworkOf } from '@momonga/testkit';
+import { TEST_TOOL_LIMITS, unconfiguredNetworkOf, MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord, pollUntil, testProcessInspector, TEST_STDIO_LAUNCH, createTempDir } from '@momonga/testkit';
 
 
 
@@ -237,6 +237,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
     return {
       calls,
       toolSet,
+      limits: TEST_TOOL_LIMITS,
       fence: { runId, workerId: 'w1', leaseToken: 1 },
       runId,
       onWarning: (_message, toolKey) => codes.add(toolKey),

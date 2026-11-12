@@ -25,19 +25,19 @@ const byCode = (code: string, options: { status?: number; param?: string } = {})
 
 const byStatus = (status: number) => (headers: Record<string, string>) => withHeaders(planAdmissionReply(status, 'denied by policy'), headers);
 
-const CREDENTIAL_SENTENCE = 'Sign in again only after a confirmed revocation or a terminal refresh error';
+const CREDENTIAL_SENTENCE = 'The sign-in of this account has expired. Run momonga auth login to sign in again';
 
 const ROWS: Row[] = [
-  { name: '1 usage limit', reply: byCode('subscription_sharing_usage_limit_exceeded'), status: 429, type: 'too_many_requests', code: 'plan_usage_limit', param: null, sentence: 'Manage usage' },
-  { name: '2 workspace usage limit', reply: byCode('subscription_sharing_workplace_individual_usage_limit_exceeded', { status: 400 }), status: 429, type: 'too_many_requests', code: 'plan_workspace_usage_limit', param: null, sentence: 'Ask the workspace admin to raise the limit' },
+  { name: '1 usage limit', reply: byCode('subscription_sharing_usage_limit_exceeded'), status: 429, type: 'too_many_requests', code: 'plan_usage_limit', param: null, sentence: 'This account has reached the usage its plan allows for now. Wait for the usage to reset, or manage the usage in the ChatGPT settings' },
+  { name: '2 workspace usage limit', reply: byCode('subscription_sharing_workplace_individual_usage_limit_exceeded', { status: 400 }), status: 429, type: 'too_many_requests', code: 'plan_workspace_usage_limit', param: null, sentence: 'This account has reached the usage its workspace allows. Ask the workspace admin to allow more' },
   { name: '3 usage unavailable', reply: byCode('subscription_sharing_usage_unavailable'), status: 502, type: 'server_error', code: 'plan_usage_unavailable', param: null, sentence: 'Try again later' },
   { name: '4 user unavailable', reply: byCode('subscription_sharing_user_unavailable'), status: 502, type: 'server_error', code: 'plan_user_unavailable', param: null, sentence: 'Try again later' },
-  { name: '5 not eligible', reply: byCode('subscription_sharing_user_not_eligible'), status: 400, type: 'invalid_request', code: 'plan_not_eligible', param: null, sentence: 'Use another account or an API-key target' },
-  { name: '6 unsupported capability', reply: byCode('subscription_sharing_unsupported_capability', { param: 'temperature' }), status: 400, type: 'invalid_request', code: 'plan_unsupported_capability', param: 'temperature', sentence: 'The route does not carry the named parameter' },
-  { name: '7 route not supported', reply: byCode('subscription_sharing_route_not_supported'), status: 400, type: 'invalid_request', code: 'plan_route_not_supported', param: null, sentence: 'The route is POST /v1/responses' },
+  { name: '5 not eligible', reply: byCode('subscription_sharing_user_not_eligible'), status: 400, type: 'invalid_request', code: 'plan_not_eligible', param: null, sentence: 'This account cannot use its plan here. Sign in with another account, or use a model with an API key' },
+  { name: '6 unsupported capability', reply: byCode('subscription_sharing_unsupported_capability', { param: 'temperature' }), status: 400, type: 'invalid_request', code: 'plan_unsupported_capability', param: 'temperature', sentence: 'The plan does not accept a setting of this request' },
+  { name: '7 route not supported', reply: byCode('subscription_sharing_route_not_supported'), status: 400, type: 'invalid_request', code: 'plan_route_not_supported', param: null, sentence: 'The plan does not accept this kind of request' },
   { name: '8 invalid user', reply: byCode('subscription_sharing_invalid_user'), status: 400, type: 'invalid_request', code: 'plan_credential_rejected', param: null, sentence: CREDENTIAL_SENTENCE },
-  { name: '9 scope not authorized', reply: byCode('chatpass_v2_scope_not_authorized'), status: 400, type: 'invalid_request', code: 'plan_grant_not_authorized', param: null, sentence: 'Check the client and the grant' },
-  { name: '9 invalid authorization context', reply: byCode('chatpass_v2_invalid_authorization_context'), status: 400, type: 'invalid_request', code: 'plan_grant_not_authorized', param: null, sentence: 'Check the client and the grant' },
+  { name: '9 scope not authorized', reply: byCode('chatpass_v2_scope_not_authorized'), status: 400, type: 'invalid_request', code: 'plan_grant_not_authorized', param: null, sentence: 'The plan did not authorize this sign-in for MomongaCode. Sign out of this account and sign in again' },
+  { name: '9 invalid authorization context', reply: byCode('chatpass_v2_invalid_authorization_context'), status: 400, type: 'invalid_request', code: 'plan_grant_not_authorized', param: null, sentence: 'The plan did not authorize this sign-in for MomongaCode. Sign out of this account and sign in again' },
   { name: '10 401 without a code', reply: byStatus(401), status: 400, type: 'invalid_request', code: 'plan_credential_rejected', param: null, sentence: CREDENTIAL_SENTENCE },
   { name: '11 403 without a code', reply: byStatus(403), status: 400, type: 'invalid_request', code: 'plan_admission_denied', param: null, sentence: 'Admission was denied by a policy such as the serving region' },
   { name: '12 503 without a code', reply: byStatus(503), status: 502, type: 'server_error', code: 'plan_route_unavailable', param: null, sentence: 'Try again later' },
@@ -114,8 +114,8 @@ describe('the 12 plan error rows reach the client with their status, type, code,
   });
 
   it.each([
-    { upstream: 'subscription_sharing_usage_limit_exceeded', code: 'plan_usage_limit', message: 'Manage usage.' },
-    { upstream: 'subscription_sharing_workplace_individual_usage_limit_exceeded', code: 'plan_workspace_usage_limit', message: 'Ask the workspace admin to raise the limit.' },
+    { upstream: 'subscription_sharing_usage_limit_exceeded', code: 'plan_usage_limit', message: 'This account has reached the usage its plan allows for now. Wait for the usage to reset, or manage the usage in the ChatGPT settings.' },
+    { upstream: 'subscription_sharing_workplace_individual_usage_limit_exceeded', code: 'plan_workspace_usage_limit', message: 'This account has reached the usage its workspace allows. Ask the workspace admin to allow more.' },
   ])('answers an upstream response.failed $upstream as a response.failed terminal that carries plan', async ({ upstream, code, message }) => {
     const frames = await streamFrames(planErrorStreamReply(upstream, {}));
     const last = frames.at(-1)?.data;

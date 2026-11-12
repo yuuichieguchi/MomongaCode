@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { renderWorkingState } from '@momonga/context';
 import type { CommandFact, RunState, WorkingFacts, WrittenFact } from '@momonga/protocol';
 import { initialRunState } from '@momonga/store';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const tokensOf = (text: string): number => Math.ceil(text.length / 4);
 const READERS = { history_range: 'HistoryRead' } as const;
 
 const stateWith = (facts: Partial<WorkingFacts>): RunState => {
-  const base = initialRunState({ runId: 'run-effects', sessionId: 'session-effects' });
+  const base = initialRunState({ runId: 'run-effects', sessionId: 'session-effects', fence: TEST_FENCE });
   return {
     ...base,
     summary: { item: { type: 'message', role: 'user', content: 'summary' }, summary: 'summary', replacedThroughSeq: 1 },

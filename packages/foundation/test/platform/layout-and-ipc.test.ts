@@ -5,7 +5,9 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, assertSocketPathLength, ensureMomongaDirs, generationLayout, ensureSessionTmpDir, isPipePath, listenUnix, momongaLayout, momongaPaths, pipePathFor } from '@momonga/foundation';
 import { createTempDir, realProcessTestSignal, removeTempDir, testKernelLock } from '@momonga/testkit';
-import type { CommandRunner } from '@momonga/foundation';
+import type { CommandRunner, EndpointScope } from '@momonga/foundation';
+
+const PIPES: EndpointScope = { form: 'pipe', token: '0123456789abcdef0123456789abcdef' };
 
 describe('win32 layout', () => {
   const home = 'C:\\Users\\Alice';
@@ -26,13 +28,6 @@ describe('win32 layout', () => {
     expect(fallback.keychains).toBe('C:\\Users\\Alice\\AppData\\Roaming\\Microsoft\\Credentials');
   });
 
-  it('names the endpoints as named pipes scoped by the home directory, ignoring case', () => {
-    expect(first.sockets.runtime).toMatch(/^\\\\\.\\pipe\\momonga-[0-9a-f]{16}-g1-runtime$/);
-    expect(new Set(Object.values(first.sockets)).size).toBe(3);
-    expect(generationLayout('c:\\users\\alice', FIRST_GENERATION, 'win32').sockets.runtime).toBe(first.sockets.runtime);
-    expect(generationLayout('C:\\Users\\Bob', FIRST_GENERATION, 'win32').sockets.runtime).not.toBe(first.sockets.runtime);
-  });
-
   it('accepts the pipe names through momongaPaths', () => {
     expect(() => momongaPaths(home, 'win32', env)).not.toThrow();
   });
@@ -47,7 +42,7 @@ describe('linux layout', () => {
 
 describe('pipe path limits', () => {
   it('limits pipe paths to 256 characters whatever the platform', () => {
-    expect(isPipePath(pipePathFor('C:\\h', 'x'))).toBe(true);
+    expect(isPipePath(pipePathFor(PIPES, 'x'))).toBe(true);
     expect(() => assertSocketPathLength(`\\\\.\\pipe\\${'p'.repeat(247)}`)).not.toThrow();
     expect(() => assertSocketPathLength(`\\\\.\\pipe\\${'p'.repeat(248)}`)).toThrow(/256/);
   });
@@ -69,20 +64,20 @@ describe('listening on a named pipe', () => {
   };
 
   it('binds the pipe without touching the filesystem', async () => {
-    const pipe = pipePathFor('C:\\Users\\Alice', 'gateway');
+    const pipe = pipePathFor(PIPES, 'gateway');
     const { server, listened } = fakeServer('listening');
     await listenUnix(server, pipe, { mechanism: testKernelLock() }, realProcessTestSignal());
     expect(listened).toEqual([pipe]);
   });
 
   it('reports a second server on the same pipe as already in use', async () => {
-    const pipe = pipePathFor('C:\\Users\\Alice', 'gateway');
+    const pipe = pipePathFor(PIPES, 'gateway');
     const { server } = fakeServer(Object.assign(new Error('EADDRINUSE'), { code: 'EADDRINUSE' }));
     await expect(listenUnix(server, pipe, { mechanism: testKernelLock() }, realProcessTestSignal())).rejects.toThrow(`${pipe} is already in use by a live server`);
   });
 
   it('propagates other bind failures unchanged', async () => {
-    const pipe = pipePathFor('C:\\Users\\Alice', 'gateway');
+    const pipe = pipePathFor(PIPES, 'gateway');
     const { server } = fakeServer(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
     await expect(listenUnix(server, pipe, { mechanism: testKernelLock() }, realProcessTestSignal())).rejects.toThrow('EACCES');
   });

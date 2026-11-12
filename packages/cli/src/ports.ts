@@ -1,5 +1,5 @@
 import type { WorkspaceFiles, WorkspaceProbe } from '@momonga/eval';
-import type { FileSystem, HostExec, OpenUrl, ProcessPort, SecretStore, Timing } from '@momonga/foundation';
+import type { FileSystem, HostExec, OpenUrl, ProcessPort, SecretStore, Timing, EndpointScope, MomongaPaths } from '@momonga/foundation';
 import type { HandoverHost } from './handover/host.ts';
 
 export type CliClock = {
@@ -31,7 +31,7 @@ export type AcpInput = { take(): Uint8Array | undefined; arrival(): Promise<'byt
 
 export type AcpStdio = { input: AcpInput; output: WritableStream<Uint8Array> };
 
-export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream };
+export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream; colourOff(): void };
 
 export type CliTimers = Pick<Timing, 'setTimeout' | 'clearTimeout'>;
 
@@ -73,6 +73,7 @@ export type CliPorts = {
   openUrl: OpenUrl;
   secretStore(): SecretStore;
   personCapability(): Promise<string>;
+  endpointScope(paths: Pick<MomongaPaths, 'run'>): Promise<EndpointScope>;
   acpStdio?: () => AcpStdio;
   handover?: HandoverHost;
 };

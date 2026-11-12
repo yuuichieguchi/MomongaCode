@@ -108,7 +108,7 @@ describe('the screen-reader display of the transcript', () => {
   });
 
   it('writes the start banner as plain lines with its notices', () => {
-    const banner = { config: { version: '1.2.3', home: '/home/u', color: true }, model: 'local', cwd: '/home/u/work', notices: ['an update is ready'] };
+    const banner = { config: { version: '1.2.3', home: '/home/u' }, model: 'local', cwd: '/home/u/work', notices: ['an update is ready'] };
     const reader = rowsFor({ kind: 'banner', banner }, READER, 80);
     expect(reader).toEqual(['MomongaCode v1.2.3', 'model: local', '~/work', '! an update is ready']);
     expect(rowsFor({ kind: 'banner', banner }, NO_A11Y, 80).some((row) => BOX.test(row))).toBe(true);

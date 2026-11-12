@@ -112,9 +112,9 @@ const runJob = async (survives: boolean) => {
 };
 
 describe('a background job whose process group keeps a member that survives the stop', () => {
-  it('finishes as exited with its exit code and output, tells the reader a process it started is still running, and keeps the marker', async () => {
+  it('finishes as unknown with its exit code and output, tells the reader a process it started is still running, and keeps the marker', async () => {
     const { read, markerKept } = await runJob(true);
-    expect(read.job).toMatchObject({ status: 'exited', exitCode: 0 });
+    expect(read.job).toMatchObject({ status: 'unknown', exitCode: 0 });
     expect(read.output).toContain('job-output');
     expect(read.output).toContain(STILL_RUNNING);
     expect(read.output).toContain(FOUR_OCCASIONS);

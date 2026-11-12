@@ -21,6 +21,7 @@ import {
   toolCall,
 } from './inherit-fixtures.ts';
 import type { InheritedEvent } from './inherit-fixtures.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const LONG_LEASE_MS = 10 * TIMEOUT_MS;
 
@@ -127,7 +128,7 @@ describe('inheritContext: the happy path', () => {
     expect(reference).not.toHaveProperty('history');
     expect(inheritedOf(store, second.id).history).toEqual(history);
     expect(mustRun(store, second.id).lastSeq).toBe(2);
-    const state = events.reduce(foldRunState, initialRunState({ runId: second.id, sessionId: session.id }));
+    const state = events.reduce(foldRunState, initialRunState({ runId: second.id, sessionId: session.id, fence: TEST_FENCE }));
     expect(state.history).toEqual([{ seq: 3, item: taskItem('And again') }]);
     expect(state.taskSeq).toBe(3);
   });

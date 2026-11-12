@@ -14,6 +14,7 @@ import { journalReaderPreparer } from './harness.ts';
 const foldedRunStateAt = (dbPath: string, runId: string) => journalReaderPreparer(dbPath).runState({ runId });
 import { toolUsageWindowOf } from '../../src/worker/tool-usage-window.ts';
 import { bodyWatchedStore } from './body-watched-store.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const LAST_VERSION_BEFORE_THE_RECORD = 17;
 const PROJECT = '/work/a';
@@ -96,7 +97,7 @@ const storeWrittenBeforeTheRecord = (): string => {
         db.prepare('INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, ?, ?, ?)').run(
           run.id,
           run.events.length,
-          canonicalJson(encodeRunState({ ...initialRunState({ runId: run.id, sessionId: run.session }), lastSeq: run.events.length })),
+          canonicalJson(encodeRunState({ ...initialRunState({ runId: run.id, sessionId: run.session, fence: TEST_FENCE }), lastSeq: run.events.length })),
           run.createdAt,
         );
       }

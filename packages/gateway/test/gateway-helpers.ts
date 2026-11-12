@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { DEFAULT_STOP_VALUES, createUdsClient, gatewayMaxCloseMs, decodeSse, managedServerStopBoundMs, fixedRolePort, fixedSocket } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createUdsClient, gatewayMaxCloseMs, SSE_EVENT_MAX_BYTES, decodeSse, managedServerStopBoundMs, fixedRolePort, fixedSocket } from '@momonga/foundation';
 import type { GenerationRole, RolePort, UdsClient, UdsResponse } from '@momonga/foundation';
 import { createGateway } from '@momonga/gateway';
 import type { FixedModelsOptions, Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
@@ -247,12 +247,12 @@ export const readSse = async (response: UdsResponse): Promise<SseFrame[]> => {
   expect(response.status).toBe(200);
   expect(response.headers['content-type']).toMatch(/^text\/event-stream/);
   const frames: SseFrame[] = [];
-  for await (const frame of decodeSse(response.body)) frames.push({ event: frame.event, data: JSON.parse(frame.data) });
+  for await (const frame of decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES })) frames.push({ event: frame.event, data: JSON.parse(frame.data) });
   return frames;
 };
 
 export const sseIterator = (response: UdsResponse): AsyncIterator<SseFrame> => {
-  const source = decodeSse(response.body);
+  const source = decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES });
   return {
     next: async () => {
       const step = await source.next();

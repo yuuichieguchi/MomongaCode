@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LINUX_SOCKET_GUARD_BINARY_ASSET, LINUX_SOCKET_GUARD_MANIFEST_ASSET, LinuxSocketGuardDistributionError, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, sha256Hex } from '@momonga/foundation';
+import { testLocks } from '@momonga/testkit';
 import { hostExtractedLinuxSocketGuard, nodeSourceKeeperFiles } from '../src/node-ports.ts';
 import { sourceBuiltLinuxSocketGuard } from '../src/keeper/source.ts';
 import type { SourceKeeperPorts } from '../src/keeper/source.ts';
@@ -88,7 +89,7 @@ describe('where the runtime gets its socket guard', () => {
       builtFromSource: neverBuilt,
       extracted,
     });
-    const file = await source?.({ executables: path.join(root, 'executables') })();
+    const file = await source?.({ executables: path.join(root, 'executables') }, testLocks())();
 
     expect(file).toBe(path.join(root, 'executables', `linux-socket-guard-${SHA.slice(0, 16)}`, 'momonga-socket-guard'));
     expect(fs.statSync(file as string).mode & 0o777).toBe(0o700);
@@ -105,7 +106,7 @@ describe('where the runtime gets its socket guard', () => {
       },
       extracted,
     });
-    const guard = source?.({ executables: '/cache/executables' });
+    const guard = source?.({ executables: '/cache/executables' }, testLocks());
 
     expect(asked).toEqual([]);
     expect(await guard?.()).toBe('/built/guard');

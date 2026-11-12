@@ -113,11 +113,10 @@ describe('stdio layout', () => {
 });
 
 describe('spawn options', () => {
-  it('children are spawned detached', (context) => {
+  it('children are spawned in the home with the contract flags', (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
     const call = harness.port.calls[0];
-    expect(call?.options.detached).toBe(true);
     expect(call?.options.cwd).toBe(harness.home);
     expect(call?.command).toBe(process.execPath);
     expect(call?.args).toEqual(['/opt/momonga/fixture-bin.ts', `--home=${harness.home}`, '--generation=1', '--lifeline-fd=3', '--log-target=file']);

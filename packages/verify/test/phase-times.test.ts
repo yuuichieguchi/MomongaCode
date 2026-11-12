@@ -18,7 +18,7 @@ describe('the time a verification spends per phase', () => {
     const fileSystem = caseSensitiveFs();
     const roots = [layout.project];
     let now = 0;
-    const report = await verifyPermissions(z3.engine().api, { deniedLocations: testSecretLocations(layout.home),
+    const report = await verifyPermissions(z3.engine().api, { unixSockets: { kind: 'limited', allowed: [] }, deniedLocations: testSecretLocations(layout.home),
       rules: [],
       roots,
       mode: 'manual',

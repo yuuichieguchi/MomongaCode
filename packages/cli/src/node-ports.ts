@@ -36,8 +36,9 @@ import {
   hostProcessGroupPort,
   launchApart,
   personCapabilityOf,
+  endpointScopeOf,
 } from '@momonga/foundation';
-import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism } from '@momonga/foundation';
+import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism, EndpointScope } from '@momonga/foundation';
 import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
@@ -195,8 +196,10 @@ export const runSocketGuardBuild = (script: string, workDir: string): number | n
   return run.status;
 };
 
-export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string): Promise<string> =>
-  ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem });
+export const hostPlatform = (): NodeJS.Platform => process.platform;
+
+export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string, lock: KernelLockMechanism): Promise<string> =>
+  ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem, lock });
 
 export const hostSourceBuiltLinuxSocketGuard = (executablesRoot: string): (() => string) =>
   sourceBuiltLinuxSocketGuard({ script: LINUX_SOCKET_GUARD_BUILD_SCRIPT, executablesRoot, build: runSocketGuardBuild, files: nodeSourceKeeperFiles, random: systemRandom });
@@ -335,6 +338,7 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
   const self = nodeSelf(process.argv, isSea);
   const home = process.env['HOME'] ?? os.homedir();
   const lock = layoutLockOf(home, process.platform, process.env);
+  const endpointScopes = new Map<string, Promise<EndpointScope>>();
   return {
     version,
     interrupt,
@@ -354,13 +358,20 @@ export const nodePorts = (version: string, interrupt: AbortSignal, streams: Guar
     self,
     handover: createHandoverHost({ version, parties: async () => ({ writer: process.pid, reader: process.pid, namespace: await pidNamespaceOf(nodeFileSystem) }), self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles(lock) }),
     spawnDetached: nodeSpawnDetached,
-    terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
+    terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout, colourOff: () => Reflect.set(process.env, 'FORCE_COLOR', '0') } : undefined,
     files: nodeFilesLockedBy(lock),
     exec: createHostExec(minimalChildEnv(process.env)),
     probe: nodeWorkspaceProbeOf(nodeWorkspaceSandbox(settingsWorkspaceSandbox(home, process.cwd(), interrupt, (text) => streams.stderr.write(`${text}\n`))), hostProcessGroupPort()),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) }),
     personCapability: () => personCapabilityOf({ files: nodeFileSystem, random: systemRandom, lock: lock() }, home),
+    endpointScope: (paths) => {
+      const known = endpointScopes.get(paths.run);
+      if (known !== undefined) return known;
+      const read = endpointScopeOf(paths, process.platform, { files: nodeFileSystem, random: systemRandom, lock: lock() });
+      endpointScopes.set(paths.run, read);
+      return read;
+    },
     acpStdio: () => ({ input: acpInputOf(process.stdin), output: Writable.toWeb(process.stdout) }),
   };
 };

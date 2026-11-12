@@ -3,6 +3,7 @@ import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { decodeEvent } from '../src/codec.ts';
 import { ENVELOPE_KEYS, enqueue, harness, mustClaim, mustRun, newSession, payloadOf } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const COMPACTING: RunEventPayload = { type: 'context.compacting', step: 0, attempt: 1 };
 const CLASSIFYING: RunEventPayload = { type: 'tool.permission.classifying', callId: 'call-1', subjectDigest: 'd'.repeat(64) };
@@ -55,7 +56,7 @@ describe('the run events that back the waiting row in the journal (design-screen
   });
 
   it.each(PAYLOADS)('folding $type changes nothing of the run state but its last sequence number', (payload) => {
-    const state = initialRunState({ runId: ENVELOPE.runId, sessionId: ENVELOPE.sessionId });
+    const state = initialRunState({ runId: ENVELOPE.runId, sessionId: ENVELOPE.sessionId, fence: TEST_FENCE });
     const event = { ...payload, ...ENVELOPE } as RunEvent;
     expect(foldRunState(state, event)).toEqual({ ...state, lastSeq: ENVELOPE.seq });
   });

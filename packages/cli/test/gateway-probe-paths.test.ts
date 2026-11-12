@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
@@ -50,7 +51,7 @@ const runCli = async (home: string, args: readonly string[], overrides: Partial<
   const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { executables: path.join(home, 'cache', 'executables') }),
+    policyVerify: () => nodePolicyVerifyHost(ports, { executables: path.join(home, 'cache', 'executables') }, testKernelLock()),
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt,

@@ -24,7 +24,7 @@ const cells = PERMISSION_MODES.flatMap((mode) => ENFORCEMENTS.flatMap((enforceme
 const decide = async (env: Env, mode: PermissionMode, enforcement: RuleEnforcement, rules: readonly { text: string; effect: 'allow' | 'deny' }[]) => {
   const cwd = env.project;
   const parsed = rules.map((rule) => parseRule(rule.text, { effect: rule.effect, origin: 'user', source: `${env.home}/.momonga/settings.json`, settingsRoot: env.home, home: env.home, cwd } as never));
-  const input = await env.ruleVerifier.inputOf({ rules: parsed, roots: [cwd], mode, home: env.home, cwd, exemptDirectory: `${env.home}/.momonga/tmp/sessions/s1`, enforcement }, NEVER_CANCELLED);
+  const input = await env.ruleVerifier.inputOf({ unixSockets: { kind: 'limited', allowed: [] }, rules: parsed, roots: [cwd], mode, home: env.home, cwd, exemptDirectory: `${env.home}/.momonga/tmp/sessions/s1`, enforcement }, NEVER_CANCELLED);
   return env.ruleVerifier.verify(input, NEVER_CANCELLED);
 };
 

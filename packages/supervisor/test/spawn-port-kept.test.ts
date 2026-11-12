@@ -13,7 +13,7 @@ const COMMAND_PID = 200;
 
 type SpawnProcess = NonNullable<GroupLaunchRequest['spawnProcess']>;
 
-const OPTIONS: SpawnPortOptions = { cwd: 'C:\\work', env: { SystemRoot: 'C:\\Windows' }, detached: true, markerFile: 'C:\\m\\marker', stdio: ['ignore', 'pipe', 'pipe', 'pipe', 17] };
+const OPTIONS: SpawnPortOptions = { cwd: 'C:\\work', env: { SystemRoot: 'C:\\Windows' }, markerFile: 'C:\\m\\marker', stdio: ['ignore', 'pipe', 'pipe', 'pipe', 17] };
 
 export const keptWorld = (script: (keeper: FakeKeeper) => void = (keeper) => keeper.say(`started ${COMMAND_PID} 3\n`), withLifeline = true) => {
   const fake = fakeKeeperHost((keeper) => {

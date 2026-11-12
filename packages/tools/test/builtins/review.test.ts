@@ -220,7 +220,7 @@ describe('review 4: Bash stream errors', () => {
       kind: 'seatbelt',
       spawn: (): SandboxedProcess => ({
         pid: 2_147_483_000,
-        pgid: 2_147_483_000,
+        pgid: 2_147_483_000, rebind: () => undefined,
         stdout: stream('stdout', async () => {
           stdoutCalls += 1;
           if (stdoutCalls === 1) return { done: false, value: Buffer.from('partial\n') };
@@ -233,7 +233,7 @@ describe('review 4: Bash stream errors', () => {
               releaseStderr = () => resolve({ done: true, value: undefined });
             }),
         ),
-        exited: afterMicrotasks().then(() => ({ code: 0, signal: null })),
+        exited: afterMicrotasks().then(() => ({ code: 0, signal: null, stop: 'confirmed' })),
       }),
     };
     const [outcome] = await tools.executor.runBatch(await tools.batch('Bash', { command: 'echo hi' }, { sandbox: failingSandbox }, 'allow_once'));

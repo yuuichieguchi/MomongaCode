@@ -13,7 +13,7 @@ import { runUpdate } from '../src/commands/update.ts';
 import { runBackgroundCheck } from '../src/update/background.ts';
 import type { UpdateWiring } from '../src/update/background.ts';
 import { UpdateError } from '../src/update/errors.ts';
-import { undiciUpdateHttp } from '../src/update/node-ports.ts';
+import { leasedUpdateHttp } from '../src/update/node-ports.ts';
 import { assetNameFor } from '../src/update/source.ts';
 import { DEFAULT_SIGNATURE } from './fake-release-server.ts';
 import { mintServerCertificate } from './minted-certificates.ts';
@@ -166,7 +166,9 @@ const networkOf = (config: NetworkConfig, trust: TrustReport = NO_TRUST_FAILURES
 const releaseServerPort = (harness: UpdateHarness): number => Number(new URL(harness.server.endpoints.apiBaseUrl).port);
 
 const through = (harness: UpdateHarness, network: OutboundNetwork, origin: string, options: OutboundOptions = SHORT): UpdateWiring => {
-  harness.ports.http = undiciUpdateHttp(Promise.resolve(network), options);
+  harness.ports.http = leasedUpdateHttp((_signal, use) => use(network), options, (error) => {
+    throw error;
+  });
   return { ...harness.wiring, endpoints: { apiBaseUrl: origin, downloadBaseUrl: origin } };
 };
 

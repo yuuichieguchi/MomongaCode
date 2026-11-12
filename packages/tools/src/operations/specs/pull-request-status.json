@@ -15,7 +15,6 @@
     "required": ["number"],
     "additionalProperties": false
   },
-  "timeoutMs": 30000,
   "observe": [
     { "id": "pr", "via": { "forge": "getPullRequest", "args": { "number": "{input.number}" }, "shape": "one" } },
     { "id": "checks", "via": { "forge": "listChecks", "args": { "headSha": "{seen.pr.headSha}" }, "shape": "lines", "lines": ["{item.name}: {item.conclusion}", "{item.name}: {item.status}"] } }

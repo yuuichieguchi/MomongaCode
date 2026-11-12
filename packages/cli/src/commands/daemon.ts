@@ -42,7 +42,7 @@ export const lastStopLines = (lastStop: StopValues, settingsNow: StopValues): st
   return [`  last stop: ${last}`, ...(now === last ? [] : [`  settings now: ${now}`])];
 };
 
-export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'clock' | 'home' | 'interrupt'>, paths: MomongaPaths): Promise<number> => {
+export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'clock' | 'home' | 'interrupt' | 'endpointScope'>, paths: MomongaPaths): Promise<number> => {
   const live = await listLiveGenerations(ports, paths);
   const serving = live.find((entry) => entry.role === 'serving');
   const others = live.filter((entry) => entry !== serving);

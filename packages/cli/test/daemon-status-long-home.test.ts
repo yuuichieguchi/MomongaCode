@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
@@ -47,7 +48,7 @@ describe.skipIf(process.platform === 'win32')('daemon start on a home too long f
     const program = buildProgram(
       {
         ports,
-        policyVerify: () => nodePolicyVerifyHost(ports, { executables: `${LONG_HOME}/cache/executables` }),
+        policyVerify: () => nodePolicyVerifyHost(ports, { executables: `${LONG_HOME}/cache/executables` }, testKernelLock()),
         entries,
         update: () => {
           throw new Error('the update wiring is not used by an embedded program');

@@ -4,6 +4,7 @@ import type { MemoryView, MessageInputItem } from '@momonga/protocol';
 import { budgetFor, buildContext, capacityFor, createTokenMeter, inputCeilingFor, measurePinned } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, BuiltContext, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
 import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, assistant, buildThroughLevels, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith, tokensOfItem, tokensOfItems } from './helpers.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 8192;
 const sized = capabilitiesFor(WINDOW, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
@@ -47,6 +48,7 @@ const inputWith = (history: HistoryItem[], memories: MemoryView[]): BuildContext
   keepRecentTurns: 1,
   observedCapacity: true,
   renderedFull: new Set(['c1', 'c2']),
+  fence: TEST_FENCE,
 });
 
 type Reported = { ports: BuildContextPorts; sent: MeterCount[] };

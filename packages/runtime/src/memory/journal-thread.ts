@@ -6,7 +6,7 @@ import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
 import { RUN_REPORT_EVENT_TYPES, createRunReportFold } from '@momonga/observability/run-report';
 import { FactsRefusedError, UnknownValueError, createBlobStore, createJournalReader, encodeRunState, knownValue } from '@momonga/store';
-import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES, STORED_MODEL_KEYS, TERMINAL_STATUSES, decodeStoredModel, nanoOfAmount } from '@momonga/protocol';
+import { FACTS_SKIPPED_CANCELLED_BEFORE_START, FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES, STORED_MODEL_KEYS, TERMINAL_STATUSES, decodeStoredModel, nanoOfAmount } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, createCallsFold, createFactsFold } from '@momonga/reliability';
 import type { Capabilities, ClaimedToken, PermissionMode, RunBudgetReport, RunEvent, RunEventPayload, RunFactsLimits } from '@momonga/protocol';
 import type { DatabaseSync } from 'node:sqlite';
@@ -293,6 +293,7 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
         callsFold.add(event);
       });
     });
+    if (started === undefined && run.status === 'CANCELLED') return { skipped: FACTS_SKIPPED_CANCELLED_BEFORE_START };
     if (started === undefined) throw new FactsRefusedError(`run ${runId}: facts need the run.started event and the journal has none`);
     const begun = started;
     const rootRow = rootOf.get({ runId });

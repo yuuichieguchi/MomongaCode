@@ -63,7 +63,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
         origin: stored.origin,
       });
       expect(record).toEqual(expected);
-      expect(record.facts.recoveries).toEqual([expect.objectContaining({ cause: 'process_lost', outcome: 'recovered' })]);
+      expect('facts' in record && record.facts.recoveries).toEqual([expect.objectContaining({ cause: 'process_lost', outcome: 'recovered' })]);
     } finally {
       await thread.close();
     }
@@ -121,7 +121,8 @@ describe('store-protocol-C09: the folded root row holds the spend of a child tha
     const { dev, ino } = fs.statSync(env.dbPath);
     const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     try {
-      expect((await thread.runFacts(root.id)).facts.tokensTotal).toBe(4);
+      const answer = await thread.runFacts(root.id);
+      expect('facts' in answer && answer.facts.tokensTotal).toBe(4);
     } finally {
       await thread.close();
     }

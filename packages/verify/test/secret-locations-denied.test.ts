@@ -60,7 +60,7 @@ describe('a secret location that the workspace contains', () => {
     const layout = withSecrets();
     const roots = [layout.home];
     const fileSystem = caseSensitiveFs();
-    const context = await buildQueryContext(z3.engine().api, {
+    const context = await buildQueryContext(z3.engine().api, { unixSockets: { kind: 'limited', allowed: [] },
       signal: NEVER_CANCELLED,
       rules: rulesOf(layout, []),
       roots,

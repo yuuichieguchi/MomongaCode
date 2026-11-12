@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { buildContext, createFsInstructionReader, createTokenMeter } from '@momonga/context';
 import { BUILTIN_DIALECTS, BUILTIN_DIALECT_IDS } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import { inlinedSubsetRefusalOf, strictClosedRefusalOf } from '@momonga/testkit';
+import { TEST_FENCE, inlinedSubsetRefusalOf, strictClosedRefusalOf } from '@momonga/testkit';
 import { createBuiltinTools, createGovernanceTools, createHistoryTools, createMemoryTools, createToolRegistry } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { createAgentTool } from '../packages/agents/src/tool.ts';
@@ -551,7 +551,8 @@ describe('architecture: a large-window target gets the whole tool set', () => {
         trusted: false,
         projectRoot: root,
         home: root,
-      },
+        fence: TEST_FENCE,
+},
       { meter, blobs, instructions: createFsInstructionReader(new AbortController().signal, process.platform) },
     );
     expect(built.tools.map((tool) => tool.name).sort()).toEqual(registered.map((tool) => tool.name).sort());

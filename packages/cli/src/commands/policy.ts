@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { loadSettings, parseGovernanceRule, parseRule } from '@momonga/config';
-import { hostPaths, mapAsync, ruleEnforcementOf, sessionRootsOf, verdictKey } from '@momonga/foundation';
+import { hostPaths, mapAsync, ruleEnforcementOf, sessionRootsOf, unixSocketPolicyOf, verdictKey } from '@momonga/foundation';
 import type { MomongaPaths, PathResolver } from '@momonga/foundation';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
@@ -93,6 +93,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
       fs,
       budgetMs: VERIFY_BUDGET_MS,
       signal,
+      unixSockets: unixSocketPolicyOf(loaded.settings.sandbox, loaded.settings.sandboxUnixSockets.allow),
       ...(catalogue === undefined ? {} : { supersededForms: catalogue.supersededForms, alwaysOperations: catalogue.alwaysOperations }),
     });
   } finally {

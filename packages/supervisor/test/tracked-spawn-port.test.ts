@@ -48,13 +48,11 @@ describe('trackedSpawnPort', () => {
     const inGroup = port(process.execPath, [CHILD_FIXTURE, '--p2-grandchild=group'], {
       cwd: process.cwd(),
       env: { PATH: testHostPath('/usr/bin:/bin') },
-      detached: true,
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd],
     });
     const ownGroup = port(process.execPath, [CHILD_FIXTURE, '--p2-grandchild=default'], {
       cwd: process.cwd(),
       env: { PATH: testHostPath('/usr/bin:/bin') },
-      detached: true,
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd],
     });
     let inGroupOutput = '';
@@ -82,7 +80,7 @@ describe('trackedSpawnPort', () => {
     const markerFd = readOnlyScratchFd(context);
     const captured = capturedContext();
     const port = trackedSpawnPort(captured.context);
-    const child = port('/bin/sh', ['-c', 'exit 0'], { cwd: process.cwd(), env: {}, detached: true, stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd] });
+    const child = port('/bin/sh', ['-c', 'exit 0'], { cwd: process.cwd(), env: {}, stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd] });
     backstop(context, () => [], () => (child.pid === undefined ? [] : [child.pid]));
     const exited = new Promise<void>((resolve) => child.onExit(() => resolve()));
     child.stdout.resume();

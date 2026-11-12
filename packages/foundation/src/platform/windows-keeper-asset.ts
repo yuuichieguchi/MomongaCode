@@ -19,7 +19,6 @@ const WINDOWS_KEEPER: BundledExecutableKind = {
   what: 'keeper',
   manifestAsset: WINDOWS_KEEPER_MANIFEST_ASSET,
   folder: 'windows-keeper',
-  mode: undefined,
   failure: (message) => new WindowsKeeperDistributionError(message),
 };
 

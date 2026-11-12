@@ -13,7 +13,10 @@ import type { HandoverLeftoverPorts } from './handover-leftovers.ts';
 import type { LeftoverDirectory, Retention } from './leftover-sweep.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
-import { SocketPathUnsupportedError, assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
+import { SocketPathUnmeasuredError, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, isPipePath, pipePathFor } from './socket-path.ts';
+import type { EndpointForm, EndpointScope } from './socket-path.ts';
+import { ownerOnlySecret } from './platform/owner-only-secret.ts';
+import type { OwnerOnlySecretPorts } from './platform/owner-only-secret.ts';
 
 export interface MomongaPaths {
   home: string;
@@ -54,6 +57,13 @@ const pathFor = (platform: NodeJS.Platform): path.PlatformPath => (platform === 
 
 const absoluteOrUndefined = (candidate: string | undefined, flavor: path.PlatformPath): string | undefined =>
   candidate === undefined || !flavor.isAbsolute(candidate) ? undefined : candidate;
+
+const LAYOUT_ENV_NAMES = ['XDG_CACHE_HOME', 'XDG_DATA_HOME', 'LOCALAPPDATA', 'APPDATA'] as const;
+
+type LayoutEnvName = (typeof LAYOUT_ENV_NAMES)[number];
+
+export const layoutEnvOf = (env: Readonly<Record<string, string | undefined>>): Partial<Record<LayoutEnvName, string>> =>
+  Object.fromEntries(LAYOUT_ENV_NAMES.flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])));
 
 const cacheBaseOf = (home: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): string => {
   const flavor = pathFor(platform);
@@ -119,14 +129,21 @@ const byRole = (value: (role: GenerationProcessRole) => string): Record<Generati
   supervisor: value('supervisor'),
 });
 
-export const generationLayout = (home: string, generation: number, platform: NodeJS.Platform = process.platform): GenerationLayout => {
+export const ENDPOINT_TOKEN_FILE = 'endpoint-token';
+
+export const endpointScopeOf = async (paths: Pick<MomongaPaths, 'run'>, platform: NodeJS.Platform, ports: OwnerOnlySecretPorts): Promise<EndpointScope> =>
+  platform === 'win32' ? { form: 'pipe', token: await ownerOnlySecret(ports, paths.run, ENDPOINT_TOKEN_FILE) } : { form: 'unix' };
+
+export const generationLayout = (home: string, generation: number, platform: NodeJS.Platform = process.platform, scope?: EndpointScope): GenerationLayout => {
   if (!Number.isSafeInteger(generation) || generation < 1) throw new RangeError(`a generation number must be a positive integer, got ${generation}`);
   const join = pathFor(platform).join;
   const dir = join(home, '.momonga', 'run', `g${generation}`);
   return {
     generation,
     dir,
-    sockets: byRole((role) => (platform === 'win32' ? pipePathFor(home, `g${generation}-${role}`) : join(dir, `${role}.sock`))),
+    get sockets(): GenerationSockets {
+      return byRole((role) => (platform === 'win32' ? pipePathFor(scope, `g${generation}-${role}`) : join(dir, `${role}.sock`)));
+    },
     locks: byRole((role) => join(dir, `${role}.lock`)),
     settingsApplied: join(dir, SETTINGS_APPLIED_FILE),
     startRecord: join(dir, START_RECORD_FILE),
@@ -135,6 +152,9 @@ export const generationLayout = (home: string, generation: number, platform: Nod
     stopRecord: join(dir, STOP_RECORD_FILE),
   };
 };
+
+export const generationSockets = (home: string, generation: number, scope: EndpointScope): GenerationSockets =>
+  generationLayout(home, generation, scope.form === 'pipe' ? 'win32' : 'linux', scope).sockets;
 
 export type LayoutEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -250,6 +270,19 @@ export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInsta
   };
 };
 
+const INSTANCE_SOCKET_SUFFIX = '.sock';
+
+export type ManagedSocket = { readonly form: EndpointForm; readonly scope: EndpointScope };
+
+const instancePipeName = (instance: ManagedInstance, stem: string): string =>
+  instance.owner === 'gateway' ? `g${instance.generation}-managed-${stem}` : `managed-${stem}`;
+
+export const managedInstanceIn = (paths: MomongaPaths, instance: ManagedInstance, socket: ManagedSocket): ManagedInstancePaths => {
+  const files = managedInstancePaths(paths, instance);
+  if (socket.form === 'unix') return files;
+  return { ...files, socketPath: pipePathFor(socket.scope, instancePipeName(instance, path.basename(files.socketPath, INSTANCE_SOCKET_SUFFIX))) };
+};
+
 export const rotatedLogPath = (file: string, generation: number): string => `${file}.${generation}`;
 
 export const canonicalHomeOf = async (home: string, paths: PathResolver): Promise<string> => paths.canonicalPath(home);
@@ -309,12 +342,6 @@ export type RoleEndpoint = { socketPath: string; lockPath: string };
 
 export const roleEndpoint = (layout: GenerationLayout, role: GenerationProcessRole): RoleEndpoint => ({ socketPath: layout.sockets[role], lockPath: layout.locks[role] });
 
-const refuseUnfitGenerationSockets = async (layout: GenerationLayout): Promise<void> => {
-  const sockets = Object.values(layout.sockets);
-  for (const socket of sockets) assertSocketPathLength(socket);
-  await Promise.all(sockets.filter((socket) => !isPipePath(socket)).map((socket) => refuseUnbindableUnixSocketPath(socket)));
-};
-
 const createMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts): Promise<void> => {
   const platform = ports.platform ?? process.platform;
   await createDirectory(path.dirname(paths.root), { recursive: true });
@@ -359,7 +386,6 @@ export const leftoverDirectories = (paths: MomongaPaths, handover: HandoverLefto
   { directory: paths.planSessions, isLeftover: isAtomicWriteTemporary },
   { directory: paths.planCatalog, isLeftover: isAtomicWriteTemporary },
   { directory: path.dirname(paths.gatewayKey), isLeftover: isAtomicWriteTemporary },
-  { directory: paths.tmp.spawn, isLeftover: everyName },
   { directory: paths.tmp.sessions, isLeftover: everyName, retain: retainedByItsOwnersRule },
   { directory: path.join(path.dirname(paths.databases.runtime), STORE_BLOBS_DIRECTORY), isLeftover: isAtomicWriteTemporary },
   { directory: paths.probe, isLeftover: isAtomicWriteTemporary },
@@ -375,8 +401,8 @@ const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
 
 const longestOf = (sockets: readonly string[]): string => sockets.reduce((longest, socket) => (Buffer.byteLength(socket) > Buffer.byteLength(longest) ? socket : longest));
 
-export const refuseUnfitGenerationSocketsBeforeCreation = async (paths: MomongaPaths, generation: number): Promise<void> => {
-  const sockets = Object.values(generationLayout(homeOf(paths), generation).sockets);
+export const refuseUnfitGenerationSocketsBeforeCreation = async (paths: MomongaPaths, generation: number, scope: EndpointScope): Promise<void> => {
+  const sockets = Object.values(generationSockets(homeOf(paths), generation, scope));
   for (const socket of sockets) assertSocketPathLength(socket);
   const unixSockets = sockets.filter((socket) => !isPipePath(socket));
   if (unixSockets.length === 0) return;
@@ -384,9 +410,10 @@ export const refuseUnfitGenerationSocketsBeforeCreation = async (paths: MomongaP
   const fillerLength = Buffer.byteLength(longest) - Buffer.byteLength(paths.run) - 1;
   const standIn = path.join(paths.run, 'g'.repeat(Math.max(1, fillerLength)));
   try {
-    await refuseUnbindableUnixSocketPath(standIn);
+    await assertUnixSocketPathFits(standIn);
   } catch (error) {
     if (error instanceof SocketPathUnsupportedError) throw new SocketPathUnsupportedError(error.message.replace(standIn, longest), { cause: error });
+    if (error instanceof SocketPathUnmeasuredError) throw new SocketPathUnmeasuredError(error.message.replace(standIn, longest), { cause: error });
     throw error;
   }
 };
@@ -469,13 +496,6 @@ export const generationMemberOf = (name: string): GenerationMember | undefined =
 };
 
 export const generationSpawnScratch = (paths: MomongaPaths, generation: number): string => scopeToGeneration(paths, generation).tmp.spawn;
-
-export const ensureGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
-  const layout = generationLayout(path.dirname(paths.root), generation);
-  await refuseUnfitGenerationSockets(layout);
-  await createMomongaDirs(paths, ports);
-  await ensurePrivateDirectory(layout.dir, ports.platform ?? process.platform);
-};
 
 export class SessionTmpDirError extends Error {}
 

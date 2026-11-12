@@ -6,6 +6,7 @@ import type { Capabilities } from '@momonga/protocol';
 import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user } from './helpers.ts';
 import { weightMeter, weightOf, weightOfAll } from './weight-meter.ts';
 import type { UnderRule, WeightMeter } from './weight-meter.ts';
+import { TEST_FENCE } from '@momonga/testkit';
 
 type PortsWithFallbacks = BuildContextPorts & { fallbackMeters: readonly TokenMeter[] };
 
@@ -17,6 +18,7 @@ const portsWith = (model: WeightMeter, fallbacks: readonly WeightMeter[]): Build
 const observedInput = (capabilities: Capabilities, history: HistoryItem[]): BuildContextInput => {
   const input: BuildContextInput & { observedCapacity: true } = {
     capabilities,
+    fence: TEST_FENCE,
     model: MODEL,
     sources: sourcesWith({ history }),
     evicted: new Set<string>(),
