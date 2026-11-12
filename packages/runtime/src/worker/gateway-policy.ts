@@ -7,14 +7,16 @@ import type { RunError, StatusPatch } from '@momonga/store';
 import { EarlierAttemptNotStoppedError, RetiringYield } from '@momonga/tools';
 import { GatewayFailureError } from './errors.ts';
 import { GatewayRequestError, isGatewayNeverReached, isGenerationRetiredRefusal } from '../gateway-client.ts';
-import { SERVICE_UNAVAILABLE_STATUS, USAGE_LIMIT_CODES, isTargetProbing } from '@momonga/protocol';
-import type { PlanAccountRef, StopReason } from '@momonga/protocol';
+import { SERVICE_UNAVAILABLE_STATUS, USAGE_LIMIT_CODES, isTargetProbeFailed, isTargetProbing } from '@momonga/protocol';
+import type { Measuring, PlanAccountRef, StopReason } from '@momonga/protocol';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
 const PROVIDER_UNAVAILABLE_CODE = 'provider_unavailable';
 const DEFERRAL_FAILURE_CODE = 'rate_limited';
 const GATEWAY_FAILURE_CODE = 'gateway_failure';
 const JOURNAL_THREAD_FAILURE_CODE = 'journal_thread_error';
+
+export const MEASURING_SAME_STATE_WAITS = 2;
 
 export const INHERITANCE_FAILURE_MESSAGE = 'The previous conversation could not be loaded. Start a new conversation (/clear) to continue.';
 
@@ -26,7 +28,7 @@ export type FailureDisposition =
   | ({ kind: 'stop'; reason: StopReason } & RunErrorFields)
   | { kind: 'defer'; code: string; message: string; retryAfterMs: number }
   | { kind: 'requeue'; refund: boolean; retryAfterMs: number; interrupted: boolean }
-  | { kind: 'wait'; code: string; message: string; retryAfterMs: number };
+  | { kind: 'wait'; code: string; measuring: Measuring; retryAfterMs: number };
 
 const USAGE_LIMITS: readonly string[] = USAGE_LIMIT_CODES;
 
@@ -64,6 +66,11 @@ export const observedCodeOf = (error: unknown): string => {
   throw new TypeError('only a gateway or journal thread failure is requeued, and this one is neither', { cause: error });
 };
 
+const measuringOf = (error: GatewayRequestError): Measuring => {
+  if (error.measuring === undefined) throw new TypeError(`the answer ${error.code} carries no measuring state`, { cause: error });
+  return error.measuring;
+};
+
 export const dispositionOf = (error: unknown, interruptions: number): FailureDisposition => {
   if (error instanceof ConfigError) return { kind: 'fail', code: 'config_error', message: error.message };
   if (error instanceof SandboxPolicyError) return { kind: 'fail', code: 'sandbox_policy_error', message: error.message };
@@ -75,7 +82,8 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (isUsageLimitCode(error.code)) return { kind: 'stop', reason: 'usage_limit', code: error.code, message: error.message, ...planOf(error) };
   const retryAfterMs = error.retryAfterMs ?? 0;
   if (error.code === 'deadline_exceeded') return { kind: 'timeout' };
-  if (isTargetProbing(error)) return { kind: 'wait', code: error.code, message: error.message, retryAfterMs };
+  if (isTargetProbing(error)) return { kind: 'wait', code: error.code, measuring: measuringOf(error), retryAfterMs };
+  if (isTargetProbeFailed(error)) return { kind: 'fail', code: error.code, message: error.message };
   if (error.deferred === true) return { kind: 'defer', code: DEFERRAL_FAILURE_CODE, message: error.message, retryAfterMs };
   if (error.code === 'gateway_unavailable' && error.provenNotSent === true) return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.status === SERVICE_UNAVAILABLE_STATUS && error.code === 'gateway_closed') return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };

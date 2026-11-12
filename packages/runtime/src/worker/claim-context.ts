@@ -73,4 +73,6 @@ export type ClaimContext = {
   policyFingerprint: string | undefined;
 };
 
-export type RunMemory = { streak: number; interruptions: number; deadlineAt: number; narrowingsNoticed: Set<string> };
+export type MeasuringWaits = { state: string; waits: number };
+
+export type RunMemory = { streak: number; interruptions: number; deadlineAt: number; narrowingsNoticed: Set<string>; measuring?: MeasuringWaits };
