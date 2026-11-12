@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONTEXT_DATASET_FORMAT, EvalError, compareContextReports, formatContextComparison, parseContextDataset } from '@momonga/eval';
+import { CONTEXT_DATASET_FORMAT, compareContextReports, formatContextComparison, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload } from '@momonga/protocol';
 import { tokenFactsOf } from '../src/token-metrics.ts';
@@ -84,9 +84,10 @@ describe('each call is tagged with its kind (design core-on 3.4 Part A, test 12)
     expect(metrics.uncachedInputPerSuccess?.value).toBeCloseTo(600 + 2 * 200, 9);
   });
 
-  it('refuses a usage charge whose purpose is outside the known kinds when the report is built', () => {
-    expect(() => reportOf(DONE_WITHOUT_CHARGE, MAIN_CODE, [charge('mystery')])).toThrow(EvalError);
-    expect(() => reportOf(DONE_WITHOUT_CHARGE, MAIN_CODE, [charge('mystery')])).toThrow(/mystery/);
+  it('records every run with a usage charge whose purpose is outside the known kinds as a stopped row naming the purpose', () => {
+    const { stopped } = reportOf(DONE_WITHOUT_CHARGE, MAIN_CODE, [charge('mystery')]);
+    expect(stopped.map((row) => row.caseId).sort()).toEqual([...CASE_IDS].sort());
+    expect(stopped.every((row) => /^could not be measured: .*mystery/.test(row.reason))).toBe(true);
   });
 });
 
