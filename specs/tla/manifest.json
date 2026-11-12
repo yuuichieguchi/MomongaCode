@@ -6970,6 +6970,174 @@
       "measuredCpuSeconds": 1.4,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1636,
+      "measuredSeconds": 1.25,
+      "measuredCpuSeconds": 1.66,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.cas",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1840,
+      "measuredSeconds": 1.27,
+      "measuredCpuSeconds": 1.7,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.none",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 383,
+      "measuredSeconds": 1.21,
+      "measuredCpuSeconds": 1.5,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.responseLost",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 50,
+      "measuredSeconds": 1.14,
+      "measuredCpuSeconds": 1.36,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.live",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "every-run",
+      "distinctStates": 1636,
+      "measuredSeconds": 1.39,
+      "measuredCpuSeconds": 2.15,
+      "budgetCpuSeconds": 8,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.liveNone",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "every-run",
+      "distinctStates": 383,
+      "measuredSeconds": 1.25,
+      "measuredCpuSeconds": 1.68,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.noneRedo",
+      "role": "evidence",
+      "expect": {
+        "violates": "AtMostOneLanded",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 203,
+      "measuredSeconds": 1.22,
+      "measuredCpuSeconds": 1.53,
+      "budgetCpuSeconds": 7,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.noneRedoGuard",
+      "role": "evidence",
+      "expect": {
+        "violates": "GuardedRedo",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 27,
+      "measuredSeconds": 1.16,
+      "measuredCpuSeconds": 1.39,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.noAuthorisedMark",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoNeedlessUnknown",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 17,
+      "measuredSeconds": 1.16,
+      "measuredCpuSeconds": 1.37,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.blindRedo",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoBlindRedo",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 167,
+      "measuredSeconds": 1.18,
+      "measuredCpuSeconds": 1.48,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.guardIgnored",
+      "role": "evidence",
+      "expect": {
+        "violates": "AtMostOneOpenPR",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 77,
+      "measuredSeconds": 1.18,
+      "measuredCpuSeconds": 1.42,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
+    },
+    {
+      "config": "ObservedEffect.unknownRedo",
+      "role": "evidence",
+      "expect": {
+        "violates": "UnknownIsStable",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 106,
+      "measuredSeconds": 1.19,
+      "measuredCpuSeconds": 1.45,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
     }
   ]
 }
