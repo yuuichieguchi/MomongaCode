@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as protocol from '@momonga/protocol';
 import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { fixedSandboxBindings } from '@momonga/runtime';
+import { NO_CHECK_DECLARED_CODE, fixedSandboxBindings } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { Run } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
@@ -437,6 +437,19 @@ describe('verification.required', () => {
     await env.runOnce(workerOf(env));
 
     expect(env.run(run.id).status).toBe('COMPLETED');
+  });
+
+  it('completes a run with no declared check that changed something unverified, with one notice that says so', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    standing(env, [], false);
+    env.gateway.script.push(write('call_w_1', path.join(env.project, 'a.txt')), write('call_w_2', path.join(env.project, 'b.txt')), textStep('Done.'));
+    const run = await enqueueWith(env, 'edit', undefined);
+
+    await env.runOnce(workerOf(env));
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(starts(env, run.id)).toEqual([]);
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.code === NO_CHECK_DECLARED_CODE)).toHaveLength(1);
   });
 });
 

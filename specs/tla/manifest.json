@@ -6847,6 +6847,60 @@
       "measuredCpuSeconds": 1.75,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W6 (workers 1)"
+    },
+    {
+      "config": "HeldApproval",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3110,
+      "measuredSeconds": 1.35,
+      "measuredCpuSeconds": 2.09,
+      "budgetCpuSeconds": 8,
+      "note": "measured by formal-models-W7 (workers 1, 1-minute load 4 to 5)"
+    },
+    {
+      "config": "HeldApproval.deep",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 3042008,
+      "measuredSeconds": 99.02,
+      "measuredCpuSeconds": 111.62,
+      "budgetCpuSeconds": 227,
+      "note": "measured by formal-models-W7 (workers 1, 1-minute load 4 to 5)"
+    },
+    {
+      "config": "HeldApproval.lateFactsDropped",
+      "role": "evidence",
+      "expect": {
+        "violates": "LateMutationCounted",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9,
+      "measuredSeconds": 1.11,
+      "measuredCpuSeconds": 1.43,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W7 (workers 1, 1-minute load 4 to 5)"
+    },
+    {
+      "config": "HeldApproval.lateNoItem",
+      "role": "evidence",
+      "expect": {
+        "violates": "HistoryReadsAgree",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 7,
+      "measuredSeconds": 1.12,
+      "measuredCpuSeconds": 1.44,
+      "budgetCpuSeconds": 6,
+      "note": "measured by formal-models-W7 (workers 1, 1-minute load 4 to 5)"
     }
   ]
 }
