@@ -30,6 +30,16 @@ const identityOf = (stat: fs.BigIntStats): FileIdentity => ({ dev: stat.dev, ino
 
 const sameIdentity = (left: FileIdentity, right: FileIdentity): boolean => left.dev === right.dev && left.ino === right.ino;
 
+export class LogDirectoryMissingError extends Error {
+  readonly directory: string;
+
+  constructor(directory: string) {
+    super(`the log directory ${directory} does not exist; the log never creates it, because a removed home stays removed`);
+    this.name = 'LogDirectoryMissingError';
+    this.directory = directory;
+  }
+}
+
 export const createRotatingLogFile = (options: RotatingLogFileOptions): RotatingLogFile => {
   const { path: file, maxBytes, keep, mode = 0o600, writeSync = fs.writeSync, onWriteFailure } = options;
   const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT;
@@ -116,8 +126,12 @@ export const createRotatingLogFile = (options: RotatingLogFileOptions): Rotating
     while (offset < data.length) offset += writeSync(currentFd, data, offset, data.length - offset);
   };
 
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  openCurrent();
+  try {
+    openCurrent();
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') throw new LogDirectoryMissingError(path.dirname(file));
+    throw error;
+  }
 
   return {
     write: (line) => {
