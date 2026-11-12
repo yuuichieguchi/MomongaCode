@@ -172,7 +172,7 @@ export const MODEL_REJECTION_REASONS = ['counter_mismatch', 'missing_counter', '
 
 export type ModelRejectionReason = (typeof MODEL_REJECTION_REASONS)[number];
 
-export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier', 'rejected_answer'] as const;
+export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier', 'rejected_answer', 'reflection'] as const;
 
 export type UsageChargePurpose = (typeof USAGE_CHARGE_PURPOSES)[number];
 

@@ -4,7 +4,7 @@ import * as runtime from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
 import { mustClaim } from '../../../store/test/helpers.ts';
 
-const RUN_PINS = {
+export const RUN_PINS = {
   model: 'fm',
   systemPromptDigest: 'system-prompt-digest',
   toolSetDigest: 'tool-set-digest',

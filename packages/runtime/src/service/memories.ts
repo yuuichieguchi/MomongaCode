@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { parseOutsideJson } from '@momonga/foundation';
 import { MEMORY_SCOPES, MEMORY_STATES, USER_SHELL_RUN_ACTIVE_CODE, WORDS } from '@momonga/protocol';
-import type { AddMemoryRequest, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
+import type { AddMemoryRequest, ContextChargeView, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
 import type { MemoryChange, MemoryListCursor, RuntimeStore } from '@momonga/store';
 import { MemoryAddRefusal, prepareCommandMemory } from '../memory/add-memory.ts';
@@ -9,6 +9,7 @@ import { MEMORY_PAGE_ROWS } from '../process/constants.ts';
 import { withValidity } from '../memory/validity-view.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
 import { writeSkillFile } from '../memory/skill-promotion.ts';
+import { reflectionModelOf } from '../memory/reflection.ts';
 import type { RecordViews } from '../memory/views.ts';
 import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
@@ -51,7 +52,7 @@ const decodeCursor = (raw: string | undefined): MemoryListCursor | null => {
 const projectOf = async (raw: string | undefined, signal: AbortSignal): Promise<string | undefined> => (raw === undefined ? undefined : canonicalProject(raw, 'project', signal));
 
 export type MemoryRoutesDeps = {
-  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'contextCharges' | 'getRun'>;
+  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes'>;
   views: RecordViews;
   evidenceRun: (project: string) => EvidenceRun;
   platform: NodeJS.Platform;
@@ -156,11 +157,42 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     return json(view, 200);
   };
 
+  const journalReflectionCharges = (runId: string): ContextChargeView[] => {
+    const charged = deps.store.readRunEventsOfTypes(runId, ['usage.charged']).flatMap((event) => (event.type === 'usage.charged' && event.purpose === 'reflection' ? [event] : []));
+    if (charged.length === 0) return [];
+    const run = deps.store.getRun(runId);
+    if (run === undefined) throw new Error(`run ${runId} has reflection charges in a journal the store does not hold`);
+    const session = deps.store.getSession(run.sessionId);
+    if (session === undefined) throw new Error(`session ${run.sessionId} of run ${runId} does not exist`);
+    const started = deps.store.readRunEventsOfTypes(runId, ['run.started'])[0];
+    if (started?.type !== 'run.started') throw new Error(`run ${runId} has reflection charges and no run.started event`);
+    const model = reflectionModelOf(started.pins);
+    return charged.map(({ id, inputTokens, outputTokens, totalTokens, createdAt, responseId, cachedInputTokens, cacheWriteInputTokens, cost, unpriced, timing }) => ({
+      id,
+      purpose: 'reflection',
+      runId,
+      project: session.cwd,
+      model,
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      createdAt,
+      detail: {
+        ...(responseId === undefined ? {} : { responseId }),
+        ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+        ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
+        ...(cost === undefined ? {} : { cost }),
+        ...(unpriced === undefined ? {} : { unpriced }),
+        ...(timing === undefined ? {} : { timing }),
+      },
+    }));
+  };
+
   const runReflectionView = (runId: string): RunReflectionView => {
     const job = reflection.get(runId);
     return {
       job: job === undefined ? null : { runId: job.runId, state: job.state, attempts: job.attempts, reason: job.lastError, dropped: job.dropped, updatedAt: job.updatedAt },
-      charges: deps.store.contextCharges.list({ runIds: [runId] }).filter((entry) => entry.purpose === 'reflection'),
+      charges: [...deps.store.contextCharges.list({ runIds: [runId] }).filter((entry) => entry.purpose === 'reflection'), ...journalReflectionCharges(runId)],
       queuedAhead: job === undefined ? 0 : reflection.aheadOf(runId),
     };
   };

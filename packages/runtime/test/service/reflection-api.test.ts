@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { expectSchema, startService } from './helpers.ts';
+import { RUN_PINS } from '../memory/reflection-fixture.ts';
 
 type Settling = {
   enqueue(runId: string): boolean;
   begin(runId: string): unknown;
   complete(input: Record<string, unknown>): unknown;
+};
+
+type ServiceEnv = Awaited<ReturnType<typeof startService>>;
+
+const endRun = async (env: ServiceEnv, runId: string): Promise<void> => {
+  const claim = env.store.claim('w-reflection-api');
+  if (claim === null || claim.runId !== runId) throw new Error(`run ${runId} could not be claimed`);
+  expect(env.store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: 0, pins: RUN_PINS }]).kind).toBe('ok');
+  expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
 };
 
 describe('the last reflection job of a folder', () => {
@@ -49,20 +59,21 @@ describe('the last reflection job of a folder', () => {
     const queued = await env.http('GET', `/v1/runs/${run.id}/reflection`);
     expect(queued.json).toMatchObject({ job: { state: 'pending' }, queuedAhead: 1 });
     expectSchema('RunReflection', queued.json);
+    await endRun(env, run.id);
     jobs.begin(run.id);
-    const detail = { cachedInputTokens: 40, cost: { amount: 0.5, units: '500000000000000', currency: 'USD', priceVersion: '2026-01-01' }, timing: { firstEventMs: 3, durationMs: 9 } };
+    const detail = { responseId: 'resp_reflection', cachedInputTokens: 40, cost: { amount: 0.5, units: '500000000000000', currency: 'USD', priceVersion: '2026-01-01' }, timing: { firstEventMs: 3, durationMs: 9 } };
     jobs.complete({
       runId: run.id,
-      charge: { purpose: 'reflection', runId: run.id, project: session.cwd, model: 'fm', inputTokens: 100, outputTokens: 20, totalTokens: 120, detail },
+      charge: { runId: run.id, charged: { type: 'usage.charged', purpose: 'reflection', inputTokens: 100, outputTokens: 20, totalTokens: 120, ...detail } },
       candidates: [],
     });
     const settled = await env.http('GET', `/v1/runs/${run.id}/reflection`);
     expect(settled.json.job).toMatchObject({ runId: run.id, state: 'done' });
-    expect(settled.json.charges).toMatchObject([{ purpose: 'reflection', runId: run.id, totalTokens: 120, detail }]);
+    expect(settled.json.charges).toMatchObject([{ purpose: 'reflection', runId: run.id, project: session.cwd, model: 'fm', totalTokens: 120, detail }]);
 
     env.store.contextCharges.record({ purpose: 'reflection', runId: run.id, project: session.cwd, model: 'fm', inputTokens: 50, outputTokens: 5, totalTokens: 55 });
     const retried = await env.http('GET', `/v1/runs/${run.id}/reflection`);
-    expect(retried.json.charges.map((entry: { totalTokens: number }) => entry.totalTokens)).toEqual([120, 55]);
+    expect(retried.json.charges.map((entry: { totalTokens: number }) => entry.totalTokens)).toEqual([55, 120]);
     expectSchema('RunReflection', retried.json);
     expectSchema('RunReflection', settled.json);
   });
