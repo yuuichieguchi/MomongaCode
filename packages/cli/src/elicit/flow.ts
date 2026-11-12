@@ -51,7 +51,7 @@ export const currentField = (flow: ElicitationFlow): FormField | undefined => fl
 export const enterValue = async (flow: ElicitationFlow, text: string): Promise<ElicitationFlow> => {
   const field = currentField(flow);
   if (flow.stage !== 'fields' || field === undefined) throw new Error('the elicitation is not asking for a field');
-  const parsed = await parseFieldInput({ server: flow.server, key: currentRequest(flow).key }, field, text);
+  const parsed = await parseFieldInput({ server: flow.server, key: currentRequest(flow).key }, field, text, 'listed');
   if (!parsed.ok) return parsed.reason === 'validator-failed' ? declined(flow, parsed.error) : { ...flow, error: parsed.error };
   const content = parsed.value === undefined ? flow.content : { ...flow.content, [field.name]: parsed.value };
   const last = flow.fieldIndex + 1 >= flow.fields.length;

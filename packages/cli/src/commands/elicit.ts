@@ -68,7 +68,7 @@ const acceptedContent = async (view: ElicitationView, settings: readonly string[
     const text = values.get(field.name);
     if (text === undefined) continue;
     const origin = { server: view.server, key: request.key };
-    const parsed = await parseFieldInput(origin, field, text, signal);
+    const parsed = await parseFieldInput(origin, field, text, 'typed', signal);
     if (!parsed.ok) {
       if (parsed.reason === 'validator-failed') return declinedForValidator(view, request.key, parsed.error);
       throw new ElicitationUsageError(parsed.error);

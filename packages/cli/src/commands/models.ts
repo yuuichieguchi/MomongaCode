@@ -149,7 +149,7 @@ const modelLinesOf = (document: ModelsDocument): string[] => {
 export const formatModels = (document: ModelsDocument): string => escapedLines(modelLinesOf(document));
 
 const printDocument = (shell: ModelsShell, document: ModelsDocument, json: boolean): void => {
-  if (json) shell.stdout.write(`${JSON.stringify(document)}\n`);
+  if (json) shell.stdout.write(`${JSON.stringify({ ...document, models: document.models.map(({ health: _shownInRows, ...model }) => model) })}\n`);
   else shell.stdout.write(`${formatModels(document)}\n`);
 };
 
@@ -203,7 +203,7 @@ export const detectModels = async (shell: ModelsShell, options: { typed: readonl
   const servers = offeredServers(found);
   const managed = found.filter((server): server is DetectedManagedServer => !isLocalServer(server));
   if (options.json) {
-    shell.stdout.write(`${JSON.stringify({ servers: servers.map((server) => ({ kind: server.kind, provider: server.provider, address: server.address, models: server.models.map(detectedModelOf) })), managed })}\n`);
+    shell.stdout.write(`${JSON.stringify({ servers: servers.map((server) => ({ kind: server.kind, provider: server.provider, address: server.address, models: server.models.map(detectedModelOf) })) })}\n`);
     return 0;
   }
   print(shell.stdout, [

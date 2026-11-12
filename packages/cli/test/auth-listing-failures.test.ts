@@ -89,7 +89,7 @@ const CAPABILITIES = {
 
 const MEMBER = { model: 'local/m', counter: 'local/m', billing: 'local', provider: 'local', adapter: 'chat-completions', answers: 'model', upstream: 'm', capabilities: CAPABILITIES };
 
-const ENTRY = { id: 'local/m', object: 'model', provider: 'local', ownName: 'm', billing: 'local', capabilities: CAPABILITIES, chain: [MEMBER] };
+const ENTRY = { id: 'local/m', object: 'model', provider: 'local', ownName: 'm', billing: 'local', capabilities: CAPABILITIES, state: 'available', chain: [MEMBER] };
 
 const LIST = { object: 'list', data: [ENTRY], start: 'local/m', roles: { compaction: 'local/m' } };
 
@@ -110,14 +110,20 @@ const listedBy = async (context: TestContext, body: unknown): Promise<unknown> =
 };
 
 describe('the gateway client checks every field of the model list (settlement J-13)', () => {
+  it.for([
+    ['the entry does not say it is a model', { ...ENTRY, object: undefined }, 'object'],
+    ['the provider of a chain member is not text', { ...ENTRY, chain: [{ ...MEMBER, provider: 7 }] }, 'chain'],
+  ] as const)('lists an entry as unreadable, naming its field, when %s', async ([_name, entry, field], context) => {
+    const listed = await listedBy(context, { ...LIST, data: [entry] });
+    expect(listed).toMatchObject({ data: [{ id: 'local/m', capabilities: { toolCalling: { state: 'unavailable', code: 'model_entry_unreadable', message: expect.stringContaining(field) } } }] });
+  });
+
   it('accepts a list that states every field', async (context) => {
     expect(await listedBy(context, LIST)).toEqual(LIST);
   });
 
   it.for([
     ['the list does not say it is a list', { ...LIST, object: undefined }],
-    ['an entry does not say it is a model', { ...LIST, data: [{ ...ENTRY, object: undefined }] }],
-    ['the provider of a chain member is not text', { ...LIST, data: [{ ...ENTRY, chain: [{ ...MEMBER, provider: 7 }] }] }],
     ['a role names no model', { ...LIST, roles: { compaction: 7 } }],
     ['a role is not one of the roles', { ...LIST, roles: { other: 'local/m' } }],
   ] as const)('refuses a list when %s', async ([_name, body], context) => {

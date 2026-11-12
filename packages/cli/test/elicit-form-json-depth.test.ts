@@ -22,12 +22,12 @@ describe('user-typed elicitation JSON and the one JSON depth bound', () => {
   });
 
   it(`parses typed JSON nested exactly ${MAX_JSON_DEPTH} deep and judges it by the form rules`, async () => {
-    const parsed = await parseFieldInput(ORIGIN, blob(), typedText(MAX_JSON_DEPTH));
+    const parsed = await parseFieldInput(ORIGIN, blob(), typedText(MAX_JSON_DEPTH), 'listed');
     expect(parsed).toEqual({ ok: false, reason: 'invalid', error: 'blob must be a string, a number, a boolean or a list of strings' });
   });
 
   it(`refuses typed JSON nested ${MAX_JSON_DEPTH + 1} deep as invalid, naming the depth`, async () => {
-    const parsed = await parseFieldInput(ORIGIN, blob(), typedText(MAX_JSON_DEPTH + 1));
+    const parsed = await parseFieldInput(ORIGIN, blob(), typedText(MAX_JSON_DEPTH + 1), 'listed');
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
     expect(parsed.reason).toBe('invalid');

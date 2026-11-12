@@ -41,8 +41,8 @@ const SLOW_MODEL = 'apple/slow';
 
 const LISTING = [
   { id: PLAN_MODEL, object: 'model', provider: 'chatgpt', ownName: 'plan-model', billing: 'plan', capabilities: UNAV, state: 'available', chain: [member(PLAN_MODEL, 'plan-model', 'plan', UNAV), member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
-  { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local', capabilities: LOCAL, chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
-  { id: SLOW_MODEL, object: 'model', provider: 'apple', ownName: 'slow', billing: 'local', capabilities: PROBING, chain: [member(SLOW_MODEL, 'slow', 'local', PROBING)] },
+  { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local', capabilities: LOCAL, state: 'available', chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
+  { id: SLOW_MODEL, object: 'model', provider: 'apple', ownName: 'slow', billing: 'local', capabilities: PROBING, state: 'available', chain: [member(SLOW_MODEL, 'slow', 'local', PROBING)] },
 ];
 
 const ENTRIES = LISTING as unknown as readonly MomongaModelEntry[];
@@ -73,20 +73,18 @@ describe('the CLI shows a model that is not listed with capabilities by its stat
     expect(models[0]?.capabilities).toEqual(UNAV);
   });
 
-  it('refuses a listing whose chain member holds malformed capabilities, as it refuses malformed capabilities of the entry', async (context) => {
+  it('lists an entry as unreadable when its chain member holds malformed capabilities, as when the entry does', async (context) => {
     const malformed = { ...LOCAL, contextWindow: 'wide' };
     const answerTo = async (entry: Record<string, unknown>): Promise<{ refusal: string | undefined; expected: string }> => {
       const data = [entry];
       const gateway = await serveModelsListing(context, data);
       const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath) });
       registerCleanup(context, () => client.close());
-      const refusal = await client.models().then(
-        () => undefined,
-        (error: unknown) => (error instanceof Error ? error.message : String(error)),
-      );
-      return { refusal, expected: 'GET /v1/momonga/models answered a body that is not a model list' };
+      const [listed] = await client.models();
+      const capabilities = listed?.capabilities as { toolCalling: { code?: string } } | undefined;
+      return { refusal: capabilities?.toolCalling.code, expected: 'model_entry_unreadable' };
     };
-    const base = { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local' };
+    const base = { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local', state: 'available' };
     const entryLevel = await answerTo({ ...base, capabilities: malformed, chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] });
     expect(entryLevel.refusal).toBe(entryLevel.expected);
     const memberLevel = await answerTo({ ...base, capabilities: LOCAL, chain: [member(LOCAL_MODEL, 'local-model', 'local', malformed)] });

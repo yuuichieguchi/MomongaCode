@@ -43,7 +43,7 @@ describe('momonga models', () => {
     await listModels(harness.shell, { json: true });
 
     expect(harness.out()).toBe(
-      `${'{"start":"ollama/gemma-3-4b:latest","roles":{},"models":[{"model":"ollama/gemma-3-4b:latest","name":"ollama/gemma-3-4b","provider":"ollama","address":"http://127.0.0.1:11434","billing":"local","contextWindow":32768,"health":"available","fallback":[],"state":"ready"},{"model":"lmstudio/gemma-3-4b","name":"lmstudio/gemma-3-4b","provider":"lmstudio","address":"http://127.0.0.1:1234/v1","billing":"local","contextWindow":4096,"health":"available","fallback":[],"state":"ready"}]}'}\n`,
+      `${'{"start":"ollama/gemma-3-4b:latest","roles":{},"models":[{"model":"ollama/gemma-3-4b:latest","name":"ollama/gemma-3-4b","provider":"ollama","address":"http://127.0.0.1:11434","billing":"local","contextWindow":32768,"fallback":[],"state":"ready"},{"model":"lmstudio/gemma-3-4b","name":"lmstudio/gemma-3-4b","provider":"lmstudio","address":"http://127.0.0.1:1234/v1","billing":"local","contextWindow":4096,"fallback":[],"state":"ready"}]}'}\n`,
     );
   });
 
