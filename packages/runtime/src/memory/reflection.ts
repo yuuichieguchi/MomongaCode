@@ -1,7 +1,7 @@
 import { computeBackoff, readJsonReply } from '@momonga/foundation';
 import type { Clock, RolePort } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
-import { LOWEST_REASONING_EFFORT, jsonReplyOf, jsonReplyPathFor, summaryTokenCapFor } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { NewBilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, TextFormat, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { RunCharge, RuntimeStore, SaveCandidateInput } from '@momonga/store';
@@ -192,10 +192,6 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const model = reflectionModelOf(started.pins);
     const capabilities = await gateway.capabilities(model, { signal });
     const format: TextFormat = { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true };
-    if (jsonReplyPathFor(format, capabilities) !== 'enforced') {
-      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: `models.roles.reflection model ${model} reports no structured output` });
-      return;
-    }
     const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
     const input: CreateResponseBody['input'] = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: recordedRun }] }];
     const counted = await gateway.countTokens({ model, input, instructions: REFLECTION_INSTRUCTIONS, momonga: { ...EXACT_MODEL } }, { signal });
