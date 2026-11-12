@@ -104,7 +104,7 @@ export type ManagerHarness = {
   versionMismatches: { role: ChildRole; childVersion: string }[];
   logLines(): JsonLine[];
   events(msg: string): JsonLine[];
-  spawnInitial(): void;
+  spawnInitial(): Promise<void>;
   markers(): string[];
   spawnCount(): number;
 };

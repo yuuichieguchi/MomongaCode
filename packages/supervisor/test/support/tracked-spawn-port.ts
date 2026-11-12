@@ -18,8 +18,8 @@ const killGroupAndAssertDead = async (pgid: number): Promise<void> => {
 export const trackedSpawnPort = (context: CleanupContext): TrackedSpawnPort => {
   const realPort = createSpawnPort();
   const spawned: ChildHandle[] = [];
-  const port: SpawnPort = (command, args, options) => {
-    const handle = realPort(command, args, options);
+  const port: SpawnPort = async (command, args, options) => {
+    const handle = await realPort(command, args, options);
     spawned.push(handle);
     const pid = handle.pid;
     if (pid !== undefined) registerCleanup(context, () => killGroupAndAssertDead(pid));

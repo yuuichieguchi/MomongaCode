@@ -85,7 +85,7 @@ describe('openDaemonMarker', () => {
     const harness = createManagerHarness(context);
     const spy = failOpenWith('wx');
     registerCleanup(context, () => spy.mockRestore());
-    harness.spawnInitial();
+    await harness.spawnInitial();
     await waitFor(() => harness.manager.state() === 'backoff');
     expect(harness.spawnCount()).toBe(0);
     expect(harness.manager.health().lastExit?.reason).toBe('spawn-failed');
@@ -94,7 +94,7 @@ describe('openDaemonMarker', () => {
 });
 
 describe('daemon markers at spawn', () => {
-  it('marker is created 0600 before spawn and its fd is passed read-only as stdio[4]', (context) => {
+  it('marker is created 0600 before spawn and its fd is passed read-only as stdio[4]', async (context) => {
     const harness = createManagerHarness(context);
     const scratchDir = withTempDir(context);
     const checks: { mode: number; access: string | undefined; writeError: unknown; controlWritten: number; name: string }[] = [];
@@ -114,7 +114,7 @@ describe('daemon markers at spawn', () => {
       fs.closeSync(controlFd);
       checks.push({ mode, access, writeError, controlWritten, name });
     };
-    harness.spawnInitial();
+    await harness.spawnInitial();
     expect(checks).toHaveLength(1);
     expect(checks[0]?.name).toMatch(MARKER_NAME);
     expect(checks[0]?.mode).toBe(0o600);
@@ -126,7 +126,7 @@ describe('daemon markers at spawn', () => {
   it('the supervisor closes its marker fd after spawn', async (context) => {
     const port = trackedSpawnPort(context);
     const harness = createManagerHarness(context, { port, launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE] }) });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const marker = markerPath(harness);
     const childPid = port.spawned[0]?.pid as number;
     await pollUntil(() => lsofHolders(marker).includes(childPid), 5000, 'child holds the marker');
@@ -166,7 +166,7 @@ describe('daemon markers at spawn', () => {
     ]) {
       const harness = createManagerHarness(context);
       harness.port.nextFailure = failure;
-      harness.spawnInitial();
+      await harness.spawnInitial();
       await waitFor(() => harness.manager.state() === 'backoff');
       expect(harness.markers()).toEqual([]);
       expect(lsofNames(process.pid).filter((name) => name.startsWith(harness.paths.markers.daemons))).toEqual([]);
@@ -180,7 +180,7 @@ describe('daemon markers at child exit', () => {
     for (const error of [new Error('lsof failed with status 2'), errnoError('ENOENT', 'spawn /usr/sbin/lsof ENOENT')]) {
       const harness = createManagerHarness(context);
       harness.reapResult = () => Promise.reject(error);
-      harness.spawnInitial();
+      await harness.spawnInitial();
       const marker = markerPath(harness);
       harness.port.last().exit(1);
       await waitFor(() => harness.manager.state() === 'backoff');
@@ -196,7 +196,7 @@ describe('daemon markers at child exit', () => {
 
   it('child exit removes the marker', async (context) => {
     const harness = createManagerHarness(context, { realReap: true });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const marker = markerPath(harness);
     harness.port.last().exit(1);
     await untilReapEnds(() => harness.manager.state() === 'backoff');
@@ -211,7 +211,7 @@ describe('daemon markers at child exit', () => {
       realReap: true,
       launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE, '--p2-grandchild=mapped', '--p2-exit-after-grandchild'] }),
     });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const marker = markerPath(harness);
     await pollUntil(() => reportedPid(harness, 'grandchild') !== undefined, 5000, 'grandchild reported');
     const grandchild = reportedPid(harness, 'grandchild') as number;
@@ -222,7 +222,7 @@ describe('daemon markers at child exit', () => {
   it('a grandchild spawned without explicit mapping does not hold the marker', async (context) => {
     const port = trackedSpawnPort(context);
     const harness = createManagerHarness(context, { port, launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE, '--p2-grandchild=default'] }) });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const marker = markerPath(harness);
     await pollUntil(() => reportedPid(harness, 'grandchild') !== undefined, 5000, 'grandchild reported');
     const grandchild = reportedPid(harness, 'grandchild') as number;

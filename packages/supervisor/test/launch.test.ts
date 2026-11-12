@@ -16,7 +16,7 @@ const fakeManager = (role: ChildRole, calls: string[], snapshots: UserSettingsSn
     role,
     state: () => health.state,
     health: () => health,
-    spawnWith: (snapshot: UserSettingsSnapshot, reason: SpawnReason) => {
+    spawnWith: async (snapshot: UserSettingsSnapshot, reason: SpawnReason) => {
       calls.push(`spawnWith:${role}:${reason}`);
       snapshots.push(snapshot);
       onSpawn?.();

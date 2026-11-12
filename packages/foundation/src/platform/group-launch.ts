@@ -47,12 +47,12 @@ const STANDARD_SLOTS = 3;
 
 const descriptorsBeyondStandard = (stdio: readonly LaunchSlot[]): number[] => stdio.flatMap((slot, descriptor) => (descriptor >= STANDARD_SLOTS && slot !== 'ignore' ? [descriptor] : []));
 
-const launchKept = (keeper: GroupKeeper, request: GroupLaunchRequest, spawnProcess: typeof spawn): GroupLaunch => {
+const launchKept = async (keeper: GroupKeeper, request: GroupLaunchRequest, spawnProcess: typeof spawn): Promise<GroupLaunch> => {
   const { marker } = request;
   if (marker !== undefined && marker.file === undefined) throw new Error(`the marker of ${request.file} reaches a kept command by its path, and only a descriptor was given`);
   const stdio: LaunchSlot[] = [...request.stdio];
   if (marker !== undefined && marker.slot < stdio.length) stdio[marker.slot] = 'ignore';
-  const opening = keeper.open({
+  const opening = await keeper.open({
     command: { file: request.file, args: request.args },
     marker: marker?.file,
     descriptors: descriptorsBeyondStandard(stdio),
@@ -108,10 +108,15 @@ const launchDirect = (request: GroupLaunchRequest, spawnProcess: typeof spawn): 
   };
 };
 
-export const launchGroupLeader = (request: GroupLaunchRequest): GroupLaunch => {
+const insidePromiseJob = async (): Promise<void> => undefined;
+
+export const launchGroupLeader = async (request: GroupLaunchRequest): Promise<GroupLaunch> => {
   const spawnProcess = request.spawnProcess ?? spawn;
   const { keeper } = request.port ?? hostProcessGroupPort();
-  return keeper === undefined ? launchDirect(request, spawnProcess) : launchKept(keeper, request, spawnProcess);
+  if (keeper !== undefined) return launchKept(keeper, request, spawnProcess);
+  // Node emits a spawn error on process.nextTick; started inside a promise job, it waits until the awaiting caller has attached its listener.
+  await insidePromiseJob();
+  return launchDirect(request, spawnProcess);
 };
 
 export type ApartOptions = { cwd?: string; env?: Readonly<Record<string, string | undefined>>; stdio: StdioOptions; windowsHide?: boolean };

@@ -97,7 +97,7 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
       binary: '/usr/bin/fm',
       socketPath: path.join(dir, 'fm.sock'),
       exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
-      spawn: () => unkillableManagedChild(path.join(dir, 'fm.sock'), marker, harness.clock, harness.timers, servers),
+      spawn: async () => unkillableManagedChild(path.join(dir, 'fm.sock'), marker, harness.clock, harness.timers, servers),
       timers: fmTimers,
       onWarning: () => undefined,
     });

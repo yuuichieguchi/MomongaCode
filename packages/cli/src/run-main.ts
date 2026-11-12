@@ -21,6 +21,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
 
   try {
     const ports: CliPorts = { ...nodePorts(version, interrupt.signal, overrides.home ?? processHome(), streams), ...overrides };
+    provideEmbeddedWindowsKeeper(ports);
     const given = ports.handover === undefined ? process.argv.slice(2) : [...ports.handover.args];
     const helperCall = helperCallOf(given);
     let update: UpdateWiring | undefined;
@@ -35,7 +36,6 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
         process.exitCode = code;
       },
     });
-    program.hook('preAction', () => provideEmbeddedWindowsKeeper(ports));
     await program.parseAsync(helperCall === undefined ? given : [HELPER_COMMAND], { from: 'user' });
   } catch (error) {
     process.exitCode = exitOfFailure(error, terminalSink(() => streams.stderr), interrupt.signal);

@@ -20,7 +20,7 @@ export function createUnsandboxed(options: UnsandboxedOptions): ProtectionOnlySa
   return {
     kind: 'none',
     protection,
-    spawn(command: SandboxCommand, _policy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess {
+    spawn(command: SandboxCommand, _policy, signal: AbortSignal, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> {
       const { file, args } = protectionCommandOf(protection, {
         platform: options.platform,
         argv: command.argv,
