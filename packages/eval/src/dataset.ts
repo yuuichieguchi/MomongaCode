@@ -50,9 +50,12 @@ export type GoldenCase = {
   completion?: CompletionDeclaration;
   limits?: CaseLimits;
   mandate?: CaseMandate;
+  mcpServers?: Record<string, CaseMcpServer>;
   oracle?: OracleCheck[];
   graders: GraderSpec[];
 };
+
+export type CaseMcpServer = { command: string; args?: string[] };
 
 export type GoldenDataset = { format: typeof DATASET_FORMAT; name: string; cases: GoldenCase[] };
 
@@ -114,6 +117,15 @@ export const DATASET_SCHEMA = {
               hold: { type: 'object', properties: { onQuiescent: { enum: [...QUIESCENT_BEHAVIOURS] } }, additionalProperties: false },
             },
             additionalProperties: false,
+          },
+          mcpServers: {
+            type: 'object',
+            additionalProperties: {
+              type: 'object',
+              properties: { command: string, args: { type: 'array', items: { type: 'string' } } },
+              required: ['command'],
+              additionalProperties: false,
+            },
           },
           oracle: ORACLE_CHECKS_SCHEMA,
           graders: {
