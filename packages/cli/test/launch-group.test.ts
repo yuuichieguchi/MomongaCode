@@ -33,7 +33,7 @@ describe('the work process the CLI starts for an oracle command is a group leade
     const probe = nodeWorkspaceProbeOf(
       {
         start: async (command, cwd, env) => {
-          const { pgid, onExit } = launchGroupLeader({ file: '/bin/sh', args: ['-c', command], cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: CONTROL_PLANE_LAUNCH });
+          const { pgid, onExit } = await launchGroupLeader({ file: '/bin/sh', args: ['-c', command], cwd, env, stdio: ['ignore', 'ignore', 'ignore'], protection: CONTROL_PLANE_LAUNCH });
           if (pgid === undefined) throw new Error('the command started with no process group');
           return { pgid, exited: new Promise((resolve, reject) => onExit(({ code }) => resolve({ code }), reject)) };
         },

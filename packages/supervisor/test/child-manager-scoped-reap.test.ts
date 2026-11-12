@@ -28,7 +28,7 @@ describe('the reap of a gone gateway takes only the managed servers of its own g
         },
       },
     });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const child = harness.port.last();
 
     const stopped = harness.manager.stop('shutdown', 'term', VALUES);

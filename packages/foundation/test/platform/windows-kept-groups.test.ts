@@ -53,7 +53,7 @@ describe('a group launched through the keeper is the group of the keeper pid', (
   it('starts the keeper in launch mode, owner loss terminate, the marker by its path, and names the group by 128 random bits', async () => {
     const fake = fakeKeeperHost(launchThen(() => [COMMAND_PID]));
     const kept = createKeptGroupControl(fake.host);
-    opened(fake, kept, 'C:\\m\\marker');
+    await opened(fake, kept, 'C:\\m\\marker');
     await settle();
     const args = fake.keepers[0]?.args ?? [];
     expect(args[0]).toBe('launch');
@@ -68,7 +68,7 @@ describe('a group launched through the keeper is the group of the keeper pid', (
     let members = [COMMAND_PID, 4300];
     const fake = fakeKeeperHost(launchThen(() => members));
     const port = portOf(createKeptGroupControl(fake.host));
-    opened(fake, port.keeper as KeptGroupControl);
+    await opened(fake, port.keeper as KeptGroupControl);
     expect(await port.alive(KEEPER_PID, LIVE)).toBe(true);
     members = [];
     expect(await port.alive(KEEPER_PID, LIVE)).toBe(false);
@@ -78,11 +78,11 @@ describe('a group launched through the keeper is the group of the keeper pid', (
   it('gives the exit code of the command from the exit word, and lost when the pipe closes without one', async () => {
     const fake = fakeKeeperHost(launchThen(() => []));
     const kept = createKeptGroupControl(fake.host);
-    const first = opened(fake, kept);
+    const first = await opened(fake, kept);
     await settle();
     fake.keepers[0]?.say('exit 3\n');
     expect(await first.commandExit).toEqual({ kind: 'exit', code: 3 });
-    const second = opened(fake, kept);
+    const second = await opened(fake, kept);
     await settle();
     fake.keepers[1]?.hangUp();
     expect(await second.commandExit).toEqual({ kind: 'lost' });
@@ -91,7 +91,7 @@ describe('a group launched through the keeper is the group of the keeper pid', (
   it('is gone after the empty word without asking by name', async () => {
     const fake = fakeKeeperHost(launchThen(() => [COMMAND_PID]));
     const port = portOf(createKeptGroupControl(fake.host));
-    opened(fake, port.keeper as KeptGroupControl);
+    await opened(fake, port.keeper as KeptGroupControl);
     await settle();
     fake.keepers[0]?.say('exit 0\nempty\n');
     fake.keepers[0]?.hangUp();
@@ -118,7 +118,7 @@ describe('a group launched through the keeper is the group of the keeper pid', (
       ),
     );
     const port = portOf(createKeptGroupControl(fake.host));
-    opened(fake, port.keeper as KeptGroupControl);
+    await opened(fake, port.keeper as KeptGroupControl);
     await settle();
     fake.keepers[0]?.hangUp();
     expect(await port.alive(KEEPER_PID, LIVE)).toBe(true);
@@ -134,7 +134,7 @@ describe('a group launched through the keeper is the group of the keeper pid', (
   it('sends one terminate word for a signal of any name', async () => {
     const fake = fakeKeeperHost(launchThen(() => [COMMAND_PID]));
     const port = portOf(createKeptGroupControl(fake.host));
-    opened(fake, port.keeper as KeptGroupControl);
+    await opened(fake, port.keeper as KeptGroupControl);
     await port.signal(KEEPER_PID, 'SIGTERM', LIVE);
     expect(fake.keepers[0]?.written.filter((line) => line === 'terminate\n')).toHaveLength(1);
   });
@@ -142,7 +142,7 @@ describe('a group launched through the keeper is the group of the keeper pid', (
   it('resolves ended when the keeper says empty, with no question in between', async () => {
     const fake = fakeKeeperHost(launchThen(() => [COMMAND_PID]));
     const port = portOf(createKeptGroupControl(fake.host));
-    opened(fake, port.keeper as KeptGroupControl);
+    await opened(fake, port.keeper as KeptGroupControl);
     await settle();
     const ended = (port.ended as NonNullable<ProcessGroupPort['ended']>)(KEEPER_PID, LIVE);
     const ending = settlementOf(ended);
@@ -157,7 +157,7 @@ describe('a group launched through the keeper is the group of the keeper pid', (
   it('a question on a pipe that never answers ends with the signal of the asker', async () => {
     const fake = fakeKeeperHost((keeper) => keeper.say(`started ${COMMAND_PID}\n`));
     const port = portOf(createKeptGroupControl(fake.host));
-    opened(fake, port.keeper as KeptGroupControl);
+    await opened(fake, port.keeper as KeptGroupControl);
     const controller = new AbortController();
     const asked = port.alive(KEEPER_PID, { signal: controller.signal });
     const answer = settlementOf(asked);
@@ -172,7 +172,7 @@ describe('T-JO-7 on a fake keeper: a refused containment is reported and nothing
   it('rejects the exit of the command with the reason of the keeper, and the group is gone without the name being opened', async () => {
     const fake = fakeKeeperHost((keeper) => keeper.say('failed containment-unavailable 5\n'));
     const port = portOf(createKeptGroupControl(fake.host));
-    const opening = opened(fake, port.keeper as KeptGroupControl);
+    const opening = await opened(fake, port.keeper as KeptGroupControl);
     const refusal = await opening.commandExit.then(
       () => undefined,
       (error: unknown) => error,
@@ -188,7 +188,7 @@ describe('T-JO-7 on a fake keeper: a refused containment is reported and nothing
     const messages: Record<string, string> = {};
     for (const reason of ['containment-unavailable', 'launch-failed', 'marker-unavailable', 'name-taken'] as const) {
       const fake = fakeKeeperHost((keeper) => keeper.say(`failed ${reason} 5\n`));
-      const opening = opened(fake, portOf(createKeptGroupControl(fake.host)).keeper as KeptGroupControl);
+      const opening = await opened(fake, portOf(createKeptGroupControl(fake.host)).keeper as KeptGroupControl);
       const refusal = await opening.commandExit.then(
         () => undefined,
         (error: unknown) => error,
@@ -208,7 +208,7 @@ describe('T-JO-7 on a fake keeper: a refused containment is reported and nothing
   it('a taken name is refused the same way and the job of that name is never terminated', async () => {
     const fake = fakeKeeperHost((keeper) => keeper.say('failed name-taken 183\n'));
     const port = portOf(createKeptGroupControl(fake.host));
-    const opening = opened(fake, port.keeper as KeptGroupControl);
+    const opening = await opened(fake, port.keeper as KeptGroupControl);
     await expect(opening.commandExit).rejects.toMatchObject({ reason: 'name-taken' });
     await port.signal(KEEPER_PID, 'SIGTERM', LIVE);
     expect(fake.keepers).toHaveLength(1);
@@ -267,7 +267,7 @@ describe('a group read back from a record is proved by its name', () => {
   it('deletes the entry of a launched group when the group ends', async () => {
     const fake = fakeKeeperHost(launchThen(() => [COMMAND_PID]));
     const kept = createKeptGroupControl(fake.host);
-    opened(fake, kept);
+    await opened(fake, kept);
     await settle();
     expect(kept.nameOf(KEEPER_PID)).toBeDefined();
     expect(kept.leads(KEEPER_PID)).toBe(true);
@@ -290,7 +290,7 @@ describe('a group read back from a record is proved by its name', () => {
   it('a record never replaces a group this process launched under the same number', async () => {
     const fake = fakeKeeperHost(launchThen(() => [COMMAND_PID]));
     const port = portOf(createKeptGroupControl(fake.host));
-    opened(fake, port.keeper as KeptGroupControl);
+    await opened(fake, port.keeper as KeptGroupControl);
     await settle();
     const launchedName = port.names?.nameOf(KEEPER_PID);
     port.names?.recall(KEEPER_PID, NAME);

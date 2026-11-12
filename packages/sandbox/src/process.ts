@@ -44,7 +44,7 @@ const stdioOf = (stdinMode: 'ignore' | 'pipe', options: LaunchOptions): LaunchSl
   return slots;
 };
 
-export function launch(options: LaunchOptions): SandboxedProcess {
+export async function launch(options: LaunchOptions): Promise<SandboxedProcess> {
   const stdinMode = options.stdin === undefined ? 'ignore' : 'pipe';
   const { killGraceMs } = options;
   let signal = options.signal;
@@ -61,7 +61,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
         : { slot: MARKER_SLOT, descriptor: options.markerFd };
   let launched: GroupLaunch;
   try {
-    launched = launchGroupLeader({
+    launched = await launchGroupLeader({
       file: options.file,
       args: options.args,
       protection: options.protection,

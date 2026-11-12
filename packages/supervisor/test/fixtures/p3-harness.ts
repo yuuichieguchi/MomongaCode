@@ -148,7 +148,7 @@ export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
   let everyoneDies = false;
   const now = (): number => options.clock?.now() ?? Number.NaN;
 
-  const port: SpawnPort = (command, args, spawnOptions) => {
+  const port: SpawnPort = async (command, args, spawnOptions) => {
     const role = roleOfCommand(command);
     const failure = failures[role].shift();
     if (failure === 'throw') {

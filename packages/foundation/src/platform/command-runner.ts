@@ -41,11 +41,11 @@ export class CommandOutputTooLargeError extends Error {
 
 type Ending = { exit: LeaderExit; timedOut: boolean; stdout: string; stderr: string };
 
-const run = (file: string, args: readonly string[], options: CommandInputs, timeoutMs: number | undefined): Promise<Ending> =>
-  new Promise((resolve, reject) => {
-    const { signal } = options;
-    signal?.throwIfAborted();
-    const launch = launchGroupLeader({ file, args, ...(options.env === undefined ? {} : { env: options.env }), stdio: ['pipe', 'pipe', 'pipe'], protection: CONTROL_PLANE_LAUNCH });
+const run = async (file: string, args: readonly string[], options: CommandInputs, timeoutMs: number | undefined): Promise<Ending> => {
+  const { signal } = options;
+  signal?.throwIfAborted();
+  const launch = await launchGroupLeader({ file, args, ...(options.env === undefined ? {} : { env: options.env }), stdio: ['pipe', 'pipe', 'pipe'], protection: CONTROL_PLANE_LAUNCH });
+  return new Promise((resolve, reject) => {
     const { child } = launch;
     const stdin = child.stdin;
     const stdoutStream = child.stdout;
@@ -93,6 +93,7 @@ const run = (file: string, args: readonly string[], options: CommandInputs, time
       fail(new CommandOutputTooLargeError(file));
     };
     signal?.addEventListener('abort', leaveChildBehind, { once: true });
+    if (signal?.aborted === true) leaveChildBehind();
     stdoutStream.on('data', collect(stdout));
     stderrStream.on('data', collect(stderr));
     stdin.on('error', fail);
@@ -108,6 +109,7 @@ const run = (file: string, args: readonly string[], options: CommandInputs, time
     if (options.input === undefined) stdin.end();
     else stdin.end(options.input);
   });
+};
 
 const exited = (file: string, { exit, stdout, stderr }: Ending): CommandResult => {
   if (exit.code !== null) return { exitCode: exit.code, stdout, stderr };

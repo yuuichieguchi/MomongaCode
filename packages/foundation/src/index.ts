@@ -432,7 +432,8 @@ export type {
   KeptGroup,
   KeptLaunch,
 } from './platform/windows-keeper.ts';
-export { createNodeKeeperHost, provideCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
+export { createNodeKeeperHost, hostCheckedWindowsKeeper, provideWindowsKeeper } from './platform/windows-keeper-host.ts';
+export type { KeeperPreparation } from './platform/windows-keeper-host.ts';
 export { CONTROL_PLANE_LAUNCH } from './child-protection.ts';
 export type { ChildProtection, LaunchProtection } from './child-protection.ts';
 export { unixSocketPolicyOf } from './unix-socket-policy.ts';

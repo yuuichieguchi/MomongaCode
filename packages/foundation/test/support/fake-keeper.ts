@@ -94,7 +94,7 @@ export const fakeKeeperHost = (script: (keeper: FakeKeeper, index: number) => vo
     listened,
     start,
     host: {
-      executable: () => 'C:\\cache\\momonga-keeper.exe',
+      executable: async () => 'C:\\cache\\momonga-keeper.exe',
       commandInterpreter: () => 'C:\\Windows\\System32\\cmd.exe',
       listen: (pipe) => {
         listened.push(pipe);

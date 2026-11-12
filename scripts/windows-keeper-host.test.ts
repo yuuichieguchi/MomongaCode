@@ -48,7 +48,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
   const groups: KeptGroup[] = [];
 
   const hostWith = (names: string[] = []): KeeperHost =>
-    createNodeKeeperHost({ executable: () => keeper, random: { hex: (bytes) => names.shift() ?? systemRandom.hex(bytes) }, env: process.env });
+    createNodeKeeperHost({ executable: async () => keeper, random: { hex: (bytes) => names.shift() ?? systemRandom.hex(bytes) }, env: process.env });
 
   const startThrough =
     (wrapper: string | undefined, extraSlots: readonly 'pipe'[] = []) =>
@@ -156,7 +156,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
   it('T-JO-1: a command starts an intermediate that starts a grandchild and exits at once; stopping the command leaves no grandchild', async () => {
     const pidFile = path.join(root, 'jo1.pid');
     const stopCommand = new AbortController();
-    const launched = productLaunch(node(treeScript(pidFile)), stopCommand.signal);
+    const launched = await productLaunch(node(treeScript(pidFile)), stopCommand.signal);
     const grandchild = await grandchildOf(pidFile);
     expect(isAlive(grandchild)).toBe(true);
     stopCommand.abort();
@@ -171,7 +171,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
     const grandchildScript = `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); ${LONG_SLEEP}`;
     const intermediate = `process.getBuiltinModule('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grandchildScript)}], { detached: true, stdio: 'ignore' }).unref(); process.exit(0);`;
     const command = `process.getBuiltinModule('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(intermediate)}], { stdio: 'ignore' }); const fs = require('node:fs'); const wait = setInterval(() => { if (fs.existsSync(${JSON.stringify(pidFile)}) && fs.readFileSync(${JSON.stringify(pidFile)}, 'utf8') !== '') { clearInterval(wait); process.exit(7); } }, 20);`;
-    const launched = productLaunch(node(command), new AbortController().signal);
+    const launched = await productLaunch(node(command), new AbortController().signal);
     const exit = await launched.exited;
     expect(exit.code).toBe(7);
     expect(exit.stop).toBe('confirmed');
@@ -249,7 +249,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
 
   it('T-JO-7: inside an outer job that refuses nesting the product reports containment-unavailable and the command does not run', async () => {
     const ran = path.join(root, 'jo7.ran');
-    const launched = productLaunch(node(`require('node:fs').writeFileSync(${JSON.stringify(ran)}, 'ran');`), new AbortController().signal, {
+    const launched = await productLaunch(node(`require('node:fs').writeFileSync(${JSON.stringify(ran)}, 'ran');`), new AbortController().signal, {
       spawnProcess: ((file: string, args: readonly string[], options: object) => spawn(uiLimitedRun, [file, ...args], options)) as unknown as NonNullable<LaunchOptions['spawnProcess']>,
     });
     const failure = await launched.exited.then(

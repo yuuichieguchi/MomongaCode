@@ -223,7 +223,7 @@ describe('undefined values', () => {
 describe('settings at every spawn', () => {
   it('snapshot-not-get', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().exit(1);
     await waitFor(() => harness.manager.state() === 'backoff');
     harness.timers.advance(250);
@@ -243,7 +243,7 @@ describe('settings at every spawn', () => {
   it('a respawn uses a fresh snapshot', async (context) => {
     for (const role of ['runtime', 'gateway'] as const) {
       const harness = createManagerHarness(context, { role, env: { PATH: '/bin', HOME: '/h', UPSTREAM_X: 'upstream-value' } });
-      harness.spawnInitial();
+      await harness.spawnInitial();
       expect(harness.port.last().options.env['UPSTREAM_X']).toBe(role === 'runtime' ? 'upstream-value' : undefined);
       writeSettings(harness.home, settingsDeclaring('UPSTREAM_X'));
       harness.port.last().exit(1);
@@ -257,7 +257,7 @@ describe('settings at every spawn', () => {
 
   it('a respawn with an invalid snapshot holds', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     writeInvalidSettings(harness.home);
     const message = configErrorMessage(harness.home);
     harness.port.last().exit(1);
@@ -272,7 +272,7 @@ describe('settings at every spawn', () => {
 
   it('a respawn with a throwing snapshot backs off', async (context) => {
     const harness = createManagerHarness(context);
-    harness.spawnInitial();
+    await harness.spawnInitial();
     harness.port.last().exit(77);
     await waitFor(() => harness.manager.state() === 'waiting-lock');
     harness.settings.script = () => {
@@ -296,13 +296,13 @@ describe('settings at every spawn', () => {
     expect(harness.timers.pending().some((timer) => timer.delayMs === HELD_RETRY_MS)).toBe(false);
   });
 
-  it('a declared name that collides is logged as settings.warning once per name', (context) => {
+  it('a declared name that collides is logged as settings.warning once per name', async (context) => {
     const harness = createManagerHarness(context, {
       role: 'gateway',
       settings: settingsDeclaring('PATH', 'NODE_OPTIONS', 'UPSTREAM_X'),
       env: { PATH: '/evil', NODE_OPTIONS: '--evil', UPSTREAM_X: 'u', HOME: '/h' },
     });
-    harness.spawnInitial();
+    await harness.spawnInitial();
     const env = harness.port.last().options.env;
     expect(env['PATH']).toBe(MINIMAL_CHILD_PATH);
     expect(env).not.toHaveProperty('NODE_OPTIONS');

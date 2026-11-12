@@ -253,7 +253,7 @@ describe('finalize of a spawned fm group', () => {
       "fs.writeFileSync(process.argv[1], 'ready\\n');",
       SLEEPER,
     ].join(' ');
-    const child = createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: (message) => warnings.push(message) })(process.execPath, ['-e', source, readyFile]);
+    const child = await createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: (message) => warnings.push(message) })(process.execPath, ['-e', source, readyFile]);
     const [marker] = fs.readdirSync(markers);
     await until(() => fs.readFileSync(path.join(markers, marker ?? ''), 'utf8').includes('\ng'), 'the group line');
     const pid = (await readMarkerGroup(path.join(markers, marker ?? ''))) ?? 0;
