@@ -4,6 +4,7 @@ import { readSettingsSnapshot } from '@momonga/config';
 import type { LocalServerDetection, PlanCatalogEntry } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import type { TuiBackend } from '../src/tui/backend.ts';
+import { folderTrustFakes } from './fake-backend.ts';
 import { runAddFlow } from '../src/tui/models/add.ts';
 import { runModelsHub } from '../src/tui/models/hub.ts';
 import { runBillingFlow, runFallbackFlow, runRoleFlow, runStartFlow, runTimeoutsFlow } from '../src/tui/models/order.ts';
@@ -334,7 +335,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const slash = {
       ...harness.context,
       commands: [],
-      backend: { ...harness.context.backend, settings: async () => readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }) },
+      backend: { ...harness.context.backend, ...folderTrustFakes({ settingsPlace: () => ({ home: harness.place.home, projectDir: project }), trust: undefined, trustItems: undefined, cwd: () => project, record: () => undefined }), settings: async () => readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }) },
       background: (_label: string, work: (signal: AbortSignal) => Promise<unknown>) => work(new AbortController().signal),
     } as unknown as SlashContext;
     await runSettingsScreen(slash, []);
