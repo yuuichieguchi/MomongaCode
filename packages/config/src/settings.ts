@@ -341,7 +341,9 @@ export type HookApproval = string | { digest: string; event: string; group: unkn
 
 export type MandateApproval = string | { digest: string; document: unknown };
 
-export type ProjectApprovalsSettings = Record<string, { hooks?: HookApproval[]; mandate?: MandateApproval }>;
+export type AgentApproval = { name: string; digest: string; text: string };
+
+export type ProjectApprovalsSettings = Record<string, { hooks?: HookApproval[]; mandate?: MandateApproval; agents?: AgentApproval[] }>;
 
 export const approvalDigest = (approval: HookApproval | MandateApproval): string => (typeof approval === 'string' ? approval : approval.digest);
 

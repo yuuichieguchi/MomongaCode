@@ -14,7 +14,8 @@ import { groupAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { SANDBOX_ENDS_WITH_RUNTIME, SIGTERM_DEATH, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
-import { DEFAULT_E2E_DEPS, shutdownBarrier, startStack } from './support/stack.ts';
+import { DEFAULT_E2E_DEPS, shutdownBarrier, startStack, writeSettingsFile } from './support/stack.ts';
+import { projectAgentDigestOf } from '@momonga/config';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import {
@@ -60,10 +61,18 @@ const trustProject = async (home: E2eHome): Promise<void> => {
   }
 };
 
+const agentText = (name: string, body: string): string => `---\nname: ${name}\ndescription: ${name} helper\ntools: Read\n---\n${body}\n`;
+
 const writeAgent = (home: E2eHome, name: string, body: string): void => {
   const directory = path.join(home.project, '.momonga', 'agents');
   fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, `${name}.md`), `---\nname: ${name}\ndescription: ${name} helper\ntools: Read\n---\n${body}\n`);
+  fs.writeFileSync(path.join(directory, `${name}.md`), agentText(name, body));
+};
+
+const approveAgent = (home: E2eHome, name: string, body: string): void => {
+  const settings: Json = JSON.parse(fs.readFileSync(home.paths.settingsFile, 'utf8'));
+  const text = agentText(name, body);
+  writeSettingsFile(home, { ...settings, projectApprovals: { [fs.realpathSync(home.project)]: { agents: [{ name, digest: projectAgentDigestOf(name, text), text }] } } });
 };
 
 const agentCall = (callId = 'call_agent'): FakeScriptedReply =>
@@ -95,6 +104,7 @@ describe('agents: subagents', () => {
     writeAgent(home, 'reviewer', 'You are a terse reviewer.');
     const stack = await startStack({ home, sandbox: 'none', script: [agentCall(), textReply('child verdict: ship it'), textReply('parent done')] });
     await trustProject(home);
+    approveAgent(home, 'reviewer', 'You are a terse reviewer.');
     const runtime = createRuntimeClient(home);
     try {
       const { session } = await runtime.createSession();
@@ -144,6 +154,7 @@ describe('agents: subagents', () => {
     writeAgent(home, 'reviewer', 'You review.');
     const stack = await startStack({ home, sandbox: 'none', script: [agentCall(), hangReply('child partial')] });
     await trustProject(home);
+    approveAgent(home, 'reviewer', 'You review.');
     const runtime = createRuntimeClient(home);
     try {
       const { session } = await runtime.createSession();
@@ -191,6 +202,7 @@ describe('agents: subagents', () => {
     parentRequest.release();
     const childRequest = stack.fake.hold();
     await trustProject(home);
+    approveAgent(home, 'reviewer', 'You review.');
     const runtime = createRuntimeClient(home);
     let released = false;
     const releaseChild = (): void => {

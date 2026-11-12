@@ -739,6 +739,10 @@ export const SETTINGS_SCHEMA = {
               { type: 'object', properties: { digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN }, document: {} }, required: ['digest', 'document'], additionalProperties: false },
             ],
           },
+          agents: {
+            type: 'array',
+            items: { type: 'object', properties: { name: { type: 'string', minLength: 1 }, digest: { type: 'string', pattern: APPROVAL_DIGEST_PATTERN }, text: { type: 'string' } }, required: ['name', 'digest', 'text'], additionalProperties: false },
+          },
         },
         additionalProperties: false,
       },

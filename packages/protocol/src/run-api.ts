@@ -904,6 +904,7 @@ const trustItemsView = closed(
           closed({ kind: constant('hook'), event: string, group: anything, digest: string, source: string, change: trustItemChange }, ['kind', 'event', 'group', 'digest', 'source', 'change']),
           closed({ kind: constant('mandate'), document: anything, digest: string, source: string, change: trustItemChange }, ['kind', 'document', 'digest', 'source', 'change']),
           closed({ kind: constant('mcp'), name: string, config: anything, digest: string, source: string, change: trustItemChange }, ['kind', 'name', 'config', 'digest', 'source', 'change']),
+          closed({ kind: constant('agent'), name: string, text: string, digest: string, source: string, change: trustItemChange }, ['kind', 'name', 'text', 'digest', 'source', 'change']),
         ],
       },
     },

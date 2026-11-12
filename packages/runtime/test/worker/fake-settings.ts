@@ -64,6 +64,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
       }
     },
     trusted: async () => settings.trustedValue,
+    approvedProjectAgents: async () => ({ has: () => true }),
   };
   return settings;
 };
