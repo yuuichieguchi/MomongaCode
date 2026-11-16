@@ -2,6 +2,7 @@ import { chmodSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { momongaPaths } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
+import { nodeFiles } from '../../src/node-ports.ts';
 import type { CliPorts } from '../../src/ports.ts';
 import { createTuiBackend } from '../../src/tui/backend.ts';
 import { SWITCH_CHUNK_ROWS } from '../../src/tui/screen/constants.ts';
@@ -388,7 +389,7 @@ describe('the clipboard of the TUI backend', () => {
       const written: string[] = [];
       const piped: { file: string; args: readonly string[]; payload: string }[] = [];
       const capture = { write: (chunk: string | Uint8Array) => (written.push(String(chunk)), true) };
-      const ports = { version: '1', env: { PATH: directory }, home: '/home/alice', cwd: '/home/alice', clock: { now: () => 0, sleep: async () => undefined }, stdout: capture, stderr: capture, terminal: { stdin: process.stdin, stdout: capture } } as unknown as CliPorts;
+      const ports = { version: '1', env: { PATH: directory }, home: '/home/alice', cwd: '/home/alice', clock: { now: () => 0, sleep: async () => undefined }, stdout: capture, stderr: capture, terminal: { stdin: process.stdin, stdout: capture }, files: nodeFiles } as unknown as CliPorts;
       const backend = createTuiBackend(ports, momongaPaths('/home/alice', process.platform, process.env), {}, { load: async () => [], append: async () => undefined }, [], {
         pipe: async (file, args, payload) => void piped.push({ file, args, payload }),
         capture: async () => undefined,
