@@ -46,6 +46,22 @@ describe('the generated reference', () => {
     expect(unknown).toEqual([]);
   });
 
+  it('every option the README writes after a momonga command is one that command or the root takes', async () => {
+    const names = await referenceNames();
+    const shellLines = [...read('README.md').matchAll(/^ *```(?:sh|text)?\n([\s\S]*?)^ *```$/gm)].flatMap((block) => (block[1] ?? '').split('\n').map((line) => line.trim()));
+    const written = [...inlineCode(read('README.md')), ...shellLines].filter((text) => text.startsWith('momonga '));
+    const unknown = written.flatMap((text) => {
+      const command = commandPathOf(text);
+      const taken = names.options.get(command) ?? new Set<string>();
+      return text
+        .split(/\s+/)
+        .map((word) => word.replace(/^\[/, '').replace(/[\]|].*$/, '').split('=')[0] ?? '')
+        .filter((flag) => /^--?[a-zA-Z]/.test(flag) && !taken.has(flag))
+        .map((flag) => `${text}: ${flag}`);
+    });
+    expect(unknown).toEqual([]);
+  });
+
   it('the README names exactly the settings keys a project or local settings file cannot set', async () => {
     const names = await referenceNames();
     const line = read('README.md').split('\n').find((text) => text.startsWith('Project and local settings cannot set'));

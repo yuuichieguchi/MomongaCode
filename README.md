@@ -18,6 +18,8 @@ Windows, in PowerShell:
 irm https://raw.githubusercontent.com/yuuichieguchi/MomongaCode/main/scripts/install.ps1 | iex
 ```
 
+Then add a model and run a first prompt, as section 3 shows.
+
 ## 2. Why Momonga Code?
 
 Momonga Code puts particular effort into the following areas and aims to be No. 1 in them.
@@ -53,29 +55,73 @@ All of these settings are on by default; each is turned off key by key (see Conf
 
 ## 3. Getting Started
 
-1. Declare a model server and its models in your user settings file, `~/.momonga/settings.json` (see Configuration for a complete example), or let `momonga models add` find a server on this computer and write it.
-2. Check that it is seen:
+Add one model by one of the three routes below, then run a prompt. The first command that needs the daemon starts it in the background; `momonga daemon status` shows it.
+
+### A model server on this computer
+
+1. Start a local model server, such as Ollama, and ask which servers answer and which models they list. This writes nothing:
+
+   ```sh
+   momonga models detect
+   ```
+
+2. Add one of the listed models by the name its server gives it. Without `--yes` the change is only shown:
+
+   ```sh
+   momonga models add --address http://127.0.0.1:11434 --model <own name> --yes
+   ```
+
+   An Ollama server reports the context window and the tool support of its models, so you do not give `--window`. For a server that does not report the window, the command says so; give it with `--window <tokens>`.
+3. Check that the model is seen:
 
    ```sh
    momonga models
    ```
 
-   `momonga models detect` asks the usual local addresses, and any address you name, which model server answers there. It writes nothing.
-3. Start an interactive session in a project folder:
+### A subscription account
+
+1. Sign in in the browser. `chatgpt` is the provider this release ships, so the command needs no provider name:
 
    ```sh
-   cd your-project
-   momonga
+   momonga auth login
    ```
 
-   The first time you open a folder, Momonga Code asks whether you trust it. If you answer no, it continues without the folder's project settings.
-4. Or run a single prompt without the terminal UI:
+   A new account has no model yet, and the sign-in says what to run next. `momonga auth status` shows the saved accounts and their state.
+2. List the models the account offers, and add one by its own name:
 
    ```sh
-   momonga -p "explain what this repository does"
+   momonga models catalog <account>
+   momonga models add --plan chatgpt --account <account> --model <own name> --yes
    ```
 
-The first command starts a background daemon if it is not running. `momonga daemon status` shows it.
+In the interactive session, `/login` signs in and `/model` chooses one of the account's models. A sign-in starts only from `/login` or `momonga auth login`: the start screen takes no key while you type.
+
+### An API key
+
+1. Store the key in the platform secret store under a name you choose. The value is read from the terminal and never written to a settings file:
+
+   ```sh
+   momonga secret set <name>
+   ```
+
+2. Add the model of the server at its address:
+
+   ```sh
+   momonga models add --address <url> --api <api> --model <own name> --api-key-secret <name> --yes
+   ```
+
+   `--api` is the API of a server MomongaCode does not recognise by itself: `ollama`, `openai`, `anthropic`, or `responses`. Instead of a stored secret, `--api-key-env <NAME>` names an environment variable that holds the key; it must be set in the environment the daemon starts with.
+
+A model that is paid for by use is measured only with your consent. Its first request is refused with the most requests, input tokens and output tokens the measurement can send, and with the command to run that gives the consent. The consent is kept for that model and that bound.
+
+### The first prompt
+
+```sh
+cd your-repository
+momonga -p "explain what this repository does"
+```
+
+Run `momonga` with no prompt to start an interactive session instead. The first interactive session in a folder asks whether you trust it. Until a folder is trusted, its own settings, and everything they could make MomongaCode run, are not loaded: `momonga -p`, `momonga attach`, and an editor through `momonga acp` run without them and say so in one line that names `momonga trust <folder>`. `momonga trust --set trusted` decides the current folder from a shell.
 
 ## 4. Features
 
