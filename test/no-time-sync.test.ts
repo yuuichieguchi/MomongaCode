@@ -49,6 +49,7 @@ const BURN_DOWN: Readonly<Record<string, BurnDown>> = {
   'packages/gateway/test/managed/managed-server.test.ts': { kinds: { 'timer wait': 1 }, owner: 'gateway-accounts: the second start that waits at the lock of the first shows no event' },
   'packages/gateway/test/settings-live-gateway.test.ts': { kinds: { 'timer wait': 2 }, owner: 'gateway: a request waiting at the carried gate shows no event; the gate has no count of waiters a test can read' },
   'packages/runtime/test/process/cancel-recovery.test.ts': { kinds: { 'holder that ends by itself': 2 }, owner: 'runtime: the holders run through the product sandbox, which ends them' },
+  'packages/sandbox/test/after-exit-shared.test.ts': { kinds: { 'timer wait': 1 }, owner: 'sandbox: an exit that must stay pending while the cleanup after it runs shows no event; the case gives it twenty turns' },
   'packages/testkit/test/fake-chat-completions-hold.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W7 (fake-chat-completions): a held request is shown pending by twenty turns' },
   'packages/testkit/test/fake-chat-completions-routes.test.ts': { kinds: { 'timer wait': 2 }, owner: 'tests-W7 (fake-chat-completions): a held request is shown pending by twenty turns' },
   'test/formal/runner.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W11 (formal tier): the CPU budget poll of the TLC runner' },
