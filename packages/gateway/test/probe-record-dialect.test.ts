@@ -54,8 +54,8 @@ const rewrite = (file: string, change: (stored: Record<string, unknown>) => Reco
 };
 
 describe('record invalidation of the fm record (rule 7)', () => {
-  it('is at probe method 4, the max concurrency recorded only from a refusal after the JSON-only mode step of method 3', () => {
-    expect(PROBE_METHOD_VERSION).toBe(4);
+  it('is at probe method 5, the requests of the measurement changed after the max concurrency of method 4', () => {
+    expect(PROBE_METHOD_VERSION).toBe(5);
   });
 
   it('reads a record stored under probe method 1 as no record', async () => {

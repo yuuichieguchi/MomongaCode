@@ -27,8 +27,8 @@ const withJsonMode = (base: Capabilities, jsonMode: JsonMode): Capabilities => {
 const NOW = () => new Date('2026-11-07T12:00:00.000Z');
 
 describe('the probe method version for the JSON-only mode item', () => {
-  it('is 4, so records written by method 3 and earlier follow the method-change rule', () => {
-    expect(PROBE_METHOD_VERSION).toBe(4);
+  it('is above 3, so records written by method 3 and earlier follow the method-change rule', () => {
+    expect(PROBE_METHOD_VERSION).toBeGreaterThan(3);
   });
 });
 
