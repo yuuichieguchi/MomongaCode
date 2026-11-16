@@ -891,7 +891,7 @@ export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, progr
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
     timers: managedProbeTimersOf(ports),
-    launch: await noneSandboxLaunchOf({ home: ports.home, platform: ports.platform, env: ports.env, isUsableBinary: systemProcessFiles.isUsableBinary }),
+    launch: await noneSandboxLaunchOf({ home: ports.home, platform: ports.platform, env: ports.env, paths: systemProcessFiles.paths(signal), isUsableBinary: systemProcessFiles.isUsableBinary }),
     onWarning,
   });
 };

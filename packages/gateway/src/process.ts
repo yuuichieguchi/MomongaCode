@@ -943,7 +943,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const endpointScope = await step('endpoint-scope', () => endpointScopeOf(paths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock }));
   const own = generationLayout(options.home, options.generation, platform, endpointScope);
   const inspector = layoutProcessInspector(options.locks.capability);
-  const managedLaunch = await step('managed-launch', () => noneSandboxLaunchOf({ home: options.home, platform, env: options.env, isUsableBinary: files.isUsableBinary }));
+  const managedLaunch = await step('managed-launch', () => noneSandboxLaunchOf({ home: options.home, platform, env: options.env, paths: files.paths(AbortSignal.any(signal === undefined ? [] : [signal])), isUsableBinary: files.isUsableBinary }));
   const lock = await step('lock', () => (options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, { mechanism: kernelLock })))(own.locks.gateway));
   const cleanups: Array<(values: StopValues | undefined) => void | Promise<void>> = [() => lock.release()];
   const lifetime = new AbortController();
