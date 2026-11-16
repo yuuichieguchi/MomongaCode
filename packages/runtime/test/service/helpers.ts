@@ -872,6 +872,8 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       return created;
     },
   };
+  const verificationLifetime = new AbortController();
+  onCleanup(() => verificationLifetime.abort());
   const worker = (id = 'worker-1', overrides: Partial<WorkerOptions> = {}): Worker => {
     const created = runtime.createWorker({
       store: env.store,
@@ -883,6 +885,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       governance: inertGovernancePort,
       tools,
       ruleVerifier: createFakeRuleVerifier(),
+      verificationStop: verificationLifetime.signal,
       mandateVerification: provedMandateVerification,
       tracers: fixedTracers(tracer),
       clock: env.clock,

@@ -838,6 +838,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           agents: agentsPort,
           tools: toolRuntime.port,
           ruleVerifier,
+          verificationStop: lifetime.signal,
           mandateVerification,
           tracers,
           clock,

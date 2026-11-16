@@ -299,6 +299,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const workers: Worker[] = [];
   const fatals: Error[] = [];
   const pendingRuns: Promise<unknown>[] = [];
+  const verificationLifetime = new AbortController();
   let rawDb: DatabaseSync | undefined;
 
   cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -309,6 +310,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     await settled(Promise.allSettled(pendingRuns), 'abandoned worker runs to settle');
     await settled(Promise.allSettled(workers.map((worker) => worker.stop())), 'workers to stop');
   });
+  cleanups.push(() => verificationLifetime.abort());
 
   const session: Session = store.createSession({
     cwd: project,
@@ -377,6 +379,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       governance: inertGovernancePort,
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
       ruleVerifier,
+      verificationStop: verificationLifetime.signal,
       mandateVerification: async () => ({ verdict: 'not-needed', solver: 'test-solver', refuted: [], unknown: [], notProved: [] }),
       tracers: fixedTracers(tracer),
       clock,

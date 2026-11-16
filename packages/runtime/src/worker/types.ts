@@ -36,6 +36,7 @@ export type WorkerOptions = {
   agents?: AgentsPort;
   tools: ToolRuntimePort;
   ruleVerifier: RuleVerifierPort;
+  verificationStop: AbortSignal;
   mandateVerification: MandateRunVerification;
   tracers: TracerLeases;
   clock: Clock;
