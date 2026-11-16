@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LINUX_SOCKET_GUARD_BINARY_ASSET, LINUX_SOCKET_GUARD_MANIFEST_ASSET, LinuxSocketGuardDistributionError, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, sha256Hex } from '@momonga/foundation';
-import { testLocks } from '@momonga/testkit';
+import { testKernelLock, testLocks } from '@momonga/testkit';
 import { hostExtractedLinuxSocketGuard, nodeSourceKeeperFiles } from '../src/node-ports.ts';
 import { sourceBuiltLinuxSocketGuard } from '../src/keeper/source.ts';
 import type { SourceKeeperPorts } from '../src/keeper/source.ts';
@@ -36,11 +36,11 @@ const portsOf = (root: string, build: (workDir: string) => number | null): Sourc
   const script = path.join(root, 'scripts', 'linux-socket-guard.ts');
   fs.mkdirSync(path.dirname(script), { recursive: true });
   fs.writeFileSync(script, '');
-  return { script, executablesRoot: path.join(root, 'executables'), build: (_script, workDir) => build(workDir), files: nodeSourceKeeperFiles, random: { hex: () => 'abcdef0123456789' } };
+  return { script, executablesRoot: path.join(root, 'executables'), build: (_script, workDir) => build(workDir), files: nodeSourceKeeperFiles, random: { hex: () => 'abcdef0123456789' }, lock: testKernelLock() };
 };
 
 describe('the socket guard of a from-source run on Linux', () => {
-  it('is built on first need, kept under the executables area by its checksum as a file its owner can run, and checked before every start', () => {
+  it('is built on first need, kept under the executables area by its checksum as a file its owner can run, and checked before every start', async () => {
     const root = rootOf();
     let builds = 0;
     const executable = sourceBuiltLinuxSocketGuard(
@@ -51,18 +51,19 @@ describe('the socket guard of a from-source run on Linux', () => {
       }),
     );
     expect(builds).toBe(0);
-    const file = executable();
+    const check = await executable();
+    const file = check();
 
     expect(file).toBe(path.join(root, 'executables', `linux-socket-guard-${SHA.slice(0, 16)}`, 'momonga-socket-guard'));
     expect(fs.statSync(file).mode & 0o100).toBe(0o100);
-    expect(executable()).toBe(file);
+    expect(check()).toBe(file);
     expect(builds).toBe(1);
     fs.writeFileSync(file, 'other bytes');
-    expect(() => executable()).toThrow(LinuxSocketGuardDistributionError);
+    expect(() => check()).toThrow(LinuxSocketGuardDistributionError);
   });
 
-  it('refuses with one sentence that names the compiler when it is absent', () => {
-    expect(() => sourceBuiltLinuxSocketGuard(portsOf(rootOf(), () => WINDOWS_KEEPER_COMPILER_MISSING_EXIT))()).toThrow(
+  it('refuses with one sentence that names the compiler when it is absent', async () => {
+    await expect(sourceBuiltLinuxSocketGuard(portsOf(rootOf(), () => WINDOWS_KEEPER_COMPILER_MISSING_EXIT))()).rejects.toThrow(
       'cc was not found on PATH, so the socket guard executable that a from-source run on Linux needs could not be built from native/linux-socket-guard/guard.c',
     );
   });
@@ -70,7 +71,7 @@ describe('the socket guard of a from-source run on Linux', () => {
 
 describe('where the runtime gets its socket guard', () => {
   const embedded = (assets: Record<string, Uint8Array>) => ({ present: (name: string) => name in assets, raw: (name: string) => assets[name] as Uint8Array });
-  const neverBuilt = (): (() => string) => {
+  const neverBuilt = (): (() => Promise<() => string>) => {
     throw new Error('no build is expected');
   };
   const extracted = hostExtractedLinuxSocketGuard;
@@ -100,9 +101,9 @@ describe('where the runtime gets its socket guard', () => {
     const source = socketGuardSourceOf({
       platform: 'linux',
       embedded: undefined,
-      builtFromSource: (executablesRoot) => () => {
+      builtFromSource: (executablesRoot) => async () => {
         asked.push(executablesRoot);
-        return '/built/guard';
+        return () => '/built/guard';
       },
       extracted,
     });

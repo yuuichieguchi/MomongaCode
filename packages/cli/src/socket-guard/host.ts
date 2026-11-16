@@ -9,7 +9,7 @@ type SocketGuardSource = NonNullable<Parameters<RuntimeEntry['runRuntimeEntry']>
 export type SocketGuardHost = {
   platform: NodeJS.Platform;
   embedded: { present(name: string): boolean; raw(name: string): Uint8Array } | undefined;
-  builtFromSource(executablesRoot: string): () => string;
+  builtFromSource(executablesRoot: string, lock: KernelLockMechanism): () => Promise<() => string>;
   extracted(asset: (name: string) => Uint8Array, executablesRoot: string, lock: KernelLockMechanism): Promise<string>;
 };
 
@@ -20,9 +20,9 @@ const SOCKET_GUARD_PLATFORMS: ReadonlySet<NodeJS.Platform> = new Set(['linux']);
 export const socketGuardSourceOf = ({ platform, embedded, builtFromSource, extracted }: SocketGuardHost): SocketGuardSource | undefined => {
   if (!SOCKET_GUARD_PLATFORMS.has(platform)) return undefined;
   if (embedded === undefined) {
-    return (paths) => {
-      const built = builtFromSource(paths.executables);
-      return async () => built();
+    return (paths, locks) => {
+      const built = builtFromSource(paths.executables, locks.mechanism);
+      return async () => (await built())();
     };
   }
   if (!embedded.present(LINUX_SOCKET_GUARD_MANIFEST_ASSET)) return undefined;
