@@ -1,4 +1,5 @@
 import { EMPTY_PROTECTED_SET, groupRecordOutcome, mapAsync, homeLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
+import { GREP_TOOL_NAME } from '@momonga/protocol';
 import path from 'node:path';
 import type { SandboxExit, SandboxPolicy } from '@momonga/sandbox';
 import { CAPTURE_MAX_BYTES } from '../capture.ts';
@@ -60,7 +61,7 @@ const deniedGlobs = async (access: ReadAccessMatcher, target: string, isDirector
 };
 
 const ruleBlockedGlobs = async (access: ReadAccessMatcher, target: string, isDirectory: boolean, ctx: ToolContext): Promise<string[]> => {
-  if (!isDirectory || !access.hasReadRulesFor('Grep')) return [];
+  if (!isDirectory || !access.hasReadRulesFor(GREP_TOOL_NAME)) return [];
   const blocked: RuleBlockedEntry[] = [];
   const walk = walkFiles({
     files: ctx.files,
@@ -68,7 +69,7 @@ const ruleBlockedGlobs = async (access: ReadAccessMatcher, target: string, isDir
     readDenied: ctx.sandboxPolicy.readDenied,
     readAllowed: ctx.sandboxPolicy.readAllowed,
     fileRules: ctx.sandboxPolicy.fileRules,
-    tool: 'Grep',
+    tool: GREP_TOOL_NAME,
     includeSymlinkedFiles: false,
     signal: ctx.signal,
     onUnreadable: () => undefined,
@@ -264,7 +265,7 @@ type RipgrepCommand = { argv: string[]; cwd: string; env: Record<string, string>
 type RipgrepRun = { stdout: string; stderr: string; exit: SandboxExit; ceilingReached: boolean };
 
 const runRipgrep = async (ctx: ToolContext, command: RipgrepCommand, policy: SandboxPolicy, notes: string[], stop: AbortSignal = ctx.signal): Promise<RipgrepRun> => {
-  const { file, fd, settle } = await requireSpawnMarker(ctx, 'Grep');
+  const { file, fd, settle } = await requireSpawnMarker(ctx, GREP_TOOL_NAME);
   const ceiling = new AbortController();
   const child = await ctx.sandbox.spawn({ ...command, markerFile: file }, policy, AbortSignal.any([stop, ceiling.signal]), { markerFd: fd });
   const attached = groupRecordOutcome(ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() }), file);
@@ -340,7 +341,7 @@ const runSearch = async (
   const visible = async (recordPath: string): Promise<boolean> => {
     let verdict = visibleCache.get(recordPath);
     if (verdict === undefined) {
-      verdict = (await access.blockedBy(recordPath, spawnCwd, 'Grep')) === undefined;
+      verdict = (await access.blockedBy(recordPath, spawnCwd, GREP_TOOL_NAME)) === undefined;
       visibleCache.set(recordPath, verdict);
     }
     return verdict;
@@ -369,7 +370,7 @@ const runSearch = async (
 };
 
 export const grepTool = defineTool<GrepInput>({
-  name: 'Grep',
+  name: GREP_TOOL_NAME,
   tier: 'essential',
   description:
     'Searches file contents with a regular expression (ripgrep syntax). path is a file or directory, defaults to the working directory, and a relative path is resolved against the working directory. output_mode: files_with_matches (default, newest first), content (path:line:text with optional -A/-B/-C context), or count. Respects .gitignore and .ignore, skips .git, includes dotfiles. head_limit and offset page through the output entries.',
@@ -418,7 +419,7 @@ export const grepTool = defineTool<GrepInput>({
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.path ?? '.') }],
   subject: (input, ctx) => {
     if (input.type !== undefined) extensionsForType(input.type);
-    return { kind: 'path', tool: 'Grep', paths: [resolvedPathOf(ctx, input.path ?? '.')], access: 'read' };
+    return { kind: 'path', tool: GREP_TOOL_NAME, paths: [resolvedPathOf(ctx, input.path ?? '.')], access: 'read' };
   },
   execute: async (input, ctx) => {
     const target = await canonicalPathOf(ctx, 'path', input.path ?? '.');
