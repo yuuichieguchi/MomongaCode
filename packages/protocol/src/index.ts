@@ -94,6 +94,8 @@ export {
   errorBoundOfShape,
   marginFloorFor,
   outputReserveFor,
+  reasoningHeadroomFor,
+  summaryRequestInputLimitFor,
   sizingFractionFor,
   sizingRatioFor,
   largestSummaryCapFor,

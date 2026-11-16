@@ -88,7 +88,7 @@ describe('ratio-sweep tie: context budget functions equal their exact rational d
     expect(() => inputCeilingFor(capabilities)).toThrow(RangeError);
     expect(() => itemCapFor(capabilities)).toThrow(RangeError);
     expect(() => pinnedFloorFor(capabilities)).toThrow(RangeError);
-    expect(() => summaryInputCeilingFor(capabilities)).toThrow(RangeError);
+    expect(() => summaryInputCeilingFor(capabilities, 0)).toThrow(RangeError);
   });
 
   it.each(countings.map((counting) => [counting.label, counting] as const))(
@@ -124,7 +124,7 @@ describe('ratio-sweep tie: context budget functions equal their exact rational d
         const reserve = minBig(big(MAX_OUTPUT_TOKENS), maxBig(MIN_OUTPUT_RESERVE, ceilBig(OUTPUT_RESERVE, w)), floorBig(MAX_OUTPUT_WINDOW, w));
         return maxBig(0n, minBig(floorDivBig((w - margin) * big(sizing.den), big(sizing.den) + big(sizing.num)), w - reserve));
       };
-      expect(firstMismatch(points, (W) => summaryInputCeilingFor(capabilitiesOf(W, counting)), expected)).toBeUndefined();
+      expect(firstMismatch(points, (W) => summaryInputCeilingFor(capabilitiesOf(W, counting), 0), expected)).toBeUndefined();
     },
     SWEEP_TIMEOUT_MS,
   );

@@ -978,7 +978,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     const countSummaryInput = (items: readonly InputItem[]): Promise<MeterCount> =>
       role === undefined ? countInput(items) : role.meter.count({ input: items, tools: [] });
     const summaryCap = Math.min(summaryTokenCapFor(capabilities, roomLeft), largestSummaryCapFor(target));
-    const summaryCeiling = summaryInputCeilingFor(target);
+    const summaryCeiling = summaryInputCeilingFor(target, summaryCap);
     const promptTokens = summaryPromptTokensFor(input.compactionFocus);
     const growth = await workingStateGrowth();
     const item = summaryItemTokensFor(summaryCap) + growth;

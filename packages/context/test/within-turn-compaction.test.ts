@@ -319,7 +319,7 @@ describe('a compaction planned for the model that receives the request', () => {
     const forTarget = await planFor(target);
 
     expect(forSession?.throughSeq).toBeGreaterThan(forTarget?.throughSeq ?? Number.POSITIVE_INFINITY);
-    expect((forTarget?.tokens.request ?? Number.NaN) + (forTarget?.summaryTokenCap ?? Number.NaN)).toBeLessThanOrEqual(summaryInputCeilingFor(target));
+    expect((forTarget?.tokens.request ?? Number.NaN) + (forTarget?.summaryTokenCap ?? Number.NaN)).toBeLessThanOrEqual(summaryInputCeilingFor(target, forTarget?.summaryTokenCap ?? 0));
     expect(forTarget?.summaryTokenCap).toBe(summaryTokenCapFor(target));
   });
 
@@ -367,6 +367,6 @@ describe('a compaction planned for the model that receives the request', () => {
     const focused = await planFor(target, 'x'.repeat(8000));
 
     expect(focused?.throughSeq ?? 0).toBeLessThan(plain?.throughSeq ?? 0);
-    expect((focused?.tokens.request ?? Number.NaN) + (focused?.summaryTokenCap ?? Number.NaN)).toBeLessThanOrEqual(summaryInputCeilingFor(target));
+    expect((focused?.tokens.request ?? Number.NaN) + (focused?.summaryTokenCap ?? Number.NaN)).toBeLessThanOrEqual(summaryInputCeilingFor(target, focused?.summaryTokenCap ?? 0));
   });
 });
