@@ -44,7 +44,7 @@ const fakeIo = (argv: readonly string[]) => {
   const stderrChunks: string[] = [];
   const stdoutChunks: string[] = [];
   const exits: number[] = [];
-  const io: EntryIo = {
+  const io: EntryIo = { platform: process.platform,
     argv,
     env: { HOME },
     home: HOME,

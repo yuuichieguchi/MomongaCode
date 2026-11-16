@@ -28,6 +28,7 @@ export type LogTarget = 'file' | 'stderr' | 'both';
 export type EntryIo = {
   argv: readonly string[];
   env: Readonly<Record<string, string | undefined>>;
+  platform: NodeJS.Platform;
   home: string;
   stdout: TextStream;
   stderr: TextStream;
@@ -523,6 +524,7 @@ export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStan
   return {
     argv: host.argv.slice(2),
     env: host.env,
+    platform: host.platform,
     home: host.env['HOME'] ?? os.homedir(),
     stdout: streams.stdout,
     stderr: streams.stderr,

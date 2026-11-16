@@ -163,7 +163,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'fake.sock') });
     registerCleanup(context, () => fake.close());
     writeUserSettings(home, { sandbox: 'none', runtime: { drainTimeoutMs: 300_000 }, ...modelSettings(fake.socketPath) });
-    const gateway = await registerOwned(context, () => startGatewayProcess({
+    const gateway = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home,
