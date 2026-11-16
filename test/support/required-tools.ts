@@ -19,6 +19,7 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..');
 export const REQUIRED_TOOLS: readonly RequiredTool[] = [
   { name: 'bun', path: path.join(ROOT, 'compliance', 'open-responses', 'node_modules', '.bin', 'bun'), platforms: ['darwin', 'linux'], projects: [], setup: 'npm ci --prefix compliance/open-responses' },
   { name: 'bwrap', path: DEFAULT_BWRAP_PATH, platforms: ['linux'], projects: ['unit', 'e2e'], setup: 'install bubblewrap (apt-get install bubblewrap)' },
+  { name: 'openssl', path: '/usr/bin/openssl', platforms: ['darwin', 'linux'], projects: ['e2e'], setup: 'install openssl (apt-get install openssl); the fake https git server makes its certificate with it' },
   { name: 'sandbox-exec', path: DEFAULT_SANDBOX_EXEC_PATH, platforms: ['darwin'], projects: ['unit', 'e2e'], setup: 'macOS ships sandbox-exec; a host without it cannot run these tests' },
 ];
 

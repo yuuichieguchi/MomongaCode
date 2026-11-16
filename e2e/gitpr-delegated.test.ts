@@ -2,8 +2,8 @@ import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fakeSecretProgramsBin, startFakeForge, writeFakeSecretItem } from '@momonga/testkit';
-import type { FakeForge, FakeScriptEntry } from '@momonga/testkit';
+import { fakeSecretProgramsBin, startFakeForge, startFakeGitHttps, writeFakeSecretItem } from '@momonga/testkit';
+import type { FakeForge, FakeGitHttps, FakeScriptEntry } from '@momonga/testkit';
 import { skipCase, titleOf } from './support/cases.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
@@ -79,7 +79,84 @@ const allOutputsOf = (frames: Awaited<ReturnType<typeof runToEnd>>['frames']): s
     .map((frame) => String(frame.data['output']))
     .join('\n');
 
+const GIT_USERNAME = 'x-access-token';
+
+const startGitHttps = async (home: E2eHome): Promise<FakeGitHttps> => {
+  const server = await startFakeGitHttps({ root: home.root, repository: 'acme/widgets.git', username: GIT_USERNAME, credential: FORGE_CREDENTIAL });
+  registerE2eCleanup(() => server.close());
+  writeFakeSecretItem(fakeSecretProgramsBin(), FORGE_SECRET, FORGE_CREDENTIAL);
+  return server;
+};
+
+const initHttpsRepository = (home: E2eHome, server: FakeGitHttps): void => {
+  gitAt(home, home.project, 'init', '-q', '--initial-branch=main');
+  gitAt(home, home.project, 'config', 'user.name', 'Momonga E2E');
+  gitAt(home, home.project, 'config', 'user.email', 'e2e@example.invalid');
+  fs.writeFileSync(path.join(home.project, 'widgets.txt'), 'one\n');
+  gitAt(home, home.project, 'add', 'widgets.txt');
+  gitAt(home, home.project, 'commit', '-q', '-m', 'base');
+  gitAt(home, home.project, 'push', '-q', server.repositoryPath, 'main');
+  gitAt(home, home.project, 'remote', 'add', 'origin', `${server.origin}/acme/widgets.git`);
+};
+
+const httpsForgeSettings = (server: FakeGitHttps) => ({
+  forges: [{ id: 'local', descriptor: 'github', hosts: [server.host], apiBaseUrl: server.origin, credential: { secret: FORGE_SECRET } }],
+  network: { extraCaFiles: [server.caFile] },
+});
+
 describe('gitpr: delegated work through the real runtime, from the production start path', () => {
+  it.skipIf(skipCase('gitpr-delegated-https-push'))(titleOf('gitpr-delegated-https-push'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+    sandboxOrSkip(context);
+    const home = await createE2eHome();
+    const server = await startGitHttps(home);
+    initHttpsRepository(home, server);
+    await startStack({ home, settings: { ...httpsForgeSettings(server), models: localModels(home) }, script: [toolCallReply('GitPush', { remote: 'origin', branch: 'main' }, 'call_push'), textReply('done')] });
+    const runtime = createRuntimeClient(home);
+    try {
+      await trustProject(runtime, home);
+      fs.appendFileSync(path.join(home.project, 'widgets.txt'), 'two\n');
+      gitAt(home, home.project, 'commit', '-q', '-am', 'Add the second widget');
+      const { run, frames } = await runToEnd(runtime, 'Push main', ['GitPush']);
+      expect(allOutputsOf(frames)).not.toMatch(/certificate|SSL/i);
+      expect(run.status).toBe('COMPLETED');
+      expect(gitAt(home, server.repositoryPath, 'log', '-1', '--format=%s', 'main'), allOutputsOf(frames)).toBe('Add the second widget');
+      expect(server.requests.some((request) => request.path.endsWith('/git-receive-pack') && request.authorized)).toBe(true);
+      expect(JSON.stringify(frames)).not.toContain(FORGE_CREDENTIAL);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it.skipIf(skipCase('gitpr-delegated-https-egress'))(titleOf('gitpr-delegated-https-egress'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+    sandboxOrSkip(context);
+    const home = await createE2eHome();
+    const server = await startGitHttps(home);
+    initHttpsRepository(home, server);
+    const undeclared = server.origin.replace('://127.0.0.1:', '://localhost:');
+    gitAt(home, home.project, 'remote', 'add', 'undeclared', `${undeclared}/acme/widgets.git`);
+    await startStack({
+      home,
+      settings: { ...httpsForgeSettings(server), models: localModels(home) },
+      script: [toolCallReply('GitPush', { remote: 'origin', branch: 'main' }, 'call_push_declared'), toolCallReply('GitPush', { remote: 'undeclared', branch: 'main' }, 'call_push_undeclared'), textReply('done')],
+    });
+    const runtime = createRuntimeClient(home);
+    try {
+      await trustProject(runtime, home);
+      fs.appendFileSync(path.join(home.project, 'widgets.txt'), 'two\n');
+      gitAt(home, home.project, 'commit', '-q', '-am', 'Add the second widget');
+      const before = server.requests.length;
+      const { frames } = await runToEnd(runtime, 'Push main to both remotes', ['GitPush']);
+      const [declared, refused] = outputsOf(frames, 'GitPush');
+      expect(declared, allOutputsOf(frames)).not.toMatch(/did not reach its goal/);
+      expect(refused).toMatch(/localhost:\d+.*CONNECT tunnel failed, response 403/s);
+      expect(server.requests.slice(before).every((request) => request.authorized || request.path.endsWith('/info/refs'))).toBe(true);
+      expect(server.requests.slice(before).filter((request) => request.path.endsWith('/git-receive-pack'))).toHaveLength(1);
+      expect(JSON.stringify(frames)).not.toContain(FORGE_CREDENTIAL);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it.skipIf(skipCase('gitpr-delegated-sequence'))(titleOf('gitpr-delegated-sequence'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
     sandboxOrSkip(context);
     const home = await createE2eHome();
