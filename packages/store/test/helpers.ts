@@ -125,6 +125,21 @@ export const harness = (options: StoreOptions = {}): Harness => {
   return { dir, dbPath, clock, store };
 };
 
+export const migratedDatabase = (): string => {
+  const { dbPath, store } = harness();
+  store.close();
+  return dbPath;
+};
+
+export const harnessFrom = (migrated: string, options: StoreOptions = {}): Harness => {
+  const dir = makeStoreDir();
+  const dbPath = path.join(dir, 'runtime.db');
+  fs.copyFileSync(migrated, dbPath);
+  const clock = createFakeClock(START_MS);
+  const store = openStoreAt(dbPath, clock, options);
+  return { dir, dbPath, clock, store };
+};
+
 export const rawDb = (dbPath: string): DatabaseSync => {
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA busy_timeout = 5000');

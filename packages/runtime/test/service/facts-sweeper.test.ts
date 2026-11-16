@@ -6,7 +6,7 @@ import { FACTS_SWEEP_BATCH_RUNS, INDICATOR_DEFINITIONS_VERSION } from '@momonga/
 import type { RunCallView, RunFactsView } from '@momonga/protocol';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
-import { enqueue, harness, mustClaim, newSession, rawDb } from '../../../store/test/helpers.ts';
+import { enqueue, harness, harnessFrom, migratedDatabase, mustClaim, newSession, rawDb } from '../../../store/test/helpers.ts';
 import * as storeModule from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 
@@ -214,8 +214,8 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
     const runCount = (model.constants['Runs'] ?? '').split(',').length;
     const batchSize = Number(model.constants['BatchSize']);
 
-    const world = async () => {
-      const { dbPath, store, clock } = harness();
+    const world = async (migrated: string) => {
+      const { dbPath, store, clock } = harnessFrom(migrated);
       const timers = createFakeTimers(clock);
       const session = newSession(store).id;
       const terminalEvent = new Map<string, number>();
@@ -264,10 +264,11 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
 
     it(`every poison set of ${runCount} runs, an infrastructure failure at each request, and a definitions version change: the invariants hold after every tick and every terminal run gets its row (Coverage)`, async () => {
       const problems: string[] = [];
+      const migrated = migratedDatabase();
       for (let mask = 0; mask < 2 ** runCount; mask += 1) {
         for (let infraAt = 0; infraAt <= runCount; infraAt += 1) {
           for (const upgrade of [false, true]) {
-            const scene = await world();
+            const scene = await world(migrated);
             const ids: string[] = [];
             for (let index = 0; index < runCount; index += 1) ids.push(await scene.complete());
             const poison = new Set(ids.filter((_, index) => (mask & (1 << index)) !== 0));
@@ -291,7 +292,7 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
 
     it('a closed session that the retention sweep deletes while its run is in a batch leaves no row behind, and the batch commits with the other runs covered', async () => {
       const periodMs = 100_000;
-      const scene = await world();
+      const scene = await world(migratedDatabase());
       const closed = await scene.complete();
       scene.clock.advance(periodMs + 1);
       const other = newSession(scene.store).id;
