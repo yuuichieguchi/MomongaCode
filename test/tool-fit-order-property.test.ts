@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildContext } from '@momonga/context';
+import { buildContext, toolsDroppedMessage } from '@momonga/context';
 import type { AnyTool } from '@momonga/tools';
 import { makeTool, toolSetOf } from '../packages/tools/test/harness.ts';
 import { capabilitiesFor, harness, inputFor, seeded, sourcesWith } from '../packages/context/test/helpers.ts';
@@ -69,18 +69,7 @@ describe('the tools kept, their order and the digest', () => {
 
 describe('the tools_dropped notice', () => {
   const HUGE = 'x'.repeat(20_000);
-  const droppedByTier = (message: string): Record<string, string[]> => {
-    const list = /^The declared context window of \S+ \(\d+ tokens\) leaves no room for these tools, so they were left out: (.*); raise the declared context window of that model/.exec(message)?.[1];
-    expect(list, message).toBeDefined();
-    return Object.fromEntries(
-      list!.split('; ').map((group) => {
-        const tiered = /^(.*) \((\w+) tools\)$/.exec(group);
-        return tiered === null ? ['', group.split(', ')] : [tiered[2], tiered[1]!.split(', ')];
-      }),
-    );
-  };
-
-  it('groups the dropped tools by tier, each companion marked with its host and ranked in its host tier, in the sentence that names the declared context window"', async () => {
+  it('groups the dropped tools by tier, each companion marked with its host and ranked in its host tier, in the sentence that names the declared context window', async () => {
     const set = await toolSetOf(
       makeTool('Read', { tier: 'essential' }),
       makeTool('Bash', { tier: 'common', description: HUGE }),
@@ -91,19 +80,17 @@ describe('the tools_dropped notice', () => {
     );
     const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
     const { ports } = harness(capabilities);
-    const built = await buildContext(
-      inputFor(capabilities, {
-        sources: sourcesWith({ tools: set.forModel({ mode: 'manual', rules: [] }) }),
-        companions: { hostOf: Object.fromEntries(set.companions), keepWithoutHost: false },
-      }),
-      ports,
-    );
-    expect(built.tools.map((tool) => tool.name)).toEqual(['Read']);
-    const message = built.notices.find((notice) => notice.code === 'tools_dropped')?.message;
-    expect(message).toBeDefined();
-    expect(droppedByTier(message!)).toEqual({
-      common: ['Bash', 'BashOutput (with Bash)', 'KillBash (with Bash)'],
-      optional: ['Alpha', 'Beta'],
+    const input = inputFor(capabilities, {
+      sources: sourcesWith({ tools: set.forModel({ mode: 'manual', rules: [] }) }),
+      companions: { hostOf: Object.fromEntries(set.companions), keepWithoutHost: false },
     });
+    const built = await buildContext(input, ports);
+    expect(built.tools.map((tool) => tool.name)).toEqual(['Read']);
+    expect(built.notices.find((notice) => notice.code === 'tools_dropped')?.message).toBe(
+      toolsDroppedMessage(input.model, capabilities.contextWindow, [
+        { tier: 'common', tools: ['Bash', 'BashOutput (with Bash)', 'KillBash (with Bash)'] },
+        { tier: 'optional', tools: ['Alpha', 'Beta'] },
+      ]),
+    );
   });
 });

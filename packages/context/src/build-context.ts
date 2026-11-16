@@ -125,11 +125,18 @@ export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBoun
   return low;
 };
 
-const groupedByTier = (names: readonly string[], tiers: readonly (string | undefined)[]): string[] => {
+export type DroppedToolGroup = { tier?: string; tools: readonly string[] };
+
+const groupedByTier = (names: readonly string[], tiers: readonly (string | undefined)[]): DroppedToolGroup[] => {
   const groups = new Map<string | undefined, string[]>();
   names.forEach((name, index) => groups.set(tiers[index], [...(groups.get(tiers[index]) ?? []), name]));
-  return [...groups].map(([tier, members]) => (tier === undefined ? members.join(', ') : `${members.join(', ')} (${tier} tools)`));
+  return [...groups].map(([tier, tools]) => (tier === undefined ? { tools } : { tier, tools }));
 };
+
+const droppedGroupText = ({ tier, tools }: DroppedToolGroup): string => (tier === undefined ? tools.join(', ') : `${tools.join(', ')} (${tier} tools)`);
+
+export const toolsDroppedMessage = (model: string, contextWindow: number, groups: readonly DroppedToolGroup[]): string =>
+  `The declared context window of ${model} (${contextWindow} tokens) leaves no room for these tools, so they were left out: ${groups.map(droppedGroupText).join('; ')}; raise the declared context window of that model, or shorten the instructions`;
 
 type RankedCandidates = { tools: FunctionTool[]; rankOf: ReadonlyMap<string, number>; tierOf: ReadonlyMap<string, string> };
 
@@ -271,7 +278,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   const toolFloor =
     !selectsTools ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, toolPorts, toolFrozen, eligible) : inputCeilingFor(sized));
   let tools = eligible;
-  let leftOut: string[] = [];
+  let leftOut: DroppedToolGroup[] = [];
   if (selectsTools && !(await stableFitsFloor(eligible))) {
     const required = requiredToolsOf(input, eligible);
     const kept: FunctionTool[] = [...required];
@@ -300,7 +307,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   if (leftOut.length > 0) {
     notices.push({
       code: 'tools_dropped',
-      message: `The declared context window of ${input.model} (${capabilities.contextWindow} tokens) leaves no room for these tools, so they were left out: ${leftOut.join('; ')}; raise the declared context window of that model, or shorten the instructions`,
+      message: toolsDroppedMessage(input.model, capabilities.contextWindow, leftOut),
       key: canonicalJson({ contextWindow: capabilities.contextWindow, model: input.model }),
     });
   }
