@@ -168,3 +168,10 @@ describe('isVerifiedSuccess', () => {
     expect(isVerifiedSuccess({ status: 'COMPLETED', events: journal([], [write('src/a.ts')]), commands: [], manifests: [] })).toBe(false);
   });
 });
+
+describe('a run whose pinned mandate is malformed', () => {
+  it('is refused, not judged, when its mandate pin has no completion', () => {
+    const events = journal(undefined, []).map((event) => (event.type === 'run.started' ? { ...event, pins: { mandate: { scope: { allow: ['Read'] } } } } : event));
+    expect(() => isVerifiedSuccess({ status: 'COMPLETED', events, commands: COMMANDS, manifests: MANIFESTS })).toThrow(/the mandate pinned for this run is malformed/);
+  });
+});

@@ -1,6 +1,6 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
-import { pinnedDelegationOf, pinnedMandateOf, verificationRequiredOf, OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
+import { delegationOfMandate, pinnedMandateOf, verificationRequiredOf, OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
 import type { Capabilities, OutputFormatterName, PinnedRuleVerdict, TargetAnswers, PinnedDelegation, PinnedMandate } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
@@ -92,7 +92,7 @@ export const parentPinsOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, 
   if (started === undefined || started.type !== 'run.started') throw new Error(`run ${runId} has not recorded run.started, so it has pinned no model and no roles`);
   const model = decodeStoredModel(started.pins, STORED_MODEL_KEYS.pin);
   if (model === undefined) throw new Error(`run ${runId} recorded run.started without a model pin`);
-  const delegation = pinnedDelegationOf(started.pins);
+  const delegation = delegationOfMandate(pinnedMandateOf(started.pins));
   return { model, roles: readRoles(started.pins['roles']), ...(delegation === undefined ? {} : { delegation }) };
 };
 

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { isRecord } from '@momonga/foundation';
-import { completionMutates, conditionOwed, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
+import { completionMutates, conditionOwed, pinnedMandateOf, reconciliationMutates } from '@momonga/protocol';
 import type { ConditionResult, MutationFacts, PinnedCompletion, RunEvent } from '@momonga/protocol';
 
 export type VerifiedSuccessInput = {
@@ -80,7 +80,7 @@ export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'com
   const add = (event: RunEvent): void => {
     switch (event.type) {
       case 'run.started':
-        completion ??= pinnedCompletionOf(event.pins);
+        completion ??= pinnedMandateOf(event.pins)?.completion;
         return;
       case 'tool.call':
         calls.set(event.callId, factsOfCall(event));

@@ -103,13 +103,6 @@ export const delegationOfMandate = (mandate: { scope?: MandateScope; hold?: Mand
   return { scope: { allow: scope.allow ?? [], ask: scope.ask ?? [], deny: scope.deny ?? [] }, ...(hold === undefined ? {} : { hold }) };
 };
 
-export const pinnedDelegationOf = (pins: Record<string, unknown> | undefined): PinnedDelegation | undefined => {
-  const mandate = pins?.['mandate'];
-  if (!isRecord(mandate) || mandate['scope'] === undefined) return undefined;
-  const malformed = (): Error => new Error('the mandate pinned for this run is malformed');
-  return delegationOfMandate({ scope: readScope(mandate['scope'], malformed), ...(mandate['hold'] === undefined ? {} : { hold: readHold(mandate['hold'], malformed) }) });
-};
-
 export type PinnedCondition = { id: string; command: string; when: ConditionWhen; source: ConditionSource; timeoutMs?: number };
 
 export type PinnedCompletion = { conditions: PinnedCondition[]; requirements: string[] };
@@ -261,13 +254,6 @@ export const readPinnedCompletion = (value: unknown): PinnedCompletion => {
     return entry;
   });
   return { conditions, requirements };
-};
-
-export const pinnedCompletionOf = (pins: Record<string, unknown> | undefined): PinnedCompletion | undefined => {
-  const mandate = pins?.['mandate'];
-  if (mandate === undefined) return undefined;
-  if (!isRecord(mandate)) throw new Error('the mandate pinned for this run is malformed');
-  return mandate['completion'] === undefined ? undefined : readPinnedCompletion(mandate['completion']);
 };
 
 export type PinnedMandate = { completion: PinnedCompletion; scope?: MandateScope; hold?: MandateHold };

@@ -1,4 +1,4 @@
-import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, heldEndOf, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
+import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, heldEndOf, pinnedMandateOf, reconciliationMutates } from '@momonga/protocol';
 import type {
   BudgetExhausted,
   ConditionResult,
@@ -199,7 +199,7 @@ export const createRunReportFold = (): RunReportFold => {
   };
 
   const finish = (span: RunReportSpan): RunReport => {
-    const completion: PinnedCompletion | undefined = pinnedCompletionOf(pins);
+    const completion: PinnedCompletion | undefined = pinnedMandateOf(pins)?.completion;
     const declared = completion?.conditions ?? [];
     const requirements = completion?.requirements ?? [];
     const notRun: RunReport['notRun'] = [];

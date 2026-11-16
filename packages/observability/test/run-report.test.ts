@@ -264,3 +264,10 @@ describe('the report is a fold of the journal', () => {
     }
   });
 });
+
+describe('the report of a run whose pinned mandate is malformed', () => {
+  it('refuses a mandate pin without its completion, as the worker does', () => {
+    const scopeOnly = asPayload({ type: 'run.started', attempt: 1, now: 1, pins: { model: 'fm', mandate: { scope: { allow: ['Read'] } } } });
+    expect(() => buildRunReport(journal([{ type: 'user.message', text: 'fix the bug' }, scopeOnly]))).toThrow(/the mandate pinned for this run is malformed/);
+  });
+});

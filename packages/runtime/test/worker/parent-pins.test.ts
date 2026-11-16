@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RunEvent } from '@momonga/protocol';
+import type { PinnedMandate, RunEvent } from '@momonga/protocol';
 import { parentPinsOf } from '../../src/worker/pins.ts';
 
 const storeWith = (events: readonly Pick<RunEvent, 'type'>[]) => ({
@@ -24,5 +24,14 @@ describe('parentPinsOf', () => {
 
   it('fails when run.started pinned no model', () => {
     expect(() => parentPinsOf(storeWith([started({ roles: {} })]), 'run-1')).toThrow('run run-1 recorded run.started without a model pin');
+  });
+
+  it('gives the delegation of the mandate the parent pinned', () => {
+    const mandate: PinnedMandate = { completion: { conditions: [], requirements: [] }, scope: { allow: ['Read'] } };
+    expect(parentPinsOf(storeWith([started({ model: 'fm', mandate })]), 'run-1').delegation).toEqual({ scope: { allow: ['Read'], ask: [], deny: [] } });
+  });
+
+  it('refuses a parent mandate pin without its completion, as the worker does', () => {
+    expect(() => parentPinsOf(storeWith([started({ model: 'fm', mandate: { scope: { allow: ['Read'] } } })]), 'run-1')).toThrow(/the mandate pinned for this run is malformed/);
   });
 });
