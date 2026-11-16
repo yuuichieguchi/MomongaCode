@@ -2,7 +2,7 @@ import type { FileSystem } from './node-file-system.ts';
 import path from 'node:path';
 import { nodeFileSystem } from './node-file-system.ts';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
-import { claimPathOf, lockFormOf, sidecarSuffixOf } from './platform/lock-form.ts';
+import { claimPathOf, lockFormOf, sidecarNameSuffixesOf } from './platform/lock-form.ts';
 import type { LockForm } from './platform/lock-form.ts';
 
 export type LeftoverFiles = Pick<FileSystem, 'readdir'> & {
@@ -31,7 +31,7 @@ export const nodeLeftoverFiles: LeftoverFiles = {
   rm: (entry) => nodeFileSystem.rm(entry, { recursive: true }),
 };
 
-type Unit = { name: string; entry: boolean; sidecar: boolean };
+type Unit = { name: string; entry: boolean; sidecar: boolean; companions: string[] };
 
 type UnitOutcome = 'removed' | 'kept';
 
@@ -46,19 +46,29 @@ const namesIn = async (files: LeftoverFiles, directory: string): Promise<string[
   }
 };
 
-const unitsOf = (names: readonly string[], registered: LeftoverDirectory, sidecarSuffix: string): Unit[] => {
+const unitsOf = (names: readonly string[], registered: LeftoverDirectory, suffixes: { sidecar: string; companions: readonly string[] }): Unit[] => {
   const units = new Map<string, Unit>();
   const unitOf = (name: string): Unit => {
     const existing = units.get(name);
     if (existing !== undefined) return existing;
-    const created = { name, entry: false, sidecar: false };
+    const created: Unit = { name, entry: false, sidecar: false, companions: [] };
     units.set(name, created);
     return created;
   };
+  const sidecarOwnerOf = (name: string): { base: string; companion: boolean } | undefined => {
+    for (const companion of suffixes.companions) {
+      if (name.endsWith(companion) && name.length > companion.length) return { base: name.slice(0, -companion.length), companion: true };
+    }
+    if (name.endsWith(suffixes.sidecar) && name.length > suffixes.sidecar.length) return { base: name.slice(0, -suffixes.sidecar.length), companion: false };
+    return undefined;
+  };
   for (const name of names) {
-    const base = name.endsWith(sidecarSuffix) ? name.slice(0, -sidecarSuffix.length) : undefined;
-    if (base !== undefined && base !== '' && registered.isLeftover(base)) unitOf(base).sidecar = true;
-    else if (registered.isLeftover(name)) unitOf(name).entry = true;
+    const owner = sidecarOwnerOf(name);
+    if (owner !== undefined && registered.isLeftover(owner.base)) {
+      const unit = unitOf(owner.base);
+      unit.sidecar = true;
+      if (owner.companion) unit.companions.push(name);
+    } else if (registered.isLeftover(name)) unitOf(name).entry = true;
   }
   return [...units.values()];
 };
@@ -82,6 +92,7 @@ const claimUnit = async (lock: KernelLockMechanism, entry: string, form: LockFor
 const removeUnderClaim = async (files: LeftoverFiles, unit: Unit, entry: string, form: LockForm, held: HeldKernelLock): Promise<void> => {
   try {
     if (unit.entry) await files.rm(entry);
+    for (const companion of unit.companions) await files.rm(path.join(path.dirname(entry), companion));
   } catch (error) {
     held.release();
     throw error;
@@ -140,10 +151,10 @@ const sweepUnit = async (registered: LeftoverDirectory, lock: KernelLockMechanis
 export const sweepLeftovers = async ({ directories, lock, files = nodeLeftoverFiles, warn: onEntryError }: SweepLeftoversOptions): Promise<LeftoverSweep> => {
   const removed: string[] = [];
   const kept: string[] = [];
-  const sidecarSuffix = sidecarSuffixOf(lock);
+  const suffixes = sidecarNameSuffixesOf(lock);
   for (const registered of directories) {
     const names = await reportedOr<string[]>(registered.directory, onEntryError, [], () => namesIn(files, registered.directory));
-    for (const unit of unitsOf(names, registered, sidecarSuffix)) {
+    for (const unit of unitsOf(names, registered, suffixes)) {
       const outcome = await sweepUnit(registered, lock, files, unit, onEntryError);
       (outcome === 'removed' ? removed : kept).push(path.join(registered.directory, unit.name));
     }
