@@ -96,13 +96,14 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     await gateway.close();
   });
 
-  it('reads again when the record readAt lies in the future', async () => {
-    const gateway = await startPlanGateway({ models: LISTED });
+  it('reads again when the wall clock stepped back before the readAt of the record it answered from', async () => {
+    const clock = createFakeClock(Date.now());
+    const gateway = await startPlanGateway({ models: LISTED, clock });
     await signIn(gateway);
     await gateway.get(modelsRoute());
-    const record = await readRecord(gateway);
-    await createFileCredentialStore(catalogDirectory(gateway), { lock: testKernelLock() }).write(RECORD_KEY, JSON.stringify({ ...record, readAt: new Date(Date.now() + 86_400_000).toISOString() }), new AbortController().signal);
-    await gateway.get(modelsRoute());
+    expect(listReads(gateway)).toBe(1);
+    clock.stepWall(-60_000);
+    expect((await gateway.get(modelsRoute())).status).toBe(200);
     expect(listReads(gateway)).toBe(2);
     await gateway.close();
   });
