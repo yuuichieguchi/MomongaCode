@@ -2,6 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LockWaitTimeoutError, ProcessLockHeldError, acquireProcessLock, createKeyedSerializer, inspectProcessLock, withFileLock } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
+import { DEFAULT_LOCK_TIMEOUT_MS } from '../src/file-lock.ts';
 import { registerCleanup, withTempDir, sleepDrivenTiming, createFakeRandom, testKernelLock } from '@momonga/testkit';
 
 const NEVER_ABORTED = new AbortController().signal;
@@ -91,6 +92,32 @@ describe('withFileLock', () => {
       signal: asker.signal,
     });
     await expect(failure).rejects.toBe(reason);
+  });
+
+  it('a wait with the asker signal and no timeout ends at the default lock timeout', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'task.lock');
+    const held = await acquireProcessLock(lockPath, undefined, { mechanism: testKernelLock() });
+    registerCleanup(context, () => held.release());
+    let now = 1_000_000;
+    const start = now;
+    const failure = await withFileLock(lockPath, async () => undefined, {
+      mechanism: testKernelLock(),
+      ports: {
+        ...steppedPorts(),
+        timing: sleepDrivenTiming({
+          now: () => now,
+          sleep: async (ms) => {
+            now += ms;
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            if (now - start > 10 * DEFAULT_LOCK_TIMEOUT_MS) throw new Error('the wait did not end at the default bound');
+          },
+        }),
+      },
+      signal: NEVER_ABORTED,
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(LockWaitTimeoutError);
+    expect(failure).toMatchObject({ timeoutMs: DEFAULT_LOCK_TIMEOUT_MS });
+    expect(now - start).toBe(DEFAULT_LOCK_TIMEOUT_MS);
   });
 });
 
