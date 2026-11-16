@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
-import { HOST_READ_BOUND_MS, endedStoreCall, isAtomicWriteTemporary, isRecord, operationLimit, settledOrAborted, sweepLeftovers, systemRandom } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, claimPathOf, endedStoreCall, isAtomicWriteTemporary, isRecord, operationLimit, settledOrAborted, sweepLeftovers, systemFileLockPorts, systemRandom, withFileLock } from '@momonga/foundation';
 import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretBackend } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES, PLAN_DISABLED_STATE, PLAN_LABEL_PATTERN, PLAN_REVOCATION_CONFIRMED, PLAN_REVOCATION_NONE, PLAN_REVOCATION_UNCONFIRMED, PLAN_SIGN_IN_FAILURE, PLAN_STORE_STATES, SIGNED_IN_OUTCOME, isPlanLabel } from '@momonga/protocol';
 import type { NamedPlanAccountRef, PlanAccountRef, PlanAccountState, PlanListProblem, PlanRevocation, PlanRevocationAnswer, PlanStoreState } from '@momonga/protocol';
@@ -1047,22 +1047,28 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   };
 
   const moveActive = (ref: NamedPlanAccountRef): Promise<void> =>
-    pointerWrites.run(async () => {
-      let written: ActivePointer;
-      try {
-        written = await readActivePointer(fileSystem, paths.active);
-      } catch (error) {
-        pointerProblem = describeError(error);
-        throw storeReadFailure(pointerProblem, error);
-      }
-      const next: ActivePointer = { ...written, [ref.profile]: ref.account };
-      try {
-        await writeActivePointer(fileSystem, paths.active, next, options.lock);
-      } catch (error) {
-        throw storeWriteFailure(pointerFile, error);
-      }
-      adoptPointer(next);
-    });
+    pointerWrites.run(() =>
+      withFileLock(
+        claimPathOf(options.lock, paths.active, 'sidecar'),
+        async () => {
+          let written: ActivePointer;
+          try {
+            written = await readActivePointer(fileSystem, paths.active);
+          } catch (error) {
+            pointerProblem = describeError(error);
+            throw storeReadFailure(pointerProblem, error);
+          }
+          const next: ActivePointer = { ...written, [ref.profile]: ref.account };
+          try {
+            await writeActivePointer(fileSystem, paths.active, next, options.lock);
+          } catch (error) {
+            throw storeWriteFailure(pointerFile, error);
+          }
+          adoptPointer(next);
+        },
+        { ports: systemFileLockPorts, mechanism: options.lock },
+      ),
+    );
 
   const pointerReady = async (): Promise<void> => {
     if (pointerProblem === undefined) return;
