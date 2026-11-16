@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import { expect } from 'vitest';
-import { TEMP_LEDGER_ENV, recordTempEntry } from './temp-ledger.ts';
+import { TEMP_LEDGER_ENV, creatorOf, recordTempEntry } from './temp-ledger.ts';
 
 type Maker = (...args: unknown[]) => unknown;
 type Holder = Record<string, unknown>;
@@ -21,15 +21,8 @@ const pathOfMade = (made: unknown): string => (typeof made === 'object' && made 
 
 const REPOSITORY = path.resolve(import.meta.dirname, '..', '..');
 
-const creatorNow = (): string | undefined => {
-  const { testPath, currentTestName } = expect.getState();
-  if (testPath === undefined) return undefined;
-  const file = path.relative(REPOSITORY, testPath).split(path.sep).join('/');
-  return currentTestName === undefined ? file : `${file} > ${currentTestName}`;
-};
-
 const recorded = <T>(made: T): T => {
-  recordTempEntry(LEDGER, { path: pathOfMade(made), creator: creatorNow() });
+  recordTempEntry(LEDGER, { path: pathOfMade(made), creator: creatorOf(expect.getState(), new Error().stack ?? '', REPOSITORY) });
   return made;
 };
 
