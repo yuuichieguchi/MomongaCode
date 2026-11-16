@@ -1,6 +1,7 @@
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import { App } from '../src/tui/app.tsx';
+import { STARTING_TEXT } from '../src/tui/screen/waiting-row.tsx';
 import type { AppProps, TuiOutcome } from '../src/tui/app.tsx';
 import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
@@ -19,7 +20,7 @@ export const frame = (event: Record<string, unknown>): RunEventFrame => {
   return { id: sequence, event: String(event['type']), data: { ...base, id: sequence, seq: sequence, ...event } as PublicRunEvent };
 };
 
-export const start = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'colour' | 'copyOnSelect' | 'now' | 'timers' | 'keySettleMs' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption'>> = {}, screen: Partial<FakeScreenSize> = {}) => {
+export const startStillStarting = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'colour' | 'copyOnSelect' | 'now' | 'timers' | 'keySettleMs' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption'>> = {}, screen: Partial<FakeScreenSize> = {}) => {
   const backend = fakeBackend(options);
   const terminal = fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen });
   const outcomes: TuiOutcome[] = [];
@@ -42,6 +43,14 @@ export const start = async (options: FakeBackendOptions = {}, extra: Partial<Pic
     />,
   );
   return { backend, app, terminal, outcomes, exited: exited.promise };
+};
+
+type StartArguments = Parameters<typeof startStillStarting>;
+
+export const start = async (...given: StartArguments): ReturnType<typeof startStillStarting> => {
+  const started = await startStillStarting(...given);
+  await Promise.race([untilFrame(started.app, (now) => now !== '' && !now.includes(STARTING_TEXT)), started.exited]);
+  return started;
 };
 
 export const type = async (app: Instance, text: string, echo: string): Promise<void> => {
