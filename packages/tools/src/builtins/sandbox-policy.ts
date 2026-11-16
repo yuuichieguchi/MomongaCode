@@ -1,4 +1,4 @@
-import { hostPaths, mapAsync, someAsync } from '@momonga/foundation';
+import { hostPaths, mapAsync, someAsync, standardSecretLocations } from '@momonga/foundation';
 import type { FileRuleSet, MomongaPaths, ProtectedSet } from '@momonga/foundation';
 import { SandboxPolicyError, alwaysWriteDenied, assertAbsoluteEntries, validateSandboxPolicy } from '@momonga/sandbox';
 import type { OwnedLayout, SandboxPolicy } from '@momonga/sandbox';
@@ -45,11 +45,12 @@ export const buildSandboxPolicy = async (options: SandboxPolicyOptions, signal: 
     protectedSet: options.protectedSet,
   };
   await validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir }, paths);
-  const homeGuards = await mapAsync(denied.readDenied, paths.canonicalPath);
+  const secretLocations = standardSecretLocations(options.layout);
+  const homeGuards = await mapAsync(secretLocations.map((location) => location.directory), paths.canonicalPath);
   const skillsRoot = await paths.canonicalPath(options.layout.skills);
   for (const entry of await mapAsync(readAllowed, paths.canonicalPath)) {
     if ((await someAsync(homeGuards, (guard) => paths.comparableContains(guard, entry))) && !(await paths.comparableContains(skillsRoot, entry))) {
-      throw new SandboxPolicyError('read_allowed_inside_owned_root', `readAllowed entry must not lie inside ${denied.root} or ${denied.keychains}: ${entry}`, { path: entry });
+      throw new SandboxPolicyError('read_allowed_inside_owned_root', `readAllowed entry must not lie inside ${secretLocations.map((location) => location.label).join(', ')}: ${entry}`, { path: entry });
     }
   }
   return policy;
