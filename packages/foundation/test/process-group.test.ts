@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GroupMembersReader, ProcessGroupPort } from '@momonga/foundation';
 import { forceKillGroup, groupAlive, procGroupMembers, systemWaitTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
-import { createFakeClock, createSteppingTiming, createTempDir, killGroupsForCleanup, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { createFakeClock, createSteppingTiming, createTempDir, killGroupsForCleanup, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS, REAL_PROCESS_WAIT_MS, waitForFile } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -274,18 +274,7 @@ describe('terminateGroup', () => {
     if (pgid === undefined) throw new Error('spawn failed');
     cleanups.push(() => killGroupsForCleanup([pgid]));
     const exited = new Promise<NodeJS.Signals | null>((resolve) => child.once('exit', (_code, signal) => resolve(signal)));
-    await new Promise<void>((resolve) => {
-      const watcher = fs.watch(dir, () => {
-        if (fs.existsSync(readyFile) && fs.readFileSync(readyFile, 'utf8') === String(pgid)) {
-          watcher.close();
-          resolve();
-        }
-      });
-      if (fs.existsSync(readyFile) && fs.readFileSync(readyFile, 'utf8') === String(pgid)) {
-        watcher.close();
-        resolve();
-      }
-    });
+    await waitForFile(readyFile, { description: 'the group leader to write its ready file', boundMs: REAL_PROCESS_WAIT_MS, holds: (content) => content === String(pgid) });
     expect(await terminateGroup(pgid, { graceMs: 5000 })).toBe('terminated');
     expect(await exited).toBe('SIGTERM');
     expect(await groupAlive(pgid)).toBe(false);

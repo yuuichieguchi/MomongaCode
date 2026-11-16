@@ -4,9 +4,10 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { POLL_INTERVAL_MS } from '@momonga/foundation';
 import { TOOL_OUTPUT_TAG, tokensForText } from '@momonga/protocol';
 import { fmSchemaRefusalOf, fmToolsRefusalOf } from './fm-schema-decoding.ts';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from './test-support.ts';
+import { waitForFile } from './wait-for.ts';
 import { collectAllowedNames, findUsedKeywords, generateInstance } from './schema-instance.ts';
 
 export type FakeScenario = 'tools-ok' | 'tools-400' | 'tools-ignored' | 'json-schema-only' | 'none';
@@ -306,8 +307,10 @@ const createSocketPath = (): { socketPath: string; ownedDir?: string } => {
   return { socketPath: path.join(dir, 'fake.sock'), ownedDir: dir };
 };
 
+const HELD_REPLY_BOUND_MS = REAL_PROCESS_TEST_TIMEOUT_MS;
+
 const untilFileExists = async (file: string, signal: AbortSignal): Promise<void> => {
-  while (!fs.existsSync(file)) await delay(POLL_INTERVAL_MS, undefined, { signal });
+  await waitForFile(file, { description: 'the release of the held first reply', boundMs: HELD_REPLY_BOUND_MS, signal });
 };
 
 export const startFakeChatCompletions = async (
