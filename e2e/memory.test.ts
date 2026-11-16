@@ -1,10 +1,11 @@
+import { PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
+import { createRuntimeClient, personCapabilityOfHome, framesOfType } from './support/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import type { E2eStack } from './support/stack.ts';
@@ -24,7 +25,8 @@ const rawClient = (home: E2eHome) => {
     const response = await client.request({
       method,
       path: target,
-      ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+      headers: { [PERSON_CAPABILITY_HEADER]: await personCapabilityOfHome(home), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const text = await response.text();
     return { status: response.status, json: text === '' ? {} : (JSON.parse(text) as Json) };
