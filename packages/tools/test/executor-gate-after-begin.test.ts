@@ -1,3 +1,4 @@
+import { TEST_WRITER_LAUNCH } from './writer-launch.ts';
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import path from 'node:path';
@@ -21,6 +22,7 @@ const executorWhoseRecordVanishesAfterGet = (harness: Harness) => {
     },
   };
   return createToolExecutor({
+    writerLaunch: TEST_WRITER_LAUNCH,
     hostParallelism: 8,
     layout: momongaLayout(harness.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },

@@ -155,7 +155,7 @@ export type StartRuntimeProcessOptions = {
   stopValues?: StopValuesReader;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
-  helperSelf?: HelperSelf;
+  helperSelf: HelperSelf;
   ruleSolver?: RuleSolverSource;
   socketGuard?: SocketGuardSource;
   role?: RolePort;
@@ -445,7 +445,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       warn: (text) => logger.warn(text),
       ...(sandboxExecPath === undefined ? {} : { sandboxExecPath }),
       ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths, options.locks) }),
-      ...(helperSelf === undefined ? {} : { helperSelf }),
+      helperSelf,
     });
     const sandboxes = createPinnedDerivation<SandboxBinding>({
       cache,
@@ -622,7 +622,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         leaseMs,
         heartbeatMs: heartbeatMsFor(leaseMs),
         ...(options.bundledRipgrep === undefined ? {} : { bundledRipgrep: options.bundledRipgrep(paths, options.locks) }),
-        ...(options.helperSelf === undefined ? {} : { helperSelf: options.helperSelf }),
+        helperSelf: options.helperSelf,
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({

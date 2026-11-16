@@ -1,3 +1,4 @@
+import { TEST_WRITER_LAUNCH } from './writer-launch.ts';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,7 +10,9 @@ import { buildSandboxPolicy } from '@momonga/tools';
 import type { LeaseFence, LeasedIdempotencyPort } from '@momonga/tools';
 import type { PermissionRule, RuleEffect } from '@momonga/policy';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, validateSandboxPolicy } from '@momonga/sandbox';
-import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import type { Sandbox, SandboxCommand, SandboxExit, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
+import { PassThrough, Readable } from 'node:stream';
+import { runFileWriter } from '../src/node-ports.ts';
 
 const SEATBELT_PATH = '/usr/bin/sandbox-exec';
 
@@ -227,19 +230,29 @@ export const makeBlobs = () => {
   return { port, stored, puts };
 };
 
-export const fakeSandbox: Sandbox = {
-  kind: 'seatbelt',
-  spawn: () => {
-    throw new Error('sandbox is not used by executor tests');
-  },
+const WRITER_IN_TEST_PID = 0;
+
+const writerInThisProcess = (command: SandboxCommand): SandboxedProcess => {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const exited = runFileWriter({ args: [], env: {}, stdin: Readable.from([command.stdin ?? '']), stdout, stderr }).then(
+    (code): SandboxExit => {
+      stdout.end();
+      stderr.end();
+      return { code, signal: null, stop: 'confirmed' };
+    },
+  );
+  return { pid: WRITER_IN_TEST_PID, pgid: WRITER_IN_TEST_PID, stdout, stderr, exited, rebind: () => undefined };
 };
 
-export const noneSandbox: Sandbox = {
-  kind: 'none',
-  spawn: () => {
-    throw new Error('sandbox is not used by executor tests');
-  },
+const spawnOnlyTheWriter: Sandbox['spawn'] = (command) => {
+  if (command.argv.join('\0') !== TEST_WRITER_LAUNCH.argv.join('\0')) throw new Error('sandbox is not used by executor tests');
+  return writerInThisProcess(command);
 };
+
+export const fakeSandbox: Sandbox = { kind: 'seatbelt', spawn: spawnOnlyTheWriter };
+
+export const noneSandbox: Sandbox = { kind: 'none', spawn: spawnOnlyTheWriter };
 
 export const sessionsTmpRootOf = (layout: Layout): string => path.join(layout.root, 'sessions');
 

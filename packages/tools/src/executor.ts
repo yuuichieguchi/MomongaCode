@@ -1,3 +1,4 @@
+import type { WriterLaunch } from './builtins/file-writer.ts';
 import path from 'node:path';
 import { ABANDON_KILL_GRACE_MS, ABORT_SETTLE_LIMIT_MS, DEFAULT_SANDBOX_NETWORK, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, describeNetworkScope, displayToolPath, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf, standardSecretLocations } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
@@ -175,6 +176,7 @@ export type ToolExecutorOptions = {
   callLockDir: string;
   layout: GuardedLayout;
   kernelLock: KernelLockMechanism;
+  writerLaunch: WriterLaunch;
   fs: PolicyHostFilesystem;
   leaseMs: number;
   heartbeatMs: number;
@@ -1536,6 +1538,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...scope.reconcileCtx,
       sandbox: batch.sandbox,
       sandboxPolicy: batch.sandboxPolicy,
+      writerLaunch: options.writerLaunch,
       outboundNetwork,
       ripgrep: batch.ripgrep,
       limits: batch.limits,

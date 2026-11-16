@@ -1,3 +1,4 @@
+import { TEST_HELPER_SELF } from '../../../tools/test/writer-launch.ts';
 import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,7 +46,7 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
       authState: async () => ({ state: 'required' }),
       close: async () => undefined,
     }) as unknown as McpAuthorizingPool;
-  const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: TEST_UNPROTECTED_LAUNCH, hostParallelism: 8,
+  const toolRuntime = runtime.createToolRuntime({ helperSelf: TEST_HELPER_SELF, mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: TEST_UNPROTECTED_LAUNCH, hostParallelism: 8,
     kernelLock: testKernelLock(),
     lockCapability: testLocks().capability,
     version: '0.0.0-test',

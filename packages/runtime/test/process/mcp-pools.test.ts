@@ -1,3 +1,4 @@
+import { TEST_HELPER_SELF } from '../../../tools/test/writer-launch.ts';
 import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -406,7 +407,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     const f = await makeRuntimeFixture();
     let error: unknown;
     try {
-      runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: TEST_UNPROTECTED_LAUNCH, hostParallelism: 8,
+      runtime.createToolRuntime({ helperSelf: TEST_HELPER_SELF, mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: TEST_UNPROTECTED_LAUNCH, hostParallelism: 8,
         kernelLock: testKernelLock(),
         lockCapability: testLocks().capability,
         version: '0.0.0-test',

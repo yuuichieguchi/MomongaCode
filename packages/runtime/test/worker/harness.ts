@@ -1,3 +1,4 @@
+import { TEST_WRITER_LAUNCH } from '../../../tools/test/writer-launch.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -261,6 +262,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const executorWarnings: string[] = [];
   const layout = momongaLayout(home, process.platform, process.env);
   const realExecutor = createToolExecutor({
+    writerLaunch: TEST_WRITER_LAUNCH,
     hostParallelism: 8,
     layout,
     reap: { inspector: testProcessInspector() },

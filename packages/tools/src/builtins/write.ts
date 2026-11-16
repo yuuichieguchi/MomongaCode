@@ -1,4 +1,5 @@
 import { sha256Hex } from '@momonga/foundation';
+import { writerChildOf } from './file-writer.ts';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { PreconditionContext } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, isUtf8File, newFileMode, readUtf8File, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
@@ -80,8 +81,7 @@ export const writeTool = defineTool<WriteInput>({
       throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
     }
     const warning = await writeFileAtomically({
-      files: ctx.files,
-      random: ctx.random,
+      writer: writerChildOf(ctx),
       scope: ctx,
       target: plan.path,
       requestedPath: requested,

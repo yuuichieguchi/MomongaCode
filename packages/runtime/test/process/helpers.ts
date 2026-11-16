@@ -1,3 +1,4 @@
+import { TEST_HELPER_SELF } from '../../../tools/test/writer-launch.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach } from 'vitest';
@@ -269,7 +270,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const reapTiming = recordingReapTiming(fixture.clock, fixture.timers);
   const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: temp.home, platform: process.platform, cache, store: fixture.store });
   fs.mkdirSync(temp.paths.jobs, { recursive: true, mode: 0o700 });
-  const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: TEST_UNPROTECTED_LAUNCH, hostParallelism: 8,
+  const toolRuntime = runtime.createToolRuntime({ helperSelf: TEST_HELPER_SELF, mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: TEST_UNPROTECTED_LAUNCH, hostParallelism: 8,
     kernelLock: testKernelLock(),
     lockCapability: testLocks().capability,
     version: FIXTURE_RUNTIME_VERSION,

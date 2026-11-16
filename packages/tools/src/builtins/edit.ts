@@ -1,5 +1,6 @@
 import { sha256Hex } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
+import { writerChildOf } from './file-writer.ts';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { PreconditionContext } from '../types.ts';
 import { NotUtf8Error, assertReadAndUnchanged, assertSameLocation, looksBinary, readUtf8File, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
@@ -151,8 +152,7 @@ export const editTool = defineTool<EditInput>({
     const replacement = computeReplacement(original, input, shown);
     if (sha256Hex(replacement.updated) !== plan.postHash) throw new ToolExecutionError('Edit result does not match the prepared state');
     const warning = await writeFileAtomically({
-      files: ctx.files,
-      random: ctx.random,
+      writer: writerChildOf(ctx),
       scope: ctx,
       target: plan.path,
       requestedPath: requested,

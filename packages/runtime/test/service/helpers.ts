@@ -1,3 +1,4 @@
+import { TEST_WRITER_LAUNCH } from '../../../tools/test/writer-launch.ts';
 import { createFakeRuleVerifier } from '../worker/fake-rule-verifier.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -804,6 +805,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executor = createToolExecutor({
+    writerLaunch: TEST_WRITER_LAUNCH,
     hostParallelism: 8,
     layout: momongaLayout(env.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },
