@@ -1,12 +1,17 @@
 import { spawnSync } from '@momonga/testkit/child-process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { makeGitWorld } from './support.ts';
 import { createTempDir } from '@momonga/testkit';
 
 const supportsReftable = (): boolean => {
-  const probe = path.join(createTempDir(), 'probe.git');
-  return spawnSync('git', ['init', '-q', '--bare', '--ref-format=reftable', probe], { encoding: 'utf8' }).status === 0;
+  const base = createTempDir();
+  try {
+    return spawnSync('git', ['init', '-q', '--bare', '--ref-format=reftable', path.join(base, 'probe.git')], { encoding: 'utf8' }).status === 0;
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
 };
 
 type Measured = Record<string, string>;
