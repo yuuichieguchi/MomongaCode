@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pinnedFloorFor } from '@momonga/context';
+import { pinnedFloorFor, toolsDroppedMessage } from '@momonga/context';
 import type { Capabilities } from '@momonga/protocol';
 import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, protectionRungsOf } from '../packages/context/src/levels.ts';
 import type { HistoryShape } from '../packages/context/src/levels.ts';
@@ -211,6 +211,16 @@ const assertAcceptance = async (
   expect(journal.filter((event) => event.type === 'run.status' && event.data['to'] === 'STOPPED')).toEqual([]);
 };
 
+const isToolsDroppedNotice = (message: string, contextWindow: number): boolean => {
+  const modelMark = '\u0000model\u0000';
+  const listMark = '\u0000tools\u0000';
+  const [head = '', rest = ''] = toolsDroppedMessage(modelMark, contextWindow, [{ tools: [listMark] }]).split(modelMark);
+  const [middle = '', tail = ''] = rest.split(listMark);
+  const afterHead = message.startsWith(head) ? message.slice(head.length) : undefined;
+  const middleAt = afterHead?.indexOf(middle) ?? -1;
+  return afterHead !== undefined && middleAt > 0 && message.endsWith(tail) && afterHead.length - middleAt - middle.length > tail.length;
+};
+
 const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan, capabilities: Capabilities): void => {
   const notices = ofType(observed.journal, 'notice');
   const floor = pinnedFloorFor(capabilities);
@@ -290,7 +300,7 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     const row = runRowOf(home, runId);
     expect({ status: row.status, stopReason: row.stop_reason }).toEqual({ status: 'COMPLETED', stopReason: null });
     const notices = ofType(journalOf(home, runId), 'notice').map((event) => String(event.data['message']));
-    expect(notices.some((message) => message.includes('leaves no room for these tools, so they were left out: '))).toBe(true);
+    expect(notices.some((message) => isToolsDroppedNotice(message, capabilities.contextWindow))).toBe(true);
     const posts = chatCompletions(stack.fake);
     expect(posts).toHaveLength(1);
     expect(wireTokensOfBody(posts[0]?.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0).R);
