@@ -40,7 +40,7 @@ describe('completion conditions are checked against the deny rules where they ar
     expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'completion_condition_denied' } });
     const message = env.run(run.id).error?.message ?? '';
     expect(message).toContain('Bash(npm test*)');
-    expect(message).toContain('verification.commands of the settings');
+    expect(message).toContain('the verification commands or the accepted projectChecks of the settings');
     expect(env.ofType(run.id, 'run.started')).toEqual([]);
   });
 

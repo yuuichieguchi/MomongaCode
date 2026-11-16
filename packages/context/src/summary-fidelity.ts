@@ -1,5 +1,5 @@
 import { tokenMatcherOf } from '@momonga/protocol';
-import type { ClaimedToken, FidelityClaim, SummaryFidelity, SummarySectionCoverage } from '@momonga/protocol';
+import type { ClaimedToken, SummaryFidelity, SummarySectionCoverage } from '@momonga/protocol';
 
 export type FidelitySource = {
   attested: readonly string[];
@@ -83,12 +83,6 @@ const occursIn = (token: string, cwd: string, texts: readonly string[]): boolean
   const matcher = tokenMatcherOf(token, cwd);
   return texts.some((text) => matcher.matches(text, true));
 };
-
-const sourcesFor = (claim: FidelityClaim, record: FidelityRecord): readonly string[] =>
-  claim === 'executed' ? [...record.executedLeaves, ...record.executedText] : [...record.executedLeaves, ...record.executedText, ...record.statedText];
-
-export const attestedTokens = (claims: readonly ClaimedToken[], record: FidelityRecord, cwd: string): string[] =>
-  claims.filter(({ token, claim }) => occursIn(token, cwd, sourcesFor(claim, record))).map(({ token }) => token);
 
 const coverageOf = (found: number): SummarySectionCoverage => (found === SECTIONS.length ? 'complete' : found === 0 ? 'none' : 'partial');
 

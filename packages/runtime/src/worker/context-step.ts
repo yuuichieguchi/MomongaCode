@@ -15,6 +15,7 @@ import {
   readersOffered,
   referenceKindsOf,
   renderWorkingState,
+  createTokenMeter,
   withCalibration,
   workingStateCapFor,
 } from '@momonga/context';
@@ -238,15 +239,25 @@ export const contextInputOf = async (
   trailing: readonly InputItem[] = [],
 ): Promise<BuildContextInput> => (await offeredInputOf(ctx, wrapUp, level, scan, trailing)).input;
 
-const roleCapabilities = new WeakMap<ClaimContext, Promise<Capabilities>>();
+const roleFacts = new WeakMap<ClaimContext, Promise<{ capabilities: Capabilities; meter: TokenMeter }>>();
 
-const compactionRoleCapabilitiesOf = (ctx: ClaimContext, roleModel: string): Promise<Capabilities> => {
-  const known = roleCapabilities.get(ctx);
+const compactionRoleFactsOf = (ctx: ClaimContext, roleModel: string): Promise<{ capabilities: Capabilities; meter: TokenMeter }> => {
+  const known = roleFacts.get(ctx);
   if (known !== undefined) return known;
-  const read = ctx.control.recordingRaised(ctx.options.gateway.capabilities(roleModel, { signal: ctx.control.signal }));
-  roleCapabilities.set(ctx, read);
+  const read = ctx.control.recordingRaised(ctx.options.gateway.capabilities(roleModel, { signal: ctx.control.signal })).then((capabilities) => ({
+    capabilities,
+    meter: createTokenMeter({
+      counter: { count: (request) => ctx.control.recordingRaised(ctx.options.gateway.countTokens({ ...request, momonga: { ...request.momonga, ...EXACT_MODEL, fence: sessionFenceOf(sessionOf(ctx)) } }, { signal: ctx.control.signal })) },
+      model: roleModel,
+      capabilities,
+      observedCapacity: ctx.token.observedCapacity,
+    }),
+  }));
+  roleFacts.set(ctx, read);
   return read;
 };
+
+const compactionRoleCapabilitiesOf = async (ctx: ClaimContext, roleModel: string): Promise<Capabilities> => (await compactionRoleFactsOf(ctx, roleModel)).capabilities;
 
 const portsOf = (ctx: ClaimContext): BuildContextPorts => {
   const roleModel = ctx.roles.compaction;
@@ -258,7 +269,7 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => {
       put: (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
     },
     instructions: ctx.options.instructionReaderFor(ctx.control.signal),
-    ...(roleModel === undefined ? {} : { compactionTarget: () => compactionRoleCapabilitiesOf(ctx, roleModel) }),
+    ...(roleModel === undefined ? {} : { compactionRole: () => compactionRoleFactsOf(ctx, roleModel) }),
   };
 };
 
