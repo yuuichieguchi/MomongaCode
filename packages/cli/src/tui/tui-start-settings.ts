@@ -9,9 +9,7 @@ export type TuiStart =
   | { readonly kind: 'loaded'; readonly settings: ResolvedTuiSettings; readonly sources: Readonly<Record<TuiKey, SettingSource>> }
   | { readonly kind: 'broken'; readonly file: string | undefined; readonly message: string };
 
-export type TuiStartPlace = { readonly home: string; readonly projectDir: string; readonly userFile: string; readonly signal: AbortSignal };
-
-const UNTRUSTED = { isTrusted: () => false };
+export type TuiStartPlace = { readonly home: string; readonly projectDir: string; readonly userFile: string; readonly signal: AbortSignal; readonly isTrusted: () => Promise<boolean> };
 
 const brokenBy = async (file: string | undefined, read: () => Promise<unknown>): Promise<TuiStart | undefined> => {
   try {
@@ -23,15 +21,16 @@ const brokenBy = async (file: string | undefined, read: () => Promise<unknown>):
   }
 };
 
-export const readTuiStart = async ({ home, projectDir, userFile, signal }: TuiStartPlace): Promise<TuiStart> => {
+export const readTuiStart = async ({ home, projectDir, userFile, signal, isTrusted }: TuiStartPlace): Promise<TuiStart> => {
+  const trusted = await isTrusted();
   const userBroken = await brokenBy(userFile, () => loadUserSettings({ home, signal }));
   if (userBroken !== undefined) return userBroken;
   let settings: ResolvedTuiSettings = defaultTuiSettings();
   const layersBroken = await brokenBy(undefined, async () => {
-    settings = (await loadSettings({ home, projectDir, cli: {}, trust: UNTRUSTED, signal })).settings.tui;
+    settings = (await loadSettings({ home, projectDir, cli: {}, trust: { isTrusted: () => trusted }, signal })).settings.tui;
   });
   if (layersBroken !== undefined) return layersBroken;
-  const snapshot = await readSettingsSnapshot({ home, projectDir, trusted: false, signal });
+  const snapshot = await readSettingsSnapshot({ home, projectDir, trusted, signal });
   const keys = Object.keys(defaultTuiSettings()) as TuiKey[];
   const merged = settings;
   const sourceOf = (key: TuiKey): SettingSource => {

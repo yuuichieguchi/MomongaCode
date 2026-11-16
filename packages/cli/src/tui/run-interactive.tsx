@@ -143,7 +143,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const onExit = (result: TuiOutcome): void => {
     outcome = result;
   };
-  const readStart = (): Promise<TuiStart> => readTuiStart({ home: paths.home, projectDir: ports.cwd, userFile: paths.settingsFile, signal: ports.interrupt });
+  const readStart = (): Promise<TuiStart> => readTuiStart({ home: paths.home, projectDir: ports.cwd, userFile: paths.settingsFile, signal: ports.interrupt, isTrusted: async () => (await backend.trust()).decision === 'trusted' });
   const firstStart = await readStart();
   const start = firstStart.kind === 'loaded' ? firstStart : await repairedStart(ports, terminal, output.port, firstStart, readStart);
   if (start === undefined) {
