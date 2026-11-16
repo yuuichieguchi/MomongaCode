@@ -1565,7 +1565,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       retentionPurge: async (runIds, cutoffMs, requestSignal) => {
         await flushTelemetry(requestSignal);
         traceStore.purgeRuns(runIds, cutoffMs);
-        traceStore.moveLegacyContent({ retentionMs: clock.now() - cutoffMs });
+        traceStore.moveLegacyContent();
       },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),

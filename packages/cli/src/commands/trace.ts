@@ -90,7 +90,7 @@ export const writeTraceContent = async (sources: readonly ContentSource[], runId
         write(
           json
             ? `${JSON.stringify({ store: source.name, ...body })}\n`
-            : `${escapedLines([`${source.name} body ${body.id}  span ${body.spanId}  ${body.kind}  expires ${new Date(body.expiresAtMs).toISOString()}`, ...body.content.split('\n')])}\n`,
+            : `${escapedLines([`${source.name} body ${body.id}  span ${body.spanId}  ${body.kind}`, ...body.content.split('\n')])}\n`,
         );
       }
       after = page.next;
