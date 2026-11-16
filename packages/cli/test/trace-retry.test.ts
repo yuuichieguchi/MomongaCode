@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MOMONGA_ATTRIBUTES } from '@momonga/protocol';
 import type { RunTraceSpan, RunTraceView } from '@momonga/protocol';
 import { renderTrace } from '../src/commands/trace.ts';
 
@@ -23,8 +24,8 @@ describe('momonga trace shows a retried call (DECISION-12)', () => {
   it('a call the gateway sent again names the recorded call it retries', () => {
     const text = renderTrace(
       view([
-        span({ spanId: 'a', name: 'chat m', attributes: { 'momonga.target': 'metered', 'momonga.attempt': 1 } }),
-        span({ spanId: 'b', name: 'chat m', startMs: 11, endMs: 20, attributes: { 'momonga.target': 'metered', 'momonga.attempt': 1, 'momonga.retry_of': 41 } }),
+        span({ spanId: 'a', name: 'chat m', attributes: { [MOMONGA_ATTRIBUTES.target]: 'metered', [MOMONGA_ATTRIBUTES.attempt]: 1 } }),
+        span({ spanId: 'b', name: 'chat m', startMs: 11, endMs: 20, attributes: { [MOMONGA_ATTRIBUTES.target]: 'metered', [MOMONGA_ATTRIBUTES.attempt]: 1, [MOMONGA_ATTRIBUTES.retryOf]: 41 } }),
       ]),
     );
     expect(text).toContain('chat m  10 ms  OK  target metered, attempt 1\n');
