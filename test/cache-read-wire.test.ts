@@ -60,6 +60,7 @@ describe('the cost, breakdown and run-summary wires hold null for a figure no ca
 describe('the closed wire schemas', () => {
   const totals = {
     calls: 1,
+    retries: 0,
     localCalls: 0,
     unpricedCalls: 0,
     unknownBillingCalls: 0,
