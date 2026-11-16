@@ -382,6 +382,11 @@ const prepareStatements = (db: DatabaseSync) => ({
     `SELECT r.* FROM runs r
      WHERE r.id = :id AND ${KNOWN_RUN_VALUES} AND r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)`,
   ),
+  leasedElsewhere: db.prepare(
+    `SELECT id, lease_owner, lease_token FROM runs
+     WHERE status IN ('RUNNING', 'CANCELLING') AND lease_owner IS NOT NULL AND lease_owner <> :workerId AND lease_expires_at > :now
+     ORDER BY id`,
+  ),
   claimTakeover: db.prepare(
     `SELECT CASE WHEN ${TAKEOVER} THEN r.lease_expires_at END AS taken_from
      FROM runs r WHERE ${CLAIMABLE} AND NOT ${EXHAUSTED} ${CLAIM_ORDER} LIMIT 1`,
@@ -1607,6 +1612,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       });
       return claim;
     },
+
+    leasedElsewhere: (workerId) =>
+      sql.leasedElsewhere.all({ workerId, now: clock.now() }).map((row) => {
+        const reader = readerFor('runs', 'leased elsewhere', row);
+        return { runId: reader.string('id'), owner: reader.string('lease_owner'), leaseToken: reader.number('lease_token') };
+      }),
 
     heartbeat: (claim) =>
       transaction<HeartbeatResult>( () => {

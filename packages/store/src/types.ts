@@ -168,6 +168,8 @@ export type InboxAddInput = { delivery: InboxDelivery; text: string; images?: Im
 
 export type ClaimStatus = 'RUNNING' | 'CANCELLING';
 
+export type LeasedElsewhere = { runId: string; owner: string; leaseToken: number };
+
 export type Claim = {
   runId: string;
   sessionId: string;
@@ -646,6 +648,7 @@ export type RuntimeStore = {
   readonly maxTotalAttempts: number;
   getRun(id: string): Run | undefined;
   claim(workerId: string): Claim | null;
+  leasedElsewhere(workerId: string): LeasedElsewhere[];
   heartbeat(claim: Claim): HeartbeatResult;
   append(claim: Claim, events: readonly RunEventPayload[]): AppendResult;
   transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch, preceding?: readonly RunEventPayload[]): Promise<RunMutationResult>;

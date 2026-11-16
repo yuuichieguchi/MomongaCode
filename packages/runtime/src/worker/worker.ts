@@ -22,6 +22,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
   const controls = new Set<ClaimControl>();
   const inFlight = new Map<Promise<unknown>, string>();
   const memories = new Map<string, RunMemory>();
+  let heldReported = new Set<string>();
 
   const host: ClaimHost = {
     attach: (control) => {
@@ -63,12 +64,24 @@ export const createWorker = (options: WorkerOptions): Worker => {
     }
   };
 
+  const reportHeldElsewhere = (): void => {
+    const held = options.store.leasedElsewhere(options.workerId);
+    const current = new Set(held.map((lease) => `${lease.runId}\u0000${lease.owner}\u0000${lease.leaseToken}`));
+    for (const lease of held) {
+      if (!heldReported.has(`${lease.runId}\u0000${lease.owner}\u0000${lease.leaseToken}`)) options.onClaimHeldElsewhere({ workerId: options.workerId, ...lease });
+    }
+    heldReported = current;
+  };
+
   const runOnce = async (onClaim?: (claim: Claim) => void): Promise<'idle' | 'yielded'> => {
     if (aborted || stopping) return 'idle';
     if ((await options.role.refresh()) !== 'serving') return 'idle';
     if (aborted || stopping) return 'idle';
     const claim = options.store.claim(options.workerId);
-    if (claim === null) return 'idle';
+    if (claim === null) {
+      reportHeldElsewhere();
+      return 'idle';
+    }
     onClaim?.(claim);
     const running = runClaim(options, claim, host);
     inFlight.set(running, claim.runId);
