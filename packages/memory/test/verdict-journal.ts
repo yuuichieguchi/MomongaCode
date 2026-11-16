@@ -1,4 +1,4 @@
-import type { ApprovalBasis, RunEvent, SideEffect, ToolFile } from '@momonga/protocol';
+import type { ApprovalBasis, PinnedMandate, RunEvent, SideEffect, ToolFile } from '@momonga/protocol';
 
 export const PROJECT = '/work/a';
 
@@ -97,7 +97,7 @@ export const journal = (conditions: readonly Condition[] | undefined, steps: rea
     type: 'run.started',
     attempt: 1,
     now: 1,
-    pins: { ...(conditions === undefined ? {} : { mandate: { completion: { conditions, requirements: [] } } }) },
+    pins: { ...(conditions === undefined ? {} : { mandate: { completion: { conditions: [...conditions], requirements: [] } } satisfies PinnedMandate }) },
   });
   let lastMutationSeq = 0;
   for (const [index, step] of steps.entries()) {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PermissionMode, RunEventPayload } from '@momonga/protocol';
 import { aggregate, buildReliabilityReport, decodeReliabilityReport, encodeReliabilityReport, foldFacts, formatReliabilityReport } from '@momonga/reliability';
 import type { RunFacts } from '@momonga/reliability';
-import { T0, eventsOf, modelResponded, runInfo, started, terminal, toolCall, toolCompleted } from './streams.ts';
+import { SCOPED_MANDATE, T0, eventsOf, modelResponded, runInfo, started, terminal, toolCall, toolCompleted } from './streams.ts';
 import type { Timed } from './streams.ts';
 
 const startedWith = (callId: string, basis: string): RunEventPayload => ({ type: 'tool.started', callId, idemKey: `idem-${callId}`, basis }) as RunEventPayload;
@@ -26,7 +26,7 @@ const answered = (callId: string, optionId: string): RunEventPayload => ({ type:
 
 const denied = (callId: string, source: string): RunEventPayload => ({ type: 'tool.completed', callId, status: 'failed', output: 'denied', denial: { source, reason: 'no' } }) as RunEventPayload;
 
-const mandated: RunEventPayload = { type: 'run.started', attempt: 1, now: T0, pins: { model: 'fm', mandate: { scope: { allow: ['Read'], ask: ['GitPush'], deny: [] } } } } as RunEventPayload;
+const mandated = started(1, { mandate: SCOPED_MANDATE });
 
 const held = (callId: string): RunEventPayload => ({ type: 'tool.held', callId, approvalId: `h-${callId}`, reason: 'ask', footprint: { reads: [], writes: [] } }) as RunEventPayload;
 
@@ -100,5 +100,12 @@ describe('the permission decisions and the holds of the reliability report (reli
 
   it('keeps every new figure through the codec', () => {
     expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
+  });
+});
+
+describe('the facts of a run whose pinned mandate is malformed', () => {
+  it('refuse a mandate pin without its completion, as the worker does', () => {
+    const scopeOnly = { type: 'run.started', attempt: 1, now: T0, pins: { model: 'fm', mandate: { scope: { allow: ['Read'] } } } } as RunEventPayload;
+    expect(() => fold('r-malformed', 'manual', [[T0, scopeOnly], [T0 + 1, terminal('COMPLETED')]])).toThrow(/the mandate pinned for this run is malformed/);
   });
 });

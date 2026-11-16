@@ -3,6 +3,7 @@ import { INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, aggregate, foldCalls, foldFacts, indicatorsOf } from '@momonga/reliability';
 import type { RunFacts } from '@momonga/reliability';
 import {
+  SCOPED_MANDATE,
   T0,
   attemptFailed,
   attemptLost,
@@ -431,8 +432,7 @@ describe('X5 Budget Overrun Rate', () => {
 });
 
 describe('the figures of mandate runs', () => {
-  const MANDATE = { scope: { allow: ['Read'], ask: ['GitPush'], deny: [] } };
-  const mandated = (attempt: number): Timed[1] => ({ type: 'run.started', attempt, now: T0, pins: { model: 'fm', mandate: MANDATE } }) as Timed[1];
+  const mandated = (attempt: number): Timed[1] => started(attempt, { mandate: SCOPED_MANDATE });
   const held = (callId: string): Timed[1] => ({ type: 'tool.held', callId, approvalId: `a-${callId}`, reason: 'ask', footprint: { reads: [], writes: [] } }) as Timed[1];
   const resolved = (callId: string, outcome: 'executed' | 'rejected' | 'withdrawn'): Timed[1] =>
     (outcome === 'executed'

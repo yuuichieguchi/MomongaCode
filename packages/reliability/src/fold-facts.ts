@@ -1,4 +1,4 @@
-import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, completionMutates, heldEndOf, pinnedCompletionOf, pinnedDelegationOf, reconciliationMutates } from '@momonga/protocol';
+import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, completionMutates, delegationOfMandate, heldEndOf, pinnedMandateOf, reconciliationMutates } from '@momonga/protocol';
 import type { MutationFacts, PermissionOption, PinnedCompletion, RunFactsAnswers, RunFactsDenials, RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView, RunFactsVerification } from '@momonga/protocol';
 import type { RunInfo } from './types.ts';
 
@@ -148,9 +148,12 @@ export const createFactsFold = (): FactsFold => {
     }
     switch (event.type) {
       case 'run.started': {
-        if (!started) completion = pinnedCompletionOf(event.pins);
+        if (!started) {
+          const mandate = pinnedMandateOf(event.pins);
+          completion = mandate?.completion;
+          mandated = delegationOfMandate(mandate) !== undefined;
+        }
         started = true;
-        mandated ??= pinnedDelegationOf(event.pins) !== undefined;
         break;
       }
       case 'attempt.failed':

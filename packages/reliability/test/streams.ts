@@ -1,4 +1,4 @@
-import type { PermissionMode, RunEvent, RunEventPayload, RunStatus, SideEffect } from '@momonga/protocol';
+import type { PermissionMode, PinnedCompletion, PinnedMandate, RunEvent, RunEventPayload, RunStatus, SideEffect } from '@momonga/protocol';
 import type { RunInfo } from '@momonga/reliability';
 
 export const T0 = 1_800_000_000_000;
@@ -12,17 +12,24 @@ export const eventsOf = (runId: string, timed: readonly Timed[]): RunEvent[] =>
       ({ ...payload, id: index + 1, runId, sessionId: SESSION_ID, seq: index + 1, step: 0, leaseToken: 1, createdAt }) as RunEvent,
   );
 
-export const COMPLETION = { conditions: [{ id: 'tests', command: 'npm test', when: 'always', source: 'request' }], requirements: [] };
+export const COMPLETION: PinnedCompletion = { conditions: [{ id: 'tests', command: 'npm test', when: 'always', source: 'request' }], requirements: [] };
+
+export const SCOPED_MANDATE: PinnedMandate = { completion: { conditions: [], requirements: [] }, scope: { allow: ['Read'], ask: ['GitPush'], deny: [] } };
+
+const mandatePinOf = (options: { declared?: boolean; mandate?: PinnedMandate }): { mandate?: PinnedMandate } => {
+  if (options.mandate !== undefined) return { mandate: options.mandate };
+  return options.declared === true ? { mandate: { completion: COMPLETION } } : {};
+};
 
 export const started = (
   attempt: number,
-  options: { declared?: boolean; model?: string; mode?: PermissionMode; now?: number } = {},
+  options: { declared?: boolean; mandate?: PinnedMandate; model?: string; mode?: PermissionMode; now?: number } = {},
 ): RunEventPayload =>
   ({
     type: 'run.started',
     attempt,
     now: options.now ?? T0,
-    pins: { model: options.model ?? 'fm', ...(options.declared === true ? { mandate: { completion: COMPLETION } } : {}) },
+    pins: { model: options.model ?? 'fm', ...mandatePinOf(options) },
     ...(options.mode === undefined ? {} : { mode: options.mode }),
   }) as RunEventPayload;
 

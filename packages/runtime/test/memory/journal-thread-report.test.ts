@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { buildRunReport } from '@momonga/observability';
 import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
-import type { RunEventPayload } from '@momonga/protocol';
+import type { PinnedMandate, RunEventPayload } from '@momonga/protocol';
 import { createJournalReader } from '@momonga/store';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import { reportHandler } from '../../src/memory/journal-thread.ts';
@@ -15,7 +15,7 @@ vi.setConfig({ testTimeout: 60_000 });
 const asPayload = (value: Record<string, unknown>): RunEventPayload => value as unknown as RunEventPayload;
 
 const work = (now: number): RunEventPayload[] => [
-  asPayload({ type: 'run.started', attempt: 1, now, pins: { model: 'fm', mandate: { completion: { conditions: [{ id: 'c-test', command: 'npm test', when: 'always', source: 'request' }], requirements: [] } } }, mode: 'manual' }),
+  asPayload({ type: 'run.started', attempt: 1, now, pins: { model: 'fm', mandate: { completion: { conditions: [{ id: 'c-test', command: 'npm test', when: 'always', source: 'request' }], requirements: [] } } satisfies PinnedMandate }, mode: 'manual' }),
   asPayload({ type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { input: ['x'.repeat(4000)] } }),
   asPayload({ type: 'tool.call', callId: 'w1', providerCallId: 'w1', name: 'Write', kind: 'edit', sideEffect: 'write', title: 'Write', rawInput: { file_path: '/w/a.txt' } }),
   asPayload({ type: 'tool.started', callId: 'w1', idemKey: 'k-w1', basis: 'rule' }),

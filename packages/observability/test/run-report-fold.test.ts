@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RUN_REPORT_EVENT_TYPES, buildRunReport, createRunReportFold } from '@momonga/observability/run-report';
-import type { RunEvent, RunEventPayload } from '@momonga/protocol';
+import type { PinnedMandate, RunEvent, RunEventPayload } from '@momonga/protocol';
 import { materializeEvents } from '@momonga/testkit';
 
 const asPayload = (value: Record<string, unknown>): RunEventPayload => value as unknown as RunEventPayload;
@@ -10,7 +10,7 @@ const journal = (): RunEvent[] =>
     [
       { type: 'user.message', text: 'fix the bug' },
       { type: 'run.status', from: 'QUEUED', to: 'RUNNING' },
-      asPayload({ type: 'run.started', attempt: 1, now: 1, pins: { model: 'fm', mandate: { completion: { conditions: [{ id: 'c-test', command: 'npm test', when: 'always', source: 'request' }], requirements: ['reads well'] } } } }),
+      asPayload({ type: 'run.started', attempt: 1, now: 1, pins: { model: 'fm', mandate: { completion: { conditions: [{ id: 'c-test', command: 'npm test', when: 'always', source: 'request' }], requirements: ['reads well'] } } satisfies PinnedMandate } }),
       asPayload({ type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { input: ['x'.repeat(5000)] } }),
       asPayload({ type: 'tool.call', callId: 'w1', providerCallId: 'w1', name: 'Write', kind: 'edit', sideEffect: 'write', title: 'Write', rawInput: { file_path: '/w/a.txt' } }),
       asPayload({ type: 'tool.started', callId: 'w1', idemKey: 'k-w1', basis: 'rule' }),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as observability from '@momonga/observability';
-import type { RunEvent, RunEventPayload } from '@momonga/protocol';
+import type { PinnedCondition, PinnedMandate, RunEvent, RunEventPayload } from '@momonga/protocol';
 import { materializeEvents } from '@momonga/testkit';
 
 type Report = {
@@ -24,13 +24,13 @@ const buildRunReport = (events: readonly RunEvent[]): Report => {
 
 const asPayload = (value: Record<string, unknown>): RunEventPayload => value as unknown as RunEventPayload;
 
-const TEST = { id: 'c-test', command: 'npm test', when: 'always', source: 'request' };
-const LINT = { id: 'c-lint', command: 'npm run lint', when: 'after_mutation', source: 'settings' };
+const TEST: PinnedCondition = { id: 'c-test', command: 'npm test', when: 'always', source: 'request' };
+const LINT: PinnedCondition = { id: 'c-lint', command: 'npm run lint', when: 'after_mutation', source: 'settings' };
 
-const started = (conditions: readonly object[], requirements: readonly string[] = []): RunEventPayload[] => [
+const started = (conditions: readonly PinnedCondition[], requirements: readonly string[] = []): RunEventPayload[] => [
   { type: 'user.message', text: 'fix the bug' },
   { type: 'run.status', from: 'QUEUED', to: 'RUNNING' },
-  asPayload({ type: 'run.started', attempt: 1, now: 1, pins: { model: 'fm', mandate: { completion: { conditions, requirements } } } }),
+  asPayload({ type: 'run.started', attempt: 1, now: 1, pins: { model: 'fm', mandate: { completion: { conditions: [...conditions], requirements: [...requirements] } } satisfies PinnedMandate } }),
 ];
 
 const startedWithout = (): RunEventPayload[] => [

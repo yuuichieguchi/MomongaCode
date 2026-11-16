@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RunEvent, RunEventPayload } from '@momonga/protocol';
+import type { PinnedMandate, RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { Run } from '@momonga/store';
 import * as thread from '../../src/memory/journal-thread.ts';
 import { reflectionInputFor } from '../../src/memory/reflection-input.ts';
@@ -59,7 +59,7 @@ const checks = (count: number): RunEventPayload[] => Array.from({ length: count 
 
 const modelCalls = (count: number): RunEventPayload[] => Array.from({ length: count }, (_unused, index) => bash(`t${index}`, 'npm test', 0, 'ok')).flat();
 
-const STARTED = { type: 'run.started', attempt: 1, now: 0, pins: { mandate: { completion: { conditions: [{ id: conditionIdOf('npm test'), command: 'npm test', when: 'always', source: 'settings' }], requirements: [] } } } } as unknown as RunEventPayload;
+const STARTED = { type: 'run.started', attempt: 1, now: 0, pins: { mandate: { completion: { conditions: [{ id: conditionIdOf('npm test'), command: 'npm test', when: 'always', source: 'settings' }], requirements: [] } } satisfies PinnedMandate } } as unknown as RunEventPayload;
 
 describe('each new handler touches a bounded number of events between two unit() calls (review of fd3c85df, finding 1)', () => {
   it('verdictHandler folds each event as it is visited, never the whole journal after the last unit', async () => {

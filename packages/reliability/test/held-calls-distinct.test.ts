@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { aggregate, foldFacts, indicatorsOf } from '@momonga/reliability';
 import type { RunFacts } from '@momonga/reliability';
-import { T0, eventsOf, runInfo, terminal } from './streams.ts';
+import { SCOPED_MANDATE, T0, eventsOf, runInfo, started, terminal } from './streams.ts';
 import type { Timed } from './streams.ts';
 
-const MANDATE = { scope: { allow: ['Read'], ask: ['GitPush'], deny: [] } };
-
-const mandated: Timed[1] = { type: 'run.started', attempt: 1, now: T0, pins: { model: 'fm', mandate: MANDATE } } as Timed[1];
+const mandated = started(1, { mandate: SCOPED_MANDATE });
 
 const held = (callId: string, approvalId: string): Timed[1] => ({ type: 'tool.held', callId, approvalId, reason: 'ask', footprint: { reads: [], writes: [] } }) as Timed[1];
 
