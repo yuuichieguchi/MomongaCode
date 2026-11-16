@@ -154,7 +154,7 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3; the clos
     return { arith, predecessor, phaseOne, startup, readyBound, withPredecessorWait };
   };
 
-  it('S3 proves the ready bound of a start is its generation lock wait plus its promotion wait for every stop value of a previous daemon: a start waits for no previous daemon', async () => {
+  it('S3 proves the stall limit of a start, the longest it waits without progress, is its generation lock wait plus its promotion stall limit for every stop value of a previous daemon: a start waits for no previous daemon', async () => {
     const { arith, startup, readyBound } = clientBoundArith('S3');
     const lockWait = constant(arith, generationLockWaitBoundMs(resolveStartTiming({})));
     expect(await prove(arith, readyBound.eq(lockWait.add(startup)))).toEqual({ status: 'proved' });
@@ -168,7 +168,7 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3; the clos
     expect(await prove(arith, phaseOne.ge(predecessor.drainTimeoutMs.add(RUNTIME_CLOSE_FIXED_MS)))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('S4 proves the client ready bound covers a crash restart: for every backoff the policy allows and every child start-up within its stall limit, the stdio flush, the marker reap, the backoff and the start-up end inside the larger of the two bounds', async () => {
+  it('S4 proves the client stall limit covers a crash restart: for every backoff the policy allows and every child start-up stretch without progress within its stall limit, the stdio flush, the marker reap, the backoff and that stretch end inside the larger of the two limits', async () => {
     const arith = proofArith(z3.engine().api, 'S4');
     const backoff = arith.int('backoff');
     const startUp = arith.int('startUp');

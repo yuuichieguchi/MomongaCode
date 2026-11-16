@@ -48,6 +48,7 @@ describe('supervisor control API wire types', () => {
       pid?: number;
       startedAt?: string;
       readyAt?: string;
+      progressAt?: string;
       restarts: number;
       consecutiveFailures: number;
       nextAttemptAt?: string;

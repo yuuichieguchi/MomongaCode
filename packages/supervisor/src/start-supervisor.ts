@@ -362,6 +362,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         onVersionMismatch: (mismatch) => onVersionMismatch(mismatch.childVersion),
         stopValues,
         onReady: () => promoteOnceAllReady(),
+        onProgress: () => {
+          if (promotionBoundTimer !== undefined) armPromotionBound();
+        },
         onBackgroundError: reportBackground,
         onTransientError: reportTransient,
         lockMechanism,
@@ -402,6 +405,16 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       log(generationPromoted({ generation: own.generation, version: options.version, startToPromotedMs: clock.now() - processStartedAt }));
       runReaperPass();
     };
+
+    function armPromotionBound(): void {
+      if (promotionBoundTimer !== undefined) timers.clearTimeout(promotionBoundTimer);
+      promotionBoundTimer = timers.setTimeout(() => {
+        promotionBoundTimer = undefined;
+        if (role !== 'starting' || draining || ended) return;
+        log(startUnpromoted({ generation: own.generation, reason: 'startup-bound' }));
+        endByItself();
+      }, startupTimeoutMs);
+    }
 
     function promoteOnceAllReady(): void {
       if (role !== 'starting' || promoting || draining || ended || !managers.every((manager) => manager.state() === 'ready')) return;
@@ -652,12 +665,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         inspector,
       });
 
-    promotionBoundTimer = timers.setTimeout(() => {
-      promotionBoundTimer = undefined;
-      if (role !== 'starting' || draining || ended) return;
-      log(startUnpromoted({ generation: own.generation, reason: 'startup-bound' }));
-      endByItself();
-    }, startupTimeoutMs);
+    armPromotionBound();
     armPoll();
 
     launchPromise = runLaunchTask({

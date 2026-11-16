@@ -53,3 +53,24 @@ describe('pollUntil', () => {
     await expect(pollUntil(virtualClock(), async () => undefined, { boundMs: 100, intervalMs: 10, description: 'x', signal: controller.signal })).rejects.toThrow('interrupted');
   });
 });
+
+describe('pollUntil with a progress mark', () => {
+  it('keeps waiting past the bound in total while the mark changes within each bound, and answers when the probe does', async () => {
+    const clock = virtualClock();
+    const value = await pollUntil(clock, async () => (clock.now() >= 300 ? 'ready' : undefined), {
+      boundMs: 100,
+      intervalMs: 10,
+      description: 'x',
+      progressMark: () => String(Math.floor(clock.now() / 80)),
+    });
+    expect(value).toBe('ready');
+  });
+
+  it('gives up one bound after the last change of the mark', async () => {
+    const clock = virtualClock();
+    await expect(
+      pollUntil(clock, async () => undefined, { boundMs: 100, intervalMs: 10, description: 'the thing', progressMark: () => (clock.now() < 150 ? String(clock.now()) : 'stalled') }),
+    ).rejects.toEqual(expect.objectContaining({ name: 'PollTimeout' }));
+    expect(clock.now()).toBe(250);
+  });
+});

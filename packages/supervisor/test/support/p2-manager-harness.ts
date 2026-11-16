@@ -220,6 +220,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
       backgroundErrors.push({ error, source });
     },
     onReady: () => undefined,
+    onProgress: () => undefined,
     ...options.overrides,
   };
   harness.manager = createChildManager(managerOptions);

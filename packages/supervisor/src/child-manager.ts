@@ -122,6 +122,7 @@ export type ChildManagerOptions = {
   onTransientError(error: unknown, source: string): void;
   onVersionMismatch(mismatch: ChildVersionMismatch): void;
   onReady(): void;
+  onProgress(): void;
 };
 
 export type ChildManager = {
@@ -194,6 +195,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   let lastExit: LastExit | undefined;
   const capabilityHolders = new Set<Life>();
   let readyAt: number | undefined;
+  let progressAt: number | undefined;
   let heldReason: string | undefined;
   let lastLoggedHeldReason: string | undefined;
   let nextAttemptAt: number | undefined;
@@ -455,6 +457,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     if (progress !== undefined) {
       if (progress.service !== role || progress.pid !== life.commandPid) return false;
       armStartupTimer(life);
+      progressAt = clock.now();
+      options.onProgress();
       log(childProgress({ child: role, childPid: progress.pid, startupStep: progress.step }));
       return true;
     }
@@ -706,6 +710,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       startCaptures(life, pid);
     });
     armStartupTimer(life);
+    progressAt = undefined;
     log(childSpawn({ child: role, childPid: life.commandPid ?? null, restarts: Math.max(0, launches - 1), reason }));
   };
 
@@ -875,6 +880,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       pid: current?.commandPid,
       startedAt: current === undefined ? undefined : isoOf(current.startedAt),
       readyAt: readyAt === undefined ? undefined : isoOf(readyAt),
+      progressAt: progressAt === undefined ? undefined : isoOf(progressAt),
       nextAttemptAt: nextAttemptAt === undefined ? undefined : isoOf(nextAttemptAt),
       lastExit,
       heldReason,

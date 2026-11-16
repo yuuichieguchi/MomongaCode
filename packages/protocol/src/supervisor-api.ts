@@ -34,6 +34,7 @@ export type SupervisorChildHealth = {
   pid?: number;
   startedAt?: string;
   readyAt?: string;
+  progressAt?: string;
   restarts: number;
   consecutiveFailures: number;
   nextAttemptAt?: string;
