@@ -188,6 +188,7 @@ export {
 export type { GenerationMarkerReap, GenerationReaperFiles, GenerationReaperOptions, GenerationReaperResult } from './generation-reaper.ts';
 export { compareVersions, orderVersions, tryParseVersion } from './version-order.ts';
 export type { Version } from './version-order.ts';
+export { hasSocketGuard } from './platform/socket-guard-platform.ts';
 export { createBinaryHashCache, createHeldHostReadings, createHostExec, fileIdentityComponentOf, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
 export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading } from './host-identity.ts';
 export { NoCurrentGenerationError, currentSocketResolver, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor, versionSocketResolver } from './current-generation.ts';
@@ -242,6 +243,7 @@ export {
   EXIT_USAGE,
   EXIT_WAITING_FOR_APPROVAL,
   SIGNATURE_REJECTED_EXIT_CODE,
+  LINUX_SOCKET_GUARD_COMPILER_MISSING_EXIT,
   WINDOWS_KEEPER_COMPILER_MISSING_EXIT,
   withLogData,
   GENERATION_POLL_INTERVAL_MS,

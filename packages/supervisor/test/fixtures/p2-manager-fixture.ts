@@ -42,7 +42,7 @@ const manager = createChildManager({
   onProgress: () => undefined,
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
-  secretStoreEnv: secretStoreEnvFor({ PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home }, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }),
+  secretStoreEnv: await secretStoreEnvFor({ PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home }, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }),
   spawn: createSpawnPort(),
   settings,
   signal: new AbortController().signal,

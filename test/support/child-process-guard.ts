@@ -6,7 +6,7 @@ import { findProgramOnPathSync } from '@momonga/foundation/program-search';
 import { nodeFileSystemSync } from '../../packages/foundation/src/node-file-system.ts';
 import { SECRET_STORE_SEARCHED_PROGRAMS, credentialReadScript, credentialWriteScript } from '@momonga/foundation/secret-store';
 import { MOMONGA_LAUNCHES } from '../../packages/cli/src/daemon/launcher.ts';
-import { URL_OPENER_PROGRAMS, urlOpenerFileForSync } from '../../packages/foundation/src/open-browser.ts';
+import { URL_OPENER_PROGRAMS } from '../../packages/foundation/src/open-browser.ts';
 import { chosenSecretProgramOutsideFakes, givenSecretProgramOutsideFakes, isInsideFakeSecretPrograms, realFileOf } from '../../packages/testkit/src/secret-store-env-check.ts';
 
 const LAUNCHERS = ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'] as const;
@@ -169,7 +169,8 @@ const browserOutsideFakes = (env: ProcessEnv, cwd: unknown): string | undefined 
 };
 
 const inheritedOpenerOutsideFakes = (): string | undefined => {
-  const opener = urlOpenerFileForSync(process.env, nodeFileSystemSync);
+  const browser = process.env['BROWSER'];
+  const opener = browser !== undefined && browser !== '' ? browser : URL_OPENER_PROGRAMS.map((program) => findProgramOnPathSync(program, process.env, nodeFileSystemSync)).find((file) => file !== undefined);
   return opener === undefined || isInsideFakeSecretPrograms(opener) ? undefined : opener;
 };
 

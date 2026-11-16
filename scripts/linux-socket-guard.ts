@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { LINUX_SOCKET_GUARD_BINARY_ASSET, LINUX_SOCKET_GUARD_BINARY_NAME, LINUX_SOCKET_GUARD_MANIFEST_ASSET, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, releaseTargetOf, sha256Hex } from '@momonga/foundation';
+import { LINUX_SOCKET_GUARD_BINARY_ASSET, LINUX_SOCKET_GUARD_BINARY_NAME, LINUX_SOCKET_GUARD_COMPILER_MISSING_EXIT, LINUX_SOCKET_GUARD_MANIFEST_ASSET, releaseTargetOf, sha256Hex } from '@momonga/foundation';
 import type { BundledExecutableManifest, ReleaseTargetName } from '@momonga/foundation';
 import { repoRoot } from './bundle.ts';
 import { zigCacheDir } from './windows-keeper.ts';
@@ -76,7 +76,7 @@ if (import.meta.main) {
   } catch (error) {
     if (!linuxCompilerMissing(error)) throw error;
     process.stderr.write(`${values.compiler === 'host' ? 'cc' : 'zig'} was not found on PATH, so the socket guard cannot be compiled\n`);
-    process.exit(WINDOWS_KEEPER_COMPILER_MISSING_EXIT);
+    process.exit(LINUX_SOCKET_GUARD_COMPILER_MISSING_EXIT);
   }
   process.stdout.write(`${assets[LINUX_SOCKET_GUARD_BINARY_ASSET]}\n`);
 }

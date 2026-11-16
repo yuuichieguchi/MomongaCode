@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { SECRET_PROGRAM_ENV, secretStoreEnvFor } from '@momonga/foundation/secret-store';
+import { findProgramOnPathSync } from '@momonga/foundation/program-search';
+import { SECRET_PROGRAM_ENV, SECRET_STORE_SEARCHED_PROGRAMS } from '@momonga/foundation/secret-store';
+import { nodeFileSystemSync } from '@momonga/foundation';
 
 export const TEST_SECRET_PROGRAMS_ENV = 'MOMONGA_TEST_SECRET_PROGRAMS';
 
@@ -34,7 +36,7 @@ export const givenSecretProgramOutsideFakes = (env: ProcessEnv): string | undefi
 };
 
 export const chosenSecretProgramOutsideFakes = (env: ProcessEnv): string | undefined => {
-  const chosen = secretStoreEnvFor(env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => fs.realpathSync(file) })[SECRET_PROGRAM_ENV];
+  const chosen = SECRET_STORE_SEARCHED_PROGRAMS.map((program) => findProgramOnPathSync(program, env, nodeFileSystemSync)).find((found) => found !== undefined);
   return chosen !== undefined && !isInsideFakeSecretPrograms(chosen) ? chosen : undefined;
 };
 

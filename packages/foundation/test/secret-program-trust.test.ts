@@ -2,9 +2,9 @@ import type { SecretHost } from '@momonga/foundation/secret-store';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
+import { SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, nodeFileSystem, secretStoreEnvFor } from '@momonga/foundation';
 import { programOwnerProblemSync } from '@momonga/foundation/program-search';
-import type { ProgramOwnerFiles } from '@momonga/foundation/program-search';
+import type { ProgramOwnerFiles, ProgramSearchFiles } from '@momonga/foundation/program-search';
 import { createTempDir } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
@@ -73,29 +73,44 @@ describe('a secret program is trusted only when no other account can change it o
 });
 
 describe('the secret backend is chosen by the platform', () => {
-  it('never uses a relative PATH entry', () => {
+  it('never uses a relative PATH entry', async () => {
     const bin = binDirWith('security');
-    const env = secretStoreEnvFor({ PATH: path.relative(process.cwd(), bin) }, host('darwin'));
+    const env = await secretStoreEnvFor({ PATH: path.relative(process.cwd(), bin) }, host('darwin'));
     expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
     expect(env[SECRET_REFUSAL_ENV]).toMatch(/security \(Keychain\) is not on PATH/);
   });
 
-  it('does not use the Keychain on Linux when a security program is on PATH', () => {
+  it('does not use the Keychain on Linux when a security program is on PATH', async () => {
     const bin = binDirWith('security', 'secret-tool');
-    const env = secretStoreEnvFor({ PATH: bin, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, host('linux'));
+    const env = await secretStoreEnvFor({ PATH: bin, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, host('linux'));
     expect(env[SECRET_BACKEND_ENV]).toBe('secret-service');
     expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'secret-tool'));
   });
 
-  it('does not use the Secret Service on macOS when secret-tool is on PATH', () => {
+  it('does not use the Secret Service on macOS when secret-tool is on PATH', async () => {
     const bin = binDirWith('secret-tool');
-    const env = secretStoreEnvFor({ PATH: bin, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, host('darwin'));
+    const env = await secretStoreEnvFor({ PATH: bin, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, host('darwin'));
     expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
   });
 
-  it('refuses a program whose folder another account owns, with the sentence', () => {
+  it('finds the program through the search port it is given, and awaits it', async () => {
+    const bin = binDirWith('secret-tool');
+    const searched: string[] = [];
+    const programs: ProgramSearchFiles = {
+      stat: (file) => {
+        searched.push(file);
+        return nodeFileSystem.stat(file);
+      },
+      access: (file, mode) => nodeFileSystem.access(file, mode),
+    };
+    const env = await secretStoreEnvFor({ PATH: bin, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, host('linux'), programs);
+    expect(searched).toContain(path.join(bin, 'secret-tool'));
+    expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'secret-tool'));
+  });
+
+  it('refuses a program whose folder another account owns, with the sentence', async () => {
     const bin = binDirWith('security');
-    const env = secretStoreEnvFor({ PATH: bin }, { platform: 'darwin', uid: (process.getuid?.() ?? 0) + 1, realPathOf: (file: string) => fs.realpathSync(file) });
+    const env = await secretStoreEnvFor({ PATH: bin }, { platform: 'darwin', uid: (process.getuid?.() ?? 0) + 1, realPathOf: (file: string) => fs.realpathSync(file) });
     expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
     expect(env[SECRET_REFUSAL_ENV]).toMatch(/owned by you or root/);
   });

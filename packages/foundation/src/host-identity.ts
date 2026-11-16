@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { pipeline } from 'node:stream/promises';
 import { nodeFileSystem } from './node-file-system.ts';
 import type { FileSystem } from './node-file-system.ts';
 import { settledOrAborted } from './operation-limit.ts';
@@ -47,27 +46,40 @@ export const probeKeyComponentLabel = (component: string): string => {
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const streamedSha256 = async (file: string, signal: AbortSignal): Promise<string> => {
-  const hash = createHash('sha256');
-  await pipeline(fs.createReadStream(file), hash, { signal });
-  return hash.digest('hex');
+const HASH_READ_PAGE_BYTES = 65_536;
+
+type HashFiles = Pick<FileSystem, 'stat' | 'openRead'>;
+
+const streamedSha256 = async (files: Pick<FileSystem, 'openRead'>, file: string, signal: AbortSignal): Promise<string> => {
+  const handle = await files.openRead(file, fs.constants.O_RDONLY);
+  try {
+    const hash = createHash('sha256');
+    const page = new Uint8Array(HASH_READ_PAGE_BYTES);
+    for (let read = await handle.read(page); read > 0; read = await handle.read(page)) {
+      signal.throwIfAborted();
+      hash.update(page.subarray(0, read));
+    }
+    return hash.digest('hex');
+  } finally {
+    await handle.close();
+  }
 };
 
 const fileIdentityOf = (stat: fs.Stats): string => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
 
 const NO_LIFETIME_END = new AbortController().signal;
 
-export const createBinaryHashCache = (): BinaryHashCache => {
+export const createBinaryHashCache = (files: HashFiles = nodeFileSystem): BinaryHashCache => {
   const cached = new Map<string, { identity: string; call: SharedCall<string> }>();
   return {
     sha256Of: async (file, signal) => {
-      const identity = fileIdentityOf(await fs.promises.stat(file));
+      const identity = fileIdentityOf(await files.stat(file));
       const known = cached.get(file);
       if (known !== undefined && known.identity === identity) return known.call.join(signal);
       const forget = (): void => {
         if (cached.get(file)?.call === call) cached.delete(file);
       };
-      const call = startSharedCall(NO_LIFETIME_END, (shared) => streamedSha256(file, shared));
+      const call = startSharedCall(NO_LIFETIME_END, (shared) => streamedSha256(files, file, shared));
       cached.set(file, { identity, call });
       call.work.catch(forget);
       return call.join(signal);
@@ -102,11 +114,9 @@ export const createHeldHostReadings = (): HeldHostReadings => {
 
 const UNHELD: HeldHostReadings = { held: (_component, signal, read) => settledOrAborted(read(signal), signal), release: () => undefined };
 
-const UNCACHED: BinaryHashCache = { sha256Of: (file, signal) => streamedSha256(file, signal) };
+const uncachedHashesOf = (files: Pick<FileSystem, 'openRead'>): BinaryHashCache => ({ sha256Of: (file, signal) => streamedSha256(files, file, signal) });
 
-type StatFiles = Pick<FileSystem, 'stat'>;
-
-type ComponentRequest = { binary: string; platform: NodeJS.Platform; exec: HostExec; signal: AbortSignal; hashes: BinaryHashCache; host: HeldHostReadings; files: StatFiles };
+type ComponentRequest = { binary: string; platform: NodeJS.Platform; exec: HostExec; signal: AbortSignal; hashes: BinaryHashCache; host: HeldHostReadings; files: HashFiles };
 
 type ComponentReader = (request: ComponentRequest) => Promise<ProbeKeyReading>;
 
@@ -173,14 +183,14 @@ export type ReadProbeKeyComponentsRequest = {
   signal: AbortSignal;
   hashes?: BinaryHashCache;
   host?: HeldHostReadings;
-  files?: StatFiles;
+  files?: HashFiles;
 };
 
 export const readProbeKeyComponents = async (request: ReadProbeKeyComponentsRequest): Promise<ProbeKeyReadings> => {
-  const hashes = request.hashes ?? UNCACHED;
+  const files = request.files ?? nodeFileSystem;
+  const hashes = request.hashes ?? uncachedHashesOf(files);
   const host = request.host ?? UNHELD;
   const readings: ProbeKeyReadings = {};
-  const files = request.files ?? nodeFileSystem;
   for (const component of request.identity) {
     readings[component] = await readerOf(component)({ binary: request.binary, platform: request.platform, exec: request.exec, signal: request.signal, hashes, host, files });
   }
