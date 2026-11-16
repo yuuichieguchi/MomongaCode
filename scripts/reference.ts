@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Command, Option } from 'commander';
-import { SETTINGS_SCHEMA, USER_LAYER_ONLY_MODES, USER_LAYER_ONLY_PARTS, USER_LAYER_ONLY_SETTINGS, PROJECT_ENV_NAMES } from '@momonga/config';
+import { SETTINGS_SCHEMA, SETTING_DEFAULTS_BY, SETTING_UNIT_OF, USER_LAYER_ONLY_MODES, USER_LAYER_ONLY_PARTS, USER_LAYER_ONLY_SETTINGS, PROJECT_ENV_NAMES } from '@momonga/config';
 import { ENVIRONMENT_VARIABLES, EXIT_CODES, homeLayout } from '@momonga/foundation';
 import type { EntryIo, EnvironmentVariableKind } from '@momonga/foundation';
+import type { SettingDefaultsBy } from '@momonga/config';
 import { TOOL_NAMES } from '@momonga/protocol';
 import { OPERATION_SPECS } from '@momonga/tools';
 import { buildProgram } from '../packages/cli/src/program.ts';
@@ -94,31 +95,30 @@ type SettingRow = { readonly key: string; readonly type: string; readonly defaul
 
 const ENTRY = '<name>';
 
-const DEFAULTS_BY_TEXT: Readonly<Record<string, (key: string, value: string) => string>> = {
+const DEFAULTS_BY_TEXT: Readonly<Record<SettingDefaultsBy['by'], (key: string, value: string) => string>> = {
   platform: (key, value) => `${value} on ${key}`,
   event: (key, value) => `${code(key)}: ${value}`,
 };
 
 const valueText = (value: unknown): string => code(JSON.stringify(value));
 
-const defaultsByOf = (schema: Schema): string[] => {
-  const defaultsBy = schema['defaultsBy'];
-  if (!isSchema(defaultsBy) || typeof defaultsBy['by'] !== 'string' || !isSchema(defaultsBy['values'])) return [];
-  const text = DEFAULTS_BY_TEXT[defaultsBy['by']];
-  if (text === undefined) throw new Error(`the reference has no text for defaults by ${defaultsBy['by']}`);
-  return Object.entries(defaultsBy['values']).map(([key, value]) => text(key, valueText(value)));
+const defaultsByOf = (key: string): string[] => {
+  const defaultsBy = SETTING_DEFAULTS_BY[key];
+  if (defaultsBy === undefined) return [];
+  const text = DEFAULTS_BY_TEXT[defaultsBy.by];
+  return Object.entries(defaultsBy.values).map(([name, value]) => text(name, valueText(value)));
 };
 
-const defaultTextOf = (schema: Schema): string => [...(schema['default'] === undefined ? [] : [valueText(schema['default'])]), ...defaultsByOf(schema)].join('; ');
+const defaultTextOf = (key: string, schema: Schema): string => [...(schema['default'] === undefined ? [] : [valueText(schema['default'])]), ...defaultsByOf(key)].join('; ');
 
-const unitOf = (schema: Schema): string => (typeof schema['unit'] === 'string' ? schema['unit'] : '');
+const unitOf = (key: string): string => SETTING_UNIT_OF[key] ?? '';
 
 const settingRows = (schema: Schema, prefix: string): SettingRow[] => {
   const properties = schema['properties'];
   if (isSchema(properties)) {
     return Object.entries(properties).flatMap(([name, child]) => {
       const key = prefix === '' ? name : `${prefix}.${name}`;
-      return isSchema(child) ? [{ key, type: typeOf(child), defaultText: defaultTextOf(child), unit: unitOf(child) }, ...settingRows(child, key)] : [];
+      return isSchema(child) ? [{ key, type: typeOf(child), defaultText: defaultTextOf(key, child), unit: unitOf(key) }, ...settingRows(child, key)] : [];
     });
   }
   const entry = schema['additionalProperties'];

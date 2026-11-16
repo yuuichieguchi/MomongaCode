@@ -4,6 +4,8 @@ import { HOOK_DEFAULT_TIMEOUT_SECONDS } from '@momonga/protocol';
 import {
   DEFAULT_RETENTION_DAYS,
   SETTINGS_SCHEMA,
+  SETTING_DEFAULTS_BY,
+  SETTING_UNIT_OF,
   defaultContextSettings,
   defaultMemorySettings,
   defaultSandboxSetting,
@@ -111,17 +113,29 @@ describe('the settings schema states the default the product takes and the unit 
     expect(nodeAt(key.split('.'))['default']).toEqual(expected);
   });
 
-  it.each(UNITS)('%s states its unit %s', (key, unit) => {
-    expect(nodeAt(key.split('.'))['unit']).toBe(unit);
+  it.each(UNITS)('%s has its unit %s beside the schema', (key, unit) => {
+    expect(SETTING_UNIT_OF[key.replaceAll('.[]', '[]')]).toBe(unit);
   });
 
-  it('the hook timeout states the default of every event that has its own', () => {
+  it('every setting with a unit is one the schema declares, and the schema carries no unit keyword', () => {
+    expect(Object.keys(SETTING_UNIT_OF).sort()).toEqual(UNITS.map(([key]) => key.replaceAll('.[]', '[]')).sort());
+    for (const key of Object.keys(SETTING_UNIT_OF)) expect(Object.keys(nodeAt(key.replaceAll('[]', '.[]').split('.')))).not.toContain('unit');
+  });
+
+  it('the hook timeout has the default of every event that has its own, beside the schema', () => {
     const { default: _all, ...byEvent } = HOOK_DEFAULT_TIMEOUT_SECONDS;
-    expect(nodeAt(['hooks', '<name>', '[]', 'hooks', '[]', 'timeout'])['defaultsBy']).toEqual({ by: 'event', values: byEvent });
+    expect(SETTING_DEFAULTS_BY['hooks.<name>[].hooks[].timeout']).toEqual({ by: 'event', values: byEvent });
   });
 
-  it('sandbox states the default of each platform the product chooses', () => {
+  it('sandbox has the default of each platform the product chooses, beside the schema', () => {
     const platforms = ['darwin', 'linux', 'win32'] as const;
-    expect(nodeAt(['sandbox'])['defaultsBy']).toEqual({ by: 'platform', values: Object.fromEntries(platforms.map((platform) => [platform, defaultSandboxSetting(platform)])) });
+    expect(SETTING_DEFAULTS_BY['sandbox']).toEqual({ by: 'platform', values: Object.fromEntries(platforms.map((platform) => [platform, defaultSandboxSetting(platform)])) });
+  });
+
+  it('names only settings the schema declares, and the schema itself carries no keyword of its own for them', () => {
+    for (const key of Object.keys(SETTING_DEFAULTS_BY)) {
+      const node = nodeAt(key.replaceAll('[]', '.[]').split('.'));
+      expect(Object.keys(node)).not.toContain('defaultsBy');
+    }
   });
 });

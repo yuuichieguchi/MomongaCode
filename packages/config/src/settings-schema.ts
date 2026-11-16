@@ -27,8 +27,6 @@ const TOOLS_DEFAULTS = defaultToolsSettings();
 const TUI_DEFAULTS = defaultTuiSettings();
 const { default: HOOK_TIMEOUT_DEFAULT_SECONDS, ...HOOK_TIMEOUT_SECONDS_BY_EVENT } = HOOK_DEFAULT_TIMEOUT_SECONDS;
 
-const milliseconds = <S extends object>(schema: S) => ({ ...schema, unit: SETTING_UNITS.milliseconds }) as const;
-const usd = <S extends object>(schema: S) => ({ ...schema, unit: SETTING_UNITS.usd }) as const;
 const withDefault = <S extends object, D>(schema: S, value: D) => ({ ...schema, default: value }) as const;
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
@@ -420,12 +418,54 @@ const MODEL_CONNECTION_SCHEMA = {
 
 const MODEL_REFERENCE_SCHEMA = { type: 'string', minLength: 1 } as const;
 
+export type SettingDefaultsBy = { readonly by: 'event' | 'platform'; readonly values: Readonly<Record<string, unknown>> };
+
+export type SettingUnit = (typeof SETTING_UNITS)[keyof typeof SETTING_UNITS];
+
+export const SETTING_UNIT_OF: Readonly<Record<string, SettingUnit>> = {
+  'hooks.<name>[].hooks[].timeout': SETTING_UNITS.seconds,
+  'mcp.toolIdleTimeoutNetworkMs': SETTING_UNITS.milliseconds,
+  'mcp.toolIdleTimeoutStdioMs': SETTING_UNITS.milliseconds,
+  'mcp.toolTotalTimeoutMs': SETTING_UNITS.milliseconds,
+  'mcp.closeGraceMs': SETTING_UNITS.milliseconds,
+  'mcp.connectTimeoutMs': SETTING_UNITS.milliseconds,
+  'models.headersTimeoutMs': SETTING_UNITS.milliseconds,
+  'models.idleTimeoutMs': SETTING_UNITS.milliseconds,
+  'memory.forgetAfterDays': SETTING_UNITS.days,
+  'tools.bash.defaultTimeoutMs': SETTING_UNITS.milliseconds,
+  'tools.bash.maxTimeoutMs': SETTING_UNITS.milliseconds,
+  'tools.bash.backgroundTimeoutMs': SETTING_UNITS.milliseconds,
+  'tools.bash.maxBackgroundTimeoutMs': SETTING_UNITS.milliseconds,
+  'tools.bash.drainIdleMs': SETTING_UNITS.milliseconds,
+  'tools.search.timeoutMs': SETTING_UNITS.milliseconds,
+  'tools.operations.timeoutMs': SETTING_UNITS.milliseconds,
+  'update.stallTimeoutMs': SETTING_UNITS.milliseconds,
+  'gateway.closeGraceMs': SETTING_UNITS.milliseconds,
+  'gateway.managedServerStopGraceMs': SETTING_UNITS.milliseconds,
+  'runtime.drainTimeoutMs': SETTING_UNITS.milliseconds,
+  'pricing[].inputPerMTok': SETTING_UNITS.usdPerMillionTokens,
+  'pricing[].cachedInputPerMTok': SETTING_UNITS.usdPerMillionTokens,
+  'pricing[].cacheWritePerMTok': SETTING_UNITS.usdPerMillionTokens,
+  'pricing[].outputPerMTok': SETTING_UNITS.usdPerMillionTokens,
+  'limits.maxCostUsd': SETTING_UNITS.usd,
+  'ceilings.costUsd': SETTING_UNITS.usd,
+  'ceilings.timeMs': SETTING_UNITS.milliseconds,
+  'mandates.<name>.costUsd': SETTING_UNITS.usd,
+  'mandates.<name>.timeMs': SETTING_UNITS.milliseconds,
+  'retention.days': SETTING_UNITS.days,
+};
+
+export const SETTING_DEFAULTS_BY: Readonly<Record<string, SettingDefaultsBy>> = {
+  'hooks.<name>[].hooks[].timeout': { by: 'event', values: HOOK_TIMEOUT_SECONDS_BY_EVENT },
+  sandbox: { by: 'platform', values: Object.fromEntries(SANDBOX_DEFAULT_PLATFORMS.map((platform) => [platform, defaultSandboxSetting(platform)])) },
+};
+
 const HOOK_COMMAND_SCHEMA = {
   type: 'object',
   properties: {
     type: { const: HOOK_COMMAND_TYPE },
     command: { type: 'string', minLength: 1 },
-    timeout: { ...POSITIVE_INTEGER, default: HOOK_TIMEOUT_DEFAULT_SECONDS, defaultsBy: { by: 'event', values: HOOK_TIMEOUT_SECONDS_BY_EVENT }, unit: SETTING_UNITS.seconds },
+    timeout: { ...POSITIVE_INTEGER, default: HOOK_TIMEOUT_DEFAULT_SECONDS },
   },
   required: ['type', 'command'],
   additionalProperties: false,
@@ -483,11 +523,11 @@ export const SETTINGS_SCHEMA = {
     mcp: {
       type: 'object',
       properties: {
-        toolIdleTimeoutNetworkMs: milliseconds(withDefault(NON_NEGATIVE_INTEGER, MCP_TOOL_IDLE_TIMEOUT_MS.network)),
-        toolIdleTimeoutStdioMs: milliseconds(withDefault(NON_NEGATIVE_INTEGER, MCP_TOOL_IDLE_TIMEOUT_MS.stdio)),
-        toolTotalTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, MCP_TOOL_TOTAL_TIMEOUT_MS)),
-        closeGraceMs: milliseconds({ type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.max, default: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.default }),
-        connectTimeoutMs: milliseconds({ type: 'integer', minimum: MCP_CONNECT_TIMEOUT_LIMITS.min, maximum: MCP_CONNECT_TIMEOUT_LIMITS.max, default: MCP_CONNECT_TIMEOUT_LIMITS.default }),
+        toolIdleTimeoutNetworkMs: withDefault(NON_NEGATIVE_INTEGER, MCP_TOOL_IDLE_TIMEOUT_MS.network),
+        toolIdleTimeoutStdioMs: withDefault(NON_NEGATIVE_INTEGER, MCP_TOOL_IDLE_TIMEOUT_MS.stdio),
+        toolTotalTimeoutMs: withDefault(POSITIVE_INTEGER, MCP_TOOL_TOTAL_TIMEOUT_MS),
+        closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.max, default: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.default },
+        connectTimeoutMs: { type: 'integer', minimum: MCP_CONNECT_TIMEOUT_LIMITS.min, maximum: MCP_CONNECT_TIMEOUT_LIMITS.max, default: MCP_CONNECT_TIMEOUT_LIMITS.default },
       },
       additionalProperties: false,
     },
@@ -503,8 +543,8 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: DECLARED_SERVER_SCHEMA,
         },
         dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
-        headersTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, FIVE_MINUTES_MS)),
-        idleTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, FIVE_MINUTES_MS)),
+        headersTimeoutMs: withDefault(POSITIVE_INTEGER, FIVE_MINUTES_MS),
+        idleTimeoutMs: withDefault(POSITIVE_INTEGER, FIVE_MINUTES_MS),
         billingChanges: {
           type: 'array',
           items: {
@@ -534,7 +574,7 @@ export const SETTINGS_SCHEMA = {
           properties: { enabled: { type: 'boolean', default: MEMORY_DEFAULTS.reflection.enabled }, maxTokens: OUTPUT_TOKEN_BOUND },
           additionalProperties: false,
         },
-        forgetAfterDays: { ...POSITIVE_INTEGER, default: MEMORY_DEFAULTS.forgetAfterDays, unit: SETTING_UNITS.days },
+        forgetAfterDays: { ...POSITIVE_INTEGER, default: MEMORY_DEFAULTS.forgetAfterDays },
         repositoryFacts: { type: 'boolean', default: MEMORY_DEFAULTS.repositoryFacts },
       },
       additionalProperties: false,
@@ -570,22 +610,22 @@ export const SETTINGS_SCHEMA = {
         bash: {
           type: 'object',
           properties: {
-            defaultTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.defaultTimeoutMs)),
-            maxTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.maxTimeoutMs)),
+            defaultTimeoutMs: withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.defaultTimeoutMs),
+            maxTimeoutMs: withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.maxTimeoutMs),
             onTimeout: { enum: [...BASH_ON_TIMEOUT], default: TOOLS_DEFAULTS.bash.onTimeout },
-            backgroundTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.backgroundTimeoutMs)),
-            maxBackgroundTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.maxBackgroundTimeoutMs)),
-            drainIdleMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.drainIdleMs)),
+            backgroundTimeoutMs: withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.backgroundTimeoutMs),
+            maxBackgroundTimeoutMs: withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.maxBackgroundTimeoutMs),
+            drainIdleMs: withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.bash.drainIdleMs),
           },
           additionalProperties: false,
         },
-        search: { type: 'object', properties: { timeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.search.timeoutMs)) }, additionalProperties: false },
-        operations: { type: 'object', properties: { timeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.operations.timeoutMs)) }, additionalProperties: false },
+        search: { type: 'object', properties: { timeoutMs: withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.search.timeoutMs) }, additionalProperties: false },
+        operations: { type: 'object', properties: { timeoutMs: withDefault(POSITIVE_INTEGER, TOOLS_DEFAULTS.operations.timeoutMs) }, additionalProperties: false },
       },
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean', default: DEFAULT_AUTO_UPDATES },
-    update: { type: 'object', properties: { stallTimeoutMs: milliseconds(withDefault(POSITIVE_INTEGER, DEFAULT_UPDATE_STALL_TIMEOUT_MS)) }, additionalProperties: false },
+    update: { type: 'object', properties: { stallTimeoutMs: withDefault(POSITIVE_INTEGER, DEFAULT_UPDATE_STALL_TIMEOUT_MS) }, additionalProperties: false },
     tui: {
       type: 'object',
       properties: {
@@ -603,15 +643,15 @@ export const SETTINGS_SCHEMA = {
     gateway: {
       type: 'object',
       properties: {
-        closeGraceMs: milliseconds({ type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max, default: SHUTDOWN_SETTING_LIMITS.closeGraceMs.default }),
-        managedServerStopGraceMs: milliseconds({ type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max, default: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.default }),
+        closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max, default: SHUTDOWN_SETTING_LIMITS.closeGraceMs.default },
+        managedServerStopGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max, default: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.default },
       },
       additionalProperties: false,
     },
     runtime: {
       type: 'object',
       properties: {
-        drainTimeoutMs: milliseconds({ type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.min, maximum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.max, default: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.default }),
+        drainTimeoutMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.min, maximum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.max, default: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.default },
       },
       additionalProperties: false,
     },
@@ -634,10 +674,10 @@ export const SETTINGS_SCHEMA = {
           provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN_SOURCE },
           model: { type: 'string', minLength: 1 },
           effectiveFrom: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
-          inputPerMTok: { type: 'number', minimum: 0, unit: SETTING_UNITS.usdPerMillionTokens },
-          cachedInputPerMTok: { type: 'number', minimum: 0, unit: SETTING_UNITS.usdPerMillionTokens },
-          cacheWritePerMTok: { type: 'number', minimum: 0, unit: SETTING_UNITS.usdPerMillionTokens },
-          outputPerMTok: { type: 'number', minimum: 0, unit: SETTING_UNITS.usdPerMillionTokens },
+          inputPerMTok: { type: 'number', minimum: 0 },
+          cachedInputPerMTok: { type: 'number', minimum: 0 },
+          cacheWritePerMTok: { type: 'number', minimum: 0 },
+          outputPerMTok: { type: 'number', minimum: 0 },
           currency: { const: 'USD' },
         },
         required: ['provider', 'model', 'effectiveFrom', 'inputPerMTok', 'outputPerMTok', 'currency'],
@@ -646,15 +686,15 @@ export const SETTINGS_SCHEMA = {
     },
     limits: {
       type: 'object',
-      properties: { maxCostUsd: usd({ type: 'number', minimum: 0, maximum: MAX_COST_USD }) },
+      properties: { maxCostUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD } },
       additionalProperties: false,
     },
     ceilings: {
       type: 'object',
       properties: {
-        costUsd: usd({ type: 'number', minimum: 0, maximum: MAX_COST_USD }),
+        costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
         tokens: { type: 'integer', minimum: 1, maximum: 100_000_000 },
-        timeMs: milliseconds({ type: 'integer', minimum: 1000, maximum: 604_800_000 }),
+        timeMs: { type: 'integer', minimum: 1000, maximum: 604_800_000 },
       },
       additionalProperties: false,
     },
@@ -692,8 +732,8 @@ export const SETTINGS_SCHEMA = {
           require: NON_EMPTY_STRING_ARRAY,
           steps: { type: 'integer', minimum: 1, maximum: 1000 },
           tokens: { type: 'integer', minimum: 1, maximum: 100_000_000 },
-          costUsd: usd({ type: 'number', minimum: 0, maximum: MAX_COST_USD }),
-          timeMs: milliseconds({ type: 'integer', minimum: 1000, maximum: 604_800_000 }),
+          costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
+          timeMs: { type: 'integer', minimum: 1000, maximum: 604_800_000 },
           retries: { type: 'integer', minimum: 1, maximum: 100 },
           onQuiescent: { enum: [...QUIESCENT_BEHAVIOURS] },
         },
@@ -729,7 +769,7 @@ export const SETTINGS_SCHEMA = {
       },
       additionalProperties: false,
     },
-    sandbox: { enum: ['seatbelt', 'bubblewrap', 'none'], defaultsBy: { by: 'platform', values: Object.fromEntries(SANDBOX_DEFAULT_PLATFORMS.map((platform) => [platform, defaultSandboxSetting(platform)])) } },
+    sandbox: { enum: ['seatbelt', 'bubblewrap', 'none'] },
     sandboxNetwork: { enum: [...SANDBOX_NETWORK_SETTINGS], default: DEFAULT_SANDBOX_NETWORK },
     sandboxUnixSockets: { type: 'object', properties: { allow: { type: 'array', items: { type: 'string', minLength: 1 } } }, additionalProperties: false },
     telemetry: {
@@ -787,7 +827,7 @@ export const SETTINGS_SCHEMA = {
     },
     retention: {
       type: 'object',
-      properties: { days: { type: 'integer', minimum: MIN_RETENTION_DAYS, maximum: MAX_RETENTION_DAYS, default: DEFAULT_RETENTION_DAYS, unit: SETTING_UNITS.days } },
+      properties: { days: { type: 'integer', minimum: MIN_RETENTION_DAYS, maximum: MAX_RETENTION_DAYS, default: DEFAULT_RETENTION_DAYS } },
       additionalProperties: false,
     },
   },
