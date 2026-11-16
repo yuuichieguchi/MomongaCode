@@ -169,6 +169,14 @@ describe('every model setting can be changed from inside MomongaCode (I-N13)', (
     expect(named.filter((form) => !slashReached(form, sources))).toEqual(pendingOf('N3b'));
   });
 
+  it('a row reaches a setting through /config only when the settings screen has a row of that key', () => {
+    const screen = fs.readFileSync(path.join(cliSource, 'tui', 'settings-screen.tsx'), 'utf8');
+    const throughConfig = rows().filter((row) => row.inSession.some((form) => slashFormOf(form) === '/config'));
+    const screenKeyOf = (rowPath: string): string => withoutListMark(rowPath.endsWith('.*') ? rowPath.slice(0, -2) : rowPath);
+    expect(throughConfig.length).toBeGreaterThan(0);
+    expect(throughConfig.map((row) => screenKeyOf(row.path)).filter((key) => !new RegExp(`['"]${escaped(key)}['"]\\s*:\\s*\\{\\s*label`).test(screen))).toEqual([]);
+  });
+
   it('every shell form a row names is registered, or is listed as pending until the shell forms are built', () => {
     const register = fs.readFileSync(path.join(cliSource, 'commands', 'register.ts'), 'utf8');
     const named = [...new Set(rows().flatMap((row) => row.shell).map(shellFormOf))].sort();

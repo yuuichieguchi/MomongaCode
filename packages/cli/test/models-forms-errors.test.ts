@@ -5,7 +5,7 @@ import { runModelsForm, listModels } from '../src/commands/models.ts';
 import type { FormInput } from '../src/commands/models.ts';
 import { windowProblem, wholeNumberWithin } from '../src/models-check.ts';
 import { windowProblem as tuiWindowProblem } from '../src/tui/models/texts.ts';
-import { OLLAMA_ADDRESS, S3, documentOf, homeWith, listingOf, ollamaFound, shellOf } from './models-shell-harness.ts';
+import { LLAMA_SERVER, OLLAMA_ADDRESS, S3, documentOf, homeWith, listingOf, ollamaFound, shellOf } from './models-shell-harness.ts';
 
 const input = (args: readonly string[], options: FormInput['options'] = {}): FormInput => ({ args: [...args], options });
 
@@ -61,5 +61,15 @@ describe('the forms of momonga models map every outside text to their own errors
 
     const models = documentOf(home.settingsFile)['models'] as { connections: unknown[] };
     expect(models.connections).toEqual([{ adapter: 'managed', server: 'fm', models: [{ id: 'system' }] }]);
+  });
+
+  it('add-program without --model asks the declared program for its model and writes the model it names', async (context) => {
+    const home = homeWith(context, undefined);
+    const harness = shellOf(home, { programModel: 'qwen3-coder-30b' });
+
+    expect(await runModelsForm(harness.shell, 'add-program', input([], { command: LLAMA_SERVER.command, arg: LLAMA_SERVER.args, readyPath: LLAMA_SERVER.readyPath, yes: true }))).toBe(0);
+
+    expect(harness.programsAsked).toEqual([{ id: 'llama-server', ...LLAMA_SERVER }]);
+    expect(documentOf(home.settingsFile)['models']).toEqual({ servers: { 'llama-server': LLAMA_SERVER }, connections: [{ adapter: 'managed', server: 'llama-server', models: [{ id: 'qwen3-coder-30b' }] }] });
   });
 });

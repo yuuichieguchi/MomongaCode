@@ -265,6 +265,26 @@ describe('runs', () => {
     status = 200;
     expect((await client.cancel('run-1')).status).toBe(200);
   });
+
+  it('compacts a session by POST to its compact route with the instructions only when given, and returns the run', async (context) => {
+    const { client, seen } = await serve(context, () => json(202, { run: runView({ status: 'QUEUED' }) }));
+
+    const plain = await client.compact('session 1');
+    await client.compact('session 1', 'keep the plan');
+
+    expect(plain.status).toBe('QUEUED');
+    expect(seen.map(({ method, url }) => `${method} ${url}`)).toEqual(['POST /v1/sessions/session%201/compact', 'POST /v1/sessions/session%201/compact']);
+    expect(seen.map(({ body }) => JSON.parse(body))).toEqual([{}, { instructions: 'keep the plan' }]);
+  });
+
+  it('refuses a compact answer that is not a run, and an answer with another status', async (context) => {
+    let reply = json(202, { session: SESSION });
+    const { client } = await serve(context, () => reply);
+
+    await expect(client.compact('session-1')).rejects.toBeInstanceOf(ContractViolation);
+    reply = json(409, { error: { type: 'invalid_request_error', code: 'run_active', message: 'A run is working.' } });
+    await expect(client.compact('session-1')).rejects.toMatchObject({ status: 409, code: 'run_active' });
+  });
 });
 
 describe('the token anatomy endpoints', () => {

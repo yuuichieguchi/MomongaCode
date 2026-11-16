@@ -97,6 +97,26 @@ describe('running a command the person typed', () => {
     app.unmount();
   });
 
+  it('folds a long output of a shell entry and shows all of it at ctrl+o', async () => {
+    const lines = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`);
+    const output = lines.join('\n');
+    const { app } = await ready({
+      shell: async (command, include, io) => {
+        io.onOutput(`${output}\n`);
+        return { kind: 'exit', record: { command, exitCode: 0, output, include } };
+      },
+    });
+    await type(app, '!seq', '! seq');
+    app.stdin.write(KEYS.enter);
+    const folded = await untilFrame(app, (now) => now.includes('✓ ! seq') && now.includes('line 12'));
+    expect(folded).toContain('(ctrl+o to expand)');
+    expect(folded).not.toContain('line 1\n');
+    app.stdin.write(KEYS.ctrlO);
+    const expanded = await untilFrame(app, (now) => !now.includes('(ctrl+o to expand)'));
+    for (const line of lines) expect(expanded).toContain(line);
+    app.unmount();
+  });
+
   it('runs !!command with its output kept out of the conversation', async () => {
     const { app, backend } = await ready();
     await type(app, '!!cat notes.txt', '! !cat notes.txt');
