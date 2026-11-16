@@ -259,7 +259,7 @@ describe('a group read back from a record is proved by its name', () => {
     const port = portOf(kept);
     expect(await kept.members(6000, LIVE)).toEqual({ kind: 'unknown' });
     expect(await port.alive(6000, LIVE)).toBe(false);
-    await expect(port.signal(6000, 'SIGTERM', LIVE)).resolves.toBeUndefined();
+    await expect(port.signal(6000, 'SIGTERM', LIVE)).resolves.toBe('gone');
     await expect(port.ended?.(6000, LIVE)).resolves.toBeUndefined();
     expect(fake.keepers).toHaveLength(0);
   });

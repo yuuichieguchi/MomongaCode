@@ -526,7 +526,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       await sweepCallLocks({ dir: paths.callLocks, mechanism: kernelLock });
     });
 
-    const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, busyTimeoutMs: storeBusyWaitMs, clock }));
+    const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, busyTimeoutMs: storeBusyWaitMs }));
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
 

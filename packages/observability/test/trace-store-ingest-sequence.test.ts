@@ -24,7 +24,7 @@ const chat = (spanId: string, runId: string | null, input: number, startMs = STA
 });
 
 const openFresh = () => {
-  const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(makeDir(), 'traces.db'), clock: createFakeClock(START_MS) });
+  const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(makeDir(), 'traces.db') });
   registerCleanup(() => store.close());
   return store;
 };
@@ -43,7 +43,7 @@ describe('the ingest sequence of the trace store', () => {
     }
     legacy.close();
 
-    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file , clock: createFakeClock(START_MS) });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  });
     registerCleanup(() => store.close());
     expect(store.billedChatSpansAfter(RUN_ID, 0, 10).map((entry) => [entry.span.spanId, entry.seq])).toEqual([['late', 1], ['early', 2], ['middle', 3]]);
 
