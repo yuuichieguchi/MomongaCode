@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { adapterFilesOf } from './support/adapters.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
@@ -10,35 +11,22 @@ const packagesDir = path.join(root, 'packages');
 
 const PLATFORM_NAME_TOKEN = /process\.platform|\bos\.platform\(\)|(?<![.\w])platform\(\)|case\s+['"](?:aix|android|cygwin|darwin|freebsd|haiku|linux|netbsd|openbsd|sunos|win32)['"]/;
 
-type Kept = { file: string; row: string; reason: string };
-type BurnDown = { file: string; rows: string; owner: string };
+type BurnDown = { file: string; rows: string; sites: number; owner: string };
 
-const KEPT: readonly Kept[] = [
-  { file: 'foundation/src/platform/group-port.ts', row: 'B2', reason: 'POSIX process groups and Windows job semantics are the platform, not a probe-able feature' },
-  { file: 'foundation/src/momonga-paths.ts', row: 'B15', reason: 'OS conventions for where files live and the kind of socket' },
-  { file: 'config/src/layout.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
-  { file: 'gateway/src/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
-  { file: 'gateway/src/process-ports.ts', row: 'B15', reason: 'the port through which the gateway process takes the OS for the B15 layout conventions' },
-  { file: 'runtime/src/process/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
-  { file: 'supervisor/src/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
-  { file: 'supervisor/src/start-supervisor.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
-  { file: 'supervisor/src/reaper-pass.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
-  { file: 'foundation/src/process-contract.ts', row: 'B17', reason: 'conventions of which variables each OS needs' },
-  { file: 'foundation/src/release-assets.ts', row: 'B19', reason: 'asset names are release-engineering names' },
-  { file: 'cli/src/update/source.ts', row: 'B19', reason: 'signing is a macOS fact' },
-  { file: 'supervisor/src/spawn-port.ts', row: 'B21', reason: 'the detached spawn form differs by API' },
-];
+const PACKAGE_PREFIX = 'packages/';
+
+const KEPT_FILES: readonly string[] = Object.keys(adapterFilesOf('platform-name')).map((file) => file.slice(PACKAGE_PREFIX.length));
 
 const BURN_DOWN: readonly BurnDown[] = [
-  { file: 'foundation/src/file-rules.ts', rows: 'B7', owner: 'HB10b final deletion of HOST_RULE_ENFORCEMENT' },
-  { file: 'foundation/src/platform/process-inspector.ts', rows: 'B1', owner: 'HB10b' },
-  { file: 'foundation/src/platform/privacy.ts', rows: 'B16', owner: 'wave 3, after hb0 and a84' },
-  { file: 'tools/src/node-ports.ts', rows: 'B4 B6', owner: 'HB10a B4 after the hb0 and a84 check; HB10e' },
-  { file: 'tools/src/builtins/bash.ts', rows: 'B4 B5', owner: 'HB10e' },
-  { file: 'config/src/settings.ts', rows: 'B8', owner: 'HB10c' },
-  { file: 'runtime/src/process/start-runtime-process.ts', rows: 'B9 B15', owner: 'HB10c' },
-  { file: 'foundation/src/socket-path.ts', rows: 'B15', owner: 'config: endpointFormsOfPlatform reads process.platform by default and config/src/models.ts:122 calls it with no platform from its ports' },
-  { file: 'cli/src/node-ports.ts', rows: 'CliPorts.platform', owner: 'not classified by the HB10 table' },
+  { file: 'foundation/src/file-rules.ts', rows: 'B7', sites: 1, owner: 'HB10b final deletion of HOST_RULE_ENFORCEMENT' },
+  { file: 'foundation/src/platform/process-inspector.ts', rows: 'B1', sites: 5, owner: 'HB10b' },
+  { file: 'foundation/src/platform/privacy.ts', rows: 'B16', sites: 4, owner: 'wave 3, after hb0 and a84' },
+  { file: 'tools/src/node-ports.ts', rows: 'B4 B6', sites: 2, owner: 'HB10a B4 after the hb0 and a84 check; HB10e' },
+  { file: 'tools/src/builtins/bash.ts', rows: 'B4 B5', sites: 1, owner: 'HB10e' },
+  { file: 'config/src/setting-defaults.ts', rows: 'B8', sites: 1, owner: 'HB10c' },
+  { file: 'runtime/src/process/start-runtime-process.ts', rows: 'B9 B15', sites: 1, owner: 'HB10c' },
+  { file: 'foundation/src/socket-path.ts', rows: 'B15', sites: 1, owner: 'config: endpointFormsOfPlatform reads process.platform by default and config/src/models.ts:122 calls it with no platform from its ports' },
+  { file: 'cli/src/node-ports.ts', rows: 'CliPorts.platform', sites: 6, owner: 'not classified by the HB10 table' },
 ];
 
 const EXCLUDED_PACKAGES = new Set(['testkit']);
@@ -49,6 +37,18 @@ const sourceFiles = (directory: string): string[] =>
     if (entry.isDirectory()) return sourceFiles(full);
     return /\.tsx?$/.test(entry.name) && !entry.name.endsWith('.generated.ts') ? [full] : [];
   });
+
+const PLATFORM_NAME_SITE = new RegExp(PLATFORM_NAME_TOKEN.source, 'g');
+
+const callSitesByFile = (): Record<string, number> =>
+  Object.fromEntries(
+    fs
+      .readdirSync(packagesDir)
+      .filter((name) => !EXCLUDED_PACKAGES.has(name) && fs.existsSync(path.join(packagesDir, name, 'src')))
+      .flatMap((name) => sourceFiles(path.join(packagesDir, name, 'src')))
+      .map((file) => [path.relative(packagesDir, file).split(path.sep).join('/'), fs.readFileSync(file, 'utf8').match(PLATFORM_NAME_SITE)?.length ?? 0] as const)
+      .filter(([, sites]) => sites > 0),
+  );
 
 const filesWithPlatformNames = (): string[] =>
   fs
@@ -77,7 +77,7 @@ const HOST_RULE_READERS_OWNED_ELSEWHERE: Readonly<Record<string, string>> = {
 
 describe('platform-name branches (I-N1)', () => {
   it('names a platform only in files kept with a reason or listed for burn-down with an owner', () => {
-    const listed = new Set([...KEPT.map((entry) => entry.file), ...BURN_DOWN.map((entry) => entry.file)]);
+    const listed = new Set([...KEPT_FILES, ...BURN_DOWN.map((entry) => entry.file)]);
     expect(filesWithPlatformNames().filter((file) => !listed.has(file))).toEqual([]);
   });
 
@@ -86,8 +86,13 @@ describe('platform-name branches (I-N1)', () => {
     expect(BURN_DOWN.map((entry) => entry.file).filter((file) => !present.has(file))).toEqual([]);
   });
 
+  it('holds every burn-down file to its count of call sites, so a new branch in a listed file is seen', () => {
+    const present = callSitesByFile();
+    expect(Object.fromEntries(BURN_DOWN.map((entry) => [entry.file, present[entry.file]]))).toEqual(Object.fromEntries(BURN_DOWN.map((entry) => [entry.file, entry.sites])));
+  });
+
   it('lists no file twice', () => {
-    const files = [...KEPT.map((entry) => entry.file), ...BURN_DOWN.map((entry) => entry.file)];
+    const files = [...KEPT_FILES, ...BURN_DOWN.map((entry) => entry.file)];
     expect(files.length).toBe(new Set(files).size);
   });
 });

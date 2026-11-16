@@ -18,7 +18,7 @@ import { spawnSupervisor, startStack } from './stack.ts';
 import type { E2eStack, StartStackOptions } from './stack.ts';
 import { childOf } from './supervisor-client.ts';
 import { textReply, toolCallReply } from './upstream.ts';
-import { E2E_MARGIN_MS, E2E_READY_DEADLINE_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, until, withinBound } from './wait.ts';
+import { E2E_DISPOSE_BOUND_MS, E2E_MARGIN_MS, E2E_READY_DEADLINE_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, e2eTestTimeoutMs, until, withinBound } from './wait.ts';
 
 export type ScenarioResult =
   | { id: string; status: 'ran'; witness: Record<string, number>; outcomes: string[]; trials: InjectionTrial[] }
@@ -69,7 +69,7 @@ type Fault = {
   runBody?(env: TrialEnv): Record<string, unknown>;
   inject?(env: TrialEnv): Promise<void>;
   afterTerminal?(env: TrialEnv, frames: readonly Frame[]): Promise<void>;
-  extraBoundMs?(env: TrialEnv): number;
+  extraBoundMs?(scenario: InjectionScenario): number;
 };
 
 type Frame = { readonly data: { readonly type: string } & Readonly<Record<string, unknown>> };
@@ -192,9 +192,9 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
   },
   upstream_stall: {
     upstreamScript: (_env, script) => [{ kind: 'hang', chunks: [{ delta: { role: 'assistant', content: 'stalled' } }] }, ...script],
-    runBody: (env) => ({ timeoutMs: env.scenario.params?.timeoutMs }),
+    stackOptions: (env) => ({ model: { answers: 'script', idleTimeoutMs: env.scenario.params?.idleTimeoutMs as number } }),
     afterTerminal: async (env) => {
-      if (chatRequestsOf(env).length === 0) throw new Error(`scenario ${env.scenario.id}: the upstream never received a request, so the stall was not injected`);
+      if (chatRequestsOf(env).length < 2) throw new Error(`scenario ${env.scenario.id}: the upstream received ${chatRequestsOf(env).length} requests, so the stalled one was not cut by the idle bound and asked again`);
     },
   },
   disk_full: {
@@ -224,7 +224,7 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
       },
       ...script,
     ],
-    extraBoundMs: (env) => (env.scenario.params?.retryAfterWindow === 'beyond' ? GATEWAY_WINDOW_BOUND_MS + GATEWAY_RETRY.maxMs : 0),
+    extraBoundMs: (scenario) => (scenario.params?.retryAfterWindow === 'beyond' ? GATEWAY_WINDOW_BOUND_MS + GATEWAY_RETRY.maxMs : 0),
     afterTerminal: async (env) => {
       if (chatRequestsOf(env).length < 2) throw new Error(`scenario ${env.scenario.id}: the upstream received fewer than two requests, so the rate limit was not injected and retried`);
     },
@@ -400,7 +400,7 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
         return (TERMINAL_STATUSES as readonly string[]).includes(status);
       },
       {
-        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS + (fault.extraBoundMs?.(env) ?? 0),
+        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS + (fault.extraBoundMs?.(scenario) ?? 0),
         description: `run ${runId} to end`,
       },
     );
@@ -453,13 +453,25 @@ const sweepOf = async (scenario: InjectionScenario): Promise<ScenarioResult[]> =
 
 const notRunReason = (scenario: InjectionScenario, host: InjectionHost): string | undefined => {
   if (scenario.requires === 'any') return undefined;
-  if (!host.linuxContainer) return `linux-container: scenario ${scenario.id} needs the Linux container, where the state directory sits on a size-limited filesystem`;
-  const { blocks, bsize } = fs.statfsSync(e2eTmpRoot());
-  if (blocks * bsize > SMALL_FILESYSTEM_MAX_BYTES) {
-    return `linux-container: the filesystem under ${e2eTmpRoot()} holds ${blocks * bsize} bytes, more than the ${SMALL_FILESYSTEM_MAX_BYTES} a scenario may fill`;
-  }
+  if (!host.linuxContainer) return `linux-container: scenario ${scenario.id} needs the Linux container, where the state directory sits on a size-limited filesystem of at most ${SMALL_FILESYSTEM_MAX_BYTES} bytes under ${e2eTmpRoot()}`;
   return undefined;
 };
+
+export const detectInjectionHost = (): InjectionHost => {
+  if (process.platform !== 'linux') return { linuxContainer: false };
+  const { blocks, bsize } = fs.statfsSync(e2eTmpRoot());
+  return { linuxContainer: blocks * bsize <= SMALL_FILESYSTEM_MAX_BYTES };
+};
+
+const trialBoundMs = (scenario: InjectionScenario): number => {
+  const runBoundMs = E2E_RUN_COMPLETED_BOUND_MS + (FAULTS[scenario.fault].extraBoundMs?.(scenario) ?? 0);
+  return e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_READY_DEADLINE_MS, runBoundMs, runBoundMs, E2E_MARGIN_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_DISPOSE_BOUND_MS);
+};
+
+const trialCountOf = (scenario: InjectionScenario): number =>
+  scenario.fault === 'kill_at_step' ? 1 + (scenario.params?.points ?? []).length * scenario.task.steps.length * scenario.trials : scenario.trials;
+
+export const scenarioBoundMs = (scenario: InjectionScenario): number => trialCountOf(scenario) * trialBoundMs(scenario);
 
 export const injectionReportOf = (results: readonly ScenarioResult[]): ReliabilityReport & { population: { notRun: { id: string; reason: string }[] } } => {
   const report = buildInjectionReport({

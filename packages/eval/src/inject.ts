@@ -44,7 +44,7 @@ export type InjectionExpect = {
 
 export type InjectionParams = {
   points?: (typeof POINT_EVENT_TYPES)[number][];
-  timeoutMs?: number;
+  idleTimeoutMs?: number;
   maxTotalTokens?: number;
   retryAfterWindow?: 'inside' | 'beyond';
   change?: 'applied' | 'removed';
@@ -130,7 +130,7 @@ export const INJECT_SCHEMA = {
             type: 'object',
             properties: {
               points: { type: 'array', minItems: 1, items: { enum: [...POINT_EVENT_TYPES] } },
-              timeoutMs: count,
+              idleTimeoutMs: count,
               maxTotalTokens: count,
               retryAfterWindow: { enum: ['inside', 'beyond'] },
               change: { enum: ['applied', 'removed'] },
@@ -160,7 +160,7 @@ const REQUIRED_PARAMS: Readonly<Record<InjectionFault, readonly (keyof Injection
   kill_at_step: ['points'],
   kill_after_effect: [],
   network_down: [],
-  upstream_stall: ['timeoutMs'],
+  upstream_stall: ['idleTimeoutMs'],
   disk_full: [],
   rate_limit: ['retryAfterWindow'],
   duplicate_start: [],

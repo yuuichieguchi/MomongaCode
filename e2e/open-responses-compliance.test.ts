@@ -11,11 +11,11 @@ import { readLog } from './support/log-reader.ts';
 import { startStack } from './support/stack.ts';
 import { toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { requiredToolPath, requires } from '../test/support/required-tools.ts';
 
 const COMPLIANCE_DIR = path.join(import.meta.dirname, '..', 'compliance', 'open-responses');
-const BUN = path.join(COMPLIANCE_DIR, 'node_modules', '.bin', 'bun');
+const BUN = requiredToolPath('bun');
 const SUITE_ENTRY = path.join(COMPLIANCE_DIR, 'suite', 'bin', 'compliance-test.ts');
-const BUN_MISSING_REASON = `bun is not installed at ${BUN}; run: npm ci --prefix compliance/open-responses`;
 const EXPECTED_TESTS = 17;
 const DEBUG_TOKEN = 'fake-open-responses-debug-token';
 const MODEL = 'fake/system';
@@ -52,8 +52,8 @@ const debugPortOf = (logFile: string): number => {
 };
 
 describe('Open Responses compliance suite against the supervised gateway debug listener', () => {
-  it(titleOf('open-responses-compliance'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    if (!fs.existsSync(BUN)) context.skip(BUN_MISSING_REASON);
+  it(titleOf('open-responses-compliance'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    requires('bun');
     const home = await createE2eHome();
     const fake = await startFakeChatCompletions({
       scenario: 'tools-ok',

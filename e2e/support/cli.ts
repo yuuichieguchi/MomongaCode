@@ -17,7 +17,10 @@ export const SECRETS_FILE_NAME = 'fake-secrets.json';
 
 export type CliResult = { readonly code: number | null; readonly signal: NodeJS.Signals | null; readonly stdout: string; readonly stderr: string };
 
-export type RunCliOptions = { env?: Readonly<Record<string, string>>; cwd?: string; boundMs?: number; bundle?: string };
+export type RunCliOptions = { env?: Readonly<Record<string, string>>; cwd?: string; boundMs?: number; bundle?: string; executable?: string };
+
+export const commandOf = (options: { bundle?: string; executable?: string }, args: readonly string[], defaultBundle: string): [string, string[]] =>
+  options.executable !== undefined ? [options.executable, [...args]] : [process.execPath, [options.bundle ?? defaultBundle, ...args]];
 
 export const cliEnv = (home: E2eHome, extra: Readonly<Record<string, string>> = {}): Record<string, string> =>
   productTestEnv({
@@ -35,8 +38,8 @@ export type RunningCli = { readonly result: Promise<CliResult>; readonly pid: nu
 
 export const startCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): RunningCli => {
   const env = cliEnv(home, options.env);
-  const bundle = options.bundle ?? CLI_BUNDLE;
-  const child = spawn(process.execPath, [bundle, ...args], {
+  const [file, argv] = commandOf(options, args, CLI_BUNDLE);
+  const child = spawn(file, argv, {
     cwd: options.cwd ?? home.project,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],

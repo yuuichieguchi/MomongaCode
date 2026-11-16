@@ -16,7 +16,7 @@ describe('the managed server refuses a socket path that is too long with the one
   const document = process.env[DESIGN_DOCUMENT_VARIABLE];
   const title = `the managed-servers design named by ${DESIGN_DOCUMENT_VARIABLE} states that text and names its message`;
   if (document === undefined) {
-    it.skip(title, () => undefined);
+    it(title, (context) => context.skip(`${DESIGN_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
   } else {
     it(title, () => {
       const lines = fs.readFileSync(document, 'utf8').split('\n').filter((line) => line.includes(socketPathTooLong));

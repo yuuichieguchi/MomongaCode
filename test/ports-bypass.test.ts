@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { countCliUses, countHostUses, countSynchronousFileCalls } from './support/host-uses.ts';
+import { ADAPTER_TABLE, adapterFilesOf } from './support/adapters.ts';
 import { ROOT, packageSources, parseSource, perFile, productSources, relativeOf } from './support/source-scan.ts';
 import type { Counts, ParsedSource } from './support/source-scan.ts';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
@@ -10,31 +11,11 @@ vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const counted = (text: string, count: (source: ParsedSource) => Counts = countHostUses): Counts => count(parseSource('sample.ts', text));
 
-const ADAPTERS: Readonly<Record<string, string>> = {
-  'packages/foundation/src/system-timing.ts': 'the one production Timing adapter over the host timers and clocks: systemTiming, whose timers never hold the process open, and systemWaitTiming, whose timers hold it open until the wait ends',
-  'packages/foundation/src/system-random.ts': 'the one production Random adapter over node:crypto',
-  'packages/foundation/src/node-file-system.ts': 'the one production FileSystem adapter over node:fs',
-  'packages/foundation/src/platform/command-runner.ts': 'the one production adapter that runs a host command',
-  'packages/tools/src/node-ports.ts': 'the one production adapter module of tools: the child-and-timer port, the shell host and the host-bound factories',
-  'packages/foundation/src/platform/group-launch.ts': 'the one production adapter of the group launch: it spawns the leader of a process group',
-  'packages/foundation/src/platform/group-port.ts': 'the one production ProcessGroupPort adapter: it signals a process group through process.kill and reads its members',
-  'packages/foundation/src/platform/windows-keeper-host.ts': 'the one production KeeperHost adapter: it starts the Windows keeper and listens on its pipe',
-  'packages/foundation/src/pattern-check.ts': 'the one production adapter that runs untrusted schema patterns off the event loop, in a worker thread',
-  'packages/foundation/src/lifeline.ts': 'the one production adapter of the lifeline: it watches the inherited descriptor as a socket and yields a turn between its lines',
-  'packages/foundation/src/daemon-entry.ts': 'the composition root of every daemon process: host streams, signals and timers',
-  'packages/cli/src/node-ports.ts': 'the composition root of the CLI ports',
-  'packages/cli/src/update/node-ports.ts': 'the composition root of the update ports',
-  'packages/cli/src/tui/terminal/host.ts': 'the composition root of the terminal layer ports: the synchronous write to the terminal descriptor and the process signals',
-  'packages/gateway/src/process-ports.ts': 'the composition root of the gateway process ports',
-  'packages/runtime/src/process/start-runtime-process.ts': 'the composition root of the runtime process',
-};
+const HOST_USE_ADAPTERS = adapterFilesOf('host-uses');
 
 const DAEMON_PACKAGES: readonly string[] = ['foundation', 'gateway', 'mcp', 'runtime', 'sandbox', 'store', 'supervisor'];
 
-const SYNCHRONOUS_ADAPTERS: Readonly<Record<string, string>> = {
-  'packages/foundation/src/node-file-system.ts': 'the one production FileSystem adapter over node:fs',
-  'packages/foundation/src/sync-paths.ts': 'the synchronous driver of the one path resolution algorithm',
-};
+const SYNCHRONOUS_FILE_ADAPTERS = adapterFilesOf('synchronous-file-calls');
 
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/handover/replace-process.ts': { 'node:child_process': 1 },
@@ -105,11 +86,11 @@ const SYNCHRONOUS_FILE_CALLS: Readonly<Record<string, Counts>> = {
 
 const outside = (table: Readonly<Record<string, string>>, files: readonly string[]): string[] => files.filter((file) => !(relativeOf(file) in table));
 
-const actualBypasses = (): Record<string, Counts> => perFile(outside(ADAPTERS, productSources()), countHostUses);
+const actualBypasses = (): Record<string, Counts> => perFile(outside(HOST_USE_ADAPTERS, productSources()), countHostUses);
 
-const actualCliBypasses = (): Record<string, Counts> => perFile(outside(ADAPTERS, packageSources('cli')), countCliUses);
+const actualCliBypasses = (): Record<string, Counts> => perFile(outside(HOST_USE_ADAPTERS, packageSources('cli')), countCliUses);
 
-const actualSynchronousFileCalls = (): Record<string, Counts> => perFile(outside(SYNCHRONOUS_ADAPTERS, DAEMON_PACKAGES.flatMap(packageSources)), countSynchronousFileCalls);
+const actualSynchronousFileCalls = (): Record<string, Counts> => perFile(outside(SYNCHRONOUS_FILE_ADAPTERS, DAEMON_PACKAGES.flatMap(packageSources)), countSynchronousFileCalls);
 
 describe('ports bypass scan', () => {
   it('counts a direct host call and ignores a port call and a port method signature', () => {
@@ -163,17 +144,14 @@ describe('ports bypass scan', () => {
     });
   });
 
-  it('every production adapter named in the tables exists', () => {
-    const missing = [...Object.keys(ADAPTERS), ...Object.keys(SYNCHRONOUS_ADAPTERS)].filter((file) => !fs.existsSync(path.join(ROOT, file)));
-    expect(missing).toEqual([]);
-  });
-
-  it('every adapter carries a reason', () => {
-    expect([...Object.entries(ADAPTERS), ...Object.entries(SYNCHRONOUS_ADAPTERS)].filter(([, reason]) => reason.trim() === '')).toEqual([]);
+  it('every permanent adapter exists once in the table with its name, reason, owner and scans', () => {
+    expect(ADAPTER_TABLE.filter((adapter) => !fs.existsSync(path.join(ROOT, adapter.file))).map((adapter) => adapter.file)).toEqual([]);
+    expect(ADAPTER_TABLE.filter((adapter) => [adapter.name, adapter.reason, adapter.owner].some((text) => text.trim() === '') || adapter.scans.length === 0).map((adapter) => adapter.file)).toEqual([]);
+    expect(new Set(ADAPTER_TABLE.map((adapter) => adapter.file)).size).toBe(ADAPTER_TABLE.length);
   });
 
   it('no file is both an adapter and a present bypass', () => {
-    expect(Object.keys(PRESENT_BYPASSES).filter((file) => file in ADAPTERS)).toEqual([]);
+    expect(Object.keys(PRESENT_BYPASSES).filter((file) => file in HOST_USE_ADAPTERS)).toEqual([]);
   });
 
   it('the direct host calls outside the adapters are exactly the listed present bypasses', () => {
@@ -182,6 +160,15 @@ describe('ports bypass scan', () => {
 
   it('the synchronous file calls on the daemon paths are exactly the listed ones', () => {
     expect(actualSynchronousFileCalls()).toEqual(SYNCHRONOUS_FILE_CALLS);
+  });
+
+  it('every scan takes its permanent adapters from the one table and declares none of its own', () => {
+    const scans = ['test/ports-bypass.test.ts', 'test/platform-name-branches.test.ts', 'test/async-path-resolution.test.ts'];
+    const table = path.join(ROOT, 'test/support/adapters.ts');
+    expect(fs.existsSync(table)).toBe(true);
+    const own = scans.filter((file) => /\bconst (?:ADAPTERS|SYNCHRONOUS_ADAPTERS|KEPT|SYNCHRONOUS_USERS)\b/.test(fs.readFileSync(path.join(ROOT, file), 'utf8')));
+    const readers = scans.filter((file) => /from '\.\/support\/adapters\.ts'/.test(fs.readFileSync(path.join(ROOT, file), 'utf8')));
+    expect({ own, readers }).toEqual({ own: [], readers: scans });
   });
 
   it('the names the CLI reaches the host by are counted', () => {

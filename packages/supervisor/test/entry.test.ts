@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { EXIT_CONFIG, EXIT_OK, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
+import { EXIT_CONFIG, EXIT_OK, LIFELINE_FD, generationLayout, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, prepareGenerationForTest, registerCleanup, startLockHolder, waitFor, firstGeneration, testKernelLock } from '@momonga/testkit';
@@ -51,6 +51,7 @@ type EntryOptions = {
   argvHome?: boolean;
   generationFlag?: string | false;
   behaviours?: FakeSpawnOptions['behaviours'];
+  lifelineFd?: number;
 };
 
 const cancelOnClaim = (target: string, cancel: () => void): KernelLockMechanism => {
@@ -72,7 +73,7 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
   const io = createFakeEntryIo({
-    argv: [...(options.argvHome === false ? [] : [`--home=${home}`]), ...(options.generationFlag === false ? [] : [`--generation=${options.generationFlag ?? '1'}`]), '--log-target=file'],
+    argv: [...(options.argvHome === false ? [] : [`--home=${home}`]), ...(options.generationFlag === false ? [] : [`--generation=${options.generationFlag ?? '1'}`]), ...(options.lifelineFd === undefined ? [] : [`--lifeline-fd=${options.lifelineFd}`]), '--log-target=file'],
     home,
     env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home, LANG: 'C' },
     clock,
@@ -181,6 +182,18 @@ describe('runSupervisorEntry', () => {
     expect(run.supervisorLog().filter((line) => line.msg === 'child.ready' && line['child'] === 'runtime')).toEqual([]);
     expect(fs.existsSync(run.paths.current)).toBe(false);
     expect(run.io.exits).toEqual([EXIT_OK]);
+  });
+
+  it('T-I3-45 (15.3 death cases, P7 (c)): a supervisor whose lifeline closes before its children are ready ends without publishing and frees its lock', async (context) => {
+    const run = startEntry(context, { lifelineFd: LIFELINE_FD, behaviours: { runtime: { autoReady: false }, gateway: { autoReady: false } } });
+    await ready(run);
+    await pumpUntil(run.timers, () => run.fake.spawnCount('runtime') >= 1, { maxMs: 10_000, description: 'the runtime to be spawned', realWork: run.realWork });
+    expect(run.io.lifelineFds).toEqual([LIFELINE_FD]);
+    run.io.endLifeline();
+    await exitOf(run);
+    expect(run.supervisorLog().filter((line) => line.msg === 'child.ready')).toEqual([]);
+    expect(fs.existsSync(run.paths.current)).toBe(false);
+    expect((await inspectProcessLock(generationLayout(run.home, 1).locks.supervisor, { mechanism: testKernelLock() })).state).toBe('free');
   });
 
   it.for([['no flag', false], ['zero', '0'], ['a word', 'two'], ['a signed number', '-1']] as const)('refuses to start with %s for --generation: exit 78 and the settled text', async ([, generationFlag], context) => {

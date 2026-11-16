@@ -34,6 +34,15 @@ describe('momonga-inject/1 (design 4.1)', () => {
     expect(() => parseInjectionScenarios(withScenario((scenario) => delete scenario['params']), 'bad.json')).toThrow(/needs the parameter points/);
   });
 
+  it('states the upstream stall by the idle bound of the models section, not by a limit of the run', () => {
+    const parsed = parseInjectionScenarios(shipped(), SHIPPED);
+    const stall = parsed.scenarios.find((scenario) => scenario.fault === 'upstream_stall');
+    expect(stall?.params).toEqual({ idleTimeoutMs: expect.any(Number) });
+    const withoutIdle = JSON.parse(shipped()) as { scenarios: { fault: string; params?: unknown }[] };
+    for (const scenario of withoutIdle.scenarios) if (scenario.fault === 'upstream_stall') scenario.params = { timeoutMs: 10_000 };
+    expect(() => parseInjectionScenarios(JSON.stringify(withoutIdle), 'bad.json')).toThrow(/invalid injection scenarios/);
+  });
+
   it('refuses a scenario whose steps do not end with a text reply', () => {
     expect(() => parseInjectionScenarios(withScenario((scenario) => ((scenario['task'] as { steps: unknown[] }).steps = [{ call: { name: 'Bash', input: {} } }])), 'bad.json')).toThrow(/end its steps with a text reply/);
   });

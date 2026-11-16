@@ -14,7 +14,8 @@ import { storeSecretThroughProduct } from './support/secrets.ts';
 import { sandboxOrSkip } from './support/sandbox.ts';
 import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
-import { textReply, toolCallReply } from './support/upstream.ts';
+import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
+import type { E2eStack } from './support/stack.ts';
 import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const FORGE_SECRET = 'forge-main';
@@ -59,7 +60,19 @@ const killRuntime = async (stack: Awaited<ReturnType<typeof startStack>>): Promi
   process.kill(pid, 'SIGKILL');
 };
 
-const loadThen = (name: string, args: Readonly<Record<string, unknown>>) => [toolCallReply('LoadTools', { names: [name] }, 'call_load'), toolCallReply(name, args, 'call_effect'), textReply('done')];
+const effectThenDone = (name: string, args: Readonly<Record<string, unknown>>) => [toolCallReply(name, args, 'call_effect'), textReply('done')];
+
+const offeredToolNames = (stack: E2eStack): string[] => {
+  const first = chatCompletions(stack.fake)[0];
+  if (first === undefined) throw new Error('the upstream received no request');
+  const tools: unknown = (first.body as { tools?: unknown }).tools;
+  if (!Array.isArray(tools)) throw new Error('the first request offered no tools');
+  return tools.map((tool: { function: { name: string } }) => tool.function.name);
+};
+
+const expectScriptedToolOffered = (stack: E2eStack, effect: string): void => {
+  expect(offeredToolNames(stack)).toContain(effect);
+};
 
 const effectFramesOf = (frames: Awaited<ReturnType<ReturnType<ReturnType<typeof createRuntimeClient>['events']>['toEnd']>>, operation: string) =>
   [...framesOfType(frames, 'tool.completed'), ...framesOfType(frames, 'tool.reconciled')]
@@ -75,7 +88,7 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
     fs.writeFileSync(path.join(home.project, '.git', 'hooks', 'pre-commit'), `#!/bin/sh\necho run >> ${runs}\n[ "$(wc -l < ${runs} | tr -d ' ')" -gt 1 ] || sleep 60\n`, { mode: 0o755 });
     fs.writeFileSync(path.join(home.project, 'a.txt'), 'two\n');
     gitIn(home, 'add', 'a.txt');
-    const stack = await startStack({ home, needsBash: true, deps: { restart: E2E_RESTART_POLICY }, script: loadThen('GitCommit', { message: COMMIT_MESSAGE }) });
+    const stack = await startStack({ home, needsBash: true, deps: { restart: E2E_RESTART_POLICY }, script: effectThenDone('GitCommit', { message: COMMIT_MESSAGE }) });
     const runtime = createRuntimeClient(home);
     try {
       await trustProject(home);
@@ -96,6 +109,7 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
       await stream.close();
       expect(effectFramesOf(frames, 'GitCommit').map((effect) => effect?.outcome)).toEqual(['applied']);
       expect(childOf(await stack.client.health(), 'runtime').restarts).toBe(1);
+      expectScriptedToolOffered(stack, 'GitCommit');
     } finally {
       await runtime.close();
     }
@@ -113,7 +127,7 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
       home,
       deps: { restart: E2E_RESTART_POLICY },
       settings: { forges: [{ id: 'local', descriptor: 'github', hosts: [forge.host], apiBaseUrl: forge.origin, credential: { secret: FORGE_SECRET } }] },
-      script: loadThen('PullRequestCreate', { head: HEAD_BRANCH, base: 'main', title: 'Add x', body: 'Adds x', headSha: head }),
+      script: effectThenDone('PullRequestCreate', { head: HEAD_BRANCH, base: 'main', title: 'Add x', body: 'Adds x', headSha: head }),
     });
     const runtime = createRuntimeClient(home);
     try {
@@ -129,6 +143,7 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
       const frames = await stream.toEnd(E2E_MARGIN_MS);
       await stream.close();
       expect(JSON.stringify(frames)).not.toContain(FORGE_CREDENTIAL);
+      expectScriptedToolOffered(stack, 'PullRequestCreate');
       return {
         forge,
         outcomes: effectFramesOf(frames, 'PullRequestCreate').map((effect) => effect?.outcome),

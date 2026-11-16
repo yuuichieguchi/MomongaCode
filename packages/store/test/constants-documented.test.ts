@@ -43,7 +43,7 @@ const constantsDocument = process.env[CONSTANTS_DOCUMENT_VARIABLE];
 
 describe('the constants of the store carry their derivation', () => {
   if (constantsDocument === undefined) {
-    it.skip(documentTitle, () => undefined);
+    it(documentTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
   } else {
     it(documentTitle, () => {
       const missing = Object.entries(DOCUMENTED).flatMap(([file, names]) => names.filter((name) => !hasRow(fs.readFileSync(path.join(constantsDocument, file), 'utf8'), name)));

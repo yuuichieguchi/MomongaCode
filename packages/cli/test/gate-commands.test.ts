@@ -62,7 +62,7 @@ describe('the release gate procedure names only commands and options that exist'
   const document = process.env[GATE_DOCUMENT_VARIABLE];
   const title = `every momonga command and option in the document named by ${GATE_DOCUMENT_VARIABLE} is registered`;
   if (document === undefined) {
-    it.skip(title, () => undefined);
+    it(title, (context) => context.skip(`${GATE_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
   } else {
     it(title, () => {
       const root = program();

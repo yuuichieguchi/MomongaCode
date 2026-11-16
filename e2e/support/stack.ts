@@ -46,7 +46,7 @@ export type StackReadiness = { phase: SupervisorPhase; children: Readonly<Record
 
 export type StackModelCapabilities = { readonly contextWindow: number; readonly maxOutputTokens: number };
 
-export type StackModel = { readonly capabilities?: StackModelCapabilities; readonly toolCalling?: 'native' | 'constrained'; readonly answers?: 'model' | 'script' };
+export type StackModel = { readonly capabilities?: StackModelCapabilities; readonly toolCalling?: 'native' | 'constrained'; readonly answers?: 'model' | 'script'; readonly idleTimeoutMs?: number };
 
 export type StartStackOptions = {
   home: E2eHome;
@@ -185,7 +185,8 @@ export const settingsWithModel = (settings: Readonly<Record<string, unknown>>, m
     ...(model.capabilities === undefined ? {} : { capabilities: { ...model.capabilities } }),
     ...(model.toolCalling === undefined ? {} : { toolCalling: model.toolCalling }),
   }));
-  return model.answers === undefined ? entryChanged : withUpstreamConnection(entryChanged, (connection) => ({ ...connection, answers: model.answers }));
+  const answersChanged = model.answers === undefined ? entryChanged : withUpstreamConnection(entryChanged, (connection) => ({ ...connection, answers: model.answers }));
+  return model.idleTimeoutMs === undefined ? answersChanged : { ...answersChanged, models: { ...modelsOf(answersChanged), idleTimeoutMs: model.idleTimeoutMs } };
 };
 
 export const writeSettingsFile = (home: E2eHome, value: Readonly<Record<string, unknown>> | string): void => {

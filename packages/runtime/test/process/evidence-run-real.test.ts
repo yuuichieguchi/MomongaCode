@@ -1,3 +1,4 @@
+import { HAS_REAL_SANDBOX } from '../../../tools/test/helpers.ts';
 import { execFileSync, spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,7 +14,6 @@ import { fixedSandboxBindings } from '@momonga/runtime';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const HAS_REAL_SANDBOX = process.platform === 'darwin' || process.platform === 'linux';
 
 const KILL_GRACE_MS = 300;
 
