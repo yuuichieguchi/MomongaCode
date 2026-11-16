@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createOwnedDirectory, fileRuleBlocks, hostPaths, mapAsync, procGroupMembers, settledOrAborted, signalGroup, signalGroupExceptLeader, systemTiming } from '@momonga/foundation';
+import { componentCountOf, createOwnedDirectory, fileRuleBlocks, hostPaths, mapAsync, matchDepthOf, procGroupMembers, settledOrAborted, signalGroup, signalGroupExceptLeader, systemTiming } from '@momonga/foundation';
 import type { Awaitable, FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectory, PlaceholderForm, KernelLockMechanism, Timing } from '@momonga/foundation';
 import type { Duplex } from 'node:stream';
 import { MARKER_SLOT, SANDBOX_STOP_BOUND_MS, SOCKET_FILTER_SLOT, launch } from './process.ts';
@@ -157,8 +157,14 @@ type Inspector = {
   children(directory: string): Promise<DirectoryEntry[]>;
 };
 
+const depthBoundOf = (entry: FileRuleEntry): number | undefined => {
+  const bounds = [matchDepthOf(entry.exact), matchDepthOf(entry.exactLexical ?? entry.exact)];
+  return bounds.includes(undefined) ? undefined : Math.max(...(bounds as number[]));
+};
+
 const blockedPaths = async (set: FileRuleSet, entry: FileRuleEntry, port: Inspector, signal: AbortSignal): Promise<string[]> => {
   const found: string[] = [];
+  const depthBound = depthBoundOf(entry);
   const visit = async (candidate: string, kind: EntryKind | 'other'): Promise<void> => {
     signal.throwIfAborted();
     const blocked = fileRuleBlocks(set, entry, candidate, candidate);
@@ -166,6 +172,7 @@ const blockedPaths = async (set: FileRuleSet, entry: FileRuleEntry, port: Inspec
     if (kind !== 'directory') return;
     const wholeDirectoryBlocked = blocked && (entry.exceptions.length === 0 || entry.blockedAsWhole);
     if (wholeDirectoryBlocked) return;
+    if (!blocked && depthBound !== undefined && componentCountOf(candidate) >= depthBound) return;
     for (const child of await port.children(candidate)) await visit(child.path, child.kind);
   };
   for (const { directory } of directoriesOf(entry)) {
