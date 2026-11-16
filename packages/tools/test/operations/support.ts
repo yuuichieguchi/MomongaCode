@@ -149,8 +149,8 @@ export const NO_FORGE: ForgeAccess = {
   gitDestination: () => undefined,
 };
 
-export const operationTool = (name: string, deps: { runArgv: ArgvRunner; forge?: ForgeAccess; settings?: OperationSettings }): AnyTool => {
-  const tools = createOperationTools({ runArgv: deps.runArgv, forge: deps.forge ?? NO_FORGE, settings: deps.settings ?? {} });
+export const operationTool = (name: string, deps: { runArgv: ArgvRunner; forge?: ForgeAccess; settings?: OperationSettings; platform?: NodeJS.Platform; shell?: () => Promise<string> }): AnyTool => {
+  const tools = createOperationTools({ runArgv: deps.runArgv, forge: deps.forge ?? NO_FORGE, settings: deps.settings ?? {}, platform: deps.platform ?? process.platform, shell: deps.shell ?? (async () => '/bin/sh') });
   const tool = tools.find((candidate) => candidate.name === name);
   if (tool === undefined) throw new Error(`no operation tool named ${name}`);
   return tool;

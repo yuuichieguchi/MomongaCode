@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import type { ForgeAccess } from '@momonga/tools';
+import type { ArgvRunner, ForgeAccess } from '@momonga/tools';
 import { gitEnvironment, gitProxyEnvironment } from '@momonga/tools';
 import { contextFor, countingRunner, makeGitWorld, onCleanup, operationTool, partsOf, settle, shaOfRemote } from './support.ts';
 import type { GitWorld } from './support.ts';
@@ -209,6 +209,23 @@ describe('the pre-push hook of a repository', () => {
     expect(hookCall).toBeGreaterThanOrEqual(0);
     expect(hookCall).toBeLessThan(pushCall);
     expect(effective(world, runner.environments[pushCall] ?? {}, 'core.hooksPath')).toBe('/dev/null');
+  });
+
+  it('runs the hook through the shell on win32, with the hook file as the first operand after the shell', async () => {
+    const { world, write } = hookWorld();
+    write(recording(path.join(world.base, 'hook-ran')));
+    const real = countingRunner();
+    const hookArgvs: string[][] = [];
+    const run: ArgvRunner = async (argv, options) => {
+      if (argv[0] !== 'fake-sh') return real.run(argv, options);
+      hookArgvs.push([...argv]);
+      return { exitCode: 0, stdout: '', stderr: '' };
+    };
+    const parts = partsOf(operationTool('GitPush', { runArgv: run, platform: 'win32', shell: async () => 'fake-sh' }), PUSH, contextFor(world.work, world.env));
+    await parts.execute(await parts.prepare());
+    expect(hookArgvs).toHaveLength(1);
+    expect(hookArgvs[0]?.slice(0, 3)).toEqual(['fake-sh', '-c', '"$0" "$@"']);
+    expect(hookArgvs[0]?.[3]).toMatch(/pre-push$/);
   });
 
   it('gives the hook the value of the remote branch when the branch exists, and the delete line for a delete', async () => {
