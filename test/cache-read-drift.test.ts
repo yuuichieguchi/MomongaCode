@@ -4,26 +4,45 @@ import { describe, expect, it, vi } from 'vitest';
 import { CACHE_READ_TEXT } from '@momonga/observability';
 import { CACHE_READS_NOT_REPORTED, UNPRICED_CODE_TEXT } from '@momonga/protocol';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { ROOT, childOf, identifierName, literalValue, memberChain, packageSources, parseSource, parsedProductSource, relativeOf, sourcesUnder, unwrapped, workspacePackages } from './support/source-scan.ts';
+import type { ParsedSource, SourceNode } from './support/source-scan.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
-const root = path.resolve(import.meta.dirname, '..');
+const root = ROOT;
 
-const sourcesUnder = (relative: string): string[] => {
-  const directory = path.join(root, relative);
-  return fs
-    .readdirSync(directory, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name))
-    .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)))
-    .sort();
+const sourcesOf = (relative: string): string[] => sourcesUnder(path.join(root, relative)).map(relativeOf);
+
+const ALL_SOURCES = workspacePackages().flatMap(packageSources).map(relativeOf);
+
+const SURFACE_SOURCES = ['packages/observability/src', 'packages/eval/src', 'packages/cli/src'].flatMap(sourcesOf);
+
+const FIELD = 'cachedInputTokens';
+const EQUALITY = new Set(['===', '!==', '==', '!=']);
+
+const isUndefined = (node: SourceNode | undefined): boolean => {
+  const plain = unwrapped(node);
+  if (identifierName(plain) === 'undefined') return true;
+  if (plain?.type === 'UnaryExpression' && plain['operator'] === 'void') return true;
+  return literalValue(plain) === 'undefined';
 };
 
-const ALL_SOURCES = fs
-  .readdirSync(path.join(root, 'packages'))
-  .filter((name) => fs.existsSync(path.join(root, 'packages', name, 'src')))
-  .flatMap((name) => sourcesUnder(path.join('packages', name, 'src')));
+const isField = (node: SourceNode | undefined): boolean => {
+  const plain = unwrapped(node);
+  if (plain?.type === 'UnaryExpression' && plain['operator'] === 'typeof') return isField(childOf(plain, 'argument'));
+  const chain = memberChain(plain?.type === 'ChainExpression' ? childOf(plain, 'expression') : plain);
+  return chain === FIELD || chain?.endsWith(`.${FIELD}`) === true;
+};
 
-const SURFACE_SOURCES = ['packages/observability/src', 'packages/eval/src', 'packages/cli/src'].flatMap(sourcesUnder);
+const decidesCacheReport = (source: ParsedSource): boolean =>
+  source.nodes.some(({ node }) => {
+    if (node.type !== 'BinaryExpression' || !EQUALITY.has(String(node['operator']))) return false;
+    const left = childOf(node, 'left');
+    const right = childOf(node, 'right');
+    return (isField(left) && isUndefined(right)) || (isField(right) && isUndefined(left));
+  });
+
+const decidesIn = (text: string): boolean => decidesCacheReport(parseSource('sample.ts', text));
 
 const filesMatching = (files: readonly string[], pattern: RegExp): string[] =>
   files.filter((file) => pattern.test(fs.readFileSync(path.join(root, file), 'utf8')));
@@ -41,8 +60,16 @@ describe('one reader of whether a call reported its cache reads', () => {
     expect(readers).toEqual([]);
   });
 
+  it('counts a comparison of the field itself with undefined by any spelling, and not a longer name that ends in the field', () => {
+    expect(decidesIn('const known = usage.cachedInputTokens !== undefined;')).toBe(true);
+    expect(decidesIn('const known = undefined !== usage?.cachedInputTokens;')).toBe(true);
+    expect(decidesIn('const known = cachedInputTokens == undefined;')).toBe(true);
+    expect(decidesIn("const known = typeof usage.cachedInputTokens === 'undefined';")).toBe(true);
+    expect(decidesIn('const known = usage.reportedCachedInputTokens !== undefined;\nconst other = notcachedInputTokens === undefined;')).toBe(false);
+  });
+
   it('decides the fact with cachedInputTokens === undefined only in billed-calls.ts, cache-reads.ts and token-metrics.ts', () => {
-    const deciders = filesMatching(SURFACE_SOURCES, /cachedInputTokens\s*[!=]==\s*undefined/).filter((file) => file !== 'packages/observability/src/spans.ts');
+    const deciders = SURFACE_SOURCES.filter((file) => decidesCacheReport(parsedProductSource(path.join(root, file)))).filter((file) => file !== 'packages/observability/src/spans.ts');
 
     expect([...deciders].sort()).toEqual(['packages/eval/src/token-metrics.ts', 'packages/observability/src/billed-calls.ts', 'packages/observability/src/cache-reads.ts']);
   });
@@ -62,7 +89,7 @@ describe('one table of the cache-read texts', () => {
 
   it('keeps the cache-read wording of the observability and cli surfaces in that table only', () => {
     const owners = filesMatching(
-      ['packages/observability/src', 'packages/cli/src'].flatMap(sourcesUnder),
+      ['packages/observability/src', 'packages/cli/src'].flatMap(sourcesOf),
       /cache reads not reported|did not report cache reads|cached not reported|cache split/,
     );
 

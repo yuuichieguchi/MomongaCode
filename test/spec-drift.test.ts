@@ -163,17 +163,27 @@ describe('RunRecovery.tla against the implementation', () => {
 describe('STOP_REASONS against RunRecovery.tla and the store', () => {
   const schemaSource = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'store', 'src', 'schema.ts'), 'utf8');
 
-  const COMING_STOP_REASONS: string[] = [];
+  const NO_COMING_STOP_REASONS: readonly string[] = [];
 
-  it('is a subset of the stop_reason CHECK of the widened runs table, each reason once, and the rest is exactly the coming reasons (design-chatgpt-plan O-R5-6 L7)', () => {
-    const constraints = [...schemaSource.matchAll(/stop_reason IS NULL OR stop_reason IN \(([^)]*)\)/g)];
-    const widened = constraints.at(-1);
-    expect(widened, 'schema.ts states the widened stop_reason CHECK').toBeDefined();
-    expect(schemaSource.indexOf('const RUNS_STOP_REASONS_WIDENED')).toBeLessThan(widened?.index ?? -1);
-    const list = [...(widened?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((match) => match[1] as string);
+  const widenedReasonsOf = (source: string): string[] => {
+    const widened = [...source.matchAll(/stop_reason IS NULL OR stop_reason IN \(([^)]*)\)/g)].at(-1);
+    return [...(widened?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((match) => match[1] as string);
+  };
+
+  const comingReasonsOf = (list: readonly string[]): string[] => list.filter((reason) => !(STOP_REASONS as readonly string[]).includes(reason)).sort();
+
+  it('is a subset of the stop_reason CHECK of the widened runs table, each reason once, and the rest is exactly the coming reasons, none today (design-chatgpt-plan O-R5-6 L7)', () => {
+    expect(schemaSource.indexOf('const RUNS_STOP_REASONS_WIDENED')).toBeLessThan(schemaSource.lastIndexOf('stop_reason IS NULL OR stop_reason IN ('));
+    const list = widenedReasonsOf(schemaSource);
+    expect(list.length, 'schema.ts states the widened stop_reason CHECK').toBeGreaterThan(0);
     expect(new Set(list).size).toBe(list.length);
     expect(STOP_REASONS.every((reason) => list.includes(reason))).toBe(true);
-    expect(list.filter((reason) => !(STOP_REASONS as readonly string[]).includes(reason)).sort()).toEqual(COMING_STOP_REASONS);
+    expect(comingReasonsOf(list)).toEqual(NO_COMING_STOP_REASONS);
+  });
+
+  it('checks the coming reasons strictly: a reason in the CHECK that the protocol does not know is found', () => {
+    const planted = `stop_reason IS NULL OR stop_reason IN (${[...STOP_REASONS, 'planted_reason'].map((reason) => `'${reason}'`).join(', ')})`;
+    expect(comingReasonsOf(widenedReasonsOf(planted))).toEqual(['planted_reason']);
   });
 
   it('is one STOPPED terminal in the model: no stop reason is a variable, and STOPPED has no outgoing edge in any table', () => {

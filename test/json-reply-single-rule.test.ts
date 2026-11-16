@@ -33,7 +33,7 @@ describe('a JSON reply is decided by one rule', () => {
     expect(fs.existsSync(HELPER)).toBe(true);
   });
 
-  it('lets no caller read structuredOutput or the deleted predicate to decide whether a call may run', () => {
+  it('lets no caller file name structuredOutput or the deleted predicate at all: the reply form is decided once, in the helper the adapters share', () => {
     expect(offenders(callerFiles(), /structuredOutput|requireStructuredOutput/)).toEqual([]);
   });
 

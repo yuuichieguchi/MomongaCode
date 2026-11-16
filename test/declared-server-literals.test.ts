@@ -2,38 +2,38 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { ROOT, lineOf, parseSource, parsedProductSource, productSources, relativeOf, stringPartsOf } from './support/source-scan.ts';
+import type { ParsedSource } from './support/source-scan.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
-const root = path.resolve(import.meta.dirname, '..');
-const packagesDir = path.join(root, 'packages');
+const DESCRIPTION_FILE = 'packages/protocol/src/managed-servers.ts';
 
-const DESCRIPTION_FILE = path.join('packages', 'protocol', 'src', 'managed-servers.ts');
-const TEST_FIXTURE_SOURCES = path.join('packages', 'testkit', 'src') + path.sep;
+const SERVER_IDS = ['fm', 'mine', 'loom', 'anvil', 'kiln'];
 
-const DECLARED_TEST_IDS = ['mine', 'loom', 'anvil', 'kiln'];
+const namesOf = (source: ParsedSource, id: string): string[] =>
+  stringPartsOf(source)
+    .filter(({ text }) => text === id)
+    .map(({ node }) => `${relativeOf(source.file)}:${lineOf(source, node)}`);
 
-const sourceFilesUnder = (dir: string): string[] =>
-  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFilesUnder(full);
-    return /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
+const namedIn = (text: string, id: string): number => namesOf(parseSource('sample.ts', text), id).length;
+
+describe('no product code names a managed or declared server id outside the built-in description file (design-managed-servers 3.1 and 19.8, AT1; R-S19-19)', () => {
+  it('finds an id written as a whole string of any quote, and not a longer text that holds it', () => {
+    expect(namedIn("if (server.id === 'fm') start();", 'fm')).toBe(1);
+    expect(namedIn('if (server.id === "fm") start();', 'fm')).toBe(1);
+    expect(namedIn('const id = `fm`;', 'fm')).toBe(1);
+    expect(namedIn("const text = 'fm server';\nconst name = format;", 'fm')).toBe(0);
   });
 
-const productSources = (): string[] =>
-  fs
-    .readdirSync(packagesDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(packagesDir, entry.name, 'src')))
-    .flatMap((entry) => sourceFilesUnder(path.join(packagesDir, entry.name, 'src')))
-    .map((file) => path.relative(root, file))
-    .filter((file) => file !== DESCRIPTION_FILE && !file.startsWith(TEST_FIXTURE_SOURCES));
+  it('keeps the description file, the one allowed place', () => {
+    expect(fs.existsSync(path.join(ROOT, DESCRIPTION_FILE))).toBe(true);
+  });
 
-const literalOf = (id: string): RegExp => new RegExp(`(['"\`])${id}\\1`);
-
-const filesWithLiteral = (id: string): string[] => productSources().filter((file) => literalOf(id).test(fs.readFileSync(path.join(root, file), 'utf8')));
-
-describe('no product code names a declared server id or fm outside the built-in description file (design-managed-servers 19.8, AT1; R-S19-19)', () => {
-  it.each(['fm', ...DECLARED_TEST_IDS])('finds the literal %s in no product source', (id) => {
-    expect(filesWithLiteral(id)).toEqual([]);
+  it.each(SERVER_IDS)('finds the id %s in no product source', (id) => {
+    const found = productSources()
+      .filter((file) => relativeOf(file) !== DESCRIPTION_FILE)
+      .flatMap((file) => namesOf(parsedProductSource(file), id));
+    expect(found).toEqual([]);
   });
 });
