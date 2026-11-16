@@ -514,6 +514,8 @@ describe('the CPU budget of the harness', () => {
   );
 });
 
+const ZOMBIE_GROUP_POLLS = 40;
+
 const zombieGroupsOf = (parentPid: number): number[] =>
   spawnSync('ps', ['-A', '-o', 'pid=,pgid=,ppid=,stat='], { encoding: 'utf8' })
     .stdout.split('\n')
@@ -523,14 +525,15 @@ const zombieGroupsOf = (parentPid: number): number[] =>
 
 describe('killing a process group', () => {
   it('treats a group whose only members are zombies as already killed', async () => {
-    const holder = spawn('sh', ['-c', 'set -m; (exit 0) & exec sleep 60'], { stdio: 'ignore' });
+    const holder = spawn('perl', ['-e', 'my $child = fork; if ($child == 0) { setpgrp(0, 0); exit 0 } exec "sleep", "60"'], { stdio: 'ignore' });
     try {
       const holderPid = holder.pid as number;
       let groups = zombieGroupsOf(holderPid);
-      while (groups.length === 0) {
+      for (let poll = 0; groups.length === 0 && poll < ZOMBIE_GROUP_POLLS; poll += 1) {
         await new Promise((resolve) => setTimeout(resolve, 50));
         groups = zombieGroupsOf(holderPid);
       }
+      expect(groups).toHaveLength(1);
       const [zombieGroup] = groups as [number];
       expect(() => killGroup(zombieGroup)).not.toThrow();
     } finally {
