@@ -169,11 +169,10 @@ export async function launch(options: LaunchOptions): Promise<SandboxedProcess> 
     });
   };
 
-  let afterExitRan = false;
-  const afterExitOnce = async (): Promise<void> => {
-    if (afterExitRan) return;
-    afterExitRan = true;
-    await options.afterExit();
+  let afterExit: Promise<void> | undefined;
+  const afterExitOnce = (): Promise<void> => {
+    afterExit ??= (async () => options.afterExit())();
+    return afterExit;
   };
 
   const reapAndClean = async (): Promise<TerminateOutcome | undefined> => {
