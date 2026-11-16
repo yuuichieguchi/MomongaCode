@@ -6,7 +6,8 @@ import { LOCK_PROOF_ENV, lockProofFolder } from './test-locks.ts';
 
 export const standInEnv = (base: string = MINIMAL_CHILD_PATH): Record<string, string> => {
   const bin = fakeSecretProgramsBin();
-  return { PATH: `${bin}${path.delimiter}${base}`, BROWSER: fakeBrowserOf(bin) };
+  const fakeBus = path.join(path.dirname(bin), 'session-bus');
+  return { PATH: `${bin}${path.delimiter}${base}`, BROWSER: fakeBrowserOf(bin), DBUS_SESSION_BUS_ADDRESS: `unix:path=${fakeBus}` };
 };
 
 export const productTestEnv = (env: Readonly<Record<string, string>> = {}): Record<string, string> => {
