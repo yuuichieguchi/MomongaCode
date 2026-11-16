@@ -6,7 +6,8 @@ import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
 import { KEYS, TEST_KEY_SETTLE_MS, renderObservable, untilFrame, untilOutput, settleAtOnce } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
-import { fakeScreenTerminal } from './tui/screen-fakes.ts';
+import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './tui/screen-fakes.ts';
+import type { FakeScreenSize } from './tui/screen-fakes.ts';
 import { systemTiming } from '@momonga/foundation';
 
 export const base = { runId: 'run-1', sessionId: 'session-1', step: 1, createdAt: 1 } as const;
@@ -18,9 +19,9 @@ export const frame = (event: Record<string, unknown>): RunEventFrame => {
   return { id: sequence, event: String(event['type']), data: { ...base, id: sequence, seq: sequence, ...event } as PublicRunEvent };
 };
 
-export const start = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'colour' | 'copyOnSelect' | 'now' | 'timers' | 'keySettleMs' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption'>> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
+export const start = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'colour' | 'copyOnSelect' | 'now' | 'timers' | 'keySettleMs' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption'>> = {}, screen: Partial<FakeScreenSize> = {}) => {
   const backend = fakeBackend(options);
-  const terminal = fakeScreenTerminal(screen);
+  const terminal = fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen });
   const outcomes: TuiOutcome[] = [];
   const exited = Promise.withResolvers<TuiOutcome>();
   const keySettleMs = extra.keySettleMs ?? TEST_KEY_SETTLE_MS;

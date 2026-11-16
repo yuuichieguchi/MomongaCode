@@ -41,10 +41,17 @@ const runTask = async (home: E2eHome, task: string): Promise<string> => {
 const journalOf = (home: E2eHome, runId: string): JournalEvent[] =>
   journalOfRows(readDb<EventRow>(home.paths.databases.runtime, 'SELECT seq, type, payload_json FROM events WHERE run_id = ? ORDER BY seq', runId));
 
+const TOOL_OUTPUT_HEAD_CHARS = 80;
+
 const comparable = (journal: readonly JournalEvent[]): string[] =>
   journal
     .filter((event) => COMPARED_TYPES.has(event.type))
-    .map((event) => (event.type === 'run.status' ? `run.status:${String(event.data['to'])}` : event.type === 'notice' ? `notice:${String(event.data['message'])}` : event.type));
+    .map((event) => {
+      if (event.type === 'run.status') return `run.status:${String(event.data['to'])}`;
+      if (event.type === 'notice') return `notice:${String(event.data['message'])}`;
+      if (event.type === 'tool.completed') return `tool.completed:${String(event.data['status'])}:${String(event.data['output']).slice(0, TOOL_OUTPUT_HEAD_CHARS)}`;
+      return event.type;
+    });
 
 describe('haystack builder', () => {
   it.for([22, 74, 90, 200])('builds 100 lines with the read-back line 50 for a %i-character directory', (length) => {
@@ -229,7 +236,7 @@ describe('acceptance (a) support', () => {
     },
     {
       label: 'constrained, Grep and ReadOutput',
-      spec: { name: 'fidelity-constrained', toolCalling: 'constrained', deny: ['Read', 'Edit', 'Bash', 'UpdatePlan', 'Glob'], grid: [], probeFillers: 0 },
+      spec: { name: 'fidelity-constrained', toolCalling: 'constrained', deny: ['Edit', 'Write', 'Bash', 'UpdatePlan', 'Glob', 'MemorySave', 'MemorySearch', 'HistorySearch', 'HistoryRead'], grid: [], probeFillers: 0 },
       shape: { tool: 'ReadOutput', limit: 1 },
       fillers: 10,
     },

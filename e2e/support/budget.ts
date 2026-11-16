@@ -81,7 +81,7 @@ export type AcceptanceFacts = {
   readonly status: string;
   readonly stopReason: string | undefined;
   readonly taskSeq: number;
-  readonly grepTruncatedWithHandle: boolean;
+  readonly grepBoundedWithHandle: boolean;
   readonly grepEvictionSeq: number | undefined;
   readonly compactionSeqs: readonly number[];
   readonly withinTurnCompaction: boolean;
@@ -334,7 +334,7 @@ export const factsOf = (journal: readonly JournalEvent[], haystack: Haystack, st
     status,
     stopReason,
     taskSeq,
-    grepTruncatedWithHandle: grep?.data['truncated'] === true && grep.data['handle'] === haystack.handle,
+    grepBoundedWithHandle: (grep?.data['truncated'] === true || grep?.data['formatted'] !== undefined) && grep.data['handle'] === haystack.handle && String(grep.data['output']).includes(haystack.handle) && !String(grep.data['output']).includes(haystack.grepOutput),
     grepEvictionSeq: grepEviction?.seq,
     compactionSeqs: compactions.map((event) => event.seq),
     withinTurnCompaction: compactions.some((event) => typeof event.data['replacedThroughSeq'] === 'number' && event.data['replacedThroughSeq'] > taskSeq),
@@ -345,7 +345,7 @@ export const factsOf = (journal: readonly JournalEvent[], haystack: Haystack, st
 
 export const verdictOf = (facts: AcceptanceFacts, escalates = false): string | undefined => {
   if (escalates && facts.escalationNotices.length !== 1) return `(f) ${facts.escalationNotices.length} escalation notices, expected exactly one`;
-  if (!facts.grepTruncatedWithHandle) return '(a) the Grep output was not tool-truncated with its handle';
+  if (!facts.grepBoundedWithHandle) return '(a) the Grep output was not given in a bounded form with its handle';
   if (facts.compactionSeqs.length === 0) return `(c) no context.compacted (status ${facts.status} ${facts.stopReason ?? ''})`.trim();
   const firstCompaction = facts.compactionSeqs[0] as number;
   if (facts.grepEvictionSeq === undefined || facts.grepEvictionSeq > firstCompaction) return '(b) no journaled eviction of the Grep output before the first compaction';

@@ -5,7 +5,7 @@ import { SESSION, fakeBackend, runView } from './fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 import { startPlan } from './fake-plan-gateway.tsx';
-import { fakeScreenTerminal } from './tui/screen-fakes.ts';
+import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './tui/screen-fakes.ts';
 import { systemTiming } from '@momonga/foundation';
 
 describe('App startup', () => {
@@ -429,7 +429,7 @@ describe('App slash commands', () => {
       { name: 'review', description: 'review the diff', run: async (args) => void seen.push(args) },
     ]);
     const backend = fakeBackend();
-    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
     await untilFrame(app, 'mode: manual');
     await type(app, '/review main', '> /review main');
     app.stdin.write(KEYS.enter);
@@ -451,7 +451,7 @@ describe('App slash commands', () => {
       },
     ]);
     const backend = fakeBackend();
-    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
     await untilFrame(app, 'mode: manual');
     await type(app, '/rows', '> /rows');
     app.stdin.write(KEYS.enter);

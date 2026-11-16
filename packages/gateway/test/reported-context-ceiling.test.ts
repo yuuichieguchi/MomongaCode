@@ -1,10 +1,15 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { runProbe } from '@momonga/gateway';
+import { PLAN_ROUTES } from '@momonga/protocol';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
+import { NO_REPORTED_WINDOW } from '../src/plan/catalog.ts';
 import { reportedContextCeiling, reportedContextWindow } from '../src/probe/run-probe.ts';
+import { FM_PROBE_ROUTES } from './fm-record-support.ts';
+import { ACCOUNT, accountRoute, signIn, startPlanGateway } from './plan-signin-support.ts';
+import { hostProbePorts } from './probe-ports-support.ts';
 import { LMSTUDIO_API_V1_MODELS, LMSTUDIO_V1_MODELS } from './detect-kinds-support.ts';
 
-const sourceOf = (relative: string): string => fs.readFileSync(path.join(import.meta.dirname, '..', 'src', relative), 'utf8');
+const CEILING = 32768;
 
 describe('a reported maximum is a ceiling, never the window in force (design-model-names 4.14)', () => {
   it('reads a lone max_context_length as the ceiling and no window', () => {
@@ -22,16 +27,26 @@ describe('a reported maximum is a ceiling, never the window in force (design-mod
     expect(reportedContextCeiling(LMSTUDIO_API_V1_MODELS)).toBe(32768);
   });
 
-  it('the probe takes the window reader, so a listing with only a maximum falls to the measured search', () => {
-    const probe = sourceOf('probe/run-probe.ts');
-    expect(probe).toContain('const value = reportedContextWindow(source);');
-    expect(probe).toContain('reportedWindowOf(modelsBody, model, healthResult.text) ?? (await searchContextWindow(');
-    expect(probe).not.toContain('reportedContextCeiling(source)');
+  it('the probe searches the window when the listing reports only a maximum', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const window = 3000;
+    const fake = await startFakeChatCompletions({ scenario: 'tools-ok', contextWindow: window, models: [{ id: 'system', object: 'model', max_context_length: CEILING }] });
+    try {
+      const report = await runProbe({ ports: hostProbePorts, socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2 });
+      expect(report.contextWindow.method).toBe('searched');
+      expect(report.contextWindow.value).toBeLessThan(CEILING);
+    } finally {
+      await fake.close();
+    }
   });
 
-  it('the plan catalog takes the window reader', () => {
-    const catalog = sourceOf('plan/catalog.ts');
-    expect(catalog).toContain('const contextWindow = reportedContextWindow(entry);');
-    expect(catalog).not.toContain('reportedContextCeiling');
+  it('the plan catalog marks an entry with only a maximum unusable', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const gateway = await startPlanGateway({ models: [{ slug: 'ceiling-model', display_name: 'Ceiling Model', visibility: 'list', max_context_length: CEILING }] });
+    try {
+      await signIn(gateway);
+      const listed = await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=chatgpt`);
+      expect(listed.body.models).toEqual([{ slug: 'ceiling-model', displayName: 'Ceiling Model', usable: false, reason: NO_REPORTED_WINDOW }]);
+    } finally {
+      await gateway.close();
+    }
   });
 });

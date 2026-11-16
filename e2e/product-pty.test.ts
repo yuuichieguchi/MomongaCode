@@ -172,6 +172,7 @@ describe('MCP input in the terminal', () => {
       expect(fs.existsSync(path.join(home.root, OPEN_LOG_FILE_NAME))).toBe(false);
       await pty.waitForPrompt('1. Open the URL in the browser and accept');
       pty.write('1');
+      pty.write(KEYS.enter);
       await pty.waitFor('link done');
       expect(fs.readFileSync(path.join(home.root, OPEN_LOG_FILE_NAME), 'utf8')).toBe('https://example.test/connect?s=1\n');
       expect(requestText(chatCompletions(fake)[3])).toContain('link accept');

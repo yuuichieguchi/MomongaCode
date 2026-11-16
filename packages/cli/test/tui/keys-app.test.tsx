@@ -23,7 +23,8 @@ import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
 import { KEYS as PRESS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
-import { fakeScreenTerminal } from './screen-fakes.ts';
+import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './screen-fakes.ts';
+import type { FakeScreenSize } from './screen-fakes.ts';
 
 const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', name, ...plain, ...mods });
@@ -66,14 +67,14 @@ const disk = (initial?: string) => {
   };
 };
 
-const startWith = async (options: FakeBackendOptions, extra: Partial<AppProps>, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
+const startWith = async (options: FakeBackendOptions, extra: Partial<AppProps>, screen: Partial<FakeScreenSize> = {}) => {
   const backend = fakeBackend(options);
-  const terminal = fakeScreenTerminal(screen);
+  const terminal = fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen });
   const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} {...extra} onExit={() => undefined} />);
   return { backend, terminal, app };
 };
 
-const withFile = async (initial: ReturnType<typeof file> | undefined, options: FakeBackendOptions = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}, extra: Partial<AppProps> = {}) => {
+const withFile = async (initial: ReturnType<typeof file> | undefined, options: FakeBackendOptions = {}, screen: Partial<FakeScreenSize> = {}, extra: Partial<AppProps> = {}) => {
   const host = disk(initial === undefined ? undefined : JSON.stringify(initial));
   const keyBindings = createKeyBindings({ file: FILE, shownFile: SHOWN, files: host.files });
   await keyBindings.load();

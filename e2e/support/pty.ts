@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { CLI_BUNDLE, CLI_FAKES_BUNDLE, cliEnv, fakePortsEnv } from './cli.ts';
 import { registerE2eCleanup } from './home.ts';
+import { requirePosixHost } from './posix-host.ts';
 import type { E2eHome } from './home.ts';
 import { trackStreamErrors } from './stream-errors.ts';
 import { KEY_SETTLE_MS } from '../../packages/cli/src/tui/terminal/constants.ts';
@@ -65,6 +66,7 @@ export const answerTrust = async (pty: PtySession, row: keyof typeof TRUST_ROWS)
 };
 
 export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true; bundle?: string } = {}): Promise<PtySession> => {
+  requirePosixHost('the pty helper (e2e/support/pty.ts)');
   const bundle = options.bundle ?? (options.fakes === true ? CLI_FAKES_BUNDLE : CLI_BUNDLE);
   const childEnv = options.fakes === true ? { ...fakePortsEnv(home), ...env } : env;
   const ptyEnv = { ...cliEnv(home, childEnv), TERM: 'xterm-256color' };
