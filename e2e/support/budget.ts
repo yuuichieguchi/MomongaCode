@@ -1,4 +1,5 @@
 import { defaultContextSettings, defaultToolsSettings } from '@momonga/config';
+import type { ResolvedContextSettings } from '@momonga/config';
 import { canonicalJson, createRedactor, systemClock, fixedSocket } from '@momonga/foundation';
 import { createFsInstructionReader, createTokenMeter, outputRenderOf, proactiveGainFor } from '@momonga/context';
 import type { ContextOverflowError, TokenCounter } from '@momonga/context';
@@ -56,6 +57,7 @@ export type PlanCaseSpec = {
   readonly grid: readonly FillerShape[];
   readonly probeFillers: number;
   readonly escalates?: true;
+  readonly context?: Partial<ResolvedContextSettings>;
 };
 
 export type ScriptCall = { readonly name: string; readonly arguments: Readonly<Record<string, unknown>> };
@@ -256,6 +258,36 @@ export const overflowStepRange = async (pins: StackPins, base: number, steps: nu
     throw new Error(`no step size makes the last of ${steps} steps stop fitting while the one before fits: ${range.lowest} to ${range.highest} (base ${base})`);
   }
   return range;
+};
+
+const compactsInStack = async (pins: StackPins, base: number, stepTokens: number, steps: number, protectedSteps: number, gain: number): Promise<boolean> => {
+  const meter = stackMeterOf(pins);
+  const items: InputItem[] = [textItemOf(base)];
+  const first = await meter.count({ input: items, tools: [] });
+  meter.observe({ inputDigest: first.inputDigest, inputTokens: reportedTokensOf(base) });
+  let last = first;
+  let regionEnd = first.inputTokens;
+  for (let step = 1; step <= steps; step += 1) {
+    items.push(textItemOf(stepTokens));
+    last = await meter.count({ input: items, tools: [] });
+    if (step === steps - protectedSteps) regionEnd = last.inputTokens;
+    meter.observe({ inputDigest: last.inputDigest, inputTokens: reportedTokensOf(base + step * stepTokens) });
+  }
+  const ceiling = tokenPolicyOf(pins.token).observedCapacity ? capacityFor(pins.capabilities, last.underAt) : inputCeilingFor(pins.capabilities);
+  const highMark = first.inputTokens + floorRatio(COMPACT_AT, ceiling - first.inputTokens);
+  return last.inputTokens > highMark && regionEnd - first.inputTokens >= gain;
+};
+
+export const stepTokensToCompact = async (pins: StackPins, base: number, steps: number, protectedSteps: number, gain: number): Promise<number> => {
+  let low = 1;
+  let high = budgetFor(pins.capabilities, 0).I;
+  if (!(await compactsInStack(pins, base, high, steps, protectedSteps, gain))) throw new Error(`no step size carries ${steps} steps over the high mark with a region worth the gain ${gain} (base ${base})`);
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (await compactsInStack(pins, base, middle, steps, protectedSteps, gain)) high = middle;
+    else low = middle + 1;
+  }
+  return low;
 };
 
 const grepCall = (haystack: Haystack): ScriptCall => ({ name: 'Grep', arguments: { pattern: NEEDLE, path: haystack.file, output_mode: 'content' } });
@@ -459,7 +491,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
         return perturbed;
       },
     };
-    env.settings.contextValue = defaultContextSettings();
+    env.settings.contextValue = { ...defaultContextSettings(), ...plan.spec.context };
     env.settings.toolsValue = defaultToolsSettings();
     env.settings.extraRules.push(...plan.spec.deny.map((rule) => ({ effect: 'deny' as const, rule })));
     const session = env.store.createSession({

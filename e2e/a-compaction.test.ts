@@ -60,7 +60,7 @@ const PLANNED_CASES: readonly PlannedCase[] = [
   {
     id: 'a-compaction-lean',
     title: titleOf('a-compaction-lean'),
-    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: LEAN_LINE_CHARS.map((lineChars) => ({ tool: 'Read', lineChars })), probeFillers: 16, escalates: true },
+    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: LEAN_LINE_CHARS.map((lineChars) => ({ tool: 'Read', lineChars })), probeFillers: 16, escalates: true, context: { observedCapacity: false } },
   },
   {
     id: 'a-compaction-constrained',
@@ -228,7 +228,7 @@ const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan
   expect(planned).toBeDefined();
   const messages = notices.map((event) => String(event.data['message']));
   expect(
-    messages.filter((message) => message.includes('leaves no room for these tools, so they were left out: ')),
+    messages.filter((message) => isToolsDroppedNotice(message, capabilities.contextWindow)),
     `Bash is denied and no background job runs, so BashOutput and KillBash are not offered; the measured pinned prefix is ${plan.sizing.pinned} tokens against the floor ${floor} (ceiling ${plan.sizing.ceiling} minus the larger of the minimum room and a quarter of the ceiling), so every offered tool fits and none is left out`,
   ).toEqual([]);
   const before = planned?.facts.requestsBeforeEscalation ?? 0;
@@ -279,7 +279,7 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     const capabilities = await planningCount.capabilities();
     const plan = await planScript({ spec, home, haystack, gatewaySocket: firstGeneration(planningHome.paths).sockets.gateway, summary }, capabilities);
 
-    const stack = await startStack({ home, model: target, settings: denySettings(spec.deny), script: plan.replies, routes: [summaryRoute(summary)] });
+    const stack = await startStack({ home, model: target, settings: { ...denySettings(spec.deny), ...(spec.context === undefined ? {} : { context: spec.context }) }, script: plan.replies, routes: [summaryRoute(summary)] });
     const count = createGatewayCountClient(firstGeneration(home.paths).sockets.gateway);
     expect(await count.capabilities()).toEqual(capabilities);
     const runId = await runToEnd(home);
