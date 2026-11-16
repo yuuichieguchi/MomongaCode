@@ -88,6 +88,13 @@ describe('the fields the edit flows offer (4.9.2)', () => {
     expect(declined.bytes()).toBe(before);
   });
 
+  it('the program list of a managed server always holds the built-in programs, so it never opens with no row (cli-tui-25 c)', async (context) => {
+    const onFm = { models: { connections: [{ adapter: 'managed', server: 'fm', models: [{ id: 'apple-model', capabilities: CAPABILITIES }] }] } };
+    const harness = flowOf(context, onFm, [{ pick: /^Server program/ }]);
+    await runServerFields(harness.context, 'apple');
+    expect(harness.picks().find((pick) => pick.title === 'Server program')?.rows).toEqual(['fm']);
+  });
+
   it('a field the kind of the server does not allow is not offered', () => {
     expect(labelsOf(serverFieldRows(CONNECTIONS.ollama))).toEqual(['API', 'Address', 'Socket', 'Billing', 'Who answers', 'Idempotency key header', 'Concurrent requests', 'Wait for a free slot']);
     expect(labelsOf(modelFieldRows(CONNECTIONS.ollama))).not.toContain('Output limit field');
