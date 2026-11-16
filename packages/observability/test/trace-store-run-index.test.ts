@@ -14,7 +14,7 @@ describe('the run ingest index of the trace store', () => {
     const legacy = openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     migrate(legacy, TRACE_STORE_MIGRATIONS.slice(0, 3));
     legacy.close();
-    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file , clock: createFakeClock(START_MS) }).close();
+    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  }).close();
 
     const db = openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
     registerCleanup(() => db.close());

@@ -31,7 +31,7 @@ describe('trace store migration 5: content bodies', () => {
   it('names the migration and lists the six content attribute names in the bodies kind check and in the content index', () => {
     expect(TRACE_STORE_MIGRATIONS.at(-1)).toMatchObject({ version: 5, name: 'content-bodies' });
     const { file } = legacyStore();
-    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file , clock: createFakeClock(START_MS) }).close();
+    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  }).close();
     withDb(file, (db) => {
       const tableSql = String(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'bodies'").get()?.['sql']);
       const indexSql = String(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'spans_with_content'").get()?.['sql']);
@@ -44,7 +44,7 @@ describe('trace store migration 5: content bodies', () => {
 
   it('replaces the four old body kinds: an old kind is refused and a content attribute name is accepted', () => {
     const { file } = legacyStore();
-    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file , clock: createFakeClock(START_MS) }).close();
+    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  }).close();
     withDb(file, (db) => {
       const insert = (kind: string) =>
         db.prepare('INSERT INTO bodies (trace_id, span_id, kind, content, created_at_ms, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?)').run('t', 's', kind, 'c', 1, 2);
@@ -55,7 +55,7 @@ describe('trace store migration 5: content bodies', () => {
 
   it('serves the legacy content lookup from the partial index, so an empty backlog costs no scan of the spans table', () => {
     const { file } = legacyStore();
-    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file , clock: createFakeClock(START_MS) }).close();
+    openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  }).close();
     withDb(file, (db) => {
       const indexSql = String(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'spans_with_content'").get()?.['sql']);
       const predicate = indexSql.slice(indexSql.indexOf(' WHERE ') + ' WHERE '.length);
@@ -80,7 +80,7 @@ describe('trace store migration 5: content bodies', () => {
          VALUES ('t', 's', NULL, 'chat gpt-x', 'CLIENT', ?, ?, 'OK', ?, '[]', ?, 1)`,
       ).run(endMs - 5, endMs, attributes, RUN_ID);
     });
-    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file , clock: createFakeClock(START_MS) });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  });
     registerCleanup(() => store.close());
     expect(store.moveLegacyContent({ retentionMs: 5000 })).toBe(1);
     expect(bodiesOfSpan(store, 's')).toEqual([{ traceId: 't', spanId: 's', kind: BODY_KINDS[1], content: SENTINEL, createdAtMs: endMs, expiresAtMs: endMs + 5000 }]);
@@ -98,7 +98,7 @@ describe('trace store migration 5: content bodies', () => {
         ).run(`s${index}`, JSON.stringify({ [BODY_KINDS[2]]: `body ${index}` }), RUN_ID, index);
       }
     });
-    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file , clock: createFakeClock(START_MS) });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  });
     registerCleanup(() => store.close());
     const batches: number[] = [];
     for (let moved = store.moveLegacyContent({ retentionMs: 1 }); moved > 0; moved = store.moveLegacyContent({ retentionMs: 1 })) batches.push(moved);

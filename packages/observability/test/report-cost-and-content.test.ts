@@ -95,13 +95,13 @@ describe('the stored bodies of a run (trace --content)', () => {
     return { store: store as BodyStore, clock };
   };
 
-  it('reads the bodies of the spans of one run in the order they were stored, after a cursor and up to a count', () => {
+  it('reads the bodies of the spans of one run in the order they were stored, after a cursor and up to a count, whatever expiry was written with them', () => {
     const { store, clock } = filled();
     clock.advance(20);
     const first = store.bodiesOfRunAfter('run-1', 0, 2);
     expect(first.map((entry) => entry.body.content)).toEqual(['first', 'second']);
-    const rest = store.bodiesOfRunAfter('run-1', (first[1] as StoredBody).id, 2);
-    expect(rest.map((entry) => entry.body.content)).toEqual(['third']);
+    const rest = store.bodiesOfRunAfter('run-1', (first[1] as StoredBody).id, 3);
+    expect(rest.map((entry) => entry.body.content)).toEqual(['expired', 'third']);
   });
 
   it('pages them with a next cursor that is null on the last page, and refuses a count outside the page bound', () => {
@@ -114,7 +114,7 @@ describe('the stored bodies of a run (trace --content)', () => {
     expect(first.bodies[0]).toMatchObject({ spanId: 'span-1', createdAtMs: START_MS, expiresAtMs: START_MS + 1000 });
     expect(first.next).toBe((first.bodies[1] as { id: number }).id);
     const last = pageRunBodies(store, 'run-1', first.next as number, 2);
-    expect(last.bodies.map((entry) => entry.content)).toEqual(['third']);
+    expect(last.bodies.map((entry) => entry.content)).toEqual(['expired', 'third']);
     expect(last.next).toBeNull();
     expect(() => pageRunBodies(store, 'run-1', 0, bound + 1)).toThrow(RangeError);
     expect(() => pageRunBodies(store, 'run-1', 0, 0)).toThrow(RangeError);
