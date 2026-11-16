@@ -6,7 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { TEST_SETUP_COMMAND, requireTlaJar } from '../../scripts/fetch-tla.ts';
 import { systemTempRoot, tempDirPrefixFor, testRunToken } from '../../packages/testkit/src/test-support.ts';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
-import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, moduleOf, readManifest, runTlc, verdictProblems } from './manifest.ts';
+import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, readManifest, runTlc, verdictProblems } from './manifest.ts';
 import type { Manifest, ManifestEntry, TlcRun } from './manifest.ts';
 import { groupKiller, killGroup } from './runner.ts';
 import { LIVENESS_ARGS, actionPropertyViolationOutput, cfgFor, completedOutput, endlessSpec, holdsEntry, invariantEntry, invariantViolationOutput, runOf, temporalEntry, temporalViolationOutput, tinySpec, writeFile } from './fixtures.ts';
@@ -39,11 +39,11 @@ const selectedTier = process.env['MOMONGA_TLC_TIER'] === 'deep' ? 'deep' : 'ever
 const tierEntries = 'manifest' in loaded ? loaded.manifest.entries.filter((entry) => entry.tier === selectedTier) : loaded.error;
 const manifestConfigs = 'manifest' in loaded ? loaded.manifest.entries.map((entry) => entry.config) : [];
 
-const discoveryManifest = (configs: readonly string[]): Manifest => ({
+const discoveryManifest = (configs: readonly string[], modules: readonly string[] = ['Tiny']): Manifest => ({
   format: MANIFEST_FORMAT,
   unitSuiteSeconds: 100,
   startupCpuSeconds: 3,
-  modules: [...new Set(configs.map(moduleOf))].map((module) => ({ module, abstractions: ['the fixture leaves out time'], notProved: ['the fixture proves nothing'] })),
+  modules: modules.map((module) => ({ module, abstractions: ['the fixture leaves out time'], notProved: ['the fixture proves nothing'] })),
   entries: configs.map((config) => ({ ...holdsEntry, config })),
 });
 
@@ -141,7 +141,7 @@ describe('the tools the formal suite needs', () => {
 
 describe('the manifest of specs/tla', () => {
   it('is readable and declares its format', () => {
-    expect(manifestOrThrow().format).toBe('momonga-tla-manifest/1');
+    expect(manifestOrThrow().format).toBe(MANIFEST_FORMAT);
   });
 
   it('lists exactly the configurations on disk, each module exists, and every module has a configuration', () => {
@@ -217,9 +217,19 @@ describe('discovery against a spec directory', () => {
 
   it('fails on a module that has no configuration', () => {
     writeFile(path.join(root, 'Lonely.tla'), tinySpec.replace('MODULE Tiny', 'MODULE Lonely'));
-    const problems = discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken']));
+    const problems = discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken'], ['Tiny', 'Lonely']));
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('Lonely');
+  });
+
+  it('fails on a module with no entry in the modules of the manifest', () => {
+    const problems = discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken'], []));
+    expect(problems).toEqual(["Tiny.tla has no entry in the manifest's modules"]);
+  });
+
+  it('fails on a modules entry whose module is not on disk', () => {
+    const problems = discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken'], ['Tiny', 'Gone']));
+    expect(problems).toEqual(["the manifest's modules list Gone, but Gone.tla is not on disk"]);
   });
 
   it('fails when the same configuration is listed twice', () => {

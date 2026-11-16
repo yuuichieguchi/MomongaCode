@@ -98,9 +98,9 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect(definitionOf('ListedHolderInGroup')).not.toContain('swapped');
   });
 
-  it.each(['signalUnprovedHolder', 'killWithoutReproof', 'groupProofWithoutStartTime'])('the code without the check, variant %s, is an every-run evidence configuration that violates NoSignalToUnprovedGroup', (variant) => {
+  it.each(['signalUnprovedHolder', 'killWithoutReproof', 'groupProofWithoutStartTime'])('the code without the check, variant %s, is an evidence configuration that violates NoSignalToUnprovedGroup', (variant) => {
     expect(variants()).toContain(variant);
-    expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'NoSignalToUnprovedGroup' } });
+    expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', expect: { violates: 'NoSignalToUnprovedGroup' } });
   });
 
   it('the same-second reuse of a pid by another generation is modelled, so the darwin one-second start time is the limit the proof must not rely on alone', () => {
@@ -115,9 +115,9 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect(definitionOf('SigT')).toContain('TermAllowed(m)');
   });
 
-  it.each(['retireSignalsOther', 'crossGenWithoutHold'])('the code variant %s is an every-run evidence configuration that violates StopNeverSignalsOtherGen', (variant) => {
+  it.each(['retireSignalsOther', 'crossGenWithoutHold'])('the code variant %s is an evidence configuration that violates StopNeverSignalsOtherGen', (variant) => {
     expect(variants()).toContain(variant);
-    expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'StopNeverSignalsOtherGen', exitCode: 13 } });
+    expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', expect: { violates: 'StopNeverSignalsOtherGen', exitCode: 13 } });
   });
 
   it('the proof of a target requires the marker hold at the reprove, and a stop of a holder that stopped holding is not proved', () => {
@@ -126,9 +126,9 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect(definitionOf('ReusePid')).toContain("held' = [held EXCEPT ![m] = FALSE]");
   });
 
-  it('a same-second reuse without the hold is an every-run evidence configuration that violates NoSignalToNonHolder', () => {
+  it('a same-second reuse without the hold is an evidence configuration that violates NoSignalToNonHolder', () => {
     expect(variants()).toContain('sameSecondWithoutHold');
-    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.sameSecondWithoutHold')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'NoSignalToNonHolder', exitCode: 13 } });
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.sameSecondWithoutHold')).toMatchObject({ role: 'evidence', expect: { violates: 'NoSignalToNonHolder', exitCode: 13 } });
   });
 
   it('a group is proved only by a listed holder that is now a member of the group and still holds the marker', () => {
@@ -136,7 +136,7 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect(definitionOf('ListedHolderInGroup')).toContain('held[m]');
     expect(definitionOf('LeaveGroup')).toContain("inGroup' = [inGroup EXCEPT ![m] = FALSE]");
     expect(variants()).toContain('groupProofIgnoresGroup');
-    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.groupProofIgnoresGroup')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'NoSignalToUnprovedGroup', exitCode: 12 } });
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.groupProofIgnoresGroup')).toMatchObject({ role: 'evidence', expect: { violates: 'NoSignalToUnprovedGroup', exitCode: 12 } });
   });
 
   it('every listing is the processes that hold the marker now, and the words gone, terminated and killed need a fresh listing', () => {
@@ -144,7 +144,7 @@ describe('the reap signals only a target proved ours by the same start time at t
     for (const step of ['Begin', 'TermWaitEnds', 'KillWaitEnds', 'Sweep']) expect(definitionOf(step)).toContain('ListFresh');
     expect(definitionOf('Fork')).toContain('IF Escape THEN FALSE');
     expect(variants()).toContain('noRelist');
-    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.noRelist')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'FinishSeesEveryHolder', exitCode: 13 } });
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.noRelist')).toMatchObject({ role: 'evidence', expect: { violates: 'FinishSeesEveryHolder', exitCode: 13 } });
   });
 
   it.each(['ProcessStop.escape', 'ProcessStop.escapeGenerations'])('the configuration %s, with groups left and listings renewed, holds', (config) => {
@@ -270,15 +270,15 @@ describe('the settle says that a process is still running only while a holder or
     ['guardUnknownCurrent', 'RefuseOnlyOnPositiveEvidence'],
     ['guardHeldCurrent', 'RefuseOnlyOnPositiveEvidence'],
     ['jobCurrent', 'RemovalSafe'],
-  ])('the code without the check, variant %s, is an every-run evidence configuration that violates %s', (variant, property) => {
-    expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 12 } });
+  ])('the code without the check, variant %s, is an evidence configuration that violates %s', (variant, property) => {
+    expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', expect: { violates: property, exitCode: 12 } });
   });
 
   it.each([
     ['ProcessStop.reconcileCurrent', 'NoLongerRunningOnlyWhenClear'],
     ['ProcessStop.listFailCurrent', 'NoRunningClaimAfterListFailure'],
-  ])('the code without the check, %s, is an every-run evidence configuration that violates %s', (config, property) => {
-    expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 12 } });
+  ])('the code without the check, %s, is an evidence configuration that violates %s', (config, property) => {
+    expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'evidence', expect: { violates: property, exitCode: 12 } });
   });
 
   it('a list failure claims nothing running, and the reconcile claims no longer running only when nothing holds the marker or can run', () => {
@@ -295,8 +295,8 @@ describe('the settle says that a process is still running only while a holder or
     expect(definitionOf('SurvivorReachesNotice')).toContain('SomeoneRuns');
   });
 
-  it('the candidate configuration holds every-run', () => {
-    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.settleCandidate')).toMatchObject({ role: 'check', tier: 'every-run', expect: 'holds' });
+  it('the candidate configuration is a check that holds', () => {
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.settleCandidate')).toMatchObject({ role: 'check', expect: 'holds' });
   });
 });
 

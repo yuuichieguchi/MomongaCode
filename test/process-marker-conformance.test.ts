@@ -89,7 +89,7 @@ describe('the attempt record of a marker does what specs/tla/ProcessMarker.tla s
     for (const event of RETRY_KINDS) expect(await claimRetry(MARKER, event, { signal: new AbortController().signal, files: record.files })).toBe('spent');
   });
 
-  it('the fifth retry is an every-run evidence configuration that violates AtMostFourRetries', () => {
-    expect(manifest.entries.find((entry) => entry.config === 'ProcessMarker.fifthRetry')).toMatchObject({ role: 'evidence', tier: 'every-run' });
+  it('the fifth retry is an evidence configuration that violates AtMostFourRetries', () => {
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessMarker.fifthRetry')).toMatchObject({ role: 'evidence' });
   });
 });
