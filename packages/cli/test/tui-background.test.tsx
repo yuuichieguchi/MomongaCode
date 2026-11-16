@@ -6,7 +6,7 @@ import type { SlashCommand, SlashContext } from '../src/tui/slash.ts';
 import { fakeBackend } from './fake-backend.ts';
 import { KEYS, renderObservable, untilFrame } from './ink-helpers.ts';
 import { runStarted, type } from './tui-harness.tsx';
-import { fakeScreenTerminal } from './tui/screen-fakes.ts';
+import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './tui/screen-fakes.ts';
 import { systemTiming } from '@momonga/foundation';
 
 type Background = <T>(label: string, work: (signal: AbortSignal) => Promise<T>) => Promise<T>;
@@ -34,7 +34,7 @@ const longCheck = () => {
 
 const startWith = async (command: SlashCommand, tasks = createBackgroundTasks()) => {
   const backend = fakeBackend();
-  const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} timers={systemTiming} initialMode={undefined} slash={createSlashRegistry([...BUILTIN_SLASH_COMMANDS, command])} {...({ tasks } as object)} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={systemTiming} initialMode={undefined} slash={createSlashRegistry([...BUILTIN_SLASH_COMMANDS, command])} {...({ tasks } as object)} onExit={() => undefined} />);
   await untilFrame(app, 'mode: manual');
   return { backend, app, tasks };
 };

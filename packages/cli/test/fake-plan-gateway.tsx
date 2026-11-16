@@ -22,7 +22,8 @@ import { SESSION, fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
 import { FRAME_BOUND_MS, KEYS, renderObservable, untilFrame } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
-import { fakeScreenTerminal } from './tui/screen-fakes.ts';
+import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './tui/screen-fakes.ts';
+import type { FakeScreenSize } from './tui/screen-fakes.ts';
 import { systemTiming } from '@momonga/foundation';
 
 const shipped = PLAN_PROFILES['chatgpt'];
@@ -220,10 +221,10 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   return backend;
 };
 
-export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill' | 'startup'> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
+export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill' | 'startup'> = {}, screen: Partial<FakeScreenSize> = {}) => {
   const backend = fakePlanBackend(options);
   const outcomes: TuiOutcome[] = [];
-  const app = renderObservable(<App backend={backend as TuiBackend} terminal={fakeScreenTerminal(screen)} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
+  const app = renderObservable(<App backend={backend as TuiBackend} terminal={fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen })} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
   return { backend, app, outcomes };
 };
 

@@ -9,7 +9,7 @@ import type { FakeBackendOptions } from '../fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
-import { fakeScreenTerminal } from './screen-fakes.ts';
+import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './screen-fakes.ts';
 
 const READY = 'mode: manual (shift+tab)';
 const TASK_RUNNING = 'A task is running. Esc stops it.';
@@ -23,7 +23,7 @@ const inputLines = (shown: string): string[] =>
 
 const startWith = (options: FakeBackendOptions, extra: Partial<AppProps>) => {
   const backend = fakeBackend(options);
-  const terminal = fakeScreenTerminal();
+  const terminal = fakeScreenTerminal(WIDE_TEST_SCREEN);
   const outcomes: TuiOutcome[] = [];
   const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={systemTiming} {...extra} onExit={(outcome) => outcomes.push(outcome)} />);
   return { backend, terminal, app, outcomes };
@@ -39,7 +39,7 @@ describe('the editor while the daemon is starting', () => {
       return boot();
     };
     const exited = Promise.withResolvers<TuiOutcome>();
-    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} initialMode={undefined} now={Date.now} timers={systemTiming} onExit={exited.resolve} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} initialMode={undefined} now={Date.now} timers={systemTiming} onExit={exited.resolve} />);
     return { backend, app, ready: gate.resolve, exited: exited.promise };
   };
 

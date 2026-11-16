@@ -74,7 +74,11 @@ export type FakeScreenTerminal = ScreenTerminal & {
   bells: string[];
 };
 
-export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: number; rows?: number } = {}): FakeScreenTerminal => {
+export type FakeScreenSize = { readonly screen?: ScreenMode; readonly columns: number; readonly rows: number };
+
+export const WIDE_TEST_SCREEN: FakeScreenSize = { columns: 160, rows: 100 };
+
+export const fakeScreenTerminal = (given: FakeScreenSize): FakeScreenTerminal => {
   const listeners = new Set<() => void>();
   const screenListeners = new Set<(request: ScreenRequest) => void>();
   const claims = createClaimTable();
@@ -86,7 +90,7 @@ export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: numbe
     screen: given.screen ?? 'fullscreen',
     negotiation: 'unknown',
     enabled: [],
-    size: { columns: given.columns ?? 160, rows: given.rows ?? 100 },
+    size: { columns: given.columns, rows: given.rows },
     tooSmall: false,
     synchronizedOutput: false,
     backgroundColor: undefined,
