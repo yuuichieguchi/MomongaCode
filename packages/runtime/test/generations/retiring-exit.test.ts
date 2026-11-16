@@ -15,7 +15,6 @@ const BYPASS = { permissionMode: 'bypassPermissions', bypassAllowed: true };
 const FINAL = ['COMPLETED', 'FAILED', 'CANCELLED'];
 const HOST_SANDBOX = process.platform === 'darwin' ? 'seatbelt' : 'bubblewrap';
 const ROLE_TICKS_WAITED = 3;
-const ROLE_TICK_MS = 1000;
 
 const textReply = (text: string) => ({ kind: 'stream' as const, chunks: [{ delta: { role: 'assistant', content: text }, finishReason: 'stop' }] });
 
@@ -89,7 +88,8 @@ describe('T-I4-7 (17.1 "Exit", rules 3a and 3b): a retiring runtime exits exactl
     if (!holdsSomething) {
       await waitForCondition(() => shutdowns === 1, 'the retiring runtime that holds nothing to ask for its shutdown');
     } else {
-      await new Promise((resolve) => setTimeout(resolve, ROLE_TICKS_WAITED * ROLE_TICK_MS));
+      const refreshedBefore = role.refreshes();
+      await waitForCondition(() => role.refreshes() >= refreshedBefore + ROLE_TICKS_WAITED, 'three role ticks of the retiring runtime');
       expect(shutdowns).toBe(0);
       if (row.job) expect(jobOf(stack.temp.paths.databases.runtime)?.status).toBe('running');
       hold?.release();

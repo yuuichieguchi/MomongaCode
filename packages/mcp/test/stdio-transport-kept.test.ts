@@ -5,7 +5,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createKeptGroupControl, createProcessGroupPort, nodeCommandRunner, nodeFileSystem } from '@momonga/foundation';
-import type { GroupLaunchRequest } from '@momonga/foundation';
+import type { GroupLaunchHost } from '@momonga/foundation';
 import { TEST_STDIO_LAUNCH, testProcessInspector } from '@momonga/testkit';
 import { answeringMembers, fakeKeeperHost, settle } from '../../foundation/test/support/fake-keeper.ts';
 import { createStdioTransport } from '../src/stdio-transport.ts';
@@ -13,7 +13,7 @@ import { createStdioTransport } from '../src/stdio-transport.ts';
 const KEEPER_PID = 100;
 const COMMAND_PID = 200;
 
-type SpawnProcess = NonNullable<GroupLaunchRequest['spawnProcess']>;
+type SpawnProcess = NonNullable<GroupLaunchHost['spawnProcess']>;
 
 const folders: string[] = [];
 

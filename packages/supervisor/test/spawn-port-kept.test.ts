@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { createKeptGroupControl, createProcessGroupPort, nodeCommandRunner } from '@momonga/foundation';
-import type { GroupLaunchRequest } from '@momonga/foundation';
+import type { GroupLaunchHost } from '@momonga/foundation';
 import { answeringMembers, fakeKeeperHost, settle } from '../../foundation/test/support/fake-keeper.ts';
 import type { FakeKeeper } from '../../foundation/test/support/fake-keeper.ts';
 import type { SpawnPortOptions } from '../src/child-manager.ts';
@@ -11,7 +11,7 @@ import { spawnPortOverFakeHost } from './support/tracked-spawn-port.ts';
 const KEEPER_PID = 100;
 const COMMAND_PID = 200;
 
-type SpawnProcess = NonNullable<GroupLaunchRequest['spawnProcess']>;
+type SpawnProcess = NonNullable<GroupLaunchHost['spawnProcess']>;
 
 const OPTIONS: SpawnPortOptions = { cwd: 'C:\\work', env: { SystemRoot: 'C:\\Windows' }, markerFile: 'C:\\m\\marker', stdio: ['ignore', 'pipe', 'pipe', 'pipe', 17] };
 
