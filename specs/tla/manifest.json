@@ -7414,11 +7414,12 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 83,
-      "measuredSeconds": 1.22,
+      "distinctStates": 89,
+      "measuredSeconds": 1.51,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.72,
-      "budgetCpuSeconds": 7
+      "measuredCpuSeconds": 2.11,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 14.24 at start)"
     },
     {
       "config": "ManagedServer.noRestartBudget",
@@ -7429,11 +7430,12 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 688,
-      "measuredSeconds": 1.33,
+      "distinctStates": 1021,
+      "measuredSeconds": 1.5,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.2,
-      "budgetCpuSeconds": 8
+      "measuredCpuSeconds": 3.36,
+      "budgetCpuSeconds": 10,
+      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.67 at start)"
     },
     {
       "config": "ManagedServer.twoFlights",
@@ -7444,11 +7446,12 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 39,
-      "measuredSeconds": 1.29,
+      "distinctStates": 40,
+      "measuredSeconds": 1.33,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.75,
-      "budgetCpuSeconds": 7
+      "measuredCpuSeconds": 1.99,
+      "budgetCpuSeconds": 7,
+      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.51 at start)"
     },
     {
       "config": "ManagedServer.sharedProbeSocket",
@@ -7459,11 +7462,12 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 2605,
-      "measuredSeconds": 1.46,
+      "distinctStates": 4267,
+      "measuredSeconds": 1.81,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.54,
-      "budgetCpuSeconds": 9
+      "measuredCpuSeconds": 4.1,
+      "budgetCpuSeconds": 12,
+      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.88 at start)"
     },
     {
       "config": "ManagedServer.unboundedClaim",
@@ -7496,11 +7500,12 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 7376,
-      "measuredSeconds": 2.16,
+      "distinctStates": 17880,
+      "measuredSeconds": 3.72,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 5.26,
-      "budgetCpuSeconds": 14
+      "measuredCpuSeconds": 13.19,
+      "budgetCpuSeconds": 30,
+      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.12 at start)"
     },
     {
       "config": "ManagedServer.retryEveryStart",
@@ -7514,11 +7519,12 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 4438,
-      "measuredSeconds": 1.84,
+      "distinctStates": 11470,
+      "measuredSeconds": 2.92,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 4.18,
-      "budgetCpuSeconds": 12
+      "measuredCpuSeconds": 10.11,
+      "budgetCpuSeconds": 24,
+      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.54 at start)"
     },
     {
       "config": "ManagedServer.deep",
@@ -9542,12 +9548,12 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 852,
-      "measuredSeconds": 2.95,
+      "distinctStates": 825,
+      "measuredSeconds": 1.37,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.85,
+      "measuredCpuSeconds": 2.56,
       "budgetCpuSeconds": 9,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 173.8 at start (above the gate 15): re-measure in the quiet window"
+      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.67 at start)"
     },
     {
       "config": "ManagedServer.sharedAcrossGenerations",
