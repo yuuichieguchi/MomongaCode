@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, hostBuiltSocketGuard, startFakeGitHttp, testKernelLock, testProcessInspector, unconfiguredNetworkOf } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, hostBuiltSocketGuard, startFakeGitHttp, testKernelLock, testProcessInspector, unconfiguredNetworkOf } from '@momonga/testkit';
 import { createSandboxedArgvRunner, nodeShellHost } from '@momonga/tools';
 import { makeLayout, policyFor, sessionTmpDirOf } from '../helpers.ts';
 import type { Layout } from '../helpers.ts';
@@ -36,7 +35,7 @@ const stage = async () => {
   const sandbox = scopedSandbox(sandboxTmp);
   const markerDir = path.join(world.base, 'markers');
   fs.mkdirSync(markerDir);
-  const credentialRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cred-')));
+  const credentialRoot = createTempDir();
   onCleanup(() => fs.rmSync(credentialRoot, { recursive: true, force: true }));
   const runArgv = createSandboxedArgvRunner({
     inspector: testProcessInspector(),

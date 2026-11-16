@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createTempDir } from '@momonga/testkit';
 import { trustFolder } from '../src/commands/trust.ts';
 import { UsageError } from '../src/usage-error.ts';
 import { startRealRuntime } from './real-runtime.ts';
@@ -43,7 +44,7 @@ describe('momonga trust', () => {
 
   it('acts on the folder it is given', async () => {
     const runtime = await runtimeOf();
-    const other = await fs.promises.realpath(await fs.promises.mkdtemp(`${runtime.service.layout.home}/other-`));
+    const other = createTempDir({ parent: await fs.promises.realpath(runtime.service.layout.home) });
     expect(await trustFolder(runtime.ports, runtime.paths, { folder: other, set: 'untrusted' })).toBe(0);
     expect((await runtime.client.trust(other)).decision).toBe('untrusted');
     expect((await runtime.client.trust(runtime.folder)).decision).toBeNull();

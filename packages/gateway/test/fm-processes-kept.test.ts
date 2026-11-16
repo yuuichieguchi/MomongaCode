@@ -1,12 +1,11 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createKeptGroupControl, createProcessGroupPort, nodeCommandRunner } from '@momonga/foundation';
 import type { GroupLaunchHost } from '@momonga/foundation';
-import { TEST_UNPROTECTED_LAUNCH, testProcessInspector } from '@momonga/testkit';
+import { createTempDir, TEST_UNPROTECTED_LAUNCH, testProcessInspector } from '@momonga/testkit';
 import { answeringMembers, fakeKeeperHost, settle } from '../../foundation/test/support/fake-keeper.ts';
 import { createGroupSpawn } from '../src/managed/fm-processes.ts';
 
@@ -31,7 +30,7 @@ const keptSpawn = () => {
     fake.start(file, args);
     return Object.assign(new EventEmitter(), { pid: KEEPER_PID, stdin: null, stdout: new PassThrough(), stderr: new PassThrough(), stdio: [null, null, null], kill: () => true });
   }) as unknown as SpawnProcess;
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'fm-kept-'));
+  const folder = createTempDir();
   folders.push(folder);
   const markerDirectory = path.join(folder, 'markers');
   fs.mkdirSync(markerDirectory);

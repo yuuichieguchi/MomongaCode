@@ -1,7 +1,7 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createTempDir } from '@momonga/testkit';
 import { EMPTY_FILE_RULES, createPathResolver, nodeFileSystem } from '@momonga/foundation';
 import type { PathFileSystem } from '@momonga/foundation';
 import { createReadAccessMatcher } from '../src/read-access.ts';
@@ -25,7 +25,7 @@ const countingFiles = (): { files: PathFileSystem; asked: () => number } => {
 };
 
 const questionsForOneFile = async (guards: number): Promise<number> => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-read-access-')));
+  const root = createTempDir();
   made.push(root);
   const denied = Array.from({ length: guards }, (_, index) => path.join(root, `denied-${index}`));
   for (const directory of denied) fs.mkdirSync(directory);
