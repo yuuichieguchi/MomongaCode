@@ -5398,11 +5398,11 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 2064736,
-      "measuredSeconds": 2077.87,
+      "measuredSeconds": 451.85,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1939.18,
-      "budgetCpuSeconds": 3882,
-      "measuredNote": "measured on a loaded machine (1-minute load 20 to 43 during the run); to be re-measured on a quiet machine (1-minute load below 15)"
+      "measuredCpuSeconds": 1885.09,
+      "budgetCpuSeconds": 3774,
+      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.09 at start)"
     },
     {
       "config": "SettingsSwap",
