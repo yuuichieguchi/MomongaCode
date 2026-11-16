@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { nodeEntryIo, nodeFileSystem } from '@momonga/foundation';
-import { fileSystemWithFault } from '@momonga/testkit';
+import { fileSystemWithFault } from '@momonga/testkit/file-system-fault';
 import type { FileSystem } from '@momonga/foundation';
 import { runGatewayEntry } from '@momonga/gateway';
 import { runRuntimeEntry } from '@momonga/runtime';

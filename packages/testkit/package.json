@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./child-process": "./src/child-process.ts",
+    "./file-system-fault": "./src/file-system-fault.ts",
     "./first-generation": "./src/first-generation.ts",
     "./terminal-screen": "./src/terminal-screen.ts",
     "./test-support": "./src/test-support.ts"
