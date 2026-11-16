@@ -55,7 +55,7 @@ const C5_WRITERS: readonly string[] = [
   'packages/gateway/src/probe/record.ts',
   'packages/store/src/blobs.ts',
   'packages/cli/src/update/node-ports.ts',
-  'packages/tools/src/builtins/files.ts',
+  'packages/tools/src/builtins/file-writer.ts',
 ];
 
 const OWN_TEMPORARY_NAMES: readonly RegExp[] = [/process\.pid\}[^`]*\.tmp/, /\.tmp-\$\{/];
