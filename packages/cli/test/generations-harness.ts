@@ -1,7 +1,8 @@
+import { nodeFilesLockedBy } from '../src/node-ports.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, testKernelLock, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import type { SelfExecutable } from '../src/ports.ts';
@@ -39,6 +40,6 @@ export const setupGenerations = async (context: TestContext, version: string, in
   const installed = installedProgram(() => ({ exitCode: 0, stdout: `${typeof installedVersion === 'string' ? installedVersion : installedVersion()}\n`, stderr: '' }));
   const stdout = sink();
   const stderr = sink();
-  const ports: DaemonPorts & { stdout: Sink; stderr: Sink } = { version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawning.spawn, ...installed.ports, stdout, stderr };
+  const ports: DaemonPorts & { stdout: Sink; stderr: Sink } = { files: nodeFilesLockedBy(testKernelLock), version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawning.spawn, ...installed.ports, stdout, stderr };
   return { home, paths, start, ports, spawned: spawning.spawned, asked: installed.asked, stdout, stderr };
 };
