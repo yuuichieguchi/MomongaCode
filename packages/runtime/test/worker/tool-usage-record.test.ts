@@ -58,12 +58,7 @@ const deferralEnv = async (): Promise<Env> => {
 };
 
 const warmWindow = async (env: Env): Promise<void> => {
-  const worker = env.worker('warm', { toolList: toolsOf(env, WORK_TOOLS) });
-  for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
-    env.gateway.script.push(callsStep([{ callId: `warm-${index}`, name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
-    await env.enqueue(`warm ${index}`, { history: 'fresh' });
-    await env.runOnce(worker);
-  }
+  for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) await pastRun(env, [offered(WORK_TOOLS), called(`warm-${index}`, 'Echo')]);
 };
 
 const eventsOf = (env: Env, runId: string): { seq: number; type: string; names?: string[] }[] =>
