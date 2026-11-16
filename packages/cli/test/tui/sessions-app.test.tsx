@@ -178,7 +178,7 @@ describe('/resume (9.1, 4.3)', () => {
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     await enter(app, '/resume aaaaaaaa');
-    await untilFrame(app, 'A task is running. Esc stops it.');
+    await untilFrame(app, 'A run is working. Esc stops it.');
     expect(backend.calls).not.toContain('resume:aaaaaaaa');
     app.unmount();
   });
@@ -260,7 +260,7 @@ describe('/clear (9.4)', () => {
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     await enter(app, '/clear');
-    await untilFrame(app, 'A task is running. Esc stops it.');
+    await untilFrame(app, 'A run is working. Esc stops it.');
     expect(backend.opened.length).toBe(1);
     app.unmount();
   });
