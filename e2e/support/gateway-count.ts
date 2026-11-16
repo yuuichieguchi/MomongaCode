@@ -22,6 +22,7 @@ export const countRequestOf = (body: CreateResponseBody): CountTokensRequest => 
     ...(body.instructions === undefined ? {} : { instructions: body.instructions }),
     ...(body.tools === undefined || body.tools === null ? {} : { tools: body.tools }),
     ...(body.tool_choice === undefined || body.tool_choice === null ? {} : { tool_choice: body.tool_choice }),
+    ...(body.momonga?.fence === undefined ? {} : { momonga: { fence: body.momonga.fence } }),
   };
 };
 

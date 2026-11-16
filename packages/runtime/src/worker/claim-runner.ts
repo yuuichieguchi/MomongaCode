@@ -517,7 +517,7 @@ const drive = async (
   const displays = displayMapOf(listing.views);
   const token = tokenPolicyOf(pins.token);
   const chainMeter = createTokenMeter({
-    counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, ...EXACT_MODEL } }, { signal: control.signal })) },
+    counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, ...EXACT_MODEL, fence: sessionFenceOf(session) } }, { signal: control.signal })) },
     model: pins.model,
     capabilities: chainMeterCapabilities,
     observedCapacity: token.observedCapacity,
@@ -528,7 +528,7 @@ const drive = async (
     if (known !== undefined) return known;
     const capabilities = await control.recordingRaised(gateway.capabilities(pins.model, { signal: control.signal, target }));
     const meter = createTokenMeter({
-      counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target, ...EXACT_MODEL } }, { signal: control.signal })) },
+      counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target, ...EXACT_MODEL, fence: sessionFenceOf(session) } }, { signal: control.signal })) },
       model: pins.model,
       capabilities,
       observedCapacity: token.observedCapacity,

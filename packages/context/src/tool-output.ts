@@ -1,5 +1,5 @@
 import { TRUNCATION_MARKER_SOURCE, truncationMarker } from '@momonga/foundation';
-import { TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
+import { fenceToolOutput } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem } from '@momonga/protocol';
 
 const HIGH_SURROGATE_START = 0xd800;
@@ -82,6 +82,6 @@ export type OutputRender = { full: FunctionCallOutputInputItem; enclose: (conten
 
 export const outputRenderOf = (original: FunctionCallOutputInputItem, tool: string | undefined, harnessTools: ReadonlySet<string>, pointer: boolean, sessionBoundary: string): OutputRender => {
   if (pointer || (tool !== undefined && harnessTools.has(tool))) return { full: original, enclose: (content) => content };
-  const enclose = (content: string): string => fenceUntrusted(TOOL_OUTPUT_TAG, { call: original.call_id, tool: tool ?? '' }, content, sessionBoundary);
+  const enclose = (content: string): string => fenceToolOutput(original.call_id, tool ?? '', content, sessionBoundary);
   return { full: withOutput(original, enclose(outputTextOf(original.output))), enclose };
 };

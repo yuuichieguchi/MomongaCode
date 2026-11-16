@@ -1,4 +1,5 @@
 import { TEST_FENCE } from '@momonga/testkit';
+import { fenceToolOutput } from '@momonga/protocol';
 import { toolResultBlock } from '../src/adapters/chat-completions/plain-history.ts';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
@@ -140,6 +141,17 @@ describe('POST /v1/momonga/count_tokens counts the chat-completions wire', () =>
     expect(counted.status).toBe(200);
     const tokens = tokensOfWire(wire);
     expect(counted.body).toEqual({ input_tokens: tokens, method: 'estimated', error_bound: boundOf(tokens), error_shape: { ratio: 0.3, minimum: 1 } });
+  });
+
+  it('counts the constrained wire of a runtime-fenced tool step under the session fence the create carries', async () => {
+    const { harness, fake } = await gatewayFor('constrained');
+    const fenced = fenceToolOutput('c1', 'read_file', 'alpha < beta', TEST_FENCE);
+    const input = [...historyInput.slice(0, 2), { type: 'function_call_output', call_id: 'c1', output: fenced }];
+    const wire = await sentWire(harness, fake, { input, tools, momonga: { fence: TEST_FENCE } });
+    expect(JSON.stringify(wire).split(TEST_FENCE)).toHaveLength(5);
+    const counted = await count(harness, { input, tools, momonga: { fence: TEST_FENCE } });
+    expect(counted.status).toBe(200);
+    expect(counted.body.input_tokens).toBe(tokensOfWire(wire));
   });
 
   it('counts the constrained tool listing but not the response_format schema, so the same request costs more than in native mode', async () => {
