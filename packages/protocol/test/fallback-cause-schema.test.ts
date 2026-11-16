@@ -1,6 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
-import { RUN_API_SCHEMAS, isFallbackCause, isFallbackCauseList } from '../src/index.ts';
+import { RUN_API_SCHEMAS, fallbackCauseName, isFallbackCause, isFallbackCauseList } from '../src/index.ts';
 
 type SchemaNode = { properties: Record<string, SchemaNode>; items: SchemaNode };
 
@@ -56,5 +56,20 @@ describe('the fallback cause schema accepts every cause the gateway writes', () 
     expect(isFallbackCauseList(ALLOWED)).toBe(false);
     expect(isFallbackCauseList([ALLOWED, ONLY_FROM])).toBe(false);
     expect(isFallbackCauseList([ALLOWED, PLAIN])).toBe(true);
+  });
+});
+
+describe('FallbackCause.name: the canonical model name a cause carries beside its target', () => {
+  const NAMED = { ...PLAIN, name: 'chatgpt/gpt-5.5' };
+
+  it('the schema and the guard accept a string name and refuse any other type', () => {
+    const samples = [NAMED, { ...PLAIN, name: 7 }, { ...PLAIN, name: null }];
+    expect(samples.map(accepts)).toEqual([true, false, false]);
+    expect(samples.map((sample) => isFallbackCause(sample))).toEqual([true, false, false]);
+  });
+
+  it('the name of a cause is its canonical name when present and its target otherwise', () => {
+    expect(fallbackCauseName(NAMED)).toBe('chatgpt/gpt-5.5');
+    expect(fallbackCauseName(PLAIN)).toBe('plan');
   });
 });
