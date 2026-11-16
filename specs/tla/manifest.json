@@ -3585,10 +3585,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 407102,
-      "measuredSeconds": 11.64,
-      "measuredCpuSeconds": 15.19,
-      "budgetCpuSeconds": 34
+      "distinctStates": 1875910,
+      "measuredSeconds": 50.3,
+      "measuredCpuSeconds": 54.07,
+      "budgetCpuSeconds": 112,
+      "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
     },
     {
       "config": "Retention.blobRace",
@@ -3599,10 +3600,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 111594,
-      "measuredSeconds": 4.25,
-      "measuredCpuSeconds": 5.98,
-      "budgetCpuSeconds": 15
+      "distinctStates": 368200,
+      "measuredSeconds": 7.5,
+      "measuredCpuSeconds": 9.13,
+      "budgetCpuSeconds": 22,
+      "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
     },
     {
       "config": "Retention.singleMember",
@@ -3613,10 +3615,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 151,
-      "measuredSeconds": 2.25,
-      "measuredCpuSeconds": 1.79,
-      "budgetCpuSeconds": 7
+      "distinctStates": 91,
+      "measuredSeconds": 1.17,
+      "measuredCpuSeconds": 1.39,
+      "budgetCpuSeconds": 6,
+      "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
     },
     {
       "config": "Retention.noSweepRecord",
@@ -3627,10 +3630,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 6863,
-      "measuredSeconds": 2.39,
-      "measuredCpuSeconds": 2.97,
-      "budgetCpuSeconds": 9
+      "distinctStates": 9676,
+      "measuredSeconds": 1.43,
+      "measuredCpuSeconds": 2.2,
+      "budgetCpuSeconds": 8,
+      "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
     },
     {
       "config": "Retention.judgeByCreation",
@@ -3641,10 +3645,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1045,
-      "measuredSeconds": 2.49,
-      "measuredCpuSeconds": 2.11,
-      "budgetCpuSeconds": 8
+      "distinctStates": 1059,
+      "measuredSeconds": 1.22,
+      "measuredCpuSeconds": 1.58,
+      "budgetCpuSeconds": 7,
+      "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
     },
     {
       "config": "Retention.live",
@@ -3655,10 +3660,11 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 153701,
-      "measuredSeconds": 63.59,
-      "measuredCpuSeconds": 81.05,
-      "budgetCpuSeconds": 166
+      "distinctStates": 702841,
+      "measuredSeconds": 463.97,
+      "measuredCpuSeconds": 409.12,
+      "budgetCpuSeconds": 822,
+      "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
     },
     {
       "config": "Retention.chain",
@@ -3670,6 +3676,36 @@
       "measuredSeconds": 1286.24,
       "measuredCpuSeconds": 1492.52,
       "budgetCpuSeconds": 2989
+    },
+    {
+      "config": "Retention.perStoreSweep",
+      "role": "evidence",
+      "expect": {
+        "violates": "OneSetting",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 168,
+      "measuredSeconds": 1.22,
+      "measuredCpuSeconds": 1.47,
+      "budgetCpuSeconds": 6,
+      "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
+    },
+    {
+      "config": "Retention.deleteWhileRead",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoLiveReferenceDeleted",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 181,
+      "measuredSeconds": 1.2,
+      "measuredCpuSeconds": 1.51,
+      "budgetCpuSeconds": 7,
+      "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
     },
     {
       "config": "UpdateSwitch",
