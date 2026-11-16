@@ -49,6 +49,31 @@ require_env() {
   done
 }
 
+smoke_here() {
+  run env MOMONGA_SEA_SMOKE_EXECUTABLE="$1" npx vitest run --project packaging scripts/sea-smoke.test.ts
+}
+
+smoke_in_linux_container() {
+  local platform="$1" asset="$2" output
+  if [ "$DRY_RUN" = "1" ]; then
+    run docker run --rm -i --platform "$platform" node:24-bookworm bash -c "scripts/test-linux.sh" _ "MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/$asset node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts"
+    return
+  fi
+  output="$(cd "$ROOT" && COPYFILE_DISABLE=1 tar --exclude=node_modules --exclude=.git -cf - . | docker run --rm -i --platform "$platform" --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined node:24-bookworm bash -c "$(cat "$ROOT/scripts/test-linux.sh")" _ "MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/$asset node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts")"
+  printf '%s\n' "$output"
+  [ "$(tail -n 1 <<< "$output")" = "EXIT=0" ] || fail "the smoke run of $asset in a $platform container did not end with EXIT=0"
+}
+
+require_windows_smoke() {
+  local expected
+  if [ "$DRY_RUN" = "1" ]; then
+    run shasum -a 256 "$OUT_DIR/momonga-win-x64.exe"
+    return
+  fi
+  expected="$(shasum -a 256 "$OUT_DIR/momonga-win-x64.exe" | cut -d ' ' -f 1)"
+  [ "${MOMONGA_WINDOWS_SMOKE_SHA256:-}" = "$expected" ] || fail "start momonga-win-x64.exe (sha256 $expected) on a Windows host with scripts/sea-smoke.test.ts (MOMONGA_SEA_SMOKE_EXECUTABLE), then set MOMONGA_WINDOWS_SMOKE_SHA256 to that sha256"
+}
+
 verify_team_id() {
   if [ "$DRY_RUN" = "1" ]; then
     run codesign --display --verbose=4 "$BINARY"
@@ -177,6 +202,9 @@ fi
 step "assess with Gatekeeper"
 run spctl --assess --type execute --verbose=4 "$BINARY"
 
+step "start the signed macOS executable on this host"
+smoke_here "$BINARY"
+
 step "build linux and windows executables"
 for index in "${!OTHER_TARGETS[@]}"; do
   run npm run sea -- --unsigned --target "${OTHER_TARGETS[$index]}" --output "$OUT_DIR/${OTHER_ASSETS[$index]}" "${UPDATE_SOURCE_FLAGS[@]}"
@@ -187,6 +215,11 @@ assert_executable_format "$OUT_DIR/momonga-win-x64.exe" PE
 for index in "${!OTHER_TARGETS[@]}"; do
   assert_embedded_ripgrep "$OUT_DIR/${OTHER_ASSETS[$index]}" "${OTHER_TARGETS[$index]}"
 done
+
+step "start each linux executable in a container of its platform, and the windows executable on a Windows host"
+smoke_in_linux_container linux/amd64 momonga-linux-x64
+smoke_in_linux_container linux/arm64 momonga-linux-arm64
+require_windows_smoke
 
 step "third-party notices of the release"
 run npm run notices -- --output "$NOTICES"
