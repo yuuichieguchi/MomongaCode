@@ -1252,6 +1252,12 @@ const INBOX_MENTION_ATTACHMENTS = `
 ALTER TABLE run_inbox ADD COLUMN mention_attachments TEXT NOT NULL DEFAULT '[]';
 `;
 
+const BACKGROUND_COMMANDS_TABLE = 'jobs';
+
+const JOB_OUTPUT_INCOMPLETE = `
+ALTER TABLE ${BACKGROUND_COMMANDS_TABLE} ADD COLUMN output_incomplete INTEGER NOT NULL DEFAULT 0 CHECK (output_incomplete IN (0, 1));
+`;
+
 const RETENTION_SWEEPS = `
 CREATE TABLE retention_sweeps (
   session_id TEXT PRIMARY KEY,
@@ -1551,5 +1557,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 51,
     name: 'keep with a waiting message the files it names with @ that the runtime attached when it was added, so the message carries them into the run as a run request does',
     sql: INBOX_MENTION_ATTACHMENTS,
+  },
+  {
+    version: 52,
+    name: 'keep on the row of a command run in the background whether the output read after the command ended stopped before the output ended, so its view says so; a row finished before keeps 0',
+    sql: JOB_OUTPUT_INCOMPLETE,
   },
 ];

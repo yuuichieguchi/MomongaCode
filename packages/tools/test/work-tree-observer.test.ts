@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
-import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, createGitWorkTreeObserver, observedToolFiles, unprotectedLaunch } from '@momonga/tools';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
+import { OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, createGitWorkTreeObserver, observedToolFiles } from '@momonga/tools';
 import type { ObservedFile, WorkTreeObserver } from '@momonga/tools';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -32,7 +32,7 @@ const put = (name: string, content: string): string => {
 
 const signal = (): AbortSignal => new AbortController().signal;
 
-const observerFor = (cwd: string, trusted = true): WorkTreeObserver => createGitWorkTreeObserver({ storeRoot, cwd, trusted }, unprotectedLaunch('the tests of the observer start git without the protection of the home'));
+const observerFor = (cwd: string, trusted = true): WorkTreeObserver => createGitWorkTreeObserver({ storeRoot, cwd, trusted }, TEST_UNPROTECTED_LAUNCH);
 
 const sorted = (files: readonly ObservedFile[]): ObservedFile[] => [...files].sort((a, b) => a.path.localeCompare(b.path) || a.change.localeCompare(b.change));
 

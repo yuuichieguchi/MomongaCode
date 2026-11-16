@@ -141,6 +141,7 @@ const generationOf = (w: World, generation: number, role: GenerationRole = 'serv
       callId: callKey,
       command: 'sleep 30',
       timeoutMs: 60_000,
+      drainIdleMs: 1000,
       spawn: (_marker, signal) => {
         const created = fakeProcess(4000 + spawned.length, signal);
         spawned.push(created);

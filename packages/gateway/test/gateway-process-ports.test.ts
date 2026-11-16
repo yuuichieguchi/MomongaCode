@@ -1,7 +1,7 @@
 import { request } from 'undici';
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
-import { startGatewayProcess } from '@momonga/gateway';
+import { startGatewayProcess, systemProcessFiles } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, registerOwned, testLocks } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 
@@ -25,6 +25,7 @@ describe('gateway process ports', () => {
       debugTcp: { port: 0, tokenFile: '/nonexistent/debug.token' },
       files: {
         isUsableBinary: async () => false,
+        paths: systemProcessFiles.paths,
         readDebugToken: (file) => {
           asked.push(file);
           return TOKEN;

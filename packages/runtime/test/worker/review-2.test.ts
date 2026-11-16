@@ -1,3 +1,4 @@
+import { TEST_WRITER_LAUNCH } from '../../../tools/test/writer-launch.ts';
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import { unconfiguredNetworkOf, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
@@ -57,6 +58,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Stall' } });
     expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const executor = createToolExecutor({
+    writerLaunch: TEST_WRITER_LAUNCH,
     hostParallelism: 8,
     layout: momongaLayout(env.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },

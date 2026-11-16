@@ -13,6 +13,8 @@ import { call, makeHarness, toolSetOf } from '../harness.ts';
 import type { ApprovalSpec } from '../harness.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, policyFor, sessionTmpDirOf, sessionsTmpRootOf } from '../helpers.ts';
 
+export { TEST_WRITER_LAUNCH } from '../writer-launch.ts';
+
 export const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const RG_BIN = pinnedRipgrepPath();
 export const HAS_RG = HAS_REAL_SANDBOX;

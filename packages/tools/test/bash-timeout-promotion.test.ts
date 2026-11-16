@@ -125,7 +125,20 @@ const fakeCommand = () => {
       return process;
     },
   };
-  return { sandbox, process, rebound, write: stdout.write, finish, spawned: () => spawned, finished: () => finished };
+  let leaveStreams: (exit: SandboxExit) => void = () => undefined;
+  const exitedLeavingStreams = new Promise<SandboxExit>((resolve) => {
+    leaveStreams = resolve;
+  });
+  const leaving: SandboxedProcess = { ...process, exited: exitedLeavingStreams };
+  const leavingSandbox: Sandbox = {
+    kind: 'none',
+    spawn: (_command, _policy, signal) => {
+      spawned = true;
+      bindTo(signal);
+      return leaving;
+    },
+  };
+  return { sandbox, leavingSandbox, process, rebound, write: stdout.write, finish, leaveStreams, spawned: () => spawned, finished: () => finished };
 };
 
 const LIMITS: ToolLimits = {
@@ -147,7 +160,8 @@ const adoptingJobs = (refusal?: string): { port: BackgroundJobs; adopted: Adopte
       const stop = new AbortController();
       request.process.rebind(stop.signal);
       const entry: Adopted = { request, seen: Buffer.from(request.output.seen).toString('utf8'), followed: [], stop, followDone: Promise.resolve() };
-      entry.followDone = request.output.follow((chunk) => void entry.followed.push(chunk.toString('utf8')));
+      request.output.follow((chunk) => void entry.followed.push(chunk.toString('utf8')));
+      entry.followDone = request.output.drainAfterExit(request.drainIdleMs, new AbortController().signal).then(() => request.output.close());
       adopted.push(entry);
       return { jobId: 'bash_promoted' };
     },
@@ -308,5 +322,23 @@ describe.runIf(HAS_REAL_SANDBOX)('a promoted command in the real sandbox', () =>
     adopted.stop.abort();
     await adopted.request.process.exited;
     await pollUntil(() => !isAlive(-group), { description: 'the job stopped the command group', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS / 2 });
+  });
+});
+
+describe('a Bash command whose output is still open after it ended', () => {
+  it('stops reading after the idle gap, says so in the output and marks the result as cut in its residue', async () => {
+    const timers = fakeTimers();
+    const command = fakeCommand();
+    const tools = await makeBuiltins({ sandbox: command.leavingSandbox, executor: { ...timedHost(timers.port), random: fixedNonce } });
+    const running = tools.run('Bash', { command: 'leaves-a-writer' }, { limits: LIMITS }, 'allow_once');
+    await pollUntil(command.spawned, { description: 'the command was spawned', boundMs: WAIT_BOUND_MS });
+    command.write('kept\n');
+    command.leaveStreams({ code: 0, signal: null, stop: 'confirmed' });
+    await pollUntil(() => armedMs(timers).includes(LIMITS.bash.drainIdleMs), { description: 'the read after the exit waits for the idle gap', boundMs: WAIT_BOUND_MS });
+    timers.fire(LIMITS.bash.drainIdleMs);
+    const result = resultOf(await running);
+    expect(result.output).toContain('kept');
+    expect(result.output).toContain(`Stopped reading output after ${LIMITS.bash.drainIdleMs} ms without data; output may be incomplete.`);
+    expect(result).toMatchObject({ status: 'completed', outputIncomplete: 'residue' });
   });
 });

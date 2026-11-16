@@ -1,3 +1,5 @@
+import type { HelperSelf } from '@momonga/foundation';
+import { TEST_HELPER_SELF } from '../../../tools/test/writer-launch.ts';
 import type { RuleSolverSource } from '../../src/process/rule-verifier.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -84,6 +86,7 @@ export type StartRuntimeProcessOptions = {
   role?: RolePort;
   requestShutdown?: () => void;
   createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
+  helperSelf?: HelperSelf;
 };
 
 const exported = <T>(name: string): T => {
@@ -93,7 +96,7 @@ const exported = <T>(name: string): T => {
 };
 
 export const startRuntimeProcessUnprepared = (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> =>
-  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')({ role: fixedRolePort('serving'), locks: testLocks(), ...options });
+  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')({ role: fixedRolePort('serving'), locks: testLocks(), helperSelf: TEST_HELPER_SELF, ...options });
 
 export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> => {
   if (path.isAbsolute(options.home) && options.signal?.aborted !== true) {

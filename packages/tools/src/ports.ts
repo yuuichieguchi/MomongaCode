@@ -3,6 +3,7 @@ import type { Readable } from 'node:stream';
 import type { MarkerMode } from '@momonga/foundation';
 import type { JobView } from '@momonga/protocol';
 import type { SandboxedProcess } from '@momonga/sandbox';
+import type { PumpedOutput } from './capture.ts';
 
 export type PortChild = EventEmitter & {
   stdout: Readable | null | undefined;
@@ -84,10 +85,13 @@ export type BackgroundJobStart = {
   callId: string;
   command: string;
   timeoutMs: number;
+  drainIdleMs: number;
   spawn(markerFile: string, signal: AbortSignal, markerFd?: number): SandboxedProcess | Promise<SandboxedProcess>;
 };
 
-export type AdoptedOutput = { seen: Uint8Array; follow(sink: (chunk: Buffer) => void): Promise<void> };
+export type JobOutputReader = Pick<PumpedOutput, 'drainAfterExit' | 'close' | 'failure'>;
+
+export type AdoptedOutput = JobOutputReader & { seen: Uint8Array; follow(sink: (chunk: Buffer) => void): void };
 
 export type BackgroundJobAdopt = {
   runId: string;
@@ -95,6 +99,7 @@ export type BackgroundJobAdopt = {
   callId: string;
   command: string;
   timeoutMs: number;
+  drainIdleMs: number;
   process: SandboxedProcess;
   marker: { file: string; mode: MarkerMode };
   output: AdoptedOutput;

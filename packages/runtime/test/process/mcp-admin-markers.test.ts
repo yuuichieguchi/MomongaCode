@@ -1,8 +1,9 @@
+import { TEST_HELPER_SELF } from '../../../tools/test/writer-launch.ts';
 import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
-import { FAKE_LEASE, unconfiguredDerivedNetworkOf, testLocks, testKernelLock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { FAKE_LEASE, unconfiguredDerivedNetworkOf, testLocks, testKernelLock, TEST_STDIO_LAUNCH, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import { createSession, inertSandbox, makeRuntimeFixture } from './helpers.ts';
 
@@ -14,7 +15,7 @@ describe('the MCP admin probe pool launches its servers with the MCP process mar
       created.push(options);
       return { sources: [], diagnostics: () => [], authState: async () => ({ state: 'authorized' }), authorize: async () => undefined, close: async () => undefined } as unknown as McpAuthorizingPool;
     };
-    const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: runtime.unprotectedLaunch('the tests of the runtime start git without the protection of the home'), hostParallelism: 8,
+    const toolRuntime = runtime.createToolRuntime({ helperSelf: TEST_HELPER_SELF, mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: TEST_UNPROTECTED_LAUNCH, hostParallelism: 8,
       kernelLock: testKernelLock(),
       lockCapability: testLocks().capability,
       version: '0.0.0-test',

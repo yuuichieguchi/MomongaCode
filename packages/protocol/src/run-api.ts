@@ -31,6 +31,10 @@ import type { BilledDetail, NewBilledDetail, TokenAnatomy, UnpricedCode } from '
 const DAY_MS = 86_400_000;
 
 export const MAX_RUN_TIMEOUT_MS = 7 * DAY_MS;
+
+export const MAX_MANDATE_TIME_MS = MAX_RUN_TIMEOUT_MS;
+
+export const MAX_APPROVAL_TTL_MS = MAX_RUN_TIMEOUT_MS;
 const operationEffect: JsonSchema = closed({ operation: string, target: string, outcome: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['operation', 'target', 'outcome']);
 const appliedDiffFields = {
   hunks: { type: 'array', items: closed({ oldStart: integer, newStart: integer, lines: { type: 'array', items: string } }, ['oldStart', 'newStart', 'lines']) },
@@ -189,7 +193,7 @@ export const MANDATE_BUDGET_SCHEMA: JsonSchema = closed(
     steps: boundedInteger(1, 1000),
     tokens: boundedInteger(1, 100_000_000),
     costUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
-    timeMs: boundedInteger(1000, 7 * DAY_MS),
+    timeMs: boundedInteger(1000, MAX_MANDATE_TIME_MS),
     retries: boundedInteger(1, 100),
   },
   [],
@@ -286,7 +290,7 @@ const runLimits = closed(
   {
     maxSteps: boundedInteger(1, 1000),
     maxTotalTokens: boundedInteger(1, 100_000_000),
-    approvalTtlMs: boundedInteger(1000, 7 * DAY_MS),
+    approvalTtlMs: boundedInteger(1000, MAX_APPROVAL_TTL_MS),
     loopThreshold: boundedInteger(2, 20),
     maxCostUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD },
     maxFailedAttempts: boundedInteger(1, 100),
@@ -318,6 +322,7 @@ const jobView = closed(
     signal: string,
     startedAt: integer,
     endedAt: integer,
+    outputIncomplete: { type: 'boolean', const: true },
   },
   ['id', 'sessionId', 'runId', 'callId', 'command', 'status', 'startedAt'],
 );
@@ -651,6 +656,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       mutated: { type: 'boolean', const: true },
       command: string,
       windowShared: { type: 'boolean', const: true },
+      observedTrees: closed({ from: string, to: string }, ['from', 'to']),
+      outputIncomplete: constant('residue'),
       memories: { type: 'array', items: string },
       exitCode: integer,
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
@@ -1331,6 +1338,7 @@ export type JobView = {
   signal?: string;
   startedAt: number;
   endedAt?: number;
+  outputIncomplete?: true;
 };
 
 export type JobsResponse = { jobs: JobView[] };

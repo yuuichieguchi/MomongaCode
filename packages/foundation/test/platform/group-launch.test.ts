@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
-import { GroupContainmentError, KeeperProtocolError, createKeptGroupControl, createPosixGroupPort, createProcessGroupPort, launchApart, launchGroupLeader, nodeCommandRunner } from '../../src/index.ts';
+import { GroupContainmentError, KeeperProtocolError, createKeptGroupControl, createPosixGroupPort, createProcessGroupPort, launchApart, launchGroupLeader, nodeCommandRunner, systemWaitTiming } from '../../src/index.ts';
 import type { ProcessGroupPort } from '../../src/index.ts';
 import type { GroupLaunchRequest } from '../../src/platform/group-launch.ts';
 import { answeringMembers, fakeKeeperHost, settle } from '../support/fake-keeper.ts';
@@ -113,11 +113,11 @@ describe('on a port whose groups are process groups the launch is a detached spa
 describe('a launch begun outside any promise', () => {
   it('delivers the spawn error of a missing program to a listener attached after the launch is awaited', async () => {
     const error = await new Promise<unknown>((resolve) => {
-      setImmediate(() => {
+      systemWaitTiming.setTimeout(() => {
         void launchGroupLeader({ protection: TEST_CHILD_UNPROTECTED, file: '/nonexistent/momonga-missing-program', args: [], stdio: ['ignore', 'ignore', 'ignore'], port: posixPort() }).then((launched) => {
           launched.child.once('error', resolve);
         });
-      });
+      }, 0);
     });
     expect(error).toMatchObject({ code: 'ENOENT' });
   });

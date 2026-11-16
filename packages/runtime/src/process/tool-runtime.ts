@@ -25,7 +25,7 @@ import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts, Stdio
 import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { holdSandbox } from '../worker/held-sandbox.ts';
-import { createBuiltinTools, offeredBashOf, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
+import { createBuiltinTools, offeredBashOf, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry, writerLaunchOf } from '@momonga/tools';
 import type { ChildLaunch, BuiltinToolOffer, BundledRipgrepResolver, ForgeAccess, ForgeFetch, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolEnv, ToolRuntimePort } from '../ports.ts';
@@ -75,7 +75,7 @@ export type ToolRuntimeOptions = {
   sandboxes: SandboxBindings;
   forgeSecretStore?: () => SecretStore;
   forgeFetch?: ForgeFetch;
-  helperSelf?: HelperSelf;
+  helperSelf: HelperSelf;
   shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: Timing;
@@ -149,6 +149,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     report,
   });
   const executor = createToolExecutor({
+    writerLaunch: writerLaunchOf(options.helperSelf),
     jobs,
     hostParallelism: options.hostParallelism,
     outboundNetwork: async (signal) => (await options.network(signal)).outbound,
@@ -216,7 +217,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     inspector,
     ...(options.forgeSecretStore === undefined ? {} : { secretStore: options.forgeSecretStore }),
     ...(options.forgeFetch === undefined ? {} : { forgeFetch: options.forgeFetch }),
-    ...(options.helperSelf === undefined ? {} : { helperSelf: options.helperSelf }),
+    helperSelf: options.helperSelf,
   });
 
   const builtinOfferOf = async (session: Session, env: ToolEnv, signal: AbortSignal): Promise<BuiltinToolOffer> => {

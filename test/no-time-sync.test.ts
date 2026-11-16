@@ -40,8 +40,6 @@ const KEPT: Readonly<Record<string, Kept>> = {
 };
 
 const BURN_DOWN: Readonly<Record<string, BurnDown>> = {
-  'e2e/c-cancel.test.ts': { kinds: { 'wall-clock reading': 1 }, owner: 'tests-W7: C-e2e-bodies (wall-clock asserts) and C-waits (the e2e bounds list)' },
-  'e2e/supervisor.test.ts': { kinds: { 'wall-clock reading': 1 }, owner: 'tests-W7: C-e2e-bodies (wall-clock asserts) and C-waits (the e2e bounds list)' },
   'e2e/support/stack.ts': { kinds: { 'wall-clock reading': 1 }, owner: 'tests-W7: C-e2e-bodies (wall-clock asserts) and C-waits (the e2e bounds list)' },
   'e2e/support/wait.ts': { kinds: { 'timer wait': 2, 'wall-clock reading': 1 }, owner: 'tests-W7: C-e2e-bodies (wall-clock asserts) and C-waits (the e2e bounds list)' },
   'packages/config/test/append-rule.test.ts': { kinds: { 'timer wait': 1 }, owner: 'config: the second save waits in the in-process queue of the settings lock (packages/config/src/file-lock.ts:15,22, createKeyedSerializer), which has no port that shows a waiter, so the stop comes after fifty turns' },

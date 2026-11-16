@@ -10,6 +10,7 @@ import type { AnyTool } from '@momonga/tools';
 import { createAgentTool } from '../packages/agents/src/tool.ts';
 import { SchemaRenderError } from '../packages/gateway/src/dialect/render.ts';
 import { renderToolParameters } from '../packages/gateway/src/dialect/tool-render.ts';
+import { moduleSpecifiersOf, packageTests } from './support/source-scan.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
@@ -58,7 +59,7 @@ const MATRIX: Record<string, PackageRule> = {
   config: rule(['protocol', 'foundation']),
   store: rule(['protocol', 'foundation']),
   observability: rule(['protocol', 'foundation']),
-  gateway: rule(['protocol', 'foundation', 'config', 'observability']),
+  gateway: rule(['protocol', 'foundation', 'config', 'observability', 'sandbox']),
   policy: rule(['protocol', 'foundation', 'config']),
   sandbox: rule(['foundation']),
   tools: rule(['protocol', 'foundation', 'policy', 'sandbox']),
@@ -187,6 +188,70 @@ describe('architecture: dependency matrix', () => {
       ...manifest.optionalDependencies,
     };
     expect(checkManifest(packageName, dependencies)).toEqual([]);
+  });
+});
+
+const TEST_SUPPORT_PACKAGE = 'testkit';
+
+const dependsOn = (from: string, on: string, seen: ReadonlySet<string> = new Set()): boolean => {
+  if (from === on || seen.has(from)) return false;
+  if (on === TEST_SUPPORT_PACKAGE) return !dependsOn(TEST_SUPPORT_PACKAGE, from);
+  const packageRule = MATRIX[from];
+  if (packageRule === undefined) return false;
+  const next = new Set([...seen, from]);
+  return [...packageRule.static, ...packageRule.dynamic].some((target) => target === on || dependsOn(target, on, next));
+};
+
+const packageOfSpecifier = (filePath: string, specifier: string): string | undefined => {
+  if (!specifier.startsWith('.')) return internalPackageOf(specifier);
+  const relative = path.relative(packagesDir, path.resolve(path.dirname(filePath), specifier));
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
+  return relative.split(path.sep)[0];
+};
+
+export const checkTestFile = (packageName: string, filePath: string, specifiers: readonly string[]): Violation[] =>
+  specifiers.flatMap((specifier) => {
+    const target = packageOfSpecifier(filePath, specifier);
+    if (target === undefined || target === packageName || target === TEST_SUPPORT_PACKAGE || !dependsOn(target, packageName)) return [];
+    return [{ file: path.relative(root, filePath), specifier, reason: `a test of ${packageName} may not import ${target}, which depends on ${packageName}` }];
+  });
+
+const PRESENT_TEST_INVERSIONS: Readonly<Record<string, string>> = {
+  'packages/foundation/test/outbound-checked-address.test.ts -> ../../cli/test/minted-certificates.ts': 'foundation: the minted certificates belong in testkit',
+  'packages/observability/test/run-report-unknown-call.test.ts -> ../../cli/src/commands/report.ts': 'cli-commands: the report case is a cli test',
+  'packages/protocol/test/decode-stored-model.test.ts -> ../../context/test/helpers.ts': 'store-protocol: the seeded random belongs in testkit',
+  'packages/protocol/test/legacy-cost.test.ts -> @momonga/observability': 'store-protocol: the case of the observability reader is an observability test',
+  'packages/protocol/test/model-ref-properties.test.ts -> @momonga/config': 'store-protocol: the case of the settings loader is a config test',
+  'packages/protocol/test/model-ref-properties.test.ts -> ../../context/test/helpers.ts': 'store-protocol: the seeded random belongs in testkit',
+  'packages/sandbox/test/relay-main.ts -> @momonga/tools/executable-helpers': 'policy-verify-sandbox: the executable helpers belong in testkit',
+  'packages/testkit/test/model-settings.test.ts -> @momonga/config': 'tests: the case of the settings loader is a config test',
+  'packages/tools/test/operations/delegated-sequence.test.ts -> ../../../cli/test/minted-certificates.ts': 'tools: the minted certificates belong in testkit',
+  'packages/tools/test/operations/git-credential.test.ts -> ../../../cli/test/minted-certificates.ts': 'tools: the minted certificates belong in testkit',
+  'packages/tools/test/operations/ssh-remote.test.ts -> ../../../cli/test/minted-certificates.ts': 'tools: the minted certificates belong in testkit',
+};
+
+describe('architecture: the tests of a package import no package that depends on it', () => {
+  it('refuses a protocol test that imports config, a testkit test that imports config and a relative import into the tests of a dependent package', () => {
+    const protocolTest = path.join(packagesDir, 'protocol', 'test', 'planted.test.ts');
+    expect(checkTestFile('protocol', protocolTest, ['@momonga/config']).map(({ reason }) => reason)).toEqual(['a test of protocol may not import config, which depends on protocol']);
+    expect(checkTestFile('testkit', path.join(packagesDir, 'testkit', 'test', 'planted.test.ts'), ['@momonga/config'])).toHaveLength(1);
+    expect(checkTestFile('protocol', protocolTest, ['../../context/test/helpers.ts'])).toHaveLength(1);
+    expect(checkTestFile('testkit', path.join(packagesDir, 'testkit', 'test', 'planted.test.ts'), ['@momonga/foundation', '@momonga/protocol'])).toEqual([]);
+    expect(checkTestFile('foundation', path.join(packagesDir, 'foundation', 'test', 'planted.test.ts'), ['@momonga/testkit'])).toEqual([]);
+    expect(checkTestFile('runtime', path.join(packagesDir, 'runtime', 'test', 'planted.test.ts'), ['@momonga/store', '../../store/test/helpers.ts', '@momonga/testkit', '../../../test/support/source-scan.ts'])).toEqual([]);
+  });
+
+  const inversionsOf = (packageName: string): string[] =>
+    packageTests(packageName).flatMap((file) => checkTestFile(packageName, file, moduleSpecifiersOf(file)).map(({ file: where, specifier }) => `${where} -> ${specifier}`));
+
+  it.each(packageNames)('the tests of %s import no package that depends on it, beyond the present inversions their owners move', (packageName) => {
+    expect(inversionsOf(packageName).filter((line) => !(line in PRESENT_TEST_INVERSIONS))).toEqual([]);
+  });
+
+  it('lists only present inversions, each with its owner', () => {
+    const present = new Set(packageNames.flatMap(inversionsOf));
+    expect(Object.keys(PRESENT_TEST_INVERSIONS).filter((line) => !present.has(line))).toEqual([]);
+    expect(Object.values(PRESENT_TEST_INVERSIONS).filter((owner) => owner === '')).toEqual([]);
   });
 });
 

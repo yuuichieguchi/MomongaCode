@@ -61,17 +61,19 @@ export const CAPTURE_MAX_BYTES = HEAD_BYTES + TAIL_BYTES;
 
 export const DRAIN_RESIDUE_MAX_BYTES = CAPTURE_MAX_BYTES;
 
-export type DrainEnd = { kind: 'idle'; idleMs: number } | { kind: 'bytes'; maxBytes: number };
+export type DrainEnd = { kind: 'idle'; idleMs: number } | { kind: 'bytes'; maxBytes: number } | { kind: 'owner' };
 
 export type Drained = { complete: true } | { complete: false; note: string };
 
 export const drainIncompleteNote = (end: DrainEnd): string =>
   end.kind === 'idle'
     ? `Stopped reading output after ${end.idleMs} ms without data; output may be incomplete.`
-    : `Stopped reading output after ${end.maxBytes} bytes that came after the command ended; output may be incomplete.`;
+    : end.kind === 'bytes'
+      ? `Stopped reading output after ${end.maxBytes} bytes that came after the command ended; output may be incomplete.`
+      : 'Stopped reading output when the time of the command ran out; output may be incomplete.';
 
 export type PumpedOutput = {
-  drainAfterExit(idleMs: number): Promise<Drained>;
+  drainAfterExit(idleMs: number, owner: AbortSignal): Promise<Drained>;
   ended(): Promise<void>;
   close(): Promise<void>;
   failure(): { error: unknown } | undefined;
@@ -99,7 +101,7 @@ export const pumpOutput = (streams: readonly AsyncIterable<Uint8Array>[], onChun
   );
   const allEnded = Promise.all(pumps).then(() => undefined);
   return {
-    drainAfterExit: (idleMs) =>
+    drainAfterExit: (idleMs, owner) =>
       new Promise<Drained>((resolve) => {
         let settled = false;
         let received = 0;
@@ -109,6 +111,7 @@ export const pumpOutput = (streams: readonly AsyncIterable<Uint8Array>[], onChun
           settled = true;
           timers.clearTimeout(idle);
           draining = undefined;
+          owner.removeEventListener('abort', onOwnerEnd);
           resolve(drained);
         };
         const arm = (): void => {
@@ -120,6 +123,12 @@ export const pumpOutput = (streams: readonly AsyncIterable<Uint8Array>[], onChun
           if (received > DRAIN_RESIDUE_MAX_BYTES) finish({ complete: false, note: drainIncompleteNote({ kind: 'bytes', maxBytes: DRAIN_RESIDUE_MAX_BYTES }) });
           else arm();
         };
+        const onOwnerEnd = (): void => finish({ complete: false, note: drainIncompleteNote({ kind: 'owner' }) });
+        if (owner.aborted) {
+          onOwnerEnd();
+          return;
+        }
+        owner.addEventListener('abort', onOwnerEnd, { once: true });
         arm();
         void allEnded.then(() => finish({ complete: true }));
       }),

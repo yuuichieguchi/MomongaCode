@@ -871,7 +871,7 @@ export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input:
 };
 
 export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, program: ServerProgram, signal: AbortSignal, onWarning: (message: string) => void): Promise<string> => {
-  const { listManagedModel, managedLaunchOf, systemProcessFiles } = await import('@momonga/gateway');
+  const { listManagedModel, noneSandboxLaunchOf, systemProcessFiles } = await import('@momonga/gateway');
   const { settings } = await loadUserSettings({ home: ports.home, signal });
   const declared = 'builtIn' in program ? undefined : { [program.id]: { command: program.command, args: [...program.args], readyPath: program.readyPath } };
   const description = registeredServer(serverRegistryOf(declared, paths.settingsFile), program.id);
@@ -891,7 +891,7 @@ export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, progr
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
     timers: managedProbeTimersOf(ports),
-    launch: await managedLaunchOf({ home: ports.home, platform: ports.platform, env: ports.env, isUsableBinary: systemProcessFiles.isUsableBinary }),
+    launch: await noneSandboxLaunchOf({ home: ports.home, platform: ports.platform, env: ports.env, paths: systemProcessFiles.paths(signal), isUsableBinary: systemProcessFiles.isUsableBinary }),
     onWarning,
   });
 };

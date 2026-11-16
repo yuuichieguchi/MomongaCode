@@ -76,6 +76,7 @@ const runJob = async (survives: boolean) => {
     callId: 'call-1',
     command: 'echo job-output',
     timeoutMs: 60_000,
+    drainIdleMs: 1000,
     spawn: (marker, signal) => {
       fs.writeFileSync(marker, NOT_AN_ATTEMPT_RECORD);
       const stdout = new PassThrough();

@@ -1,3 +1,5 @@
+import { sleep, systemWaitTiming } from '@momonga/foundation';
+import { toJobView } from '../../src/service/views.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -15,6 +17,8 @@ import { jobGenerationOptions } from './job-fixture.ts';
 import { UNASKED_COMMANDS } from '../../../store/test/support/unasked.ts';
 
 const START_MS = 1_800_000_000_000;
+const DRAIN_IDLE_MS = 1000;
+const CHUNK_GAP_MS = 400;
 
 type FakeStream = AsyncIterable<Uint8Array> & { write(text: string): Promise<void>; end(): void };
 
@@ -22,34 +26,54 @@ const fakeStream = (): FakeStream => {
   const queue: { chunk: Uint8Array; consumed: () => void }[] = [];
   let wake: (() => void) | undefined;
   let ended = false;
-  async function* iterate(): AsyncGenerator<Uint8Array> {
+  const poke = (): void => {
+    const woken = wake;
+    wake = undefined;
+    woken?.();
+  };
+  let handedOut: (() => void) | undefined;
+  const releaseHandedOut = (): void => {
+    const consumed = handedOut;
+    handedOut = undefined;
+    consumed?.();
+  };
+  const next = async (): Promise<IteratorResult<Uint8Array>> => {
+    releaseHandedOut();
     for (;;) {
-      while (queue.length === 0) {
-        if (ended) return;
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
+      const item = queue.shift();
+      if (item !== undefined) {
+        handedOut = item.consumed;
+        return { done: false, value: item.chunk };
       }
-      const item = queue.shift() as (typeof queue)[number];
-      yield item.chunk;
-      item.consumed();
+      if (ended) return { done: true, value: undefined };
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
     }
-  }
+  };
   return {
-    [Symbol.asyncIterator]: iterate,
+    [Symbol.asyncIterator]: () => ({
+      next,
+      return: async () => {
+        releaseHandedOut();
+        ended = true;
+        poke();
+        return { done: true, value: undefined };
+      },
+    }),
     write: (text) =>
       new Promise<void>((resolve) => {
         queue.push({ chunk: Buffer.from(text), consumed: resolve });
-        wake?.();
+        poke();
       }),
     end: () => {
       ended = true;
-      wake?.();
+      poke();
     },
   };
 };
 
-type FakeProcess = SandboxedProcess & { stdoutStream: FakeStream; stderrStream: FakeStream; exit(result: SandboxExit): void; signal: AbortSignal };
+type FakeProcess = SandboxedProcess & { stdoutStream: FakeStream; stderrStream: FakeStream; exit(result: SandboxExit): void; exitLeavingStreams(result: SandboxExit): void; signal: AbortSignal };
 
 const fakeProcess = (pgid: number, signal: AbortSignal): FakeProcess => {
   const stdoutStream = fakeStream();
@@ -64,7 +88,7 @@ const fakeProcess = (pgid: number, signal: AbortSignal): FakeProcess => {
     finish(result);
   };
   signal.addEventListener('abort', () => exit({ code: null, signal: 'SIGTERM', killedBy: 'abort', stop: 'confirmed' }), { once: true });
-  return { pid: pgid, pgid, rebind: () => undefined, stdout: stdoutStream, stderr: stderrStream, exited, stdoutStream, stderrStream, exit, signal };
+  return { pid: pgid, pgid, rebind: () => undefined, stdout: stdoutStream, stderr: stderrStream, exited, stdoutStream, stderrStream, exit, exitLeavingStreams: (result) => finish(result), signal };
 };
 
 const roots: string[] = [];
@@ -128,6 +152,7 @@ const setup = async (probes: Parameters<typeof createBackgroundJobs>[0]['probes'
       callId: callKey,
       command,
       timeoutMs,
+      drainIdleMs: DRAIN_IDLE_MS,
       spawn: (marker, signal) => {
         expect(fs.existsSync(marker)).toBe(true);
         const process = fakeProcess(4000 + spawned.length, signal);
@@ -378,6 +403,7 @@ describe('background jobs', () => {
         callId: 'call-1',
         command: 'x',
         timeoutMs: 1000,
+        drainIdleMs: DRAIN_IDLE_MS,
         spawn: () => {
           throw new Error('no such shell');
         },
@@ -618,5 +644,69 @@ describe('a finished job removes its marker only once the marker reads free', ()
     await t.settled(jobId);
     expect(read).toEqual([path.join(t.markerDir, key)]);
     expect(fs.existsSync(path.join(t.markerDir, key))).toBe(false);
+  });
+});
+
+describe('the output of a background job after its command ended is read by the one reader of tools', () => {
+  const drainArmed = async (t: Awaited<ReturnType<typeof setup>>): Promise<void> => {
+    for (let turn = 0; !t.timers.pending().some((timer) => timer.delayMs === DRAIN_IDLE_MS); turn += 1) {
+      if (turn > 10_000) throw new Error('the drain after the exit was never armed');
+      await sleep(systemWaitTiming, 0);
+    }
+  };
+
+  it('keeps reading a writer that outlives the command while a chunk comes within each idle gap', async () => {
+    const t = await setup();
+    const { jobId } = await t.start('call-1');
+    const process = t.spawned[0] as FakeProcess;
+    process.exitLeavingStreams({ code: 0, signal: null, stop: 'confirmed' });
+    await drainArmed(t);
+    for (const line of ['one', 'two', 'three', 'four']) {
+      t.timers.advance(CHUNK_GAP_MS);
+      await process.stdoutStream.write(`${line}\n`);
+    }
+    process.stdoutStream.end();
+    process.stderrStream.end();
+    await t.settled(jobId);
+    const done = await t.jobs.read(t.run.id, jobId, { call: 'read-1' });
+    expect(done.output).toBe('one\ntwo\nthree\nfour');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    expect(t.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED', result: { job: jobId, status: 'exited' } });
+    expect(t.store.idempotency.get(key)).not.toHaveProperty('result.output');
+  });
+
+  it('stops reading at the time of the job while a steady writer keeps every idle gap filled, and marks the record incomplete', async () => {
+    const t = await setup();
+    const { jobId } = await t.start('call-1', 'sleep 30', 2000);
+    const process = t.spawned[0] as FakeProcess;
+    process.exitLeavingStreams({ code: 0, signal: null, stop: 'confirmed' });
+    await drainArmed(t);
+    for (let line = 0; line < 4; line += 1) {
+      t.timers.advance(CHUNK_GAP_MS);
+      await process.stdoutStream.write(`line ${line}\n`);
+    }
+    t.timers.advance(CHUNK_GAP_MS);
+    await t.settled(jobId);
+    const done = await t.jobs.read(t.run.id, jobId, { call: 'read-1' });
+    expect(done.output).toContain('Stopped reading output when the time of the command ran out; output may be incomplete.');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    expect(t.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED', result: { job: jobId, status: 'exited', output: { incomplete: true } } });
+    expect(toJobView(t.store.jobs.get(jobId) ?? expect.fail('the job is recorded'))).toMatchObject({ status: 'exited', outputIncomplete: true });
+  });
+
+  it('stops reading after the idle gap, writes the note into the output and marks the record incomplete', async () => {
+    const t = await setup();
+    const { jobId } = await t.start('call-1');
+    const process = t.spawned[0] as FakeProcess;
+    await process.stdoutStream.write('started\n');
+    process.exitLeavingStreams({ code: 0, signal: null, stop: 'confirmed' });
+    await drainArmed(t);
+    t.timers.advance(DRAIN_IDLE_MS);
+    await t.settled(jobId);
+    const done = await t.jobs.read(t.run.id, jobId, { call: 'read-1' });
+    expect(done.output).toContain('started');
+    expect(done.output).toContain(`Stopped reading output after ${DRAIN_IDLE_MS} ms without data; output may be incomplete.`);
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    expect(t.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED', result: { job: jobId, status: 'exited', output: { incomplete: true } } });
   });
 });

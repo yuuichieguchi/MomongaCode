@@ -153,6 +153,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
       callId: ctx.callId,
       command: input.command,
       timeoutMs: timeout.ms,
+      drainIdleMs: ctx.limits.bash.drainIdleMs,
       spawn: async (markerFile, signal, markerFd) => {
         const child = await ctx.sandbox.spawn(
           {
@@ -329,6 +330,7 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
 
     const capture = createCapture();
     let forward: ((chunk: Buffer) => void) | undefined;
+    let flushForwarded: (() => void) | undefined;
     const pump = pumpOutput(
       [child.stdout, child.stderr],
       (_index, chunk) => {
@@ -358,6 +360,7 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
             callId: ctx.callId,
             command: input.command,
             timeoutMs: ctx.limits.bash.backgroundTimeoutMs,
+            drainIdleMs: ctx.limits.bash.drainIdleMs,
             process: {
               ...child,
               exited: child.exited.then(async (exit) => {
@@ -372,8 +375,15 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
               follow: (sink) => {
                 const filtered = withoutCwdRecord(nonce, sink);
                 forward = filtered.push;
-                return pump.ended().then(() => filtered.flush());
+                flushForwarded = filtered.flush;
               },
+              drainAfterExit: async (idleMs, owner) => {
+                const drained = await pump.drainAfterExit(idleMs, owner);
+                flushForwarded?.();
+                return drained;
+              },
+              close: () => pump.close(),
+              failure: () => pump.failure(),
             },
           });
           return { status: 'completed', output: withLine(withLine(seen, timeout.note), movedText(jobId, timeout.ms)), detached: true };
@@ -385,6 +395,7 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
     }
     let exit: SandboxExit;
     const notes: string[] = [];
+    let residue = false;
     let refusals: string[];
     try {
       let groupNotice: string | undefined;
@@ -392,8 +403,11 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
       if (groupNotice !== undefined) notes.push(groupNotice);
       if (exit.stop === 'not_confirmed') notes.push(STOP_NOT_CONFIRMED_NOTE);
       notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
-      const drained = await pump.drainAfterExit(ctx.limits.bash.drainIdleMs);
-      if (!drained.complete) notes.push(drained.note);
+      const drained = await pump.drainAfterExit(ctx.limits.bash.drainIdleMs, AbortSignal.any([ctx.signal, ctx.expired]));
+      if (!drained.complete) {
+        notes.push(drained.note);
+        residue = true;
+      }
     } finally {
       await pump.close();
       refusals = await network.settle();
@@ -415,10 +429,11 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
     }
     for (const note of notes) output += `${output === '' ? '' : '\n'}${note}`;
     output = withLine(output, timeout.note);
-    if (exit.signal !== null) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]` };
     const exitCode = exit.code === null ? {} : { exitCode: exit.code };
-    if (exit.code !== 0) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[exit code ${exit.code}]`, ...exitCode };
-    return { status: 'completed', output, ...exitCode };
+    const incomplete = residue ? { outputIncomplete: 'residue' as const } : {};
+    if (exit.signal !== null) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]`, ...incomplete };
+    if (exit.code !== 0) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[exit code ${exit.code}]`, ...exitCode, ...incomplete };
+    return { status: 'completed', output, ...exitCode, ...incomplete };
   },
   reconcile: async (input, record, ctx) => {
     if (input.run_in_background === true) {
@@ -474,7 +489,7 @@ export const runUserCommand = async (host: UserCommandHost): Promise<UserCommand
   let drained: Drained;
   try {
     exit = await child.exited;
-    drained = await pump.drainAfterExit(host.drainIdleMs);
+    drained = await pump.drainAfterExit(host.drainIdleMs, host.signal);
   } finally {
     await pump.close();
   }

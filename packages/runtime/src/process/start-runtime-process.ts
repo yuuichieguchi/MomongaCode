@@ -40,7 +40,7 @@ import {
 import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, DEFAULT_SANDBOX_EXEC_PATH, bubblewrapPresent, childProtectionFor, protectionCommandOf, createPlaceholderJournal, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
+import { createPlaceholderJournal, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { unaskedCommandsFor } from '@momonga/policy';
 import { DERIVED_CATCH_UP_PAGES, FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
@@ -54,6 +54,7 @@ import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHos
 import type { BundledRipgrepResolver, ChildLaunch, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
+import { hostNoneSandboxLaunch } from './host-none-sandbox-launch.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../memory/journal-thread-limits.ts';
 import { startJournalThread } from '../memory/journal-thread-client.ts';
 import type { GatewayClient } from '../gateway-client.ts';
@@ -154,7 +155,7 @@ export type StartRuntimeProcessOptions = {
   stopValues?: StopValuesReader;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
-  helperSelf?: HelperSelf;
+  helperSelf: HelperSelf;
   ruleSolver?: RuleSolverSource;
   socketGuard?: SocketGuardSource;
   role?: RolePort;
@@ -431,12 +432,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const journalDirectory = placeholderJournalDirectoryOf(paths);
     const { helperSelf } = options;
-    const bubblewrap = platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
-    const noneProtection = childProtectionFor({ sandbox: 'none', home: canonicalHome, platform, env: process.env, bubblewrap });
-    const childLaunch: ChildLaunch = {
-      protection: noneProtection,
-      commandOf: (argv, scratch) => protectionCommandOf(noneProtection, { platform, argv, scratch, sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
-    };
+    const childLaunch: ChildLaunch = await hostNoneSandboxLaunch({ home: canonicalHome, platform, env: process.env }, startDeadlineSignal(signal));
+    const noneProtection = childLaunch.protection;
     const sandboxOf = createSandboxOf({
       platform,
       paths,
@@ -448,7 +445,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       warn: (text) => logger.warn(text),
       ...(sandboxExecPath === undefined ? {} : { sandboxExecPath }),
       ...(options.socketGuard === undefined ? {} : { socketGuard: options.socketGuard(paths, options.locks) }),
-      ...(helperSelf === undefined ? {} : { helperSelf }),
+      helperSelf,
     });
     const sandboxes = createPinnedDerivation<SandboxBinding>({
       cache,
@@ -598,7 +595,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         version,
         mcpLaunch: {
           protection: noneProtection,
-          commandOf: (argv) => protectionCommandOf(noneProtection, { platform, argv, scratch: [], sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
+          commandOf: (argv) => childLaunch.commandOf(argv, []),
         },
         owners: markerOwners,
         lockCapability,
@@ -625,7 +622,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         leaseMs,
         heartbeatMs: heartbeatMsFor(leaseMs),
         ...(options.bundledRipgrep === undefined ? {} : { bundledRipgrep: options.bundledRipgrep(paths, options.locks) }),
-        ...(options.helperSelf === undefined ? {} : { helperSelf: options.helperSelf }),
+        helperSelf: options.helperSelf,
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({

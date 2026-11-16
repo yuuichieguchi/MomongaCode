@@ -128,7 +128,7 @@ export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBoun
 const groupedByTier = (names: readonly string[], tiers: readonly (string | undefined)[]): string[] => {
   const groups = new Map<string | undefined, string[]>();
   names.forEach((name, index) => groups.set(tiers[index], [...(groups.get(tiers[index]) ?? []), name]));
-  return [...groups].map(([tier, members]) => (tier === undefined ? members.join(', ') : `${tier}: ${members.join(', ')}`));
+  return [...groups].map(([tier, members]) => (tier === undefined ? members.join(', ') : `${members.join(', ')} (${tier} tools)`));
 };
 
 type RankedCandidates = { tools: FunctionTool[]; rankOf: ReadonlyMap<string, number>; tierOf: ReadonlyMap<string, string> };
@@ -300,7 +300,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   if (leftOut.length > 0) {
     notices.push({
       code: 'tools_dropped',
-      message: `Tools ${leftOut.join('; ')} were left out because the declared context window of ${input.model} (${capabilities.contextWindow} tokens) leaves no room for them; raise the declared context window of that model, or shorten the instructions`,
+      message: `The declared context window of ${input.model} (${capabilities.contextWindow} tokens) leaves no room for these tools, so they were left out: ${leftOut.join('; ')}; raise the declared context window of that model, or shorten the instructions`,
       key: canonicalJson({ contextWindow: capabilities.contextWindow, model: input.model }),
     });
   }

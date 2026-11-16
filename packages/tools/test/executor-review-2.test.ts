@@ -1,3 +1,4 @@
+import { TEST_WRITER_LAUNCH } from './writer-launch.ts';
 import { nodeFileSystem, systemRandom } from '@momonga/foundation';
 import { unconfiguredNetworkOf, FAKE_LEASE, createFakeClock, createFakeTimers, fakePolicyFilesystem, hostFilesystemOf, testProcessInspector } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
@@ -17,6 +18,7 @@ const GRACE_MS = 20;
 
 const boundedExecutor = (harness: Harness, timers?: FakeTimers) =>
   createToolExecutor({
+    writerLaunch: TEST_WRITER_LAUNCH,
     hostParallelism: 8,
     layout: momongaLayout(harness.layout.home, process.platform, process.env),
     reap: { inspector: testProcessInspector() },

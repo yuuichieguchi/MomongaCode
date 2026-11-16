@@ -148,7 +148,8 @@ const adoptingJobs = (refusal?: string): { port: BackgroundJobs; adopted: Adopte
       const stop = new AbortController();
       request.process.rebind(stop.signal);
       const entry: Adopted = { request, seen: Buffer.from(request.output.seen).toString('utf8'), followed: [], stop, followDone: Promise.resolve() };
-      entry.followDone = request.output.follow((chunk) => void entry.followed.push(chunk.toString('utf8')));
+      request.output.follow((chunk) => void entry.followed.push(chunk.toString('utf8')));
+      entry.followDone = request.output.drainAfterExit(request.drainIdleMs, new AbortController().signal).then(() => request.output.close());
       adopted.push(entry);
       return { jobId: 'bash_promoted' };
     },

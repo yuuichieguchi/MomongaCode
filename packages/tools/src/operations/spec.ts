@@ -268,6 +268,28 @@ const checkForgeProbe = (name: string, probe: Probe, earlier: readonly Probe[]):
   }
 };
 
+const OBSERVATION_ROOTS: ReadonlySet<string> = new Set(['before', 'after']);
+
+const clauseReferences = (item: ClauseItem): string[] => {
+  if (isClause(item)) return isComparison(item) ? item.filter((operand): operand is string => typeof operand === 'string') : [item.observed];
+  const condition = 'if' in item ? item.if : item.ifObserved;
+  return [condition, ...item.then.flatMap(clauseReferences), ...item.else.flatMap(clauseReferences)];
+};
+
+const checkGuardInputs = (spec: Pick<OperationSpec, 'name' | 'input' | 'observe' | 'applied' | 'unchanged'> & { require?: readonly ClauseItem[] }): void => {
+  const properties = spec.input['properties'];
+  const argumentsOfCall = new Set(typeof properties === 'object' && properties !== null ? Object.keys(properties) : []);
+  const probes = new Set(spec.observe.map((probe) => probe.id));
+  for (const reference of [...(spec.require ?? []), ...spec.applied, ...spec.unchanged].flatMap(clauseReferences)) {
+    const [root, name] = reference.split('.');
+    if (root === 'input') {
+      if (name === undefined || !argumentsOfCall.has(name)) throw new OperationSpecError(`${spec.name}: the clause reads ${reference}, which is not an argument of the call`);
+    } else if (root !== undefined && OBSERVATION_ROOTS.has(root)) {
+      if (name === undefined || !probes.has(name)) throw new OperationSpecError(`${spec.name}: the clause reads ${reference}, which no probe observes`);
+    } else throw new OperationSpecError(`${spec.name}: the clause reads ${reference}, which is neither an argument of the call nor an observation`);
+  }
+};
+
 export const parseOperationSpec = (value: unknown): OperationSpec => {
   const verdict = validateSpec(value);
   if (!verdict.valid) {
@@ -275,6 +297,7 @@ export const parseOperationSpec = (value: unknown): OperationSpec => {
     throw new OperationSpecError(`invalid operation spec at ${first?.instancePath === '' ? '/' : (first?.instancePath ?? '/')}: ${first?.message ?? 'schema violation'}`);
   }
   const spec = verdict.value;
+  checkGuardInputs(spec);
   if (spec.sideEffect === 'read_only') {
     if (spec.effect !== undefined) throw new OperationSpecError(`${spec.name} is read-only and must not declare an effect`);
   } else {

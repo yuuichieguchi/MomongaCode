@@ -32,8 +32,11 @@ export type { HookReply, HookRunContext } from './hooks/run.ts';
 export { selectHookCommands } from './hooks/run.ts';
 export { runSandboxedCommand, verificationMarkerName } from './sandboxed-command.ts';
 export type { SandboxedCommandRequest, SandboxedCommandResult } from './sandboxed-command.ts';
+export { pumpOutput } from './capture.ts';
+export type { Drained, PumpedOutput } from './capture.ts';
 export type {
   AdoptedOutput,
+  JobOutputReader,
   BackgroundJobAdopt,
   BackgroundJobKill,
   BackgroundJobRead,
@@ -106,7 +109,6 @@ export {
   createPolicyFilesystem,
   listDirectoryEntries,
   listFileCandidates,
-  unprotectedLaunch,
   nodeChildPorts,
   nodeShellHost,
   nodeShellPorts,
@@ -185,3 +187,5 @@ export type { ForgeFetch } from './forge/http.ts';
 export { EMPTY_FOOTPRINT, blockedByHeldText, blockerOf, footprintOf, footprintsConflict } from './footprint.ts';
 export type { Footprint, HeldFootprint } from './footprint.ts';
 export { diffOfContents } from './builtins/applied-diff.ts';
+export { FILE_WRITER_HELPER, writeInWriterChild, writerLaunchOf } from './builtins/file-writer.ts';
+export type { WriterAnswer, WriterChild, WriterLaunch, WriterRequest } from './builtins/file-writer.ts';

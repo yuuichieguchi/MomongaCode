@@ -1,3 +1,4 @@
+import { TEST_WRITER_LAUNCH } from './writer-launch.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, nodeFileSystem, resolveCanonicalPath, sha256Hex, systemRandom, truncationMarker, validateUntrusted, momongaLayout } from '@momonga/foundation';
@@ -126,6 +127,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
   const kernelLock = createFakeKernelLock({ inheritable: false });
   const warnings: string[] = [];
   const executor = createToolExecutor({
+    writerLaunch: TEST_WRITER_LAUNCH,
     shellHost: nodeShellHost(),
     random: systemRandom,
     files: nodeFileSystem,

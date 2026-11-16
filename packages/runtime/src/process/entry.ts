@@ -14,7 +14,7 @@ export const RUNTIME_ENTRY_FLAGS = {
   'sandbox-exec-path': { kind: 'string' },
 } as const satisfies FlagSpec;
 
-export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource; ruleSolver?: RuleSolverSource; helperSelf?: HelperSelf; socketGuard?: SocketGuardSource };
+export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource; ruleSolver?: RuleSolverSource; helperSelf: HelperSelf; socketGuard?: SocketGuardSource };
 
 export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<number> => {
   let stopValues: StopValuesReader | undefined;
@@ -53,7 +53,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
         ...(deps.bundledRipgrep === undefined ? {} : { bundledRipgrep: deps.bundledRipgrep }),
         ...(deps.ruleSolver === undefined ? {} : { ruleSolver: deps.ruleSolver }),
         ...(deps.socketGuard === undefined ? {} : { socketGuard: deps.socketGuard }),
-        ...(deps.helperSelf === undefined ? {} : { helperSelf: deps.helperSelf }),
+        helperSelf: deps.helperSelf,
       });
       return { close: handle.close, abort: handle.abort, fatal: handle.fatal };
     },

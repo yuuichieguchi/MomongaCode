@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { DRAIN_RESIDUE_MAX_BYTES, drainIncompleteNote, pumpOutput } from '../src/capture.ts';
 import { cfgNames } from '../../../test/formal/cfg-names.ts';
+import { sleep, systemWaitTiming } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
@@ -15,7 +16,9 @@ type Step = 'chunk' | 'shortGap' | 'idleGap' | 'end' | 'flood';
 
 const STEPS: readonly Step[] = ['chunk', 'shortGap', 'idleGap', 'end', 'flood'];
 
-const turn = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+const turn = async (): Promise<void> => {
+  await sleep(systemWaitTiming, 0);
+};
 
 const traces = (length: number): Step[][] => {
   let all: Step[][] = [[]];
@@ -41,7 +44,7 @@ describe('the bounded reader after the exit on the cases of specs/tla/OutputDrai
         received += chunk.length;
       }, timers);
       let released: Awaited<ReturnType<typeof pump.drainAfterExit>> | undefined;
-      const draining = pump.drainAfterExit(IDLE_MS).then((drained) => {
+      const draining = pump.drainAfterExit(IDLE_MS, new AbortController().signal).then((drained) => {
         released = drained;
         return drained;
       });
@@ -97,7 +100,7 @@ describe('the bounded reader after the exit on the cases of specs/tla/OutputDrai
     await timers.advanceAsync(IDLE_MS * 10);
     stream.write('late');
     await turn();
-    const draining = pump.drainAfterExit(IDLE_MS);
+    const draining = pump.drainAfterExit(IDLE_MS, new AbortController().signal);
     stream.end();
     expect(await draining).toEqual({ complete: true });
     expect(chunks.join('')).toBe('late');

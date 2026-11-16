@@ -1,3 +1,4 @@
+import type { WriterLaunch } from './builtins/file-writer.ts';
 import path from 'node:path';
 import { ABANDON_KILL_GRACE_MS, ABORT_SETTLE_LIMIT_MS, DEFAULT_SANDBOX_NETWORK, NO_NETWORK, UNMEASURED_CAPABILITY, canonicalJson, comparableFromParts, containsByComponents, computeBackoff, createMarker, describeNetworkScope, displayToolPath, fileRuleFingerprint, findAsync, hostPaths, systemWaitTiming, lexicallyWithin, mapAsync, momongaLayout, networkScopeOfRequest, reapMarkedProcessesWithReport, recordMarkerGroup, settledOrAborted, sha256Hex, someAsync, writableAreaOf, writableCheckOf, standardSecretLocations } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
@@ -175,6 +176,7 @@ export type ToolExecutorOptions = {
   callLockDir: string;
   layout: GuardedLayout;
   kernelLock: KernelLockMechanism;
+  writerLaunch: WriterLaunch;
   fs: PolicyHostFilesystem;
   leaseMs: number;
   heartbeatMs: number;
@@ -232,9 +234,20 @@ type RecoveryPlan = {
 
 type RunPlan = ExecutionPlan | RecoveryPlan;
 
-type Gate = { subject: PermissionSubject; access: BatchAccess; facts?: GateFacts };
+type Gate = { subject: PermissionSubject; access: BatchAccess; facts?: GateFacts; decidedPaths?: readonly string[] };
 
-type GateTarget = { input: unknown; subject: PermissionSubject; facts?: GateFacts; hookInput?: unknown; basis?: ApprovalBasis };
+type GateTarget = { input: unknown; subject: PermissionSubject; facts?: GateFacts; hookInput?: unknown; basis?: ApprovalBasis; decidedPaths?: readonly string[] };
+
+const decidedReadPathsOf = async (subject: PermissionSubject, scope: SubjectContext): Promise<readonly string[] | undefined> => {
+  if (subject.kind !== 'path' || subject.access !== 'read') return undefined;
+  const resolved: string[] = [];
+  for (const candidate of subject.paths) {
+    const resolution = await scope.paths.resolveCanonicalPath(candidate);
+    if (!resolution.ok) return undefined;
+    resolved.push(resolution.path);
+  }
+  return resolved;
+};
 
 const allowBasisOf = (decision: Decision): ApprovalBasis => {
   if (decision.basis === undefined) throw new Error(`an allow decision from ${decision.source} carries no basis`);
@@ -436,7 +449,7 @@ type OpenWindow = { kind: 'open'; mark: WorkTreeMark; sharedAtStart: boolean } |
 
 type Observed<T> = { kind: 'observed'; value: T } | { kind: 'not_observed'; reason: string };
 
-type WindowEffects = Pick<ToolResult, 'files' | 'windowShared'> & { note?: string };
+type WindowEffects = Pick<ToolResult, 'files' | 'windowShared' | 'observedTrees'> & { note?: string };
 
 const NOT_OBSERVED_LEAD = 'file effects were not observed';
 
@@ -706,6 +719,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.mutated === undefined ? {} : { mutated: result.mutated }),
       ...(result.command === undefined ? {} : { command: result.command }),
       ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
+      ...(result.observedTrees === undefined ? {} : { observedTrees: result.observedTrees }),
+      ...(result.outputIncomplete === undefined ? {} : { outputIncomplete: result.outputIncomplete }),
       ...(result.memories === undefined ? {} : { memories: result.memories }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...(result.backend === undefined ? {} : { backend: result.backend }),
@@ -863,6 +878,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       }
     }
     const { subject, input } = target;
+    const decidedPaths = await decidedReadPathsOf(subject, subjectContextOf(batch));
+    if (decidedPaths === undefined) delete target.decidedPaths;
+    else target.decidedPaths = decidedPaths;
     const requested = requestedNetworkOf(subject);
     const admission = callNetworkOf({ requested, granted: requested, sandbox: batch.sandbox.kind, unkeptHosts: 'refuse' });
     if (admission.kind === 'refused') return deniedOutcome(call.callId, { source: 'sandbox', reason: admission.reason });
@@ -1027,7 +1045,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         call,
         tool,
         input: target.input,
-        gate: { subject: target.subject, access, ...(target.facts === undefined ? {} : { facts: target.facts }) },
+        gate: { subject: target.subject, access, ...(target.facts === undefined ? {} : { facts: target.facts }), ...(target.decidedPaths === undefined ? {} : { decidedPaths: target.decidedPaths }) },
         key,
         batch,
         gateRan: recovered === undefined,
@@ -1491,6 +1509,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     state.closed = { mark: closed.value.mark, ran: state.ran };
     return {
       files: await observedToolFiles(options.files, closed.value.files, batch.signal),
+      observedTrees: { from: window.mark.tree, to: closed.value.mark.tree },
       ...(window.sharedAtStart || sharedAtEnd ? { windowShared: true as const } : {}),
       ...(closed.value.oversized.length === 0 ? {} : { note: oversizedNote(closed.value.oversized) }),
     };
@@ -1502,6 +1521,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       input: plan.input,
       subject: gate.subject,
       ...(gate.facts === undefined ? {} : { facts: gate.facts }),
+      ...(gate.decidedPaths === undefined ? {} : { decidedPaths: gate.decidedPaths }),
       ...(plan.hookInput === undefined ? {} : { hookInput: plan.hookInput }),
       ...(plan.basis === undefined ? {} : { basis: plan.basis }),
     };
@@ -1518,6 +1538,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...scope.reconcileCtx,
       sandbox: batch.sandbox,
       sandboxPolicy: batch.sandboxPolicy,
+      writerLaunch: options.writerLaunch,
       outboundNetwork,
       ripgrep: batch.ripgrep,
       limits: batch.limits,
@@ -1601,6 +1622,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const executeWithMarker = async (marker: { handle: MarkerHandle; settle: MarkerSettle } | undefined, reconciled: ReconcileResult['outcome'] | undefined, resume: ToolResume | undefined): Promise<CallOutcome> => {
         const executionCtx: ToolContext = {
           ...contextForBasis(),
+          ...(target.decidedPaths === undefined ? {} : { decidedPaths: target.decidedPaths }),
           outputFit: fitOfCall(batch.outputFit, call),
           ...(resume === undefined ? {} : { resume }),
           ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle, spawnMarker: scope.spawnMarker }),

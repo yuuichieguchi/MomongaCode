@@ -220,19 +220,28 @@ export const renderReference = async (): Promise<string> => {
 
 export type ReferenceNames = {
   readonly commands: ReadonlySet<string>;
+  readonly options: ReadonlyMap<string, ReadonlySet<string>>;
   readonly settings: ReadonlySet<string>;
   readonly topLevelSettings: ReadonlySet<string>;
   readonly environment: ReadonlySet<string>;
   readonly userOnlySettings: readonly string[];
 };
 
-export const referenceNames = async (): Promise<ReferenceNames> => ({
-  commands: new Set(commandsOf(commandTree(), []).map((command) => command.path)),
-  settings: new Set(settingRows(SETTINGS_SCHEMA, '').map((row) => row.key)),
-  topLevelSettings: new Set(Object.keys(SETTINGS_SCHEMA.properties)),
-  environment: new Set(ENVIRONMENT_VARIABLES.map((variable) => variable.name)),
-  userOnlySettings: USER_LAYER_ONLY_SETTINGS,
-});
+const flagsOf = (options: readonly Option[]): ReadonlySet<string> =>
+  new Set([...options.filter((option) => !option.hidden).flatMap((option) => [option.long, option.short].filter((flag) => flag !== undefined)), ...HELP_FLAGS.split(', ')]);
+
+export const referenceNames = async (): Promise<ReferenceNames> => {
+  const tree = commandTree();
+  const shown = commandsOf(tree, []);
+  return {
+    commands: new Set(shown.map((command) => command.path)),
+    options: new Map([['', flagsOf(tree.options)], ...shown.map((command): [string, ReadonlySet<string>] => [command.path, flagsOf(command.options)])]),
+    settings: new Set(settingRows(SETTINGS_SCHEMA, '').map((row) => row.key)),
+    topLevelSettings: new Set(Object.keys(SETTINGS_SCHEMA.properties)),
+    environment: new Set(ENVIRONMENT_VARIABLES.map((variable) => variable.name)),
+    userOnlySettings: USER_LAYER_ONLY_SETTINGS,
+  };
+};
 
 if (import.meta.main) {
   fs.writeFileSync(REFERENCE_FILE, await renderReference());

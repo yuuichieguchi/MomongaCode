@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { EntryUsageError, nodeFileSystem, systemTiming } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import { EntryUsageError, createPathResolver, nodeFileSystem, systemTiming } from '@momonga/foundation';
+import type { Clock, PathResolver } from '@momonga/foundation';
 import type { GatewayTimers } from './types.ts';
 
 export type ProcessFilePorts = {
   isUsableBinary(file: string): Promise<boolean>;
+  paths(signal: AbortSignal): PathResolver;
   readDebugToken(tokenFile: string): string;
   databaseExists(file: string): boolean;
   readTextFile(file: string): Promise<string>;
@@ -68,6 +69,7 @@ export const realTimers: GatewayTimers = createGatewayTimers({
 
 export const systemProcessFiles: ProcessFilePorts = {
   readTextFile: nodeFileSystem.readTextFile,
+  paths: (signal) => createPathResolver(nodeFileSystem, signal),
   isUsableBinary: async (file) => {
     try {
       await fs.promises.access(file, fs.constants.R_OK | fs.constants.X_OK);

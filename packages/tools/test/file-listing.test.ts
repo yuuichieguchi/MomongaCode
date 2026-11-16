@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync } from '@momonga/testkit/child-process';
-import { createTempDir, testHostPath } from '@momonga/testkit';
-import { listDirectoryEntries, listFileCandidates, unprotectedLaunch } from '@momonga/tools';
+import { createTempDir, testHostPath, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
+import { listDirectoryEntries, listFileCandidates } from '@momonga/tools';
 
-const TEST_LAUNCH = unprotectedLaunch('the tests of the file list start git without the protection of the home');
+const TEST_LAUNCH = TEST_UNPROTECTED_LAUNCH;
 
 const made: string[] = [];
 

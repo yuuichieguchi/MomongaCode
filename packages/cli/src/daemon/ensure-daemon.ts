@@ -28,7 +28,6 @@ import {
 } from '@momonga/foundation';
 import type { CurrentGeneration, GenerationRef, HeldStart, KernelLockMechanism, MomongaPaths, StartTrigger, StopValues, EndpointScope } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
-import { DEFAULT_RESTART_POLICY, childRestartBoundMs, resolveStartTiming, supervisorStartBoundMs } from '@momonga/supervisor';
 import type { InterruptedWorkItem, SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import type { SupervisorClient } from '../client/supervisor-client.ts';
@@ -89,8 +88,10 @@ export const startProgressMarkOf = (health: SupervisorHealth | undefined): strin
     ? 'no supervisor'
     : JSON.stringify([health.phase, health.children.map((child) => [child.role, child.state, child.startedAt, child.progressAt, child.readyAt, child.restarts])]);
 
-export const daemonReadyBoundMs = async (): Promise<number> =>
-  Math.max(supervisorStartBoundMs(resolveStartTiming({})), childRestartBoundMs({ policy: DEFAULT_RESTART_POLICY, startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS }));
+export const daemonReadyBoundMs = async (): Promise<number> => {
+  const { DEFAULT_RESTART_POLICY, childRestartBoundMs, resolveStartTiming, supervisorStartBoundMs } = await import('@momonga/supervisor');
+  return Math.max(supervisorStartBoundMs(resolveStartTiming({})), childRestartBoundMs({ policy: DEFAULT_RESTART_POLICY, startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS }));
+};
 
 export { STOP_WAIT_WHEN_UNKNOWN_MS };
 

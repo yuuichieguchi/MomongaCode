@@ -1,3 +1,4 @@
+import { TEST_WRITER_LAUNCH } from '../../../tools/test/writer-launch.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -15,9 +16,9 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
-import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testLocks, testProcessInspector, createTempDir } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testLocks, testProcessInspector, createTempDir, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
-import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost, unprotectedLaunch } from '@momonga/tools';
+import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, reportHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
@@ -261,6 +262,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const executorWarnings: string[] = [];
   const layout = momongaLayout(home, process.platform, process.env);
   const realExecutor = createToolExecutor({
+    writerLaunch: TEST_WRITER_LAUNCH,
     hostParallelism: 8,
     layout,
     reap: { inspector: testProcessInspector() },
@@ -327,7 +329,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
 
   const toolRuntime = (toolList: () => AnyTool[]): ToolRuntimePort => ({
     inspector: testProcessInspector(),
-    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeRoot: path.join(stateDir, 'observer'), cwd: target.cwd, trusted: false }, unprotectedLaunch('the tests of the runtime start git without the protection of the home')),
+    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeRoot: path.join(stateDir, 'observer'), cwd: target.cwd, trusted: false }, TEST_UNPROTECTED_LAUNCH),
     envFor: (target: Session) => {
       const env: ToolEnv = { ...target.env };
       portCalls.envFor.push({ sessionId: target.id, env });

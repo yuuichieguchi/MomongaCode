@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { nodeFileSystem } from '@momonga/foundation';
+import { nodeFileSystem, systemRandom } from '@momonga/foundation';
+import { fileWriterOn } from './builtins/file-writer.ts';
 import type { FileCandidates } from '@momonga/foundation';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { executableCheckOn } from './builtins/shell.ts';
@@ -45,11 +46,6 @@ export const listFileCandidates = (options: FileListingOptions, launch: ChildLau
 
 export const listDirectoryEntries = (options: FileListingOptions, launch: ChildLaunch): Promise<string[]> => directoryEntriesOn(hostListing(launch), options);
 
-export const unprotectedLaunch = (reason: string): ChildLaunch => ({
-  protection: { kind: 'unprotected', reason },
-  commandOf: (argv) => {
-    const [file, ...args] = argv;
-    if (file === undefined) throw new Error('argv must not be empty');
-    return { file, args };
-  },
-});
+
+
+export const runFileWriter = fileWriterOn({ files: nodeFileSystem, random: systemRandom });

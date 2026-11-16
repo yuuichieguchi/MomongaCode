@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createJsonLogger, FIRST_GENERATION, momongaPaths, protectedAreasOf } from '@momonga/foundation';
+import { createJsonLogger, createPathResolver, FIRST_GENERATION, momongaPaths, nodeFileSystem, protectedAreasOf } from '@momonga/foundation';
 import type { ChildLaunch, ChildProtection } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, fakeExec } from '@momonga/testkit';
-import { managedLaunchOf } from '../../src/managed-launch.ts';
+import { noneSandboxLaunchOf } from '@momonga/sandbox';
 import type { ManagedServerOptions } from '../../src/managed/server.ts';
 import { START_MS, makeDir } from '../gateway-helpers.ts';
 import { placeFakeFm } from '../fm-record-support.ts';
@@ -85,14 +85,15 @@ describe('every managed model server is spawned with the self-protection of the 
   });
 
   it('the launch of a managed server denies the areas of the home on macOS and on Linux with bubblewrap, and is unprotected with its reason on Linux without it', async () => {
-    const home = '/home/person';
+    const home = fs.realpathSync(makeDir());
     const env = {};
+    const SAME_PATHS = createPathResolver(nodeFileSystem, new AbortController().signal);
     const present = async (): Promise<boolean> => true;
     const absent = async (): Promise<boolean> => false;
 
-    const mac = await managedLaunchOf({ home, platform: 'darwin', env, isUsableBinary: absent });
-    const linux = await managedLaunchOf({ home, platform: 'linux', env, isUsableBinary: present });
-    const bare = await managedLaunchOf({ home, platform: 'linux', env, isUsableBinary: absent });
+    const mac = await noneSandboxLaunchOf({ home, platform: 'darwin', env, isUsableBinary: absent, paths: SAME_PATHS });
+    const linux = await noneSandboxLaunchOf({ home, platform: 'linux', env, isUsableBinary: present, paths: SAME_PATHS });
+    const bare = await noneSandboxLaunchOf({ home, platform: 'linux', env, isUsableBinary: absent, paths: SAME_PATHS });
 
     expect(mac.protection).toEqual({ kind: 'home-denied', home, denied: protectedAreasOf(momongaPaths(home, 'darwin', env)) });
     expect(mac.commandOf(['/bin/server'], []).file).toBe('/usr/bin/sandbox-exec');

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { systemTiming } from '@momonga/foundation';
+import { sleep, systemTiming, systemWaitTiming } from '@momonga/foundation';
 import { TARGET_PROBE_FAILED, TARGET_PROBING } from '@momonga/protocol';
 import { ProbeKeyChangedError, createAutoProbe, probeLockPath } from '@momonga/gateway';
 import { GatewayError } from '../src/core/errors.ts';
@@ -212,7 +212,7 @@ describe('the probe runner does what AutoProbe.tla states, on the cases of the m
     await probe.close();
     const again = createAutoProbe({ redactor: { text: (text) => text }, dir: world.dir, lock: world.lock, clock: { now: () => 0, monotonicMs: () => 0 }, timers: realTimers, retryAfterMs: 60_000, onEvent: () => undefined });
     await again.ensure(subject, one);
-    for (let tries = 0; again.openFlights() > 0 && tries < 100; tries += 1) await new Promise((resolve) => setImmediate(resolve));
+    for (let tries = 0; again.openFlights() > 0 && tries < 100; tries += 1) await sleep(systemWaitTiming, 0);
     expect(await codeOf(again.ensure(subject, one))).toBe(TARGET_PROBE_FAILED);
     await again.close();
   });

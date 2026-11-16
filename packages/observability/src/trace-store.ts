@@ -4,7 +4,7 @@ import { immediateTx, migrate, openDatabase, isRecord } from '@momonga/foundatio
 import type { Migration } from '@momonga/foundation';
 import { reportError } from './errors.ts';
 import { DEFAULT_MAX_QUEUED_BYTES } from './body-queue.ts';
-import { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
+import { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
 
 const A = GENAI_SEMCONV.attributes;
 
@@ -109,9 +109,9 @@ CREATE INDEX bodies_by_expiry ON bodies (expires_at_ms);
 
 const RECORD_BILLING_OF_EARLIER_CHAT_SPANS = `
 UPDATE spans
-SET attributes_json = json_set(attributes_json, '$."momonga.billing"', '${UNKNOWN_BILLING}')
+SET attributes_json = json_set(attributes_json, '$."${MOMONGA_ATTRIBUTES.billing}"', '${UNKNOWN_BILLING}')
 WHERE json_extract(attributes_json, '$."gen_ai.operation.name"') = 'chat'
-  AND json_extract(attributes_json, '$."momonga.billing"') IS NULL;
+  AND json_extract(attributes_json, '$."${MOMONGA_ATTRIBUTES.billing}"') IS NULL;
 `;
 
 const INGEST_SEQUENCE = `

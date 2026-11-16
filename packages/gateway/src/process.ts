@@ -146,7 +146,7 @@ import { invalidRequest, missingApiKeyError, secretUnavailableError } from './co
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { PreconditionFailedError } from './adapters/shared/failures.ts';
 import { createManagedServer } from './managed/server.ts';
-import { managedLaunchOf } from './managed-launch.ts';
+import { noneSandboxLaunchOf } from '@momonga/sandbox';
 import type { ManagedServer, ManagedServerTimers, SpawnFn } from './managed/server.ts';
 import type { ExecFn } from './managed/preconditions.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
@@ -943,7 +943,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const endpointScope = await step('endpoint-scope', () => endpointScopeOf(paths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock }));
   const own = generationLayout(options.home, options.generation, platform, endpointScope);
   const inspector = layoutProcessInspector(options.locks.capability);
-  const managedLaunch = await step('managed-launch', () => managedLaunchOf({ home: options.home, platform, env: options.env, isUsableBinary: files.isUsableBinary }));
+  const managedLaunch = await step('managed-launch', () => noneSandboxLaunchOf({ home: options.home, platform, env: options.env, paths: files.paths(AbortSignal.any(signal === undefined ? [] : [signal])), isUsableBinary: files.isUsableBinary }));
   const lock = await step('lock', () => (options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, { mechanism: kernelLock })))(own.locks.gateway));
   const cleanups: Array<(values: StopValues | undefined) => void | Promise<void>> = [() => lock.release()];
   const lifetime = new AbortController();

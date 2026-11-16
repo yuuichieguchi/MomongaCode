@@ -81,6 +81,8 @@ export const outcomePayloads = (outcome: ResultOutcome, held?: HeldLink): RunEve
           ...(result.mutated === undefined ? {} : { mutated: result.mutated }),
           ...(result.command === undefined ? {} : { command: result.command }),
           ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
+          ...(result.observedTrees === undefined ? {} : { observedTrees: result.observedTrees }),
+          ...(result.outputIncomplete === undefined ? {} : { outputIncomplete: result.outputIncomplete }),
           ...(result.memories === undefined ? {} : { memories: result.memories }),
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
           ...diffFieldsOf(result),

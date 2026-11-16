@@ -18,6 +18,7 @@ export const decodeJob = (row: Row, context: DecodeContext): Job => {
   const ownerGeneration = reader.nullableNumber('owner_generation');
   const killRequestedAt = reader.nullableNumber('kill_requested_at');
   const outputPath = reader.nullableString('output_path');
+  const outputIncomplete = reader.number('output_incomplete');
   return {
     id: reader.string('id'),
     idemKey: reader.string('idem_key'),
@@ -39,6 +40,7 @@ export const decodeJob = (row: Row, context: DecodeContext): Job => {
     ...(ownerGeneration === null ? {} : { ownerGeneration }),
     ...(killRequestedAt === null ? {} : { killRequestedAt }),
     ...(outputPath === null ? {} : { outputPath }),
+    ...(outputIncomplete === 1 ? { outputIncomplete: true as const } : {}),
   };
 };
 
@@ -54,7 +56,7 @@ export const prepareJobStatements = (db: DatabaseSync) => ({
   forSession: db.prepare('SELECT * FROM jobs WHERE session_id = :sessionId ORDER BY started_at, rowid'),
   finish: db.prepare(
     `UPDATE jobs SET status = :status, exit_code = :exitCode, signal = :signal, output_handle = :outputHandle,
-       output_start = :outputStart, output_total = :outputTotal, ended_at = :endedAt
+       output_start = :outputStart, output_total = :outputTotal, ended_at = :endedAt, output_incomplete = :outputIncomplete
      WHERE id = :id AND status = 'running'`,
   ),
   requestKill: db.prepare("UPDATE jobs SET kill_requested_at = :now WHERE id = :id AND status = 'running' AND kill_requested_at IS NULL"),

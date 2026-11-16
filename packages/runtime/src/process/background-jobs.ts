@@ -3,12 +3,12 @@ import { POLL_INTERVAL_MS, sleep, canonicalJson, claimRetry, commandMayStillRun,
 import type { Clock, FileSystem, MarkerMode, MarkerState, ProcessGroupPort, Timing, RolePort, UninspectableProcess, UninspectableRegistry, ProcessInspector } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
-import { RetiringYield, ToolExecutionError, createMarkerOwners, unnamedLivenessNotes } from '@momonga/tools';
-import type { BackgroundJobs, LineFilter, MarkerOwners } from '@momonga/tools';
+import { RetiringYield, ToolExecutionError, createMarkerOwners, pumpOutput, unnamedLivenessNotes } from '@momonga/tools';
+import type { BackgroundJobs, JobOutputReader, LineFilter, MarkerOwners } from '@momonga/tools';
 import { toJobView as viewOf } from '../service/views.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
-import { JOB_END_PROBE_MS, JOB_ID_HEX_CHARS, JOB_IDEMPOTENCY_TTL_MS, JOB_KILL_OWNER_WAKE_MS, JOB_OUTPUT_FILE_MAX_BYTES, JOB_OUTPUT_WINDOW_BYTES, JOB_RECONCILE_BATCH_JOBS, JOB_STREAM_DRAIN_MS, MAX_RUNNING_JOBS_PER_SESSION } from './constants.ts';
+import { JOB_END_PROBE_MS, JOB_ID_HEX_CHARS, JOB_IDEMPOTENCY_TTL_MS, JOB_KILL_OWNER_WAKE_MS, JOB_OUTPUT_FILE_MAX_BYTES, JOB_OUTPUT_WINDOW_BYTES, JOB_RECONCILE_BATCH_JOBS, MAX_RUNNING_JOBS_PER_SESSION } from './constants.ts';
 import { jobOutputFileErrorCode, jobOutputPathOf, openJobOutputFile, readJobFileWindow, removeJobOutputFile, removeLeftoverJobOutputFile } from './job-output-file.ts';
 import type { JobOutputFile } from './job-output-file.ts';
 import { createJobOutput } from './job-output.ts';
@@ -74,6 +74,8 @@ type LiveJob = {
   file: JobOutputFile;
   stopReason: StopReason | undefined;
   finalized: Promise<void>;
+  timeEnded: AbortController;
+  exited: boolean;
 };
 
 const slotsTaken = (running: number): ToolExecutionError =>
@@ -113,16 +115,18 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     if (lookup !== undefined && lookup.s !== 'COMPLETED') store.idempotency.complete(job.idemKey, result);
   };
 
-  const drain = async (pumps: Promise<void>): Promise<void> => {
-    let handle: unknown;
-    const expired = new Promise<void>((resolve) => {
-      handle = timers.setTimeout(resolve, JOB_STREAM_DRAIN_MS);
-    });
+  const drain = async (entry: LiveJob, reader: JobOutputReader, drainIdleMs: number): Promise<boolean> => {
+    let drained;
     try {
-      await Promise.race([pumps, expired]);
+      drained = await reader.drainAfterExit(drainIdleMs, AbortSignal.any([entry.timeEnded.signal, entry.controller.signal, lifecycle]));
     } finally {
-      timers.clearTimeout(handle);
+      await reader.close();
     }
+    const failure = reader.failure();
+    if (failure !== undefined) throw failure.error;
+    if (drained.complete) return false;
+    entry.output.push(Buffer.from(`\n${drained.note}\n`));
+    return true;
   };
 
   const discardOutputFile = async (file: JobOutputFile, jobId: string): Promise<void> => {
@@ -166,7 +170,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     return { uninspectable, remaining, refused, liveness };
   };
 
-  const finalize = async (entry: LiveJob, process: SandboxedProcess, pumps: Promise<void>, timer: unknown): Promise<void> => {
+  const finalize = async (entry: LiveJob, process: SandboxedProcess, reader: JobOutputReader, drainIdleMs: number, timer: unknown): Promise<void> => {
     const { job } = entry;
     const marker = path.join(markerDir, job.idemKey);
     let markerSettled = false;
@@ -178,7 +182,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     try {
       const [exit, groupNotice] = await Promise.all([process.exited, groupRecordOutcome(recordMarkerGroup(marker, process.pgid), marker)]);
       if (groupNotice !== undefined) entry.output.push(Buffer.from(`\n${groupNotice}\n`));
-      timers.clearTimeout(timer);
+      entry.exited = true;
       const probe = endProbeBound();
       let ended: EndProbe | undefined;
       try {
@@ -197,7 +201,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
         }
       }
       const inspected = ended !== undefined && ended.uninspectable.length === 0 && exit.stop === 'confirmed';
-      await drain(pumps);
+      const incomplete = await drain(entry, reader, drainIdleMs);
       const window = entry.output.window();
       const stored = window.bytes.length === 0 ? undefined : await store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
       const result: JobResult = {
@@ -205,9 +209,10 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
         ...(exit.code === null ? {} : { exitCode: exit.code }),
         ...(exit.signal === null ? {} : { signal: exit.signal }),
         ...(stored === undefined ? {} : { output: { handle: stored.handle, start: window.start, total: window.total } }),
+        ...(incomplete ? { outputIncomplete: true as const } : {}),
       };
       store.jobs.finish(job.id, result);
-      settleRecord(job, { job: job.id, status: result.status });
+      settleRecord(job, { job: job.id, status: result.status, ...(incomplete ? { output: { incomplete: true } } : {}) });
     } catch (error) {
       recordUnknown();
       throw error;
@@ -221,20 +226,18 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     }
   };
 
+  const timeLimitOf = (entry: LiveJob, timeoutMs: number): unknown =>
+    timers.setTimeout(() => {
+      entry.timeEnded.abort();
+      if (!entry.exited) void stop(entry, 'timeout');
+    }, timeoutMs);
+
   const stop = (entry: LiveJob, reason: StopReason): Promise<void> => {
     if (entry.stopReason === undefined) {
       entry.stopReason = reason;
       entry.controller.abort();
     }
     return entry.finalized;
-  };
-
-  const pump = async (stream: AsyncIterable<Uint8Array>, output: JobOutput, file: JobOutputFile): Promise<void> => {
-    for await (const chunk of stream) {
-      const bytes = Buffer.from(chunk);
-      output.push(bytes);
-      file.append(bytes);
-    }
   };
 
   const ownerLives = async (job: Job): Promise<boolean> => {
@@ -360,10 +363,17 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     store.jobs.attachProcess(job.id, process.pgid);
     store.idempotency.attachProcess(idemKey, { pgid: process.pgid, startedAt: clock.now() });
     const output = createJobOutput(JOB_OUTPUT_WINDOW_BYTES);
-    const pumps = Promise.all([pump(process.stdout, output, file), pump(process.stderr, output, file)]).then(() => undefined);
-    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve() };
-    const timer = timers.setTimeout(() => void stop(entry, 'timeout'), request.timeoutMs);
-    entry.finalized = finalize(entry, process, pumps, timer);
+    const reader = pumpOutput(
+      [process.stdout, process.stderr],
+      (_index, bytes) => {
+        output.push(bytes);
+        file.append(bytes);
+      },
+      timers,
+    );
+    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve(), timeEnded: new AbortController(), exited: false };
+    const timer = timeLimitOf(entry, request.timeoutMs);
+    entry.finalized = finalize(entry, process, reader, request.drainIdleMs, timer);
     entry.finalized.catch(report);
     live.set(job.id, entry);
     return { jobId: job.id };
@@ -424,13 +434,13 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       output.push(seen);
       file.append(seen);
     }
-    const pumps = request.output.follow((chunk) => {
+    request.output.follow((chunk) => {
       output.push(chunk);
       file.append(chunk);
     });
-    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve() };
-    const timer = timers.setTimeout(() => void stop(entry, 'timeout'), request.timeoutMs);
-    entry.finalized = finalize(entry, process, pumps, timer);
+    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve(), timeEnded: new AbortController(), exited: false };
+    const timer = timeLimitOf(entry, request.timeoutMs);
+    entry.finalized = finalize(entry, process, request.output, request.drainIdleMs, timer);
     entry.finalized.catch(report);
     live.set(job.id, entry);
     return { jobId: job.id };

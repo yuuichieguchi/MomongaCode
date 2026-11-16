@@ -1,3 +1,4 @@
+import { TEST_HELPER_SELF } from '../../../tools/test/writer-launch.ts';
 import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,7 +7,7 @@ import { createHash } from 'node:crypto';
 import type { SecretStore } from '@momonga/foundation';
 import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
-import { FAKE_LEASE, unconfiguredDerivedNetworkOf, testLocks, testKernelLock, waitFor, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { FAKE_LEASE, unconfiguredDerivedNetworkOf, testLocks, testKernelLock, waitFor, TEST_STDIO_LAUNCH, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import { createSession, inertSandbox, makeRuntimeFixture, writeUserSettings } from './helpers.ts';
 
@@ -45,7 +46,7 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
       authState: async () => ({ state: 'required' }),
       close: async () => undefined,
     }) as unknown as McpAuthorizingPool;
-  const toolRuntime = runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: runtime.unprotectedLaunch('the tests of the runtime start git without the protection of the home'), hostParallelism: 8,
+  const toolRuntime = runtime.createToolRuntime({ helperSelf: TEST_HELPER_SELF, mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: TEST_UNPROTECTED_LAUNCH, hostParallelism: 8,
     kernelLock: testKernelLock(),
     lockCapability: testLocks().capability,
     version: '0.0.0-test',

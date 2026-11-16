@@ -1,3 +1,4 @@
+import type { WriterLaunch } from './builtins/file-writer.ts';
 import type { CallStop } from './call-stop.ts';
 import type { Awaitable, MarkerMode, Clock, FileSystem, KernelLockMechanism, NetworkScope, OutboundNetwork, PathResolver, ProcessInspector, Random, SandboxNetworkSetting } from '@momonga/foundation';
 import type { ShellHost } from './builtins/shell.ts';
@@ -21,6 +22,8 @@ export type SkillActivation = { name: string; content: string };
 
 export type ToolBackend = { source: string; version: string };
 
+export type ObservedTrees = { from: string; to: string };
+
 export type ToolResult = {
   status: 'completed' | 'failed';
   output: string;
@@ -34,6 +37,8 @@ export type ToolResult = {
   mutated?: true;
   command?: string;
   windowShared?: true;
+  observedTrees?: ObservedTrees;
+  outputIncomplete?: 'residue';
   detached?: true;
   memories?: string[];
   exitCode?: number;
@@ -80,6 +85,8 @@ export type BashLimits = {
 export type ToolLimits = { bash: BashLimits; search: { timeoutMs: number }; operations: { timeoutMs: number } };
 
 export type ToolContext = ReconcileContext & {
+  decidedPaths?: readonly string[];
+  writerLaunch: WriterLaunch;
   limits: ToolLimits;
   expired: AbortSignal;
   stopForTimeout(reason?: string): void;

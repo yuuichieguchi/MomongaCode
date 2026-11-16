@@ -95,8 +95,8 @@ SweepEdges == [
     CANCELLED     |-> {}]
 
 DeadLetterEdges == [
-    QUEUED        |-> {"FAILED", "CANCELLED"},
-    RUNNING       |-> {"FAILED", "CANCELLED"},
+    QUEUED        |-> {"FAILED"},
+    RUNNING       |-> {"FAILED"},
     WAITING_TOOL  |-> {},
     WAITING_HUMAN |-> {},
     CANCELLING    |-> {"CANCELLED"},
@@ -222,7 +222,7 @@ Claimable(S, r) ==
 DeadLetterOne(S, r) ==
     IF Claimable(S, r) /\ Exhausted(S.run[r])
     THEN LET x == S.run[r]
-             to == IF x.cancelReq \/ x.status = "CANCELLING" THEN "CANCELLED" ELSE "FAILED"
+             to == IF x.status = "CANCELLING" THEN "CANCELLED" ELSE "FAILED"
          IN Change(S, r, to, <<>>, FALSE, FALSE)
     ELSE S
 
