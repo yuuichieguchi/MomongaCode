@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FENCE_BOUNDARY_MARKER, TOOL_OUTPUT_TAG, fenceUntrusted } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, FunctionTool } from '@momonga/protocol';
 import { buildConstrainedBody } from '../../src/adapters/chat-completions/constrained-request.ts';
+import { summaryRequestOf } from '../../src/adapters/shared/compact.ts';
 import { FULL_KEYWORD_SUPPORT } from '../../src/dialect/keyword-support.ts';
 import { EVERY_REASONING_IS_OWN } from '../own-reasoning.ts';
 
@@ -46,5 +47,22 @@ describe('the constrained body fences a tool step once, with the real boundary',
 
   it('the wire body of the runtime-fenced step counts what a single fence counts', () => {
     expect(JSON.stringify(bodyOf(runtimeFenced))).toBe(JSON.stringify(bodyOf(OUTPUT)));
+  });
+});
+
+describe('the compaction transcript fences a tool step once, with the real boundary', () => {
+  const runtimeFenced = fenceUntrusted(TOOL_OUTPUT_TAG, { call: 'call_1', tool: 'Grep' }, OUTPUT, FENCE);
+  const transcriptOf = (output: string): string =>
+    JSON.stringify(summaryRequestOf({ model: 'm', input: historyWith(output), momonga: { fence: FENCE } }, 2000, EVERY_REASONING_IS_OWN).input);
+
+  it('an output the runtime already fenced is in the transcript with exactly one fence', () => {
+    const transcript = transcriptOf(runtimeFenced);
+    expect(occurrences(transcript, `<${TOOL_OUTPUT_TAG} `)).toBe(1);
+    expect(transcript).not.toContain(FENCE_BOUNDARY_MARKER);
+    expect(transcript).toContain(JSON.stringify(runtimeFenced).slice(1, -1));
+  });
+
+  it('an unfenced output is fenced the same way', () => {
+    expect(transcriptOf(OUTPUT)).toBe(transcriptOf(runtimeFenced));
   });
 });

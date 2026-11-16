@@ -17,7 +17,7 @@ const FOOTPRINT = { reads: [], writes: ['local:/work/a/x.txt'] };
 const LATE_OUTPUT = 'the file was written after the approval';
 
 type Produced = { item: unknown; callId?: string; handle?: string };
-type ItemFacts = { providerCallIdOf(callId: string): string; heldToolNameOf(callId: string): string };
+type ItemFacts = { fence: string; providerCallIdOf(callId: string): string; heldToolNameOf(callId: string): string };
 
 const exported = <T,>(name: string): T => {
   const found = (storeModule as Record<string, unknown>)[name];
@@ -91,6 +91,7 @@ describe('the items of the history of a run come from one table', () => {
     const itemCountOf = exported<(event: RunEventPayload) => number>('itemCountOf');
     const earlier = state(before);
     const facts: ItemFacts = {
+      fence: TEST_FENCE,
       providerCallIdOf: (callId) => earlier.pendingCalls[callId]?.providerCallId ?? `no call ${callId}`,
       heldToolNameOf: (callId) => earlier.heldCalls?.[callId]?.name ?? `no held call ${callId}`,
     };

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
-import { findDanglingOutput } from '@momonga/protocol';
+import { findDanglingOutput, sessionFenceOf } from '@momonga/protocol';
 import type { InputItem, PermissionMode, RunEvent, RunEventPayload, RunState, StopReason } from '@momonga/protocol';
 import { JournalThreadError, applyInheritance, createJournalReader, foldRunState, initialRunState, knownValue, projectInheritance } from '@momonga/store';
 import { retractsTask } from '../../src/inherit.ts';
@@ -12,7 +12,6 @@ import { START_MS, TIMEOUT_MS, makeStoreDir, mustClaim, mustRun, newSession, noJ
 import { assistantItem, callItem } from '../inherit-fixtures.ts';
 import type { InheritedEvent } from '../inherit-fixtures.ts';
 import type { Random } from './seeded.ts';
-import { TEST_FENCE } from '@momonga/testkit';
 
 export const LONG_LEASE_MS = 10 * TIMEOUT_MS;
 export const UNBOUNDED_WINDOW = 1_000_000_000;
@@ -148,7 +147,14 @@ const payloadOfEvent = (event: RunEvent): RunEventPayload => {
   return payload as unknown as RunEventPayload;
 };
 
-export const foldEvents = (run: Run, events: readonly RunEvent[]): RunState => events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: TEST_FENCE }));
+const sessionFenceIn = (store: RuntimeStore, sessionId: string): string => {
+  const session = store.getSession(sessionId);
+  if (session === undefined) throw new Error(`the store holds no session ${sessionId}`);
+  return sessionFenceOf(session);
+};
+
+export const foldEvents = (store: RuntimeStore, run: Run, events: readonly RunEvent[]): RunState =>
+  events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId, fence: sessionFenceIn(store, run.sessionId) }));
 
 export const outcomeOf = (run: Run): InheritanceOutcome => ({
   status: run.status as InheritanceOutcome['status'],
@@ -203,10 +209,10 @@ export const oracleState = (store: RuntimeStore, runId: string, throughSeq = Num
     const { form: _form, ...rest } = event as RunEvent & { form?: string };
     return { ...rest, ...oracleProjection(store, run, mode) } as unknown as RunEvent;
   });
-  return foldEvents(run, replaced);
+  return foldEvents(store, run, replaced);
 };
 
-export const ownState = (store: RuntimeStore, runId: string): RunState => foldEvents(mustRun(store, runId), eventsOf(store, runId));
+export const ownState = (store: RuntimeStore, runId: string): RunState => foldEvents(store, mustRun(store, runId), eventsOf(store, runId));
 
 export const recordedTokens = (store: RuntimeStore, sessionId: string): Map<string, number> => {
   const tokens = new Map<string, number>();
