@@ -6,18 +6,11 @@ import { BUNDLE_SCRIPT } from './support/launcher.ts';
 import { claimE2eRun } from './support/run-setup.ts';
 import { SANDBOX_ENV, encodeSandboxProbe, runSandboxProbe, sandboxLine } from './support/sandbox.ts';
 
-export const BOTH_PROJECTS_REFUSAL = 'the unit and the e2e projects cannot share one run; run e2e only through npm run test:e2e';
+export const NO_PROJECT_REFUSAL = 'this run names no project and would include the calibration project; name the projects, as npm test and npm run test:reuse do';
 
-const bothProjectsSelected = (argv: readonly string[]): boolean => {
-  const projects: string[] = [];
-  argv.forEach((arg, index) => {
-    if (arg === '--project') projects.push(argv[index + 1] ?? '');
-    else if (arg.startsWith('--project=')) projects.push(arg.slice('--project='.length));
-  });
-  return projects.length === 0 || (projects.includes('unit') && projects.includes('e2e'));
-};
+const namesAProject = (argv: readonly string[]): boolean => argv.some((arg) => arg === '--project' || arg.startsWith('--project='));
 
-export const refusedSelection = (argv: readonly string[]): string | undefined => (bothProjectsSelected(argv) ? BOTH_PROJECTS_REFUSAL : undefined);
+export const refusedSelection = (argv: readonly string[]): string | undefined => (namesAProject(argv) ? undefined : NO_PROJECT_REFUSAL);
 
 export default function setup(): () => Promise<void> {
   const refusal = refusedSelection(process.argv);
