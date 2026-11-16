@@ -28,7 +28,7 @@ export const readTempLedger = (ledger: string): TempEntry[] =>
     .filter((line) => line !== '')
     .map((line) => entryOf(line, ledger));
 
-export type TestState = { readonly testPath: string | undefined; readonly currentTestName: string | undefined };
+export type TestState = { readonly testPath?: string | undefined; readonly currentTestName?: string | undefined };
 
 const TESTKIT_SOURCES = 'packages/testkit/src/';
 
