@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ContextChargeInput, SaveCandidateInput } from '@momonga/store';
-import { enqueue, harness, newSession, rawDb } from './helpers.ts';
+import type { RunCharge, RuntimeStore, SaveCandidateInput } from '@momonga/store';
+import { cancelToEnd, enqueue, harness, newSession, rawDb } from './helpers.ts';
 
 type Job = { state: string; lastError: string | null };
 
@@ -9,13 +9,14 @@ type Failing = {
   begin(runId: string): Job;
   finish(runId: string, reason?: string): Job;
   get(runId: string): Job | undefined;
-  fail(runId: string, reason: string, charge?: ContextChargeInput, candidates?: readonly SaveCandidateInput[]): Job;
+  fail(runId: string, reason: string, charge?: RunCharge, candidates?: readonly SaveCandidateInput[]): Job;
 };
 
 const PROJECT = '/work/a';
 
-const charge = (runId: string): ContextChargeInput =>
-  ({ purpose: 'reflection', runId, project: PROJECT, model: 'fm', inputTokens: 10, outputTokens: 5, totalTokens: 15 }) as ContextChargeInput;
+const charge = (runId: string): RunCharge => ({ runId, charged: { type: 'usage.charged', purpose: 'reflection', inputTokens: 10, outputTokens: 5, totalTokens: 15, responseId: 'response-1' } });
+
+const chargesOf = (store: RuntimeStore, runId: string) => store.readRunEventsOfTypes(runId, ['usage.charged']);
 
 const fact = (runId: string, ordinal: number, command: string): SaveCandidateInput => ({
   scope: 'project',
@@ -33,6 +34,7 @@ const started = async () => {
   const session = newSession(store, PROJECT);
   const run = await enqueue(store, session.id, 'fix the bug');
   const jobs = store.reflection as unknown as Failing;
+  await cancelToEnd(store, run.id);
   jobs.enqueue(run.id);
   jobs.begin(run.id);
   return { store, dbPath, run, jobs };
@@ -43,7 +45,7 @@ describe('a failed reflection job keeps the candidates code produced', () => {
     const { store, run, jobs } = await started();
     const failed = jobs.fail(run.id, 'the call failed', charge(run.id), [fact(run.id, 0, 'npm test'), fact(run.id, 1, 'npm run lint')]);
     expect(failed).toMatchObject({ state: 'failed', lastError: 'the call failed' });
-    expect(store.contextCharges.list()).toHaveLength(1);
+    expect(chargesOf(store, run.id)).toHaveLength(1);
     const saved = store.memories.candidates();
     expect(saved.map((memory) => [memory.text, memory.kind, memory.state, memory.source])).toEqual([
       ['Run `npm test` to verify a change in this repository.', 'procedure', 'candidate', { kind: 'reflection', sessionId: expect.any(String), runId: run.id, ordinal: 0 }],
@@ -55,7 +57,7 @@ describe('a failed reflection job keeps the candidates code produced', () => {
   it('stores the candidates of a failure that made no model charge', async () => {
     const { store, run, jobs } = await started();
     jobs.fail(run.id, 'the call failed', undefined, [fact(run.id, 0, 'npm test')]);
-    expect(store.contextCharges.list()).toEqual([]);
+    expect(chargesOf(store, run.id)).toEqual([]);
     expect(store.memories.candidates().map((memory) => memory.text)).toEqual(['Run `npm test` to verify a change in this repository.']);
   });
 
@@ -64,14 +66,14 @@ describe('a failed reflection job keeps the candidates code produced', () => {
     jobs.finish(run.id, 'finished elsewhere');
     expect(() => jobs.fail(run.id, 'late', charge(run.id), [fact(run.id, 0, 'npm test')])).toThrow('cannot fail');
     expect(store.memories.candidates()).toEqual([]);
-    expect(store.contextCharges.list()).toEqual([]);
+    expect(chargesOf(store, run.id)).toEqual([]);
   });
 
   it('commits nothing when a candidate cannot be stored: no charge, no candidate, the job still running', async () => {
     const { store, dbPath, run, jobs } = await started();
     rawDb(dbPath).exec("CREATE TRIGGER fail_memories BEFORE INSERT ON memories BEGIN SELECT RAISE(ABORT, 'injected failure'); END");
     expect(() => jobs.fail(run.id, 'the call failed', charge(run.id), [fact(run.id, 0, 'npm test')])).toThrow('injected failure');
-    expect(store.contextCharges.list()).toEqual([]);
+    expect(chargesOf(store, run.id)).toEqual([]);
     expect(store.memories.candidates()).toEqual([]);
     expect(jobs.get(run.id)).toMatchObject({ state: 'running' });
   });
