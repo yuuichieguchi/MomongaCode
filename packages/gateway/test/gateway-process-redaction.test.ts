@@ -70,7 +70,7 @@ const startKeyedStack = async (
     models: modelsOf({ primary: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) }),
   });
   const log = captureLog();
-  const handle = await registerOwned(context, () => startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
@@ -308,7 +308,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) }),
   });
   await placeFakeFm(home, fm.binaryPath);
-  const handle = await registerOwned(context, () => startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

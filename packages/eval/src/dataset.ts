@@ -1,6 +1,6 @@
 import { defineProductSchema, describeFirstError, parseOutsideJson } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, MAX_COST_USD, PERMISSION_MODES, QUIESCENT_BEHAVIOURS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import { COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, MAX_COST_USD, PERMISSION_MODES, QUIESCENT_BEHAVIOURS, RUN_STATUSES, STOP_REASONS, nonEmptyString as string } from '@momonga/protocol';
 import type { CompletionDeclaration, Mandate, PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
 import { GATE_VERDICTS } from './oracle.ts';
 import type { GateVerdict } from './oracle.ts';
@@ -66,7 +66,6 @@ export class DatasetError extends Error {
   }
 }
 
-const string = { type: 'string', minLength: 1 } as const;
 const countRange = {
   type: 'object',
   properties: { min: { type: 'integer', minimum: 0 }, max: { type: 'integer', minimum: 0 } },

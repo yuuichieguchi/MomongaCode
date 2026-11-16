@@ -67,6 +67,8 @@ export const settleAtOnce = <T extends TestTimers>(timers: T): T => ({
 
 export const FRAME_BOUND_MS = 10_000;
 
+export const TUI_TEST_TIMEOUT_MS = FRAME_BOUND_MS * 4;
+
 type Source = (instance: Instance) => string | undefined;
 
 const lastFrameOf: Source = (instance) => instance.lastFrame();

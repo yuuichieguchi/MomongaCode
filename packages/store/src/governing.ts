@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, uuidv7 } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, Random } from '@momonga/foundation';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from '@momonga/protocol';
 import type { GoverningFactView } from '@momonga/protocol';
 import { UNKNOWN_VALUE, corrupt, readerFor, storedOneOf } from './rows.ts';
@@ -52,7 +52,7 @@ const decodeFact = (row: Row, context: DecodeContext): GoverningFactView => {
   };
 };
 
-export const createGoverningFactStore = (db: DatabaseSync, clock: Clock, context: DecodeContext): GoverningFactStore => {
+export const createGoverningFactStore = (db: DatabaseSync, clock: Clock, random: Random, context: DecodeContext): GoverningFactStore => {
   const insert = db.prepare(
     `INSERT INTO governing_facts (id, kind, target, text, scope_level, project, paths_json, valid_from, valid_until, supersedes_json,
        enforcement_behavior, enforcement_rule, source_kind, source_at, source_session_id, source_run_id, source_seq, source_call_id)
@@ -78,7 +78,7 @@ export const createGoverningFactStore = (db: DatabaseSync, clock: Clock, context
       const existing = byProposal.get({ runId: source.runId, callId: source.callId });
       if (existing !== undefined) return { fact: decodeFact(existing, context), created: false };
     }
-    const id = uuidv7(clock);
+    const id = uuidv7(clock, random);
     insert.run({
       id,
       kind: input.kind,

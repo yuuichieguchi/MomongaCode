@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { readTx } from '@momonga/foundation/sqlite';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, Random } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
 import { foldRunState, initialRunState } from './fold.ts';
@@ -44,6 +44,12 @@ const NO_CLOCK: Clock = {
   },
 };
 
+const noRandom = (): never => {
+  throw new Error('the journal reader reads and has no random source');
+};
+
+const NO_RANDOM: Random = { float: noRandom, bytes: noRandom, hex: noRandom, uuid: noRandom };
+
 export const JOURNAL_SCAN_RANGE_ROWS = 1000;
 
 export type JournalReaderOptions = {
@@ -79,7 +85,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const unit = options.unit ?? ((): void => undefined);
   const stepped = options.onRowsStepped ?? ((): void => undefined);
   const decodeContext = decodeContextOf(db);
-  const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK, decodeContext), governing: createGoverningFactStore(db, NO_CLOCK, decodeContext) };
+  const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK, NO_RANDOM, decodeContext), governing: createGoverningFactStore(db, NO_CLOCK, NO_RANDOM, decodeContext) };
   const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
   const fenceOfRun = runFenceReader(db);
   const reference = createReferenceReader(db, { unit, stepped, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }), ...(options.onHop === undefined ? {} : { onHop: options.onHop }) });

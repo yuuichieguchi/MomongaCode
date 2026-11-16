@@ -82,7 +82,7 @@ export const BSD_SPECS: readonly CommandSpec[] = [
   define({ names: ['tail'], approval: 'read-only', operands: 'read-all', numericOptions: true, options: [...flag('-F', '-f', '-r', '-q', '-v'), ...valued('non-path', '-b', '-c', '-n')] }),
   define({ names: ['wc'], approval: 'read-only', operands: 'read-all', options: flag(...letters('Lclmw')) }),
   define({ names: ['grep'], approval: 'read-only', operands: 'pattern-first', patternOptions: ['-e', '-f', '--regexp', '--file'], options: GREP_OPTIONS }),
-  define({ names: ['egrep', 'fgrep'], operands: 'pattern-first', patternOptions: ['-e', '-f', '--regexp', '--file'], options: GREP_OPTIONS }),
+  define({ names: ['egrep', 'fgrep'], approval: 'read-only', operands: 'pattern-first', patternOptions: ['-e', '-f', '--regexp', '--file'], options: GREP_OPTIONS }),
   define({ names: ['diff'], approval: 'read-only', operands: 'read-all', options: DIFF_OPTIONS }),
   define({
     names: ['stat'],

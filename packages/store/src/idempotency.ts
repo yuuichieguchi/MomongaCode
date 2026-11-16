@@ -21,6 +21,7 @@ const decodeRecord = (row: Row, context: DecodeContext): Omit<IdempotencyRecord,
   const key = String(row['key']);
   const reader = readerFor('idempotency', key, row);
   const pgid = reader.nullableNumber('pgid');
+  const groupName = reader.nullableString('group_name');
   const startedAt = reader.nullableNumber('started_at');
   const leaseToken = reader.nullableNumber('lease_token');
   const authorisedAt = reader.nullableNumber('authorised_at');
@@ -29,6 +30,7 @@ const decodeRecord = (row: Row, context: DecodeContext): Omit<IdempotencyRecord,
     state: storedOneOf(context, 'idempotency', key, 'state', OPEN_STATES, reader.string('state')),
     meta: expectRecord('idempotency', key, 'meta_json', reader.json('meta_json')),
     ...(pgid === null ? {} : { pgid }),
+    ...(groupName === null ? {} : { groupName }),
     ...(startedAt === null ? {} : { startedAt }),
     ...(leaseToken === null ? {} : { leaseToken }),
     ...(authorisedAt === null ? {} : { authorisedAt }),
@@ -45,7 +47,7 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
   );
   const select = db.prepare('SELECT * FROM idempotency WHERE key = :key');
   const attach = db.prepare(
-    "UPDATE idempotency SET pgid = :pgid, started_at = :startedAt WHERE key = :key AND state = 'PENDING'",
+    "UPDATE idempotency SET pgid = :pgid, started_at = :startedAt, group_name = :groupName WHERE key = :key AND state = 'PENDING'",
   );
   const adopt = db.prepare("UPDATE idempotency SET lease_token = :leaseToken, authorised_at = COALESCE(:authorisedAt, authorised_at) WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')");
   const setCheckpoint = db.prepare(
@@ -89,8 +91,8 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
     return lookupRow(key, row);
   };
 
-  const attachRecord = (key: string, process: { pgid: number; startedAt: number }): void => {
-    requireChange(attach.run({ key, pgid: process.pgid, startedAt: process.startedAt }).changes, key, 'attach a process to', 'PENDING');
+  const attachRecord = (key: string, process: { pgid: number; startedAt: number; groupName?: string }): void => {
+    requireChange(attach.run({ key, pgid: process.pgid, startedAt: process.startedAt, groupName: process.groupName ?? null }).changes, key, 'attach a process to', 'PENDING');
   };
 
   const completeRecord = (key: string, result: unknown, meta?: Record<string, unknown>): void => {

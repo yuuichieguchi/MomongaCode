@@ -158,7 +158,7 @@ export const GNU_SPECS: readonly CommandSpec[] = [
     options: flag(...letters('clmwL'), '--bytes', '--chars', '--lines', '--words', '--max-line-length'),
   }),
   define({ names: ['grep'], approval: 'read-only', operands: 'pattern-first', numericOptions: true, patternOptions: ['-e', '-f', '--regexp', '--file'], options: GNU_GREP_OPTIONS }),
-  define({ names: ['egrep', 'fgrep'], operands: 'pattern-first', numericOptions: true, patternOptions: ['-e', '-f', '--regexp', '--file'], options: GNU_GREP_OPTIONS }),
+  define({ names: ['egrep', 'fgrep'], approval: 'read-only', operands: 'pattern-first', numericOptions: true, patternOptions: ['-e', '-f', '--regexp', '--file'], options: GNU_GREP_OPTIONS }),
   define({ names: ['diff'], approval: 'read-only', operands: 'read-all', options: GNU_DIFF_OPTIONS }),
   define({
     names: ['stat'],

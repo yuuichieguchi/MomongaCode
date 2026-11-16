@@ -190,6 +190,15 @@ describe('the list in the rows it is given', () => {
     expect(selectLayout(of, scrolled, text, frame, 0).items).toEqual([3, 4, 5]);
   });
 
+  it('keeps the approval title in a short frame: the frame bound wins over the list floor', () => {
+    const title = 'Permission requested: Write a.txt';
+    const of = spec({ title, lines: Array.from({ length: 20 }, (_, index) => `line ${index}`), rows: labels(3) });
+    const short = { width: 60, rows: 8, border: true };
+    const layout = selectLayout(of, selectStart(of), selectText(of, short), short, 1);
+    expect(layout.text[0]?.text).toBe(title);
+    expect(layout.text.length + layout.items.length + (layout.moreRow ? 1 : 0)).toBeLessThanOrEqual(4);
+  });
+
   it('never hides text without saying so: the last text row counts the rows that did not fit', () => {
     const of = spec({ title: 'Permission requested: Write a.txt', lines: Array.from({ length: 20 }, (_, index) => `line ${index}`), rows: labels(2) });
     const layout = selectLayout(of, selectStart(of), selectText(of, frame), frame, 0);

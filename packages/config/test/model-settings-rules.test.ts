@@ -92,7 +92,7 @@ describe('schema dialects', () => {
 
   it('refuses a model dialect that is neither built in nor declared, naming the id', async () => {
     expect(await sentenceOf({ models: { connections: [chatWith({ schemaDialect: 'nowhere' })] } })).toBe(
-      'models.connections[0].models[0]: capabilities.schemaDialect "nowhere" is neither a built-in dialect nor declared in models.dialects',
+      'invalid settings at /models/connections/0/models/0/capabilities/schemaDialect: "nowhere" is neither a built-in dialect nor declared in models.dialects',
     );
   });
 

@@ -2,8 +2,8 @@ import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TR
 import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool, Transport } from '@modelcontextprotocol/client';
 import { projectMcpServersFile, stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules, McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, CredentialStoreError, MCP_CONNECT_TIMEOUT_LIMITS, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, createRedactor, computeBackoff, limitEndOf, limitEndText, operationLimit, routeOf, settledOrAborted } from '@momonga/foundation';
-import type { Clock, FileSystem, OperationLimit, OutboundNetwork } from '@momonga/foundation';
+import { CircuitBreaker, CredentialStoreError, MCP_CONNECT_TIMEOUT_LIMITS, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, createRedactor, computeBackoff, limitEndOf, limitEndText, operationLimit, routeOf, settledOrAborted, systemTiming } from '@momonga/foundation';
+import type { Clock, FileSystem, OperationLimit, OutboundNetwork, Timing } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { credentialNoticesOf } from './credential-strength.ts';
 import { CLOSE_LIMIT_LABEL, CONNECT_LIMIT_LABEL, CONNECT_SUBJECT, CREDENTIAL_STORE_WAIT, REQUEST_LIMIT_LABEL, REQUEST_SUBJECT } from './limit-texts.ts';
@@ -115,6 +115,7 @@ export type McpConnectionOptions = {
   files: FileSystem;
   launch: StdioLaunch;
   clock: Clock;
+  timing?: Pick<Timing, 'monotonicMs'>;
   clientVersion: string;
   timers?: McpTimers;
   remote?: McpRemotePorts;
@@ -748,7 +749,7 @@ class ManagedConnection implements McpServerConnection {
         launch: this.options.launch,
         ...(markers === undefined ? {} : { markers }),
         ...(closeGraceMs === undefined ? {} : { closeGraceMs }),
-        timing: { now: () => this.options.clock.now(), monotonicMs: () => this.options.clock.now(), setTimeout: (callback, ms) => this.timers.setTimeout(callback, ms), clearTimeout: (handle) => this.timers.clearTimeout(handle) },
+        timing: { now: () => this.options.clock.now(), monotonicMs: () => (this.options.timing ?? systemTiming).monotonicMs(), setTimeout: (callback, ms) => this.timers.setTimeout(callback, ms), clearTimeout: (handle) => this.timers.clearTimeout(handle) },
       });
       return { transport: Object.assign(transport, { terminateSession: () => Promise.resolve(), toolCallsDelivered: () => 0 }), guarded: undefined };
     }

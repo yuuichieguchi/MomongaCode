@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { DaemonStartError, ensureDaemon, stopDaemon } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { DAEMON_POLL_INTERVAL_MS } from '../src/constants.ts';
-import { nodeClock } from '../src/node-ports.ts';
+import { nodeClock, nodeFilesLockedBy } from '../src/node-ports.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
 import { createFakeWork, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
@@ -34,7 +34,7 @@ const setup = async (context: TestContext) => {
     running.push(supervisor);
     return supervisor;
   };
-  const portsWith = (spawn: DaemonPorts['spawnDetached'], version = VERSION): DaemonPorts => ({ version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn, ...installedProgram(version).ports });
+  const portsWith = (spawn: DaemonPorts['spawnDetached'], version = VERSION): DaemonPorts => ({ files: nodeFilesLockedBy(testKernelLock), version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn, ...installedProgram(version).ports });
   const counter = path.join(paths.run, 'generation.counter');
   return { home, paths, start, portsWith, counter };
 };

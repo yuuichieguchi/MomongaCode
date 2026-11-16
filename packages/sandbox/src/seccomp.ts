@@ -24,7 +24,6 @@ const ARCHITECTURE_OFFSET = 4;
 const FIRST_ARGUMENT_OFFSET = 16;
 const SECOND_ARGUMENT_OFFSET = 24;
 
-const KILL_PROCESS = 0x80000000;
 const ALLOW = 0x7fff0000;
 const ASK_THE_GUARD = 0x7fc00000;
 const ERRNO = 0x00050000;
@@ -60,7 +59,7 @@ const stepsOf = (numbers: CallNumbers, kind: SocketFilterKind): Step[] => {
   return [
     load(ARCHITECTURE_OFFSET),
     jump(JUMP_IF_EQUAL, numbers.architecture, 'calls'),
-    answer(KILL_PROCESS),
+    answer(NOT_PERMITTED),
     labelled('calls', load(NUMBER_OFFSET)),
     ...(numbers.foreignCallsFrom === undefined ? [] : [jump(JUMP_IF_AT_LEAST, numbers.foreignCallsFrom, 'next', 'dispatch'), answer(NO_SUCH_CALL)]),
     labelled('dispatch', whenCall(numbers.socket, named ? 'pair' : 'socket')),

@@ -188,7 +188,7 @@ export type StartGatewayProcessOptions = {
   timers?: GatewayTimers;
   random?: () => number;
   files?: ProcessFilePorts;
-  platform?: NodeJS.Platform;
+  platform: NodeJS.Platform;
   pid?: number;
   exec?: ExecFn;
   execWithStdin?: ExecWithStdinFn;
@@ -676,6 +676,7 @@ const createProbedOllamaAdapter = async (
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
   const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, display), key);
   const loaded = await readRecord();
+  const metered = isMeteredTarget(target) ? { display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   const subject = ollamaProbeSubject({
     target: endpointLockKeyOf(key).target,
     key,
@@ -691,8 +692,10 @@ const createProbedOllamaAdapter = async (
         contextWindow: target.capabilities.contextWindow,
         userDialects,
         ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
+        ...(metered === undefined ? {} : { metered: meteredGateOf(probeRecordDir, key, metered, DEFAULT_SAMPLES) }),
       }),
     currency,
+    ...(metered === undefined ? {} : { metered: { measurement: metered, samples: DEFAULT_SAMPLES } }),
   });
   const probed = createProbedOllamaTarget({
     targetName: display,
@@ -929,7 +932,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const timers = options.timers ?? systemProcessPorts.timers;
   const random = options.random ?? systemProcessPorts.random;
   const files = options.files ?? systemProcessPorts.files;
-  const platform = options.platform ?? systemProcessPorts.platform;
+  const platform = options.platform;
   const pid = options.pid ?? systemProcessPorts.pid;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const { signal } = options;
@@ -1487,12 +1490,12 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
 
     handedCredential = credentialFromSupervisor(own.sockets.supervisor, options.env[CREDENTIAL_CAPABILITY_ENV], (value) => shared.redactor.add(value));
-    const derivation = createPinnedDerivation<ProcessEpoch>({
+    const derivation = createPinnedDerivation<ProcessEpoch, EpochInputs>({
       cache,
       signal: lifetime.signal,
       inputsOf: epochInputsOf,
       prepare: preparePlan,
-      derive: (current, previous, deriveSignal, inputs) => deriveEpoch(shared, current, previous, deriveSignal, inputs as EpochInputs),
+      derive: (current, previous, deriveSignal, inputs) => deriveEpoch(shared, current, previous, deriveSignal, inputs),
       retire: async (epoch) => {
         liveEpochs.delete(epoch);
         await Promise.all(closablesOf(epoch).map(letGo));

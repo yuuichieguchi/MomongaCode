@@ -188,7 +188,7 @@ const recordTextOf = async (file: string): Promise<string | undefined> => {
   }
 };
 
-export const readAutoFitRecord = async (directory: string, key: AutoFitKey): Promise<AutoFitRecord | undefined> => {
+const readAutoFitRecord = async (directory: string, key: AutoFitKey): Promise<AutoFitRecord | undefined> => {
   const file = fileOf(directory, key);
   const text = await recordTextOf(file);
   return text === undefined ? undefined : recordOf(parseJsonText(text, file), file);

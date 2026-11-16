@@ -1,5 +1,6 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { SchemaValidatorFailure, canonicalJson, sha256Hex } from '@momonga/foundation';
+import { MAX_TOOL_NAME_CHARS } from '@momonga/protocol';
 import { defineTool, ToolExecutionError, ToolInputRequired, TransientToolError } from '@momonga/tools';
 import type { AnyTool, ToolListOptions, ToolResult, ToolResume, ToolSource, ToolSourceListing, ToolStop } from '@momonga/tools';
 import { McpUnavailableError } from './connection.ts';
@@ -15,7 +16,6 @@ import type { McpServerConnection } from './connection.ts';
 import { boundedSchemaCopy } from './schema-copy.ts';
 import { capText, sanitizeServerText } from './text.ts';
 
-const MAX_TOOL_NAME_CHARS = 64;
 const MAX_DESCRIPTION_CHARS = 2048;
 const MAX_TITLE_CHARS = 200;
 const HASH_CHARS = 8;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ContextOverflowError, buildContext } from '@momonga/context';
+import { ContextOverflowError, buildContext, createTokenMeter } from '@momonga/context';
 import { summaryInputCeilingFor } from '../src/budget.ts';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, SUMMARY_PROMPT_TOKENS, summaryPromptTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { CompactionInputItem, InputItem, MessageInputItem } from '@momonga/protocol';
@@ -10,7 +10,9 @@ import {
   assistant,
   call,
   capabilitiesFor,
+  MODEL,
   expectPairsWhole,
+  fakeCounter,
   handleOf,
   harness,
   idsOf,
@@ -292,7 +294,7 @@ describe('a compaction planned for the model that receives the request', () => {
     const ports = harness(session).ports;
     const built = await buildContext(
       inputFor(session, { sources: sourcesWith({ history }), level: 0, compactNow: true, ...(focus === undefined ? {} : { compactionFocus: focus }) }),
-      target === undefined ? ports : { ...ports, compactionTarget: async () => target },
+      target === undefined ? ports : { ...ports, compactionRole: async () => ({ capabilities: target, meter: createTokenMeter({ counter: fakeCounter(0), model: MODEL, capabilities: target }) }) },
     );
     return built.compaction;
   };
@@ -319,6 +321,26 @@ describe('a compaction planned for the model that receives the request', () => {
     expect(forSession?.throughSeq).toBeGreaterThan(forTarget?.throughSeq ?? Number.POSITIVE_INFINITY);
     expect((forTarget?.tokens.request ?? Number.NaN) + (forTarget?.summaryTokenCap ?? Number.NaN)).toBeLessThanOrEqual(summaryInputCeilingFor(target));
     expect(forTarget?.summaryTokenCap).toBe(summaryTokenCapFor(target));
+  });
+
+  it('counts the region sent for the summary with the meter of the model that receives the request', async () => {
+    const receiving = fakeCounter(0);
+    const doubled = {
+      calls: receiving.calls,
+      count: async (request: Parameters<typeof receiving.count>[0]) => {
+        const counted = await receiving.count(request);
+        return { ...counted, input_tokens: counted.input_tokens * 2 };
+      },
+    };
+    const sessionPlan = await planFor(undefined);
+    const built = await buildContext(
+      inputFor(session, { sources: sourcesWith({ history }), level: 0, compactNow: true }),
+      { ...harness(session).ports, compactionRole: async () => ({ capabilities: session, meter: createTokenMeter({ counter: doubled, model: MODEL, capabilities: session }) }) },
+    );
+
+    expect(receiving.calls.length).toBeGreaterThan(0);
+    expect(built.compaction?.throughSeq).toBe(sessionPlan?.throughSeq);
+    expect(built.compaction?.tokens.replaced).toBe(2 * (sessionPlan?.tokens.replaced ?? Number.NaN));
   });
 
   it('sizes the request by the region sent and the prompt, not by the whole input', async () => {

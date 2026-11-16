@@ -1,3 +1,4 @@
+import { nodeFilesLockedBy } from '../src/node-ports.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { acquireProcessLock, momongaPaths } from '@momonga/foundation';
@@ -45,7 +46,7 @@ const setup = async (context: TestContext) => {
     }
     return supervisor;
   };
-  const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock: oversleepingClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn, ...installedProgram(VERSION).ports };
+  const ports: DaemonPorts = { files: nodeFilesLockedBy(testKernelLock), version: VERSION, env: { PATH: '/usr/bin' }, home, clock: oversleepingClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn, ...installedProgram(VERSION).ports };
   return { paths, ports, start, writeUserSettings };
 };
 

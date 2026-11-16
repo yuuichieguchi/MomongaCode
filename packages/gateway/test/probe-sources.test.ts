@@ -23,10 +23,30 @@ const PROBING = { state: 'probing', message: 'measuring', retryAfterSeconds: 120
 
 describe('the three sources of a capability: declared, reported by the server, measured', () => {
   it('takes the tool support and the window the server reports in its details', () => {
-    expect(reportedFieldsOf({ window: 131_072, tools: 'yes', capabilities: ['completion', 'tools'] })).toEqual({ toolCalling: 'native', contextWindow: 131_072 });
-    expect(reportedFieldsOf({ window: 8_192, tools: 'no', capabilities: ['completion'] })).toEqual({ toolCalling: 'none', contextWindow: 8_192 });
+    expect(reportedFieldsOf({ window: 131_072, tools: 'yes', capabilities: ['completion', 'tools'] })).toEqual({
+      toolCalling: 'native',
+      contextWindow: 131_072,
+      thinking: false,
+      vision: false,
+    });
+    expect(reportedFieldsOf({ window: 8_192, tools: 'no', capabilities: ['completion'] })).toEqual({
+      toolCalling: 'none',
+      contextWindow: 8_192,
+      thinking: false,
+      vision: false,
+    });
     expect(reportedFieldsOf({ tools: 'unknown' })).toEqual({});
     expect(reportedFieldsOf(undefined)).toEqual({});
+  });
+
+  it('carries the thinking and vision the server lists in its capabilities, and the absence of each as a refusal', () => {
+    expect(reportedFieldsOf({ window: 131_072, tools: 'yes', capabilities: ['completion', 'tools', 'thinking', 'vision'] })).toEqual({
+      toolCalling: 'native',
+      contextWindow: 131_072,
+      thinking: true,
+      vision: true,
+    });
+    expect(reportedFieldsOf({ tools: 'no', capabilities: ['completion'] })).toEqual({ toolCalling: 'none', thinking: false, vision: false });
   });
 
   it('takes the window of a model from what the server lists, else from its details', () => {

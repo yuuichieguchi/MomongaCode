@@ -17,7 +17,6 @@ export type ProcessPorts = {
   timers: GatewayTimers;
   random: () => number;
   files: ProcessFilePorts;
-  platform: NodeJS.Platform;
   pid: number;
 };
 
@@ -96,6 +95,5 @@ export const systemProcessPorts: ProcessPorts = {
   timers: realTimers,
   random: Math.random,
   files: systemProcessFiles,
-  platform: process.platform,
   pid: process.pid,
 };

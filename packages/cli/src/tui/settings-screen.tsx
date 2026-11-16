@@ -1,6 +1,6 @@
 import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, settingReadPointOf } from '@momonga/config';
 import type { ProjectMandateState, SettingReadPoint, SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
-import { isRecord } from '@momonga/foundation';
+import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import { openInEditor } from './external-editor.ts';
 import type { PickRow } from './picker.tsx';
 import { switchWordOf } from './screen/a11y.ts';
@@ -670,10 +670,10 @@ const editChoices = async (context: SlashContext, leaf: SettingLeaf, presentatio
 
 const jsonProblem = (text: string): string | undefined => {
   try {
-    JSON.parse(text);
+    parseOutsideJson(text);
     return undefined;
   } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
+    if (!(error instanceof SyntaxError || error instanceof JsonDepthError)) throw error;
     return error.message;
   }
 };
@@ -685,7 +685,7 @@ const editStructured = async (context: SlashContext, snapshot: SettingsSnapshot,
     const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, structured: true, validate: jsonProblem });
     if (text === undefined) return LEFT;
     draft = text;
-    const value: unknown = JSON.parse(text);
+    const value: unknown = parseOutsideJson(text);
     const empty = isRecord(value) && Object.keys(value).length === 0;
     const refusal = await writeSetting(context, layer, empty ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value });
     if (refusal === undefined) return { kind: 'written' };
@@ -710,7 +710,7 @@ const editMandate = async (context: SlashContext, mandate: ProjectMandateState):
     const text = await context.overlays.promptText({ title: MANDATE_ROW, lines: [mandate.file, ...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, structured: true, validate: jsonProblem });
     if (text === undefined) return LEFT;
     draft = text;
-    const value: unknown = JSON.parse(text);
+    const value: unknown = parseOutsideJson(text);
     if (!isRecord(value)) {
       sentence = MANDATE_OBJECT;
       continue;
@@ -745,7 +745,7 @@ const editDialects = async (context: SlashContext, snapshot: SettingsSnapshot, l
     const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, structured: true, validate: jsonProblem });
     if (text === undefined) return LEFT;
     draft = text;
-    const value: unknown = JSON.parse(text);
+    const value: unknown = parseOutsideJson(text);
     if (!isRecord(value)) {
       sentence = 'The schema dialects are a JSON object.';
       continue;

@@ -835,20 +835,30 @@ export type { BillingChangeReason, BillingChangeRecord, FallbackCause, SpanFallb
 export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';
 export type { NamedPlanAccountRef } from './plan-account.ts';
 export type { JsonSchema } from './schema-helpers.ts';
+export { closed, nonEmptyString, nonNegativeInteger } from './schema-helpers.ts';
 export {
   ACTIVATE_SKILL_TOOL_NAME,
   AGENT_TOOL_NAME,
+  BASH_OUTPUT_TOOL_NAME,
   BUILTIN_TOOL_NAMES,
   COMMAND_TOOL_NAME,
+  EDIT_TOOL_NAME,
+  GLOB_TOOL_NAME,
+  GREP_TOOL_NAME,
   HISTORY_READ_TOOL_NAME,
   HISTORY_SEARCH_TOOL_NAME,
+  KILL_BASH_TOOL_NAME,
   LOAD_TOOLS_TOOL_NAME,
   MEMORY_SAVE_TOOL_NAME,
   MEMORY_SEARCH_TOOL_NAME,
   OPERATION_RULE_TOOLS,
   PATH_TOOL_NAMES,
+  READ_OUTPUT_TOOL_NAME,
+  READ_TOOL_NAME,
   RULE_PROPOSE_TOOL_NAME,
   TOOL_NAMES,
+  UPDATE_PLAN_TOOL_NAME,
+  WRITE_TOOL_NAME,
 } from './tool-names.ts';
 export { isMeasuring, measuringLineOf, measuringOfWire, measuringSkipOf, measuringStepOf, measuringWireOf } from './measuring.ts';
 export type { Measuring, MeasuringWire } from './measuring.ts';

@@ -131,12 +131,11 @@ const resolvedCommand = (command: string, env: ProcessEnv, cwd: unknown): string
 
 const NOT_A_FILE_NAME: ReadonlySet<string> = new Set(['ENAMETOOLONG', 'EINVAL', 'ERR_INVALID_ARG_VALUE']);
 
-const realFileOfWord = (file: string): string | undefined => {
+const startedFileOf = (file: string): string => {
   try {
-    const real = realFileOf(file);
-    return real !== undefined && fs.statSync(real).isFile() ? real : undefined;
+    return realFileOf(file) ?? file;
   } catch (error) {
-    if (NOT_A_FILE_NAME.has(String((error as NodeJS.ErrnoException).code))) return undefined;
+    if (NOT_A_FILE_NAME.has(String((error as NodeJS.ErrnoException).code))) return file;
     throw error;
   }
 };
@@ -144,7 +143,7 @@ const realFileOfWord = (file: string): string | undefined => {
 const realFileStartedBy = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {
   if (command === undefined || command === '') return undefined;
   const found = resolvedCommand(command, env, cwd);
-  return found === undefined ? undefined : realFileOfWord(found);
+  return found === undefined ? undefined : startedFileOf(found);
 };
 
 const realSecretProgram = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {

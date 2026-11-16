@@ -2,7 +2,7 @@ import { ToolExecutionError } from '../types.ts';
 
 export type RemoteLocation = { host: string; repo: string };
 
-const SCP_FORM = /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(.+)$/;
+const SCP_FORM = /^(?:[^@/\s]+@)?([^:/\s]{2,}):(?!\/\/)(.+)$/;
 
 const repoOf = (pathname: string): string => pathname.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.git$/, '');
 

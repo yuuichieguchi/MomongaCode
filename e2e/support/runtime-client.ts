@@ -10,7 +10,7 @@ import { nodeClock } from '../../packages/cli/src/node-ports.ts';
 import type { ApprovalView, RunView, SessionView } from '../../packages/cli/src/client/views.ts';
 import type { E2eHome } from './home.ts';
 import { until } from './wait.ts';
-import { firstGeneration, testKernelLock } from '@momonga/testkit';
+import { firstGeneration, standInEnv, testKernelLock } from '@momonga/testkit';
 
 export type { ApprovalView, RunView, SessionView };
 
@@ -68,7 +68,7 @@ export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver
   const createSession = async (options: CreateSessionOptions = {}): Promise<{ session: SessionView }> => {
     const { session } = await product.createSession({
       cwd: home.project,
-      env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp },
+      env: { HOME: home.home, ...standInEnv(SESSION_PATH), TMPDIR: home.sessionTmp },
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.permissionMode === 'bypassPermissions' ? { bypassAllowed: true } : {}),
     });

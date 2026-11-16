@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { defineProductSchema } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { CONDITION_WHENS, PERMISSION_MODES } from '@momonga/protocol';
+import { CONDITION_WHENS, PERMISSION_MODES, nonEmptyString as text } from '@momonga/protocol';
 import type { ConditionWhen, Mandate, PermissionMode } from '@momonga/protocol';
 import { ASK_RESPONSES, DatasetError, describeFirstError, isInsideWorkspace, jsonOf } from './dataset.ts';
 import type { AskResponse } from './dataset.ts';
@@ -48,7 +48,6 @@ export type Benchmark = {
   tasks: BenchTask[];
 };
 
-const text = { type: 'string', minLength: 1 } as const;
 const count = { type: 'integer', minimum: 1 } as const;
 export const BENCH_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',

@@ -54,7 +54,7 @@ beforeAll(async () => {
     (cleanup) => {
       closeGateway = cleanup;
     },
-    () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION }),
+    () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION }),
   );
   expect(Buffer.byteLength(gateway.socketPath)).toBeLessThan(104);
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });

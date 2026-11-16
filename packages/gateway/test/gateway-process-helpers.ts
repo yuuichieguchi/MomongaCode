@@ -14,7 +14,7 @@ export const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
 export const notTheRoleTick = (timer: PendingTimer): boolean => timer.delayMs !== SWEEP_INTERVAL_MS;
 
-export type GatewayProcessOptions = Omit<Parameters<typeof startGatewayProcess>[0], 'locks'> & { locks?: LayoutLocks };
+export type GatewayProcessOptions = Omit<Parameters<typeof startGatewayProcess>[0], 'locks' | 'platform'> & { locks?: LayoutLocks; platform?: NodeJS.Platform };
 export type GatewayProcessHandle = Awaited<ReturnType<typeof startGatewayProcess>>;
 
 export const makeHome = (): string => {
@@ -120,7 +120,7 @@ export const captureStdout = (): StdoutCapture => {
 };
 
 export const launchGateway = async (options: GatewayProcessOptions): Promise<GatewayProcessHandle> => {
-  return registerOwned(registerCleanup, () => startGatewayProcess({ locks: testLocks(), ...options }));
+  return registerOwned(registerCleanup, () => startGatewayProcess({ locks: testLocks(), platform: process.platform, ...options }));
 };
 
 export const clientFor = (socketPath: string): UdsClient => {

@@ -113,38 +113,15 @@ export const withImageDefault = (declared: DeclaredCapabilities, record: Pick<Pr
   return { ...core, schemaDialect: resolveDialectId(core.schemaDialect, record), ...(layer.image ?? imageCapability(false, undefined)) };
 };
 
-const splitByPrecedence = (layer: CapabilityLayer) => {
-  const { toolCalling, structuredOutput, streaming, stopSequences, parallelToolCalls, usageReported, reasoning, ...declaredFirst } = layer;
-  return {
-    declaredFirst,
-    probeFirst: {
-      ...(toolCalling === undefined ? {} : { toolCalling }),
-      ...(structuredOutput === undefined ? {} : { structuredOutput }),
-      ...(streaming === undefined ? {} : { streaming }),
-      ...(stopSequences === undefined ? {} : { stopSequences }),
-      ...(parallelToolCalls === undefined ? {} : { parallelToolCalls }),
-      ...(usageReported === undefined ? {} : { usageReported }),
-      ...(reasoning === undefined ? {} : { reasoning }),
-    },
-  };
-};
-
 export type CapabilityMerge = {
   defaults: CapabilitiesCore;
   declared: CapabilityLayer;
+  reported?: CapabilityLayer;
   probed: CapabilityLayer;
   probedAt: string;
 };
 
-export const mergeCapabilities = ({ defaults, declared, probed, probedAt }: CapabilityMerge): Capabilities => {
-  const fromDeclaration = splitByPrecedence(declared);
-  const fromProbe = splitByPrecedence(probed);
-  const { image, ...merged } = {
-    ...defaults,
-    ...fromProbe.declaredFirst,
-    ...fromDeclaration.probeFirst,
-    ...fromProbe.probeFirst,
-    ...fromDeclaration.declaredFirst,
-  };
+export const mergeCapabilities = ({ defaults, declared, reported = {}, probed, probedAt }: CapabilityMerge): Capabilities => {
+  const { image, ...merged } = { ...defaults, ...probed, ...reported, ...declared };
   return { ...merged, ...(image ?? imageCapability(false, undefined)), source: 'probed', probedAt };
 };
