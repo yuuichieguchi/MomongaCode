@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { momongaLayout } from '@momonga/foundation';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
+import { caseEnvironment } from '../packages/cli/src/eval/context-host.ts';
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
@@ -51,6 +53,11 @@ const STARTER_ROUTES: FakeRoute[] = [
   afterTool('Create approved.txt', textReply('The file was created.')),
 ];
 
+const caseRuntimeDatabaseOf = (workspace: string): string => {
+  const caseRoot = path.dirname(workspace);
+  return momongaLayout(caseRoot, process.platform, caseEnvironment(process.env, caseRoot, process.platform)).databases.runtime;
+};
+
 const prepare = async (routes: FakeRoute[]) => {
   const home = await createE2eHome();
   const fake = await startUpstream(home, { home, routes });
@@ -89,7 +96,7 @@ describe('momonga eval against real processes', () => {
     const { home } = await prepare([
       firstStep('Create accept.txt', (workspace) => toolCallReply('Write', { file_path: path.join(workspace, 'accept.txt'), content: 'x\n' })),
       afterTool('Create accept.txt', textReply('done')),
-      firstStep('Read the runtime database', () => toolCallReply('Read', { file_path: home.paths.databases.runtime })),
+      firstStep('Read the runtime database', (workspace) => toolCallReply('Read', { file_path: caseRuntimeDatabaseOf(workspace) })),
       afterTool('Read the runtime database', textReply('blocked')),
     ]);
     const dataset = path.join(home.root, 'false-allow.json');
