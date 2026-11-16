@@ -1,4 +1,5 @@
 import { spawn } from '@momonga/testkit/child-process';
+import { requirePosixHost } from './posix-host.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ChildProcessByStdio } from '@momonga/testkit/child-process';
@@ -378,6 +379,7 @@ export const startUpstream = async (home: E2eHome, options: StartStackOptions): 
 };
 
 export const startStack = async (options: StartStackOptions): Promise<E2eStack> => {
+  requirePosixHost('the stack helper (e2e/support/stack.ts)');
   const { home } = options;
   if (options.settings !== undefined && 'sandbox' in options.settings) throw new Error('startStack: settings must not contain a sandbox key; use the sandbox option');
   const deps = options.deps ?? {};
