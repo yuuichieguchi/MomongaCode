@@ -32,6 +32,7 @@ export type ManagedEndpointForm = (typeof MANAGED_ENDPOINT_FORMS)[number];
 
 export type ManagedServerDescription = {
   readonly id: string;
+  readonly label: string;
   readonly provider: string;
   readonly wire: 'chat-completions';
   readonly binary: { readonly defaultPath: string };
@@ -58,6 +59,7 @@ export const MANAGED_RESTART_POLICY = { backoffMs: 1000, maxRestarts: 5, windowM
 
 export const FM_SERVER = {
   id: 'fm',
+  label: 'the Apple on-device model',
   provider: 'apple',
   wire: 'chat-completions',
   binary: { defaultPath: '/usr/bin/fm' },

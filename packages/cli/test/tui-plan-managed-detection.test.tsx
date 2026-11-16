@@ -6,10 +6,11 @@ import { PLAN_TEST_TIMEOUT_MS, choose, startPlan } from './fake-plan-gateway.tsx
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
-const managed: LocalServerDetection = { shape: 'managed', id: 'fm', provider: 'apple', binary: '/usr/bin/fm' };
+const managed: LocalServerDetection = { shape: 'managed', id: 'fm', label: 'the Apple on-device model', provider: 'apple', binary: '/usr/bin/fm' };
 const refused: LocalServerDetection = {
   shape: 'managed',
   id: 'gated-server',
+  label: 'the server gated-server',
   provider: 'someone',
   binary: '/opt/gated/serve',
   refused: { message: 'the licence has not been accepted', remedy: 'gated license' },
@@ -22,7 +23,7 @@ describe('server programs in the list of local servers (O-R5-5 item 4, S7, S10)'
     await choose(app, 'Use a local server');
     const frame = await untilFrame(app, 'Use the Apple on-device model');
     expect(frame).toContain('A model server that answered');
-    expect(frame).toContain('Use gated-server · the licence has not been accepted (gated license)');
+    expect(frame).toContain('Use the server gated-server · the licence has not been accepted (gated license)');
     app.unmount();
   });
 

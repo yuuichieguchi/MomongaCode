@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { INBOX_MAX_PENDING } from '@momonga/protocol';
 import type { InboxRowView } from '@momonga/protocol';
-import { INBOX_FULL_HINT, INBOX_ROWS_SHOWN, busyDeliveryOf, busyHint, completionHint, draftOf, isInboxFull, onFirstLine, takenBack, waitingRows } from '../../src/tui/busy-input.ts';
-import { emptyEditor, insertText, placeCaret } from '../../src/tui/editor.ts';
+import { INBOX_FULL_HINT, INBOX_ROWS_SHOWN, busyDeliveryOf, busyHint, completionHint, draftOf, isInboxFull, onFirstLine, waitingRows } from '../../src/tui/busy-input.ts';
+import { emptyEditor, insertText, placeCaret, placeMessages } from '../../src/tui/editor.ts';
 import { BUSY_KEYS, DEFAULT_KEY_TABLE, KEYS, createKeyTable } from '../../src/tui/keys/table.ts';
 import type { KeyEvent } from '../../src/tui/terminal/events.ts';
 
@@ -83,10 +83,12 @@ describe('the draft that is sent and taken back', () => {
     expect(draftOf(insertText(emptyEditor(), ' /model x'))).toBeUndefined();
   });
 
-  it('puts the taken-back texts before the typed text, one per line', () => {
-    expect(takenBack(['one', 'two'], 'draft')).toBe('one\ntwo\ndraft');
-    expect(takenBack(['one'], '')).toBe('one');
-    expect(takenBack([], 'draft')).toBe('draft');
+  it('puts the taken-back messages before the typed text, one per line, each with its paste spans', () => {
+    const span = { start: 4, label: '[Image #1]', text: '[Image #1]' };
+    const placed = placeMessages(emptyEditor(), [{ text: 'one', pastes: [] }, { text: 'two [Image #1]', pastes: [span] }, { text: 'draft', pastes: [{ ...span, start: 0 }] }]);
+    expect(placed.text).toBe('one\ntwo [Image #1]\ndraft');
+    expect(placed.pastes).toEqual([{ ...span, start: 8 }, { ...span, start: 19 }]);
+    expect(placeMessages(emptyEditor(), [{ text: 'one', pastes: [] }, { text: '', pastes: [] }]).text).toBe('one');
   });
 
   it('knows whether the caret is on the first line', () => {

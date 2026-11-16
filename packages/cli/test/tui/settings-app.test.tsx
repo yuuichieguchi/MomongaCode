@@ -58,7 +58,7 @@ describe('/config, the settings screen', () => {
     await open(started);
     await openRow(started, 'Automatic compaction', `Automatic compaction  off  user  ${APPLIES_NOW}`);
     expect(stored(place.userFile)).toEqual({ context: { autoCompact: false } });
-    await openRow(started, 'Automatic updates', `Automatic updates  off  user  ${APPLIES_NEXT_SESSION}`);
+    await openRow(started, 'Automatic updates', `Automatic updates  off  user  ${APPLIES_NOW}`);
     expect(stored(place.userFile)).toEqual({ context: { autoCompact: false }, autoUpdates: false });
     started.app.unmount();
   });
@@ -80,7 +80,7 @@ describe('/config, the settings screen', () => {
     await press(started, '3', '› 3. none');
     await press(started, KEYS.enter, 'Run commands without a sandbox?');
     await press(started, '2', '› 2. Yes');
-    await press(started, KEYS.enter, `Sandbox  none  user  ${APPLIES_NEXT_SESSION}`);
+    await press(started, KEYS.enter, `Sandbox  none  user  ${APPLIES_NOW}`);
     expect(stored(place.userFile)).toEqual({ sandbox: 'none' });
     started.app.unmount();
   });
@@ -95,7 +95,7 @@ describe('/config, the settings screen', () => {
     await press(started, KEYS.enter, 'expected a whole number from 1');
     expect(fs.existsSync(place.userFile)).toBe(false);
     await press(started, `${CLEAR}30`, '> 30');
-    await press(started, KEYS.enter, `Forget after (days)  30  user  ${APPLIES_NEXT_SESSION}`);
+    await press(started, KEYS.enter, `Forget after (days)  30  user  ${APPLIES_NOW}`);
     expect(stored(place.userFile)).toEqual({ memory: { forgetAfterDays: 30 } });
     started.app.unmount();
   });
@@ -143,7 +143,7 @@ describe('/config, the settings screen', () => {
     await press(started, '2', '› 2. Yes');
     await press(started, KEYS.enter, '1. npm run lint');
     expect(stored(place.userFile)).toEqual({ verification: { commands: ['npm run lint'] } });
-    await press(started, KEYS.escape, `Verification commands  npm run lint  user  ${APPLIES_NEXT_SESSION}`);
+    await press(started, KEYS.escape, `Verification commands  npm run lint  user  ${APPLIES_NOW}`);
     started.app.unmount();
   });
 

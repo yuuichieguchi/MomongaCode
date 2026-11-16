@@ -1,6 +1,6 @@
 import type { SettingsLayer, SettingsSnapshot } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
-import { HOOK_COMMAND_TYPE, HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/protocol';
+import { HOOK_COMMAND_TYPE, HOOK_DEFAULT_TIMEOUT_SECONDS, HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError, hookTimeoutSecondsOf } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookMatcherGroup } from '@momonga/protocol';
 import { APPLIES_NOW, ENTRY_ACTIONS, chooseSaveTarget, chosenAction, removeQuestion, runCollection, writeSetting } from '../settings-screen.tsx';
 import type { Refusal } from '../settings-screen.tsx';
@@ -10,7 +10,17 @@ export const HOOKS_TITLE = 'Hooks';
 export const HOOK_EVENT_TITLE = 'Run the hook on';
 export const HOOK_MATCHER_TITLE = 'Matcher (empty: every tool)';
 export const HOOK_COMMAND_TITLE = 'Command';
-export const HOOK_TIMEOUT_TITLE = 'Timeout (empty: none)';
+const { default: defaultTimeoutSeconds, ...eventTimeoutSeconds } = HOOK_DEFAULT_TIMEOUT_SECONDS;
+
+export const HOOK_TIMEOUT_TITLE = `Timeout, seconds (empty: ${[String(defaultTimeoutSeconds), ...Object.entries(eventTimeoutSeconds).map(([event, seconds]) => `or ${seconds} for ${event}`)].join(', ')})`;
+
+const hookEventOf = (event: string): HookEvent | undefined => HOOK_EVENTS.find((known) => known === event);
+
+const timeoutShown = (event: string, timeout: number | undefined): string[] => {
+  const known = hookEventOf(event);
+  if (known !== undefined) return [`timeout ${hookTimeoutSecondsOf(known, timeout)} s`];
+  return timeout === undefined ? [] : [`timeout ${timeout} s`];
+};
 
 type Held = { readonly layer: SettingsLayer; readonly event: string; readonly group: number; readonly hook: number; readonly matcher: string | undefined; readonly command: HookCommand };
 
@@ -26,7 +36,7 @@ const heldHooks = (snapshot: SettingsSnapshot): Held[] =>
   });
 
 export const hookLine = (held: Held): string =>
-  [held.event, held.matcher === undefined || held.matcher === '' ? '*' : held.matcher, held.command.command, ...(held.command.timeout === undefined ? [] : [`timeout ${held.command.timeout}`]), held.layer].join('  ');
+  [held.event, held.matcher === undefined || held.matcher === '' ? '*' : held.matcher, held.command.command, ...timeoutShown(held.event, held.command.timeout), held.layer].join('  ');
 
 const withoutHook = (held: Held) => (current: unknown): unknown => {
   const next = groupsOf(current).flatMap((group, groupIndex) => {

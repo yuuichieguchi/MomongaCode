@@ -208,7 +208,7 @@ const unrunnableExec =
 const detectManaged = async (description: ManagedServerDescription, options: DetectLocalServersOptions): Promise<DetectedManagedServer | undefined> => {
   const binary = description.binary.defaultPath;
   if (!(await options.exists(binary))) return undefined;
-  const listed: DetectedManagedServer = { shape: 'managed', id: description.id, provider: description.provider, binary };
+  const listed: DetectedManagedServer = { shape: 'managed', id: description.id, label: description.label, provider: description.provider, binary };
   try {
     const verdict = await runPreconditions(description, binary, unrunnableExec(options.exec), options.signal);
     if (verdict.kind === 'met') return listed;

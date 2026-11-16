@@ -525,10 +525,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const attachedTo = async (session: Session, body: CreateRunBody, signal: AbortSignal): Promise<AttachedMentions> => {
-    if (body.attachMentions !== true || mentionsOf(body.input).length === 0) return { attachments: [], images: [] };
+  const attachedTo = async (session: Session, text: string, attachMentions: boolean | undefined, signal: AbortSignal): Promise<AttachedMentions> => {
+    if (attachMentions !== true || mentionsOf(text).length === 0) return { attachments: [], images: [] };
     const capabilities = await capabilitiesOf(session, signal);
-    return deps.userInput.attach(session, body.input, { ceiling: capabilities.contextWindow - outputReserveFor(capabilities), imageInput: capabilities.imageInput, signal });
+    return deps.userInput.attach(session, text, { ceiling: capabilities.contextWindow - outputReserveFor(capabilities), imageInput: capabilities.imageInput, signal });
   };
 
   const refuseDeniedConditions = async (session: Session, mandate: Mandate | undefined, signal: AbortSignal): Promise<void> => {
@@ -625,7 +625,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     );
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill, context.req.raw.signal);
     await requireImageInput(session, body.images, context.req.raw.signal);
-    const attached = await attachedTo(session, body, context.req.raw.signal);
+    const attached = await attachedTo(session, body.input, body.attachMentions, context.req.raw.signal);
     const issue = await issueOf(session, body, context.req.raw.signal);
     const images = [...(body.images ?? []), ...attached.images];
     const attachments = [...attached.attachments, ...(issue === undefined ? [] : [{ type: 'forge_issue' as const, issue: issue.reference.url, content: issue.content }])];
@@ -686,11 +686,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     refuseOversizeImages(body.images);
     await requireImageInput(session, body.images, context.req.raw.signal);
     const terms = await admittedTermsOf(session, {}, context.req.raw.signal);
+    const attached = await attachedTo(session, body.text, body.attachMentions, context.req.raw.signal);
+    const images = [...(body.images ?? []), ...attached.images];
     refuseRunStartedByInbox(session);
     const result = await store.inbox.add(session.id, {
       delivery: body.delivery,
       text: body.text,
-      ...(body.images === undefined ? {} : { images: body.images }),
+      ...(images.length === 0 ? {} : { images }),
+      ...(attached.attachments.length === 0 ? {} : { attachments: attached.attachments }),
       run: { timeoutMs: terms.timeoutMs, limits: terms.limits, pins: {} },
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);

@@ -1248,6 +1248,10 @@ const INHERITED_COMPACTED_RECORDED = `
 SELECT 'event type: context.inherited_compacted';
 `;
 
+const INBOX_MENTION_ATTACHMENTS = `
+ALTER TABLE run_inbox ADD COLUMN mention_attachments TEXT NOT NULL DEFAULT '[]';
+`;
+
 const RETENTION_SWEEPS = `
 CREATE TABLE retention_sweeps (
   session_id TEXT PRIMARY KEY,
@@ -1542,5 +1546,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 50,
     name: 'let retention delete the rows of an expired session closure: record each session being deleted in retention_sweeps with its run ids until every store has let them go, allow a delete of events only for a session recorded there, and drop the two delete triggers of sessions, whose tables the retention registry deletes from',
     sql: RETENTION_SWEEPS,
+  },
+  {
+    version: 51,
+    name: 'keep with a waiting message the files it names with @ that the runtime attached when it was added, so the message carries them into the run as a run request does',
+    sql: INBOX_MENTION_ATTACHMENTS,
   },
 ];

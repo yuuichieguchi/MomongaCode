@@ -379,7 +379,7 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
     case 'model.responded':
       store.update({ contextTokens: event.response.usage.total_tokens, ...(event.target === undefined ? {} : { answeringTarget: event.target }) });
       if (event.target !== undefined && state.answeringTarget !== undefined && state.answeringTarget !== event.target)
-        appendEntry(store, { kind: 'info', text: `model changed: ${state.answeringTarget} -> ${event.target}` });
+        appendEntry(store, { kind: 'info', text: `model changed: ${state.shownModels.get(state.answeringTarget) ?? state.answeringTarget} -> ${state.shownModels.get(event.target) ?? event.target}` });
       return;
     case 'context.compacted':
       appendEntry(store, {
@@ -534,6 +534,10 @@ export const foldReplayedEvent = (store: TranscriptStore, event: PublicRunEvent,
 
 export const runCreated = (store: TranscriptStore, runId: string, startedAt: number): void => {
   store.update({ runId, runStatus: 'QUEUED', phase: { kind: 'queued', text: WAITING_FOR_MODEL, startedAt } });
+};
+
+export const modelChosen = (store: TranscriptStore): void => {
+  store.update({ answeringTarget: undefined });
 };
 
 export const runLeft = (store: TranscriptStore): void => {

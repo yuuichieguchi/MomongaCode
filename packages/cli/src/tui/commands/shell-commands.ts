@@ -12,7 +12,7 @@ type ShellSlash = {
 
 export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
   { name: 'cost', usage: '[run-id] [--session <id>] [--all] [--breakdown] [--json]', description: 'show the model cost of a run, of a session, or of the sessions of this folder' },
-  { name: 'reliability', usage: '[--group-by <key>] [--days <n>] [--explain]', description: 'report the completion, recovery, duplicate, intervention, budget, time and cost indicators of the terminal tasks of the period' },
+  { name: 'reliability', usage: '[--group-by <key>] [--days <n>] [--explain]', description: 'report the completion, recovery, duplicate, intervention, budget, time and cost indicators of the ended runs of the period' },
   { name: 'auth', usage: 'status [--json] | logout <account>', description: 'show the saved subscription accounts, or sign one out', subcommands: ['status', 'logout'], elsewhere: { login: 'sign in with /login' } },
   { name: 'status', usage: '[run-id] [--json]', description: 'show a run, the subagent runs under it and the approvals waiting in them' },
   { name: 'jobs', usage: '[session-id] [--json]', description: 'list the background jobs of a session, including those of its subagents' },

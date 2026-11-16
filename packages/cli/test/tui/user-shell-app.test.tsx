@@ -7,7 +7,7 @@ import { runStarted, start, type } from '../tui-harness.tsx';
 const READY = 'mode: manual (shift+tab)';
 const WIDE = { columns: 120, rows: 40 };
 const SHELL_HINT = '! shell: output goes to the model · !! keeps it out · enter runs · esc leaves';
-const TASK_RUNNING = 'A task is running. Esc stops it.';
+const TASK_RUNNING = 'A run is working. Esc stops it.';
 
 const inputLines = (shown: string): string[] =>
   shown

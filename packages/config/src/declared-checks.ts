@@ -8,6 +8,8 @@ import { layoutOf } from './layout.ts';
 import { isAbsentPathError, parseJsonText, readJsonText } from './json-file.ts';
 import type { ResolvedSettings } from './load-settings.ts';
 
+export type CheckProposal = { readonly ask: false } | { readonly ask: true; readonly checks: readonly DeclaredCheck[] };
+
 export type DeclaredCheckSource = 'package.json' | 'Makefile' | 'justfile';
 
 export type DeclaredCheck = { readonly source: DeclaredCheckSource; readonly command: string };

@@ -5,7 +5,7 @@ import { start } from '../tui-harness.tsx';
 const GEMMA = 'ollama/gemma-3-4b:latest';
 const QWEN = 'ollama/qwen3.8:27b';
 const NOT_CONFIGURED = `The model "${GEMMA}" of this session is not configured any more. Choose another with /model.`;
-const LIST = 'a change applies from the next task';
+const LIST = 'a change applies from the next run';
 
 const typedOnUnconfigured = async () => {
   const started = await start({ session: { model: GEMMA }, models: [QWEN] });

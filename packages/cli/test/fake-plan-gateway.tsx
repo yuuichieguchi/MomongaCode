@@ -58,6 +58,7 @@ export type FakePlanOptions = FakeBackendOptions & {
   accounts?: readonly PlanAccountView[];
   profiles?: readonly PlanProfileView[];
   catalogs?: Readonly<Record<string, PlanModelsResponse>>;
+  catalogFailures?: Readonly<Record<string, Error>>;
   complete?: PlanSignInCompleteResponse;
   confirmed?: PlanSignInCompleteResponse;
   completeFails?: Error;
@@ -158,6 +159,8 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     },
     accountModels: async (label) => {
       called(`accounts/${label}/models`);
+      const failure = options.catalogFailures?.[label];
+      if (failure !== undefined) throw failure;
       return options.catalogs?.[label] ?? { readAt: '2026-11-10T00:00:00.000Z', models: [] };
     },
     addTarget: async (label, request) => {

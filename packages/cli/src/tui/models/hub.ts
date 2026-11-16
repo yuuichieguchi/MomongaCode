@@ -194,7 +194,7 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
       case 'Billing changes':
         await runBillingFlow(context);
         break;
-      case 'Models for other jobs':
+      case 'Models for other roles':
         await runRoleFlow(context);
         break;
       case 'Wait limits':

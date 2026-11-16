@@ -11,6 +11,7 @@ export const FAKE_SERVER_KEY_MISSING_EXIT = 3;
 
 export const FAKE_SERVER = {
   id: FAKE_SERVER_ID,
+  label: 'the fake server',
   provider: 'fake-provider',
   wire: 'chat-completions',
   binary: { defaultPath: '/nonexistent/fake-server' },

@@ -259,7 +259,7 @@ describe('a picker is the selection component', () => {
     app.stdin.write(KEYS.enter);
     const picker = await untilFrame(app, 'qwen3.8:27b  ·  metered');
     expect(picker).toContain('› 1. scripted-model  ·  metered  ·  current');
-    expect(picker).toContain('a change applies from the next task');
+    expect(picker).toContain('a change applies from the next run');
     expect(picker).toContain('1-9 or enter to choose · up/down to move · tab: also use at every start · esc: go back');
     app.stdin.write(KEYS.escape);
     await untilFrame(app, /^(?![\s\S]*qwen3\.8:27b {2}· {2}metered)[\s\S]*mode: manual/);

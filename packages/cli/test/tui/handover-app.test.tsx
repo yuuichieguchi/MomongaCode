@@ -363,6 +363,21 @@ describe('the fullscreen view across the move (16.6, red tests 21, 22 and 23)', 
   });
 });
 
+describe('the events of a child run take their own anchor (P-309)', () => {
+  it('records the child run in the applied sequence and anchors a note made after a child event to that event', async () => {
+    const old = await open({ conversations: [STREAMING] }, { reopen: { kind: 'id', id: SESSION_ID } });
+    await untilFrame(old.app, 'Found two files, now checking');
+    const [child] = framesOf('helper-1', [{ type: 'agent.message.delta', attempt: 0, itemId: 'h1', text: 'the helper looked' }]);
+    if (child === undefined) throw new Error('no child frame');
+    old.backend.following().onChildEvent(child, 'helper');
+    await vi.waitFor(() => expect(old.move.surface().snapshot()?.lastSeq).toEqual({ 'list-1': 5, 'helper-1': 1 }), { timeout: 2000 });
+    old.move.surface().say('a note after the helper');
+    const snapshot = old.move.surface().snapshot();
+    old.app.unmount();
+    expect(snapshot?.notes).toEqual([{ anchor: { runId: 'helper-1', seq: 1 }, kind: 'info', level: 'info', text: 'a note after the helper' }]);
+  });
+});
+
 describe('the scrollback output across the move (16.6, red test 8)', () => {
   it('prints no settled item twice: the first printed items are skipped and the rest is the live region', async () => {
     const old = await open({ conversations: [STREAMING] }, { reopen: { kind: 'id', id: SESSION_ID } }, { screen: 'scrollback' });

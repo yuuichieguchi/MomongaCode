@@ -35,6 +35,7 @@ const declaredIdentityOf = (declared: DeclaredServer): readonly ProbeKeyComponen
 
 const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedServerDescription => ({
   id,
+  label: `the server ${id}`,
   provider: id,
   wire: 'chat-completions',
   binary: { defaultPath: declared.command },

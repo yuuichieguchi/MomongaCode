@@ -158,7 +158,7 @@ const exit: SlashCommand = {
   name: 'exit',
   needsSession: false,
   otherNames: ['quit'],
-  description: 'leave momonga; a running task continues in the daemon',
+  description: 'leave momonga; a run that is working continues in the daemon',
   run: async (_args, context) => {
     context.exit();
   },

@@ -157,7 +157,7 @@ export const runRoleFlow = async (context: ModelsFlowContext): Promise<void> => 
 
 export const runClassifierFlow = async (context: ModelsFlowContext): Promise<void> => {
   const row = ROLE_ROWS.find((candidate) => candidate.job === 'classifier');
-  if (row === undefined) throw new TypeError('the jobs hold no classifier row');
+  if (row === undefined) throw new TypeError('the roles hold no classifier row');
   await chooseRoleModel(context, await openEdit(context), row.job, row.label);
 };
 

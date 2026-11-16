@@ -1,4 +1,4 @@
-import { isValidSkillName } from '@momonga/runtime';
+import { isValidSkillName } from '@momonga/protocol';
 import type { SkillView } from '@momonga/protocol';
 import type { TemplateKind } from '../file-templates.ts';
 import { SkillInvocationError, skillTask } from '../../run/skill-invocation.ts';
