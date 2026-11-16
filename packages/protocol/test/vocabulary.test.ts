@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CONCEPTS, MESSAGE_KEYS, SURFACES, VOCABULARY, WORDS, attachRunCommand, bannedVariantsIn, messageOf, reopenSessionCommand } from '../src/index.ts';
-import type { VocabularyRow } from '../src/index.ts';
+import { CONCEPTS, MESSAGE_KEYS, NOT_RUN_REASONS, SURFACES, STOP_REASONS, VOCABULARY, WORDS, attachRunCommand, bannedVariantsIn, budgetSentence, messageOf, notRunWord, reopenSessionCommand, shellQuote, stopWord, withBillingRemedy } from '../src/index.ts';
+import type { BudgetExhausted, VocabularyRow } from '../src/index.ts';
 
 const rowOf = (concept: (typeof CONCEPTS)[number]): VocabularyRow => VOCABULARY[concept];
 
@@ -48,7 +48,7 @@ describe('messageOf: one builder per message, which names the command of the sur
     expect(messageOf('sessionNotFound', 'cli', { id: 'ffffffff' })).toBe('No session has the id ffffffff.');
     expect(messageOf('sessionIdTooShort', 'cli', { id: '0123456', minimum: 8 })).toBe('No session has the id 0123456. A shortened id needs at least 8 characters.');
     expect(messageOf('sessionAmbiguous', 'cli', { id: 'abcdefgh', matches: ['abcdefgh-1', 'abcdefgh-2'] })).toBe('abcdefgh matches more than one session: abcdefgh-1, abcdefgh-2');
-    expect(messageOf('sessionInOtherFolder', 'cli', { id: 's1', folder: '/work/other' })).toBe('That session belongs to the folder /work/other. Run: cd /work/other && momonga --resume s1');
+    expect(messageOf('sessionInOtherFolder', 'cli', { id: 's1', folder: '/work/other', platform: 'darwin' })).toBe('That session belongs to the folder /work/other. Run: cd /work/other && momonga --resume s1');
     expect(messageOf('noSessionToContinue', 'cli', { folder: '/work/project' })).toBe('No session to continue in the folder /work/project.');
   });
 
@@ -78,7 +78,7 @@ describe('messageOf: one builder per message, which names the command of the sur
       sessionNotFound: (surface) => messageOf('sessionNotFound', surface, { id: 'i' }),
       sessionIdTooShort: (surface) => messageOf('sessionIdTooShort', surface, { id: 'i', minimum: 8 }),
       sessionAmbiguous: (surface) => messageOf('sessionAmbiguous', surface, { id: 'i', matches: ['i1', 'i2'] }),
-      sessionInOtherFolder: (surface) => messageOf('sessionInOtherFolder', surface, { id: 'i', folder: '/f' }),
+      sessionInOtherFolder: (surface) => messageOf('sessionInOtherFolder', surface, { id: 'i', folder: '/f', platform: 'darwin' }),
       noSessionToContinue: (surface) => messageOf('noSessionToContinue', surface, { folder: '/f' }),
       notAnId: (surface) => messageOf('notAnId', surface, { value: '..' }),
       optionNeedsPrint: (surface) => messageOf('optionNeedsPrint', surface, { option: '--verbose' }),
@@ -103,5 +103,39 @@ describe('messageOf: one builder per message, which names the command of the sur
       daemonStarting: (surface) => messageOf('daemonStarting', surface),
     };
     expect(MESSAGE_KEYS.flatMap((key) => SURFACES.flatMap((surface) => bannedVariantsIn(samples[key](surface)).map((use) => `${key} on ${surface}: ${use.variant}`)))).toEqual([]);
+  });
+});
+
+describe('the words of a stop, a not-run reason, the budget, the shell quoting and the billing notice', () => {
+  it('gives a word, not the identifier, for each stop reason and each not-run reason', () => {
+    for (const reason of STOP_REASONS) expect(stopWord(reason)).not.toBe(reason);
+    for (const reason of NOT_RUN_REASONS) expect(notRunWord(reason)).not.toBe(reason);
+    expect(new Set(STOP_REASONS.map(stopWord)).size).toBe(STOP_REASONS.length);
+    expect(new Set(NOT_RUN_REASONS.map(notRunWord)).size).toBe(NOT_RUN_REASONS.length);
+  });
+
+  it('writes the one budget sentence for each cause, with the figures the caller formats', () => {
+    const format = (_dimension: BudgetExhausted['dimension'], value: number): string => String(value);
+    expect(budgetSentence({ dimension: 'steps', cause: 'limit', spent: 5, limit: 5 }, format)).toBe('The run stopped at its step limit (5 of 5 used or reserved).');
+    expect(budgetSentence({ dimension: 'retries', cause: 'cap_too_small', spent: 2, limit: 3, admitsAt: 4 }, format)).toBe(
+      'The run stopped at its retry limit: what is left does not pay for another model request (2 of 3 used or reserved). A budget of 4 admits the next model request.',
+    );
+    expect(budgetSentence({ dimension: 'cost', cause: 'unpriced', spent: 1, limit: 2 }, format)).toBe(
+      'The run stopped at its money limit: a model call has no price, so its cost cannot be counted (1 of 2 used or reserved).',
+    );
+  });
+
+  it('quotes an argument in the form of the host shell: the Windows form for win32, the POSIX form elsewhere', () => {
+    expect(shellQuote('a b', 'win32')).toBe('"a b"');
+    expect(shellQuote('a b', 'darwin')).toBe("'a b'");
+    expect(shellQuote('plain', 'win32')).toBe('plain');
+  });
+
+  it('stores the billing refusal with no surface remedy, and the remedy of the surface is added where the notice is shown', () => {
+    const notice = messageOf('billingChangeRefused', 'tui', { model: 'm', from: 'a', to: 'b' });
+    expect(notice).not.toContain('/models billing');
+    expect(notice).not.toContain('models billing allow');
+    expect(withBillingRemedy(notice, 'tui', 'a', 'b')).toBe(`${notice} Run /models billing.`);
+    expect(withBillingRemedy(notice, 'cli', 'a', 'b')).toBe(`${notice} Run ${WORDS.command} models billing allow a b.`);
   });
 });
