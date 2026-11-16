@@ -9,7 +9,7 @@ import { createBackgroundTasks } from '../../src/tui/background-tasks.ts';
 import { runView } from '../fake-backend.ts';
 import type { FakeBackendOptions, FakeConversation } from '../fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
-import { frame, runStarted, start, type } from '../tui-harness.tsx';
+import { frame, runStarted, start, startStillStarting, type } from '../tui-harness.tsx';
 import { waitFor, afterMicrotasks } from '@momonga/testkit';
 
 const IDLE = /^(?![\s\S]*esc to cancel)(?![\s\S]*steer after)[\s\S]*mode: \w+ \(shift\+tab\)/;
@@ -95,6 +95,12 @@ const open = async (options: FakeBackendOptions, extra: Extra = {}, screen: Para
   return { ...started, move };
 };
 
+const openStillStarting = async (options: FakeBackendOptions) => {
+  const move = moving();
+  const started = await startStillStarting(options, { move: move.port });
+  return { ...started, move };
+};
+
 const adopt = async (options: FakeBackendOptions, record: TuiRecord, extra: Extra = {}, screen: Parameters<typeof start>[2] = {}) => {
   const attached = Promise.withResolvers<void>();
   const opened = await open(options, { ...extra, adoption: { record, attached: () => attached.resolve() } }, screen);
@@ -115,7 +121,7 @@ describe('the prompt on the screen comes from its event (16.2, red test 5)', () 
 
 describe('the quiet point of the TUI (16.5, red tests 12 and 28)', () => {
   it('is not quiet before a session is open, and is quiet when idle and while a run streams', async () => {
-    const { backend, app, move } = await open({});
+    const { backend, app, move } = await openStillStarting({});
     expect(move.surface().session()).toBeUndefined();
     await untilFrame(app, 'mode: manual');
     expect(move.surface().session()).toBe('session-1');
