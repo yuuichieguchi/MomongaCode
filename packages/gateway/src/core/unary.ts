@@ -166,7 +166,7 @@ const countOnTarget = async (
   const capabilities = await narrowed.capabilitiesOf(target);
   const toolChoiceWire = target.adapter.toolChoiceWire(capabilities, adapterTargetOf(target));
   const counted = asGatewayError(target, () =>
-    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter, services.fenceBoundary(resolved.forAdapter)), capabilities.allowedTools, target.display, toolChoiceWire),
+    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter, request.momonga?.fence ?? services.fenceBoundary(resolved.forAdapter)), capabilities.allowedTools, target.display, toolChoiceWire),
   );
   const renderWire = target.adapter.renderWire;
   if (renderWire !== undefined) {
