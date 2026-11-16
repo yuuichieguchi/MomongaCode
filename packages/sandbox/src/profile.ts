@@ -315,7 +315,7 @@ export async function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmp
 
 const PROTECTION_BASE_RULES = ['(version 1)', '(allow default)'];
 
-export function buildProtectionProfile(denied: readonly string[], scratch: readonly string[]): SeatbeltProfile {
+export function buildProtectionProfile(denied: readonly string[], scratch: readonly string[], readable: readonly string[]): SeatbeltProfile {
   const params: Record<string, string> = {};
   const lines = [...PROTECTION_BASE_RULES];
   denied.forEach((area, index) => {
@@ -328,7 +328,12 @@ export function buildProtectionProfile(denied: readonly string[], scratch: reado
     params[name] = folder;
     lines.push(`(allow file-read* file-write* (subpath (param "${name}")))`);
   });
-  lexicalMetadataAncestors(scratch, denied).forEach((directory, index) => {
+  readable.forEach((entry, index) => {
+    const name = `READABLE_${index}`;
+    params[name] = entry;
+    lines.push(`(allow file-read* (subpath (param "${name}")))`);
+  });
+  lexicalMetadataAncestors([...scratch, ...readable], denied).forEach((directory, index) => {
     const name = `SCRATCH_METADATA_${index}`;
     params[name] = directory;
     lines.push(`(allow file-read-metadata (literal (param "${name}")))`);

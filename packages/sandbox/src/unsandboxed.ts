@@ -20,11 +20,12 @@ export function createUnsandboxed(options: UnsandboxedOptions): ProtectionOnlySa
   return {
     kind: 'none',
     protection,
-    spawn(command: SandboxCommand, _policy, signal: AbortSignal, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> {
+    spawn(command: SandboxCommand, policy, signal: AbortSignal, descriptors?: SandboxDescriptors): Promise<SandboxedProcess> {
       const { file, args } = protectionCommandOf(protection, {
         platform: options.platform,
         argv: command.argv,
         scratch: command.tmpDir === undefined ? [] : [command.tmpDir],
+        readable: policy.readAllowed ?? [],
         sandboxExecPath: options.sandboxExecPath ?? DEFAULT_SANDBOX_EXEC_PATH,
         bwrapPath: options.bwrapPath ?? DEFAULT_BWRAP_PATH,
       });

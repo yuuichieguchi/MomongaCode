@@ -34,6 +34,7 @@ export type ProtectionCommandInput = {
   platform: NodeJS.Platform;
   argv: readonly string[];
   scratch: readonly string[];
+  readable: readonly string[];
   sandboxExecPath: string;
   bwrapPath: string;
 };
@@ -47,10 +48,10 @@ export function protectionCommandOf(protection: ChildProtection, input: Protecti
   const launcher = HOME_LAUNCHERS[input.platform];
   if (launcher === undefined) throw new Error(`the home cannot be denied to a child on ${input.platform}`);
   if (launcher === 'seatbelt') {
-    const { profile, params } = buildProtectionProfile(protection.denied, input.scratch);
+    const { profile, params } = buildProtectionProfile(protection.denied, input.scratch, input.readable);
     return { file: input.sandboxExecPath, args: ['-p', profile, ...paramArgsOf(params), '--', ...input.argv] };
   }
-  return { file: input.bwrapPath, args: [...planProtection(protection.denied, input.scratch), '--', ...input.argv] };
+  return { file: input.bwrapPath, args: [...planProtection(protection.denied, input.scratch, input.readable), '--', ...input.argv] };
 }
 
 const ABSENT_LAUNCHER_CODES: ReadonlySet<string> = new Set(['ENOENT', 'EACCES', 'ENOTDIR']);

@@ -386,12 +386,13 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   };
 }
 
-export const planProtection = (denied: readonly string[], scratch: readonly string[]): string[] => [
+export const planProtection = (denied: readonly string[], scratch: readonly string[], readable: readonly string[]): string[] => [
   '--bind',
   '/',
   '/',
   ...denied.flatMap((area) => ['--tmpfs', area]),
   ...scratch.flatMap((folder) => ['--bind', folder, folder]),
+  ...readable.flatMap((entry) => ['--ro-bind', entry, entry]),
 ];
 
 export const bwrapProbeArguments = (shell: string): string[] => [

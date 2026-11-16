@@ -28,10 +28,10 @@ describe.runIf(PROTECTED_HOST)('a sandbox none child under the protection of the
     return dir;
   };
 
-  const sh = async (script: string, scratch?: string): Promise<{ code: number | null; stdout: string }> => {
+  const sh = async (script: string, scratch?: string, policy: SandboxPolicy = OPEN_POLICY): Promise<{ code: number | null; stdout: string }> => {
     const protection = childProtectionFor({ sandbox: 'none', home, platform: process.platform, env: {}, bubblewrap: process.platform === 'linux' });
     const sandbox = createUnsandboxed({ killGraceMs: 300, protection, platform: process.platform });
-    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: BASE_ENV, ...(scratch === undefined ? {} : { tmpDir: scratch }) }, OPEN_POLICY, new AbortController().signal);
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: BASE_ENV, ...(scratch === undefined ? {} : { tmpDir: scratch }) }, policy, new AbortController().signal);
     spawned.push(proc);
     return run(proc);
   };
@@ -60,6 +60,18 @@ describe.runIf(PROTECTED_HOST)('a sandbox none child under the protection of the
     const inside = await sh(`cat '${path.join(root, 'x')}'`);
     expect(inside.stdout).not.toContain('secret');
     expect((await sh(`cat '${path.join(work, 'y')}'`)).stdout).toBe('open');
+  });
+
+  it('reads a file in the home that its policy allows it to read, and cannot write it', async () => {
+    const granted = path.join(momongaLayout(home, process.platform, {}).grepArguments, 'a.rgrc');
+    fs.mkdirSync(path.dirname(granted), { recursive: true });
+    fs.writeFileSync(granted, 'granted');
+    fs.writeFileSync(path.join(path.dirname(granted), 'b.rgrc'), 'withheld');
+    const policy: SandboxPolicy = { ...OPEN_POLICY, readAllowed: [granted] };
+    expect((await sh(`cat '${granted}'`, undefined, policy)).stdout).toBe('granted');
+    expect((await sh(`cat '${path.join(path.dirname(granted), 'b.rgrc')}'`, undefined, policy)).stdout).not.toContain('withheld');
+    await sh(`echo changed > '${granted}'`, undefined, policy);
+    expect(fs.readFileSync(granted, 'utf8')).toBe('granted');
   });
 
   it('leaves the real home untouched by a write of the command', async () => {

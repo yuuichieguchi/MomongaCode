@@ -18,6 +18,6 @@ export const noneSandboxLaunchOf = async ({ home: given, platform, env, paths, i
   const protection = childProtectionFor({ sandbox: 'none', home, platform, env, bubblewrap });
   return {
     protection,
-    commandOf: (argv, scratch) => protectionCommandOf(protection, { platform, argv, scratch, sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
+    commandOf: (argv, scratch) => protectionCommandOf(protection, { platform, argv, scratch, readable: [], sandboxExecPath: DEFAULT_SANDBOX_EXEC_PATH, bwrapPath: DEFAULT_BWRAP_PATH }),
   };
 };

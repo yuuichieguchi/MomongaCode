@@ -53,7 +53,7 @@ describe('the protection command', () => {
   const protection: ChildProtection = { kind: 'home-denied', home: HOME, denied: ['/home/someone/.momonga', '/home/someone/.cache/momonga/tmp'] };
 
   it('builds the macOS protection profile: everything allowed except the home areas, the command scratch allowed back with the metadata of its folders inside the area', () => {
-    expect(buildProtectionProfile(protection.denied, ['/home/someone/.cache/momonga/tmp/sessions/s1'])).toEqual({
+    expect(buildProtectionProfile(protection.denied, ['/home/someone/.cache/momonga/tmp/sessions/s1'], [])).toEqual({
       profile: [
         '(version 1)',
         '(allow default)',
@@ -74,7 +74,7 @@ describe('the protection command', () => {
   });
 
   it('builds the Linux protection plan: the root bound writable, an empty tmpfs over each home area, the command scratch bound back', () => {
-    expect(planProtection(protection.denied, ['/home/someone/.cache/momonga/tmp/sessions/s1'])).toEqual([
+    expect(planProtection(protection.denied, ['/home/someone/.cache/momonga/tmp/sessions/s1'], [])).toEqual([
       '--bind', '/', '/',
       '--tmpfs', '/home/someone/.momonga',
       '--tmpfs', '/home/someone/.cache/momonga/tmp',
@@ -84,12 +84,12 @@ describe('the protection command', () => {
 
   it('wraps the command per platform', () => {
     const argv = ['/bin/sh', '-c', 'true'];
-    const darwin = protectionCommandOf(protection, { platform: 'darwin', argv, scratch: [], sandboxExecPath: '/usr/bin/sandbox-exec', bwrapPath: '/usr/bin/bwrap' });
-    const profile = buildProtectionProfile(protection.denied, []);
+    const darwin = protectionCommandOf(protection, { platform: 'darwin', argv, scratch: [], readable: [], sandboxExecPath: '/usr/bin/sandbox-exec', bwrapPath: '/usr/bin/bwrap' });
+    const profile = buildProtectionProfile(protection.denied, [], []);
     expect(darwin).toEqual({ file: '/usr/bin/sandbox-exec', args: ['-p', profile.profile, '-D', `HOME_DENIED_0=${protection.denied[0]}`, '-D', `HOME_DENIED_1=${protection.denied[1]}`, '--', ...argv] });
-    const linux = protectionCommandOf(protection, { platform: 'linux', argv, scratch: [], sandboxExecPath: '/usr/bin/sandbox-exec', bwrapPath: '/usr/bin/bwrap' });
-    expect(linux).toEqual({ file: '/usr/bin/bwrap', args: [...planProtection(protection.denied, []), '--', ...argv] });
-    const unprotected = protectionCommandOf({ kind: 'unprotected', reason: 'none' }, { platform: 'win32', argv, scratch: [], sandboxExecPath: '/usr/bin/sandbox-exec', bwrapPath: '/usr/bin/bwrap' });
+    const linux = protectionCommandOf(protection, { platform: 'linux', argv, scratch: [], readable: [], sandboxExecPath: '/usr/bin/sandbox-exec', bwrapPath: '/usr/bin/bwrap' });
+    expect(linux).toEqual({ file: '/usr/bin/bwrap', args: [...planProtection(protection.denied, [], []), '--', ...argv] });
+    const unprotected = protectionCommandOf({ kind: 'unprotected', reason: 'none' }, { platform: 'win32', argv, scratch: [], readable: [], sandboxExecPath: '/usr/bin/sandbox-exec', bwrapPath: '/usr/bin/bwrap' });
     expect(unprotected).toEqual({ file: '/bin/sh', args: ['-c', 'true'] });
   });
 });

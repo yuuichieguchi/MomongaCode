@@ -55,7 +55,7 @@ describe.runIf(PROTECTED_HOST)('a stdio MCP server under the protection of the h
       files: nodeFileSystem,
       launch: {
         protection,
-        commandOf: (argv) => protectionCommandOf(protection, { platform: process.platform, argv, scratch: [], sandboxExecPath: SANDBOX_EXEC, bwrapPath: DEFAULT_BWRAP_PATH }),
+        commandOf: (argv) => protectionCommandOf(protection, { platform: process.platform, argv, scratch: [], readable: [], sandboxExecPath: SANDBOX_EXEC, bwrapPath: DEFAULT_BWRAP_PATH }),
       },
     });
     cleanups.push(() => transport.close(0));
