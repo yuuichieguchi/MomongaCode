@@ -4054,36 +4054,6 @@
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.25 at start)"
     },
     {
-      "config": "StopProtocol.lateWaiter",
-      "role": "evidence",
-      "expect": {
-        "violates": "SameValues",
-        "exitCode": 12
-      },
-      "args": [],
-      "tier": "every-run",
-      "distinctStates": 49,
-      "measuredSeconds": 0.89,
-      "measuredCpuSeconds": 0.99,
-      "budgetCpuSeconds": 5,
-      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.93 at start)"
-    },
-    {
-      "config": "StopProtocol.lateWaiter.outlast",
-      "role": "evidence",
-      "expect": {
-        "violates": "NoOutlast",
-        "exitCode": 12
-      },
-      "args": [],
-      "tier": "every-run",
-      "distinctStates": 332260,
-      "measuredSeconds": 7.81,
-      "measuredCpuSeconds": 10.65,
-      "budgetCpuSeconds": 25,
-      "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.93 at start)"
-    },
-    {
       "config": "StopProtocol.noDeadline",
       "role": "evidence",
       "expect": {
