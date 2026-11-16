@@ -359,7 +359,7 @@ export { programKeysOfConfig } from './git-config-programs.ts';
 export type { ConfigPrograms } from './git-config-programs.ts';
 export { EMPTY_PROTECTED_SET, GIT_DIRECTORY_ENTRIES, MAX_POINTER_FILE_BYTES, WORKSPACE_CONTROL_NAMES, commondirTarget, defaultProtectedPaths, gitFileTarget, isProtectedWrite, protectedSetFor } from './protected-set.ts';
 export type { EntryRead, PlaceholderForm, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
-export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseFilePattern, testFileMatcher } from './file-pattern.ts';
+export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, componentCountOf, fileMatcherOf, matchDepthOf, parseFilePattern, testFileMatcher } from './file-pattern.ts';
 export type { Expression, FileMatcher, FilePatternContext } from './file-pattern.ts';
 export { HOST_FLAVOUR, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
 export type { PathFlavour } from './path-flavour.ts';
