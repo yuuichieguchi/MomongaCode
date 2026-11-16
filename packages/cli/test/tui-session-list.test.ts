@@ -71,3 +71,18 @@ describe('the sessions /resume lists (cli-tui-23)', () => {
     ]);
   });
 });
+
+describe('the title of a listed session (real-use-24)', () => {
+  it('is the first message the person wrote, not a command such as /compact that started the first run', async () => {
+    const prompts: Readonly<Record<string, string>> = { 'r-1': '/compact', 'r-2': 'remember the codeword banana' };
+    const reads: SessionReads = {
+      listSessions: async () => [{ ...SESSION, id: 's1', cwd: CWD, createdAt: 100, latestRunId: 'r-2' }],
+      listRuns: async (sessionId) => [runView({ id: 'r-1', sessionId, ordinal: 1 }), runView({ id: 'r-2', sessionId, ordinal: 2 })],
+      streamEvents: async function* (runId): AsyncGenerator<RunEventFrame> {
+        yield frame({ type: 'user.message', text: prompts[runId] ?? '' });
+      },
+    };
+    const [listed] = await listedSessions(reads, CWD, undefined, new AbortController().signal);
+    expect(listed?.firstPrompt).toBe('remember the codeword banana');
+  });
+});
