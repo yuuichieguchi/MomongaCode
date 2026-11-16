@@ -29,7 +29,7 @@ const refusingKill = (leader: () => number): SignalSender =>
     process.kill(target, signal);
   }) as never;
 
-const INTERRUPTED = (name: string) => `Not run: a process started by an earlier command that was interrupted when MomongaCode stopped (marker ${name}, `;
+const INTERRUPTED = (name: string) => `Not run: a process started by an earlier command that was interrupted when MomongaCode stopped (marker ${name}) may still be running`;
 
 describe.runIf(process.platform === 'darwin')('T15 a lost call whose leader survives the crash', () => {
   it('is kept by the start-up sweep, refuses Write, Edit and Bash, is retried once by the sweep, and clears when the leader exits', async () => {
