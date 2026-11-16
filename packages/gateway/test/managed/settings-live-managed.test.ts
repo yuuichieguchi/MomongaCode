@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, FIRST_GENERATION, managedInstancePaths, momongaPaths } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, FIRST_GENERATION, createJsonLogger, managedInstancePaths, momongaPaths, systemClock } from '@momonga/foundation';
 import type { ManagedInstance } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitFor, registerOwned, testLocks } from '@momonga/testkit';
 import type { FakeFm } from '@momonga/testkit';
@@ -46,7 +46,7 @@ const targetsDirectory = (home: string): string => path.join(momongaPaths(home, 
 const BOUNDED_STEPS_OF_AN_EDIT_SEQUENCE = 5;
 const STEP_BOUND_MS = REAL_PROCESS_TEST_TIMEOUT_MS / BOUNDED_STEPS_OF_AN_EDIT_SEQUENCE;
 
-type SettledStatus = { settled(): boolean; within(step: string): Promise<number> };
+type SettledStatus = { settled(): boolean; within(trail: Trail, step: string): Promise<number> };
 
 const settledStatus = (pending: Promise<number>): SettledStatus => {
   let status: number | undefined;
@@ -55,8 +55,13 @@ const settledStatus = (pending: Promise<number>): SettledStatus => {
   });
   return {
     settled: () => status !== undefined,
-    within: async (step) => {
-      await until(() => status !== undefined, step, STEP_BOUND_MS);
+    within: async (trail, step) => {
+      trail.step(step);
+      try {
+        await until(() => status !== undefined, `${step} (trail: ${trail.file})`, STEP_BOUND_MS);
+      } catch (error) {
+        throw new Error(`${String(error)}\n${fs.readFileSync(trail.file, 'utf8')}`, { cause: error });
+      }
       if (status === undefined) throw new Error(`${step}: no status`);
       return status;
     },
@@ -73,8 +78,24 @@ const setup = async (): Promise<Setup> => {
   return { fm, dumpFile, home: makeHome() };
 };
 
-const launch = async (home: string) => {
-  const handle = await registerOwned(registerCleanup, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }));
+type Trail = { readonly file: string; step(name: string): void; readonly stream: { write(line: string): boolean } };
+
+const TRAIL_FILE = 'settings-live-trail.log';
+
+const trailIn = (home: string): Trail => {
+  const file = path.join(home, TRAIL_FILE);
+  const stream = {
+    write: (line: string): boolean => {
+      fs.appendFileSync(file, line.endsWith('\n') ? line : `${line}\n`);
+      return true;
+    },
+  };
+  return { file, stream, step: (name) => void stream.write(`${new Date().toISOString()} step: ${name}`) };
+};
+
+const launch = async (home: string, trail?: Trail) => {
+  const output = trail === undefined ? { stdout: { write: () => true } } : { stdout: trail.stream, logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: trail.stream, level: 'debug' }) };
+  const handle = await registerOwned(registerCleanup, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, ...output }));
   registerCleanup(async () => {
     await handle.close({ ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 });
   });
@@ -130,28 +151,30 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
 
   it('an edit a to b to a with a call in flight on a keeps one managed server for the counter of a (design-settings-live 15.4)', async () => {
     const { fm, dumpFile, home } = await setup();
+    const trail = trailIn(home);
     const releaseFile = path.join(makeDir(), 'release-first-reply');
     const release = (): void => fs.writeFileSync(releaseFile, '');
     fm.configure({ envDumpFile: dumpFile, serve: { holdFirstUntilFile: releaseFile } });
     const settingsWith = (maxOutputTokens: number) => ({ models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, admissionTimeoutMs: 1, ...declared(maxOutputTokens) } }) });
     try {
       replaceSettings(home, settingsWith(512));
-      const handle = await launch(home);
+      const handle = await launch(home, trail);
       registerCleanup(release);
       const statusOf = (pending: Promise<{ status: number }>) => pending.then((response) => response.status, () => -1);
       const first = settledStatus(statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))));
+      trail.step('the first incarnation to start');
       await until(() => serves(dumpFile).length === 1, 'the first incarnation to start', STEP_BOUND_MS);
       fm.configure({ envDumpFile: dumpFile, serve: {} });
       replaceSettings(home, settingsWith(256));
       const second = settledStatus(statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))));
-      expect(await second.within('the request of the epoch of b to end while the call pinned to apple-1 is still running')).toBe(200);
+      expect(await second.within(trail, 'the request of the epoch of b to end while the call pinned to apple-1 is still running')).toBe(200);
       replaceSettings(home, settingsWith(512));
       const third = settledStatus(statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))));
-      expect(await third.within('the request of the return to a to be answered'), 'the return to a shares the gate of a, which its first call holds').toBe(429);
+      expect(await third.within(trail, 'the request of the return to a to be answered'), 'the return to a shares the gate of a, which its first call holds').toBe(429);
       expect(first.settled(), 'the first call still holds the gate of a when the third request is refused').toBe(false);
       expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
       release();
-      expect(await first.within('the first call to end after its reply is released')).toBe(200);
+      expect(await first.within(trail, 'the first call to end after its reply is released')).toBe(200);
     } finally {
       release();
     }
