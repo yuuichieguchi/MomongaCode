@@ -50,7 +50,7 @@ data: {"id":"chatcmpl-183","object":"chat.completion.chunk","created":1793792400
 
 data: {"id":"chatcmpl-183","object":"chat.completion.chunk","created":1793792400,"model":"qwen3.8:27b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"content":"."},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-183","object":"chat.completion.chunk","created":1793792400,"model":"qwen3.8:27b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"content":"","tool_calls":[{"id":"call_kip4hx4t","index":0,"type":"function","function":{"name":"Read","arguments":"{\"file_path\":\"/private/tmp/claude-501/w/devs-5/tiny-calc\"}"}}]},"finish_reason":null}]}
+data: {"id":"chatcmpl-183","object":"chat.completion.chunk","created":1793792400,"model":"qwen3.8:27b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"content":"","tool_calls":[{"id":"call_kip4hx4t","index":0,"type":"function","function":{"name":"Read","arguments":"{\"file_path\":\"/private/tmp/momonga-test/w/devs-5/tiny-calc\"}"}}]},"finish_reason":null}]}
 
 data: {"id":"chatcmpl-183","object":"chat.completion.chunk","created":1793792400,"model":"qwen3.8:27b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
 
