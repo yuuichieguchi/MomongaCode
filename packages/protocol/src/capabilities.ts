@@ -4,6 +4,8 @@ import type { ErrorType } from './open-responses.ts';
 import { CAPABILITIES_UNKNOWN_CODE, PLAN_STORE_STATES, SIGN_IN_REQUIRED_CODE } from './plan-api.ts';
 import { isMeasuring } from './measuring.ts';
 import type { Measuring } from './measuring.ts';
+import { SURFACES } from './vocabulary.ts';
+import type { Surface } from './vocabulary.ts';
 
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
 
@@ -232,14 +234,6 @@ export type ChainCapabilities = Omit<Capabilities, 'schemaDialect'> & { schemaDi
 
 export type CapabilityOverride = Partial<CapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel | undefined };
 
-export const applyCapabilityOverride = (declared: Capabilities, override: CapabilityOverride): Capabilities => {
-  const { imageInput: declaredInput, imageTokens: declaredTokens, ...declaredCore } = declared;
-  const { imageInput: overrideInput, imageTokens: overrideTokens, ...overrideCore } = override;
-  const imageInput = overrideInput ?? declaredInput;
-  const imageTokens = overrideTokens ?? (imageInput ? declaredTokens : undefined);
-  return { ...declaredCore, ...overrideCore, ...imageCapability(imageInput, imageTokens) };
-};
-
 export const PRECONDITION_FAILED_CODE = 'precondition_failed';
 
 export const CHAIN_ROOM_REFUSED_CODE = 'chain_room_refused';
@@ -289,17 +283,24 @@ export type ReadinessInput = ({ toolCalling: ToolCallingState; unavailable?: und
 
 const NO_TOOLS_MESSAGE = 'This model cannot call tools. MomongaCode will answer without reading or changing files.';
 
-export const REMEDY_SURFACES = ['tui', 'shell'] as const;
-export type RemedySurface = (typeof REMEDY_SURFACES)[number];
+export const REMEDY_SURFACES = SURFACES;
+export type RemedySurface = Surface;
+
+const SHELL_NO_TOOLS_REMEDY = 'For coding work, choose another model with momonga --model <model>; momonga models detect lists the local servers that are running.';
+const SHELL_UNAVAILABLE_REMEDY = 'Choose a model with momonga --model <model>, or set one up with momonga models add.';
 
 const READINESS_REMEDIES: Readonly<Record<'no_tools' | 'unavailable', Readonly<Record<RemedySurface, string>>>> = {
   no_tools: {
     tui: 'For coding work, choose another model with /model; /models add lists the local servers that are running.',
-    shell: 'For coding work, choose another model with momonga --model <model>; momonga models detect lists the local servers that are running.',
+    cli: SHELL_NO_TOOLS_REMEDY,
+    acp: SHELL_NO_TOOLS_REMEDY,
+    gateway: SHELL_NO_TOOLS_REMEDY,
   },
   unavailable: {
     tui: 'Choose a model with /model, or set one up with /models add.',
-    shell: 'Choose a model with momonga --model <model>, or set one up with momonga models add.',
+    cli: SHELL_UNAVAILABLE_REMEDY,
+    acp: SHELL_UNAVAILABLE_REMEDY,
+    gateway: SHELL_UNAVAILABLE_REMEDY,
   },
 };
 
