@@ -129,6 +129,8 @@ export type ResultOutcome = {
   idemKey?: string;
   reconciled?: ReconcileResult['outcome'];
   interrupted?: 'timeout' | 'cancelled';
+  command?: string;
+  files?: ToolFile[];
 };
 
 export type NeedsApprovalOutcome = {
@@ -1004,7 +1006,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (existing?.s === 'COMPLETED') return outcome(storedOutcome(existing.result));
       if (existing === undefined) return outcome(failedOutcome(call.callId, `${tool.name} was cancelled`));
       if (existing.s === 'UNKNOWN') {
-        return outcome({ ...failedOutcome(call.callId, interruptedOutput(tool)), idemKey: key, reconciled: 'unknown' });
+        return outcome({ ...failedOutcome(call.callId, interruptedOutput(tool)), idemKey: key, reconciled: 'unknown', ...recordedFactsOf(existing.rec) });
       }
       const hooked = await hookedInputOf(batch, tool, existing);
       if (hooked !== undefined && 'failure' in hooked) return outcome(failedOutcome(call.callId, hooked.failure));
