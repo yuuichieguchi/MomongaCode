@@ -6,13 +6,13 @@ import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
 const TLA_DIRECTORY = `${repoRoot}specs/tla`;
 
-const isSpecificationInput = (name: string): boolean => name.endsWith('.tla') || name.endsWith('.cfg') || name === 'manifest.json';
+const isSpecificationInput = (name: string): boolean => name.endsWith('.tla') || name.endsWith('.cfg') || name.endsWith('.json');
 
 const unkeyedEntriesOf = (entries: readonly fs.Dirent[]): string[] =>
   entries.filter((entry) => !entry.isFile() || !isSpecificationInput(entry.name)).map((entry) => entry.name).sort();
 
 describe('the kinds of file in specs/tla, the inputs of the cached TLC results', () => {
-  it('holds only modules, configurations and the manifest, so nothing TLC loads from the folder is outside the key', () => {
+  it('holds only modules, configurations and JSON inputs (the manifest and model inputs such as Handover.actors.json, each in the reuse key), so nothing TLC loads from the folder is outside the key', () => {
     expect(unkeyedEntriesOf(fs.readdirSync(TLA_DIRECTORY, { withFileTypes: true }))).toEqual([]);
   });
 
