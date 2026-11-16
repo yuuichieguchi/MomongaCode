@@ -40,8 +40,7 @@ export const killListedGroups = async (pidsFile: string, ports: TeardownPorts = 
 
 const ABSENT_CODES: ReadonlySet<string | undefined> = new Set(['ENOENT', 'ENOTDIR']);
 
-export const evalRootsOfRun = (base: string, tmpRoot: string, run: string): string[] => {
-  const homePrefix = e2eEntryPrefix(run);
+export const evalRootsOwnedBy = (base: string, owns: (home: string) => boolean): string[] => {
   const roots: string[] = [];
   for (const name of fs.readdirSync(base)) {
     if (!name.startsWith(ROOT_PREFIX)) continue;
@@ -54,10 +53,13 @@ export const evalRootsOfRun = (base: string, tmpRoot: string, run: string): stri
       throw error;
     }
     const owner = parseEvalOwner(text);
-    if (owner !== undefined && path.dirname(owner.home) === tmpRoot && path.basename(owner.home).startsWith(homePrefix)) roots.push(root);
+    if (owner !== undefined && owns(owner.home)) roots.push(root);
   }
   return roots;
 };
+
+export const evalRootsOfRun = (base: string, tmpRoot: string, run: string): string[] =>
+  evalRootsOwnedBy(base, (home) => path.dirname(home) === tmpRoot && path.basename(home).startsWith(e2eEntryPrefix(run)));
 
 export const runE2eTeardown = async (options: E2eTeardownOptions): Promise<void> => {
   const { tmpRoot, run, ports = defaultLedgerPorts, report = (line: string) => console.error(line), evalBase = sharedTempBase(), sharedBase = sharedTempBase() } = options;

@@ -7,7 +7,7 @@ import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { stoppingText } from '../packages/cli/src/commands/daemon.ts';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
-import { CLI_FAKES_BUNDLE, runCli, runCliWithFakes, setFakeCliVersion, startCli } from './support/cli.ts';
+import { CLI_FAKES_BUNDLE, E2E_CHECK_PASSED_TEXT, decideProjectFolderWithCheck, runCli, runCliWithFakes, setFakeCliVersion, startCli } from './support/cli.ts';
 import { readDb } from './support/db.ts';
 import { supervisorLog, supervisorPidsOf } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
@@ -73,10 +73,11 @@ const rootRunOf = (treeJson: string): { id: string; lastSeq: number } => {
 describe('cli: momonga -p', () => {
   it(titleOf('cli-print'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home, target, fake } = await prepare(editTask);
+    await decideProjectFolderWithCheck(home);
 
     const result = await runCli(home, ['-p', 'Update the greeting', '--permission-mode', 'acceptEdits']);
 
-    expect(result.stderr).toBe('');
+    expect(result.stderr).toBe(`momonga: ${E2E_CHECK_PASSED_TEXT}\n`);
     expect(result.code).toBe(0);
     expect(result.stdout).toBe(`${FINAL_TEXT}\n`);
     expect(fs.readFileSync(target, 'utf8')).toBe(EDITED);

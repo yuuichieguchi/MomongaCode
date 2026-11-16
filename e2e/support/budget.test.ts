@@ -83,12 +83,13 @@ describe('haystack builder', () => {
 });
 
 const HANDLE = 'a'.repeat(64);
-const SYNTHETIC_HAYSTACK = { file: '/p/haystack.txt', grepLines: [], grepOutput: '', handle: HANDLE };
+const SYNTHETIC_GREP_OUTPUT = '/p/haystack.txt:1:needle one\n/p/haystack.txt:2:needle two';
+const SYNTHETIC_HAYSTACK = { file: '/p/haystack.txt', grepLines: SYNTHETIC_GREP_OUTPUT.split('\n'), grepOutput: SYNTHETIC_GREP_OUTPUT, handle: HANDLE };
 
 const syntheticJournal = (evictionSeq: number, compactions: readonly { seq: number; through: number }[]): JournalEvent[] =>
   [
     { seq: 1, type: 'user.message', data: { text: 'task' } },
-    { seq: 3, type: 'tool.completed', data: { callId: 'g', truncated: true, handle: HANDLE } },
+    { seq: 3, type: 'tool.completed', data: { callId: 'g', truncated: true, handle: HANDLE, output: `/p/haystack.txt:1:needle one\n[output truncated; handle ${HANDLE}]` } },
     { seq: 5, type: 'tool.completed', data: { callId: 'r' } },
     { seq: 7, type: 'tool.completed', data: { callId: 'f1' } },
     { seq: evictionSeq, type: 'context.truncated', data: { callId: 'g', handle: HANDLE, kind: 'omitted' } },

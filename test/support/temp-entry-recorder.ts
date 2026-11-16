@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
+import path from 'node:path';
+import { expect } from 'vitest';
 import { TEMP_LEDGER_ENV, recordTempEntry } from './temp-ledger.ts';
 
 type Maker = (...args: unknown[]) => unknown;
@@ -17,8 +19,17 @@ const LEDGER = ledgerOfRun();
 
 const pathOfMade = (made: unknown): string => (typeof made === 'object' && made !== null && 'path' in made ? String(made.path) : String(made));
 
+const REPOSITORY = path.resolve(import.meta.dirname, '..', '..');
+
+const creatorNow = (): string | undefined => {
+  const { testPath, currentTestName } = expect.getState();
+  if (testPath === undefined) return undefined;
+  const file = path.relative(REPOSITORY, testPath).split(path.sep).join('/');
+  return currentTestName === undefined ? file : `${file} > ${currentTestName}`;
+};
+
 const recorded = <T>(made: T): T => {
-  recordTempEntry(LEDGER, pathOfMade(made));
+  recordTempEntry(LEDGER, { path: pathOfMade(made), creator: creatorNow() });
   return made;
 };
 

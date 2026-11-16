@@ -33,11 +33,16 @@ const realProcessTests = (): Array<{ file: string; source: string }> =>
       (callsRealStart(source) || namesRealProcessGuard(source)) && !file.startsWith('test/real-process-timeout-single-rule') && !IN_PROCESS_HARNESS_FILES.includes(file),
   );
 
-const REAL_PROCESS_FORM = { constant: 'REAL_PROCESS_TEST_TIMEOUT_MS', integerMultiple: true } as const;
+const MULTIPLE_OF_GUARD = /^export const (\w+_TEST_TIMEOUT_MS) = [1-9]\d* \* REAL_PROCESS_TEST_TIMEOUT_MS;$/gm;
+
+const guardMultiples = (): string[] =>
+  [...fs.readFileSync(path.join(ROOT, 'packages/testkit/src/test-support.ts'), 'utf8').matchAll(MULTIPLE_OF_GUARD)].map((match) => match[1] ?? '');
+
+const REAL_PROCESS_FORM = { constant: `(?:${['REAL_PROCESS_TEST_TIMEOUT_MS', ...guardMultiples()].join('|')})`, integerMultiple: true } as const;
 
 const offendersOf = (file: string, source: string): string[] => {
   const reasons: string[] = [];
-  if (!importsFromTestkit(source, 'REAL_PROCESS_TEST_TIMEOUT_MS')) reasons.push('does not import REAL_PROCESS_TEST_TIMEOUT_MS from @momonga/testkit');
+  if (!importsFromTestkit(source, REAL_PROCESS_FORM.constant)) reasons.push('does not import REAL_PROCESS_TEST_TIMEOUT_MS or a multiple of it from @momonga/testkit');
   if (!fileLevelTestTimeout(source, REAL_PROCESS_FORM)) reasons.push('has no file-level vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS })');
   reasons.push(...timeoutFormOffences(source, REAL_PROCESS_FORM));
   return reasons.map((reason) => `${file}: ${reason}`);
@@ -118,6 +123,13 @@ describe('every test file that starts a real gateway or runtime sets REAL_PROCES
     ['an integer multiple of the guard', '4 * REAL_PROCESS_TEST_TIMEOUT_MS'],
   ])('accepts %s at file level', (_form, value) => {
     const source = `import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';\nvi.setConfig({ testTimeout: ${value} });\nit('x', async () => {});\n`;
+
+    expect(offendersOf('fixture.test.ts', source)).toEqual([]);
+  });
+
+  it('accepts at file level a testkit bound declared as an integer multiple of the guard', () => {
+    expect(guardMultiples()).toEqual(expect.arrayContaining(['SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS']));
+    const source = `import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS } from '@momonga/testkit';\nvi.setConfig({ testTimeout: SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS });\nit('x', async () => {});\n`;
 
     expect(offendersOf('fixture.test.ts', source)).toEqual([]);
   });

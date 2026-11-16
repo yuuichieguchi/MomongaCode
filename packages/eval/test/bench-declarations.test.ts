@@ -1,7 +1,7 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createTempDir } from '@momonga/testkit';
 import { nodeProbe } from './bench-fixtures.ts';
 
 const BENCH_DIR = path.resolve(import.meta.dirname, '..', 'datasets', 'bench');
@@ -11,7 +11,7 @@ type ShippedTask = { id: string; repository: string; declaration: Declared[]; re
 type Shipped = { repositories: Record<string, { directory: string }>; tasks: ShippedTask[] };
 
 const shipped = JSON.parse(fs.readFileSync(path.join(BENCH_DIR, 'benchmark.json'), 'utf8')) as Shipped;
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-bench-declarations-'));
+const scratch = createTempDir();
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
 const workspaceOf = (task: ShippedTask, fixed: boolean): string => {

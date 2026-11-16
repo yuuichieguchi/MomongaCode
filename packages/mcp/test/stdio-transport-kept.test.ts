@@ -1,12 +1,11 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createKeptGroupControl, createProcessGroupPort, nodeCommandRunner, nodeFileSystem } from '@momonga/foundation';
 import type { GroupLaunchHost } from '@momonga/foundation';
-import { TEST_STDIO_LAUNCH, testProcessInspector } from '@momonga/testkit';
+import { createTempDir, TEST_STDIO_LAUNCH, testProcessInspector } from '@momonga/testkit';
 import { answeringMembers, fakeKeeperHost, settle } from '../../foundation/test/support/fake-keeper.ts';
 import { createStdioTransport } from '../src/stdio-transport.ts';
 
@@ -37,7 +36,7 @@ const keptWorld = () => {
 };
 
 const transportOver = (world: ReturnType<typeof keptWorld>) => {
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-kept-'));
+  const folder = createTempDir();
   folders.push(folder);
   const markers = path.join(folder, 'markers');
   fs.mkdirSync(markers);

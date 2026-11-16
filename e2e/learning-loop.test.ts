@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
+import { unaskedCommandsFor } from '@momonga/policy';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
@@ -55,6 +56,9 @@ const toEnd = async (runtime: RuntimeClient, runId: string) => {
   return frames;
 };
 
+const reviewedMemoriesOf = (review: string): Array<{ id: string; shown: string }> =>
+  [...review.matchAll(/^id: (\S+)$/gm)].map((match, index, all) => ({ id: match[1] ?? '', shown: review.slice(match.index, all[index + 1]?.index ?? review.length) }));
+
 const recalledTextOf = (requests: ReturnType<typeof chatCompletions>, index: number): string | undefined =>
   messagesOf(requests[index])
     .map((message) => (typeof message.content === 'string' ? message.content : JSON.stringify(message.content)))
@@ -88,7 +92,8 @@ describe('learning loop', () => {
       expect((await raw.call('PUT', '/v1/trust', { path: project, decision: 'trusted' })).status).toBe(200);
       const { session } = await runtime.createSession({ permissionMode: 'manual' });
       const { run: first } = await runtime.createRun(session.id, 'Write answer.ts and run the check');
-      await approveEachAskUntilEnd(runtime, first.id, 2);
+      expect(unaskedCommandsFor(process.platform).readOnly, 'the check command echo runs without asking, so the Write is the one ask of the first run').toContain('echo');
+      await approveEachAskUntilEnd(runtime, first.id, 1);
       const frames = await toEnd(runtime, first.id);
       expect(frames.at(-1)?.data['to']).toBe('COMPLETED');
       expect(framesOfType(frames, 'tool.completed').map((frame) => frame.data['exitCode'])).toContain(0);
@@ -101,11 +106,14 @@ describe('learning loop', () => {
         { deadlineMs: SWEEP_BOUND_MS, intervalMs: 250, description: 'the sweeper of the runtime to reflect on the verified run' },
       );
       expect(waiting.code).toBe(0);
-      const memoryId = /^id: (\S+)$/m.exec(waiting.stdout)?.[1];
-      if (memoryId === undefined) throw new Error(`no memory id in ${waiting.stdout}`);
-      expect(waiting.stdout).toContain('evidence: file answer.ts');
-      expect(waiting.stdout).toContain('evidence: check echo verified exited 0');
-      expect(waiting.stdout).toContain(`reflection candidate 0`);
+      const waitingMemories = reviewedMemoriesOf(waiting.stdout);
+      const noted = waitingMemories.find((memory) => memory.shown.includes(NOTE));
+      if (noted === undefined) throw new Error(`no memory with the note in ${waiting.stdout}`);
+      const memoryId = noted.id;
+      expect(noted.shown).toContain('evidence: file answer.ts');
+      expect(noted.shown).toContain('evidence: check echo verified exited 0');
+      expect(noted.shown).toMatch(/reflection candidate \d+/);
+      const otherCandidates = waitingMemories.filter((memory) => memory.id !== memoryId);
 
       const requests = chatCompletions(stack.fake);
       expect(requests).toHaveLength(4);
@@ -114,16 +122,11 @@ describe('learning loop', () => {
       expect(reflection).toContain('<recorded_run>');
       expect((requests[3]?.body as { tools?: unknown[] }).tools ?? []).toEqual([]);
 
-      const cost = await runCli(home, ['cost']);
+      const cost = await runCli(home, ['cost', '--json']);
       expect(cost.code).toBe(0);
-      expect(cost.stdout).toContain(`reflection run ${first.id}`);
       const reflectionInput = reportedTokensOfRequest(requests[3]?.body);
-      expect(cost.stdout).toContain(`${reflectionInput} input + 5 output = ${reflectionInput + 5} tokens`);
-      const costJson = JSON.parse((await runCli(home, ['cost', '--json'])).stdout) as { contextCharges: { charges: Json[]; totalTokens: number } };
-      expect(costJson.contextCharges).toMatchObject({
-        totalTokens: reflectionInput + 5,
-        charges: [{ purpose: 'reflection', runId: first.id, project, inputTokens: reflectionInput, outputTokens: 5, totalTokens: reflectionInput + 5 }],
-      });
+      const report = JSON.parse(cost.stdout) as { runs: Array<{ runId: string; roles: Record<string, Json> }> };
+      expect(report.runs.find((run) => run.runId === first.id)?.roles['reflection']).toMatchObject({ calls: 1, inputTokens: reflectionInput, outputTokens: 5 });
 
       const { run: second } = await runtime.createRun(session.id, 'Say hello', { history: 'fresh' });
       expect((await toEnd(runtime, second.id)).at(-1)?.data['to']).toBe('COMPLETED');
@@ -131,6 +134,7 @@ describe('learning loop', () => {
 
       const accepted = await runCli(home, ['memory', 'review', 'accept', memoryId]);
       expect(accepted.stdout).toBe(`accepted memory ${memoryId}\n`);
+      for (const other of otherCandidates) expect((await runCli(home, ['memory', 'review', 'reject', other.id])).stdout).toBe(`rejected memory ${other.id}\n`);
       const settled = await until(
         async () => {
           const review = await runCli(home, ['memory', 'review']);

@@ -22,18 +22,25 @@ const callTextFrom = (text: string, open: number): string => {
   return text.slice(open);
 };
 
-const callsWithoutSignal = (relative: string): string[] => {
-  const text = read(relative);
+const forwardsOptionsOfItsCaller = (call: string, beforeCall: string): boolean =>
+  [...call.matchAll(/\.\.\.(\w+)\b/g)].some(([, name = '']) => new RegExp(`\\([^()]*\\b${name}\\b[^()]*\\)\\s*=>\\s*$`).test(beforeCall));
+
+const signalOf = (call: string, line: string, beforeCall: string): boolean => /\bsignal\b/.test(forwardsOptionsOfItsCaller(call, beforeCall) ? line : call);
+
+const callsWithoutSignalIn = (relative: string, text: string): string[] => {
   const found: string[] = [];
   for (const match of text.matchAll(PROBE_CALL)) {
     const lineStart = text.lastIndexOf('\n', match.index) + 1;
-    const line = text.slice(lineStart, text.indexOf('\n', match.index));
+    const lineEnd = text.indexOf('\n', match.index);
+    const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
     if (line.trim().startsWith('import') || line.includes('typeof ')) continue;
     const call = callTextFrom(text, match.index + match[0].length - 1);
-    if (!/\bsignal\b/.test(call)) found.push(`${relative}:${text.slice(0, match.index).split('\n').length}: ${line.trim()}`);
+    if (!signalOf(call, line, text.slice(lineStart, match.index))) found.push(`${relative}:${text.slice(0, match.index).split('\n').length}: ${line.trim()}`);
   }
   return found;
 };
+
+const callsWithoutSignal = (relative: string): string[] => callsWithoutSignalIn(relative, read(relative));
 
 describe('T4 (d) every caller of a probe passes the signal of its operation', () => {
   it.for([
@@ -48,6 +55,12 @@ describe('T4 (d) every caller of a probe passes the signal of its operation', ()
     'packages/cli/src/paths.ts',
   ])('%s calls no probe without a signal', (relative) => {
     expect(callsWithoutSignal(relative)).toEqual([]);
+  });
+
+  it('reads a probe inside an arrow that spreads its options parameter as given the signal its caller passes on the same line', () => {
+    expect(callsWithoutSignalIn('planted.ts', 'await ((pgid, options) => terminateGroup(pgid, { ...options, port }))(group, { signal: bound.signal });')).toEqual([]);
+    expect(callsWithoutSignalIn('planted.ts', 'await ((pgid, options) => terminateGroup(pgid, { ...options, port }))(group, { graceMs });')).toHaveLength(1);
+    expect(callsWithoutSignalIn('planted.ts', 'await terminateGroup(pgid, { ...defaults, port }); const signal = bound.signal;')).toHaveLength(1);
   });
 });
 

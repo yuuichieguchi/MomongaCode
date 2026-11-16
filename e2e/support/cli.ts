@@ -6,7 +6,9 @@ import type { E2eHome } from './home.ts';
 import { CLI_BUNDLE, CLI_FAKES_BUNDLE } from './cli-bundles.ts';
 import { TEST_OPENER_RECORD_ENV, productTestEnv, readOpenerRecord } from '@momonga/testkit';
 import type { OpenerCall } from '@momonga/testkit';
+import { describeVerification } from '../../packages/cli/src/policy-messages.ts';
 import { SESSION_PATH } from './runtime-client.ts';
+import { baseSettings, sandboxChoiceOf, writeSettingsFile } from './stack.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, withinBound } from './wait.ts';
 
 export { CLI_BUNDLE, CLI_FAKES_BUNDLE, CLI_FAKES_ENTRY } from './cli-bundles.ts';
@@ -86,6 +88,33 @@ export const startCli = (home: E2eHome, args: readonly string[], options: RunCli
 };
 
 export const runCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> => startCli(home, args, options).result;
+
+const E2E_CHECK_COMMAND = 'echo verified';
+
+export const E2E_DECLARED_CHECK = { commands: [E2E_CHECK_COMMAND] } as const;
+
+export const E2E_CHECK_PASSED_TEXT = describeVerification({
+  type: 'verification.completed',
+  round: 1,
+  conditionId: E2E_CHECK_COMMAND,
+  command: E2E_CHECK_COMMAND,
+  outcome: 'passed',
+  durationMs: 0,
+  output: '',
+  mutationSeq: 0,
+  id: 0,
+  runId: '',
+  sessionId: '',
+  seq: 0,
+  step: 0,
+  createdAt: 0,
+});
+
+export const decideProjectFolderWithCheck = async (home: E2eHome): Promise<void> => {
+  writeSettingsFile(home, { ...baseSettings(home, sandboxChoiceOf({ home }).kind), verification: E2E_DECLARED_CHECK });
+  const decided = await runCli(home, ['trust', home.project, '--set', 'trusted']);
+  if (decided.code !== 0) throw new Error(`momonga trust ${home.project} --set trusted exited ${decided.code}: ${decided.stderr}`);
+};
 
 export const fakePortsEnv = (home: E2eHome): Record<string, string> => ({
   MOMONGA_E2E_OPEN_LOG: path.join(home.root, OPEN_LOG_FILE_NAME),

@@ -1,7 +1,7 @@
-import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { shortTempBase } from '@momonga/foundation';
+import { systemTempRoot } from '@momonga/testkit/test-support';
 
 export const E2E_RUN_ENV = 'MOMONGA_E2E_RUN';
 export const E2E_RUN_PATTERN = /^[0-9a-f]{4}$/;
@@ -45,7 +45,7 @@ export const privateTempRoot = (base: string, identity: PrivateRootIdentity = cu
   return verifyPrivateRoot(root, identity);
 };
 
-export const sharedTempBase = (): string => fs.realpathSync(shortTempBase(process.platform, os.tmpdir()));
+export const sharedTempBase = (): string => fs.realpathSync(shortTempBase(process.platform, systemTempRoot()));
 
 export const e2eTmpRoot = (): string => privateTempRoot(sharedTempBase());
 

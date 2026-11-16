@@ -8,7 +8,7 @@ import type { FakeScriptedReply } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { startAcpClient, updatesOf } from './support/acp.ts';
 import { titleOf } from './support/cases.ts';
-import { runCli } from './support/cli.ts';
+import { E2E_CHECK_PASSED_TEXT, decideProjectFolderWithCheck, runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
@@ -172,6 +172,7 @@ describe('acp: momonga acp', () => {
       textReply('child edited the greeting'),
       textReply(FINAL_TEXT),
     ]);
+    await decideProjectFolderWithCheck(home);
     fs.mkdirSync(home.paths.agents, { recursive: true });
     fs.writeFileSync(path.join(home.paths.agents, 'editor.md'), '---\nname: editor\ndescription: edits files\ntools: Read, Edit\n---\nYou edit files.\n');
     const acp = startAcpClient(home, {
@@ -192,7 +193,7 @@ describe('acp: momonga acp', () => {
     expect(acp.permissionRequests[0]?.toolCall).toMatchObject({ kind: 'edit', title: 'editor: Edit config.toml', rawInput: { file_path: target } });
     const waiting = updatesOf(acp.updates, 'tool_call_update').filter((update) => JSON.stringify(update).includes('waiting for subagent editor'));
     expect(waiting).toHaveLength(1);
-    expect(messageTexts(acp.updates, 'agent_message_chunk').join('')).toBe(FINAL_TEXT);
+    expect(messageTexts(acp.updates, 'agent_message_chunk').join('')).toBe(`${FINAL_TEXT}momonga info: ${E2E_CHECK_PASSED_TEXT}\n`);
     expect(await acp.finish()).toEqual({ code: 0, signal: null });
   });
 
