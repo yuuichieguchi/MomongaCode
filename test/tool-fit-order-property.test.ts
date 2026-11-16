@@ -70,17 +70,17 @@ describe('the tools kept, their order and the digest', () => {
 describe('the tools_dropped notice', () => {
   const HUGE = 'x'.repeat(20_000);
   const droppedByTier = (message: string): Record<string, string[]> => {
-    const list = /^Tools (.*) were left out because the declared context window of \S+ \(\d+ tokens\) leaves no room for them; /.exec(message)?.[1];
+    const list = /^The declared context window of \S+ \(\d+ tokens\) leaves no room for these tools, so they were left out: (.*); raise the declared context window of that model/.exec(message)?.[1];
     expect(list, message).toBeDefined();
     return Object.fromEntries(
       list!.split('; ').map((group) => {
-        const separator = group.indexOf(': ');
-        return separator < 0 ? ['', group.split(', ')] : [group.slice(0, separator), group.slice(separator + 2).split(', ')];
+        const tiered = /^(.*) \((\w+) tools\)$/.exec(group);
+        return tiered === null ? ['', group.split(', ')] : [tiered[2], tiered[1]!.split(', ')];
       }),
     );
   };
 
-  it('groups the dropped tools by tier, each companion marked with its host and ranked in its host tier, as in the design example "Tools optional: GitCommit, GitPush; common: BashOutput (with Bash) were left out because the declared context window leaves no room for them"', async () => {
+  it('groups the dropped tools by tier, each companion marked with its host and ranked in its host tier, in the sentence that names the declared context window"', async () => {
     const set = await toolSetOf(
       makeTool('Read', { tier: 'essential' }),
       makeTool('Bash', { tier: 'common', description: HUGE }),

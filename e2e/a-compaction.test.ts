@@ -218,7 +218,7 @@ const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan
   expect(planned).toBeDefined();
   const messages = notices.map((event) => String(event.data['message']));
   expect(
-    messages.filter((message) => message.startsWith('Tools ') && message.includes('were left out')),
+    messages.filter((message) => message.includes('leaves no room for these tools, so they were left out: ')),
     `Bash is denied and no background job runs, so BashOutput and KillBash are not offered; the measured pinned prefix is ${plan.sizing.pinned} tokens against the floor ${floor} (ceiling ${plan.sizing.ceiling} minus the larger of the minimum room and a quarter of the ceiling), so every offered tool fits and none is left out`,
   ).toEqual([]);
   const before = planned?.facts.requestsBeforeEscalation ?? 0;
@@ -290,7 +290,7 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     const row = runRowOf(home, runId);
     expect({ status: row.status, stopReason: row.stop_reason }).toEqual({ status: 'COMPLETED', stopReason: null });
     const notices = ofType(journalOf(home, runId), 'notice').map((event) => String(event.data['message']));
-    expect(notices.some((message) => message.startsWith('Tools ') && message.includes('were left out'))).toBe(true);
+    expect(notices.some((message) => message.includes('leaves no room for these tools, so they were left out: '))).toBe(true);
     const posts = chatCompletions(stack.fake);
     expect(posts).toHaveLength(1);
     expect(wireTokensOfBody(posts[0]?.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0).R);
