@@ -68,7 +68,7 @@ export interface ProbeOptions {
   progress?: MeasurementProgress;
 }
 
-export const PROBE_METHOD_VERSION = 4;
+export const PROBE_METHOD_VERSION = 5;
 
 const MAX_RATE_LIMIT_RETRIES = 3;
 const MEASUREMENT_BASE_REQUESTS = 64;
