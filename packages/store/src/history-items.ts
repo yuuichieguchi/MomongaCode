@@ -1,4 +1,4 @@
-import { RECORDED_DATA_MARKER, includedShellTexts, recordedDataMessage, userMessageContent } from '@momonga/protocol';
+import { RECORDED_DATA_MARKER, fenceToolOutput, includedShellTexts, userMessageContent } from '@momonga/protocol';
 import type { ContentPart, HeldOutcome, InputItem, RunEventPayload } from '@momonga/protocol';
 
 export const LATE_RESULT_TAG = 'late_tool_result';
@@ -19,6 +19,9 @@ const LATE_OUTCOME_TEXT: Record<LateOutcome, string> = {
 export const lateResultOrigin = (tool: string, callId: string, outcome: LateOutcome): string =>
   `${RECORDED_DATA_MARKER}: the result of the held call ${tool} (${callId}); ${LATE_OUTCOME_TEXT[outcome]}`;
 
+const lateResultText = (tool: string, callId: string, outcome: LateOutcome, output: string, fence: string): string =>
+  `<${LATE_RESULT_TAG}>\n${lateResultOrigin(tool, callId, outcome)}\n${fenceToolOutput(callId, tool, output, fence)}\n</${LATE_RESULT_TAG}>`;
+
 export type ProducedItem = { item: InputItem; callId?: string; handle?: string };
 
 export type ItemFacts = {
@@ -37,7 +40,7 @@ const outputOf = (callId: string, output: string, facts: ItemFacts): ProducedIte
 });
 
 const lateResultOf = (callId: string, outcome: LateOutcome, output: string, facts: ItemFacts): ProducedItem => ({
-  item: recordedDataMessage({ tag: LATE_RESULT_TAG, origin: lateResultOrigin(facts.heldToolNameOf(callId), callId, outcome), text: output }),
+  item: { type: 'message', role: 'user', content: lateResultText(facts.heldToolNameOf(callId), callId, outcome, output, facts.fence) },
 });
 
 const ITEM_PRODUCERS = {

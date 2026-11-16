@@ -1,4 +1,4 @@
-import { fenceUntrusted } from '@momonga/protocol';
+import { fenceToolOutput } from '@momonga/protocol';
 import { fenceBoundaryIn } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import {
@@ -375,7 +375,7 @@ describe('anthropic adapter through the gateway: compaction', () => {
     expect(body.system[0]?.text).toContain('handoff note');
     expect(JSON.stringify(body)).not.toContain('cache_control');
     const transcript = body.messages[0]?.content[0]?.text ?? '';
-    expect(transcript).toContain(fenceUntrusted('tool_result', { id: 'c1' }, 'body', fenceBoundaryIn(transcript)));
+    expect(transcript).toContain(fenceToolOutput('c1', 'read_file', 'body', fenceBoundaryIn(transcript)));
   });
 
   it('sizes the summary request by counting the system and messages it will actually send', async () => {
