@@ -6,7 +6,7 @@ import { GUIDELINE_ANALYSIS_INSTRUCTIONS, GUIDELINE_CANDIDATE_INSTRUCTIONS, GUID
 import { HISTORY_READ_TOOL_NAME } from '@momonga/tools';
 import type { FakeRoute } from '@momonga/testkit';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
-import { fitLimitAfterReport, gainThresholdOf, isCompactionRequest } from './support/budget.ts';
+import { fitLimitAfterReport, gainThresholdOf, isCompactionRequest, stepTokensToCompact } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import {
@@ -257,10 +257,10 @@ describe('momonga context improve', () => {
     ).toBeGreaterThan(0);
     const measured = await measureWindow(home, fake, MEASURE_WINDOW_BOUND_MS);
     const benchmarkGain = gainThresholdOf(measured.benchmark, measured.factlessWorkingStateTokens);
-    const benchmarkStepTokens = Math.ceil(benchmarkGain / (STEPS - DEFAULT_KEEP_RECENT_STEPS)) - Math.ceil(measured.readFixedTokens);
+    const benchmarkStepTokens = (await stepTokensToCompact(measured.pins, measured.benchmark.pinned, STEPS, DEFAULT_KEEP_RECENT_STEPS, benchmarkGain)) - Math.ceil(measured.readFixedTokens);
     expect(
       benchmarkStepTokens,
-      'a step older than the protected recent steps keeps its call and an omitted-output marker (measured here by the fixed cost of a Read) once its output is evicted, so its text only has to make up the rest of the compaction gain; the gain is the product rule, twice the summary item plus the working state the compaction adds, and the walk records no written file, command, later user message or plan, so that working state is the widest replaced line alone',
+      'a step keeps its call and an omitted-output marker (measured here by the fixed cost of a Read) once its output is evicted, so its text only has to make up the rest of the smallest step cost that, counted by the token meter of the product under the pins of the run and fed the usage the upstream reports, carries the evicted walk over the high mark, where the build looks for a proactive compaction, with the steps older than the protected recent steps worth the compaction gain; the gain is the product rule, twice the summary item plus the working state the compaction adds, and the walk records no written file, command, later user message or plan, so that working state is the widest replaced line alone',
     ).toBeGreaterThan(0);
     const benchmarkStepCost = benchmarkStepTokens + Math.ceil(measured.readFixedTokens);
     expect(
