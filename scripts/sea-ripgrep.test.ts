@@ -52,8 +52,8 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
   const searchRound = async (stderr = ''): Promise<string> => {
     const before = chatCompletions(upstream).length;
     const result = await run('-p', 'Find the needle', '--permission-mode', 'acceptEdits');
-    expect(result).toEqual({ status: 0, stdout: `${DONE}\n`, stderr: `${undecidedNotice()}${stderr}` });
     const requests = chatCompletions(upstream);
+    expect(result, JSON.stringify((requests[requests.length - 1]?.body as { messages: unknown[] }).messages.slice(-1))).toEqual({ status: 0, stdout: `${DONE}\n`, stderr: `${undecidedNotice()}${stderr}` });
     expect(requests.length - before).toBe(2);
     return JSON.stringify(requests[requests.length - 1]);
   };

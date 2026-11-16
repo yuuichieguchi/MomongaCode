@@ -64,8 +64,8 @@ describe('CI configuration', () => {
   };
 
   it('pins the reuse of model-checking results in each script that runs the tier: off in test and test:tlc-deep, on in test:reuse', () => {
-    expect(scriptParts('test')).toEqual({ assignments: { MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit' });
-    expect(scriptParts('test:reuse')).toEqual({ assignments: { MOMONGA_TLC_REUSE: '1' }, command: 'vitest run --project unit' });
+    expect(scriptParts('test')).toEqual({ assignments: { MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit --project e2e --project packaging' });
+    expect(scriptParts('test:reuse')).toEqual({ assignments: { MOMONGA_TLC_REUSE: '1' }, command: 'vitest run --project unit --project e2e --project packaging' });
     expect(scriptParts('test:tlc-deep')).toEqual({ assignments: { MOMONGA_TLC_TIER: 'deep', MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit test/formal' });
   });
 

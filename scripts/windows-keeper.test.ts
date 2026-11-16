@@ -1,7 +1,7 @@
 import { testKernelLock } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { RELEASE_ASSETS, WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, WindowsKeeperDistributionError, ensureBundledWindowsKeeper, nodeFileSystem, parseWindowsKeeperManifest, sha256Hex } from '@momonga/foundation';
 import type { ReleaseTargetName } from '@momonga/foundation';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
@@ -9,6 +9,17 @@ import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { WINDOWS_KEEPER_SOURCE, WINDOWS_KEEPER_TARGETS, buildWindowsKeeperAssets, compileCommandOf } from './windows-keeper.ts';
 
 const TARGET = 'win-x64';
+
+const FAKE_ZIG = (calls: string): string => `#!/bin/sh
+printf '%s\\n' "$*" >> '${calls}'
+output=''
+source=''
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -o ]; then output="$2"; source="$3"; shift 2; fi
+  shift
+done
+{ printf 'MZ'; cat "$source"; } > "$output"
+`;
 
 describe('the keeper asset of the single executable (T-JO-8)', () => {
   let root = '';
@@ -18,13 +29,27 @@ describe('the keeper asset of the single executable (T-JO-8)', () => {
   const extractInto = (cache: string, asset: (name: string) => Uint8Array = read): Promise<string> =>
     ensureBundledWindowsKeeper({ asset, executablesRoot: path.join(root, cache), random: { hex: () => 'abcdef0123456789' }, files: nodeFileSystem, lock: testKernelLock() });
 
+  let compilerCalls = '';
+
   beforeAll(async () => {
     root = fs.realpathSync(createTempRoot());
+    const bin = path.join(root, 'fake-compiler');
+    compilerCalls = path.join(root, 'compiler-calls.txt');
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'zig'), FAKE_ZIG(compilerCalls), { mode: 0o755 });
+    vi.stubEnv('PATH', `${bin}:/usr/bin:/bin`);
     assets = await buildWindowsKeeperAssets(path.join(root, 'work'), TARGET);
   }, UNBOUNDED_BUILD_WAIT_MS);
 
   afterAll(async () => {
+    vi.unstubAllEnvs();
     await removeTempRoot(root);
+  });
+
+  it('runs the one compile command, on the compiler found on PATH', () => {
+    const output = path.join(root, 'work', 'windows-keeper', WINDOWS_KEEPER_BINARY_ASSET);
+    const { args } = compileCommandOf(WINDOWS_KEEPER_SOURCE, output, 'x86_64-windows-gnu');
+    expect(fs.readFileSync(compilerCalls, 'utf8').split('\n')[0]).toBe(args.join(' '));
   });
 
   it('is built from the one C source by the one compile command, for every release target that runs Windows and for no other', () => {

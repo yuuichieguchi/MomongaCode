@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { BuildOptions, Metafile } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { bundle, bundleJournalThread, bundleRuleVerifierThread, journalThreadEntry, repoRoot, ruleVerifierThreadEntry } from './bundle.ts';
+import { bundle, bundleJournalThread, bundleRuleVerifierThread, journalThreadEntry, repoRoot, ruleVerifierThreadEntry, storeWorkerEntry } from './bundle.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
@@ -68,7 +68,7 @@ describe('the rule verifier thread bundle contents', () => {
   );
 });
 
-describe('the plugins of the two builds', () => {
+describe('the plugins of the thread builds', () => {
   let root = '';
 
   beforeAll(() => {
@@ -91,7 +91,7 @@ describe('the plugins of the two builds', () => {
       });
       const threads = recorded.filter((options) => options.format === 'cjs');
       const main = recorded.filter((options) => options.format === 'esm');
-      expect(threads.map((options) => options.entryPoints)).toEqual([[journalThreadEntry], [ruleVerifierThreadEntry]]);
+      expect(threads.map((options) => options.entryPoints)).toEqual([[journalThreadEntry], [ruleVerifierThreadEntry], [storeWorkerEntry]]);
       expect(main).toHaveLength(1);
       for (const thread of threads) {
         const threadNames = pluginNamesOf(thread);
