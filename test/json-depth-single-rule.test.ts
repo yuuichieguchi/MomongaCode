@@ -75,6 +75,7 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/foundation/src/uds.ts': { calls: { 'body.json': 1 }, reason: 'the body of an answer of the product\'s own services over its own socket; owner foundation' },
   'packages/gateway/src/probe/client.ts': { calls: { 'body.json': 1 }, reason: 'the body of a model server\'s answer to a probe, read without the depth bound: outside text, owner gateway (problems list)' },
   'packages/runtime/src/service/service.ts': { calls: { 'body.json': 1 }, reason: 'an answer of the product\'s own service; owner runtime' },
+  'packages/tools/src/builtins/file-writer.ts': { calls: { 'JSON.parse': 2 }, reason: 'the request the tool runtime writes to its own file writer child and the answer that child writes back' },
   'packages/runtime/src/process/supervised-gateway.ts': { calls: { 'body.json': 1 }, reason: 'the state answer of the product\'s own gateway; owner runtime' },
 };
 

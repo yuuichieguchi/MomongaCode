@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { adapterFilesOf } from './support/adapters.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
@@ -72,16 +73,11 @@ const ASYNCHRONOUS_FILES: readonly string[] = [
   'packages/cli/src/acp/serve.ts',
 ];
 
-const SYNCHRONOUS_USERS: Readonly<Record<string, string>> = {
-  'packages/foundation/src/sync-paths.ts': 'the synchronous driver of the one resolution algorithm',
-  'packages/foundation/src/index.ts': 'exports the synchronous driver',
-  'packages/supervisor/src/start-supervisor.ts': 'the real path of the secret program, checked for its owners when the store is chosen once at start',
-  'packages/cli/src/node-ports.ts': 'the real path of the secret program, checked for its owners when a secret command chooses the store',
-};
+const SYNCHRONOUS_DRIVER_USERS = adapterFilesOf('synchronous-paths');
 
 describe('path resolution is asynchronous and goes through the file-system port', () => {
   it('names files that exist', () => {
-    expect([...ASYNCHRONOUS_FILES, ...Object.keys(SYNCHRONOUS_USERS)].filter((file) => !fs.existsSync(path.join(ROOT, file)))).toEqual([]);
+    expect([...ASYNCHRONOUS_FILES, ...Object.keys(SYNCHRONOUS_DRIVER_USERS)].filter((file) => !fs.existsSync(path.join(ROOT, file)))).toEqual([]);
   });
 
   it('keeps no synchronous call in the files that resolve paths for a decision, a tool call or a sandbox', () => {
@@ -94,8 +90,8 @@ describe('path resolution is asynchronous and goes through the file-system port'
       .filter((file) => !isGenerated(file) && SYNCHRONOUS_DRIVER.test(fs.readFileSync(file, 'utf8')))
       .map(relative)
       .sort();
-    expect(users).toEqual(Object.keys(SYNCHRONOUS_USERS).sort());
-    expect(Object.values(SYNCHRONOUS_USERS).filter((reason) => reason.trim() === '')).toEqual([]);
+    expect(users).toEqual(Object.keys(SYNCHRONOUS_DRIVER_USERS).sort());
+    expect(Object.values(SYNCHRONOUS_DRIVER_USERS).filter((reason) => reason.trim() === '')).toEqual([]);
   });
 
   it('resolves no link and no real path synchronously outside the file-system adapter and the synchronous driver', () => {
