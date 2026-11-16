@@ -824,6 +824,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return { decision };
   };
 
+  const preconditionContextOf = (batch: BatchCore): PreconditionContext => ({ ...subjectContextOf(batch), files: options.files, session: batch.session, signal: batch.signal });
+
   const permissionGate = async (
     call: ToolCall,
     tool: AnyTool,
@@ -906,10 +908,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
     const { approval } = call;
     if (decision.kind === 'ask') {
-      const preconditionContext: PreconditionContext = { ...subjectContextOf(batch), files: options.files, session: batch.session, signal: batch.signal };
+      const preconditionContext = preconditionContextOf(batch);
       let described: ApprovalDescription;
       try {
-        if (stage === 'enforce' && tool.precondition !== undefined) await tool.precondition(input, preconditionContext);
         described = await approvalDescriptionOf(tool, input, displayContextOf(batch), preconditionContext, target.facts);
       } catch (error) {
         return failedOutcome(call.callId, describeThrown(tool.name, error));
@@ -1576,6 +1577,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       }
       if (record === undefined) {
         await batch.outputFit.ready?.();
+        if (tool.precondition !== undefined) {
+          try {
+            await tool.precondition(target.input, preconditionContextOf(batch));
+          } catch (error) {
+            return failedOutcome(callId, describeThrown(tool.name, error));
+          }
+        }
         if (tool.prepare !== undefined) {
           try {
             prepared = await tool.prepare(target.input, contextForBasis(), target.facts);
