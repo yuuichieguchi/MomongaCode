@@ -47,7 +47,7 @@ describe('the candidates', () => {
   });
 
   it('ignore the letter case and keep at most the asked number', async () => {
-    expect(await rank(['README.md', 'readme.txt', 'src/Readme'], 'READ', 2)).toEqual(['README.md', 'readme.txt']);
+    expect(await rank(['src/Readme', 'readme.txt', 'README.md'], 'READ', 2)).toEqual(['README.md', 'readme.txt']);
   });
 
   it('list the shortest paths first for an empty query', async () => {

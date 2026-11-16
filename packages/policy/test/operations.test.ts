@@ -265,7 +265,7 @@ describe('a covered program is judged by what is known to be read-only, not by w
     return decideWith(layout, BASH, subject, 'manual', rules.map(([effect, text]) => ruleIn(layout)(effect, text)), { ...(mandate ? { mandate: true as const } : {}), supersededForms: SUPERSEDED, coveredPrograms: PROGRAMS });
   };
 
-  it.each(['git -c alias.x=push x origin main', 'git --config-env=alias.x=A x', 'git x', 'git rebase main', 'git --exec-path=/tmp/evil status', 'gh pr new', 'gh api -X POST repos/acme/widgets/pulls', 'gh api repos/acme/widgets/pulls/7/merge -X PUT', 'git --no-pager rebase log', 'git'])(
+  it.each(['git -c alias.x=push x origin main', 'git --config-env=alias.x=A x', 'git x', 'git rebase main', 'git --exec-path=/tmp/evil status', 'gh pr new', 'gh api -X POST repos/acme/widgets/pulls', 'gh api repos/acme/widgets/pulls/7/merge -X PUT', 'git --no-pager rebase log', 'git -C push status', 'git'])(
     'needs a person in a mandate run, whatever the allow rules: %s',
     async (command) => {
       expect(await decideIn(command, [['allow', 'Bash(git:*)'], ['allow', 'Bash(gh:*)']])).toMatchObject({ kind: 'ask', source: 'operation', humanOnly: true });
