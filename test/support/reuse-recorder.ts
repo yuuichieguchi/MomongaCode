@@ -37,6 +37,17 @@ const keepingProperties = (replacement: Call, original: Call): void => {
   Object.defineProperty(replacement, RECORDING, { value: true });
 };
 
+export const recordingLaunchOf = (original: Call, onStart: () => void): Call => {
+  const replacement = function recordingLaunch(this: unknown, ...args: unknown[]): unknown {
+    onStart();
+    return original.apply(this, args);
+  };
+  keepingProperties(replacement, original);
+  const promised = (original as unknown as Holder)[promisify.custom] as Call | undefined;
+  if (promised !== undefined) Object.defineProperty(replacement, promisify.custom, { value: recordingLaunchOf(promised, onStart) });
+  return replacement;
+};
+
 const start = (): void => {
   const reads = new Set<string>();
   let startsProcesses = false;
@@ -81,12 +92,9 @@ const start = (): void => {
   const launching = (holder: Holder, name: string): void => {
     const original = holder[name] as (Call & { [RECORDING]?: true }) | undefined;
     if (original === undefined || original[RECORDING] === true) return;
-    const replacement = function recordingLaunch(this: unknown, ...args: unknown[]): unknown {
+    holder[name] = recordingLaunchOf(original, () => {
       startsProcesses = true;
-      return original.apply(this, args);
-    };
-    keepingProperties(replacement, original);
-    holder[name] = replacement;
+    });
   };
   for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) launching(childProcess as unknown as Holder, name);
 
