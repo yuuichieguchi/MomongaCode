@@ -23,6 +23,7 @@ export const toJobView = (job: Job): JobView => ({
   ...(job.signal === undefined ? {} : { signal: job.signal }),
   startedAt: job.startedAt,
   ...(job.endedAt === undefined ? {} : { endedAt: job.endedAt }),
+  ...(job.outputIncomplete === true ? { outputIncomplete: true } : {}),
 });
 
 export const toRunView = (run: Run) => ({

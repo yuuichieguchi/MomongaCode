@@ -1,3 +1,4 @@
+import { toJobView } from '../../src/service/views.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -689,6 +690,7 @@ describe('the output of a background job after its command ended is read by the 
     expect(done.output).toContain('Stopped reading output when the time of the command ran out; output may be incomplete.');
     const key = t.store.jobs.get(jobId)?.idemKey ?? '';
     expect(t.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED', result: { job: jobId, status: 'exited', output: { incomplete: true } } });
+    expect(toJobView(t.store.jobs.get(jobId) ?? expect.fail('the job is recorded'))).toMatchObject({ status: 'exited', outputIncomplete: true });
   });
 
   it('stops reading after the idle gap, writes the note into the output and marks the record incomplete', async () => {

@@ -1273,6 +1273,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           outputStart: result.output?.start ?? 0,
           outputTotal: result.output?.total ?? 0,
           endedAt: clock.now(),
+          outputIncomplete: result.outputIncomplete === true ? 1 : 0,
         });
         const event: RunEventPayload = {
           type: 'job.finished',

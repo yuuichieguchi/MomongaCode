@@ -209,6 +209,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
         ...(exit.code === null ? {} : { exitCode: exit.code }),
         ...(exit.signal === null ? {} : { signal: exit.signal }),
         ...(stored === undefined ? {} : { output: { handle: stored.handle, start: window.start, total: window.total } }),
+        ...(incomplete ? { outputIncomplete: true as const } : {}),
       };
       store.jobs.finish(job.id, result);
       settleRecord(job, { job: job.id, status: result.status, ...(incomplete ? { output: { incomplete: true } } : {}) });

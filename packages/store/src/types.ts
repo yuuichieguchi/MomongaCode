@@ -883,13 +883,14 @@ export type Job = {
   ownerGeneration?: number;
   killRequestedAt?: number;
   outputPath?: string;
+  outputIncomplete?: true;
 };
 
 export type StartJobInput = { id: string; idemKey: string; sessionId: string; runId: string; callId: string; command: string; ownerGeneration?: number; outputPath?: string };
 
 export type JobOutputRef = { handle: string; start: number; total: number };
 
-export type JobResult = { status: Exclude<JobStatus, 'running'>; exitCode?: number; signal?: string; output?: JobOutputRef };
+export type JobResult = { status: Exclude<JobStatus, 'running'>; exitCode?: number; signal?: string; output?: JobOutputRef; outputIncomplete?: true };
 
 export type FinishJobResult = { kind: 'finished'; job: Job } | { kind: 'already_finished'; job: Job } | NotFound;
 

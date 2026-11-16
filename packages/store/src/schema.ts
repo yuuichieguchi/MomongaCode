@@ -1248,6 +1248,12 @@ const INHERITED_COMPACTED_RECORDED = `
 SELECT 'event type: context.inherited_compacted';
 `;
 
+const BACKGROUND_COMMANDS_TABLE = 'jobs';
+
+const JOB_OUTPUT_INCOMPLETE = `
+ALTER TABLE ${BACKGROUND_COMMANDS_TABLE} ADD COLUMN output_incomplete INTEGER NOT NULL DEFAULT 0 CHECK (output_incomplete IN (0, 1));
+`;
+
 const RETENTION_SWEEPS = `
 CREATE TABLE retention_sweeps (
   session_id TEXT PRIMARY KEY,
@@ -1542,5 +1548,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 50,
     name: 'let retention delete the rows of an expired session closure: record each session being deleted in retention_sweeps with its run ids until every store has let them go, allow a delete of events only for a session recorded there, and drop the two delete triggers of sessions, whose tables the retention registry deletes from',
     sql: RETENTION_SWEEPS,
+  },
+  {
+    version: 51,
+    name: 'keep on the row of a command run in the background whether the output read after the command ended stopped before the output ended, so its view says so; a row finished before keeps 0',
+    sql: JOB_OUTPUT_INCOMPLETE,
   },
 ];

@@ -322,6 +322,7 @@ const jobView = closed(
     signal: string,
     startedAt: integer,
     endedAt: integer,
+    outputIncomplete: { type: 'boolean', const: true },
   },
   ['id', 'sessionId', 'runId', 'callId', 'command', 'status', 'startedAt'],
 );
@@ -1337,6 +1338,7 @@ export type JobView = {
   signal?: string;
   startedAt: number;
   endedAt?: number;
+  outputIncomplete?: true;
 };
 
 export type JobsResponse = { jobs: JobView[] };

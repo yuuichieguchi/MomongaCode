@@ -49,6 +49,16 @@ describe('background jobs', () => {
     expect(h.store.jobs.finish('missing', { status: 'killed' })).toEqual({ kind: 'not_found' });
   });
 
+  it('keeps on the job row that its output was read incompletely after its command ended, and no such mark otherwise', async () => {
+    const { h, session, run } = await setup();
+    const { job } = startJob(h.store, session.id, run.id);
+    const other = startJob(h.store, session.id, run.id, 'bash_bbbbbbbbbbbb').job;
+    expect(h.store.jobs.finish(job.id, { status: 'exited', exitCode: 0, outputIncomplete: true })).toMatchObject({ kind: 'finished', job: { outputIncomplete: true } });
+    h.store.jobs.finish(other.id, { status: 'exited', exitCode: 0 });
+    expect(h.store.jobs.get(job.id)?.outputIncomplete).toBe(true);
+    expect(h.store.jobs.get(other.id)).not.toHaveProperty('outputIncomplete');
+  });
+
   it('records no event when no run is active', async () => {
     const { h, session, run, claim } = await setup();
     const { job } = startJob(h.store, session.id, run.id);
