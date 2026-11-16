@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { writeSync } from 'node:fs';
 import { signalsOf } from '@momonga/foundation';
 import type { ProcessPort, TerminalOutputPort } from './layer.ts';
@@ -60,3 +61,15 @@ export const hostProcessOn = (platform: NodeJS.Platform): ProcessPort => ({
   },
   deliverable: (signal) => signalsOf(platform).includes(signal),
 });
+
+export const launchOnTerminal = (argv: readonly string[]): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const [program, ...args] = argv;
+    if (program === undefined) {
+      reject(new Error('no program to launch'));
+      return;
+    }
+    const child = spawn(program, args, { stdio: 'inherit' });
+    child.once('error', reject);
+    child.once('exit', () => resolve());
+  });
