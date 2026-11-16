@@ -122,7 +122,7 @@ describe('a move that stays tells the remedy of the surface that stays', () => {
     });
     mover.attach({ ...surface, recordFile: () => file, quiet: () => true, terminal: () => undefined, suspend: () => Promise.resolve(), release: () => undefined, resume: () => undefined, say: (text) => void said.push(text) });
     mover.refuse('1.2.4', 'the installed program is still v1.2.3');
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     const [text] = said;
     if (text === undefined || said.length !== 1) throw new Error(`the mover said ${said.length} texts`);
     return text;

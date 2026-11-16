@@ -68,7 +68,7 @@ describe('16.8: the record names its owner and is held by its writer', () => {
       resume: () => undefined,
       say: () => undefined,
     });
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     expect(written.map(handoverRecordOwner)).toEqual([4242]);
     expect(written.map((text): unknown => JSON.parse(text))).toEqual([expect.objectContaining({ pid: 4242, reader: 4343, namespace: 'pid:[4026531836]' })]);
   });
@@ -181,7 +181,7 @@ describe('P-323: a relayed record names the child as its reader', () => {
         resume: () => undefined,
         say: () => undefined,
       });
-      void mover.learned('1.2.4');
+      void mover.learned('1.2.4', 'live');
     });
     await spawned;
     const child = children[0];

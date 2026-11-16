@@ -139,7 +139,7 @@ describe('the standard input of an ACP connection across a handover', () => {
     await old.output.until(answers(1));
 
     const surface = old.surface();
-    await vi.waitFor(() => expect(surface.quiet()).toBe(true));
+    await vi.waitFor(() => expect(surface.quiet('live')).toBe(true));
     await surface.suspend();
     old.input.arrive(`${request.slice(20)}${line(SET_MODE(3))}`);
     const record = acpRecordOf(surface);

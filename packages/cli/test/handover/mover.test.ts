@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMover } from '../../src/handover/mover.ts';
-import type { MoveSurface } from '../../src/handover/mover.ts';
+import type { MoveSurface, OwnGeneration } from '../../src/handover/mover.ts';
 import { HANDOVER_FORMAT, HANDOVER_RECORD_MAX_BYTES, parseRecord } from '../../src/handover/record.ts';
 import type { StreamRecord } from '../../src/handover/record.ts';
 import type { ReplaceTarget } from '../../src/handover/replace-process.ts';
@@ -20,6 +20,7 @@ const setup = (faults: Faults = {}) => {
   const targets: ReplaceTarget[] = [];
   const said: string[] = [];
   const state = { quiet: true, padding: '', file: FILE as string | undefined };
+  const asked: OwnGeneration[] = [];
   const mover = createMover({
     version: '1.2.3',
     parties: async () => ({ writer: 4242, reader: 4242, namespace: 'single' }),
@@ -48,7 +49,10 @@ const setup = (faults: Faults = {}) => {
     surface: 'cli',
     kept: () => KEPT,
     recordFile: () => state.file,
-    quiet: () => state.quiet,
+    quiet: (own) => {
+      asked.push(own);
+      return state.quiet;
+    },
     snapshot: (toVersion) => {
       log.push('snapshot');
       return recordFor(toVersion, state.padding);
@@ -70,7 +74,7 @@ const setup = (faults: Faults = {}) => {
     },
   };
   mover.attach(surface);
-  return { mover, log, written, targets, said, state };
+  return { mover, log, written, targets, said, state, asked };
 };
 
 const MOVE = ['snapshot', 'suspend', 'say', 'snapshot', 'write', 'replace', 'release', 'write', 'hand over'];
@@ -95,7 +99,7 @@ describe('the texts of section 7 and 16.4', () => {
 describe('a session client moves at a quiet point (16.5, 16.8)', () => {
   it('writes the record and replaces the process in one step, the mode set travelling in the environment', async () => {
     const { mover, log, written, targets, said } = setup();
-    void mover.learned('1.2.4');
+    void mover.learned('1.2.4', 'live');
     await settled();
     expect(log).toEqual(MOVE);
     expect(said).toEqual([restartingText('1.2.4')]);
@@ -104,11 +108,22 @@ describe('a session client moves at a quiet point (16.5, 16.8)', () => {
     expect(targets).toEqual([{ file: '/opt/momonga', args: ['--handover', FILE], env: { MOMONGA_HANDOVER_TERMINAL: '{"screen":"fullscreen","modes":["alt-screen","kitty-keys"]}' } }]);
   });
 
+  it('asks the surface whether it is quiet for a generation of its own that is live or gone, and a gone generation stays gone (P-308)', async () => {
+    const { mover, asked, state } = setup();
+    state.quiet = false;
+    await mover.learned('1.2.4', 'live');
+    await mover.check();
+    await mover.learned('1.2.4', 'gone');
+    await mover.learned('1.2.4', 'live');
+    await mover.check();
+    expect(asked).toEqual(['live', 'live', 'gone', 'gone', 'gone']);
+  });
+
   it('does not move for its own version, an older one or one it cannot order', async () => {
     const { mover, log } = setup();
-    await mover.learned('1.2.3');
-    await mover.learned('1.2.2');
-    await mover.learned('nightly');
+    await mover.learned('1.2.3', 'live');
+    await mover.learned('1.2.2', 'live');
+    await mover.learned('nightly', 'live');
     await mover.check();
     expect(log).toEqual([]);
   });
@@ -116,7 +131,7 @@ describe('a session client moves at a quiet point (16.5, 16.8)', () => {
   it('does not move while something is pending, and moves at the event that ends it (red tests 12 and 28)', async () => {
     const { mover, log, state } = setup();
     state.quiet = false;
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     await mover.check();
     expect(log).toEqual([]);
     state.quiet = true;
@@ -128,13 +143,13 @@ describe('a session client moves at a quiet point (16.5, 16.8)', () => {
   it('does not move before a session is open', async () => {
     const { mover, log, state } = setup();
     state.file = undefined;
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     expect(log).toEqual([]);
   });
 
   it('goes back to waiting when the quiet point ended while it prepared', async () => {
     const { mover, log, state } = setup({ quietAfterSuspend: false });
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     expect(log).toEqual(['snapshot', 'suspend', 'resume']);
     state.quiet = true;
     await mover.check();
@@ -143,7 +158,7 @@ describe('a session client moves at a quiet point (16.5, 16.8)', () => {
 
   it('makes one attempt at a time', async () => {
     const { mover, log } = setup();
-    void mover.learned('1.2.4');
+    void mover.learned('1.2.4', 'live');
     void mover.check();
     void mover.check();
     await settled();
@@ -154,7 +169,7 @@ describe('a session client moves at a quiet point (16.5, 16.8)', () => {
 describe('a move that fails (16.4, M4)', () => {
   it('stays and says why when the record cannot be written, and the next check tries the same version again (red test 15)', async () => {
     const { mover, log, said } = setup({ write: new Error('ENOSPC: no space left on device') });
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     expect(log).toEqual(['snapshot', 'suspend', 'say', 'snapshot', 'write', 'resume', 'say']);
     expect(said.at(-1)).toBe(handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'ENOSPC: no space left on device', kept: KEPT }));
     await mover.check();
@@ -164,7 +179,7 @@ describe('a move that fails (16.4, M4)', () => {
   it('says a write failure once per version and reason: again only for another reason or a newer version', async () => {
     const faults: Faults = { write: Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) };
     const { mover, log, said } = setup(faults);
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     await mover.check();
     expect(log.filter((step) => step === 'write')).toHaveLength(2);
     expect(said.filter((text) => text.startsWith('Could not restart'))).toHaveLength(1);
@@ -172,14 +187,14 @@ describe('a move that fails (16.4, M4)', () => {
     await mover.check();
     expect(said.filter((text) => text.startsWith('Could not restart'))).toHaveLength(2);
     faults.write = Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
-    await mover.learned('1.2.5');
+    await mover.learned('1.2.5', 'live');
     expect(said.filter((text) => text.startsWith('Could not restart'))).toHaveLength(3);
   });
 
   it('a write failure is not a refusal: a later check after the fault cleared moves to that version', async () => {
     const faults: Faults = { write: new Error('the lock of the record is held by another process') };
     const { mover, log, targets } = setup(faults);
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     delete faults.write;
     void mover.check();
     await settled();
@@ -189,7 +204,7 @@ describe('a move that fails (16.4, M4)', () => {
 
   it('names the relayed child as the reader of the record, under the hold, and only then hands the hold over', async () => {
     const { mover, log, written } = setup();
-    void mover.learned('1.2.4');
+    void mover.learned('1.2.4', 'live');
     await settled();
     expect(log.slice(-4)).toEqual(['replace', 'release', 'write', 'hand over']);
     expect(written.map(({ text }): unknown => JSON.parse(text))).toEqual([
@@ -200,7 +215,7 @@ describe('a move that fails (16.4, M4)', () => {
 
   it('stays, removes the record, says why and makes one attempt when the exec fails (red test 16)', async () => {
     const { mover, log, said } = setup({ replace: new Error('execve EACCES') });
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     expect(log).toEqual(['snapshot', 'suspend', 'say', 'snapshot', 'write', 'replace', 'remove', 'resume', 'say']);
     expect(said.at(-1)).toBe(handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'execve EACCES', kept: KEPT }));
     await mover.check();
@@ -210,7 +225,7 @@ describe('a move that fails (16.4, M4)', () => {
   it('does not move while the record is larger than 1 MiB, says so once, and moves when it fits (red test 18)', async () => {
     const { mover, log, said, state } = setup();
     state.padding = 'x'.repeat(HANDOVER_RECORD_MAX_BYTES);
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     await mover.check();
     await mover.check();
     expect(log).toEqual(['snapshot', 'say', 'snapshot', 'snapshot']);
@@ -224,7 +239,7 @@ describe('a move that fails (16.4, M4)', () => {
   it('is told that the installed program is not the newer version, and does not try that generation', async () => {
     const { mover, log, said } = setup();
     mover.refuse('1.2.4', 'the installed program is still v1.2.3');
-    await mover.learned('1.2.4');
+    await mover.learned('1.2.4', 'live');
     expect(log).toEqual(['say']);
     expect(said).toEqual([handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'the installed program is still v1.2.3', kept: KEPT })]);
   });

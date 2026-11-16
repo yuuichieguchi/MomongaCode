@@ -7,11 +7,13 @@ import type { HandoverRecord } from './record.ts';
 import type { ReplaceHooks, ReplaceTarget } from './replace-process.ts';
 import { handoverFailedText, recordTooLargeText, restartingText } from './texts.ts';
 
+export type OwnGeneration = 'live' | 'gone';
+
 export type MoveSurface = {
   surface: Surface;
   kept(): KeptWork;
   recordFile(): string | undefined;
-  quiet(): boolean;
+  quiet(own: OwnGeneration): boolean;
   snapshot(toVersion: string): HandoverRecord;
   terminal(): HandoverTerminal | undefined;
   suspend(): Promise<void>;
@@ -32,7 +34,7 @@ export type MoverPorts = {
 
 export type Mover = {
   attach(surface: MoveSurface): () => void;
-  learned(version: string): Promise<void>;
+  learned(version: string, own: OwnGeneration): Promise<void>;
   check(): Promise<void>;
   refuse(version: string, reason: string): void;
 };
@@ -48,6 +50,7 @@ export const createMover = (ports: MoverPorts): Mover => {
   let surface: MoveSurface | undefined;
   let wanted: string | undefined;
   let moving: Promise<void> | undefined;
+  let own: OwnGeneration = 'live';
   const tried = new Set<string>();
   const toldTooLarge = new Set<string>();
   const refusals = new Map<string, string>();
@@ -110,7 +113,7 @@ export const createMover = (ports: MoverPorts): Mover => {
       return;
     }
     await on.suspend();
-    if (!on.quiet()) {
+    if (!on.quiet(own)) {
       on.resume();
       return;
     }
@@ -129,7 +132,7 @@ export const createMover = (ports: MoverPorts): Mover => {
       stayed(on, version, refusal);
       return Promise.resolve();
     }
-    if (!on.quiet()) return Promise.resolve();
+    if (!on.quiet(own)) return Promise.resolve();
     const running = attempt(on, file, version).finally(() => {
       moving = undefined;
     });
@@ -144,7 +147,8 @@ export const createMover = (ports: MoverPorts): Mover => {
         if (surface === next) surface = undefined;
       };
     },
-    learned: (version) => {
+    learned: (version, standing) => {
+      if (standing === 'gone') own = 'gone';
       if (orderVersions(ports.version, version) !== 'older') return Promise.resolve();
       if (wanted === undefined || orderVersions(wanted, version) === 'older') wanted = version;
       return check();

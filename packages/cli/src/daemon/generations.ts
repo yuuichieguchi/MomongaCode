@@ -53,7 +53,7 @@ export const endSessionWhenMovedAway =
   async () => {
     const current = await readCurrentGeneration(paths);
     if (current === undefined || current.version === version) return;
-    if (orderVersions(version, current.version) === 'older') await onNewer?.(current.version);
+    if (orderVersions(version, current.version) === 'older') await onNewer?.(current.version, 'gone');
     throw new DaemonStartError(reopenSessionMessage(current.version), paths.logFiles.supervisor, { pointsAtLog: false });
   };
 

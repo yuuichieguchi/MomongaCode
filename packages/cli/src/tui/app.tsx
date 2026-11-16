@@ -87,6 +87,7 @@ import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } fro
 import type { ColourHost, ThemeId } from './screen/theme.ts';
 import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, blockingPrompt, nextMode, promptTakesFocus, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
 import type { Entry } from './transcript.ts';
+import type { OwnGeneration } from '../handover/mover.ts';
 import { attachmentDigest } from '../handover/record.ts';
 import type { HandoverAttachment, HandoverInput, HandoverNote } from '../handover/record.ts';
 import { attachmentChangedText, attachmentUnreadableText } from '../handover/texts.ts';
@@ -317,12 +318,12 @@ export function App(props: AppProps) {
         notes: origins.notes(),
       };
     };
-    const quiet = (): boolean => {
+    const quiet = (own: OwnGeneration): boolean => {
       const state = store.state();
       const now = facts.current;
       if (openedSession.current === undefined || phaseRef.current !== 'ready' || now.overlay) return false;
       if (readingRef.current || switchingRef.current || shellRunning.current || now.tasks.count() > 0) return false;
-      if (state.approval !== undefined || state.elicitation !== undefined) return false;
+      if ((state.approval !== undefined && own === 'live') || state.elicitation !== undefined) return false;
       return now.terminal.state().screen === 'fullscreen' || sourceRef.current === undefined || !feedRef.current.pending(sourceRef.current, store.settledAt);
     };
     const surface: TuiSurface = {
