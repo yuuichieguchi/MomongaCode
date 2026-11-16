@@ -844,6 +844,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           workerId: id,
           role: rolePort,
           onClaimSettled: () => onWorkEnded(),
+          onClaimHeldElsewhere: (fact) => logger.info('worker.claim_held', { workerId: fact.workerId, runId: fact.runId, data: { owner: fact.owner, leaseToken: fact.leaseToken } }),
           leaseMs,
           random: Math.random,
           platform,

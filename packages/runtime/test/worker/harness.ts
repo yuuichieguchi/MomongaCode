@@ -397,6 +397,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       onFatal: (error: Error) => {
         fatals.push(error);
       },
+      onClaimHeldElsewhere: () => undefined,
       ...rest,
     });
     workers.push(created);

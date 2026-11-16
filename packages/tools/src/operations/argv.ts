@@ -1,4 +1,5 @@
 import path from 'node:path';
+import tls from 'node:tls';
 import { canonicalJson, groupRecordOutcome, sha256Hex } from '@momonga/foundation';
 import type { HelperSelf, NetworkScope, OutboundNetwork, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -11,7 +12,7 @@ import type { MarkerOwners } from '../marker-owners.ts';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { runSandboxedCommand } from '../sandboxed-command.ts';
 import { ToolExecutionError } from '../types.ts';
-import { gitProxyEnvironment, withNetwork } from '../read-only-call.ts';
+import { appendGitConfig, gitProxyEnvironment, withNetwork } from '../read-only-call.ts';
 import type { ProbeContext, ToolContext } from '../types.ts';
 import { openGitCredentialChannel } from './git-credential.ts';
 import type { GitCredentialChannel, GitOriginCredential } from './git-credential.ts';
@@ -88,13 +89,45 @@ const sandboxOf = (ports: SandboxedRunnerPorts, context: ProbeContext): Promise<
 
 const destinationsOf = (network: RenderedNetwork): readonly string[] => (network === 'none' ? [] : network.destinations);
 
-const grantNetwork = async (options: ArgvOptions, argv: readonly string[], granting: Pick<ToolContext, 'outboundNetwork' | 'sandboxPolicy' | 'sandbox'>): Promise<GrantedNetwork> => {
+const TRUST_FILE_NAME = 'ca.pem';
+
+const withTrust = async (ports: SandboxedRunnerPorts, options: ArgvOptions, granted: GrantedNetwork): Promise<GrantedNetwork> => {
+  const { files } = options.context;
+  const directory = await files.mkdtemp(path.join(ports.credentialRoot, 'mmca-'));
+  const bundle = path.join(directory, TRUST_FILE_NAME);
+  try {
+    await files.writeFile(bundle, `${tls.getCACertificates('default').join('\n')}\n`);
+  } catch (error) {
+    await files.rm(directory, { recursive: true });
+    throw error;
+  }
+  return {
+    ...granted,
+    env: appendGitConfig(granted.env, [['http.sslCAInfo', bundle]]),
+    settle: async () => {
+      try {
+        return await granted.settle();
+      } finally {
+        await files.rm(directory, { recursive: true });
+      }
+    },
+  };
+};
+
+const grantNetwork = async (ports: SandboxedRunnerPorts, options: ArgvOptions, argv: readonly string[], granting: Pick<ToolContext, 'outboundNetwork' | 'sandboxPolicy' | 'sandbox'>): Promise<GrantedNetwork> => {
   const destinations = destinationsOf(options.network);
   const requested = networkScopeOfDestinations(destinations, programOf(argv));
   const network = callNetworkOf({ requested, granted: requested, sandbox: granting.sandbox.kind, unkeptHosts: options.context.sandboxNetwork });
   if (network.kind === 'refused') throw new ToolExecutionError(`${programOf(argv)} was not run: ${network.reason}`);
-  const granted = await openGrantedNetwork({ network: network.scope, outboundNetwork: granting.outboundNetwork, sandboxPolicy: withNetwork(granting.sandboxPolicy, network.sandboxNetwork), env: options.env });
-  return granted.proxy === undefined ? granted : { ...granted, env: gitProxyEnvironment(granted.env, granted.proxy, destinations) };
+  const opened = await openGrantedNetwork({ network: network.scope, outboundNetwork: granting.outboundNetwork, sandboxPolicy: withNetwork(granting.sandboxPolicy, network.sandboxNetwork), env: options.env });
+  const granted = opened.proxy === undefined ? opened : { ...opened, env: gitProxyEnvironment(opened.env, opened.proxy, destinations) };
+  if (destinations.length === 0) return granted;
+  try {
+    return await withTrust(ports, options, granted);
+  } catch (error) {
+    await granted.settle();
+    throw error;
+  }
 };
 
 const programOf = (argv: readonly string[]): string => argv.slice(0, 2).join(' ');
@@ -104,7 +137,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
   const held: ReconcileSandbox = await sandboxOf(ports, context);
   let network: GrantedNetwork;
   try {
-    network = await grantNetwork(options, argv, { outboundNetwork: await ports.outboundNetwork(context.signal), sandboxPolicy: held.sandboxPolicy, sandbox: held.sandbox });
+    network = await grantNetwork(ports, options, argv, { outboundNetwork: await ports.outboundNetwork(context.signal), sandboxPolicy: held.sandboxPolicy, sandbox: held.sandbox });
   } catch (error) {
     held.release();
     throw error;
@@ -143,7 +176,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
 
 const runEffect = async (ports: SandboxedRunnerPorts, argv: readonly string[], options: ArgvOptions, context: ToolContext): Promise<ArgvResult> => {
   const { file, fd, settle } = await requireSpawnMarker(context, programOf(argv));
-  const network = await grantNetwork(options, argv, context);
+  const network = await grantNetwork(ports, options, argv, context);
   let supplied: Supplied | undefined;
   try {
     supplied = await supplyCredentials(ports, options, network);

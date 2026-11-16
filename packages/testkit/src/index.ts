@@ -310,3 +310,5 @@ export { PropertyFailure, forEachSeed, seededGenerator, seedsFrom } from './prop
 export type { Generator } from './property.ts';
 export { fileSystemWithFault } from './file-system-fault.ts';
 export type { FileSystemFault } from './file-system-fault.ts';
+export { startFakeGitHttps } from './fake-git-https.ts';
+export type { FakeGitHttps, FakeGitHttpsOptions, FakeGitHttpsRequest } from './fake-git-https.ts';

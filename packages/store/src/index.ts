@@ -59,6 +59,7 @@ export type {
   BlobStore,
   ChildRunInput,
   Claim,
+  LeasedElsewhere,
   ClaimStatus,
   Conflict,
   CreateChildRunResult,

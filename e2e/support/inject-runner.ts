@@ -18,6 +18,7 @@ import { spawnSupervisor, startStack } from './stack.ts';
 import type { E2eStack, StartStackOptions } from './stack.ts';
 import { childOf } from './supervisor-client.ts';
 import { textReply, toolCallReply } from './upstream.ts';
+import { readLog } from './log-reader.ts';
 import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 import { roleMainOverride } from './launcher.ts';
 import { fileFaultArgument } from './role-main.ts';
@@ -276,6 +277,21 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
   },
   concurrent_workers: {
     stackOptions: (env) => ({ deps: { runtime: { workerCount: env.scenario.params?.workerCount as number } } }),
+    beforeRun: async (env) => {
+      env.holds.push((env.fake as FakeChatCompletionsServer).hold());
+    },
+    inject: async (env) => {
+      const hold = env.holds[0] as FakeResponseHold;
+      await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request of the claimed run' });
+      await until(
+        () =>
+          readLog(env.home.paths.logFiles.runtime).some(
+            (record) => record.msg === 'worker.claim_held' && record['runId'] === env.runId && typeof record['owner'] === 'string' && record['owner'] !== record['workerId'],
+          ),
+        { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `another worker to reach run ${env.runId as string} and find it held by the worker that claimed it` },
+      );
+      hold.release();
+    },
   },
   budget: {
     runBody: (env) => ({ limits: { maxTotalTokens: env.scenario.params?.maxTotalTokens } }),

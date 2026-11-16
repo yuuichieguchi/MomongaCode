@@ -890,6 +890,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       onFatal: (error: Error) => {
         fatals.push(error);
       },
+      onClaimHeldElsewhere: () => undefined,
       ...overrides,
     });
     workers.push(created);

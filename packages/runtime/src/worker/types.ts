@@ -21,6 +21,8 @@ export type WorkerBlobs = {
 
 export type WorkerErrorContext = { runId?: string; workerId: string };
 
+export type ClaimHeldElsewhere = { workerId: string; runId: string; owner: string; leaseToken: number };
+
 export type WorkerWake = { subscribe(listener: () => void): () => void };
 
 export type WorkerOptions = {
@@ -40,6 +42,7 @@ export type WorkerOptions = {
   workerId: string;
   role: RolePort;
   onClaimSettled?: () => void;
+  onClaimHeldElsewhere: (fact: ClaimHeldElsewhere) => void;
   leaseMs: number;
   heartbeatMs?: number;
   cancelPollMs?: number;
