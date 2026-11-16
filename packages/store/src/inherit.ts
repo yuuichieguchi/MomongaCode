@@ -148,7 +148,7 @@ const lastResponseStart = (previous: RunState, history: readonly HistoryEntry[])
   return start < 0 ? history.length : start;
 };
 
-const projectionOf = (previous: RunState, outcome: InheritanceOutcome, kind: InheritanceKind, pairing: 'whole' | 'last_response'): Projection => {
+export const projectionOf = (previous: RunState, outcome: InheritanceOutcome, kind: InheritanceKind, pairing: 'whole' | 'last_response'): Projection => {
   const retracted = retractsTask(previous, outcome);
   const dropped = outcome.status === 'FAILED' && outcome.errorCode === 'pinned_overflow' && previous.step === 0;
   if (dropped && outcome.carriedSkills === undefined) throw inconsistent(previous, 'the skills carried into a step-0 pinned_overflow run are not known');
@@ -226,27 +226,6 @@ const projectionOf = (previous: RunState, outcome: InheritanceOutcome, kind: Inh
     mode,
     activatedSkills: carriedSkills.length === 0 ? undefined : carriedSkills.map(({ name, content }) => ({ name, content })),
   };
-};
-
-export const projectInheritance = (previous: RunState, outcome: InheritanceOutcome, kind: InheritanceKind): InheritedPayload => {
-  const { history, retracted, closures, markers, partial, nextItemSeq, mode, activatedSkills } = projectionOf(previous, outcome, kind, 'whole');
-  const unsigned: Omit<InheritedPayload, 'digest'> = {
-    type: 'context.inherited',
-    fromRunId: previous.runId,
-    fromLastSeq: previous.lastSeq,
-    history,
-    nextItemSeq,
-    ...(previous.summary === undefined ? {} : { summary: previous.summary }),
-    workingFacts: inheritedWorkingFacts(previous.workingFacts, !retracted),
-    evicted: [...previous.evicted],
-    closures,
-    ...(partial === undefined ? {} : { partial }),
-    markers,
-    ...(previous.mode === undefined ? {} : { fromMode: previous.mode }),
-    ...(mode === undefined ? {} : { mode }),
-    ...(activatedSkills === undefined ? {} : { activatedSkills }),
-  };
-  return { ...unsigned, digest: copyDigestOf(unsigned) };
 };
 
 export type ReferenceSource = {

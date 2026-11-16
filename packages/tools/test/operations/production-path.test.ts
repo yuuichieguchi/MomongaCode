@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { REDACTED_MARKER } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
-import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
+import type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxPolicy } from '@momonga/sandbox';
 import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED, testProcessInspector, unconfiguredNetworkOf } from '@momonga/testkit';
 import { createOperationTools, createSandboxedArgvRunner, networkScopeOfDestinations, nodeShellHost } from '@momonga/tools';
 import type { CallOutcome, NeedsApprovalOutcome, ResultOutcome } from '@momonga/tools';
@@ -14,13 +14,13 @@ import { ENTRY_AS_SCRIPT, NO_FORGE, contextFor, makeGitWorld, onCleanup, recordO
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-type Spawn = { argv: readonly string[]; policy: SandboxPolicy };
+type Spawn = { argv: readonly string[]; policy: SandboxPolicy; descriptors?: SandboxDescriptors };
 
 const recordingSandbox = (inner: Sandbox, spawns: Spawn[]): Sandbox => ({
   kind: inner.kind,
-  spawn: (command: SandboxCommand, policy, signal) => {
-    spawns.push({ argv: command.argv, policy });
-    return inner.spawn(command, policy, signal);
+  spawn: (command: SandboxCommand, policy, signal, descriptors) => {
+    spawns.push({ argv: command.argv, policy, ...(descriptors === undefined ? {} : { descriptors }) });
+    return inner.spawn(command, policy, signal, descriptors);
   },
 });
 
@@ -96,6 +96,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('operations through the executor, the policy 
     expect(spawns.length).toBeGreaterThan(0);
     expect(spawns.every((spawn) => spawn.argv[0] === 'git')).toBe(true);
     expect(spawns.every((spawn) => spawn.policy.network === 'deny')).toBe(true);
+    expect(spawns.every((spawn) => spawn.descriptors?.markerFd !== undefined)).toBe(true);
     expect(spawns.some((spawn) => spawn.argv.includes('commit'))).toBe(true);
     expect(result.output).toContain(world.git(world.work, 'rev-parse', 'HEAD'));
   });

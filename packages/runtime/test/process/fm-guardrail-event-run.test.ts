@@ -63,7 +63,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
     await prepareGeneration(temp);
-    const gateway = await registerOwned(onCleanup, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec }));
+    const gateway = await registerOwned(onCleanup, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec }));
     onCleanup(async () => {
       await gateway.close();
     });

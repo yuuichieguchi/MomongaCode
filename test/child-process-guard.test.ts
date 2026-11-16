@@ -80,6 +80,10 @@ describe('the worker guard refuses a launch of a real secret store program (i)',
     expect(launchRefusal('execSync', ['/usr/bin/security -h', {}])).toMatch(REAL_PROGRAM);
   });
 
+  it('decides by the program name that a secret store program at a path that does not exist is refused, without launching it', () => {
+    expect(launchRefusal('execFileSync', ['/nonexistent-momonga-guard/security', ['-h'], {}])).toMatch(REAL_PROGRAM);
+  });
+
   it.each(['/bin/sh', 'git', 'sw_vers', process.execPath])('lets the product start %s with MINIMAL_CHILD_PATH', (command) => {
     expect(launchRefusal('spawn', [command, [], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
   });
@@ -197,14 +201,13 @@ describe('the worker guard classifies the real file behind a symbolic link', () 
     }
   });
 
-  it('does not throw from the guard for a dangling link; the launch itself reports the missing file', () => {
+  it('refuses by name a dangling link named security, and the guard does not throw for it', () => {
     const dir = tempDir();
     try {
       const link = path.join(dir, 'security');
       fs.symlinkSync(path.join(dir, 'gone'), link);
-      expect(launchRefusal('spawn', [link, [], {}])).toBeUndefined();
+      expect(launchRefusal('spawn', [link, [], {}])).toMatch(REAL_PROGRAM);
       expect(launchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toMatch(/\(ii\)/);
-      expect((nodeChildProcess.spawnSync(link, []).error as NodeJS.ErrnoException).code).toBe('ENOENT');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

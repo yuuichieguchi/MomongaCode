@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { kernelLockNamed, layoutProcessInspector, resolveLayoutLocks } from '@momonga/foundation';
+import { layoutProcessInspector, resolveLayoutLocks } from '@momonga/foundation';
 import type { ClaimOutcome, KernelLockMechanism, LayoutLocks, LockCapability, LockCapabilityProbe, ProcessInspector } from '@momonga/foundation';
 
 export const LOCK_PROOF_ENV = 'MOMONGA_TEST_LOCK_PROOF';
@@ -57,4 +57,4 @@ export const fixedLockCapability = (answer: LockCapability): LockCapabilityProbe
   contradicted: () => undefined,
 });
 
-export const expectedKernelLockOn = (platform: NodeJS.Platform): KernelLockMechanism => kernelLockNamed(platform === 'darwin' ? 'file-lock' : 'sqlite-lock');
+export const expectedKernelLockOn = (_platform: NodeJS.Platform): KernelLockMechanism => testKernelLock();

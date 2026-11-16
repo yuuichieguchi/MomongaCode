@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PERMISSION_MODE_DESCRIPTIONS } from '@momonga/protocol';
 import type { MemoryView, SkillView } from '@momonga/protocol';
 import { DEFAULT_SLASH_COMMANDS } from '../src/tui/commands/index.ts';
 import { skillCommands } from '../src/tui/commands/skills.ts';
@@ -142,6 +143,17 @@ describe('built-in commands', () => {
     await run('mode', 'turbo', context);
     expect(modes).toEqual(['acceptEdits']);
     expect(infos).toEqual(['unknown permission mode turbo; available: manual, acceptEdits, plan']);
+  });
+
+  it('/mode shows the description table of the modes and no permission mode toast', async () => {
+    const shown: string[] = [];
+    const { context, infos, modes } = contextOf({ mode: 'plan', overlays: { ...unusedOverlays, choose: async (request) => void shown.push(...request.rows.map((row) => row.label)) } });
+    await run('mode', '', context);
+    expect(shown).toContain(`plan  ${PERMISSION_MODE_DESCRIPTIONS.plan}`);
+    expect(shown).toContain(`manual  ${PERMISSION_MODE_DESCRIPTIONS.manual}`);
+    await run('mode', 'acceptEdits', context);
+    expect(modes).toEqual(['acceptEdits']);
+    expect(infos.filter((text) => text.includes('permission mode:'))).toEqual([]);
   });
 
   it('/mode manual sets the asking mode, and /mode default is refused with the list of valid modes', async () => {

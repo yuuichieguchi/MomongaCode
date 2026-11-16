@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { EDITOR_ENV_NAMES } from '@momonga/foundation';
+import type { CliPorts } from '../ports.ts';
 import { commandWords } from './command-words.ts';
 import type { KeyTable } from './keys/table.ts';
+import type { TerminalLayer } from './terminal/layer.ts';
 
 export const EDITOR_VARIABLES = EDITOR_ENV_NAMES;
 
@@ -77,3 +79,14 @@ export const createExternalEditor = (host: ExternalEditorHost): ExternalEditorPo
     }
   },
 });
+
+export const terminalExternalEditor = (ports: Pick<CliPorts, 'env' | 'files' | 'tmpdir'>, layer: Pick<TerminalLayer, 'leaveForProgram'>, launch: (argv: readonly string[]) => Promise<void>): ExternalEditorPort =>
+  createExternalEditor({
+    env: ports.env,
+    temporaryDirectory: () => ports.files.mkdtemp(path.join(ports.tmpdir, 'momonga-draft-')),
+    writePrivate: (file, text) => ports.files.writeTextAtomically(file, text, 0o600),
+    read: (file) => ports.files.readText(file),
+    remove: (directory) => ports.files.rm(directory, { recursive: true }),
+    leaveScreen: layer.leaveForProgram,
+    launch,
+  });

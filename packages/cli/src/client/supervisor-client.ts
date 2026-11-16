@@ -52,7 +52,7 @@ export const createSupervisorClient = (options: SupervisorClientOptions): Superv
     const text = await response.text();
     if (response.status !== 200) throw new Error(`GET /v1/health answered ${response.status}: ${text}`);
     const body: unknown = JSON.parse(text);
-    if (!isSupervisorHealth(body)) throw new Error(`GET /v1/health answered a body that is not a supervisor health: ${text}`);
+    if (!isSupervisorHealth(body)) throw new Error('GET /v1/health answered a body that is not a supervisor health');
     await options.onHealth?.(body);
     return body;
   };

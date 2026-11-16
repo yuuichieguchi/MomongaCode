@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createOwnedDirectory, lockFormOf, sweepLeftovers } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, createOwnedDirectory, lockFormOf, sqliteFileLock, sweepLeftovers } from '@momonga/foundation';
 import type { LeftoverFiles, LockForm } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startClaimHolder, expectedKernelLockOn } from '@momonga/testkit';
 import { exitOf, startHolder } from './support/lock-processes.ts';
@@ -133,4 +133,18 @@ describe('S2: a directory entry has the sidecar form under every mechanism, on r
       expect(fs.readdirSync(parent)).toEqual([]);
     });
   }
+});
+
+describe('the sqlite lock database and its journal are one leftover unit', () => {
+  it('sweeps a journal beside a leftover entry with the entry, and keeps nothing', async () => {
+    const dir = makeTemporaryDirectory();
+    const entry = path.join(dir, 'session-3');
+    fs.writeFileSync(entry, 'stray');
+    fs.writeFileSync(`${entry}${LOCK_DATABASE_SUFFIX}`, '');
+    fs.writeFileSync(`${entry}${LOCK_DATABASE_SUFFIX}-journal`, '');
+    fs.writeFileSync(path.join(dir, `session-4${LOCK_DATABASE_SUFFIX}-journal`), '');
+    const swept = await sweepLeftovers({ directories: [{ directory: dir, isLeftover: () => true }], lock: sqliteFileLock });
+    expect(swept.kept).toEqual([]);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
 });

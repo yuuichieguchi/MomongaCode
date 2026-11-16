@@ -298,7 +298,7 @@ export {
   testHostPath,
 } from './fake-programs.ts';
 export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
-export { productTestEnv } from './product-spawn.ts';
+export { productTestEnv, standInEnv } from './product-spawn.ts';
 export { SCRIPTED_MODEL, SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, modelSettings } from './model-settings.ts';
 export type { ModelSettings, ModelSettingsConnection, ModelSettingsSpec, ModelSpec } from './model-settings.ts';
 export { testSecretLocations } from './secret-locations.ts';

@@ -26,6 +26,26 @@ describe('the Ollama probe', () => {
     expect(stored?.report).toEqual(result.report);
   });
 
+  it('sends no measurement request to a metered endpoint the person has not consented to', async () => {
+    const fake = await startFakeOllama();
+    const dir = makeDir();
+
+    await expect(
+      probeOllamaTarget({
+        ports: hostProbePorts,
+        lock: testKernelLock(),
+        probeRecordDir: dir,
+        upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK },
+        key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL },
+        model: OLLAMA_MODEL,
+        contextWindow: 32768,
+        metered: { display: 'ollama/devstral', declaredContextWindow: 32768 },
+      }),
+    ).rejects.toThrow('measured only with your consent');
+
+    expect(fake.requests).toEqual([]);
+  });
+
   it('matches a model name without a tag to its :latest entry in /api/tags', async () => {
     const fake = await startFakeOllama();
     expect((await probe(fake.origin, makeDir(), 32768, OLLAMA_MODEL)).identity).toBe(DEVSTRAL_DIGEST);

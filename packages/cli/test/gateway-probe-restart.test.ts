@@ -1,7 +1,8 @@
+import { nodeFilesLockedBy } from '../src/node-ports.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, testKernelLock, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { restartDaemon } from '../src/commands/gateway.ts';
@@ -32,6 +33,7 @@ const setup = async (context: TestContext) => {
   };
   const printed: string[] = [];
   const portsWith = (spawn: DaemonPorts['spawnDetached'], version = VERSION): Pick<CliPorts, 'stdout'> & DaemonPorts => ({
+    files: nodeFilesLockedBy(testKernelLock),
     version,
     env: { PATH: '/usr/bin' },
     home,

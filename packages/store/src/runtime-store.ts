@@ -494,11 +494,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const lifetime = new AbortController();
   const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, fileSystemSync: options.fileSystemSync, random, lock: options.lock });
   const decodeContext = decodeContextOf(db);
-  const approvalOps = createApprovalStore(db, clock, decodeContext);
-  const memories = createMemoryStore(db, clock, decodeContext);
+  const approvalOps = createApprovalStore(db, clock, random, decodeContext);
+  const memories = createMemoryStore(db, clock, random, decodeContext);
   const contextCharges = createContextChargeStore(db, clock, decodeContext);
   const reflection = createReflectionStore(db, clock, { memories, endedRun: { append: (runId, payloads) => appendToEndedRun(runId, payloads) } }, decodeContext);
-  const governing = createGoverningFactStore(db, clock, decodeContext);
+  const governing = createGoverningFactStore(db, clock, random, decodeContext);
   const issueWatch = createIssueWatchStore(db, clock);
   const runFacts = createRunFactsStore(db, decodeContext);
   const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
@@ -758,7 +758,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const ordinal = readerFor('runs', sessionId, ordinalRow).number('next');
     const previous = sql.latestRunOfSession.get({ sessionId });
     const shell = pendingUserShell(sessionId);
-    const id = uuidv7(clock);
+    const id = uuidv7(clock, random);
     const now = clock.now();
     sql.insertRun.run({
       id,
@@ -1333,7 +1333,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return transaction<InboxAddResult>(() => {
         if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
         if (inboxTable.pendingCount(sessionId) >= INBOX_MAX_PENDING) return { kind: 'full' };
-        const added = inboxTable.insert({ id: uuidv7(clock), sessionId, delivery: input.delivery, text: input.text, images: input.images, attachments: input.attachments, terms: input.run, origin });
+        const added = inboxTable.insert({ id: uuidv7(clock, random), sessionId, delivery: input.delivery, text: input.text, images: input.images, attachments: input.attachments, terms: input.run, origin });
         const open = inboxTable.sessionHasOpenRun(sessionId);
         if (open) announceInbox(sessionId);
         else startNextQueued(sessionId);
@@ -1384,7 +1384,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const store: RuntimeStore = {
     createSession: (input) =>
       transaction(() => {
-        const id = uuidv7(clock);
+        const id = uuidv7(clock, random);
         sql.insertSession.run({
           id,
           cwd: input.cwd,
@@ -1482,7 +1482,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         }
         const parentSession = requireSession(parent.sessionId);
         const now = clock.now();
-        const sessionId = uuidv7(clock);
+        const sessionId = uuidv7(clock, random);
         sql.insertSession.run({
           id: sessionId,
           cwd: parentSession.cwd,
@@ -1496,7 +1496,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           createdAt: now,
           fenceNonce: random.hex(FENCE_NONCE_BYTE_LENGTH),
         });
-        const runId = uuidv7(clock);
+        const runId = uuidv7(clock, random);
         sql.insertRun.run({
           id: runId,
           sessionId,

@@ -31,7 +31,7 @@ const pathOfArgument = (argument: string): string | undefined => {
 
 const pathArgumentsOf = (args: readonly string[]): string[] => [...new Set(args.flatMap((argument) => pathOfArgument(argument) ?? []))];
 
-const declaredIdentityOf = (declared: DeclaredServer): readonly ProbeKeyComponent[] => ['binarySha256', 'hostOsBuild', ...pathArgumentsOf(declared.args).map(fileIdentityComponentOf)];
+const declaredIdentityOf = (declared: DeclaredServer): readonly ProbeKeyComponent[] => ['binarySha256', ...pathArgumentsOf(declared.args).map(fileIdentityComponentOf)];
 
 const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedServerDescription => ({
   id,

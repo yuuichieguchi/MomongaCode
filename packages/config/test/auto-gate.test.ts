@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import * as config from '@momonga/config';
-import * as autoFit from '../src/auto-fit.ts';
 import * as protocol from '@momonga/protocol';
 import { createTempDir, testKernelLock } from '@momonga/testkit';
 import type { KernelLockMechanism } from '@momonga/foundation';
@@ -34,7 +33,7 @@ type GateApi = {
 type FitApi = {
   measurement: (key: AutoGateKey, records: readonly AutoGateRecord[]) => Measurement;
   autoFitDirectoryOf: (home: string) => string;
-  readAutoFitRecord: (directory: string, key: AutoGateKey) => Promise<AutoGateRecord | undefined>;
+  readAutoFitView: (directory: string, model: string, key: AutoGateKey) => Promise<{ measurement: Measurement; facts?: { recordedAt: string } }>;
   writeAutoFitRecord: (directory: string, record: AutoGateRecord, randomHex: (bytes: number) => string, lock: KernelLockMechanism) => Promise<string>;
 };
 
@@ -52,7 +51,7 @@ const exportsOf = <T>(module: unknown, names: readonly string[], from: string): 
 
 const gate = (): GateApi => exportsOf<GateApi>(config, ['AUTO_GATE_BOUNDS', 'autoGatePasses', 'classifierIdentityOf', 'classifierCodeDigestOf'], '@momonga/config');
 
-const fit = (): FitApi => exportsOf<FitApi>({ ...config, readAutoFitRecord: autoFit.readAutoFitRecord }, ['measurement', 'autoFitDirectoryOf', 'readAutoFitRecord', 'writeAutoFitRecord'], '@momonga/config');
+const fit = (): FitApi => exportsOf<FitApi>(config, ['measurement', 'autoFitDirectoryOf', 'readAutoFitView', 'writeAutoFitRecord'], '@momonga/config');
 
 const notice = (): NoticeApi => exportsOf<NoticeApi>(protocol, ['autoModeNotice'], '@momonga/protocol');
 
@@ -177,8 +176,7 @@ describe('the record file', () => {
     const file = await fit().writeAutoFitRecord(directory, failing, (bytes) => '0'.repeat(bytes * 2), testKernelLock());
     expect(path.basename(file)).toBe(`${sha256Hex(canonicalJson(KEY))}.json`);
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
-    expect(await fit().readAutoFitRecord(directory, KEY)).toEqual(failing);
-    expect(fit().measurement(KEY, [(await fit().readAutoFitRecord(directory, KEY)) as AutoGateRecord])).toBe('did_not_pass');
+    expect(await fit().readAutoFitView(directory, 'guard', KEY)).toMatchObject({ measurement: 'did_not_pass', facts: { recordedAt: failing.recordedAt } });
   });
 
   it('replaces an earlier pass with a later failing record of the same key', async () => {
@@ -187,7 +185,7 @@ describe('the record file', () => {
     await fit().writeAutoFitRecord(directory, passing(), hex, testKernelLock());
     await fit().writeAutoFitRecord(directory, passing({ falseAllow: { successes: 1, trials: 75, high: 0.0721 }, recordedAt: '2026-11-07T00:00:00.000Z' }), hex, testKernelLock());
     expect(fs.readdirSync(directory).filter((name) => name.endsWith('.json'))).toHaveLength(1);
-    expect((await fit().readAutoFitRecord(directory, KEY))?.recordedAt).toBe('2026-11-07T00:00:00.000Z');
+    expect((await fit().readAutoFitView(directory, 'guard', KEY)).facts?.recordedAt).toBe('2026-11-07T00:00:00.000Z');
   });
 
   it('reads a damaged record as the view that names its file and the reason, and a missing one as not measured', async () => {
@@ -206,7 +204,7 @@ describe('the record file', () => {
   });
 
   it('reads nothing for a key that has no file', async () => {
-    expect(await fit().readAutoFitRecord(fit().autoFitDirectoryOf(freshHome()), KEY)).toBeUndefined();
+    expect(await fit().readAutoFitView(fit().autoFitDirectoryOf(freshHome()), 'guard', KEY)).toEqual({ model: 'guard', key: KEY, measurement: 'not_measured' });
   });
 });
 

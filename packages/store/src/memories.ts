@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, joinedTx, readTx, uuidv7 } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, Random } from '@momonga/foundation';
 import { DEFAULT_MEMORY_KIND, MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from '@momonga/protocol';
 import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource, MemoryState, MemoryStatus, Stored, StoredMemoryEvidence, StoredMemorySource } from '@momonga/protocol';
 import { UNKNOWN_VALUE, corrupt, readerFor, storedOneOf } from './rows.ts';
@@ -130,7 +130,7 @@ const cursorOf = (part: RecallCursor['part'], row: Row): RecallCursor => {
   return { part, tier: reader.number('recall_tier'), contributed: reader.number('recall_contributed'), kept: reader.number('recall_kept'), id: reader.string('id') };
 };
 
-export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: DecodeContext): MemoryStore => {
+export const createMemoryStore = (db: DatabaseSync, clock: Clock, random: Random, context: DecodeContext): MemoryStore => {
   const derived = createDerivedSnapshot(db, context);
   const insert = db.prepare(
     `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, kept_at, kind, supersedes_json)
@@ -348,7 +348,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
         for (const id of supersedes) {
           if (byId.get({ id }) === undefined) throw new RangeError(`memory ${id} cannot be superseded: it does not exist`);
         }
-        const id = uuidv7(clock);
+        const id = uuidv7(clock, random);
         insert.run({
           id,
           scope: input.scope,
@@ -376,7 +376,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
         if ((input.scope === 'project') !== (input.project !== null)) {
           throw new RangeError(`a ${input.scope} memory ${input.scope === 'project' ? 'requires' : 'cannot carry'} a project`);
         }
-        const id = uuidv7(clock);
+        const id = uuidv7(clock, random);
         insertByCommand.run({ id, scope: input.scope, project: input.project, text: input.text, now: clock.now(), kind: input.kind ?? DEFAULT_MEMORY_KIND });
         input.evidence.forEach((entry, ordinal) => void insertEvidence.run(evidenceParams(id, ordinal, entry)));
         observeUnboundWithoutEvidence(id, input.evidence);
@@ -395,7 +395,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
         if (existing !== undefined) return { memory: decode(existing), created: false };
         const session = sessionOfRun.get({ runId: input.runId });
         if (session === undefined) throw new Error(`memory source run ${input.runId} does not exist`);
-        const id = uuidv7(clock);
+        const id = uuidv7(clock, random);
         insertCandidate.run({
           id,
           scope: input.scope,

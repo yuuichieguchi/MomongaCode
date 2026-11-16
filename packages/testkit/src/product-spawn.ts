@@ -4,9 +4,13 @@ import { fakeBrowserOf } from './fake-programs.ts';
 import { assertFakeSecretStoreEnv, fakeSecretProgramsBin } from './secret-store-env-check.ts';
 import { LOCK_PROOF_ENV, lockProofFolder } from './test-locks.ts';
 
-export const productTestEnv = (env: Readonly<Record<string, string>> = {}): Record<string, string> => {
+export const standInEnv = (base: string = MINIMAL_CHILD_PATH): Record<string, string> => {
   const bin = fakeSecretProgramsBin();
-  const built = { ...env, PATH: `${bin}${path.delimiter}${env['PATH'] ?? MINIMAL_CHILD_PATH}`, BROWSER: fakeBrowserOf(bin), [LOCK_PROOF_ENV]: lockProofFolder() };
+  return { PATH: `${bin}${path.delimiter}${base}`, BROWSER: fakeBrowserOf(bin) };
+};
+
+export const productTestEnv = (env: Readonly<Record<string, string>> = {}): Record<string, string> => {
+  const built = { ...env, ...standInEnv(env['PATH'] ?? MINIMAL_CHILD_PATH), [LOCK_PROOF_ENV]: lockProofFolder() };
   assertFakeSecretStoreEnv(built, 'a product process');
   return built;
 };

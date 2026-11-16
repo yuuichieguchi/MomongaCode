@@ -33,7 +33,6 @@ const SCANNED: readonly Scanned[] = [
       'update/node-ports.ts',
       'ripgrep/host.ts',
       'handover/replace-process.ts',
-      'tui/run-interactive.tsx',
       'tui/terminal/host.ts',
       'tui/screen/clipboard-host.ts',
     ],

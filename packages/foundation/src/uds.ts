@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { Agent, buildConnector, request } from 'undici';
+import { GENERATION_RETIRED_CODE } from './generation-codes.ts';
 import { acquireProcessLock } from './process-lock.ts';
 import type { AcquireProcessLockOptions } from './process-lock.ts';
 import { modeIsPrivate, ownerProblem } from './platform/privacy.ts';
@@ -54,18 +55,36 @@ const dialResolved =
       .catch((error: unknown) => callback(error instanceof Error ? error : new Error(String(error)), null));
   };
 
+const isRetiredValue = (value: unknown): boolean =>
+  typeof value === 'object' && value !== null && (value as { error?: { code?: unknown } }).error?.code === GENERATION_RETIRED_CODE;
+
+const isRetiredText = (text: string): boolean => {
+  try {
+    return isRetiredValue(JSON.parse(text));
+  } catch {
+    return false;
+  }
+};
+
 export const createUdsClient = (resolveSocket: SocketResolver, options: UdsClientOptions): UdsClient => {
-  const agent = new Agent({
-    connect: dialResolved(resolveSocket, options.connectTimeoutMs),
-    ...(options.headersTimeoutMs === undefined ? {} : { headersTimeout: options.headersTimeoutMs }),
-    ...(options.bodyTimeoutMs === undefined ? {} : { bodyTimeout: options.bodyTimeoutMs }),
-  });
+  const newAgent = (): Agent =>
+    new Agent({
+      connect: dialResolved(resolveSocket, options.connectTimeoutMs),
+      ...(options.headersTimeoutMs === undefined ? {} : { headersTimeout: options.headersTimeoutMs }),
+      ...(options.bodyTimeoutMs === undefined ? {} : { bodyTimeout: options.bodyTimeoutMs }),
+    });
+  let agent = newAgent();
   let closing: Promise<void> | undefined;
   let destroying: Promise<void> | undefined;
+  const retireAgent = (used: Agent): void => {
+    if (used === agent) agent = newAgent();
+    void used.close();
+  };
   return {
     request: async (options) => {
+      const used = agent;
       const response = await request(`http://localhost${options.path}`, {
-        dispatcher: agent,
+        dispatcher: used,
         method: options.method as 'GET',
         ...(options.headers === undefined ? {} : { headers: options.headers }),
         ...(options.body === undefined ? {} : { body: options.body }),
@@ -81,8 +100,16 @@ export const createUdsClient = (resolveSocket: SocketResolver, options: UdsClien
         status: response.statusCode,
         headers,
         body: response.body,
-        text: () => response.body.text(),
-        json: () => response.body.json(),
+        text: async () => {
+          const text = await response.body.text();
+          if (isRetiredText(text)) retireAgent(used);
+          return text;
+        },
+        json: async () => {
+          const value: unknown = await response.body.json();
+          if (isRetiredValue(value)) retireAgent(used);
+          return value;
+        },
       };
     },
     close: () => {

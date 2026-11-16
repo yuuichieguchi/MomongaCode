@@ -26,7 +26,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
     maxCloseMs: (_flags, values) => gatewayMaxCloseMs(values),
     readStopValues: ({ logger }) => stopValuesOf(logger).read(),
     ownLockPath: (home, flags) => generationLayout(home, flags.generation).locks.gateway,
-    logPath: (home) => homeLayout(home, process.platform).logFiles.gateway,
+    logPath: (home) => homeLayout(home, io.platform).logFiles.gateway,
     isConfigError: (error) => error instanceof ConfigError,
     start: async ({ version, flags, home, env, signal, logger, stdout, locks, acquireLock, requestShutdown }) => {
       installOtelErrorHandler((error) => logger.warn('otel.error', { err: error }));
@@ -39,6 +39,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
         home: home,
         generation: flags.generation,
         env,
+        platform: io.platform,
         version,
         logger,
         stdout,

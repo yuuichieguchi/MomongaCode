@@ -1,5 +1,5 @@
 import { GENERATION_STARTING_CODE, MOVED_CODE } from '@momonga/foundation';
-import { TARGET_NOT_READY, TARGET_PROBE_FAILED, measuringLineOf, measuringWireOf, messageOf } from '@momonga/protocol';
+import { SERVICE_UNAVAILABLE_STATUS, TARGET_NOT_READY, TARGET_PROBE_FAILED, measuringLineOf, measuringWireOf, messageOf } from '@momonga/protocol';
 import type { Measuring, MeasuringWire } from '@momonga/protocol';
 import { MODEL_NOT_FOUND_CODE } from '../gateway-client.ts';
 
@@ -66,7 +66,7 @@ export const targetNotReady = (message: string): ApiError => new ApiError({ stat
 export const measuringNotReady = (measuring: Measuring): ApiError =>
   new ApiError({ status: 409, type: 'conflict', code: TARGET_NOT_READY, message: measuringLineOf(measuring), measuring: measuringWireOf(measuring) });
 
-export const targetProbeFailed = (message: string): ApiError => new ApiError({ status: 503, type: 'server_error', code: TARGET_PROBE_FAILED, message });
+export const targetProbeFailed = (message: string): ApiError => new ApiError({ status: SERVICE_UNAVAILABLE_STATUS, type: 'server_error', code: TARGET_PROBE_FAILED, message });
 
 export const imageTooLarge = (byteLength: number, maxBytes: number): ApiError =>
   new ApiError({ status: 413, type: 'invalid_request', code: 'body_too_large', message: `an image of the prompt holds ${byteLength} bytes, more than the ${maxBytes} bytes a pasted image may hold`, param: 'images' });
@@ -94,18 +94,18 @@ export const issueUnreadable = (url: string, reason: string): ApiError =>
   new ApiError({ status: 502, type: 'server_error', code: 'issue_unreadable', message: `the issue ${url} could not be read from its forge: ${reason}` });
 
 export const serviceUnavailable = (code: 'draining' | 'gateway_unavailable', message: string): ApiError =>
-  new ApiError({ status: 503, type: 'server_error', code, message, headers: { 'retry-after': '1' } });
+  new ApiError({ status: SERVICE_UNAVAILABLE_STATUS, type: 'server_error', code, message, headers: { 'retry-after': '1' } });
 
 export const gatewayAnswer = (answer: { status: number; type: string; code: string; message: string }): ApiError => new ApiError(answer);
 export const MOVED_MESSAGE = 'This daemon has been replaced by a newer version and accepts no new work. The request was not run; send it again.';
 
-export const moved = (): ApiError => new ApiError({ status: 503, type: 'server_error', code: MOVED_CODE, message: MOVED_MESSAGE, headers: { 'retry-after': '1' } });
+export const moved = (): ApiError => new ApiError({ status: SERVICE_UNAVAILABLE_STATUS, type: 'server_error', code: MOVED_CODE, message: MOVED_MESSAGE, headers: { 'retry-after': '1' } });
 
 export const starting = (): ApiError =>
-  new ApiError({ status: 503, type: 'server_error', code: GENERATION_STARTING_CODE, message: messageOf('daemonStarting', 'cli'), headers: { 'retry-after': '1' } });
+  new ApiError({ status: SERVICE_UNAVAILABLE_STATUS, type: 'server_error', code: GENERATION_STARTING_CODE, message: messageOf('daemonStarting', 'cli'), headers: { 'retry-after': '1' } });
 
 export const contributionUnavailable = (message: string): ApiError =>
-  new ApiError({ status: 503, type: 'server_error', code: 'contribution_unavailable', message, headers: { 'retry-after': '1' } });
+  new ApiError({ status: SERVICE_UNAVAILABLE_STATUS, type: 'server_error', code: 'contribution_unavailable', message, headers: { 'retry-after': '1' } });
 
 export const unknownSkill = (message: string): ApiError =>
   new ApiError({ status: 422, type: 'invalid_request', code: 'unknown_skill', message, param: 'skill' });

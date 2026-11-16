@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { contextFor, countingRunner, makeGitWorld, operationTool, partsOf, settle } from './support.ts';
 import type { GitWorld } from './support.ts';
-import { testPaths } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testPaths } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const baseWorld = (): GitWorld => {
   const world = makeGitWorld();

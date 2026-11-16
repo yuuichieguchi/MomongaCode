@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { repoRoot } from './bundle.ts';
+import { requireTlaJar } from './fetch-tla.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
@@ -68,7 +69,6 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh with a config of another module', () =
 
 describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh --fetch-jar', () => {
   let root = '';
-  const realJar = `${repoRoot}.cache/tla/tla2tools.jar`;
 
   const fetchJar = (url: string): SpawnSyncReturns<string> =>
     spawnSync('/bin/bash', [path.join(root, 'scripts/tlc.sh'), '--fetch-jar'], {
@@ -98,10 +98,11 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh --fetch-jar', () => {
     expect(fs.existsSync(path.dirname(placedJar())) ? fs.readdirSync(path.dirname(placedJar())) : []).toEqual([]);
   });
 
-  it.skipIf(!fs.existsSync(realJar))('places a download whose sha256 is the pinned one', () => {
-    const run = fetchJar(`file://${realJar}`);
+  it('places a download whose sha256 is the pinned one', () => {
+    const jar = requireTlaJar(repoRoot);
+    const run = fetchJar(`file://${jar}`);
     expect(run.status).toBe(0);
-    expect(fs.readFileSync(placedJar()).equals(fs.readFileSync(realJar))).toBe(true);
+    expect(fs.readFileSync(placedJar()).equals(fs.readFileSync(jar))).toBe(true);
   });
 });
 

@@ -144,7 +144,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     const log = capture();
     const logger = createJsonLogger({ service: 'gateway', clock: systemClock, stream: log });
 
-    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, logger, stdout: capture() }), closeQuietly));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, logger, stdout: capture() }), closeQuietly));
 
     expect(error).toBe(original);
     expect(error).not.toBeInstanceOf(AggregateError);
@@ -160,7 +160,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     const home = withTempDir(context, { asHome: true });
     prepareGenerationHome(home);
     writeSettings(home, { models: modelsOf({ '9-bad-name': { adapter: 'managed', server: 'fm', model: 'system' } }) });
-    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }), closeQuietly));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }), closeQuietly));
     expect(error).toBeInstanceOf(ConfigError);
     expect((await inspectProcessLock(homePaths(home).lock, { mechanism: testKernelLock() })).state).toBe('free');
   });
@@ -175,7 +175,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     registerCleanup(context, () => spy.mockRestore());
     const stdout = capture();
 
-    const handle = await start(context, { locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout });
+    const handle = await start(context, { platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout });
     spy.mockRestore();
 
     expect(stdout.lines()).toHaveLength(1);
@@ -197,7 +197,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     controller.abort(reason);
     const stdout = capture();
 
-    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
 
     expect(error).toBe(reason);
     expect(stdout.lines()).toEqual([]);
@@ -211,7 +211,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     control.afterCreateGateway = () => controller.abort(reason);
     const stdout = capture();
 
-    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
 
     expect(error).toBe(reason);
     expect(stdout.lines()).toEqual([]);
@@ -223,14 +223,14 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
 describe('GatewayProcess close and abort (§4.2, §4.3)', () => {
   it('close returns a clean result', async (context) => {
     const { home, paths } = await prepareHome(context);
-    const handle = await start(context, { locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await start(context, { platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     expect(await handle.close()).toEqual({ clean: true, abandonedRuns: 0, failures: [] });
     expect((await inspectProcessLock(paths.lock, { mechanism: testKernelLock() })).state).toBe('free');
   });
 
   it('close reports adapter failures in the result instead of rejecting', async (context) => {
     const { home } = await prepareHome(context);
-    const handle = await start(context, { locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await start(context, { platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const failure = new Error('adapter close failed (injected)');
     control.adapterCloseError = failure;
     const result = await handle.close();
@@ -243,7 +243,7 @@ describe('GatewayProcess close and abort (§4.2, §4.3)', () => {
     const { home, fake } = await prepareHome(context);
     const clock = createFakeClock(START_MS);
     const timers = createFakeTimers(clock);
-    const handle = await start(context, { locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers });
+    const handle = await start(context, { platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers });
     const held = await heldRequest(context, fake, handle.socketPath);
 
     const closing = handle.close();
@@ -258,7 +258,7 @@ describe('GatewayProcess close and abort (§4.2, §4.3)', () => {
     const { home, fake } = await prepareHome(context);
     const clock = createFakeClock(START_MS);
     const timers = createFakeTimers(clock);
-    const handle = await start(context, { locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers });
+    const handle = await start(context, { platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers });
     const held = await heldRequest(context, fake, handle.socketPath);
 
     const closing = handle.close();
@@ -278,7 +278,7 @@ describe('GatewayProcess close and abort (§4.2, §4.3)', () => {
 
   it('abort without close works from running', async (context) => {
     const { home, paths } = await prepareHome(context);
-    const handle = await start(context, { locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await start(context, { platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     expect(await handle.abort()).toEqual({ clean: true, abandonedRuns: 0, failures: [] });
     expect((await inspectProcessLock(paths.lock, { mechanism: testKernelLock() })).state).toBe('free');
     expect(fs.existsSync(paths.socket)).toBe(false);
@@ -286,7 +286,7 @@ describe('GatewayProcess close and abort (§4.2, §4.3)', () => {
 
   it('close and abort are idempotent and return the same promise object', async (context) => {
     const { home } = await prepareHome(context);
-    const handle = await start(context, { locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await start(context, { platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const first = handle.close();
     const second = handle.close();
     const aborting = handle.abort();
@@ -350,7 +350,7 @@ describe('gateway fatal (§4.2, §4.3)', () => {
       return server;
     }) as typeof http.createServer);
     registerCleanup(context, () => spy.mockRestore());
-    const handle = await start(context, { locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await start(context, { platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     spy.mockRestore();
     const server = servers[0];
     if (server === undefined) throw new Error('the gateway created no http server');
@@ -370,7 +370,7 @@ describe('minimalChildEnv moved to foundation (§2.3, §4)', () => {
   it('the gateway builds its child env with the foundation minimalChildEnv, from options.env as given', async (context) => {
     const { home } = await prepareHome(context);
     const env = baseEnv(home, { FOO: 'kept-out-of-children', LC_ALL: 'C' });
-    await start(context, { locks: testLocks(), generation: FIRST_GENERATION, home, env, version: PROCESS_VERSION });
+    await start(context, { platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env, version: PROCESS_VERSION });
     expect(control.minimalEnvSources).toContain(env);
   });
 });

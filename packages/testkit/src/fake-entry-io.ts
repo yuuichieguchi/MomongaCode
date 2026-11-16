@@ -25,6 +25,7 @@ export type FakeEntryIoOptions = {
   argv: readonly string[];
   home: string;
   env?: Readonly<Record<string, string | undefined>>;
+  platform?: NodeJS.Platform;
   clock?: Clock;
   timers?: EntryIo['timers'];
   logFile?: (path: string) => RotatingLogFile;
@@ -77,6 +78,7 @@ export const createFakeEntryIo = (options: FakeEntryIoOptions): FakeEntryIo => {
     argv: options.argv,
     locks: () => (options.lockMechanism === undefined ? testLocks() : { capability: testLocks().capability, mechanism: options.lockMechanism }),
     env: options.env ?? {},
+    platform: options.platform ?? process.platform,
     home: options.home,
     stdout: {
       write: (chunk) => {
