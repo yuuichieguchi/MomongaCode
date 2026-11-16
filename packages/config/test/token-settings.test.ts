@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadSettings, loadUserSettings } from '@momonga/config';
+import { DEFAULT_BASH_DRAIN_IDLE_MS, loadSettings, loadUserSettings } from '@momonga/config';
 import { MAX_BUDGET_COUNT } from '@momonga/protocol';
 import { connectionOf, makeTree, modelOf, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
@@ -17,7 +17,7 @@ const rejectedWith = async (settings: Record<string, unknown>, fragment: string 
 
 const DEFAULT_CONTEXT = { adaptiveBudget: true, autoCompact: true, cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
 
-const ON_TOOLS = { deferral: true, conciseDescriptions: true, ripgrep: 'bundled', bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000 }, search: { timeoutMs: 60_000 }, operations: { timeoutMs: 120_000 } };
+const ON_TOOLS = { deferral: true, conciseDescriptions: true, ripgrep: 'bundled', bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000, drainIdleMs: DEFAULT_BASH_DRAIN_IDLE_MS }, search: { timeoutMs: 60_000 }, operations: { timeoutMs: 120_000 } };
 
 describe('token settings defaults', () => {
   it('turns every context policy of the token design on', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultContextSettings, defaultMemorySettings, defaultToolsSettings, loadSettings, loadUserSettings } from '@momonga/config';
+import { DEFAULT_BASH_DRAIN_IDLE_MS, defaultContextSettings, defaultMemorySettings, defaultToolsSettings, loadSettings, loadUserSettings } from '@momonga/config';
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const EVERY_FORMATTER = ['log', 'json', 'grep', 'identicalOutput'];
@@ -13,7 +13,7 @@ const ON_CONTEXT = {
   observedCapacity: true,
   unboundedOutputReserve: true,
 };
-const ON_TOOLS = { deferral: true, conciseDescriptions: true, ripgrep: 'bundled', bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000 }, search: { timeoutMs: 60_000 }, operations: { timeoutMs: 120_000 } };
+const ON_TOOLS = { deferral: true, conciseDescriptions: true, ripgrep: 'bundled', bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000, drainIdleMs: DEFAULT_BASH_DRAIN_IDLE_MS }, search: { timeoutMs: 60_000 }, operations: { timeoutMs: 120_000 } };
 const ON_MEMORY = { reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true };
 
 describe('the defaults of the two core areas are on (design core-on 1, test 1)', () => {

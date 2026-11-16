@@ -75,7 +75,7 @@ export type { McpServerUrlProblem } from './mcp-server-rules.ts';
 export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope, PendingMcpServer, ServerKeyOfLabel } from './mcp-servers.ts';
 export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, NETWORK_RULE_SUBJECT, OPERATION_RULE_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
-export { SETTINGS_SCHEMA } from './settings-schema.ts';
+export { SETTINGS_SCHEMA, SETTING_UNITS } from './settings-schema.ts';
 export { CORE_SETTING_KEYS } from './core-settings.ts';
 export { telemetryWithReferences } from './expansion.ts';
 export type { CoreSettingKey } from './core-settings.ts';
@@ -92,6 +92,7 @@ export type { SettingReadPoint } from './setting-read-points.ts';
 export { resolveNetwork, resolveNetworkSources } from './network.ts';
 export type { NetworkEnvironment, NetworkSources, ShownNetworkValue } from './network.ts';
 export {
+  DEFAULT_BASH_DRAIN_IDLE_MS,
   DEFAULT_FORGET_AFTER_DAYS,
   DEFAULT_UPDATE_STALL_TIMEOUT_MS,
   DEFAULT_VERIFICATION_COMMANDS,
