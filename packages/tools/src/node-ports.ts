@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
-import { nodeFileSystem, systemRandom } from '@momonga/foundation';
-import { fileWriterOn } from './builtins/file-writer.ts';
+import { nodeFileSystem } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { executableCheckOn } from './builtins/shell.ts';
@@ -45,7 +44,3 @@ const hostListing = (launch: ChildLaunch): FileListingPorts => ({ child: nodeChi
 export const listFileCandidates = (options: FileListingOptions, launch: ChildLaunch): Promise<FileCandidates> => fileCandidatesOn(hostListing(launch), options);
 
 export const listDirectoryEntries = (options: FileListingOptions, launch: ChildLaunch): Promise<string[]> => directoryEntriesOn(hostListing(launch), options);
-
-
-
-export const runFileWriter = fileWriterOn({ files: nodeFileSystem, random: systemRandom });
