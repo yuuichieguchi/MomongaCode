@@ -368,11 +368,11 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     await options.sessions.pointerReady();
     const waitingAttempt = attempts.get(attemptId);
     if (waitingAttempt === undefined) throw signInFailure(PLAN_SIGN_IN_FAILURE.attemptNotFound, undefined);
+    const { exchanged } = waitingAttempt;
     if (options.clock.now() >= waitingAttempt.expiresAt) {
       discard(waitingAttempt);
-      throw signInFailure(PLAN_SIGN_IN_FAILURE.attemptExpired, waitingAttempt.profile);
+      throw signInFailure(exchanged === undefined ? PLAN_SIGN_IN_FAILURE.attemptExpired : PLAN_SIGN_IN_FAILURE.identityLate, waitingAttempt.profile);
     }
-    const { exchanged } = waitingAttempt;
     if (exchanged === undefined) throw signInFailure(PLAN_SIGN_IN_FAILURE.identityNotExchanged, waitingAttempt.profile);
     consume(attemptId);
     removeExpired();
