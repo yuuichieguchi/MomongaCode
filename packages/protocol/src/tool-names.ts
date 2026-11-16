@@ -1,10 +1,28 @@
-export const PATH_TOOL_NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep'] as const;
+export const READ_TOOL_NAME = 'Read';
+
+export const WRITE_TOOL_NAME = 'Write';
+
+export const EDIT_TOOL_NAME = 'Edit';
+
+export const GLOB_TOOL_NAME = 'Glob';
+
+export const GREP_TOOL_NAME = 'Grep';
+
+export const PATH_TOOL_NAMES = [READ_TOOL_NAME, WRITE_TOOL_NAME, EDIT_TOOL_NAME, GLOB_TOOL_NAME, GREP_TOOL_NAME] as const;
 
 export const COMMAND_TOOL_NAME = 'Bash';
 
+export const BASH_OUTPUT_TOOL_NAME = 'BashOutput';
+
+export const KILL_BASH_TOOL_NAME = 'KillBash';
+
+export const READ_OUTPUT_TOOL_NAME = 'ReadOutput';
+
+export const UPDATE_PLAN_TOOL_NAME = 'UpdatePlan';
+
 export const OPERATION_RULE_TOOLS = ['GitBranch', 'GitStage', 'GitCommit', 'GitFetch', 'GitUpdate', 'GitPush', 'PullRequestStatus', 'PullRequestComments', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment', 'IssueRead', 'IssueComment'] as const;
 
-export const BUILTIN_TOOL_NAMES = [...PATH_TOOL_NAMES, COMMAND_TOOL_NAME, 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan'] as const;
+export const BUILTIN_TOOL_NAMES = [...PATH_TOOL_NAMES, COMMAND_TOOL_NAME, BASH_OUTPUT_TOOL_NAME, KILL_BASH_TOOL_NAME, READ_OUTPUT_TOOL_NAME, UPDATE_PLAN_TOOL_NAME] as const;
 
 export const MEMORY_SAVE_TOOL_NAME = 'MemorySave';
 

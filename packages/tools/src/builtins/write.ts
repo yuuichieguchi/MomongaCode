@@ -1,4 +1,5 @@
 import { sha256Hex } from '@momonga/foundation';
+import { READ_TOOL_NAME, WRITE_TOOL_NAME } from '@momonga/protocol';
 import { writerChildOf } from './file-writer.ts';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { PreconditionContext } from '../types.ts';
@@ -40,8 +41,8 @@ const prepareWrite = async (input: WriteInput, ctx: PreconditionContext): Promis
 };
 
 export const writeTool = defineTool<WriteInput>({
-  name: 'Write',
-  companionOf: 'Read',
+  name: WRITE_TOOL_NAME,
+  companionOf: READ_TOOL_NAME,
   description:
     'Writes a file, creating missing parent directories. file_path may be absolute or relative; a relative path is resolved against the working directory. An existing file must have been read with Read first and must be unchanged since. Replaces the whole file; prefer Edit for partial changes.',
   conciseDescription:
@@ -65,7 +66,7 @@ export const writeTool = defineTool<WriteInput>({
   timeoutMs: 30_000,
   title: async (input, ctx) => `Write ${await shownPath(ctx, await accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
-  subject: (input, ctx) => ({ kind: 'path', tool: 'Write', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
+  subject: (input, ctx) => ({ kind: 'path', tool: WRITE_TOOL_NAME, paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
   approval: async (input, ctx) => approvalOfPreparedWrite(await prepareWrite(input, ctx)),
   prepare: prepareWrite,
   execute: async (input, ctx, prepared) => {
@@ -98,5 +99,5 @@ export const writeTool = defineTool<WriteInput>({
       ...plan.diff,
     };
   },
-  reconcile: async (input, record, ctx) => reconcileWrite(record, 'Write', ctx, resolvedPathOf(ctx, input.file_path)),
+  reconcile: async (input, record, ctx) => reconcileWrite(record, WRITE_TOOL_NAME, ctx, resolvedPathOf(ctx, input.file_path)),
 });
