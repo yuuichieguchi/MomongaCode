@@ -159,7 +159,11 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   const derived = createDerivedSnapshot(db);
   const itemFactsOf = (runId: string): ItemFacts => ({
     fence: fenceOfRun(runId),
-    providerCallIdOf: (callId) => callId,
+    providerCallIdOf: (callId) => {
+      const call = derived.read((view) => view.toolCallOf(runId, callId));
+      if (call?.type !== 'tool.call') throw inconsistent(`run ${runId}: the call ${callId} has no tool.call record that names its provider call id`);
+      return call.providerCallId;
+    },
     heldToolNameOf: (callId) => {
       const call = derived.read((view) => view.toolCallOf(runId, callId));
       if (call?.type !== 'tool.call') throw inconsistent(`run ${runId}: the held call ${callId} has no tool.call record that names its tool`);

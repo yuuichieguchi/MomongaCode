@@ -12,7 +12,7 @@ import { ProbeTimeoutError, createProbeClient, fixedStepBound } from './client.t
 import type { ProbeHostPorts } from './client.ts';
 import { PERSON_TRAFFIC } from './request-gate.ts';
 import type { MeasuringAsk } from './auto-probe.ts';
-import { measuringAskOf, sourcedCapabilities, unknownFieldsOf } from './sources.ts';
+import { declaredLayerOf, measuringAskOf, reportedLayerOf, sourcedCapabilities, unknownFieldsOf } from './sources.ts';
 import type { ReportedFields, ToolCallingDeclaration } from './sources.ts';
 import type { ProbeEndpoint } from './client.ts';
 import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
@@ -197,7 +197,8 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
       );
       return mergeCapabilities({
         defaults: { ...declaredParts.core, schemaDialect: resolveDialectId(declared.schemaDialect, record.report) },
-        declared: declaredParts.layer,
+        declared: declaredLayerOf(declared, options.toolCalling),
+        reported: reportedLayerOf(await options.readReported()),
         probed: {
           toolCalling: refusal ?? toolCalling,
           structuredOutput,

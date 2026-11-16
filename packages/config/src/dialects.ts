@@ -1,6 +1,7 @@
 import { BUILTIN_DIALECT_IDS, DIALECT_ID_PATTERN } from '@momonga/protocol';
 import type { DialectDefinition } from '@momonga/protocol';
 import { ConfigError } from './config-error.ts';
+import { invalidSettingsMessage } from './schema-errors.ts';
 import type { ModelConnection } from './settings.ts';
 
 const ID_PATTERN = new RegExp(DIALECT_ID_PATTERN);
@@ -26,7 +27,7 @@ export const checkModelDialects = (connections: readonly ModelConnection[], dial
     (connection.models ?? []).forEach((entry, entryIndex) => {
       const id = entry.capabilities !== undefined && 'schemaDialect' in entry.capabilities ? entry.capabilities.schemaDialect : undefined;
       if (id === undefined || isBuiltin(id) || Object.hasOwn(dialects, id)) return;
-      throw new ConfigError(`${source}: models.connections[${index}].models[${entryIndex}]: capabilities.schemaDialect ${JSON.stringify(id)} is neither a built-in dialect nor declared in models.dialects`);
+      throw new ConfigError(invalidSettingsMessage(source, `/models/connections/${index}/models/${entryIndex}/capabilities/schemaDialect`, `${JSON.stringify(id)} is neither a built-in dialect nor declared in models.dialects`));
     });
   });
 };

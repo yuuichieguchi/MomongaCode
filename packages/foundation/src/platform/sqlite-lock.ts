@@ -124,6 +124,7 @@ const beginExclusive = (database: DatabaseSync): 'acquired' | 'held' => {
 
 const heldDatabase = (ops: SqliteLockOps, lockPath: string, databasePath: string, database: DatabaseSync): HeldKernelLock => {
   let open = true;
+  let holderWritten = false;
   const release = (): void => {
     if (!open) return;
     open = false;
@@ -138,11 +139,14 @@ const heldDatabase = (ops: SqliteLockOps, lockPath: string, databasePath: string
   };
   return {
     descriptor: undefined,
-    writeHolder: (text) => writeHolderFile(lockPath, text),
+    writeHolder: (text) => {
+      writeHolderFile(lockPath, text);
+      holderWritten = true;
+    },
     release,
     dispose: () => {
       try {
-        ops.remove(lockPath);
+        if (holderWritten) ops.remove(lockPath);
         if (ops.removesOpenFiles) ops.remove(databasePath);
       } finally {
         release();

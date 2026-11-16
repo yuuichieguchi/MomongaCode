@@ -39,9 +39,15 @@ describe('the key of a verdict', () => {
     expect(verdictKey(verdictSubjectOf({ ...facts, roots: ['/work', '/extra', '/work'] }), SOLVER)).toBe(verdictKey(base, SOLVER));
   });
 
-  it.each(Object.keys(base).map((field) => [field] as const))('changes when %s changes', (field) => {
+  it.each(Object.keys(base).filter((field) => field !== 'cwd').map((field) => [field] as const))('changes when %s changes', (field) => {
     const changed = { ...base, [field]: `${JSON.stringify(base[field as keyof typeof base])} and more` } as never;
     expect(verdictKey(changed, SOLVER)).not.toBe(verdictKey(base, SOLVER));
+  });
+
+  it('is the same for two sessions in two folders, so a new session with the same rules does not verify again', () => {
+    const otherSession = { ...facts, cwd: '/elsewhere' };
+    expect(verdictKey(verdictSubjectOf(otherSession), SOLVER)).toBe(verdictKey(base, SOLVER));
+    expect(verdictSubjectOf(otherSession).cwd).toBe('/elsewhere');
   });
 
   it('changes with the scratch folder a session exempts, and when no folder is exempt', () => {

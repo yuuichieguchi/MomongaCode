@@ -11,6 +11,7 @@ import {
   quantizedRatioOf,
 } from './budget-ratios.ts';
 import type { Ratio } from './budget-ratios.ts';
+import { LOWEST_REASONING_EFFORT, outputTokensFor } from './capabilities.ts';
 import type { Capabilities } from './capabilities.ts';
 import { ESTIMATED_CHARACTERS_PER_TOKEN } from './characters-per-token.ts';
 import { compactionSummaryMessage } from './compaction-summary.ts';
@@ -78,6 +79,12 @@ export const summaryInputLimitFor = (
     capabilities.contextWindow - summaryCap - reasoningHeadroom - marginFloorFor(capabilities.contextWindow),
     capabilities.contextWindow - outputReserveFor(capabilities),
   );
+
+export const reasoningHeadroomFor = (capabilities: Capabilities, summaryCap: number): number =>
+  outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, summaryCap) - summaryCap;
+
+export const summaryRequestInputLimitFor = (capabilities: Capabilities, summaryCap: number): number =>
+  summaryInputLimitFor(capabilities, summaryCap, reasoningHeadroomFor(capabilities, summaryCap));
 
 export const summaryTokenCapFor = (capabilities: Pick<Capabilities, 'contextWindow'>, room?: number): number => {
   const base = Math.min(

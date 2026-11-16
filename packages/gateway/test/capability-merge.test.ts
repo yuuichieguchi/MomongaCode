@@ -18,14 +18,25 @@ describe('one merge decides declared against probed capabilities', () => {
     expect(merged).toMatchObject({ contextWindow: 8192, maxOutputTokens: 2048, promptCache: { kind: 'none' }, imageInput: true, imageTokens: OLLAMA_CAPABILITIES.imageTokens });
   });
 
-  it('takes the probed tool calling, structured output and parallel calls over the declaration', () => {
+  it('keeps the declared tool calling, structured output and parallel calls over a different measured value', () => {
     const merged = mergeCapabilities({
       defaults: layerOf(declared).core,
       declared: layerOf(declared).layer,
       probed: { toolCalling: 'none', structuredOutput: 'json_schema', parallelToolCalls: true, reasoning: { control: 'none' } },
       probedAt: PROBED_AT,
     });
-    expect(merged).toMatchObject({ toolCalling: 'none', structuredOutput: 'json_schema', parallelToolCalls: true, reasoning: { control: 'none' }, source: 'probed', probedAt: PROBED_AT });
+    expect(merged).toMatchObject({ toolCalling: 'native', structuredOutput: 'none', parallelToolCalls: false, reasoning: { control: 'none' }, source: 'probed', probedAt: PROBED_AT });
+  });
+
+  it('takes the reported value over the measured one, and the declared value over both', () => {
+    const merged = mergeCapabilities({
+      defaults: layerOf(declared).core,
+      declared: { contextWindow: 16384 },
+      reported: { contextWindow: 131072, toolCalling: 'native', reasoning: { control: 'reasoning_effort', lowest: 'low' } },
+      probed: { contextWindow: 1024, toolCalling: 'constrained', reasoning: { control: 'none' } },
+      probedAt: PROBED_AT,
+    });
+    expect(merged).toMatchObject({ contextWindow: 16384, toolCalling: 'native', reasoning: { control: 'reasoning_effort', lowest: 'low' } });
   });
 
   it('keeps the declared value of a field the probe did not measure', () => {

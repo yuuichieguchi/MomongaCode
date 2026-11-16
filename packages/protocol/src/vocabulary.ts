@@ -1,3 +1,7 @@
+import type { BudgetExhausted } from './budget.ts';
+import type { NotRunReason } from './completion.ts';
+import type { StopReason } from './run-types.ts';
+
 export const SURFACES = ['cli', 'tui', 'acp', 'gateway'] as const;
 
 export type Surface = (typeof SURFACES)[number];
@@ -183,7 +187,10 @@ export const bannedVariantsIn = (text: string): BannedUse[] =>
 
 const SHELL_PLAIN_ARGUMENT = /^[A-Za-z0-9_@%+=:,./-]+$/;
 
-export const shellQuote = (argument: string): string => (SHELL_PLAIN_ARGUMENT.test(argument) ? argument : `'${argument.replaceAll("'", "'\\''")}'`);
+export const shellQuote = (argument: string, platform: string): string => {
+  if (SHELL_PLAIN_ARGUMENT.test(argument)) return argument;
+  return platform === 'win32' ? `"${argument.replaceAll('"', '\\"')}"` : `'${argument.replaceAll("'", "'\\''")}'`;
+};
 
 export const BYPASS_OPT_IN_OPTION = '--dangerously-skip-permissions';
 
@@ -233,11 +240,58 @@ const CONNECT_MODEL_REMEDY: Readonly<Record<Surface, string>> = {
 
 const billingChangeRemedy = (surface: Surface, from: string, to: string): string => (surface === 'tui' ? '/models billing' : `${WORDS.command} models billing allow ${from} ${to}`);
 
+export const withBillingRemedy = (notice: string, surface: Surface, from: string, to: string): string => `${notice} Run ${billingChangeRemedy(surface, from, to)}.`;
+
 const COUNT_WORDS: Readonly<Record<number, string>> = { 2: 'two', 3: 'three' };
 
 export const serverCountText = (count: number): string => COUNT_WORDS[count] ?? String(count);
 
 const noModelConnected = (surface: Surface): string => `No ${WORDS.model} is connected. ${CONNECT_MODEL_REMEDY[surface]}`;
+
+const STOP_WORDS: Readonly<Record<StopReason, string>> = {
+  max_steps: 'step limit reached',
+  budget: 'budget limit reached',
+  max_tokens: 'token limit reached',
+  timeout: 'time limit reached',
+  loop: 'repeated tool calls',
+  approval_timeout: 'no answer to an approval',
+  refusal: 'refused by the model',
+  usage_limit: 'usage limit reached',
+  conditions_unmet: 'completion conditions not met',
+};
+
+export const stopWord = (reason: StopReason): string => STOP_WORDS[reason];
+
+const NOT_RUN_WORDS: Readonly<Record<NotRunReason, string>> = {
+  max_steps: 'the step limit was reached',
+  budget: 'the budget limit was reached',
+  max_tokens: 'the token limit was reached',
+  timeout: 'the time limit was reached',
+  loop: 'the run looped',
+  approval_timeout: 'no approval was given in time',
+  refusal: 'the model refused',
+  usage_limit: 'the usage limit was reached',
+  cancelled: 'the run was cancelled',
+  failed: 'the run failed',
+  not_needed: 'it was not needed',
+  no_mechanical_check: 'no mechanical check exists',
+  unfinished: 'the run did not finish',
+};
+
+export const notRunWord = (reason: NotRunReason): string => NOT_RUN_WORDS[reason];
+
+const DIMENSION_WORDS: Readonly<Record<BudgetExhausted['dimension'], string>> = { steps: 'step', tokens: 'token', cost: 'money', time: 'time', retries: 'retry' };
+
+export const budgetSentence = (exhausted: BudgetExhausted, format: (dimension: BudgetExhausted['dimension'], value: number) => string): string => {
+  const what = DIMENSION_WORDS[exhausted.dimension];
+  const figures = `${format(exhausted.dimension, exhausted.spent)} of ${format(exhausted.dimension, exhausted.limit)} used or reserved`;
+  if (exhausted.cause === 'unpriced') return `The run stopped at its ${what} limit: a model call has no price, so its cost cannot be counted (${figures}).`;
+  if (exhausted.cause === 'cap_too_small') {
+    const admits = exhausted.admitsAt === undefined ? '' : ` A budget of ${format(exhausted.dimension, exhausted.admitsAt)} admits the next model request.`;
+    return `The run stopped at its ${what} limit: what is left does not pay for another model request (${figures}).${admits}`;
+  }
+  return `The run stopped at its ${what} limit (${figures}).`;
+};
 
 const UNSENT_INPUT_KEPT: Readonly<Record<Surface, string>> = {
   cli: '',
@@ -265,7 +319,7 @@ export type MessageInputs = {
   sessionNotFound: [given: { readonly id: string }];
   sessionIdTooShort: [given: { readonly id: string; readonly minimum: number }];
   sessionAmbiguous: [given: { readonly id: string; readonly matches: readonly string[] }];
-  sessionInOtherFolder: [given: { readonly id: string; readonly folder: string }];
+  sessionInOtherFolder: [given: { readonly id: string; readonly folder: string; readonly platform: string }];
   noSessionToContinue: [given: { readonly folder: string }];
   notAnId: [given: { readonly value: string }];
   storedBypassNeedsOptIn: [given: { readonly id: string }];
@@ -303,7 +357,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   sessionNotFound: (_surface, given) => `No ${WORDS.session} has the id ${given.id}.`,
   sessionIdTooShort: (_surface, given) => `No ${WORDS.session} has the id ${given.id}. A shortened id needs at least ${given.minimum} characters.`,
   sessionAmbiguous: (_surface, given) => `${given.id} matches more than one ${WORDS.session}: ${given.matches.join(', ')}`,
-  sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${shellQuote(given.folder)} && ${reopenSessionCommand(given.id)}`,
+  sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${shellQuote(given.folder, given.platform)} && ${reopenSessionCommand(given.id)}`,
   optionNeedsPrint: (_surface, given) => `${given.option} applies only with ${PRINT_OPTION}; the interactive ${WORDS.session} cannot apply it.`,
   optionNeedsInteractive: (_surface, given) => `${given.option} applies only to the interactive ${WORDS.session}; it cannot be given with ${PRINT_OPTION}.`,
   promptGivenTwice: (_surface, given) => `${PRINT_OPTION} takes the prompt as its value, so ${JSON.stringify(given.prompt)} cannot be given as well.`,
@@ -337,7 +391,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   accountWithoutModel: (surface, given) => `No ${WORDS.model} uses this account yet. ${ACCOUNT_MODEL_STEP[surface](given)}`,
   serverFormNotOffered: (_surface, given) =>
     `the ${WORDS.server} ${JSON.stringify(given.server)} cannot be used on ${given.platform}: it accepts only the socket forms [${given.accepted.join(', ')}], and ${given.platform} offers [${given.offered.join(', ')}]`,
-  billingChangeRefused: (surface, given) => `Did not fall back to ${given.model}: billing from ${given.from} to ${given.to} is not allowed. Run ${billingChangeRemedy(surface, given.from, given.to)}.`,
+  billingChangeRefused: (_surface, given) => `Did not fall back to ${given.model}: billing from ${given.from} to ${given.to} is not allowed.`,
   daemonStarting: () => `The ${WORDS.daemon} is still starting and accepts no new work yet. The request was not run; send it again.`,
 };
 

@@ -7,7 +7,7 @@ import { provideEmbeddedWindowsKeeper } from '../src/keeper/host.ts';
 import { nodeSourceKeeperFiles } from '../src/node-ports.ts';
 import { sourceBuiltWindowsKeeper } from '../src/keeper/source.ts';
 import type { SourceKeeperPorts } from '../src/keeper/source.ts';
-import { createTempDir } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 
 const dirs: string[] = [];
 
@@ -52,6 +52,7 @@ const worldOf = (build: (workDir: string) => number | null): World => {
       },
       files: nodeSourceKeeperFiles,
       random: { hex: () => 'abcdef0123456789' },
+      lock: testKernelLock(),
     },
   };
 };
@@ -63,57 +64,73 @@ describe('a from-source run builds the keeper on first need and checks it like t
     expect(world.builds).toEqual([]);
   });
 
-  it('builds once, keeps the keeper under the executables area by its checksum, and removes the work directory', () => {
+  it('builds once, keeps the keeper under the executables area by its checksum, and removes the work directory', async () => {
     const world = worldOf((workDir) => {
       writesKeeper(workDir);
       return 0;
     });
     const executable = sourceBuiltWindowsKeeper(world.ports);
-    const file = executable();
+    const check = await executable();
+    const file = check();
     expect(file).toBe(path.join(world.ports.executablesRoot, `windows-keeper-${SHA.slice(0, 16)}`, 'momonga-keeper.exe'));
     expect(sha256Hex(fs.readFileSync(file))).toBe(SHA);
-    expect(executable()).toBe(file);
+    expect(await executable()).toBe(check);
+    expect(check()).toBe(file);
     expect(world.builds).toHaveLength(1);
     expect(fs.existsSync(world.builds[0] as string)).toBe(false);
   });
 
-  it('checks the keeper before every start: a changed byte is refused', () => {
+  it('checks the keeper before every start: a changed byte is refused', async () => {
     const world = worldOf((workDir) => {
       writesKeeper(workDir);
       return 0;
     });
-    const executable = sourceBuiltWindowsKeeper(world.ports);
-    const file = executable();
+    const check = await sourceBuiltWindowsKeeper(world.ports)();
+    const file = check();
     fs.writeFileSync(file, 'MZ other bytes');
-    expect(() => executable()).toThrow(/does not match/);
+    expect(() => check()).toThrow(/does not match/);
   });
 
-  it('refuses a built keeper that does not match its manifest', () => {
+  it('refuses a built keeper that does not match its manifest', async () => {
     const world = worldOf((workDir) => {
       writesKeeper(workDir, new TextEncoder().encode('MZ something else'));
       return 0;
     });
-    expect(() => sourceBuiltWindowsKeeper(world.ports)()).toThrow(/does not match the checksum in its manifest/);
+    await expect(sourceBuiltWindowsKeeper(world.ports)()).rejects.toThrow(/does not match the checksum in its manifest/);
   });
 
-  it('refuses with one sentence that names zig when the compiler is absent', () => {
+  it('refuses with one sentence that names zig when the compiler is absent', async () => {
     const world = worldOf(() => WINDOWS_KEEPER_COMPILER_MISSING_EXIT);
-    expect(() => sourceBuiltWindowsKeeper(world.ports)()).toThrow(
+    await expect(sourceBuiltWindowsKeeper(world.ports)()).rejects.toThrow(
       'zig was not found on PATH, so the keeper executable that a from-source run on Windows needs could not be built from native/windows-keeper/keeper.c',
     );
   });
 
-  it('names the exit code of a build that failed for another reason', () => {
+  it('names the exit code of a build that failed for another reason', async () => {
     const world = worldOf(() => 1);
-    expect(() => sourceBuiltWindowsKeeper(world.ports)()).toThrow('the keeper executable could not be built from native/windows-keeper/keeper.c: the build ended with exit code 1');
+    await expect(sourceBuiltWindowsKeeper(world.ports)()).rejects.toThrow('the keeper executable could not be built from native/windows-keeper/keeper.c: the build ended with exit code 1');
   });
 
-  it('names the build script when it is absent', () => {
+  it('names the build script when it is absent', async () => {
     const world = worldOf(() => 0);
     fs.rmSync(world.ports.script);
-    expect(() => sourceBuiltWindowsKeeper(world.ports)()).toThrow(`the keeper executable could not be built for this from-source run: ${world.ports.script} is missing`);
+    await expect(sourceBuiltWindowsKeeper(world.ports)()).rejects.toThrow(`the keeper executable could not be built for this from-source run: ${world.ports.script} is missing`);
     expect(world.builds).toEqual([]);
   });
+
+  it('removes a staged file that a run which died left beside the keeper, on the next source run', async () => {
+    const world = worldOf((workDir) => {
+      writesKeeper(workDir);
+      return 0;
+    });
+    const directory = path.join(world.ports.executablesRoot, `windows-keeper-${SHA.slice(0, 16)}`);
+    fs.mkdirSync(directory, { recursive: true });
+    const dead = path.join(directory, 'momonga-keeper.exe.partial-0123456789abcdef');
+    fs.writeFileSync(dead, 'MZ half written');
+    await sourceBuiltWindowsKeeper(world.ports)();
+    expect(fs.existsSync(dead)).toBe(false);
+  });
+
 });
 
 describe('outside a single executable the composition root provides the keeper built from source', () => {

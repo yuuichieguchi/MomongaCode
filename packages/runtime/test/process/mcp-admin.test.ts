@@ -317,6 +317,16 @@ describe('createMcpAdmin authorization', () => {
     });
   });
 
+  it('removes a finished attempt once the client has read its outcome', async () => {
+    const { admin, session, pools } = await setup();
+    await admin.startAuthorization(session.id, 'remote', new AbortController().signal);
+    pools[0]?.failAuthorization(new Error('the token endpoint is down'));
+    await admin.close(CLOSE_GRACE_MS);
+
+    expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed' });
+    expect(admin.authorization(session.id, 'remote')).toBeUndefined();
+  });
+
   it('cancels an awaiting attempt and refuses to cancel anything else', async () => {
     const { admin, session } = await setup();
     expect(admin.cancelAuthorization(session.id, 'remote')).toBe(false);

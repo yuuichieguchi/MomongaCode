@@ -3,7 +3,7 @@ import { startBudget } from '../src/budget.ts';
 
 const steppedClock = () => {
   let current = 1000;
-  return { clock: { now: () => current }, advance: (ms: number): void => void (current += ms) };
+  return { clock: { now: () => current, monotonicMs: () => current }, advance: (ms: number): void => void (current += ms) };
 };
 
 describe('a share of the verification budget', () => {

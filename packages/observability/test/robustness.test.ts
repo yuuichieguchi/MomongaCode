@@ -134,7 +134,7 @@ describe('captured content is queued off the span path and never throws', () => 
     const errors = captureErrors();
     const queue = createBodyQueue({ maxEntries: 10, maxBytes: 1000 });
     queue.close('telemetry is shut down');
-    for (const index of [1, 2, 3]) queue.push({ traceId: 't'.repeat(32), spanId: 's'.repeat(16), kind: INPUT, content: String(index), createdAtMs: START_MS, expiresAtMs: START_MS + 1 });
+    for (const index of [1, 2, 3]) queue.push({ traceId: 't'.repeat(32), spanId: 's'.repeat(16), kind: INPUT, content: String(index), createdAtMs: START_MS });
     await waitFor(() => errors.length > 0, { description: 'the aggregated error of the closed queue' });
     expect(errors).toHaveLength(1);
     expect(String(errors[0])).toContain('telemetry is shut down; dropped 3 bodies');
@@ -299,21 +299,20 @@ describe('body retention', () => {
 });
 
 describe('housekeeping is separate from the write', () => {
-  const bodyRecord = (spanId: string, expiresAtMs: number): BodyRecord => ({
+  const bodyRecord = (spanId: string): BodyRecord => ({
     traceId: 't'.repeat(32),
     spanId,
     kind: INPUT,
     content: 'x',
     createdAtMs: START_MS,
-    expiresAtMs,
   });
 
   it('writeSpans never purges', () => {
     const clock = createFakeClock(START_MS);
     const { store, file } = openStore(clock);
-    store.writeSpans([], [bodyRecord('a'.repeat(16), START_MS + 1)]);
+    store.writeSpans([], [bodyRecord('a'.repeat(16))]);
     clock.advance(10);
-    store.writeSpans([], [bodyRecord('b'.repeat(16), START_MS + 1000)]);
+    store.writeSpans([], [bodyRecord('b'.repeat(16))]);
     expect(countRows(file, 'bodies')).toBe(2);
   });
 
@@ -357,7 +356,6 @@ describe('standalone store exporter', () => {
     kind: OUTPUT,
     content: 'last words',
     createdAtMs: START_MS,
-    expiresAtMs: START_MS + 1000,
   });
   const limits = { maxEntries: 10, maxBytes: 1000 };
 

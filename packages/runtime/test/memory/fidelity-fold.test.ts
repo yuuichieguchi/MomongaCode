@@ -40,6 +40,16 @@ describe('the fidelity fold decides sources by event type', () => {
     expect(await attested(startedCall('c1', { command: 'ls' }, `log: ${TOKEN} done`), 'executed')).toEqual([TOKEN]);
   });
 
+  it('attests a path token only at a path-segment boundary in the output of a call', async () => {
+    const env = await fidelityEnv();
+    const attestedPath = async (token: string, output: string): Promise<string[]> => {
+      const run = await env.finished(startedCall('c1', { command: 'ls' }, output));
+      return (await env.fidelity(run.id, [{ token, claim: 'executed' }])).attested;
+    };
+    expect(await attestedPath('a/b.ts', 'wrote xa/b.ts')).toEqual([]);
+    expect(await attestedPath('a/b.ts', 'wrote ./a/b.ts and more')).toEqual(['a/b.ts']);
+  });
+
   it('attests a token in a handled blob', async () => {
     const env = await fidelityEnv();
     const { handle } = await env.store.blobs.put(`head\nthe blob says ${TOKEN}\ntail`, { mediaType: 'text/plain' } as never);

@@ -247,8 +247,11 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
   };
 
   const authorizationOf = (scopeId: string, name: string): McpAuthorizationView | undefined => {
-    const attempt = attempts.get(keyOf(scopeId, name));
-    return attempt === undefined ? undefined : { ...attempt.view };
+    const key = keyOf(scopeId, name);
+    const attempt = attempts.get(key);
+    if (attempt === undefined) return undefined;
+    if (attempt.view.status !== 'awaiting_user') attempts.delete(key);
+    return { ...attempt.view };
   };
 
   const cancelAuthorizationOf = (scopeId: string, name: string): boolean => {

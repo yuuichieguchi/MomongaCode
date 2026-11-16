@@ -75,7 +75,7 @@ describe('POST /v1/report/cost', () => {
 describe('GET /v1/runs/:id/trace/content', () => {
   it('answers one page of the stored bodies of the run after the cursor', async () => {
     const asked: { runId: string; after: number; limit: number }[] = [];
-    const page = { bodies: [{ id: 4, spanId: 'span-1', kind: 'gen_ai.input.messages', content: 'hello', createdAtMs: 1, expiresAtMs: 2 }], next: 4 };
+    const page = { bodies: [{ id: 4, spanId: 'span-1', kind: 'gen_ai.input.messages', content: 'hello', createdAtMs: 1 }], next: 4 };
     const { env, run } = await withCalls({
       runTraceContent: async (runId, after, limit) => {
         asked.push({ runId, after, limit });

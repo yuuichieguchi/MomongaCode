@@ -46,6 +46,7 @@ export const treeCpuSeconds = async (rootPid: number): Promise<number> => {
 };
 
 const liveGroups = new Set<number>();
+const liveDirectories = new Set<string>();
 
 export const trackGroup = (pgid: number): (() => void) => {
   liveGroups.add(pgid);
@@ -53,6 +54,26 @@ export const trackGroup = (pgid: number): (() => void) => {
     liveGroups.delete(pgid);
   };
 };
+
+const trackDirectory = (dir: string): (() => void) => {
+  liveDirectories.add(dir);
+  return () => {
+    liveDirectories.delete(dir);
+  };
+};
+
+const cleanUpLive = (): void => {
+  for (const pgid of liveGroups) killGroup(pgid);
+  for (const dir of liveDirectories) fs.rmSync(dir, { recursive: true, force: true });
+};
+
+process.on('exit', cleanUpLive);
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    cleanUpLive();
+    process.kill(process.pid, signal);
+  });
+}
 
 export type GroupHost = {
   signalGroup: (pgid: number) => void;
@@ -85,12 +106,9 @@ export const groupKiller =
 
 export const killGroup = groupKiller(hostGroups);
 
-process.on('exit', () => {
-  for (const pgid of liveGroups) killGroup(pgid);
-});
-
 export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
   const metadir = createTempDir();
+  const untrackDirectory = trackDirectory(metadir);
   try {
     const child = spawn(options.script, [options.config, ...options.args, '-workers', String(TLC_WORKERS)], {
       detached: true,
@@ -153,5 +171,6 @@ export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
     }
   } finally {
     fs.rmSync(metadir, { recursive: true, force: true });
+    untrackDirectory();
   }
 };

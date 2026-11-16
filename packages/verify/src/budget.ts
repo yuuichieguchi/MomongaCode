@@ -1,11 +1,13 @@
-import type { Clock } from '@momonga/foundation';
+import type { Timing } from '@momonga/foundation';
 
 export type SolveBudget = { readonly totalMs: number; remainingMs(): number; share(propertiesLeft: number): SolveBudget };
 
-const budgetUntil = (clock: Clock, totalMs: number, deadline: number): SolveBudget => ({
+export type BudgetTiming = Pick<Timing, 'monotonicMs'>;
+
+const budgetUntil = (timing: BudgetTiming, totalMs: number, deadline: number): SolveBudget => ({
   totalMs,
-  remainingMs: () => deadline - clock.now(),
-  share: (propertiesLeft) => budgetUntil(clock, totalMs, clock.now() + (deadline - clock.now()) / propertiesLeft),
+  remainingMs: () => deadline - timing.monotonicMs(),
+  share: (propertiesLeft) => budgetUntil(timing, totalMs, timing.monotonicMs() + (deadline - timing.monotonicMs()) / propertiesLeft),
 });
 
-export const startBudget = (clock: Clock, totalMs: number): SolveBudget => budgetUntil(clock, totalMs, clock.now() + totalMs);
+export const startBudget = (timing: BudgetTiming, totalMs: number): SolveBudget => budgetUntil(timing, totalMs, timing.monotonicMs() + totalMs);

@@ -31,6 +31,7 @@ describe('the sign-in failures are one table of code, status, type and template 
       jwks_unavailable: { status: 502, type: 'server_error', template: 'The keys needed to verify the identity returned by {identityLabel} could not be fetched.' },
       identity_mismatch: { status: 400, type: 'invalid_request', template: 'The account that signed in is not the account saved under this label. Nothing was changed.' },
       identity_not_exchanged: { status: 409, type: 'invalid_request', template: 'This sign-in attempt has no account identity to confirm yet: the browser has not returned.' },
+      identity_late: { status: 409, type: 'invalid_request', template: 'The identity returned by {identityLabel} arrived after this sign-in attempt had ended. Nothing was saved.' },
     });
     expect([...protocol.PLAN_SIGN_IN_FAILURES].sort()).toEqual(Object.keys(rules()).sort());
   });

@@ -61,7 +61,7 @@ describe('a server declared in the user settings resolves to the one description
       endpoint: FM_SERVER.endpoint,
       ready: { method: 'GET', path: '/ready', status: 200, limitMs: 10_000 },
       preconditions: [],
-      identity: ['binarySha256', 'hostOsBuild'],
+      identity: ['binarySha256'],
       restart: { backoffMs: 1000, maxRestarts: 5, windowMs: 60_000 },
       models: { listPath: '/v1/models', idPath: ['data', '0', 'id'] },
       toolForms: ['native', 'envelope'],

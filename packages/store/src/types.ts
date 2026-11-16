@@ -241,6 +241,7 @@ export type IdempotencyRecord = {
   state: 'PENDING' | 'UNKNOWN';
   meta: Record<string, unknown>;
   pgid?: number;
+  groupName?: string;
   startedAt?: number;
   leaseToken?: number;
   authorisedAt?: number;
@@ -267,7 +268,7 @@ export type LeasedOutcome = { kind: 'ok' } | LeaseLost;
 export type LeasedIdempotency = {
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): LeasedBegin;
   authorise(key: string, purpose?: 'reconcile'): LeasedOutcome;
-  attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
+  attachProcess(key: string, process: { pgid: number; startedAt: number; groupName?: string }): LeasedOutcome;
   checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
   complete(key: string, result: unknown, meta?: Record<string, unknown>): LeasedOutcome;
 };
@@ -278,7 +279,7 @@ export type IdempotencyStore = {
   holding(fence: LeaseFence): LeasedIdempotency;
   clearCheckpoint(key: string): void;
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): IdempotencyBegin;
-  attachProcess(key: string, process: { pgid: number; startedAt: number }): void;
+  attachProcess(key: string, process: { pgid: number; startedAt: number; groupName?: string }): void;
   complete(key: string, result: unknown): void;
   markUnknown(key: string): void;
   markUnknownIfPending(key: string): boolean;

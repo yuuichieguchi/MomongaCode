@@ -9,7 +9,7 @@ import type { DeclaredCapabilities } from './decide.ts';
 import { memoizedVerification } from './endpoint-target.ts';
 import { recordForIdentity } from './record.ts';
 import type { MeasuringAsk } from './auto-probe.ts';
-import { measuringAskOf, sourcedCapabilities, unknownFieldsOf } from './sources.ts';
+import { declaredLayerOf, measuringAskOf, reportedLayerOf, sourcedCapabilities, unknownFieldsOf } from './sources.ts';
 import type { ReportedFields, ToolCallingDeclaration } from './sources.ts';
 
 export type ProbedOllamaTargetOptions = {
@@ -61,10 +61,12 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
     capabilities: async () => {
       record = usable(await options.readRecord());
       if (record === null) return fromSources();
+      reportedOnce ??= await options.readReported();
       const { report } = record;
       return mergeCapabilities({
         defaults: { ...declaredParts.core, schemaDialect: resolveDialectId(declared.schemaDialect, report) },
-        declared: declaredParts.layer,
+        declared: declaredLayerOf(declared, options.toolCalling),
+        reported: reportedLayerOf(reportedOnce),
         probed: {
           toolCalling: report.nativeTools.accepted ? 'native' : 'none',
           image: report.imageInputAccepted && report.imageTokens !== undefined ? imageCapability(true, report.imageTokens) : imageCapability(false, undefined),

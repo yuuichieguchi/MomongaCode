@@ -79,7 +79,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
   prepareHome(home);
   writeSettings(home, settings);
   const log = captureLog();
-  const handle = await registerOwned(context, () => startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

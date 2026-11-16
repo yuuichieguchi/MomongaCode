@@ -51,12 +51,12 @@ export type PinnedDerivation<T> = {
   retireAll(): Promise<void>;
 };
 
-export type PinnedDerivationOptions<T> = {
+export type PinnedDerivationOptions<T, I = unknown> = {
   cache: Pick<UserSettingsCache, 'loadOrKeep'>;
   signal: AbortSignal;
-  inputsOf(settings: ResolvedSettings): unknown;
+  inputsOf(settings: ResolvedSettings): I;
   prepare?(settings: ResolvedSettings, signal: AbortSignal): Promise<void> | undefined;
-  derive(settings: ResolvedSettings, previous: T | undefined, signal: AbortSignal, inputs: unknown): T | Promise<T>;
+  derive(settings: ResolvedSettings, previous: T | undefined, signal: AbortSignal, inputs: I): T | Promise<T>;
   retire(object: T): void | Promise<void>;
   onWarning(message: string): void;
 };
@@ -73,7 +73,7 @@ const reasonOf = (error: unknown): string => (error instanceof Error ? error.mes
 
 type Prepared = { failed: false } | { failed: true; error: unknown };
 
-export const createPinnedDerivation = <T>({ cache, signal: owner, inputsOf, prepare, derive, retire, onWarning }: PinnedDerivationOptions<T>): PinnedDerivation<T> => {
+export const createPinnedDerivation = <T, I = unknown>({ cache, signal: owner, inputsOf, prepare, derive, retire, onWarning }: PinnedDerivationOptions<T, I>): PinnedDerivation<T> => {
   let current: Entry<T> | undefined;
   let inFlight: InFlight<T> | undefined;
   const warned = new Set<string>();
@@ -119,7 +119,7 @@ export const createPinnedDerivation = <T>({ cache, signal: owner, inputsOf, prep
     flight.waiters.clear();
   };
 
-  const start = (digest: string, settings: ResolvedSettings, inputs: unknown): InFlight<T> => {
+  const start = (digest: string, settings: ResolvedSettings, inputs: I): InFlight<T> => {
     const previous = current;
     const flight: InFlight<T> = { digest, waiters: new Set<Waiter<T>>(), settled: Promise.resolve() };
     flight.settled = (async () => {

@@ -3,14 +3,14 @@ import path from 'node:path';
 import { INIT_INSTRUCTION } from '@momonga/runtime';
 import { PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS } from '@momonga/protocol';
 import type { McpServerView } from '@momonga/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SLASH_COMMANDS } from '../../src/tui/commands/index.ts';
 import { HOOKS_TITLE, HOOK_COMMAND_TITLE, HOOK_EVENT_TITLE, HOOK_MATCHER_TITLE, HOOK_TIMEOUT_TITLE } from '../../src/tui/commands/hooks.ts';
 import { ADD_HTTP_ROW, ADD_STDIO_ROW, MCP_ADDRESS_TITLE, MCP_ARGUMENTS_TITLE, MCP_COMMAND_TITLE, MCP_ENVIRONMENT_TITLE, MCP_NAME_TITLE, MCP_SECRETS_TITLE, MCP_TITLE, sessionServerNote } from '../../src/tui/commands/mcp.ts';
 import { PERMISSIONS_TITLE, PROTECTED_HEADING, PROTECTED_LINES, TRUST_ROW, TRUST_TITLE } from '../../src/tui/commands/permissions.ts';
 import { APPLIES_NEXT_SESSION, APPLIES_NOW, SAVE_TO_TITLE } from '../../src/tui/settings-screen.tsx';
 import { FAKE_INIT_INSTRUCTION, runView } from '../fake-backend.ts';
-import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { KEYS, TUI_TEST_TIMEOUT_MS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { command, freshPlace, localFileOf, press, startAt, stored, typeInto, writeSettings } from './settings-harness.tsx';
 import type { Started } from './settings-harness.tsx';
 
@@ -30,6 +30,8 @@ const openRun = async (started: Started): Promise<void> => {
   await started.backend.called('openSession');
   await untilOutput(started.app, '> go');
 };
+
+vi.setConfig({ testTimeout: TUI_TEST_TIMEOUT_MS });
 
 describe('the commands of the settings', () => {
   it.each(['config', 'permissions', 'hooks', 'mcp', 'init'])('/%s is in the command registry', (name) => {

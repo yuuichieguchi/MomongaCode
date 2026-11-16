@@ -49,7 +49,7 @@ describe('the name of a managed model over the epochs of the settings (gateway-a
     replaceSettings(home, { models: modelsOf({ apple }) });
     const handle = await registerOwned(
       registerCleanup,
-      () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }),
+      () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }),
       (started) => started.close({ ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 }),
     );
     const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `apple/${OWN_NAME}`, input: userInput('hello') }));

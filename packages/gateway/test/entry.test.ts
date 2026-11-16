@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { EXIT_ALREADY_RUNNING, FIRST_GENERATION, createUdsClient, inspectProcessLock, momongaPaths, fixedSocket } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, FIRST_GENERATION, createUdsClient, homeLayout, inspectProcessLock, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, runGatewayEntry } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration, testKernelLock, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
@@ -195,5 +195,19 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(io.stderrLines()).toHaveLength(1);
     expect(() => JSON.parse(io.stderrLines()[0] ?? '')).not.toThrow();
     expect(io.logFilePaths).toEqual([]);
+  });
+
+  it('gateway: the log file is the one of the platform the entry is given, not of the host', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    prepareHome(home);
+    writeSettings(home, { models: modelsOf({ '9-bad-name': { adapter: 'managed', server: 'fm', model: 'system' } }) });
+    const io = createFakeEntryIo({ argv: [`--home=${home}`, `--generation=${FIRST_GENERATION}`], home, env: { PATH: MINIMAL_PATH, HOME: home }, platform: 'win32' });
+    const exit = runGatewayEntry(io, { version: VERSION });
+    registerCleanup(context, async () => {
+      await exit.catch(() => undefined);
+    });
+
+    await exit;
+    expect(io.logFilePaths).toEqual([homeLayout(home, 'win32').logFiles.gateway]);
   });
 });
