@@ -7,8 +7,8 @@ import { SandboxPolicyError } from '@momonga/sandbox';
 import type { ResultOutcome, ToolHooks } from '@momonga/tools';
 import { LSOF_PATH, waitFor } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
-import { keyFor } from './helpers.ts';
-import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
+import { fakeSandbox, keyFor } from './helpers.ts';
+import { makeBuiltins, resultOf, TEST_WRITER_LAUNCH } from './builtins/fixtures.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 
@@ -19,7 +19,8 @@ const openByThisProcess = (file: string): boolean => {
 
 const refusingSandbox = (error: () => Error): Sandbox => ({
   kind: 'seatbelt',
-  spawn: () => {
+  spawn: (command, ...rest) => {
+    if (command.argv.join('\0') === TEST_WRITER_LAUNCH.argv.join('\0')) return fakeSandbox.spawn(command, ...rest);
     throw error();
   },
 });

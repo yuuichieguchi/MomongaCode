@@ -36,7 +36,7 @@ export const makeDir = (mode = 0o700): string => {
 
 export const openStore = (clock: FakeClock): { store: TraceStore; file: string } => {
   const file = path.join(makeDir(), 'traces.db');
-  const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file });
+  const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file, clock });
   registerCleanup(() => store.close());
   return { store, file };
 };

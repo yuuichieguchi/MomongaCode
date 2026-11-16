@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { RuntimeStore } from '@momonga/store';
-import { START_MS, callEvent, enqueue, harness, makeStoreDir, mustClaim, newSession, rawDb } from './helpers.ts';
+import type { RunCharge, RuntimeStore } from '@momonga/store';
+import { START_MS, callEvent, cancelToEnd, enqueue, harness, makeStoreDir, mustClaim, newSession, rawDb } from './helpers.ts';
 import { NEVER_CANCELLED } from '@momonga/testkit';
 
 type Job = { runId: string; state: string; attempts: number; lastError: string | null; dropped: { ordinal: number; text: string | null; cause: string; reason: string }[]; createdAt: number; updatedAt: number };
@@ -151,7 +151,7 @@ describe('reflection jobs', () => {
 
 type Dropped = { ordinal: number; text: string | null; cause: string; reason: string };
 
-type Charge = { purpose: 'reflection'; runId: string; project: string; model: string; inputTokens: number; outputTokens: number; totalTokens: number };
+type Charge = RunCharge;
 
 type Settling = Jobs & {
   complete(input: { runId: string; charge: Charge | null; candidates: Record<string, unknown>[]; dropped?: Dropped[]; reason?: string }): Job;
@@ -160,7 +160,8 @@ type Settling = Jobs & {
 };
 
 describe('settling a reflection job', () => {
-  const charge = (runId: string): Charge => ({ purpose: 'reflection', runId, project: '/work/a', model: 'fm', inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+  const charge = (runId: string): Charge => ({ runId, charged: { type: 'usage.charged', purpose: 'reflection', inputTokens: 10, outputTokens: 5, totalTokens: 15, responseId: 'response-1' } });
+  const chargesOf = (store: RuntimeStore, runId: string) => store.readRunEventsOfTypes(runId, ['usage.charged']);
 
   const candidate = (runId: string, ordinal: number, text: string): Record<string, unknown> => ({
     scope: 'project',
@@ -176,6 +177,7 @@ describe('settling a reflection job', () => {
   const started = async () => {
     const env = await setup();
     const settling = env.store.reflection as unknown as Settling;
+    await cancelToEnd(env.store, env.first.id);
     env.jobs.enqueue(env.first.id);
     env.jobs.begin(env.first.id);
     return { ...env, settling };
@@ -190,7 +192,7 @@ describe('settling a reflection job', () => {
     const { store, settling, first } = await started();
     const done = settling.complete({ runId: first.id, charge: charge(first.id), candidates: [candidate(first.id, 0, 'one'), candidate(first.id, 1, 'two')], reason: 'kept two' });
     expect(done).toMatchObject({ state: 'done', lastError: 'kept two' });
-    expect(store.contextCharges.list()).toHaveLength(1);
+    expect(chargesOf(store, first.id)).toHaveLength(1);
     expect(store.memories.candidates().map((memory) => memory.text)).toEqual(['one', 'two']);
   });
 
@@ -245,21 +247,21 @@ describe('settling a reflection job', () => {
   it('records no charge when it is given none', async () => {
     const { store, settling, first } = await started();
     expect(settling.complete({ runId: first.id, charge: null, candidates: [] })).toMatchObject({ state: 'done' });
-    expect(store.contextCharges.list()).toEqual([]);
+    expect(chargesOf(store, first.id)).toEqual([]);
   });
 
   it('commits nothing when a candidate cannot be stored: no charge, no candidate, the job still running', async () => {
     const { store, settling, first, dbPath } = await started();
     failOn(dbPath, 'memories');
     expect(() => settling.complete({ runId: first.id, charge: charge(first.id), candidates: [candidate(first.id, 0, 'one')] })).toThrow('injected failure');
-    expect(store.contextCharges.list()).toEqual([]);
+    expect(chargesOf(store, first.id)).toEqual([]);
     expect(store.memories.candidates()).toEqual([]);
     expect(settling.get(first.id)).toMatchObject({ state: 'running' });
   });
 
   it('commits nothing when the charge cannot be recorded', async () => {
     const { store, settling, first, dbPath } = await started();
-    failOn(dbPath, 'context_charges');
+    failOn(dbPath, 'events');
     expect(() => settling.complete({ runId: first.id, charge: charge(first.id), candidates: [candidate(first.id, 0, 'one')] })).toThrow('injected failure');
     expect(store.memories.candidates()).toEqual([]);
     expect(settling.get(first.id)).toMatchObject({ state: 'running' });
@@ -269,21 +271,21 @@ describe('settling a reflection job', () => {
     const { store, settling, first } = await started();
     settling.finish(first.id, 'finished elsewhere');
     expect(() => settling.complete({ runId: first.id, charge: charge(first.id), candidates: [candidate(first.id, 0, 'one')] })).toThrow('cannot finish');
-    expect(store.contextCharges.list()).toEqual([]);
+    expect(chargesOf(store, first.id)).toEqual([]);
     expect(store.memories.candidates()).toEqual([]);
   });
 
   it('records the charge together with the failure of the job', async () => {
     const { store, settling, first } = await started();
     expect(settling.fail(first.id, 'the call failed', charge(first.id))).toMatchObject({ state: 'failed', lastError: 'the call failed' });
-    expect(store.contextCharges.list()).toHaveLength(1);
+    expect(chargesOf(store, first.id)).toHaveLength(1);
   });
 
   it('records no charge when the failure cannot be written', async () => {
     const { store, settling, first } = await started();
     settling.finish(first.id);
     expect(() => settling.fail(first.id, 'late', charge(first.id))).toThrow('cannot fail');
-    expect(store.contextCharges.list()).toEqual([]);
+    expect(chargesOf(store, first.id)).toEqual([]);
   });
 
   it('gives back the attempt of a job that was aborted, and leaves it to be handed out again', async () => {
