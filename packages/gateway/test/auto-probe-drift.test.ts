@@ -139,7 +139,7 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
 
     expect(rejectStale.constants.RejectStale).toBe('TRUE');
     expect(rejectStale.invariants).toContain('RecordMatchesKey');
-    expect(spec).toContain('record.ts recordForIdentity');
+    expect(spec).toContain('probe/record.ts (recordForIdentity)');
     for (const file of ['probe/record.ts', 'probe/endpoint-target.ts', 'probe/ollama-target.ts']) {
       expect(sourceOf(file)).toContain('recordForIdentity(');
     }

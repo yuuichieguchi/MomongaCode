@@ -48,8 +48,8 @@
 (* sharedProbeSocket (InstanceWait FALSE) has two flights of one target    *)
 (* under different keys both pass their claims on the instance's one       *)
 (* socket and marker directory before either child holds the socket        *)
-(* (packages/gateway/src/managed/fm-serve.ts:244-271, claimSocketPath: the *)
-(* reap, then the socket check), and both spawn: OneLiveChild is violated. *)
+(* (packages/gateway/src/managed/server.ts (claimInstance, waitForFreeSocket): *)
+(* the reap, then the socket check), and both spawn: OneLiveChild is violated. *)
 (* The instance name recurs across starts, because the start-time reap of  *)
 (* the same instance is what removes an orphan (StartAfterOrphanServes is  *)
 (* per instance); a name per flight, such as a key digest, never recurs    *)
@@ -60,10 +60,9 @@
 (* reap touches it (the supervisor's reap of a gone gateway never cuts a   *)
 (* CLI measurement; 18.4 A16 and T-I5-14). Its orphans are removed by its  *)
 (* own stop (StopEnd) and by the start-time reap of its next start (the    *)
-(* claim). Today the CLI's probe has one socket for every target and no    *)
-(* marker directory (packages/cli/src/commands/gateway.ts:14,169-188, so   *)
-(* fm-serve.ts:125-129 spawns it without a group); the model states the    *)
-(* design.                                                                 *)
+(* claim). The CLI's probe has its own instance                            *)
+(* (packages/cli/src/commands/gateway.ts (cliProbeInstance)); the model    *)
+(* states the design.                                                      *)
 (*                                                                         *)
 (* Item 15 and decision 12: a survivor is retried a bounded number of      *)
 (* times, then the person is told. The first attempt to stop a child is    *)
@@ -81,96 +80,106 @@
 (* recur, and with BoundedRetries FALSE (the evidence retryEveryStart) it  *)
 (* recurs forever with nobody told.                                        *)
 (*                                                                         *)
-(* Design gap found in the code (item 15). The managed start-time reap     *)
-(* does not follow decision 12. fm-serve.ts:244-247 (claimSocketPath)      *)
-(* calls reapStaleFmGroups (fm-processes.ts:95-96), the generic            *)
-(* reapMarkerDirectory (packages/foundation/src/process-markers.ts:506),   *)
-(* which retries a kept marker at every start of the instance with no      *)
-(* count (claimRetry and the attempt record, foundation/src/platform/      *)
-(* marker-record.ts:3,62, are not used for managed markers) and reports it *)
-(* only as a log warning, "... kept: process ... still hold it after       *)
-(* cleanup; the next start will retry" (process-markers.ts:431, through    *)
-(* onWarning to logger.warn, packages/gateway/src/process.ts:675,698). The *)
-(* claim ignores the reap's kept count (fm-serve.ts:247). The supervisor's *)
-(* reap of a gone gateway's markers is the same: a kept marker is only     *)
-(* logged (packages/supervisor/src/child-manager.ts:519-528). /markers     *)
-(* ignore accepts only markers under paths.markers.tools                   *)
-(* (packages/runtime/src/service/markers.ts:15,20). The tool markers do    *)
-(* follow decision 12 (packages/tools/src/marker-guard.ts:9-33,108-143).   *)
-(* The holding configurations state the design (BoundedRetries TRUE).      *)
+(* Decision 12 in the code (item 15). Every reap of a managed marker is    *)
+(* the reap of one occasion: the start-time reap                           *)
+(* (packages/gateway/src/managed/fm-processes.ts (reapStaleGroups), the    *)
+(* occasion startup) and the supervisor's reap of a gone gateway           *)
+(* (packages/supervisor/src/child-manager.ts (reapManagedServers), the     *)
+(* occasion shutdown) both go through                                      *)
+(* packages/foundation/src/process-markers.ts (reapMarkerDirectory, reapOnOccasion) *)
+(* which claims the occasion's retry in the attempt record                 *)
+(* (packages/foundation/src/platform/marker-record.ts (claimRetry, readAttemptRecord)) *)
+(* before it signals, and tells the person                                 *)
+(* (packages/foundation/src/process-markers.ts (survivorNoticeText)) when  *)
+(* every occasion is spent. /markers ignore                                *)
+(* (packages/runtime/src/service/markers.ts (registerMarkerRoutes)) marks  *)
+(* a marker ignored (packages/foundation/src/platform/marker-record.ts (markIgnored)). *)
+(* The tool markers follow the same rule                                   *)
+(* (packages/tools/src/marker-guard.ts (createMarkerGuard)).               *)
+(* The holding configurations state this rule (BoundedRetries TRUE).       *)
 (*                                                                         *)
-(* Actors, derived from the code. The managed code of this branch is the   *)
-(* fm-serve.ts form; the generation-keyed form (managedInstancePaths,      *)
-(* momonga-paths.ts:179-187; the server, target and precondition files)    *)
-(* is on feat/product. Lines cite this branch unless marked feat/product.  *)
-(*   gateway process per generation: process.ts:626-629 (closeAdapters),   *)
-(*     :649-653 (closeProbes, the probe serves stopped with the close),    *)
-(*     :794-796 (closeTogether); Close, Crash, GwUp, GwStart               *)
-(*   role poll of run/current (18.1; new in I5, feat/product has none):    *)
+(* Actors, derived from the code. The instance paths are the generation's  *)
+(* own (packages/foundation/src/momonga-paths.ts (generationLayout, markers, targets)). *)
+(*   gateway process per generation:                                       *)
+(*     packages/gateway/src/process.ts (close, closeProbes, closeTogether) *)
+(*     (the probe servers stopped with the close); Close, Crash, GwUp,     *)
+(*     GwStart                                                             *)
+(*   role poll of run/current (18.1):                                      *)
+(*     packages/foundation/src/generation-role.ts (createRolePort, RolePort) *)
 (*     Retire; the gateway's refusal of a new call: StartServe and         *)
 (*     ProbeStart need ~ret                                                *)
 (*   accepted calls (18.1, 18.4 A2): Accept, CallEnd                       *)
-(*   serving child: managed/fm-serve.ts:288-300 (launch), :322-357         *)
-(*     (terminate: SIGTERM, grace, SIGKILL, grace, finalize), :359-387     *)
-(*     (waitUntilHealthy), managed/fm-processes.ts:65-91 (own group, the   *)
-(*     marker as fd 3); Spawn, Ready, ChildCrash, ExpireSpawn, ExpireReady *)
-(*   start path: fm-serve.ts:469-502 (performStart), :504-521 (begin: the  *)
-(*     failure count reset), :244-271 (claimSocketPath: the start-time     *)
-(*     reap of the marker directory, then the socket check); StartServe,   *)
-(*     PreOk, PreBad, ClaimOk, ClaimKept, ClaimBusy, Hang                  *)
-(*   the start-time reap: fm-processes.ts:95-96, the generic reaper        *)
-(*     foundation/src/process-markers.ts:388-438 and :506-537, which       *)
-(*     signals every holder of every marker in the directory (a sibling    *)
-(*     flight's live child too) and may end with a marker kept (:431);     *)
+(*   serving child:                                                        *)
+(*     packages/gateway/src/managed/server.ts (launch, terminate, waitUntilReady) *)
+(*     (terminate: SIGTERM, grace, SIGKILL, grace, finalize),              *)
+(*     packages/gateway/src/managed/fm-processes.ts (createGroupSpawn)     *)
+(*     (own group, the marker as fd 3); Spawn, Ready, ChildCrash,          *)
+(*     ExpireSpawn, ExpireReady                                            *)
+(*   start path:                                                           *)
+(*     packages/gateway/src/managed/server.ts (performStart, begin, claimInstance) *)
+(*     (begin: the failure count reset; claimInstance: the instance lock,  *)
+(*     the start-time reap of the marker directory, then the socket check); *)
+(*     StartServe, PreOk, PreBad, ClaimOk, ClaimKept, ClaimBusy, Hang      *)
+(*   the start-time reap:                                                  *)
+(*     packages/gateway/src/managed/fm-processes.ts (reapStaleGroups), the *)
+(*     generic reaper                                                      *)
+(*     packages/foundation/src/process-markers.ts (reapMarkerDirectory, reapOnOccasion, reapMarkedProcesses) *)
+(*     which signals every holder of every marker in the directory (a      *)
+(*     sibling flight's live child too) and may end with a marker kept;    *)
 (*     ClaimOk is the confirmed reap, ClaimKept the kept one; its scope is *)
-(*     the instance's own key (ReapOwnGenerationOnly; feat/product's       *)
-(*     instance path is the generation's own)                              *)
-(*   restart timer and budget: fm-serve.ts:399-414 (scheduleRestart),      *)
-(*     :416-422 (armStableTimer after restartResetMs), :424-464            *)
-(*     (runRestart, which claims as the start does, :441-442); TimerFires, *)
-(*     WindowDone                                                          *)
-(*   precondition cache C1 (section 7.1): fm-serve.ts:235-242, read and    *)
-(*     written by the start and by the health route (fm-target.ts:289,     *)
-(*     fm-serve.ts:568-578); PreOk, PreBad, Health                         *)
-(*   request path: fm-target.ts:266,275 (ensureRunning), fm-serve.ts:      *)
-(*     539-547; StartServe. ensureRunning returns the endpoint only in     *)
-(*     running (fm-serve.ts:540-541, :500-501), so P4 (answers only after  *)
-(*     readiness) holds by the shape of the start (item 15), pinned by a   *)
-(*     unit test, not by TLC                                               *)
-(*   gateway probe flights: probe/auto-probe.ts:135-213 (createAutoProbe,  *)
-(*     the per-key lock :154), probe/probe-fm.ts:57-93 (each flight starts *)
-(*     and stops its own serve), process.ts:686-700; ProbeStart, Enter,    *)
+(*     the instance's own key (ReapOwnGenerationOnly)                      *)
+(*   restart timer and budget:                                             *)
+(*     packages/gateway/src/managed/server.ts (scheduleRestart, armWindowTimer, runRestart) *)
+(*     (runRestart claims as the start does); TimerFires, WindowDone       *)
+(*   precondition cache C1 (section 7.1):                                  *)
+(*     packages/gateway/src/managed/server.ts (checkPreconditions, health) *)
+(*     read and written by the start and by the health route               *)
+(*     (packages/gateway/src/managed/target.ts (health)); PreOk, PreBad,   *)
+(*     Health                                                              *)
+(*   request path:                                                         *)
+(*     packages/gateway/src/managed/target.ts (ensureRunning) and          *)
+(*     packages/gateway/src/managed/server.ts (ensureRunning, start);      *)
+(*     StartServe. ensureRunning returns the endpoint only in running, so  *)
+(*     P4 (answers only after readiness) holds by the shape of the start   *)
+(*     (item 15), pinned by a unit test, not by TLC                        *)
+(*   gateway probe flights:                                                *)
+(*     packages/gateway/src/probe/auto-probe.ts (createAutoProbe, holdProbeLock) *)
+(*     (the per-key lock),                                                 *)
+(*     packages/gateway/src/probe/probe-fm.ts (onManagedServer, measureManagedServer) *)
+(*     (each flight starts and stops its own server); ProbeStart, Enter,   *)
 (*     ExpireMeasure                                                       *)
-(*   CLI probe: packages/cli/src/commands/gateway.ts:169-188, the same     *)
-(*     recordProbe and kernel lock (probe/auto-probe.ts:40-49, 90-94);     *)
+(*   CLI probe: packages/cli/src/commands/gateway.ts (cliProbeInstance, probeModel), *)
+(*     the same recordProbe and kernel lock                                *)
+(*     (packages/gateway/src/probe/auto-probe.ts (recordProbe, acquireProbeLock)); *)
 (*     its interrupt (Cancel) and its process killed without its stop      *)
 (*     (CliCrash: the kernel lock is released, the child stays)            *)
 (*   supervisor reap of a gone gateway's managed servers: close-grace      *)
-(*     design revision 6, packages/supervisor/src/child-manager.ts:519-528 *)
-(*     (reapManagedServers, called from handleExit :536,541): after the    *)
-(*     gateway child is gone by any path, the supervisor reaps             *)
+(*     design revision 6,                                                  *)
+(*     packages/supervisor/src/child-manager.ts (reapManagedServers, handleExit) *)
+(*     after the gateway child is gone by any path, the supervisor reaps   *)
 (*     paths.markers.targets with the generic reaper at the reaper's own   *)
-(*     bound (foundation/src/process-contract.ts:90,                       *)
-(*     managedServerReapBoundMs) before it counts the child stopped and    *)
-(*     starts the next one; SupervisorReap, then GwUp.                     *)
-(*     Item 12 of the managed design (section 18) and 18.4 A16: the        *)
-(*     supervisor reaps only its own generation's markers/g<N>/targets/.   *)
-(*     THE DEPARTURE: child-manager.ts:528 still reaps paths.markers.targets *)
-(*     of every generation (feat/product too). The model has the designed  *)
-(*     rule (the reap of one generation's keys); the code is a step 5 fix. *)
+(*     bound                                                               *)
+(*     (packages/foundation/src/process-contract.ts (managedServerReapBoundMs)) *)
+(*     before it counts the child stopped and starts the next one;         *)
+(*     SupervisorReap, then GwUp. Item 12 of the managed design (section   *)
+(*     18) and 18.4 A16: the supervisor reaps only its own generation's    *)
+(*     markers/g<N>/targets/, which is the paths.markers.targets of its    *)
+(*     generation layout.                                                  *)
 (*   key change (a binary replaced, an OS update): KeyChange taints the    *)
 (*     flights that run; a newer key may start its own flight              *)
 (*   the precondition world (licence, availability): Refuse, Fix           *)
 (*                                                                         *)
 (* Actors stated as unable to affect the properties:                       *)
-(*   the probe record and its key (probe/record.ts): P10 and P11 are       *)
+(*   the probe record and its key                                          *)
+(*     (packages/gateway/src/probe/record.ts (loadProbeRecord)): P10 and P11 are *)
 (*     AutoProbe.tla's (section 17 item 2); here a key change only frees   *)
 (*     the per-key lock for the newer key                                  *)
 (*   other marker users (runtime background jobs, MCP, tools): they use    *)
 (*     other marker directories and write none of these variables          *)
 (*   config readers and test fakes: the targets are constants; a fake      *)
 (*     stands in for the child                                             *)
-(*   the generation reaper (L2, 14.5; orphans.ts:120) and the start-up     *)
+(*   the generation reaper (L2, 14.5;                                      *)
+(*     packages/supervisor/src/orphans.ts (reapOrphans)) and the start-up  *)
 (*     reap of dead generations (H3): they remove a dead generation's      *)
 (*     directories under the reap's claims; they are LeftoverCleanup.tla's *)
 (*     and their removal of an instance's socket is modelled there (18.9a) *)
@@ -188,6 +197,16 @@
 (*     and gives "c" one flight                                            *)
 (*   /markers ignore: it changes none of these variables (the survivor     *)
 (*     still holds its socket); it is the person's answer after Told       *)
+(*                                                                         *)
+(* Incarnations. A changed managed definition starts a new serving        *)
+(* instance of the target with its own socket, lock and marker directory   *)
+(* (packages/foundation/src/momonga-paths.ts (managedInstancePaths), the   *)
+(* incarnation of packages/gateway/src/process.ts (startGatewayProcess)); *)
+(* the old one serves its last leases and stops. Two incarnations share no *)
+(* path, so the model's instance "s" is one incarnation; an orphan of an   *)
+(* earlier incarnation is not reaped by a later incarnation's claim but by *)
+(* the supervisor's reap, which walks every directory under the            *)
+(* generation's targets markers (ReapGone).                                *)
 (*                                                                         *)
 (* Abstractions. Time is nondeterministic: each wait ends by its own       *)
 (* completion or by its asking limit (A1). The child's readiness, crash    *)
@@ -213,9 +232,11 @@
 (* bounded, each by its own counter: gateway closes (MaxCloses), gateway   *)
 (* crashes, CLI cancels and kills, key changes, child crashes and refusal  *)
 (* toggles. A close or a crash may cut a claim (the model's Close moves it *)
-(* to stopping; in the code the claim runs to its own outcome first,       *)
-(* fm-serve.ts:483-485 and :441-442, and the stop waits for the pending    *)
-(* start, :561-562); with the closes bounded, a claim that recurs ends by  *)
+(* to stopping; in the code the claim runs to its own outcome first        *)
+(* (packages/gateway/src/managed/server.ts (performStart, runRestart)),    *)
+(* and the stop waits for the pending start                                *)
+(* (packages/gateway/src/managed/server.ts (stop, startFlight))); with the *)
+(* closes bounded, a claim that recurs ends by                             *)
 (* its own outcome, and weak fairness does not choose that outcome: the    *)
 (* kept reap stays possible each time. A behaviour with more closes than   *)
 (* MaxCloses is not checked.                                               *)
@@ -238,10 +259,12 @@
 (* supervisor reaps and starts the next one), and its child is an orphan   *)
 (* of the serving instance that the next start's reap and the supervisor's *)
 (* reap remove; it then holds every property of this model, so it shows    *)
-(* nothing. The stop's duration with a pending start (fm-serve.ts:561-562) *)
-(* is close-grace arithmetic (packages/verify/test/proofs/                 *)
-(* shutdown-bounds.test.ts), not a TLC property. The model has the code's  *)
-(* rule: a stop aborts a start (fm-serve.ts:549-552, :484-485).            *)
+(* nothing. The stop's duration with a pending start                       *)
+(* (packages/gateway/src/managed/server.ts (stop, startFlight)) is         *)
+(* close-grace arithmetic                                                  *)
+(* (packages/verify/test/proofs/shutdown-bounds.test.ts (managedServerStopBoundMs, gatewayMaxCloseMs)), *)
+(* not a TLC property. The model has the code's rule: a stop aborts a      *)
+(* start (packages/gateway/src/managed/server.ts (stoppedDuringStart, endStart)). *)
 (*                                                                         *)
 (* Configurations and what they leave uncovered.                           *)
 (*   every-run, holding (Gens = {1}, the one generation of the earlier     *)
@@ -282,8 +305,9 @@
 (*   Not covered by TLC: section 16.1's deep shape (two targets with three *)
 (*   restarts and every event, and liveness over two targets) does not     *)
 (*   finish within the 30 CPU-minute bound of a run. A restart budget of   *)
-(*   three is the arithmetic of RM5 (packages/verify/test/proofs/          *)
-(*   managed-bounds.test.ts). Two targets share no variable but the        *)
+(*   three is the arithmetic of RM5                                        *)
+(*   (packages/verify/test/proofs/managed-bounds.test.ts (managedServerReapBoundOf, managedServerStopBoundOf)). *)
+(*   Two targets share no variable but the                                 *)
 (*   gateway's up and down, the supervisor's reap and the precondition     *)
 (*   world, which twoTargets checks for safety only, with one close and no *)
 (*   crash. Not checked: liveness with a child crash, a refusal toggle or  *)
@@ -299,17 +323,33 @@
 (*   GwFlights      1: the gateway runs one flight per target; 2: also a   *)
 (*                  second flight under a newer key ("p3")                 *)
 (*   SingleFlight   "key": a flight starts only when every other flight    *)
-(*                  that shares its lock is idle or runs under an older key *)
-(*                  (tainted); "none": no lock. Flights of two generations *)
-(*                  do not share the record lock (18.3), so they never     *)
-(*                  wait for each other by this switch                     *)
+(*                  of its own process (scope) is idle or runs under an    *)
+(*                  older key (tainted): the flights map of                *)
+(*                  packages/gateway/src/probe/auto-probe.ts (createAutoProbe) *)
+(*                  is per process, and the per-key kernel lock is taken   *)
+(*                  only around the key check and the save, after the      *)
+(*                  measurement (AutoProbe.tla, SaveLock), so a CLI flight *)
+(*                  and a gateway flight of one key measure side by side,  *)
+(*                  each on its own instance; "none": no check             *)
 (*   InstanceWait   a flight waits for the running flight of its instance  *)
 (*                  (item 12); FALSE: it goes on at once                   *)
+(*   ClaimLock      the instance lock of the code: a claim holds it from   *)
+(*                  the reap to readiness                                  *)
+(*                  (packages/gateway/src/managed/server.ts (claimInstance, launchReady)), *)
+(*                  so no other flight of the instance is in claim, spawn  *)
+(*                  or ready meanwhile; after readiness it is released and *)
+(*                  a later claim reaps the instance's marker directory,   *)
+(*                  the live child of a running flight too. The code has   *)
+(*                  no wait for a running flight (InstanceWait FALSE in    *)
+(*                  the code; MANAGED_SERVER_BEHAVIOUR.instanceWait claims *)
+(*                  it): with the code's switches NoSiblingCut            *)
+(*                  is violated (formal-models-W14 finding)                *)
 (*   ReapOnStart    the claim reaps the marker directory first             *)
 (*   BoundedRetries a survivor gets Retries retries, then the person is    *)
-(*                  told and no reap signals it again (decision 12);       *)
+(*                  told and no reap signals it again (decision 12, the    *)
+(*                  code: reapOnOccasion claims a retry per occasion);     *)
 (*                  FALSE: every claim and every supervisor reap retries   *)
-(*                  it and nobody is told (the code today)                 *)
+(*                  it and nobody is told                                  *)
 (*   Retries        the retries of decision 12 (four)                      *)
 (*   CacheRefusal   a refused precondition is cached                       *)
 (*   ResetOnReady   the failure count resets on every ready, not after a   *)
@@ -347,7 +387,8 @@ CONSTANTS
     SharedKey,
     ReapOther,
     RetiringRestart,
-    CliEvents
+    CliEvents,
+    ClaimLock
 
 ASSUME /\ Gens \subseteq Nat \ {0} /\ Gens # {}
        /\ MaxRestarts \in Nat \ {0}
@@ -371,6 +412,7 @@ ASSUME /\ Gens \subseteq Nat \ {0} /\ Gens # {}
        /\ ReapOther \in BOOLEAN
        /\ RetiringRestart \in BOOLEAN
        /\ CliEvents \in BOOLEAN
+       /\ ClaimLock \in BOOLEAN
 
 Scopes == {0} \cup Gens
 MinGen == CHOOSE g \in Gens : \A h \in Gens : g <= h
@@ -388,15 +430,19 @@ GwStates == {"none", "up", "down"}
 
 KeyS(s) == IF s = 0 \/ ~SharedKey THEN s ELSE MinGen
 ReapKeys(s) == IF ReapOther /\ s # 0 THEN {KeyS(g) : g \in Gens} ELSE {KeyS(s)}
-Locked(s, r) == s = r \/ s = 0 \/ r = 0
+Locked(s, r) == s = r
 Partner(f) == IF f = "p1" THEN "p3" ELSE "p1"
 
 VARIABLES
     gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls,
     st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped,
-    foreignReap, restartRetiring
+    foreignReap, restartRetiring, siblingCut
 
-vars == <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+vars == <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
+
+Held == {"claim", "spawn", "ready"}
+ClaimFree(s, t, f) == ~ClaimLock \/ \A r \in Scopes, p \in Flights : (KeyS(r) = KeyS(s) /\ InstOf(p) = InstOf(f) /\ ~(r = s /\ p = f)) => st[r][t][p] \notin Held
+CutsSibling(s, t, f) == \E r \in Scopes, p \in Flights : KeyS(r) \in ReapKeys(s) /\ InstOf(p) = InstOf(f) /\ ~(r = s /\ p = f) /\ alive[r][t][p] = 1
 
 AliveOn(k, t, n) == Cardinality({sf \in Scopes \X Flights : KeyS(sf[1]) = k /\ InstOf(sf[2]) = n /\ alive[sf[1]][t][sf[2]] = 1})
 OnInst(s, t, n) == orphan[KeyS(s)][t][n] + AliveOn(KeyS(s), t, n)
@@ -433,6 +479,7 @@ TypeOK ==
     /\ gt \in [Scopes -> [Targets -> 0..MaxRestarts]]
     /\ foreignReap \in BOOLEAN
     /\ restartRetiring \in BOOLEAN
+    /\ siblingCut \in BOOLEAN
 
 Init ==
     /\ gw = [g \in Gens |-> IF g = MinGen THEN "up" ELSE "none"]
@@ -452,33 +499,35 @@ Init ==
     /\ gt = [s \in Scopes |-> [t \in Targets |-> 0]]
     /\ foreignReap = FALSE
     /\ restartRetiring = FALSE
+    /\ siblingCut = FALSE
 
 StartServe(s, t) ==
     /\ s \in Gens /\ gw[s] = "up" /\ ~ret[s]
     /\ st[s][t]["s"] \in Gone /\ pre[s][t] # "refused"
+    /\ (pre[s][t] = "met" => ClaimFree(s, t, "s"))
     /\ st' = [st EXCEPT ![s][t]["s"] = IF pre[s][t] = "met" THEN "claim" ELSE "pre"]
     /\ pre' = [pre EXCEPT ![s][t] = "unknown"]
     /\ cc' = [cc EXCEPT ![s][t] = 0]
     /\ gt' = [gt EXCEPT ![s][t] = 0]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Health(s, t) ==
     /\ s \in Gens /\ gw[s] = "up" /\ pre[s][t] = "unknown"
     /\ pre' = [pre EXCEPT ![s][t] = IF cond = "ok" THEN "met" ELSE IF CacheRefusal THEN "refused" ELSE "unknown"]
     /\ pre' # pre
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 PreOk(s, t, f) ==
-    /\ st[s][t][f] = "pre" /\ cond = "ok"
+    /\ st[s][t][f] = "pre" /\ cond = "ok" /\ ClaimFree(s, t, f)
     /\ st' = [st EXCEPT ![s][t][f] = "claim"]
     /\ pre' = [pre EXCEPT ![s][t] = IF f = "s" THEN "met" ELSE pre[s][t]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 PreBad(s, t, f) ==
     /\ st[s][t][f] = "pre" /\ cond = "bad"
     /\ st' = [st EXCEPT ![s][t][f] = "idle"]
     /\ pre' = [pre EXCEPT ![s][t] = IF f = "s" /\ CacheRefusal THEN "refused" ELSE pre[s][t]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ClaimOk(s, t, f) ==
     LET n == InstOf(f)
@@ -487,6 +536,7 @@ ClaimOk(s, t, f) ==
     /\ st[s][t][f] = "claim" /\ ~hung[s][t][f] /\ (OnInst(s, t, n) = 0 \/ MayReap(s, t, n))
     /\ st' = [st EXCEPT ![s][t][f] = "spawn"]
     /\ foreignReap' = (foreignReap \/ ForeignFootprint(s, t, n))
+    /\ siblingCut' = (siblingCut \/ CutsSibling(s, t, f))
     /\ orphan' = [s2 \in Scopes |-> [t2 \in Targets |-> [n2 \in Insts |->
             IF t2 = t /\ n2 = n /\ s2 \in ReapKeys(s) THEN 0 ELSE orphan[s2][t2][n2]]]]
     /\ tries' = [tries EXCEPT ![k][t][n] = 0]
@@ -502,7 +552,7 @@ ClaimKept(s, t, f) ==
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
     /\ tries' = [tries EXCEPT ![k][t][n] = Spend(k, t, n)]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ClaimBusy(s, t, f) ==
     LET n == InstOf(f)
@@ -510,26 +560,26 @@ ClaimBusy(s, t, f) ==
     /\ st[s][t][f] = "claim" /\ ~hung[s][t][f] /\ OnInst(s, t, n) > 0 /\ ~MayReap(s, t, n)
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ClaimEnd(s, t, f) == ClaimOk(s, t, f) \/ ClaimKept(s, t, f) \/ ClaimBusy(s, t, f)
 
 Hang(s, t, f) ==
     /\ ~ClaimBounded /\ st[s][t][f] = "claim" /\ ~hung[s][t][f]
     /\ hung' = [hung EXCEPT ![s][t][f] = TRUE]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Spawn(s, t, f) ==
     /\ st[s][t][f] = "spawn"
     /\ st' = [st EXCEPT ![s][t][f] = "ready"]
     /\ alive' = [alive EXCEPT ![s][t][f] = 1]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Ready(s, t, f) ==
     /\ st[s][t][f] = "ready" /\ alive[s][t][f] = 1
     /\ st' = [st EXCEPT ![s][t][f] = IF f = "s" THEN "running" ELSE "measure"]
     /\ cc' = [cc EXCEPT ![s][t] = IF f = "s" /\ ResetOnReady THEN 0 ELSE cc[s][t]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ChildCrash(s, t, f) ==
     /\ childCrashes < MaxChildCrashes /\ alive[s][t][f] = 1 /\ st[s][t][f] \in {"ready", "running", "measure"}
@@ -537,30 +587,30 @@ ChildCrash(s, t, f) ==
     /\ alive' = [alive EXCEPT ![s][t][f] = 0]
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
-    /\ UNCHANGED <<gw, ret, gwCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ExpirePre(s, t, f) ==
     /\ st[s][t][f] = "pre"
     /\ st' = [st EXCEPT ![s][t][f] = "idle"]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ExpireSpawn(s, t, f) ==
     /\ st[s][t][f] = "spawn"
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ExpireReady(s, t, f) ==
     /\ st[s][t][f] = "ready"
     /\ alive' = [alive EXCEPT ![s][t][f] = 0]
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ExpireMeasure(s, t, f) ==
     /\ f \in Probes /\ st[s][t][f] = "measure"
     /\ st' = [st EXCEPT ![s][t][f] = "stopping"]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Expire(s, t, f) == ExpirePre(s, t, f) \/ ExpireSpawn(s, t, f) \/ ExpireReady(s, t, f) \/ ExpireMeasure(s, t, f)
 
@@ -572,23 +622,23 @@ TimerFires(s, t) ==
     /\ cc' = [cc EXCEPT ![s][t] = cc[s][t] + 1]
     /\ gt' = [gt EXCEPT ![s][t] = gt[s][t] + 1]
     /\ restartRetiring' = (restartRetiring \/ (ret[s] /\ calls[s][t] = 0))
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, reaped, foreignReap>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, reaped, foreignReap, siblingCut>>
 
 WindowDone(s, t) ==
     /\ st[s][t]["s"] = "running" /\ (cc[s][t] > 0 \/ gt[s][t] > 0)
     /\ cc' = [cc EXCEPT ![s][t] = 0]
     /\ gt' = [gt EXCEPT ![s][t] = 0]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Accept(s, t) ==
     /\ s \in Gens /\ gw[s] = "up" /\ ~ret[s] /\ calls[s][t] < MaxCalls
     /\ calls' = [calls EXCEPT ![s][t] = calls[s][t] + 1]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 CallEnd(s, t) ==
     /\ calls[s][t] > 0
     /\ calls' = [calls EXCEPT ![s][t] = calls[s][t] - 1]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ProbeStart(s, t, f) ==
     /\ f \in Probes /\ st[s][t][f] = "idle" /\ ProbeGate(s, f)
@@ -596,12 +646,12 @@ ProbeStart(s, t, f) ==
     /\ (SingleFlight = "none" \/ \A r \in Scopes : Locked(s, r) => \A j \in Probes : ((r = s /\ j = f) \/ st[r][t][j] = "idle" \/ taint[r][t][j]))
     /\ st' = [st EXCEPT ![s][t][f] = IF InstanceWait /\ InstanceBusy(s, t, f) THEN "wait" ELSE "pre"]
     /\ taint' = [taint EXCEPT ![s][t][f] = FALSE]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Enter(s, t, f) ==
     /\ st[s][t][f] = "wait" /\ ~InstanceBusy(s, t, f)
     /\ st' = [st EXCEPT ![s][t][f] = "pre"]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 StopEnd(s, t, f) ==
     LET n == InstOf(f)
@@ -615,13 +665,13 @@ StopEnd(s, t, f) ==
     /\ pre' = ClearedPre(s, t, f)
     /\ taint' = [taint EXCEPT ![s][t][f] = FALSE]
     /\ hung' = [hung EXCEPT ![s][t][f] = FALSE]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, tries, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, tries, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Cancel(t) ==
     /\ cancels < MaxCancels /\ st[0][t]["p2"] \in {"pre", "claim", "spawn", "ready", "measure"}
     /\ st' = [st EXCEPT ![0][t]["p2"] = "stopping"]
     /\ cancels' = cancels + 1
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 CliCrash(t) ==
     /\ cancels < MaxCancels /\ st[0][t]["p2"] # "idle"
@@ -631,7 +681,7 @@ CliCrash(t) ==
     /\ taint' = [taint EXCEPT ![0][t]["p2"] = FALSE]
     /\ hung' = [hung EXCEPT ![0][t]["p2"] = FALSE]
     /\ cancels' = cancels + 1
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, closes, calls, tries, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, closes, calls, tries, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Close(g) ==
     /\ gw[g] = "up" /\ closes < MaxCloses
@@ -644,7 +694,7 @@ Close(g) ==
                 ELSE st[g][t][f]]]]
     /\ pre' = [pre EXCEPT ![g] = [t \in Targets |-> "unknown"]]
     /\ reaped' = [reaped EXCEPT ![g] = FALSE]
-    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, calls, alive, orphan, tries, taint, hung, cond, cc, gt, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, calls, alive, orphan, tries, taint, hung, cond, cc, gt, foreignReap, restartRetiring, siblingCut>>
 
 Crash(g) ==
     /\ gw[g] = "up" /\ gwCrashes < MaxGwCrashes
@@ -660,7 +710,7 @@ Crash(g) ==
     /\ cc' = [cc EXCEPT ![g] = [t \in Targets |-> 0]]
     /\ gt' = [gt EXCEPT ![g] = [t \in Targets |-> 0]]
     /\ reaped' = [reaped EXCEPT ![g] = FALSE]
-    /\ UNCHANGED <<ret, childCrashes, keyChanges, refusals, cancels, closes, calls, tries, cond, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<ret, childCrashes, keyChanges, refusals, cancels, closes, calls, tries, cond, foreignReap, restartRetiring, siblingCut>>
 
 ReapGone(g) ==
     /\ gw[g] = "down" /\ ~reaped[g]
@@ -676,7 +726,7 @@ ReapGone(g) ==
                 IF ~Signalled(t, n) THEN tries[k][t][n]
                 ELSE IF kill[t][n] THEN 0
                 ELSE Spend(k, t, n)]]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, taint, hung, cond, pre, cc, gt, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, taint, hung, cond, pre, cc, gt, foreignReap, restartRetiring, siblingCut>>
 
 SupervisorReap == \E g \in Gens : ReapGone(g)
 
@@ -687,33 +737,33 @@ GwUp(g) ==
     /\ hung' = [hung EXCEPT ![g] = [t \in Targets |-> [f \in Flights |-> IF f \in GwOwned THEN FALSE ELSE hung[g][t][f]]]]
     /\ cc' = [cc EXCEPT ![g] = [t \in Targets |-> 0]]
     /\ gt' = [gt EXCEPT ![g] = [t \in Targets |-> 0]]
-    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, cond, pre, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, cond, pre, reaped, foreignReap, restartRetiring, siblingCut>>
 
 GwStart(g) ==
     /\ gw[g] = "none"
     /\ gw' = [gw EXCEPT ![g] = "up"]
-    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Retire(g) ==
     /\ ~ret[g] /\ (\E h \in Gens : h > g /\ gw[h] # "none")
     /\ ret' = [ret EXCEPT ![g] = TRUE]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 KeyChange ==
     /\ keyChanges < MaxKeyChanges
     /\ keyChanges' = keyChanges + 1
     /\ taint' = [s \in Scopes |-> [t \in Targets |-> [f \in Flights |-> taint[s][t][f] \/ (f \in Probes /\ st[s][t][f] # "idle")]]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, refusals, cancels, closes, calls, st, alive, orphan, tries, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, refusals, cancels, closes, calls, st, alive, orphan, tries, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Refuse ==
     /\ cond = "ok" /\ refusals < MaxRefusals
     /\ cond' = "bad" /\ refusals' = refusals + 1
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, cancels, closes, calls, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, cancels, closes, calls, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Fix ==
     /\ cond = "bad" /\ refusals < MaxRefusals
     /\ cond' = "ok" /\ refusals' = refusals + 1
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, cancels, closes, calls, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, cancels, closes, calls, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Next ==
     \/ \E t \in Targets : Cancel(t) \/ CliCrash(t)
@@ -743,7 +793,7 @@ Spec == Init /\ [][Next]_vars /\ Fairness
 (* P1: at most one live child per instance, that is per key and instance *)
 OneLiveChild == \A k \in Scopes, t \in Targets, n \in Insts : orphan[k][t][n] + AliveOn(k, t, n) <= 1
 
-(* P7: a flight runs only beside flights that do not share its lock, or of older keys *)
+(* P7: a flight runs only beside flights of other processes, or of older keys *)
 OneFlight == \A t \in Targets : \A s, r \in Scopes : \A p, q \in Probes :
     (Locked(s, r) /\ ~(s = r /\ p = q) /\ st[s][t][p] # "idle" /\ st[r][t][q] # "idle") => (taint[s][t][p] \/ taint[r][t][q])
 
@@ -758,6 +808,9 @@ GenerationIsolation == \A g \in Gens, t \in Targets, p \in Flights : alive[g][t]
 
 (* reap: a claim's reap touches only its own generation's keys (18.2.3, item 12) *)
 ReapOwnGenerationOnly == ~foreignReap
+
+(* item 12: a claim never stops the live child of another flight of its instance *)
+NoSiblingCut == ~siblingCut
 
 (* 18.8: a timer restart at a retiring gateway needs an accepted call of that generation *)
 GwNoRestartRetiring == ~restartRetiring

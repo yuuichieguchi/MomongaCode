@@ -5,13 +5,10 @@ export type { Expectation, Manifest, ManifestEntry, Role, Tier, TlcRun, TlcRunOp
 export { TLC_WORKERS, runTlc } from './runner.ts';
 export { verdictProblems } from './verdict.ts';
 
-export const everyRunBudgetSeconds = (manifest: Manifest): number =>
-  manifest.entries.filter((entry) => entry.tier === 'every-run').reduce((total, entry) => total + Math.ceil(2 * entry.measuredSeconds), 0);
-
-export const EVERY_RUN_BUDGET_RATIO = 52;
+export const everyRunColdSeconds = (manifest: Manifest): number =>
+  Number(manifest.entries.filter((entry) => entry.tier === 'every-run').reduce((total, entry) => total + entry.measuredSeconds, 0).toFixed(2));
 
 export const tierBudgetProblem = (manifest: Manifest): string | undefined => {
-  const total = everyRunBudgetSeconds(manifest);
-  const limit = EVERY_RUN_BUDGET_RATIO * manifest.unitSuiteSeconds;
-  return total > limit ? `the every-run budgets sum to ${total} s, over ${EVERY_RUN_BUDGET_RATIO} x ${manifest.unitSuiteSeconds} s = ${limit} s` : undefined;
+  const total = everyRunColdSeconds(manifest);
+  return total > manifest.unitSuiteSeconds ? `the every-run rows take ${total} s cold, over the unit suite wall time of ${manifest.unitSuiteSeconds} s` : undefined;
 };

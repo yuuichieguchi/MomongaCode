@@ -3,7 +3,7 @@ EXTENDS Naturals
 
 CONSTANTS Gens, Vals, MaxT, Variant
 
-ASSUME Variant \in {"decided", "mixed", "noMessage", "lateWaiter", "noDeadline", "waitsForever",
+ASSUME Variant \in {"decided", "mixed", "noMessage", "noDeadline", "waitsForever",
                     "sigtermAfterFail", "malformed", "malformedNoKill", "noReap", "runtimeLate",
                     "graceConfirm", "failOnUnconfirmed", "unboundedConfirm", "runtimeNoShare"}
 ASSUME MaxT \in Nat
@@ -108,10 +108,10 @@ CliStop ==
     /\ cdl' = [g \in Gens |-> 0]
     /\ rst' = [g \in Gens |-> "closing"]
     /\ rtdl' = [g \in Gens |-> clock + RTK(file)]
-    /\ cw' = [g \in Gens |-> IF Variant = "lateWaiter" THEN "pending" ELSE "armed"]
-    /\ cwVal' = [g \in Gens |-> IF Variant = "lateWaiter" THEN 0 ELSE file]
+    /\ cw' = [g \in Gens |-> "armed"]
+    /\ cwVal' = [g \in Gens |-> file]
     /\ rtv' = [g \in Gens |-> [rtv[g] EXCEPT !.carry = file, !.bound = file]]
-    /\ cwDL' = [g \in Gens |-> IF Variant = "lateWaiter" THEN 0 ELSE clock + DAEMON(file, file)]
+    /\ cwDL' = [g \in Gens |-> clock + DAEMON(file, file)]
     /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, sent, gst, gv, gBegin, gcalls, gphase, ms, rdl >>
 
 SelfBegin(g) ==
@@ -138,15 +138,6 @@ Escalate(g) ==
     /\ gphase' = [gphase EXCEPT ![g] = IF gst[g] = "closing" /\ gphase[g] = "none" THEN "fm" ELSE gphase[g]]
     /\ ms' = [ms EXCEPT ![g] = IF gst[g] = "closing" /\ gphase[g] = "none" THEN "stopping" ELSE ms[g]]
     /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, gst, gv, gBegin, gcalls, rdl, cw, cwDL, cwVal, rst, rtdl >>
-
-ArmWaiter(g) ==
-    /\ Variant = "lateWaiter"
-    /\ cw[g] = "pending"
-    /\ clock >= sBegin[g]
-    /\ cw' = [cw EXCEPT ![g] = "armed"]
-    /\ cwVal' = [cwVal EXCEPT ![g] = file]
-    /\ cwDL' = [cwDL EXCEPT ![g] = clock + DAEMON(file, file)]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, rst, rtdl >>
 
 SendStop(g) ==
     /\ sst[g] = "stopping"
@@ -312,7 +303,6 @@ GenStep(g) ==
     \/ RtDone(g)
     \/ RtKill(g)
     \/ RtGone(g)
-    \/ ArmWaiter(g)
     \/ Escalate(g)
     \/ SendStop(g)
     \/ WriteFailed(g)
@@ -350,7 +340,7 @@ TypeOK ==
     /\ gphase \in [Gens -> {"none", "fm"}]
     /\ ms \in [Gens -> {"alive", "stopping", "gone"}]
     /\ rdl \in [Gens -> 0..(MaxT + REAP)]
-    /\ cw \in [Gens -> {"none", "pending", "armed", "gaveUp", "done"}]
+    /\ cw \in [Gens -> {"none", "armed", "gaveUp", "done"}]
     /\ rtv \in [Gens -> [carry : Vals \cup {0}, bound : Vals \cup {0}, applied : Vals \cup {0}]]
     /\ gst \in [Gens -> {"none", "closing", "killing", "gone"}]
     /\ kdl \in [Gens -> 0..(MaxT + MaxVal)]

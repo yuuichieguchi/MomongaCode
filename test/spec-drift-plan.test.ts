@@ -133,22 +133,8 @@ describe('PlanCredential.tla: a transient persist failure never signs an account
 });
 
 
-describe('PlanCredential.tla cites code lines that hold what it names', () => {
-  const lineOf = (file: string, line: number): string => fs.readFileSync(path.join(root, file), 'utf8').split('\n')[line - 1] ?? '';
+describe('PlanCredential.tla states the intent write failure', () => {
   const header = credentialSpec.slice(0, credentialSpec.indexOf('EXTENDS'));
-
-  const CITATIONS: readonly (readonly [string, number, string, string])[] = [
-    ['packages/gateway/src/plan/session.ts', 795, 'await writeRecord(account, entry, intent, signal)', 'session.ts:795-799'],
-    ['packages/gateway/src/plan/session.ts', 797, 'markWriteFailure(account, error, signal)', 'session.ts:795-799'],
-    ['packages/gateway/src/plan/session.ts', 941, 'await writeRecord(account, entry, signingOut, signal)', 'packages/gateway/src/plan/session.ts:941'],
-    ['packages/gateway/src/plan/session.ts', 947, ': await revokeRefreshToken({', 'session.ts:947-962'],
-    ['packages/gateway/src/plan/session.ts', 962, 'await writeRecord(account, entry, cleared, signal)', 'session.ts:947-962'],
-  ];
-
-  it.each(CITATIONS)('%s:%i holds %s and the header cites it as %s', (file, line, text, cited) => {
-    expect(lineOf(file, line), `${file}:${line}`).toContain(text);
-    expect(header).toContain(cited);
-  });
 
   it('says that the intent write before a refresh can fail and that its failure sends nothing', () => {
     expect(header).not.toMatch(/intent write before a refresh cannot fail/);
