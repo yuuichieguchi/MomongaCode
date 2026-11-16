@@ -1,11 +1,11 @@
 import { Duplex, Readable } from 'node:stream';
 import { CONTROL_PLANE_LAUNCH, DAEMON_MARKER_FD, LIFELINE_FD, hostProcessGroupPort, launchGroupLeader, signalGroup } from '@momonga/foundation';
-import type { GroupLaunchMarker, GroupLaunchRequest, ProcessGroupPort } from '@momonga/foundation';
+import type { GroupLaunchHost, GroupLaunchMarker } from '@momonga/foundation';
 import type { ChildExit, ChildHandle, SpawnPort } from './child-manager.ts';
 
 const endedReadable = (): Readable => Readable.from([]);
 
-export type SpawnPortHost = { port?: ProcessGroupPort; spawnProcess?: GroupLaunchRequest['spawnProcess'] };
+export type SpawnPortHost = GroupLaunchHost;
 
 export const createSpawnPort = ({ port: given, spawnProcess }: SpawnPortHost = {}): SpawnPort => async (command, args, options) => {
   const port = given ?? hostProcessGroupPort();

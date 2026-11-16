@@ -5,7 +5,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
+import { Deadline, SHUTDOWN_SETTING_LIMITS, claimRetry, groupTerminationBoundMs, hostProcessGroupPort, launchGroupLeader, operationSignal, reapMarkedProcesses, recordMarkerGroup, systemTiming, terminateGroup, type GroupLaunch, type GroupLaunchHost, type ProcessGroupPort, type RetryKind, type TerminateOutcome, type Timing } from '@momonga/foundation';
 import type { ChildProtection, FileSystem, ProcessInspector } from '@momonga/foundation';
 
 export type StdioLaunch = { protection: ChildProtection; commandOf(argv: readonly string[]): { file: string; args: string[] } };
@@ -21,7 +21,7 @@ export const closeGraceOf = (grace: CloseGrace | undefined): number => (typeof g
 
 export type McpMarkerOptions = { dir: string; inspector: ProcessInspector; onWarning(message: string): void };
 
-export interface StdioTransportOptions {
+export interface StdioTransportOptions extends GroupLaunchHost {
   name: string;
   config: McpStdioServerConfig;
   projectDir: string;
@@ -115,9 +115,11 @@ class StdioTransportImpl implements StdioTransport {
 
   private readonly options: StdioTransportOptions;
   private readonly timing: Timing;
+  private readonly groupPort: ProcessGroupPort;
 
   constructor(options: StdioTransportOptions) {
     this.options = options;
+    this.groupPort = options.port ?? hostProcessGroupPort();
     const timing = options.timing ?? systemTiming;
     this.timing = timing;
   }
@@ -168,7 +170,7 @@ class StdioTransportImpl implements StdioTransport {
       if (markerPath !== undefined) await this.options.files.rm(markerPath);
       throw error;
     }
-    if (markerPath !== undefined && launched.pgid !== undefined) await recordMarkerGroup(markerPath, launched.pgid);
+    if (markerPath !== undefined && launched.pgid !== undefined) await recordMarkerGroup(markerPath, launched.pgid, { names: this.groupPort.names });
     this.exited = new Promise<void>((resolve) => {
       const ended = (exit: StdioTransportExit): void => {
         this.exit = exit;
@@ -193,9 +195,10 @@ class StdioTransportImpl implements StdioTransport {
     const resolved = await resolveCommand(this.options.files, config.command, cwd, env['PATH'] ?? '');
     const { protection } = this.options.launch;
     const { file, args } = this.options.launch.commandOf([resolved, ...(config.args ?? [])]);
-    if (markerPath === undefined) return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], protection });
+    const host = { port: this.groupPort, ...(this.options.spawnProcess === undefined ? {} : { spawnProcess: this.options.spawnProcess }) };
+    if (markerPath === undefined) return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], protection, ...host });
     await (await this.options.files.open(markerPath, 'wx', MARKER_FILE_MODE)).close();
-    return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], protection, marker: { slot: MARKER_SLOT, file: markerPath } });
+    return launchGroupLeader({ file, args, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], protection, marker: { slot: MARKER_SLOT, file: markerPath }, ...host });
   }
 
   send(message: JSONRPCMessage): Promise<void> {
@@ -242,7 +245,7 @@ class StdioTransportImpl implements StdioTransport {
         const stopBound = Deadline.after(groupTerminationBoundMs(graceMs), this.timing);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          const outcome = await (this.options.terminate ?? terminateGroup)(group, { graceMs, signal: stopBound.signal, timing: this.timing });
+          const outcome = await (this.options.terminate ?? ((pgid, options) => terminateGroup(pgid, { ...options, port: this.groupPort })))(group, { graceMs, signal: stopBound.signal, timing: this.timing });
           if (outcome !== 'unconfirmed') await this.exitRecordedWithin(stopBound.signal);
         } catch (error) {
           terminateFailure = { error };
@@ -262,6 +265,7 @@ class StdioTransportImpl implements StdioTransport {
                 pgid: group,
                 killGraceMs: graceMs,
                 label: 'mcp',
+                groupPort: this.groupPort,
                 inspector: this.options.markers.inspector,
                 onWarning: this.options.markers.onWarning,
                 timing: this.timing,

@@ -22,6 +22,8 @@ export type GroupLaunchRequest = {
   protection: LaunchProtection;
 };
 
+export type GroupLaunchHost = { port?: ProcessGroupPort; spawnProcess?: typeof spawn };
+
 export type LeaderExit = { code: number | null; signal: NodeJS.Signals | null };
 
 export type GroupLaunch = {
