@@ -21,6 +21,7 @@ export const EXIT_OK = EXIT_CODES.ok.code;
 export const EXIT_FAILURE = EXIT_CODES.failure.code;
 export const EXIT_USAGE = EXIT_CODES.usage.code;
 export const WINDOWS_KEEPER_COMPILER_MISSING_EXIT = EXIT_CODES.keeperCompilerMissing.code;
+export const LINUX_SOCKET_GUARD_COMPILER_MISSING_EXIT = EXIT_CODES.keeperCompilerMissing.code;
 export const EXIT_WAITING_FOR_APPROVAL = EXIT_CODES.waitingForApproval.code;
 export const EXIT_ALREADY_RUNNING = EXIT_CODES.alreadyRunning.code;
 export const EXIT_CONFIG = EXIT_CODES.config.code;
