@@ -63,11 +63,11 @@ export type SecretHostProgram = { program: string; canonicalBinary: string; extr
 
 export type SecretHost = { env: Record<string, string>; programPath: string };
 
-export const fakeSecretHost = (bin: string, store: SecretHostProgram): SecretHost => {
+export const fakeSecretHost = async (bin: string, store: SecretHostProgram): Promise<SecretHost> => {
   const programPath = path.join(bin, store.program);
   fs.writeFileSync(programPath, '#!/bin/sh\nexit 97\n', { mode: 0o755 });
   const platform: NodeJS.Platform = store.program === 'security' ? 'darwin' : 'linux';
-  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }, { platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }), programPath };
+  return { env: await secretStoreEnvFor({ PATH: bin, ...store.extraEnv }, { platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }), programPath };
 };
 
 export type HostPort = SecretProcessPort & {

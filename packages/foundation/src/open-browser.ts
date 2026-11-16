@@ -1,6 +1,6 @@
 import { BROWSER_ENV } from './environment-variables.ts';
-import { findProgramOnPath, findProgramOnPathSync } from './program-search.ts';
-import type { ProgramSearchFiles, ProgramSearchFilesSync, SearchEnv } from './program-search.ts';
+import { findProgramOnPath } from './program-search.ts';
+import type { ProgramSearchFiles, SearchEnv } from './program-search.ts';
 
 export type OpenCommand = { file: string; args: readonly string[] };
 
@@ -32,9 +32,6 @@ const openerOnPath = async (env: SearchEnv, files: ProgramSearchFiles): Promise<
 };
 
 export const urlOpenerFileFor = async (env: SearchEnv, files: ProgramSearchFiles): Promise<string | undefined> => browserOf(env) ?? (await openerOnPath(env, files))?.file;
-
-export const urlOpenerFileForSync = (env: SearchEnv, files: ProgramSearchFilesSync): string | undefined =>
-  browserOf(env) ?? URL_OPENER_PROGRAMS.map((program) => findProgramOnPathSync(program, env, files)).find((file) => file !== undefined);
 
 export const openCommandFor = async (url: URL, env: SearchEnv, files: ProgramSearchFiles): Promise<OpenCommand> => {
   const browser = browserOf(env);

@@ -1,8 +1,8 @@
 import type { CredentialSecretStore } from './encrypted-credential-store.ts';
 import { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
 import { settledOrAborted } from './operation-limit.ts';
-import { findProgramOnPathSync, programOwnerProblemSync } from './program-search.ts';
-import type { ProgramOwnerFiles } from './program-search.ts';
+import { findProgramOnPath, programOwnerProblemSync } from './program-search.ts';
+import type { ProgramOwnerFiles, ProgramSearchFiles } from './program-search.ts';
 import { declaredChildEnv } from './process-contract.ts';
 import { powershellArgs, powershellPath } from './platform/windows-scripts.ts';
 import { SecretStoreAbsentError, SecretStoreAnswerError, endedStoreCall } from './secret-store-failures.ts';
@@ -393,12 +393,12 @@ const trusted = (program: string, host: SecretHost): ChosenSecretStore | undefin
 
 const chosenProgram = (id: BackendId, program: string, host: SecretHost): ChosenSecretStore => trusted(program, host) ?? { kind: 'chosen', id, program };
 
-const chooseSecretBackend = (env: SecretEnv, host: SecretHost): ChosenSecretStore => {
+const chooseSecretBackend = async (env: SecretEnv, host: SecretHost, programs: ProgramSearchFiles): Promise<ChosenSecretStore> => {
   const id = PLATFORM_BACKENDS[host.platform];
   if (id === undefined) return { kind: 'none', reason: `MomongaCode knows no secret store of the platform ${host.platform}` };
   if (id === 'credential-manager') return chosenProgram(id, powershellPath(env), host);
   const backend = SECRET_BACKENDS[id].backend;
-  const program = findProgramOnPathSync(backend.searchedProgram, env, nodeFileSystemSync);
+  const program = await findProgramOnPath(backend.searchedProgram, env, programs);
   if (program === undefined) return { kind: 'none', reason: notOnPath(backend) };
   if (id === 'secret-service') {
     const busAddress = env['DBUS_SESSION_BUS_ADDRESS'];
@@ -411,8 +411,8 @@ const chooseSecretBackend = (env: SecretEnv, host: SecretHost): ChosenSecretStor
 
 const backendKindOf = (id: string): SecretBackendKind | undefined => (Object.hasOwn(SECRET_BACKENDS, id) ? SECRET_BACKENDS[id as BackendId] : undefined);
 
-export const secretStoreEnvFor = (hostEnv: SecretEnv, host: SecretHost): Record<string, string> => {
-  const chosen = chooseSecretBackend(hostEnv, host);
+export const secretStoreEnvFor = async (hostEnv: SecretEnv, host: SecretHost, programs: ProgramSearchFiles = nodeFileSystem): Promise<Record<string, string>> => {
+  const chosen = await chooseSecretBackend(hostEnv, host, programs);
   if (chosen.kind === 'none') return { [SECRET_REFUSAL_ENV]: chosen.reason };
   const kind = backendKindOf(chosen.id) as SecretBackendKind;
   return { [SECRET_BACKEND_ENV]: chosen.id, [SECRET_PROGRAM_ENV]: chosen.program, ...declaredChildEnv(hostEnv, kind.backend.childEnvNames) };
@@ -455,13 +455,13 @@ export const createGivenSecretStore = (run: SecretProcessPort, givenEnv: SecretE
   };
 };
 
-const chosenStoreFor = (run: SecretProcessPort, env: SecretEnv, host: SecretHost, files: SecretStoreFiles, call: NamedSecretCall): SecretStore => {
-  const chosen = chooseSecretBackend(env, host);
+const chosenStoreFor = async (run: SecretProcessPort, env: SecretEnv, host: SecretHost, files: SecretStoreFiles, programs: ProgramSearchFiles, call: NamedSecretCall): Promise<SecretStore> => {
+  const chosen = await chooseSecretBackend(env, host, programs);
   if (chosen.kind === 'none') throw new SecretStoreAbsentError({ reason: chosen.reason, call });
   return (backendKindOf(chosen.id) as SecretBackendKind).create(run, chosen.program, files);
 };
 
-export const createPlatformSecretStore = (run: SecretProcessPort, env: SecretEnv, host: SecretHost, files: SecretStoreFiles = nodeSecretStoreFiles): SecretStore => ({
-  read: async (name, signal) => chosenStoreFor(run, env, host, files, { action: 'read', name }).read(name, signal),
-  write: async (name, value, signal) => chosenStoreFor(run, env, host, files, { action: 'write', name }).write(name, value, signal),
+export const createPlatformSecretStore = (run: SecretProcessPort, env: SecretEnv, host: SecretHost, files: SecretStoreFiles = nodeSecretStoreFiles, programs: ProgramSearchFiles = nodeFileSystem): SecretStore => ({
+  read: async (name, signal) => (await chosenStoreFor(run, env, host, files, programs, { action: 'read', name })).read(name, signal),
+  write: async (name, value, signal) => (await chosenStoreFor(run, env, host, files, programs, { action: 'write', name })).write(name, value, signal),
 });
