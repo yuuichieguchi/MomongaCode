@@ -377,6 +377,11 @@ export const startUpstream = async (home: E2eHome, options: StartStackOptions): 
   return fake;
 };
 
+const preparedOf = (options: StartStackOptions): number => {
+  if (options.preparedGeneration === undefined) throw new Error('startStack: a product entry has either a started or a prepared generation');
+  return options.preparedGeneration;
+};
+
 export const startStack = async (options: StartStackOptions): Promise<E2eStack> => {
   const { home } = options;
   if (options.settings !== undefined && 'sandbox' in options.settings) throw new Error('startStack: settings must not contain a sandbox key; use the sandbox option');
@@ -387,6 +392,7 @@ export const startStack = async (options: StartStackOptions): Promise<E2eStack> 
   const deadline = Date.now() + (options.readinessDeadlineMs ?? e2eStartBoundMs(deps));
   const remainingMs = (): number => Math.max(0, deadline - Date.now());
   const testEntry = options.deps !== undefined || options.supervisorScript !== undefined || options.version !== undefined;
+  const started = testEntry || options.preparedGeneration !== undefined ? undefined : await startGenerationForTest(home.home, { version: cliPackage.version });
   const entry: SupervisorEntry = testEntry
     ? {
         kind: 'test',
@@ -395,9 +401,9 @@ export const startStack = async (options: StartStackOptions): Promise<E2eStack> 
         ...(options.version === undefined ? {} : { version: options.version }),
         ...(options.preparedGeneration === undefined ? {} : { generation: options.preparedGeneration }),
       }
-    : { kind: 'product', generation: options.preparedGeneration ?? (await startGenerationForTest(home.home, { version: cliPackage.version })).generation };
+    : { kind: 'product', generation: started?.generation ?? preparedOf(options) };
   const supervisor = spawnSupervisor({ home, entry, stackNumber: 1 });
-  const ready = await supervisor.ready(remainingMs());
+  const ready = await supervisor.ready(remainingMs()).finally(() => started?.release());
   const client = createSupervisorClient(home);
   registerE2eCleanup(() => client.close());
 
