@@ -5,6 +5,7 @@ import type { GenerationRole, ProcessLock, KernelLockMechanism, Redactor, Timing
 import { SERVICE_UNAVAILABLE_STATUS, TARGET_NOT_READY, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE, isTargetProbing, measuringOfWire, measuringWireOf } from '@momonga/protocol';
 import type { Measuring, Probing } from '@momonga/protocol';
 import { GatewayError } from '../core/errors.ts';
+import { redactedText } from '../core/guarded-adapter.ts';
 import type { GatewayTimers } from '../types.ts';
 import type { MeasurementProgress } from './client.ts';
 import { ensurePrivateProbeDirectory } from './record.ts';
@@ -127,7 +128,7 @@ export const targetProbingError = (probing: Probing): GatewayError =>
 export type ProbeFailure = { cause: string; target: string; declaration: string };
 
 export const probeFailureOf = (error: unknown, target: string, ask: MeasuringAsk, redactor: Pick<Redactor, 'text'>): ProbeFailure => ({
-  cause: redactor.text(cleanFailureMessage(measurementCauseOf(error))),
+  cause: redactedText(redactor, cleanFailureMessage(measurementCauseOf(error))),
   target,
   declaration: ask.declaration,
 });

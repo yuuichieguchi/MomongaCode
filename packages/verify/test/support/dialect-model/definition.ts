@@ -57,6 +57,7 @@ export type Op = Rule['op'];
 export interface Definition {
   extends?: string;
   rules: Rule[];
+  strictPerTool?: boolean;
 }
 
 export const OPS: readonly Op[] = [
@@ -112,6 +113,7 @@ export const DEFINITION_SCHEMA: Record<string, Json> = {
   properties: {
     extends: { $ref: '#/$defs/id' },
     rules: { type: 'array', items: { $ref: '#/$defs/rule' } },
+    strictPerTool: { type: 'boolean' },
   },
   required: ['rules'],
   additionalProperties: false,
@@ -273,6 +275,7 @@ export const BUILTINS: Record<string, Definition> = {
       },
       { select: [{ kinds: ['object-with-properties'] }], op: 'require-all' },
     ],
+    strictPerTool: true,
   },
   'inlined-subset': {
     rules: [

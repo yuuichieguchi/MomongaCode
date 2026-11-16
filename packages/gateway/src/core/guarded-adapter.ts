@@ -36,6 +36,8 @@ const shapedPlan = (plan: unknown): ShapedPlan => {
 const planUnchanged = (original: unknown, shaped: ShapedPlan): boolean =>
   shaped.plan === undefined ? original === undefined : isRecord(original) && Object.keys(original).length === Object.keys(shaped.plan).length;
 
+export const redactedText = (redactor: Pick<Redactor, 'text'>, text: string): string => redactor.text(text);
+
 export const redactedError = (redactor: Redactor, error: unknown): Error => {
   const redacted = new Error(redactor.text(describeError(error)));
   if (error instanceof Error) {

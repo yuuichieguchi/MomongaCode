@@ -17,7 +17,11 @@ describe('managed server reaper delegation to foundation (design-managed-servers
   });
 
   it('the start-time reap goes through reapMarkerDirectory with the managed server label and the startup occasion of decision 12', () => {
-    expect(source).toMatch(/\breapMarkerDirectory\(\{[^}]*\bdir:\s*markerDirectory\b[^}]*\blabel:\s*MANAGED_SERVER_LABEL\b[^}]*\boccasion:\s*'startup'[^}]*\}\)/s);
+    const call = /\breapMarkerDirectory\(\{(.*?)\}\);/s.exec(source)?.[1];
+    expect(call).toBeDefined();
+    expect(call).toMatch(/\bdir:\s*markerDirectory\b/);
+    expect(call).toMatch(/\blabel:\s*MANAGED_SERVER_LABEL\b/);
+    expect(call).toMatch(/\boccasion:\s*'startup'/);
   });
 
   it('imports both reapers from @momonga/foundation', () => {

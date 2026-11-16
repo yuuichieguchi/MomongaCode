@@ -11,7 +11,7 @@ import { CC_CAPABILITIES, makeAdapter, startFake } from './cc-support.ts';
 import { chunkLine, doneLine, makeOllamaAdapter, OLLAMA_CAPABILITIES, startFakeOllama } from './ollama-support.ts';
 import { contextOf } from './own-reasoning.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
-import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
+import { TEST_FENCE, UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const EDIT_RECORD: WrapRecord = { tool: 'edit', wrapped: [{ at: [], property: 'note' }] };
 const VIEW_RECORD: WrapRecord = { tool: 'view', wrapped: [{ at: [], property: 'path' }] };
@@ -120,6 +120,7 @@ const requestFor = (tool: Tool): AdapterRequest => ({
   model: 'm',
   input: [{ type: 'message', role: 'user', content: `Use ${tool.name} now` }],
   tools: [tool],
+  fence: TEST_FENCE,
 });
 
 type Reader = { kind: string; adapter: ProviderAdapter; target: AdapterTarget };

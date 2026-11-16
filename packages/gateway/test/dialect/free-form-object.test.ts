@@ -38,6 +38,18 @@ describe('a schema that cannot be expressed strictly', () => {
     expect(rendered).toMatchObject({ strict: false, schema: { type: 'object', additionalProperties: true } });
   });
 
+  it('a node that admits no object is no free-form object: closing it is vacuous and the render stays strict', () => {
+    const closeEverything = {
+      id: 'mine',
+      definition: definitionOf('mine', { mine: { rules: [{ select: [{ kinds: ['any'] }], op: 'ensure-key', key: 'additionalProperties', value: false, overwrite: 'always' }], strictPerTool: false } }),
+    };
+    for (const node of [{ const: 2 }, { type: 'boolean' }, { enum: ['a', 1] }, { type: ['string', 'null'] }]) {
+      const schema = { type: 'object', properties: { value: node }, required: ['value'] };
+      expect(renderSchema(schema, toolSite('configure'), closeEverything)).toMatchObject({ strict: true, schema: { properties: { value: { ...node, additionalProperties: false } } } });
+    }
+    expect(failureOf(() => renderSchema({ type: 'object', properties: { value: { items: {} } } }, toolSite('configure'), closeEverything))).toMatchObject({ reason: 'free-form-object' });
+  });
+
   it('a user dialect inherits per-tool strictness from the dialect it extends and can declare it off', () => {
     expect(renderSchema(FREE_FORM, toolSite('configure'), strictClosedExtension(undefined)).strict).toBe(false);
     expect(failureOf(() => renderSchema(FREE_FORM, toolSite('configure'), strictClosedExtension(false)))).toMatchObject({

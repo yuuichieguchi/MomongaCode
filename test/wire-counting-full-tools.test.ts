@@ -39,6 +39,7 @@ const firstRequest = async (): Promise<AdapterRequest> => ({
   ],
   tools: await fullToolSet(),
   tool_choice: 'auto',
+  fence: TEST_FENCE,
 });
 
 const adapters: Array<{ close(): Promise<void> }> = [];

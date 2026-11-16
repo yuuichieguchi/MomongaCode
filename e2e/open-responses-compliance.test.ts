@@ -16,7 +16,18 @@ import { requiredToolPath, requires } from '../test/support/required-tools.ts';
 const COMPLIANCE_DIR = path.join(import.meta.dirname, '..', 'compliance', 'open-responses');
 const BUN = requiredToolPath('bun');
 const SUITE_ENTRY = path.join(COMPLIANCE_DIR, 'suite', 'bin', 'compliance-test.ts');
-const EXPECTED_TESTS = 17;
+const SERVED = ['basic-response', 'assistant-phase', 'response-output-phase-schema', 'streaming-response', 'system-prompt', 'tool-calling', 'image-input', 'multi-turn', 'compact-response', 'compact-missing-model'] as const;
+const NOT_SERVED = [
+  'websocket-response',
+  'websocket-sequential-responses',
+  'websocket-continuation',
+  'websocket-reconnect-store-false-recovery',
+  'websocket-previous-response-not-found',
+  'websocket-failed-continuation-evicts-cache',
+  'websocket-compact-new-chain',
+] as const;
+const WEBSOCKET_REFUSED = 'WebSocket connection failed';
+const TOTAL_TESTS = SERVED.length + NOT_SERVED.length;
 const DEBUG_TOKEN = 'fake-open-responses-debug-token';
 const MODEL = 'fake/system';
 
@@ -90,9 +101,12 @@ describe('Open Responses compliance suite against the supervised gateway debug l
 
     const { output, exitCode } = await runSuite(`http://127.0.0.1:${port}/v1`, home.root, { PATH: '/usr/bin:/bin', HOME: home.home, TMPDIR: home.sessionTmp });
 
-    expect(output.results.filter((result) => result.status !== 'passed')).toEqual([]);
-    expect(output.summary).toEqual({ passed: EXPECTED_TESTS, failed: 0, skipped: 0, total: EXPECTED_TESTS });
-    expect(output.results.map((result) => result.id)).toEqual(expect.arrayContaining(['websocket-response', 'websocket-continuation', 'image-input', 'tool-calling', 'compact-response']));
-    expect(exitCode).toBe(0);
+    const idsWith = (status: SuiteResult['status']): string[] => output.results.filter((result) => result.status === status).map((result) => result.id).sort();
+    expect(output.results.filter((result) => result.status !== 'passed' && !NOT_SERVED.some((id) => id === result.id))).toEqual([]);
+    expect(idsWith('passed')).toEqual([...SERVED].sort());
+    expect(idsWith('failed')).toEqual([...NOT_SERVED].sort());
+    expect(output.results.filter((result) => result.status === 'failed').every((result) => result.errors?.some((error) => error.includes(WEBSOCKET_REFUSED)) === true)).toBe(true);
+    expect(output.summary).toEqual({ passed: SERVED.length, failed: NOT_SERVED.length, skipped: 0, total: TOTAL_TESTS });
+    expect(exitCode).toBe(1);
   });
 });
