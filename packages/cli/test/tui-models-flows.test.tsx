@@ -13,7 +13,7 @@ import { createPlanFlows } from '../src/tui/plan-flows.ts';
 import { runSettingsScreen, settingsFileLines } from '../src/tui/settings-screen.tsx';
 import type { SlashContext } from '../src/tui/slash.ts';
 import { CHATGPT, account, fakePlanBackend } from './fake-plan-gateway.tsx';
-import { LLAMA_SERVER, OLLAMA_ADDRESS, S2, S3, S4, ollamaFound, threeModels } from './models-shell-harness.ts';
+import { LLAMA_SERVER, OLLAMA_ADDRESS, S1, S2, S3, S4, ollamaFound, threeModels } from './models-shell-harness.ts';
 import { NO, YES, flowOf, untilAborted } from './tui-models-harness.ts';
 import type { FlowHarness, Step } from './tui-models-harness.ts';
 
@@ -38,6 +38,18 @@ const twoOnOllama = (): LocalServerDetection[] => [ollamaFound(OLLAMA_ADDRESS, [
 const LMSTUDIO_ONLY = { models: { connections: [S2.models.connections[1]] } };
 
 describe('the /models flows, one per row of 4.9.1', () => {
+  it('row 1: a found model that is already configured is not offered, and a server with nothing left to add says so (P-376)', async (context) => {
+    const partly = flowOf(context, S1, [{ pick: SEARCH }, { pick: /^ollama/ }], { found: twoOnOllama });
+    await runAddFlow(partly.context);
+    expect(partly.picks()[1]?.rows).toEqual(['ollama  ·  http://127.0.0.1:11434  ·  1 model']);
+    expect(partly.picks()[2]?.rows).toEqual(['qwen3.8:27b']);
+
+    const whole = flowOf(context, S1, [{ pick: SEARCH }, { pick: /^ollama/ }], { found: () => [ollamaFound(OLLAMA_ADDRESS, ['devstral-small-2:latest'])] });
+    await runAddFlow(whole.context);
+    expect(whole.picks()).toHaveLength(2);
+    expect(whole.infos).toEqual([`Every model that ollama at ${OLLAMA_ADDRESS} lists is in your settings already.`]);
+  });
+
   it('row 1: a model of a server the search finds is added after the confirm row, and Esc cancels the search', async (context) => {
     const steps: Step[] = [{ pick: SEARCH }, { pick: OLLAMA_ROW }, { pick: 'devstral-small-2' }, { type: 'many' }, { type: '32768' }];
     const declined = flowOf(context, undefined, [...steps, NO], { found: twoOnOllama });
