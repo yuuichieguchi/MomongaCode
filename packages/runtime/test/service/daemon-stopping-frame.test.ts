@@ -2,24 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { parseSse, startService } from './helpers.ts';
 import type { ServiceEnv, SseFrame } from './helpers.ts';
 
-type Reading = { frames: SseFrame[]; until(count: number): Promise<SseFrame[]>; ended: Promise<void> };
+type Closed = { kind: 'ended' } | { kind: 'failed'; error: unknown };
+
+type Reading = { frames: SseFrame[]; until(count: number): Promise<SseFrame[]>; ended: Promise<Closed> };
 
 const reading = async (env: ServiceEnv, target: string): Promise<Reading> => {
   const response = await env.client.request({ method: 'GET', path: target, headers: { accept: 'text/event-stream' } });
   expect(response.status).toBe(200);
   const frames: SseFrame[] = [];
   let wake: (() => void) | undefined;
-  const ended = (async () => {
-    try {
-      for await (const frame of parseSse(response.body)) {
-        if (frame.data === undefined) continue;
-        frames.push(frame);
-        wake?.();
-      }
-    } catch {
-      return;
+  const ended = (async (): Promise<Closed> => {
+    for await (const frame of parseSse(response.body)) {
+      if (frame.data === undefined) continue;
+      frames.push(frame);
+      wake?.();
     }
-  })();
+    return { kind: 'ended' };
+  })().catch((error: unknown): Closed => ({ kind: 'failed', error }));
   const until = async (count: number): Promise<SseFrame[]> => {
     while (frames.length < count) await new Promise<void>((resolve) => (wake = resolve));
     return frames;
@@ -50,7 +49,8 @@ describe('the daemon.stopping frame of a stop (real-use-30)', () => {
     expect(frames[2]).toEqual({ event: 'daemon.stopping', data: '{}' });
     expect(lateFrames.filter(isStopping)).toHaveLength(1);
     await env.closeService();
-    await Promise.all([runStream.ended, late.ended]);
+    const closed = await Promise.all([runStream.ended, late.ended]);
+    for (const outcome of closed) expect(outcome).toMatchObject({ kind: 'failed', error: { code: 'UND_ERR_SOCKET' } });
     expect(runStream.frames.filter(isStopping)).toHaveLength(1);
   });
 });
