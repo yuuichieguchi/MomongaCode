@@ -1,12 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { codeDigestOfRunningProcess, currentSocketResolver } from '@momonga/foundation';
-import { buildInjectionReport, parseInjectionScenarios } from '@momonga/eval';
+import { currentSocketResolver } from '@momonga/foundation';
 import type { InjectionExpect, InjectionScenario, InjectionTrial } from '@momonga/eval';
 import { REPORT_PAGE_ROWS, TERMINAL_STATUSES } from '@momonga/protocol';
 import type { AnsweredByView, RunFactsView } from '@momonga/protocol';
-import { encodeReliabilityReport } from '@momonga/reliability';
-import type { ReliabilityReport } from '@momonga/reliability';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeResponseHold, FakeScriptedReply } from '@momonga/testkit';
@@ -25,15 +22,14 @@ import { fileFaultArgument } from './role-main.ts';
 import type { RoleMainFileFault } from './role-main.ts';
 import { E2E_DISPOSE_BOUND_MS, E2E_MARGIN_MS, E2E_READY_DEADLINE_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, e2eTestTimeoutMs, until, withinBound } from './wait.ts';
 
-export type ScenarioResult =
-  | { id: string; status: 'ran'; witness: Record<string, number>; outcomes: string[]; trials: InjectionTrial[] }
-  | { id: string; status: 'not_run'; reason: string };
+import { INJECTION_REPORT_ENV, writeInjectionPart } from './inject-report.ts';
+import type { ScenarioResult } from './inject-report.ts';
+
+export { INJECTION_REPORT_ENV, injectionReportOf } from './inject-report.ts';
+export type { ScenarioResult } from './inject-report.ts';
 
 export type InjectionHost = { linuxContainer: boolean };
 
-export const INJECTION_REPORT_ENV = 'MOMONGA_INJECTION_REPORT';
-
-const SCENARIOS_FILE = path.join(import.meta.dirname, '..', 'inject', 'scenarios.json');
 const HELD_COMMAND_SECONDS = 600;
 const GATEWAY_RETRY = GATEWAY_CONFIG_DEFAULTS.retry;
 const GATEWAY_WINDOW_BOUND_MS = GATEWAY_RETRY.totalWaitMs + E2E_MARGIN_MS;
@@ -47,12 +43,9 @@ const HOOK_MARK_FILE_NAME = 'hook.mark';
 const HOOK_RELEASE_FILE_NAME = 'hook.release';
 const BROKEN_SETTINGS_TEXT = '{ "models": ';
 
-const scenarioFile = parseInjectionScenarios(fs.readFileSync(SCENARIOS_FILE, 'utf8'), SCENARIOS_FILE);
-const codeDigest = await codeDigestOfRunningProcess();
+export type InjectionPoint = { type: 'model.requested' | 'tool.started'; occurrence: number };
 
-const finished: ScenarioResult[] = [];
-
-type Point = { type: 'model.requested' | 'tool.started'; occurrence: number };
+type Point = InjectionPoint;
 
 type TrialEnv = {
   readonly scenario: InjectionScenario;
@@ -520,7 +513,7 @@ const resultOf = async (scenario: InjectionScenario, point: Point | undefined, i
 
 const sweepOf = async (scenario: InjectionScenario): Promise<ScenarioResult[]> => {
   const sweep: ScenarioResult[] = [];
-  for (const point of await pointsOf(scenario)) sweep.push(await resultOf(scenario, point, `${scenario.id}@${point.type}#${point.occurrence}`));
+  for (const point of await pointsOf(scenario)) sweep.push(await resultOf(scenario, point, pointIdOf(scenario, point)));
   return sweep;
 };
 
@@ -546,17 +539,6 @@ const trialCountOf = (scenario: InjectionScenario): number =>
 
 export const scenarioBoundMs = (scenario: InjectionScenario): number => trialCountOf(scenario) * trialBoundMs(scenario);
 
-export const injectionReportOf = (results: readonly ScenarioResult[]): ReliabilityReport & { population: { notRun: { id: string; reason: string }[] } } => {
-  const report = buildInjectionReport({
-    scenarios: scenarioFile,
-    trials: results.flatMap((result) => (result.status === 'ran' ? result.trials : [])),
-    notRun: results.flatMap((result) => (result.status === 'not_run' ? [{ id: result.id, reason: result.reason }] : [])),
-    codeDigest,
-    groupBy: 'model',
-  });
-  return report as ReliabilityReport & { population: { notRun: { id: string; reason: string }[] } };
-};
-
 export const runInjectionScenario = async (scenario: InjectionScenario, host: InjectionHost): Promise<ScenarioResult[]> => {
   const reason = notRunReason(scenario, host);
   const results: ScenarioResult[] =
@@ -565,8 +547,27 @@ export const runInjectionScenario = async (scenario: InjectionScenario, host: In
       : scenario.fault === 'kill_at_step'
         ? await sweepOf(scenario)
         : [await resultOf(scenario, undefined, scenario.id)];
-  finished.push(...results);
+  return reported(results);
+};
+
+const reported = (results: ScenarioResult[]): ScenarioResult[] => {
   const target = process.env[INJECTION_REPORT_ENV];
-  if (target !== undefined) fs.writeFileSync(target, `${encodeReliabilityReport(injectionReportOf(finished))}\n`);
+  if (target !== undefined) writeInjectionPart(target, results);
   return results;
 };
+
+export const pointIdOf = (scenario: InjectionScenario, point: InjectionPoint): string => `${scenario.id}@${point.type}#${point.occurrence}`;
+
+export const declaredPointsOf = (scenario: InjectionScenario): InjectionPoint[] =>
+  (scenario.params?.points ?? []).flatMap((type) => {
+    const occurrences = type === 'model.requested' ? scenario.task.steps.length : scenario.task.steps.filter((step) => 'call' in step).length;
+    return Array.from({ length: occurrences }, (_unused, index): InjectionPoint => ({ type, occurrence: index + 1 }));
+  });
+
+export const referencePointsOf = (scenario: InjectionScenario): Promise<InjectionPoint[]> => pointsOf(scenario);
+
+export const referenceBoundMs = (scenario: InjectionScenario): number => trialBoundMs(scenario);
+
+export const pointBoundMs = (scenario: InjectionScenario): number => scenario.trials * trialBoundMs(scenario);
+
+export const runInjectionPoint = async (scenario: InjectionScenario, point: InjectionPoint): Promise<ScenarioResult[]> => reported([await resultOf(scenario, point, pointIdOf(scenario, point))]);

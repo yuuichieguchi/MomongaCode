@@ -7,27 +7,29 @@ import { RELOCATABLE_LINKS, makeDifferentialWorkspace } from './differential/fix
 import { generate, seededRng } from './differential/generator.ts';
 import { runCase } from './differential/oracles.ts';
 import type { Case } from './differential/oracles.ts';
-import { PLACEHOLDER_PATHS, SEPARATE_WORD_SUBCOMMANDS, editSeeds, optionWordSweep, readSeeds, separateWordSweep } from './differential/seeds.ts';
+import { PLACEHOLDER_PATHS, SEPARATE_WORD_SUBCOMMANDS, editSeeds, optionWordSweep, readSeeds } from './differential/seeds.ts';
+import { DIFFERENTIAL_TITLE, failures } from './policy-differential-cases.ts';
 
 vi.setConfig({ testTimeout: 10 * REAL_PROCESS_TEST_TIMEOUT_MS });
-
 
 const SEED_CHUNK = 8;
 const GENERATED_SEEDS = [1, 2, 3, 4, 5, 6];
 const CASES_PER_SEED = 24;
 
-const failures = async (cases: readonly Case[], run: (input: Case) => ReturnType<typeof runCase>): Promise<{ approved: number; failures: string[] }> => {
-  const found: string[] = [];
-  let approved = 0;
-  for (const input of cases) {
-    const outcome = await run(input);
-    if (outcome.ran) approved += 1;
-    for (const violation of outcome.violations) found.push(`${JSON.stringify(input)}: ${violation}`);
-  }
-  return { approved, failures: found };
-};
+const SWEEP_CALL = /^separateWordSweepFile\('([a-z-]+)'\);$/m;
 
-describe('every command decide approves does what the analysis reported, on real /bin/bash and real git', () => {
+describe('the files of the separate-word sweep', () => {
+  it('run every subcommand of the sweep, one file each', () => {
+    const swept = fs
+      .readdirSync(import.meta.dirname)
+      .filter((name) => /^policy-differential-[a-z-]+\.test\.ts$/.test(name))
+      .flatMap((name) => SWEEP_CALL.exec(fs.readFileSync(path.join(import.meta.dirname, name), 'utf8'))?.[1] ?? [])
+      .sort();
+    expect(swept).toEqual([...SEPARATE_WORD_SUBCOMMANDS].sort());
+  });
+});
+
+describe(DIFFERENTIAL_TITLE, () => {
   const readCount = readSeeds(PLACEHOLDER_PATHS).length;
 
   it.each(Array.from({ length: Math.ceil(readCount / SEED_CHUNK) }, (_, chunk) => chunk))('bypasses reported in both review rounds, chunk %i', async (chunk) => {
@@ -61,22 +63,6 @@ describe('every command decide approves does what the analysis reported, on real
     fs.rmSync(path.join(workspace.base, 'fired-echo'));
     const values = (GIT_OPTION_TABLES[subcommand] as { values: readonly string[] }).values;
     expect((await failures(optionWordSweep(values, subcommand), (input) => runCase(workspace, input))).failures).toEqual([]);
-  });
-
-  it.each(SEPARATE_WORD_SUBCOMMANDS)('every option of git %s followed by a side-effect option word, with and without a separator', async (subcommand) => {
-    const workspace = makeDifferentialWorkspace();
-    fs.copyFileSync(workspace.hookScript('echo'), path.join(workspace.project, 'pager.sh'));
-    fs.chmodSync(path.join(workspace.project, 'pager.sh'), 0o755);
-    workspace.write('.gitattributes', 'tracked diff=x\n');
-    workspace.git(workspace.project, 'config', 'diff.x.textconv', workspace.hookScript('echo'));
-    workspace.write('two', 'two\n');
-    workspace.git(workspace.project, 'add', 'two');
-    workspace.git(workspace.project, 'commit', '-q', '-m', 'two');
-    const table = GIT_OPTION_TABLES[subcommand] as { flags: readonly string[]; values: readonly string[]; optionalValues: readonly string[] };
-    const options = [...table.flags, ...table.values, ...table.optionalValues];
-    const swept = separateWordSweep(subcommand, options);
-    expect(swept.length).toBeGreaterThan(options.length);
-    expect((await failures(swept, (input) => runCase(workspace, input))).failures).toEqual([]);
   });
 });
 
