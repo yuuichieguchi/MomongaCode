@@ -65,9 +65,8 @@ describe('the waiting row in the screen (6.1)', () => {
 });
 
 describe('a daemon stop under an open run (real-use-30)', () => {
-  it('says once that the daemon is stopping, and the reconnect follows as its phase', async () => {
+  it('says that the daemon is stopping, and the reconnect follows as its phase', async () => {
     const { app, backend, clock } = await working({ columns: 100, rows: 20 });
-    backend.following().onDaemonStopping();
     backend.following().onDaemonStopping();
     const said = await untilFrame(app, DAEMON_STOPPING_TEXT);
     expect(said.split(DAEMON_STOPPING_TEXT)).toHaveLength(2);

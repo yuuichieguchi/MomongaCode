@@ -51,7 +51,7 @@ const scripted = (clock: ReturnType<typeof virtualClock>, attemptOf: (index: num
 };
 
 const follow = (client: RuntimeClient, clock: ReturnType<typeof virtualClock>, seen: number[] = []) =>
-  followRun({ client, clock, random: () => 0.5, runId: 'run-1', reconnectBoundMs: BOUND_MS, restoreConnection: async () => undefined, onEvent: (received) => seen.push(received.id) });
+  followRun({ client, clock, random: () => 0.5, runId: 'run-1', reconnectBoundMs: BOUND_MS, restoreConnection: async () => undefined, onEvent: (received) => seen.push(received.id), onDaemonStopping: () => undefined });
 
 describe('the bound of a follow counts the time without the stream since the last event', () => {
   it('ends a stream that opens and breaks before any frame, every time, with ReconnectBoundExceeded and the cause', async () => {

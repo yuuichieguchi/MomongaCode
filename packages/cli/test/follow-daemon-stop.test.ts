@@ -22,7 +22,7 @@ const deltaFrame = `id: 1\nevent: agent.message.delta\ndata: ${JSON.stringify({ 
 class Restored extends Error {}
 
 describe('a daemon that stops under an open follower (real-use-30)', () => {
-  it('tells the follower when the stop begins, delivers the events of the drain, and reaches it as a reconnect when the stop closes the socket', async (context) => {
+  it('tells the follower once when the stop begins, delivers the events of the drain, and reaches it as a reconnect when the stop closes the socket', async (context) => {
     const socketPath = path.join(withTempDir(context), 's.sock');
     let opened!: () => void;
     const streaming = new Promise<void>((resolve) => {
@@ -31,6 +31,7 @@ describe('a daemon that stops under an open follower (real-use-30)', () => {
     const server = http.createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
       response.write(deltaFrame);
+      response.write(STOPPING_FRAME);
       response.write(STOPPING_FRAME);
       response.write(secondFrame);
       opened();

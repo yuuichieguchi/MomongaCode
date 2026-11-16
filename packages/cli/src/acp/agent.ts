@@ -5,7 +5,7 @@ import type { ElicitationAnswerRecord, Mandate, ModelViews, Readiness, SkillsRes
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
-import { isTerminalStatus } from '../run/follow.ts';
+import { DAEMON_STOPPING_TEXT, isTerminalStatus } from '../run/follow.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { availableCommandsOf } from './commands.ts';
 import { elicitationAnswerOf, elicitationRequestOf } from './elicitation.ts';
@@ -23,6 +23,7 @@ export type FollowRequest = {
   runId: string;
   onEvent(frame: RunEventFrame): void;
   onChildEvent(frame: RunEventFrame, agent: string): void;
+  onDaemonStopping(): void;
   signal: AbortSignal;
 };
 
@@ -333,6 +334,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
       runId,
       signal: session.lifetime.signal,
       onChildEvent: (frame, agent) => handleChildFrame(session, frame, agent),
+      onDaemonStopping: () => send(session, noticeUpdate(clientFeatures(), `${runId}/daemon-stopping`, 'info', DAEMON_STOPPING_TEXT)),
       onEvent: (frame) => {
         handleFrame(session, frame, replayThrough, mutedThrough);
         if ('seq' in frame.data && frame.data.seq >= replayThrough) onCaughtUp?.();

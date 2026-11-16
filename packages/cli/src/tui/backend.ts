@@ -325,6 +325,7 @@ export const createTuiBackend = (
           onEvent: (frame) => {
             if (frame.data.type === 'inbox.changed') changed();
           },
+          onDaemonStopping: () => undefined,
           signal,
         }),
     },

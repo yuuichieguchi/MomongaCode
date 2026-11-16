@@ -43,6 +43,7 @@ const clientOf = (streams: readonly Stream[], statuses: readonly ReturnType<type
 
 const options = (client: RuntimeClient, seen: number[], extra: Partial<Parameters<typeof followRun>[0]> = {}): Parameters<typeof followRun>[0] => ({
   client,
+  onDaemonStopping: () => undefined,
   clock: virtualClock(),
   random: () => 0.5,
   runId: 'run-1',
@@ -222,6 +223,7 @@ describe('followSession', () => {
 
   const sessionOptions = (client: RuntimeClient, seen: number[], extra: Partial<Parameters<typeof followSession>[0]> = {}): Parameters<typeof followSession>[0] => ({
     client,
+    onDaemonStopping: () => undefined,
     clock: virtualClock(),
     random: () => 0.5,
     sessionId: 'session-1',

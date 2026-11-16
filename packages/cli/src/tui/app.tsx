@@ -726,7 +726,6 @@ export function App(props: AppProps) {
 
   const follow = (runId: string, replay: Replay | undefined): Promise<RunView> => {
     let firstSeq: number | undefined;
-    let toldStopping = false;
     const deliver = (work: () => void, position?: number): void => {
       if (replay === undefined) work();
       else replay.queue.push(work, position);
@@ -771,8 +770,6 @@ export function App(props: AppProps) {
       onChildEnded: (_agent, childRunId) => deliver(() => subagentEnded(store, childRunId)),
       onReconnecting: () => setReconnectingSince((since) => since ?? now()),
       onDaemonStopping: () => {
-        if (toldStopping) return;
-        toldStopping = true;
         append({ kind: 'notice', level: 'info', text: DAEMON_STOPPING_TEXT });
       },
     });

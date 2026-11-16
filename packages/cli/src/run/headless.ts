@@ -17,7 +17,7 @@ import { describeRetryWait } from '../retry-wait.ts';
 import type { AttemptFailed } from '../retry-wait.ts';
 import { describeClassification, describeDenial, describeHook, describeRunError, describeVerification, unmetConditionLines } from '../policy-messages.ts';
 import { asChildEvent, noEventTypeLeft } from './child-events.ts';
-import { followRun } from './follow.ts';
+import { DAEMON_STOPPING_TEXT, followRun } from './follow.ts';
 import { adoptionOf, refuseStart } from '../handover/start.ts';
 import { newerListenerOf, streamMoveOf, streamSurface } from '../handover/stream.ts';
 import type { StreamMove } from '../handover/stream.ts';
@@ -488,6 +488,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
         checkMove();
       },
       onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
+      onDaemonStopping: () => ports.stderr.write(`momonga: ${DAEMON_STOPPING_TEXT}\n`),
     });
   } catch (error) {
     if (leaving === undefined) throw error;
