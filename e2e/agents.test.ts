@@ -161,7 +161,7 @@ describe('agents: subagents', () => {
       const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Review my change');
       const child = await until(() => childRunsOf(home, run.id)[0], { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'a child run' });
-      await until(() => stack.fake.openConnections() === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the child holds an upstream connection' });
+      await until(() => chatCompletions(stack.fake).length === 2 && stack.fake.openConnections() === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the request of the child reached the upstream and holds its connection' });
       await until(() => runRow(home, run.id)?.status === 'WAITING_TOOL', { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the parent waits' });
       const disconnectsBefore = stack.fake.disconnects();
 

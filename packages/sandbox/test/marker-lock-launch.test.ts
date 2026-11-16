@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createLockCapability, createMarker, createProcessInspector, hostInspectorPorts, POLL_INTERVAL_MS, systemWaitTiming, waitUntil } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testLocks } from '@momonga/testkit';
 import { launch } from '../src/process.ts';
@@ -19,6 +19,7 @@ const live = () => ({ signal: new AbortController().signal });
 
 const setup = async () => {
   const root = fs.realpathSync(makeTempDir());
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   const proofDir = path.join(root, 'lock-proof');
   const markerDir = path.join(root, 'markers');
   fs.mkdirSync(proofDir, { mode: 0o700 });
