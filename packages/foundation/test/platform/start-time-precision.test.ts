@@ -3,6 +3,7 @@ import { createLinuxInspector } from '../../src/platform/linux-inspector.ts';
 import { auxvLayoutOf } from '../../src/platform/linux-parsers.ts';
 import type { ProcFs } from '../../src/platform/procfs.ts';
 import { createWindowsInspector } from '../../src/platform/windows-inspector.ts';
+import { systemWaitTiming } from '../../src/system-timing.ts';
 import { startTimeScript } from '../../src/platform/windows-scripts.ts';
 
 const LIVE = { signal: new AbortController().signal };
@@ -72,9 +73,9 @@ describe('Windows start times are compared as the FILETIME at 100 ns', () => {
   });
 
   it('tells apart two creation times 100 ns apart', async () => {
-    const first = await createWindowsInspector({ run: runnerPrinting('133400000000000001\r\n'), env: ENV, groups: { members: async () => ({ kind: 'members', pids: [] }), leads: () => false }, alive: () => false }).startTimeOf(321, LIVE);
-    const hundredNanosecondsLater = await createWindowsInspector({ run: runnerPrinting('133400000000000002\r\n'), env: ENV, groups: { members: async () => ({ kind: 'members', pids: [] }), leads: () => false }, alive: () => false }).startTimeOf(321, LIVE);
-    const same = await createWindowsInspector({ run: runnerPrinting('133400000000000001\r\n'), env: ENV, groups: { members: async () => ({ kind: 'members', pids: [] }), leads: () => false }, alive: () => false }).startTimeOf(321, LIVE);
+    const first = await createWindowsInspector({ timing: systemWaitTiming, run: runnerPrinting('133400000000000001\r\n'), env: ENV, groups: { members: async () => ({ kind: 'members', pids: [] }), leads: () => false }, alive: () => false }).startTimeOf(321, LIVE);
+    const hundredNanosecondsLater = await createWindowsInspector({ timing: systemWaitTiming, run: runnerPrinting('133400000000000002\r\n'), env: ENV, groups: { members: async () => ({ kind: 'members', pids: [] }), leads: () => false }, alive: () => false }).startTimeOf(321, LIVE);
+    const same = await createWindowsInspector({ timing: systemWaitTiming, run: runnerPrinting('133400000000000001\r\n'), env: ENV, groups: { members: async () => ({ kind: 'members', pids: [] }), leads: () => false }, alive: () => false }).startTimeOf(321, LIVE);
     expect(first.kind).toBe('value');
     expect(hundredNanosecondsLater).not.toEqual(first);
     expect(same).toEqual(first);

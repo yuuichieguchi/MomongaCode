@@ -1,4 +1,6 @@
 import type { CommandRunner } from './command-runner.ts';
+import type { Timing } from '../timing.ts';
+import { abandoned } from './abandoned.ts';
 import { failureOfError, probeFailed } from './inspector-types.ts';
 import { withListedState } from './marker-state.ts';
 import type { ProbeFailure, ProbeResult, ProcessInspector } from './inspector-types.ts';
@@ -6,8 +8,11 @@ import type { KeptGroupControl } from './windows-kept-groups.ts';
 import { parsePidList, parseStartTime } from './windows-parsers.ts';
 import { holdersScript, powershellArgs, powershellPath, startTimeScript } from './windows-scripts.ts';
 
+export const POWERSHELL_CALL_BOUND_MS = 10_000;
+
 export type WindowsInspectorPorts = {
   run: CommandRunner;
+  timing: Pick<Timing, 'setTimeout' | 'clearTimeout'>;
   env: Readonly<Record<string, string | undefined>>;
   groups: Pick<KeptGroupControl, 'members' | 'leads'>;
   alive(pid: number): boolean;
@@ -41,9 +46,23 @@ const failureOf = (error: unknown): ProbeFailure => {
   return failureOfError(error);
 };
 
-export const createWindowsInspector = ({ run, env, groups, alive }: WindowsInspectorPorts): ProcessInspector => {
+const boundedCall = async <T>(work: (signal: AbortSignal) => Promise<T>, timing: Pick<Timing, 'setTimeout' | 'clearTimeout'>, signal: AbortSignal): Promise<T> => {
+  const bound = new AbortController();
+  const expire = (): void => bound.abort(Object.assign(new Error(`powershell did not answer within ${POWERSHELL_CALL_BOUND_MS} ms`), { killed: true }));
+  const timer = timing.setTimeout(expire, POWERSHELL_CALL_BOUND_MS);
+  const leave = (): void => bound.abort(signal.reason);
+  signal.addEventListener('abort', leave, { once: true });
+  try {
+    return await abandoned(work(bound.signal), bound.signal);
+  } finally {
+    timing.clearTimeout(timer);
+    signal.removeEventListener('abort', leave);
+  }
+};
+
+export const createWindowsInspector = ({ run, timing, env, groups, alive }: WindowsInspectorPorts): ProcessInspector => {
   const execute = async (script: string, signal: AbortSignal): Promise<string> => {
-    const result = await run(powershellPath(env), powershellArgs(script), { env: probeEnv(env), signal });
+    const result = await boundedCall((bounded) => run(powershellPath(env), powershellArgs(script), { env: probeEnv(env), signal: bounded }), timing, signal);
     if (result.exitCode !== 0) throw new PowerShellExit(result.exitCode, `powershell exited with ${result.exitCode}: ${result.stderr.trim()}`);
     return result.stdout;
   };
