@@ -1,10 +1,11 @@
 import { defineTool } from '../types.ts';
+import { UPDATE_PLAN_TOOL_NAME } from '@momonga/protocol';
 import type { PlanEntry } from '../types.ts';
 
 type UpdatePlanInput = { entries: PlanEntry[] };
 
 export const updatePlanTool = defineTool<UpdatePlanInput>({
-  name: 'UpdatePlan',
+  name: UPDATE_PLAN_TOOL_NAME,
   description:
     'Records the current task plan. Send the complete list of entries every time; each entry has content, a status (pending, in_progress, completed) and a priority (high, medium, low).',
   conciseDescription:
@@ -36,6 +37,6 @@ export const updatePlanTool = defineTool<UpdatePlanInput>({
   },
   timeoutMs: 5_000,
   title: () => 'Update plan',
-  subject: () => ({ kind: 'none', tool: 'UpdatePlan' }),
+  subject: () => ({ kind: 'none', tool: UPDATE_PLAN_TOOL_NAME }),
   execute: async (input) => ({ status: 'completed', output: `Plan updated (${input.entries.length} entries)`, plan: input.entries }),
 });

@@ -181,7 +181,7 @@ export const RELIABILITY_DERIVATIONS = {
     'One JSON object per line, one line per stored body, because the content is read page by page and written as each page arrives: the whole content of a run is never held in memory, and a reader may stop after any line.',
 } as const satisfies Record<string, string>;
 
-export type TraceContentView = { id: number; spanId: string; kind: string; content: string; createdAtMs: number; expiresAtMs: number };
+export type TraceContentView = { id: number; spanId: string; kind: string; content: string; createdAtMs: number };
 
 export type TraceContentPage = { bodies: TraceContentView[]; next: number | null };
 
@@ -215,7 +215,7 @@ export const REPORT_SCHEMAS = {
     unreported: { type: 'array', uniqueItems: true, items: nonEmptyString },
   }),
   TraceContentPage: closedRequiringAll({
-    bodies: { type: 'array', items: closedRequiringAll({ id: nonNegativeInteger, spanId: nonEmptyString, kind: nonEmptyString, content: string, createdAtMs: nonNegativeInteger, expiresAtMs: nonNegativeInteger }) },
+    bodies: { type: 'array', items: closedRequiringAll({ id: nonNegativeInteger, spanId: nonEmptyString, kind: nonEmptyString, content: string, createdAtMs: nonNegativeInteger }) },
     next: nullable(nonNegativeInteger),
   }),
 } as const satisfies Record<string, JsonSchema>;

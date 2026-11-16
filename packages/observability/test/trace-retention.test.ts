@@ -23,7 +23,6 @@ const body = (spanId: string, content: string, createdAtMs: number): BodyRecord 
   kind: CONTENT.ATTR_GEN_AI_INPUT_MESSAGES,
   content,
   createdAtMs,
-  expiresAtMs: createdAtMs + 1,
 });
 
 const spanIds = (store: TraceStore, runId: string | null): string[] =>

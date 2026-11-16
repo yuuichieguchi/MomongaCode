@@ -186,7 +186,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     const readiness = await deps.readinessOf(session.model);
     if (readiness.state === 'ready') return;
     readinessNotices += 1;
-    send(session, noticeUpdate(clientFeatures(), `${session.id}/readiness/${readinessNotices}`, 'warning', readinessShownText(readiness, 'shell')));
+    send(session, noticeUpdate(clientFeatures(), `${session.id}/readiness/${readinessNotices}`, 'warning', readinessShownText(readiness, 'cli')));
   };
 
   const applyModel = (session: BridgeSession, model: string): void => {

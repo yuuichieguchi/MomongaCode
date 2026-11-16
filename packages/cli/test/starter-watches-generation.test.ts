@@ -1,3 +1,4 @@
+import { nodeFilesLockedBy } from '../src/node-ports.ts';
 import fs from 'node:fs';
 import { EXIT_ALREADY_RUNNING, FIRST_GENERATION, STARTUP_TIMEOUT_MS, ensureMomongaDirs, generationLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { SupervisorChildHealth } from '@momonga/protocol';
@@ -38,7 +39,7 @@ const setup = async (context: TestContext) => {
     running.push(supervisor);
     return supervisor;
   };
-  const portsWith = (spawn: DaemonPorts['spawnDetached'], clock: CliClock): DaemonPorts => ({ version: VERSION, env: { PATH: '/usr/bin' }, home, clock, self: SELF, spawnDetached: spawn, ...installedProgram(VERSION).ports });
+  const portsWith = (spawn: DaemonPorts['spawnDetached'], clock: CliClock): DaemonPorts => ({ files: nodeFilesLockedBy(testKernelLock), version: VERSION, env: { PATH: '/usr/bin' }, home, clock, self: SELF, spawnDetached: spawn, ...installedProgram(VERSION).ports });
   return { home, paths, start, portsWith };
 };
 

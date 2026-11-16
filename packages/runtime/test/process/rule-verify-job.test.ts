@@ -17,11 +17,11 @@ describe('a verification job inside its thread', () => {
   it('runs under the signal of its asker: an asker that is gone ends the job with its reason before the solver is opened', async () => {
     const asker = new AbortController();
     asker.abort(new Error('the run was cancelled'));
-    await expect(runRuleVerifyJob(job, { signal: asker.signal, clock: { now: () => 1_000 }, timing: systemWaitTiming, onEntered: () => undefined })).rejects.toThrow('the run was cancelled');
+    await expect(runRuleVerifyJob(job, { signal: asker.signal, clock: { now: () => 1_000, monotonicMs: () => 0 }, timing: systemWaitTiming, onEntered: () => undefined })).rejects.toThrow('the run was cancelled');
   });
 
   it('opens the solver for an asker that is present, and fails with the cause when the solver cannot be loaded', async () => {
-    await expect(runRuleVerifyJob(job, { signal: new AbortController().signal, clock: { now: () => 1_000 }, timing: systemWaitTiming, onEntered: () => undefined })).rejects.toThrow(/\/nowhere\/z3\.js/);
+    await expect(runRuleVerifyJob(job, { signal: new AbortController().signal, clock: { now: () => 1_000, monotonicMs: () => 0 }, timing: systemWaitTiming, onEntered: () => undefined })).rejects.toThrow(/\/nowhere\/z3\.js/);
   });
 
   it('times the start of the thread from the moment the runtime asked, then the load of the solver and its instantiation', () => {

@@ -31,7 +31,7 @@ describe('the time a verification spends per phase', () => {
       exemptDirectory: null,
       enforcement: ruleEnforcementOf('none'),
       budgetMs: 0,
-      clock: { now: () => (now += 2) },
+      clock: { now: () => (now += 2), monotonicMs: () => now },
       hostPhases: HOST_PHASES,
     });
 

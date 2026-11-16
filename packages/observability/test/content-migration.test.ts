@@ -29,7 +29,7 @@ const withDb = <T>(file: string, run: (db: DatabaseSync) => SettledBeforeCleanup
 
 describe('trace store migration 5: content bodies', () => {
   it('names the migration and lists the six content attribute names in the bodies kind check and in the content index', () => {
-    expect(TRACE_STORE_MIGRATIONS.at(-1)).toMatchObject({ version: 5, name: 'content-bodies' });
+    expect(TRACE_STORE_MIGRATIONS.find((migration) => migration.version === 5)).toMatchObject({ version: 5, name: 'content-bodies' });
     const { file } = legacyStore();
     openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  }).close();
     withDb(file, (db) => {
@@ -47,7 +47,7 @@ describe('trace store migration 5: content bodies', () => {
     openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  }).close();
     withDb(file, (db) => {
       const insert = (kind: string) =>
-        db.prepare('INSERT INTO bodies (trace_id, span_id, kind, content, created_at_ms, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?)').run('t', 's', kind, 'c', 1, 2);
+        db.prepare('INSERT INTO bodies (trace_id, span_id, kind, content, created_at_ms) VALUES (?, ?, ?, ?, ?)').run('t', 's', kind, 'c', 1);
       expect(() => insert('input')).toThrow();
       expect(() => insert(BODY_KINDS[0])).not.toThrow();
     });
@@ -82,10 +82,10 @@ describe('trace store migration 5: content bodies', () => {
     });
     const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  });
     registerCleanup(() => store.close());
-    expect(store.moveLegacyContent({ retentionMs: 5000 })).toBe(1);
-    expect(bodiesOfSpan(store, 's')).toEqual([{ traceId: 't', spanId: 's', kind: BODY_KINDS[1], content: SENTINEL, createdAtMs: endMs, expiresAtMs: endMs + 5000 }]);
+    expect(store.moveLegacyContent()).toBe(1);
+    expect(bodiesOfSpan(store, 's')).toEqual([{ traceId: 't', spanId: 's', kind: BODY_KINDS[1], content: SENTINEL, createdAtMs: endMs }]);
     expect(JSON.stringify(store.spansForRun(RUN_ID))).not.toContain(SENTINEL);
-    expect(store.moveLegacyContent({ retentionMs: 5000 })).toBe(0);
+    expect(store.moveLegacyContent()).toBe(0);
   });
 
   it('moves one batch at a time and bounds the batch by span count', () => {
@@ -101,7 +101,7 @@ describe('trace store migration 5: content bodies', () => {
     const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file  });
     registerCleanup(() => store.close());
     const batches: number[] = [];
-    for (let moved = store.moveLegacyContent({ retentionMs: 1 }); moved > 0; moved = store.moveLegacyContent({ retentionMs: 1 })) batches.push(moved);
+    for (let moved = store.moveLegacyContent(); moved > 0; moved = store.moveLegacyContent()) batches.push(moved);
     expect(batches).toEqual([16, 16, 8]);
   });
 });

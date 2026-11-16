@@ -15,7 +15,7 @@ describe('a gateway whose home was removed while it started writes nothing back 
     writeSettings(home, { models: modelsOf({ local: ccTarget(path.join(makeDir(), 'up.sock'), { toolCalling: 'native' }) }) });
     const role = switchableRole('serving');
     const removals = { count: 0 };
-    const start = registerOwned(registerCleanup, () => startGatewayProcess({
+    const start = registerOwned(registerCleanup, () => startGatewayProcess({ platform: process.platform,
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home,

@@ -5,6 +5,7 @@ import { DEVSTRAL_DIGEST, OLLAMA_MODEL, QWEN_DIGEST, QWEN_MODEL, TRAINED_CONTEXT
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { UNCONFIGURED_NETWORK, testKernelLock } from '@momonga/testkit';
 import { hostProbePorts } from './probe-ports-support.ts';
+import { DeclaredWindowAboveReportedError } from '../src/probe/declared-window.ts';
 
 const probe = (origin: string, dir: string, contextWindow: number, model = OLLAMA_MODEL) =>
   probeOllamaTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: origin }), model }, model, contextWindow });
@@ -24,6 +25,26 @@ describe('the Ollama probe', () => {
     const stored = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model');
     expect(stored?.identity).toBe(DEVSTRAL_DIGEST);
     expect(stored?.report).toEqual(result.report);
+  });
+
+  it('sends no measurement request to a metered endpoint the person has not consented to', async () => {
+    const fake = await startFakeOllama();
+    const dir = makeDir();
+
+    await expect(
+      probeOllamaTarget({
+        ports: hostProbePorts,
+        lock: testKernelLock(),
+        probeRecordDir: dir,
+        upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK },
+        key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL },
+        model: OLLAMA_MODEL,
+        contextWindow: 32768,
+        metered: { display: 'ollama/devstral', declaredContextWindow: 32768 },
+      }),
+    ).rejects.toThrow('measured only with your consent');
+
+    expect(fake.requests).toEqual([]);
   });
 
   it('matches a model name without a tag to its :latest entry in /api/tags', async () => {
@@ -52,6 +73,19 @@ describe('the Ollama probe', () => {
   it('accepts a window equal to the trained length', async () => {
     const fake = await startFakeOllama();
     await expect(probe(fake.origin, makeDir(), TRAINED_CONTEXT_LENGTH)).resolves.toMatchObject({ identity: DEVSTRAL_DIGEST });
+  });
+
+  it('refuses a declared window above the trained length with the declared-window rule, naming both numbers', async () => {
+    const fake = await startFakeOllama();
+
+    const failure = await probe(fake.origin, makeDir(), TRAINED_CONTEXT_LENGTH + 1).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(DeclaredWindowAboveReportedError);
+    expect(String(failure)).toContain(String(TRAINED_CONTEXT_LENGTH + 1));
+    expect(String(failure)).toContain(String(TRAINED_CONTEXT_LENGTH));
   });
 
   it('rejects a window above the trained length and saves no record', async () => {

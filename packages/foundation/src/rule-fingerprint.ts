@@ -29,7 +29,9 @@ export const verdictSubjectOf = <Subject extends VerdictSubject>({
   deniedLocations,
 }: Subject): Pick<Subject, keyof VerdictSubject> => ({ rules, roots: [...new Set(roots)], mode, home, cwd, exemptDirectory, enforcement, protectedSet, secretLocations, deniedLocations });
 
-export const verdictKey = (subject: VerdictSubject, solver: string): string => sha256Hex(canonicalJson({ subject, solver, verdictDefinition: RULE_VERDICT_DEFINITION }));
+const keyedFieldsOf = (subject: VerdictSubject): Omit<VerdictSubject, 'cwd'> => Object.fromEntries(Object.entries(subject).filter(([field]) => field !== 'cwd')) as Omit<VerdictSubject, 'cwd'>;
+
+export const verdictKey = (subject: VerdictSubject, solver: string): string => sha256Hex(canonicalJson({ subject: keyedFieldsOf(subject), solver, verdictDefinition: RULE_VERDICT_DEFINITION }));
 
 export type SessionRoots = { ok: true; roots: string[] } | { ok: false; root: string; reason: string };
 

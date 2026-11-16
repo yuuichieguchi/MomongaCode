@@ -38,6 +38,10 @@ import { endpointKeyOfLock, endpointLockKeyOf } from './endpoint-record.ts';
 import type { EndpointLockKey } from './endpoint-record.ts';
 import type { DialectCurrency } from '../dialect/candidates.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';
+import { meteredPrecondition, requireMeasurementConsent } from './consent.ts';
+import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
+import { meteredGateOf } from './probe-endpoint.ts';
+import { DeclaredWindowAboveReportedError } from './declared-window.ts';
 
 export type ProbeOllamaTargetOptions = {
   ports: ProbePorts;
@@ -51,6 +55,7 @@ export type ProbeOllamaTargetOptions = {
   samples?: number;
   userDialects?: UserDialects;
   declaredDialect?: DialectId;
+  metered?: MeteredMeasurement;
   signal?: AbortSignal;
 };
 
@@ -232,12 +237,15 @@ const ollamaTransport = (client: ProbeClient, model: string, contextWindow: numb
 
 export type OllamaMeasurement = { report: OllamaProbeReport; identity: string };
 
-export type MeasureOllamaOptions = Omit<ProbeOllamaTargetOptions, 'probeRecordDir' | 'lock' | 'key' | 'signal'>;
+export type MeasureOllamaOptions = Omit<ProbeOllamaTargetOptions, 'probeRecordDir' | 'lock' | 'key' | 'signal' | 'metered'> & {
+  metered?: { measurement: MeteredMeasurement; consented: () => Promise<MeasurementBound> };
+};
 
 export const measureOllama =
   (options: MeasureOllamaOptions): MeasureProbe<EndpointLockKey, OllamaMeasurement> =>
   async ({ key, signal, progress }) => {
     const { model, upstream } = options;
+    if (options.metered !== undefined) await options.metered.consented();
     const measured: Traffic = { bound: speedStepBound(options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS), gate: options.ports.gate };
     const step = (name: string): void => progress.step(name, measured.bound.currentMs(0));
     step('model details');
@@ -249,9 +257,7 @@ export const measureOllama =
     const serverVersion = versionOf(version);
     if (serverVersion === undefined) throw new Error(`the server at ${key.endpoint} did not answer ${VERSION_PATH} in Ollama's form`);
     const { trained, capabilities } = show;
-    if (options.contextWindow > trained) {
-      throw new Error(`the context window ${options.contextWindow} is above the trained context length ${trained} of model ${model}`);
-    }
+    if (options.contextWindow > trained) throw new DeclaredWindowAboveReportedError(model, options.contextWindow, trained, key.endpoint);
     const identity = digestIn(tags, model);
     if (identity === undefined) throw new Error(`the Ollama server does not list model ${model}; pull it with \`ollama pull ${model}\``);
     const imageInputAccepted = capabilities.includes('vision');
@@ -312,25 +318,31 @@ export type OllamaProbeSubjectOptions = {
   precondition: ProbePrecondition;
   measure: MeasureProbe<EndpointLockKey, OllamaMeasurement>;
   currency: DialectCurrency;
+  metered?: { measurement: MeteredMeasurement; samples: number };
 };
 
 export const ollamaProbeSubject = (options: OllamaProbeSubjectOptions): ProbeSubject<EndpointLockKey, OllamaMeasurement> => ({
   target: options.target,
   unknown: measuringAskOf(options.target, ['toolCalling']),
   readKey: async () => endpointLockKeyOf(options.key),
-  precondition: options.precondition,
+  precondition: options.metered === undefined ? options.precondition : meteredPrecondition(options.precondition, options.probeRecordDir, options.key, options.metered.measurement, options.metered.samples),
   measure: options.measure,
   save: (key, measured) => saveEndpointRecord(options.probeRecordDir, endpointKeyOfLock(key), measured.identity, [], measured.report, options.currency, options.lock),
 });
 
 export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Promise<ProbeOllamaTargetResult> => {
+  const { metered, ...measuring } = options;
   const subject = ollamaProbeSubject({
     target: endpointLockKeyOf(options.key).target,
     key: options.key,
     probeRecordDir: options.probeRecordDir,
     lock: options.lock,
     precondition: ollamaPrecondition(options.upstream, options.ports, options.model),
-    measure: measureOllama(options),
+    measure: measureOllama({
+      ...measuring,
+      ...(metered === undefined ? {} : { metered: meteredGateOf(options.probeRecordDir, options.key, metered, options.samples ?? DEFAULT_SAMPLES) }),
+    }),
+    ...(metered === undefined ? {} : { metered: { measurement: metered, samples: options.samples ?? DEFAULT_SAMPLES } }),
     currency: {
       userDialects: options.userDialects ?? NO_USER_DIALECTS,
       probeMethod: PROBE_METHOD_VERSION,

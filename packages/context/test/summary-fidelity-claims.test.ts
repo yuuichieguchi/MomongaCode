@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { attestedTokens, checkSummary, claimedTokens } from '@momonga/context';
+import * as context from '@momonga/context';
+import { checkSummary, claimedTokens } from '@momonga/context';
 import type { FidelityRecord, FidelitySource } from '@momonga/context';
+import { attestedIn } from './fidelity-support.ts';
 
 const CWD = '/proj';
 
 const record = (overrides: Partial<FidelityRecord> = {}): FidelityRecord => ({ executedLeaves: [], executedText: [], statedText: [], ...overrides });
 
 const fabricatedIn = (summary: string, from: FidelityRecord): string[] =>
-  checkSummary(summary, { attested: attestedTokens(claimedTokens(summary), from, CWD), pinned: '', critical: [], workingState: '' }).fabricated;
+  checkSummary(summary, { attested: attestedIn(claimedTokens(summary), from, CWD), pinned: '', critical: [], workingState: '' }).fabricated;
 
 const USER_ONLY = record({ statedText: ['please run `make deploy` when you are done'] });
 
@@ -49,41 +51,11 @@ describe('the previous summary attests nothing', () => {
     const previous = 'GOAL:\ng\nTODO:\ncreate `src/new.ts`';
     expect(checkSummary(previous, { attested: [], pinned: '', critical: [], workingState: '' }).fabricated).toEqual([]);
     const next = 'GOAL:\ng\nDONE:\ncreated `src/new.ts`';
-    const laundering = { attested: attestedTokens(claimedTokens(next), record(), CWD), pinned: '', critical: [], workingState: '', previousSummary: previous } as FidelitySource;
+    const laundering = { attested: [], pinned: '', critical: [], workingState: '', previousSummary: previous } as FidelitySource;
     expect(checkSummary(next, laundering).fabricated).toEqual(['src/new.ts']);
   });
 });
 
-describe('paths compared after stripping the working directory', () => {
-  it('matches an absolute path under the session cwd against a relative record', () => {
-    expect(attestedTokens([{ token: '/proj/lib/b.ts', claim: 'executed' }], record({ executedLeaves: ['lib/b.ts'] }), CWD)).toEqual(['/proj/lib/b.ts']);
-  });
-
-  it('does not match /other/lib/b.ts against a record that holds lib/b.ts', () => {
-    expect(attestedTokens([{ token: '/other/lib/b.ts', claim: 'executed' }], record({ executedLeaves: ['lib/b.ts'] }), CWD)).toEqual([]);
-  });
-
-  it('does not match a/b.ts inside xa/b.ts in recorded text', () => {
-    expect(attestedTokens([{ token: 'a/b.ts', claim: 'executed' }], record({ executedText: ['wrote xa/b.ts'] }), CWD)).toEqual([]);
-  });
-
-  it('matches a/b.ts at a path-segment boundary in recorded text', () => {
-    expect(attestedTokens([{ token: 'a/b.ts', claim: 'executed' }], record({ executedText: ['wrote ./a/b.ts and more'] }), CWD)).toEqual(['a/b.ts']);
-  });
-
-  it('does not match on a two-segment suffix of a different path', () => {
-    expect(attestedTokens([{ token: '/elsewhere/src/a.ts', claim: 'executed' }], record({ executedText: ['changed src/a.ts'] }), CWD)).toEqual([]);
-  });
-});
-
-describe('what each source attests', () => {
-  it('attests an any claim from stated text and not an executed claim', () => {
-    const from = record({ statedText: ['look at `make lint`'] });
-    expect(attestedTokens([{ token: 'make lint', claim: 'any' }], from, CWD)).toEqual(['make lint']);
-    expect(attestedTokens([{ token: 'make lint', claim: 'executed' }], from, CWD)).toEqual([]);
-  });
-
-  it('attests hex tokens in output text', () => {
-    expect(attestedTokens([{ token: 'abc1234', claim: 'executed' }], record({ executedText: ['commit abc1234 created'] }), CWD)).toEqual(['abc1234']);
-  });
+it('does not export the attestation of a record: the runtime fold attests sources by event type', () => {
+  expect('attestedTokens' in context).toBe(false);
 });

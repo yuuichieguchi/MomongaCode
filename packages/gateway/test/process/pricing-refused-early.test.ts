@@ -19,7 +19,7 @@ describe('a pricing list the settings refuse stops the gateway before any part i
       pricing: [PRICE, { ...PRICE, inputPerMTok: 9 }],
     });
     await expect(
-      registerOwned(context, () => startGatewayProcess({
+      registerOwned(context, () => startGatewayProcess({ platform: process.platform,
         locks: testLocks(),
         generation: FIRST_GENERATION,
         home,

@@ -1,4 +1,5 @@
 import { sha256Hex } from '@momonga/foundation';
+import { EDIT_TOOL_NAME, READ_TOOL_NAME } from '@momonga/protocol';
 import type { FileSystem } from '@momonga/foundation';
 import { writerChildOf } from './file-writer.ts';
 import { defineTool, ToolExecutionError } from '../types.ts';
@@ -105,8 +106,8 @@ const prepareEdit = async (input: EditInput, ctx: PreconditionContext): Promise<
 };
 
 export const editTool = defineTool<EditInput>({
-  name: 'Edit',
-  companionOf: 'Read',
+  name: EDIT_TOOL_NAME,
+  companionOf: READ_TOOL_NAME,
   description:
     'Replaces text in an existing file. file_path may be absolute or relative; a relative path is resolved against the working directory. The file must have been read with Read first and must be unchanged since. old_string must match exactly once (include surrounding context to make it unique) unless replace_all is true.',
   conciseDescription:
@@ -134,7 +135,7 @@ export const editTool = defineTool<EditInput>({
   timeoutMs: 30_000,
   title: async (input, ctx) => `Edit ${await shownPath(ctx, await accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
-  subject: (input, ctx) => ({ kind: 'path', tool: 'Edit', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
+  subject: (input, ctx) => ({ kind: 'path', tool: EDIT_TOOL_NAME, paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
   approval: async (input, ctx) => approvalOfPreparedWrite(await prepareEdit(input, ctx)),
   prepare: prepareEdit,
   execute: async (input, ctx, prepared) => {
@@ -168,5 +169,5 @@ export const editTool = defineTool<EditInput>({
       ...plan.diff,
     };
   },
-  reconcile: async (input, record, ctx) => reconcileWrite(record, 'Edit', ctx, resolvedPathOf(ctx, input.file_path)),
+  reconcile: async (input, record, ctx) => reconcileWrite(record, EDIT_TOOL_NAME, ctx, resolvedPathOf(ctx, input.file_path)),
 });

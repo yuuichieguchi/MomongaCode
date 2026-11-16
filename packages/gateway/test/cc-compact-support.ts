@@ -1,8 +1,8 @@
 import type { ChatCompletionsAdapter } from '@momonga/gateway';
 import { createSignedEnvelope } from '../src/core/signed-envelope.ts';
-import { WORKING_FACT_KINDS, applyCapabilityOverride } from '@momonga/protocol';
+import { WORKING_FACT_KINDS, imageCapability } from '@momonga/protocol';
 import { factKindsSentence } from '../src/adapters/shared/compact.ts';
-import type { CapabilityOverride, ToolCallingMode } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, ToolCallingMode } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 import { HMAC_KEY, chainOfServers, startGateway } from './gateway-helpers.ts';
 import type { ConfigOverrides, Harness } from './gateway-helpers.ts';
@@ -80,7 +80,10 @@ export const ccAdapterFor = (
   capabilities: CapabilityOverride = {},
 ): ChatCompletionsAdapter =>
   makeAdapter(fake, {
-    capabilities: async () => applyCapabilityOverride({ ...CC_CAPABILITIES, toolCalling }, capabilities),
+    capabilities: async () => {
+      const { imageInput, imageTokens, ...core } = capabilities;
+      return { ...CC_CAPABILITIES, toolCalling, ...core, ...imageCapability(imageInput ?? false, imageTokens) } as Capabilities;
+    },
   });
 
 export const CC_MODEL = 'system';

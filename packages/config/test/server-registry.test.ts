@@ -84,18 +84,17 @@ describe('config-C13: the record key of a declared server covers the file each p
       model: 'loom-1',
     });
 
-  it('lists the binary digest, the OS build and one file identity per path argument, whole or after the equals sign of an option', () => {
+  it('lists the binary digest and one file identity per path argument, whole or after the equals sign of an option, never the OS build', () => {
     expect(declaredWith(['serve', '--model', '/models/weights.gguf', '--adapter=/models/adapter.bin', '--threads', '4', '--socket', '{socket}']).identity).toEqual([
       'binarySha256',
-      'hostOsBuild',
       fileIdentityComponentOf('/models/weights.gguf'),
       fileIdentityComponentOf('/models/adapter.bin'),
     ]);
   });
 
   it('lists a path once when two arguments name it, and none for a server without path arguments', () => {
-    expect(declaredWith(['--model', '/models/weights.gguf', '--draft=/models/weights.gguf', '{socket}']).identity).toEqual(['binarySha256', 'hostOsBuild', fileIdentityComponentOf('/models/weights.gguf')]);
-    expect(declaredWith(['serve', 'relative/weights.gguf', '--socket', '{socket}']).identity).toEqual(['binarySha256', 'hostOsBuild']);
+    expect(declaredWith(['--model', '/models/weights.gguf', '--draft=/models/weights.gguf', '{socket}']).identity).toEqual(['binarySha256', fileIdentityComponentOf('/models/weights.gguf')]);
+    expect(declaredWith(['serve', 'relative/weights.gguf', '--socket', '{socket}']).identity).toEqual(['binarySha256']);
   });
 
   it('changes the key when the file of a path argument is replaced at the same path, and keeps it while the file stays', async () => {

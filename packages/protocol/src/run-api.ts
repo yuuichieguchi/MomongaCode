@@ -9,14 +9,14 @@ import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.t
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { PLAN_LABEL_PATTERN } from './plan-account.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
-import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
+import { CHARGE_VIEW_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
 import type { PrefixEvent } from './prefix-events.ts';
 import { BILLING_CHANGE_REASONS } from './fallback-cause.ts';
 import type { FallbackCause, SpanFallbackCause } from './fallback-cause.ts';
 import { TARGET_BILLINGS } from './capabilities.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
-import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
+import type { ChargeViewPurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { BUDGET_CAUSES, BUDGET_DIMENSIONS, HELD_OUTCOMES, MAX_COST_USD } from './budget.ts';
@@ -985,7 +985,7 @@ const costTotalsSchemaProperties: Record<string, JsonSchema> = {
 const contextChargeView = closed(
   {
     id: integer,
-    purpose: storedEnumOf(CONTEXT_CHARGE_PURPOSES),
+    purpose: storedEnumOf(CHARGE_VIEW_PURPOSES),
     runId: nullable(string),
     project: string,
     model: string,
@@ -1378,7 +1378,7 @@ export type GatewayCostReportView = {
 
 export type ContextChargeView = {
   id: number;
-  purpose: Stored<ContextChargePurpose>;
+  purpose: Stored<ChargeViewPurpose>;
   runId: string | null;
   project: string;
   model: string;

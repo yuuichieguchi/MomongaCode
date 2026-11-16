@@ -20,7 +20,10 @@ export const provideEmbeddedWindowsKeeper = (
 ): void => {
   if (!launchesThroughKeeper()) return;
   if (assets === undefined) {
-    provide(async () => hostSourceBuiltWindowsKeeper((await pathsOf(ports)).executables));
+    provide(async () => {
+      const paths = await pathsOf(ports);
+      return hostSourceBuiltWindowsKeeper(paths.executables, resolveLayoutLocks(paths).mechanism)();
+    });
     return;
   }
   if (!assets.present(WINDOWS_KEEPER_MANIFEST_ASSET)) return;

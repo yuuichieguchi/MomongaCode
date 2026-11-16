@@ -16,7 +16,7 @@ describe('gateway process ports', () => {
     writeSettings(home, { models: modelsOf({ primary: ccTarget('/nonexistent/upstream.sock') }) });
     const lines: string[] = [];
     const asked: string[] = [];
-    const handle = await registerOwned(context, () => startGatewayProcess({
+    const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home,

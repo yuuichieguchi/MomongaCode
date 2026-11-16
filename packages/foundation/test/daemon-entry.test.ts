@@ -64,7 +64,7 @@ const fakeIo = (argv: readonly string[]) => {
   const exits: number[] = [];
   let lifelineFailure: Error | undefined;
   let logFileFailure: Error | undefined;
-  const io: EntryIo = {
+  const io: EntryIo = { platform: process.platform,
     argv,
     env: { HOME },
     home: HOME,

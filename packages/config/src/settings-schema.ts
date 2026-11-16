@@ -351,7 +351,7 @@ const OPEN_RESPONSES_CONNECTION_SCHEMA = {
 const PLAN_REFERENCE_SCHEMA = {
   type: 'object',
   properties: {
-    profile: { type: 'string', minLength: 1 },
+    profile: { type: 'string', pattern: PLAN_LABEL_PATTERN },
     account: { type: 'string', pattern: PLAN_LABEL_PATTERN },
   },
   required: ['profile'],

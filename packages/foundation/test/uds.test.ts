@@ -449,3 +449,43 @@ describe('listenUnix lock options', () => {
     expect(server.listening).toBe(false);
   });
 });
+
+describe('createUdsClient after a retired generation', () => {
+  it('a pooled connection that answered generation_retired is not reused: the next request reaches the new generation', async () => {
+    const dir = makeDir();
+    const retiringSocket = path.join(dir, 'retiring.sock');
+    const liveSocket = path.join(dir, 'live.sock');
+    let retiring = false;
+    const retiringGeneration = track(
+      http.createServer((_request, response) => {
+        if (!retiring) {
+          response.writeHead(200, { 'content-type': 'application/json' });
+          response.end(JSON.stringify({ generation: 'retiring' }));
+          return;
+        }
+        response.writeHead(503, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: { code: 'generation_retired', message: 'this generation is retiring' } }));
+      }),
+    );
+    await listenUnix(retiringGeneration, retiringSocket, { mechanism: testKernelLock() }, realProcessTestSignal());
+    const liveGeneration = track(
+      http.createServer((_request, response) => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ generation: 'live' }));
+      }),
+    );
+    await listenUnix(liveGeneration, liveSocket, { mechanism: testKernelLock() }, realProcessTestSignal());
+    let current = retiringSocket;
+    const pool = createUdsClient(() => Promise.resolve(current), { connectTimeoutMs: 0 });
+    cleanups.push(() => pool.close());
+    expect(await (await pool.request({ method: 'GET', path: '/v1/models' })).json()).toEqual({ generation: 'retiring' });
+    retiring = true;
+    const refused = await pool.request({ method: 'GET', path: '/v1/models' });
+    expect(refused.status).toBe(503);
+    expect(await refused.text()).toContain('generation_retired');
+    current = liveSocket;
+    const answered = await pool.request({ method: 'GET', path: '/v1/models' });
+    expect(answered.status).toBe(200);
+    expect(await answered.json()).toEqual({ generation: 'live' });
+  });
+});

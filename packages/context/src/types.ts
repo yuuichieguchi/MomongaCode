@@ -150,7 +150,7 @@ export type BuildContextPorts = {
   fallbackMeters?: readonly TokenMeter[];
   blobs: BlobPort;
   instructions: InstructionReader;
-  compactionTarget?: () => Promise<Capabilities>;
+  compactionRole?: () => Promise<{ capabilities: Capabilities; meter: TokenMeter }>;
 };
 
 export type Calibration = { tokenCounting: Capabilities['tokenCounting']; tokenErrorRatio?: number };

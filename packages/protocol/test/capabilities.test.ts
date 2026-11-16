@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { applyCapabilityOverride, imageCapability } from '../src/index.ts';
-import type { Capabilities } from '../src/index.ts';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import * as protocol from '../src/index.ts';
+import { REMEDY_SURFACES, SURFACES, imageCapability } from '../src/index.ts';
+import type { Capabilities, RemedySurface, Surface } from '../src/index.ts';
 
 const BASE: Capabilities = {
   contextWindow: 8192,
@@ -35,18 +36,13 @@ describe('imageCapability', () => {
   });
 });
 
-describe('applyCapabilityOverride', () => {
-  it('refuses an override that enables images without a token model', () => {
-    expect(() => applyCapabilityOverride(BASE, { imageInput: true })).toThrow(/imageTokens/);
+describe('the one surface type and the capability override', () => {
+  it('keys the remedy surface on the Surface type of the vocabulary', () => {
+    expect(REMEDY_SURFACES).toEqual(SURFACES);
+    expectTypeOf<RemedySurface>().toEqualTypeOf<Surface>();
   });
 
-  it('keeps the declared model when only other fields are overridden', () => {
-    const seeing = applyCapabilityOverride(BASE, { imageInput: true, imageTokens: MODEL });
-    expect(applyCapabilityOverride(seeing, { contextWindow: 4096 })).toEqual({ ...seeing, contextWindow: 4096 });
-  });
-
-  it('drops the declared model when the override disables images', () => {
-    const seeing = applyCapabilityOverride(BASE, { imageInput: true, imageTokens: MODEL });
-    expect(applyCapabilityOverride(seeing, { imageInput: false })).toEqual({ ...BASE });
+  it('exports no capability override: the protocol export list omits applyCapabilityOverride', () => {
+    expect(Object.keys(protocol)).not.toContain('applyCapabilityOverride');
   });
 });

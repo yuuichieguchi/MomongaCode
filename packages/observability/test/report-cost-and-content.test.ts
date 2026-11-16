@@ -9,7 +9,7 @@ type RunCost = { runId: string; calls: number; notPriced: number; priced: { curr
 type RunCostsOf = (runIds: readonly string[], calls: readonly { runId: string; price: CallPrice }[]) => RunCost[];
 type StoredBody = { id: number; body: BodyRecord };
 type BodyStore = TraceStore & { bodiesOfRunAfter(runId: string, afterId: number, limit: number): StoredBody[] };
-type ContentPage = { bodies: { id: number; spanId: string; kind: string; content: string; createdAtMs: number; expiresAtMs: number }[]; next: number | null };
+type ContentPage = { bodies: { id: number; spanId: string; kind: string; content: string; createdAtMs: number }[]; next: number | null };
 type PageRunBodies = (store: TraceStore, runId: string, afterId: number, limit: number) => ContentPage;
 
 const exported = <T>(name: string): T => {
@@ -32,13 +32,12 @@ const span = (spanId: string, runId: string | null): SpanRecord => ({
   runId,
 });
 
-const body = (spanId: string, content: string, expiresAtMs: number): BodyRecord => ({
+const body = (spanId: string, content: string): BodyRecord => ({
   traceId: 'trace-1',
   spanId,
   kind: observability.BODY_KINDS[0] as BodyRecord['kind'],
   content,
   createdAtMs: START_MS,
-  expiresAtMs,
 });
 
 describe('runCostsOf (X6: the priced units of the billed calls of each run)', () => {
@@ -85,11 +84,11 @@ describe('the stored bodies of a run (trace --content)', () => {
     store.writeSpans(
       [span('span-1', 'run-1'), span('span-2', 'run-1'), span('span-other', 'run-2')],
       [
-        body('span-1', 'first', START_MS + 1000),
-        body('span-other', 'of another run', START_MS + 1000),
-        body('span-2', 'second', START_MS + 1000),
-        body('span-2', 'expired', START_MS + 10),
-        body('span-1', 'third', START_MS + 1000),
+        body('span-1', 'first'),
+        body('span-other', 'of another run'),
+        body('span-2', 'second'),
+        body('span-2', 'expired'),
+        body('span-1', 'third'),
       ],
     );
     return { store: store as BodyStore, clock };
@@ -111,7 +110,7 @@ describe('the stored bodies of a run (trace --content)', () => {
     const bound = exported<number>('MAX_TRACE_CONTENT_PAGE');
     const first = pageRunBodies(store, 'run-1', 0, 2);
     expect(first.bodies.map((entry) => entry.content)).toEqual(['first', 'second']);
-    expect(first.bodies[0]).toMatchObject({ spanId: 'span-1', createdAtMs: START_MS, expiresAtMs: START_MS + 1000 });
+    expect(first.bodies[0]).toMatchObject({ spanId: 'span-1', createdAtMs: START_MS });
     expect(first.next).toBe((first.bodies[1] as { id: number }).id);
     const last = pageRunBodies(store, 'run-1', first.next as number, 2);
     expect(last.bodies.map((entry) => entry.content)).toEqual(['expired', 'third']);

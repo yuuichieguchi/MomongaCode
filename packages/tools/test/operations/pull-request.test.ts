@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createForgeAccess, loadForgeDescriptors, parseForgeDescriptor } from '@momonga/tools';
 import type { ForgeAccess, ForgeDescriptor, OperationSettings } from '@momonga/tools';
-import { LAB_DESCRIPTOR, startFakeForge } from '@momonga/testkit';
+import { LAB_DESCRIPTOR, REAL_PROCESS_TEST_TIMEOUT_MS, startFakeForge } from '@momonga/testkit';
 import type { FakeForge, ForgeShape } from '@momonga/testkit';
 import { contextFor, countingRunner, TEST_FETCH, makeGitWorld, onCleanup, operationTool, partsOf, settle, subjectFor } from './support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CREDENTIAL = 'fake-forge-credential-for-tests';
 const HEAD_SHA = 'a'.repeat(40);
