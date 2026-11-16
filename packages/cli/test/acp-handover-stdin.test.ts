@@ -151,7 +151,7 @@ describe('the standard input of an ACP connection across a handover', () => {
 
     const encoded = encodeRecord(record, { writer: 4242, reader: 4242, namespace: 'single' });
     if (encoded.kind !== 'fits') throw new Error('the record did not fit');
-    const next = serve(home, { file: '/h/run/handover/acp-41.json', session: 'acp-41', parsed: parseRecord(encoded.text), terminal: undefined });
+    const next = serve(home, { file: '/h/run/handover/acp-41.json', parsed: parseRecord(encoded.text), terminal: undefined });
     const second = await next.output.until(answers(2));
     const third = await next.output.until(answers(3));
 
