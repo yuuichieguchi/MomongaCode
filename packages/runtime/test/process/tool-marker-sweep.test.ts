@@ -6,7 +6,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, withTe
 import type { CleanupContext } from '@momonga/testkit';
 import { TOOL_MARKER_SWEEP_MS } from '../../src/process/constants.ts';
 import { START_MS, writeUserSettings } from './helpers.ts';
-import { SERVING_TICK_MS, entriesNamed, launchRuntime, modelSettings, passServingTime } from './run-helpers.ts';
+import { SERVING_TICK_MS, entriesNamed, launchRuntime, modelSettings, passServingTime, startStack } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -82,12 +82,12 @@ describe('tool marker sweep wiring (§8)', () => {
     expect(timers.pending()).toEqual([]);
   });
 
-  it('a sweep tick whose listing never answers is ended at the sweep interval, and the next tick starts', async (context) => {
+  it('a sweep tick whose listing never answers is ended at the sweep interval, and the next tick starts', async () => {
     markerSweeps.neverAnswers = true;
-    const temp = trackedRunHome(context);
+    const stack = await startStack({}, { sandbox: 'none' });
     const clock = createFakeClock(START_MS);
     const timers = createFakeTimers(clock);
-    const launched = await launchRuntime(temp, { clock, fakeTimers: timers, leaseMs: NON_SWEEP_LEASE_MS });
+    const launched = await launchRuntime(stack.temp, { clock, fakeTimers: timers, leaseMs: NON_SWEEP_LEASE_MS });
 
     await passServingTime(timers, TOOL_MARKER_SWEEP_MS, () => markerSweeps.signals.length === 1, 'the first sweep tick to start');
     expect(markerSweeps.signals[0]?.aborted).toBe(false);

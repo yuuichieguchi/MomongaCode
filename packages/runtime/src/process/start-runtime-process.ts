@@ -923,6 +923,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         onSkipped: (project) => logger.warn(`memory upkeep skipped the project ${project}: the folder no longer exists`),
       });
       const sweepStop = new AbortController();
+      const reportUnlessStopped = (error: unknown): void => {
+        if (sweepStop.signal.aborted && !isFatalStoreError(error)) logger.info('background.work.stopped', { err: asError(error) });
+        else report(error);
+      };
       const issueWatch: IssueWatchOptions = {
         view: async (viewSignal) => {
           const snapshot = await settingsComposition.userSnapshot(viewSignal);
@@ -935,7 +939,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       };
       const servingTasks = createServingTasks({
         clock,
-        report,
+        report: reportUnlessStopped,
         loops: [
           {
             start: () => {
@@ -1115,11 +1119,11 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       };
       await applyRole(rolePort.current());
       periodics.push(
-        startPeriodic({ intervalMs: SWEEP_INTERVAL_MS, run: async () => applyRole(await rolePort.refresh()), timers, report }),
+        startPeriodic({ intervalMs: SWEEP_INTERVAL_MS, run: async () => applyRole(await rolePort.refresh()), timers, report: reportUnlessStopped }),
         startPeriodic({ intervalMs: SESSION_STATE_SWEEP_MS, run: () => {
             toolRuntime.sessionStates.evictIdle(clock.now());
-          }, timers, report }),
-        startPeriodic({ intervalMs: STORE_IDENTITY_CHECK_MS, run: () => store.checkIdentity(), timers, report }),
+          }, timers, report: reportUnlessStopped }),
+        startPeriodic({ intervalMs: STORE_IDENTITY_CHECK_MS, run: () => store.checkIdentity(), timers, report: reportUnlessStopped }),
         startPeriodic({
           intervalMs: ISSUE_WATCH_POLL_MS,
           run: async () => {
@@ -1127,7 +1131,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             await sweepIssueWatch(issueWatch, sweepStop.signal);
           },
           timers,
-          report,
+          report: reportUnlessStopped,
         }),
       );
       cleanups.push({

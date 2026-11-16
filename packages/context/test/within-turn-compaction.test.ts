@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ContextOverflowError, buildContext } from '@momonga/context';
 import { summaryInputCeilingFor } from '../src/budget.ts';
-import { SUMMARY_PROMPT_TOKENS, summaryPromptTokensFor, summaryTokenCapFor } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, SUMMARY_PROMPT_TOKENS, summaryPromptTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { CompactionInputItem, InputItem, MessageInputItem } from '@momonga/protocol';
 import {
   READ_TOOL,
@@ -32,6 +32,7 @@ const capabilities = capabilitiesFor(4000);
 const ITEM_CAP = 730;
 const SUMMARY_CAP = 240;
 const PINNED_TEXT = 'You are MomongaCode.\nDo the task.';
+const PROMPT_CHARS = SUMMARY_PROMPT_TOKENS * ESTIMATED_CHARACTERS_PER_TOKEN;
 
 const itemsOf = (history: readonly HistoryItem[], throughSeq: number): InputItem[] =>
   history.filter((entry) => entry.seq <= throughSeq).map((entry) => entry.item as InputItem);
@@ -119,7 +120,7 @@ describe('forced compaction inside one turn', () => {
   });
 
   it('takes the latest cut before the last step at the last level', async () => {
-    const history = stepsOf([930, 930, 2150, 2150, 2150, 2370]);
+    const history = stepsOf([930, 930, 3854 - PROMPT_CHARS, 2150, 2150, PROMPT_CHARS + 666]);
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
 
     expect(error.lastLevel).toBe(true);
@@ -158,10 +159,10 @@ describe('forced compaction inside one turn', () => {
   });
 
   it.for([
-    { chars: 9111, inputTokens: 2944, fits: true },
-    { chars: 9115, inputTokens: 2945, fits: false },
+    { chars: 10815 - PROMPT_CHARS, inputTokens: 2944, fits: true },
+    { chars: 10819 - PROMPT_CHARS, inputTokens: 2945, fits: false },
   ])('includes the task in the summary request budget (step of $chars characters)', async ({ chars, inputTokens, fits }) => {
-    const history = [argsCall(1, 'c0', chars), output(2, 'c0', 'ok'), argsCall(3, 'c1', 2207), output(4, 'c1', 'ok')];
+    const history = [argsCall(1, 'c0', chars), output(2, 'c0', 'ok'), argsCall(3, 'c1', PROMPT_CHARS + 503), output(4, 'c1', 'ok')];
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
 
     expect(error.inputTokens).toBe(inputTokens);

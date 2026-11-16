@@ -46,7 +46,7 @@ const renderingMeter = (toolCalling: ToolCallingMode): TokenMeter => {
       const lenient = request.momonga?.lenient_items;
       if (typeof request.input === 'string' || lenient === undefined) throw new Error('the output fit counts one item through the lenient render');
       const wire = adapter.renderWire?.(
-        { model: TARGET.model, input: request.input as AdapterInputItem[] },
+        { model: TARGET.model, input: request.input as AdapterInputItem[], fence: TEST_FENCE },
         TARGET,
         { lenientItems: { callNames: lenient.call_names, withTools: lenient.with_tools }, reasoningOrigin: { own: (item) => item }, capabilities },
       );

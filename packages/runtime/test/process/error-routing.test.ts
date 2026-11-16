@@ -14,6 +14,7 @@ const control = vi.hoisted(() => ({
   purge: undefined as Injection,
   sessionActivity: undefined as Injection,
   getRun: undefined as Injection,
+  retentionHolds: false,
   injected: 0,
 }));
 
@@ -43,6 +44,17 @@ vi.mock('@momonga/store', async (importOriginal) => {
       return new Proxy(store, {
         get: (target, key, receiver) => {
           if (key === 'idempotency') return idempotency;
+          if (key === 'retention') {
+            return {
+              ...target.retention,
+              sweep: (request: Parameters<typeof target.retention.sweep>[0], signal: AbortSignal) =>
+                control.retentionHolds
+                  ? new Promise<never>((_resolve, reject) => {
+                      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+                    })
+                  : target.retention.sweep(request, signal),
+            };
+          }
           if (key === 'sessionActivity') {
             return (sessionId: string) => {
               fire(control.sessionActivity);
@@ -76,6 +88,7 @@ beforeEach(() => {
   control.purge = undefined;
   control.sessionActivity = undefined;
   control.getRun = undefined;
+  control.retentionHolds = false;
   control.injected = 0;
 });
 
@@ -128,6 +141,18 @@ describe('error routing of composition-owned callbacks through report (fake time
     await passServingTime(launched.timers, HOUR_MS, () => control.injected > 0, 'the purge at the first serving tick after the hour');
     await afterMicrotasks();
     await expectLatched(launched, error);
+  });
+
+  it('a fatal store error from the hourly purge ends the retention sweep it stops without a runtime error', async () => {
+    const launched = await launchFake();
+    const error = fatalStoreError();
+    control.purge = { error, frame: '' };
+    control.retentionHolds = true;
+    await passServingTime(launched.timers, HOUR_MS, () => control.injected > 0, 'the purge at the first serving tick after the hour');
+    await afterMicrotasks();
+    await expectLatched(launched, error);
+    await launched.handle.close();
+    expect(entriesNamed(launched.logger, 'runtime error')).toEqual([]);
   });
 
   it('a non-fatal error from the hourly purge is only logged and the purge keeps running', async () => {
