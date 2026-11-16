@@ -15,9 +15,23 @@ export const FENCE_BOUNDARY_MARKER = '[fence-boundary]';
 
 const withoutBoundary = (text: string, boundary: string): string => text.replaceAll(boundary, FENCE_BOUNDARY_MARKER);
 
-export const fenceUntrusted = (tag: string, attributes: Readonly<Record<string, string>>, text: string, boundary: string): string => {
-  const named = Object.entries(attributes).map(([name, value]) => ` ${name}=${JSON.stringify(value)}`).join('');
-  return `<${tag}${named} boundary="${boundary}">\n${withoutBoundary(text, boundary)}\n</${tag} boundary="${boundary}">`;
+const fenceHeadOf = (tag: string, attributes: Readonly<Record<string, string>>, boundary: string): string =>
+  `<${tag}${Object.entries(attributes).map(([name, value]) => ` ${name}=${JSON.stringify(value)}`).join('')} boundary="${boundary}">\n`;
+
+const fenceTailOf = (tag: string, boundary: string): string => `\n</${tag} boundary="${boundary}">`;
+
+export const fenceUntrusted = (tag: string, attributes: Readonly<Record<string, string>>, text: string, boundary: string): string =>
+  `${fenceHeadOf(tag, attributes, boundary)}${withoutBoundary(text, boundary)}${fenceTailOf(tag, boundary)}`;
+
+const isFencedBy = (text: string, tag: string, attributes: Readonly<Record<string, string>>, boundary: string): boolean => {
+  const head = fenceHeadOf(tag, attributes, boundary);
+  const tail = fenceTailOf(tag, boundary);
+  return text.length >= head.length + tail.length && text.startsWith(head) && text.endsWith(tail) && !text.slice(head.length, text.length - tail.length).includes(boundary);
+};
+
+export const fenceToolOutput = (call: string, tool: string, output: string, boundary: string): string => {
+  const attributes = { call, tool };
+  return isFencedBy(output, TOOL_OUTPUT_TAG, attributes, boundary) ? output : fenceUntrusted(TOOL_OUTPUT_TAG, attributes, output, boundary);
 };
 
 export const imageDataUrl = (image: ImageAttachment): string => `data:${image.mediaType};base64,${image.data}`;
