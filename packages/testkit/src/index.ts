@@ -306,3 +306,5 @@ export { TEST_CHILD_UNPROTECTED, TEST_STDIO_LAUNCH } from './child-protection.ts
 export { testEndpointScope } from './endpoint-scope.ts';
 export { TEST_BUILTIN_TOOL_OFFER, TEST_TOOL_LIMITS } from './tool-limits.ts';
 export { TEST_UNPROTECTED_LAUNCH } from './test-launch.ts';
+export { PropertyFailure, forEachSeed, seededGenerator, seedsFrom } from './property.ts';
+export type { Generator } from './property.ts';
