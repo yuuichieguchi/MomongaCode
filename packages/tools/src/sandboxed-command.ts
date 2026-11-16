@@ -92,7 +92,7 @@ export const runSandboxedCommand = async (request: SandboxedCommandRequest): Pro
     try {
       [exit, groupNotice] = await Promise.all([child.exited, groupRecordOutcome(recordMarkerGroup(markerFile, child.pgid), markerFile)]);
       await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: controller.signal });
-      drained = await pump.drainAfterExit(request.drainIdleMs);
+      drained = await pump.drainAfterExit(request.drainIdleMs, controller.signal);
     } finally {
       await pump.close();
     }

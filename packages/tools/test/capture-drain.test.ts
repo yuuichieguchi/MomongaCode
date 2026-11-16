@@ -20,13 +20,13 @@ describe('the output of a child after it exited is read by one bounded reader', 
     stream.write('all\n');
     stream.end();
 
-    expect(await pump.drainAfterExit(IDLE_MS)).toEqual({ complete: true });
+    expect(await pump.drainAfterExit(IDLE_MS, new AbortController().signal)).toEqual({ complete: true });
     expect(text()).toBe('all\n');
   });
 
   it('keeps reading while a writer that outlives the exit sends a chunk within each idle gap', async () => {
     const { timers, stream, pump, text } = setup();
-    const draining = pump.drainAfterExit(IDLE_MS);
+    const draining = pump.drainAfterExit(IDLE_MS, new AbortController().signal);
     for (const chunk of ['a', 'b', 'c', 'd']) {
       await timers.advanceAsync(400);
       stream.write(chunk);
@@ -42,7 +42,7 @@ describe('the output of a child after it exited is read by one bounded reader', 
   it('stops after the idle gap without data and says the output may be incomplete', async () => {
     const { timers, stream, pump } = setup();
     stream.write('x');
-    const draining = pump.drainAfterExit(IDLE_MS);
+    const draining = pump.drainAfterExit(IDLE_MS, new AbortController().signal);
     await timers.advanceAsync(IDLE_MS);
 
     expect(await draining).toEqual({ complete: false, note: drainIncompleteNote({ kind: 'idle', idleMs: IDLE_MS }) });
@@ -51,9 +51,34 @@ describe('the output of a child after it exited is read by one bounded reader', 
 
   it('stops when the output after the exit passes the byte bound, and says so', async () => {
     const { stream, pump } = setup();
-    const draining = pump.drainAfterExit(IDLE_MS);
+    const draining = pump.drainAfterExit(IDLE_MS, new AbortController().signal);
     stream.write(Buffer.alloc(DRAIN_RESIDUE_MAX_BYTES + 1, 0x61));
 
     expect(await draining).toEqual({ complete: false, note: drainIncompleteNote({ kind: 'bytes', maxBytes: DRAIN_RESIDUE_MAX_BYTES }) });
+  });
+
+  it('stops at the end of its owner, the call or the job, while a steady writer keeps every idle gap filled, and says so', async () => {
+    const { timers, stream, pump, text } = setup();
+    const owner = new AbortController();
+    const draining = pump.drainAfterExit(IDLE_MS, owner.signal);
+    for (const chunk of ['a', 'b', 'c']) {
+      await timers.advanceAsync(400);
+      stream.write(chunk);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    owner.abort();
+
+    expect(await draining).toEqual({ complete: false, note: drainIncompleteNote({ kind: 'owner' }) });
+    expect(drainIncompleteNote({ kind: 'owner' })).toBe('Stopped reading output when the time of the command ran out; output may be incomplete.');
+    expect(text()).toBe('abc');
+  });
+
+  it('does not start reading when its owner has already ended', async () => {
+    const { stream, pump } = setup();
+    stream.write('x');
+    const owner = new AbortController();
+    owner.abort();
+
+    expect(await pump.drainAfterExit(IDLE_MS, owner.signal)).toEqual({ complete: false, note: drainIncompleteNote({ kind: 'owner' }) });
   });
 });

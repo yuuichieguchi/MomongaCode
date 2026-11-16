@@ -160,7 +160,7 @@ const runEffect = async (ports: SandboxedRunnerPorts, argv: readonly string[], o
     try {
       const [exit] = await Promise.all([child.exited, attached]);
       await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: options.signal });
-      const drained = await pump.drainAfterExit(context.limits.bash.drainIdleMs);
+      const drained = await pump.drainAfterExit(context.limits.bash.drainIdleMs, AbortSignal.any([options.signal, context.expired]));
       const failure = pump.failure();
       if (failure !== undefined) throw failure.error;
       const stderr = redact(captures[1].text());

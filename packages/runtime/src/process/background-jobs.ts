@@ -74,6 +74,8 @@ type LiveJob = {
   file: JobOutputFile;
   stopReason: StopReason | undefined;
   finalized: Promise<void>;
+  timeEnded: AbortController;
+  exited: boolean;
 };
 
 const slotsTaken = (running: number): ToolExecutionError =>
@@ -116,7 +118,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
   const drain = async (entry: LiveJob, reader: JobOutputReader, drainIdleMs: number): Promise<boolean> => {
     let drained;
     try {
-      drained = await reader.drainAfterExit(drainIdleMs);
+      drained = await reader.drainAfterExit(drainIdleMs, AbortSignal.any([entry.timeEnded.signal, entry.controller.signal, lifecycle]));
     } finally {
       await reader.close();
     }
@@ -180,7 +182,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     try {
       const [exit, groupNotice] = await Promise.all([process.exited, groupRecordOutcome(recordMarkerGroup(marker, process.pgid), marker)]);
       if (groupNotice !== undefined) entry.output.push(Buffer.from(`\n${groupNotice}\n`));
-      timers.clearTimeout(timer);
+      entry.exited = true;
       const probe = endProbeBound();
       let ended: EndProbe | undefined;
       try {
@@ -222,6 +224,12 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       options.onSettled?.();
     }
   };
+
+  const timeLimitOf = (entry: LiveJob, timeoutMs: number): unknown =>
+    timers.setTimeout(() => {
+      entry.timeEnded.abort();
+      if (!entry.exited) void stop(entry, 'timeout');
+    }, timeoutMs);
 
   const stop = (entry: LiveJob, reason: StopReason): Promise<void> => {
     if (entry.stopReason === undefined) {
@@ -362,8 +370,8 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       },
       timers,
     );
-    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve() };
-    const timer = timers.setTimeout(() => void stop(entry, 'timeout'), request.timeoutMs);
+    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve(), timeEnded: new AbortController(), exited: false };
+    const timer = timeLimitOf(entry, request.timeoutMs);
     entry.finalized = finalize(entry, process, reader, request.drainIdleMs, timer);
     entry.finalized.catch(report);
     live.set(job.id, entry);
@@ -429,8 +437,8 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       output.push(chunk);
       file.append(chunk);
     });
-    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve() };
-    const timer = timers.setTimeout(() => void stop(entry, 'timeout'), request.timeoutMs);
+    const entry: LiveJob = { job, controller, output, file, stopReason: undefined, finalized: Promise.resolve(), timeEnded: new AbortController(), exited: false };
+    const timer = timeLimitOf(entry, request.timeoutMs);
     entry.finalized = finalize(entry, process, request.output, request.drainIdleMs, timer);
     entry.finalized.catch(report);
     live.set(job.id, entry);

@@ -673,6 +673,24 @@ describe('the output of a background job after its command ended is read by the 
     expect(t.store.idempotency.get(key)).not.toHaveProperty('result.output');
   });
 
+  it('stops reading at the time of the job while a steady writer keeps every idle gap filled, and marks the record incomplete', async () => {
+    const t = await setup();
+    const { jobId } = await t.start('call-1', 'sleep 30', 2000);
+    const process = t.spawned[0] as FakeProcess;
+    process.exitLeavingStreams({ code: 0, signal: null, stop: 'confirmed' });
+    await drainArmed(t);
+    for (let line = 0; line < 4; line += 1) {
+      t.timers.advance(CHUNK_GAP_MS);
+      await process.stdoutStream.write(`line ${line}\n`);
+    }
+    t.timers.advance(CHUNK_GAP_MS);
+    await t.settled(jobId);
+    const done = await t.jobs.read(t.run.id, jobId, { call: 'read-1' });
+    expect(done.output).toContain('Stopped reading output when the time of the command ran out; output may be incomplete.');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    expect(t.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED', result: { job: jobId, status: 'exited', output: { incomplete: true } } });
+  });
+
   it('stops reading after the idle gap, writes the note into the output and marks the record incomplete', async () => {
     const t = await setup();
     const { jobId } = await t.start('call-1');

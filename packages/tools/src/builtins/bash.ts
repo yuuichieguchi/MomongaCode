@@ -377,8 +377,8 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
                 forward = filtered.push;
                 flushForwarded = filtered.flush;
               },
-              drainAfterExit: async (idleMs) => {
-                const drained = await pump.drainAfterExit(idleMs);
+              drainAfterExit: async (idleMs, owner) => {
+                const drained = await pump.drainAfterExit(idleMs, owner);
                 flushForwarded?.();
                 return drained;
               },
@@ -403,7 +403,7 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
       if (groupNotice !== undefined) notes.push(groupNotice);
       if (exit.stop === 'not_confirmed') notes.push(STOP_NOT_CONFIRMED_NOTE);
       notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
-      const drained = await pump.drainAfterExit(ctx.limits.bash.drainIdleMs);
+      const drained = await pump.drainAfterExit(ctx.limits.bash.drainIdleMs, AbortSignal.any([ctx.signal, ctx.expired]));
       if (!drained.complete) {
         notes.push(drained.note);
         residue = true;
@@ -489,7 +489,7 @@ export const runUserCommand = async (host: UserCommandHost): Promise<UserCommand
   let drained: Drained;
   try {
     exit = await child.exited;
-    drained = await pump.drainAfterExit(host.drainIdleMs);
+    drained = await pump.drainAfterExit(host.drainIdleMs, host.signal);
   } finally {
     await pump.close();
   }
