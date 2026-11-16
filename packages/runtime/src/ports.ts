@@ -48,6 +48,7 @@ export type TargetFacts = { adapter: string; model: string; answers?: TargetAnsw
 
 export type SettingsPort = {
   rules(session: Pick<Session, 'cwd'>, signal: AbortSignal): Promise<PermissionRule[]>;
+  sandboxNetwork(session: Pick<Session, 'cwd' | 'sandboxNetwork'>, signal: AbortSignal): Promise<SandboxNetworkSetting>;
   hooks(session: Session, signal: AbortSignal): Promise<HooksSettings>;
   verification(session: Session, signal: AbortSignal): Promise<ResolvedVerificationSettings>;
   memory(target: Pick<Session, 'cwd'>, signal: AbortSignal): Promise<ResolvedMemorySettings>;
