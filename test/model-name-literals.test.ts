@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { isGeneratedSource } from './support/source-scan.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
@@ -35,7 +36,7 @@ const filesUnder = (directory: string): string[] =>
   fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(directory, entry.name);
     if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : filesUnder(full);
-    return entry.isFile() ? [full] : [];
+    return entry.isFile() && !isGeneratedSource(entry.name) ? [full] : [];
   });
 
 const sourceFiles = (): string[] =>
@@ -68,6 +69,15 @@ describe('no name is made from a model id or a port, and no model is named defau
     const holders = pairsOf(sourceFiles(), PORT_RULES);
     expect(holders.filter((pair) => !ADDRESSES_AS_DATA.some((file) => pair.startsWith(`${file}: `)))).toEqual([]);
     expect(holders.filter((pair) => pair.startsWith(`${ADDRESSES_AS_DATA[0]}: `))).toEqual([`${ADDRESSES_AS_DATA[0]}: 11434`, `${ADDRESSES_AS_DATA[0]}: 1234`].sort());
+  });
+
+  it('reads no generated bundle: the one marker of a generated file leaves it out of the scope', () => {
+    const generated = fs.readdirSync(packagesDir).flatMap((name) => {
+      const src = path.join(packagesDir, name, 'src');
+      return fs.existsSync(src) ? fs.readdirSync(src, { recursive: true, encoding: 'utf8' }).filter(isGeneratedSource) : [];
+    });
+    expect(generated.length).toBeGreaterThan(0);
+    expect(sourceFiles().filter(isGeneratedSource)).toEqual([]);
   });
 
   it('the burn-down list holds only files that still contain their token', () => {
