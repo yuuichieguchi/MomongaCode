@@ -144,12 +144,12 @@ describe('signalGroup', () => {
   });
 
   it('tolerates ESRCH for a group that no longer exists', async () => {
-    await expect(signalGroup(reapedGroupId(), 'SIGTERM')).resolves.toBeUndefined();
+    await expect(signalGroup(reapedGroupId(), 'SIGTERM')).resolves.toBe('gone');
   });
 
-  it('tolerates EPERM for a group owned by another user', async () => {
+  it('answers denied, without throwing, for a group owned by another user', async () => {
     expect(process.getuid?.()).not.toBe(0);
-    await expect(signalGroup(rootOwnedGroup(), 'SIGCONT')).resolves.toBeUndefined();
+    await expect(signalGroup(rootOwnedGroup(), 'SIGCONT')).resolves.toBe('denied');
   });
 
   it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', async (pgid) => {
@@ -342,6 +342,7 @@ describe('terminateGroup answers only whether the group ended, by the group prob
       signal: async (_pgid, signal) => {
         events.push(`signal ${signal}`);
         if (signal === fatal) alive = false;
+        return 'sent' as const;
       },
       alive: async () => alive,
     };

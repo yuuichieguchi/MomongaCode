@@ -16,7 +16,7 @@ const inspectorWith = (state: MarkerState): ProcessInspector =>
     markerState: async () => state,
   }) as unknown as ProcessInspector;
 
-const goneGroup: ProcessGroupPort = { signal: async () => undefined, alive: async () => false };
+const goneGroup: ProcessGroupPort = { signal: async () => 'sent' as const, alive: async () => false };
 
 const reapTiming = (): Timing => {
   const clock = createFakeClock(0);

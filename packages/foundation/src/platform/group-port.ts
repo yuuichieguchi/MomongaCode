@@ -36,9 +36,11 @@ export interface ProcessGroupPort {
   readonly names?: GroupNames;
   readonly keeper?: GroupKeeper;
   ended?(pgid: number, options: GroupProbeOptions): Promise<void>;
-  signal(pgid: number, signal: NodeJS.Signals, options: GroupProbeOptions): Promise<void>;
+  signal(pgid: number, signal: NodeJS.Signals, options: GroupProbeOptions): Promise<GroupSignalOutcome>;
   alive(pgid: number, options: GroupProbeOptions): Promise<boolean>;
 }
+
+export type GroupSignalOutcome = 'sent' | 'gone' | 'denied';
 
 export const groupSignalsOf = (port: ProcessGroupPort): GroupSignals => port.signals ?? POSIX_GROUP_SIGNALS;
 
@@ -57,8 +59,11 @@ export const createPosixGroupPort = ({ kill, reading }: PosixGroupHost): Process
   signal: async (pgid, signal) => {
     try {
       kill(-pgid, signal);
+      return 'sent';
     } catch (error) {
-      if (tolerated(error) === 'other') throw error;
+      const verdict = tolerated(error);
+      if (verdict === 'other') throw error;
+      return verdict;
     }
   },
   alive: async (pgid, options) => {
@@ -99,7 +104,10 @@ export const createJobGroupPort = (kept: KeptGroupControl): ProcessGroupPort => 
   names: { nameOf: (pgid) => kept.nameOf(pgid), recall: (pgid, name) => kept.recall(pgid, name) },
   keeper: kept,
   ended: (pgid, options) => kept.ended(pgid, options),
-  signal: (pgid, _signal, options) => kept.terminate(pgid, options),
+  signal: async (pgid, _signal, options) => {
+    await kept.terminate(pgid, options);
+    return 'sent';
+  },
   alive: async (pgid, options) => {
     const answer = await kept.members(pgid, options);
     return answer.kind === 'members' && answer.pids.length > 0;

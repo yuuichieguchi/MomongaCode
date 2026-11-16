@@ -31,7 +31,7 @@ export const world = (initial: MarkerState = 'held', extra: Partial<ToolExecutor
   }) as never;
   const askedGroups: number[] = [];
   const groupPort: ProcessGroupPort = {
-    signal: async () => undefined,
+    signal: async () => 'sent' as const,
     alive: async (pgid) => {
       askedGroups.push(pgid);
       return runnableGroups.has(pgid);

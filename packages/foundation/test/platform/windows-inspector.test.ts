@@ -164,7 +164,7 @@ describe('windows process group port and signal sender', () => {
   it('sends negative pids to the group port and signal 0 as an existence check', async () => {
     const calls: string[] = [];
     const send = createAsyncSignalSender('win32', () => ({
-      signal: async (pgid, signal) => void calls.push(`signal ${pgid} ${signal}`),
+      signal: async (pgid, signal) => (calls.push(`signal ${pgid} ${signal}`), 'sent' as const),
       alive: async (pgid) => pgid === 100,
     }));
     await send(-100, 'SIGTERM', LIVE);
@@ -203,7 +203,7 @@ describe('a Windows start time read that OpenProcess refuses (design 19.6 point 
     };
     const inspector = createWindowsInspector({ run: runner, env: ENV, groups: { members: async () => listing([]), leads: () => false }, alive: () => true });
     const sent: Array<[number, NodeJS.Signals | 0]> = [];
-    const groupPort: ProcessGroupPort = { signal: async (pgid, signal) => void sent.push([-pgid, signal]), alive: async () => false };
+    const groupPort: ProcessGroupPort = { signal: async (pgid, signal) => (sent.push([-pgid, signal]), 'sent' as const), alive: async () => false };
     let now = 0;
     const result = await reconcileProcessGroup(
       { pgid: 4000, marker: 'C:\\Users\\a\\marker' },

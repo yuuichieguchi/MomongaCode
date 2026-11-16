@@ -47,7 +47,7 @@ const runInGroup = async (ports: WorkspaceProbePorts, command: string, timeoutMs
   const stop = new AbortController();
   const started = await ports.sandbox.start(command, cwd, ports.env, stop.signal);
   let timedOut = false;
-  let signalled: Promise<void> = Promise.resolve();
+  let signalled: Promise<unknown> = Promise.resolve();
   const timer = ports.timing.setTimeout(() => {
     timedOut = true;
     signalled = ports.groups.signal(started.pgid, strongestSignal(ports.groups), { signal: undefined });

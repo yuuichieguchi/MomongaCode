@@ -24,6 +24,7 @@ const ripgrepSandbox = (timing: ReturnType<typeof virtualTiming>, survives: bool
   const groupPort: ProcessGroupPort = {
     signal: async () => {
       if (!survives) alive = false;
+      return 'sent' as const;
     },
     alive: async () => alive,
   };

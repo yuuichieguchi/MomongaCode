@@ -38,6 +38,7 @@ const world = () => {
     signal: async (pgid) => {
       if (!known.has(pgid)) throw new Error(`no job is recorded for process group ${pgid}`);
       asked.push(['signal', pgid]);
+      return 'sent' as const;
     },
     alive: async (pgid) => {
       if (!known.has(pgid)) throw new Error(`no job is recorded for process group ${pgid}`);

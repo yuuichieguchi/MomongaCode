@@ -17,7 +17,7 @@ const COMMAND_OUTPUT = 'survivor-output';
 const FOUR_OCCASIONS = 'at most once at each of: before the next command that runs a process or changes files, the periodic check, start-up and shutdown';
 
 const survivingSandbox = (timing: ReturnType<typeof virtualTiming>): Sandbox => {
-  const survivorPort: ProcessGroupPort = { signal: async () => undefined, alive: async () => true };
+  const survivorPort: ProcessGroupPort = { signal: async () => 'sent' as const, alive: async () => true };
   return {
     kind: 'none',
     spawn: (_command, _policy, signal) => {

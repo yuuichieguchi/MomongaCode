@@ -183,7 +183,7 @@ describe('one liveness rule for every reader of a group (process-markers, Linux,
     const controller = new AbortController();
     let probes = 0;
     const port: ProcessGroupPort = {
-      signal: async () => undefined,
+      signal: async () => 'sent' as const,
       alive: async () => {
         probes += 1;
         if (probes === 3) controller.abort();
@@ -198,7 +198,7 @@ describe('one liveness rule for every reader of a group (process-markers, Linux,
     const fake = fakeTiming();
     const controller = new AbortController();
     const port: ProcessGroupPort = {
-      signal: async () => undefined,
+      signal: async () => 'sent' as const,
       alive: async (_pgid, { signal }) => {
         if (fake.now() >= 30) controller.abort();
         if (signal?.aborted === true) throw new ProbeFailedError('reading the run states', { kind: 'failed', cause: 'transient', evidence: { kind: 'opaque', detail: 'aborted' } });

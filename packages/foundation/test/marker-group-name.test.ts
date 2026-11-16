@@ -80,7 +80,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
     };
     const port: ProcessGroupPort = {
       names: { nameOf: names.nameOf, recall: (pgid, name) => void order.push(`recall ${pgid} ${name}`) },
-      signal: async () => undefined,
+      signal: async () => 'sent' as const,
       alive: async (pgid) => {
         order.push(`alive ${pgid}`);
         return false;
@@ -93,7 +93,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
     const unnamed: string[] = [];
     await reconcileProcessGroup(
       { pgid: PGID, marker },
-      { killGraceMs: 10, groupPort: { signal: async () => undefined, alive: async () => (unnamed.push('alive'), false) }, timing, inspector, signal: new AbortController().signal },
+      { killGraceMs: 10, groupPort: { signal: async () => 'sent' as const, alive: async () => (unnamed.push('alive'), false) }, timing, inspector, signal: new AbortController().signal },
     );
     expect(unnamed).toEqual(['alive']);
   });
@@ -111,7 +111,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
     let now = 0;
     await reconcileProcessGroup(
       { pgid: 9999, marker },
-      { killGraceMs: 10, groupPort: { names, signal: async () => undefined, alive: async () => false }, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) }), inspector, signal: new AbortController().signal },
+      { killGraceMs: 10, groupPort: { names, signal: async () => 'sent' as const, alive: async () => false }, timing: sleepDrivenTiming({ now: () => now, sleep: async (ms: number) => void (now += ms) }), inspector, signal: new AbortController().signal },
     );
     expect(names.recalled).toEqual([]);
   });
@@ -131,7 +131,7 @@ describe('a reconcile gives the recorded name to the port before it asks the por
     };
     const groupPort: ProcessGroupPort = {
       names: { nameOf: () => undefined, recall: (pgid, name) => void order.push(`recall ${pgid} ${name}`) },
-      signal: async () => undefined,
+      signal: async () => 'sent' as const,
       alive: async () => false,
     };
     let now = 0;

@@ -367,6 +367,7 @@ describe('the modules every worker loads before its test file', () => {
     const loaded = sourcesLoadedBy('test/support/child-process-guard.ts');
     expect(loaded).toEqual([
       'packages/cli/src/daemon/launcher.ts',
+      'packages/foundation/src/environment-variables.ts',
       'packages/foundation/src/json-depth.ts',
       'packages/foundation/src/node-file-system.ts',
       'packages/foundation/src/open-browser.ts',

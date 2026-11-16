@@ -125,7 +125,7 @@ const setup = async (probes: Parameters<typeof createBackgroundJobs>[0]['probes'
       },
       ...probes,
     },
-    groupPort: { signal: async () => undefined, alive: async () => false },
+    groupPort: { signal: async () => 'sent' as const, alive: async () => false },
     ...extra,
   });
   const spawned: FakeProcess[] = [];

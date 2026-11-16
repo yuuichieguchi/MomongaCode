@@ -1,5 +1,5 @@
 import { groupSignalsOf, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';
-import type { ProcessGroupPort } from './platform/group-port.ts';
+import type { GroupSignalOutcome, ProcessGroupPort } from './platform/group-port.ts';
 import type { GroupMembersReader } from './platform/group-members.ts';
 import { KILL_CONFIRM_MS } from './process-contract.ts';
 import { systemWaitTiming } from './system-timing.ts';
@@ -23,9 +23,9 @@ function assertSignalableGroup(pgid: number): void {
   if (!Number.isInteger(pgid) || pgid <= 1) throw new Error(`refusing to signal process group ${pgid}`);
 }
 
-export async function signalGroup(pgid: number, signal: NodeJS.Signals, port: ProcessGroupPort = hostProcessGroupPort(), stop?: AbortSignal): Promise<void> {
+export async function signalGroup(pgid: number, signal: NodeJS.Signals, port: ProcessGroupPort = hostProcessGroupPort(), stop?: AbortSignal): Promise<GroupSignalOutcome> {
   assertSignalableGroup(pgid);
-  await port.signal(pgid, signal, { signal: stop });
+  return port.signal(pgid, signal, { signal: stop });
 }
 
 export type ProcessSignalSender = (pid: number, signal: NodeJS.Signals) => void;

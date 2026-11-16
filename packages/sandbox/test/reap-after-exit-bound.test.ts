@@ -19,6 +19,7 @@ describe('the reap after the leader exits is bounded by its own stop bound, not 
       signal: async (_pgid, signal) => {
         signals.push(signal);
         if (signal === 'SIGKILL') followerAlive = false;
+        return 'sent' as const;
       },
       alive: async () => followerAlive,
     };

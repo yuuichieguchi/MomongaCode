@@ -27,7 +27,7 @@ describe('the marker reap of a stale group signals through the group port it was
       ...host,
       signal: async (group, signal, options) => {
         portSignals.push([group, signal]);
-        await host.signal(group, signal, options);
+        return host.signal(group, signal, options);
       },
     };
     const hostSignals: number[] = [];

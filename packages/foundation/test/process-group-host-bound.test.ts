@@ -30,6 +30,7 @@ const groupThatSurvivesSigkillFor = (survivalMs: number, clock: FakeClock): Proc
     signal: async (_pgid, signal) => {
       sent.push(signal);
       if (signal === 'SIGKILL' && killedAt === undefined) killedAt = clock.ms;
+      return 'sent' as const;
     },
     alive: async () => killedAt === undefined || clock.ms - killedAt < survivalMs,
   };
