@@ -274,6 +274,7 @@ const recorded = (world: World): Event[] => {
     kill(target, signal);
   };
   Object.assign(world, { kill: recordingKill });
+  Object.assign(world.groupPort, { signal: async (pgid: number, signal: NodeJS.Signals | 0) => recordingKill(-pgid, signal) });
   return events;
 };
 
