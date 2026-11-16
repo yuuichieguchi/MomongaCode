@@ -1042,7 +1042,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
     });
-    const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
+    const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, busyTimeoutMs: BUSY_WAIT_LIMIT_MS, clock });
     cleanups.push(() => traceStore.close());
     const telemetryOf = (current: ResolvedSettings, outbound: OutboundNetwork): Telemetry => {
       const resolved = resolveTelemetrySettings(current.telemetry);

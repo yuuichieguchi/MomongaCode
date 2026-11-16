@@ -23,7 +23,7 @@ describe('openTraceStore', () => {
 
   it('refuses a directory that is not 0700', () => {
     const dir = makeDir(0o755);
-    expect(() => openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(dir, 'traces.db') })).toThrow(/0700/);
+    expect(() => openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(dir, 'traces.db'), clock: createFakeClock(START_MS) })).toThrow(/0700/);
   });
 
   it('indexes spans by run_id', () => {
@@ -53,7 +53,7 @@ describe('openTraceStore', () => {
     await h.telemetry.forceFlush();
     h.store.close();
     expect(() => h.store.close()).not.toThrow();
-    const reopened = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: h.file });
+    const reopened = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: h.file, clock: h.clock });
     try {
       expect(reopened.spansForRun(RUN_ID)).toHaveLength(1);
     } finally {

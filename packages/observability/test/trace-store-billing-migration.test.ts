@@ -29,7 +29,7 @@ describe('the chat-span billing migration of the trace store', () => {
     insertSpan(legacy, 'tool-1', 'execute_tool Read', { 'gen_ai.operation.name': 'execute_tool' });
     legacy.close();
 
-    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: file , clock: createFakeClock(START_MS) });
     registerCleanup(() => store.close());
     const spans = store.spansForRun(RUN_ID);
     const billingOf = (spanId: string) => spans.find((span) => span.spanId === spanId)?.attributes['momonga.billing'];
