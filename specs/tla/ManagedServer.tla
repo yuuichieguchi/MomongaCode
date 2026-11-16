@@ -198,6 +198,16 @@
 (*   /markers ignore: it changes none of these variables (the survivor     *)
 (*     still holds its socket); it is the person's answer after Told       *)
 (*                                                                         *)
+(* Incarnations. A changed managed definition starts a new serving        *)
+(* instance of the target with its own socket, lock and marker directory   *)
+(* (packages/foundation/src/momonga-paths.ts (managedInstancePaths), the   *)
+(* incarnation of packages/gateway/src/process.ts (startGatewayProcess)); *)
+(* the old one serves its last leases and stops. Two incarnations share no *)
+(* path, so the model's instance "s" is one incarnation; an orphan of an   *)
+(* earlier incarnation is not reaped by a later incarnation's claim but by *)
+(* the supervisor's reap, which walks every directory under the            *)
+(* generation's targets markers (ReapGone).                                *)
+(*                                                                         *)
 (* Abstractions. Time is nondeterministic: each wait ends by its own       *)
 (* completion or by its asking limit (A1). The child's readiness, crash    *)
 (* and exit are environment events (A2). A live child holds its socket, so *)
@@ -313,17 +323,33 @@
 (*   GwFlights      1: the gateway runs one flight per target; 2: also a   *)
 (*                  second flight under a newer key ("p3")                 *)
 (*   SingleFlight   "key": a flight starts only when every other flight    *)
-(*                  that shares its lock is idle or runs under an older key *)
-(*                  (tainted); "none": no lock. Flights of two generations *)
-(*                  do not share the record lock (18.3), so they never     *)
-(*                  wait for each other by this switch                     *)
+(*                  of its own process (scope) is idle or runs under an    *)
+(*                  older key (tainted): the flights map of                *)
+(*                  packages/gateway/src/probe/auto-probe.ts (createAutoProbe) *)
+(*                  is per process, and the per-key kernel lock is taken   *)
+(*                  only around the key check and the save, after the      *)
+(*                  measurement (AutoProbe.tla, SaveLock), so a CLI flight *)
+(*                  and a gateway flight of one key measure side by side,  *)
+(*                  each on its own instance; "none": no check             *)
 (*   InstanceWait   a flight waits for the running flight of its instance  *)
 (*                  (item 12); FALSE: it goes on at once                   *)
+(*   ClaimLock      the instance lock of the code: a claim holds it from   *)
+(*                  the reap to readiness                                  *)
+(*                  (packages/gateway/src/managed/server.ts (claimInstance, launchReady)), *)
+(*                  so no other flight of the instance is in claim, spawn  *)
+(*                  or ready meanwhile; after readiness it is released and *)
+(*                  a later claim reaps the instance's marker directory,   *)
+(*                  the live child of a running flight too. The code has   *)
+(*                  no wait for a running flight (InstanceWait FALSE in    *)
+(*                  the code; MANAGED_SERVER_BEHAVIOUR.instanceWait claims *)
+(*                  it): with the code's switches NoSiblingCut            *)
+(*                  is violated (formal-models-W14 finding)                *)
 (*   ReapOnStart    the claim reaps the marker directory first             *)
 (*   BoundedRetries a survivor gets Retries retries, then the person is    *)
-(*                  told and no reap signals it again (decision 12);       *)
+(*                  told and no reap signals it again (decision 12, the    *)
+(*                  code: reapOnOccasion claims a retry per occasion);     *)
 (*                  FALSE: every claim and every supervisor reap retries   *)
-(*                  it and nobody is told (the code today)                 *)
+(*                  it and nobody is told                                  *)
 (*   Retries        the retries of decision 12 (four)                      *)
 (*   CacheRefusal   a refused precondition is cached                       *)
 (*   ResetOnReady   the failure count resets on every ready, not after a   *)
@@ -361,7 +387,8 @@ CONSTANTS
     SharedKey,
     ReapOther,
     RetiringRestart,
-    CliEvents
+    CliEvents,
+    ClaimLock
 
 ASSUME /\ Gens \subseteq Nat \ {0} /\ Gens # {}
        /\ MaxRestarts \in Nat \ {0}
@@ -385,6 +412,7 @@ ASSUME /\ Gens \subseteq Nat \ {0} /\ Gens # {}
        /\ ReapOther \in BOOLEAN
        /\ RetiringRestart \in BOOLEAN
        /\ CliEvents \in BOOLEAN
+       /\ ClaimLock \in BOOLEAN
 
 Scopes == {0} \cup Gens
 MinGen == CHOOSE g \in Gens : \A h \in Gens : g <= h
@@ -402,15 +430,19 @@ GwStates == {"none", "up", "down"}
 
 KeyS(s) == IF s = 0 \/ ~SharedKey THEN s ELSE MinGen
 ReapKeys(s) == IF ReapOther /\ s # 0 THEN {KeyS(g) : g \in Gens} ELSE {KeyS(s)}
-Locked(s, r) == s = r \/ s = 0 \/ r = 0
+Locked(s, r) == s = r
 Partner(f) == IF f = "p1" THEN "p3" ELSE "p1"
 
 VARIABLES
     gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls,
     st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped,
-    foreignReap, restartRetiring
+    foreignReap, restartRetiring, siblingCut
 
-vars == <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+vars == <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
+
+Held == {"claim", "spawn", "ready"}
+ClaimFree(s, t, f) == ~ClaimLock \/ \A r \in Scopes, p \in Flights : (KeyS(r) = KeyS(s) /\ InstOf(p) = InstOf(f) /\ ~(r = s /\ p = f)) => st[r][t][p] \notin Held
+CutsSibling(s, t, f) == \E r \in Scopes, p \in Flights : KeyS(r) \in ReapKeys(s) /\ InstOf(p) = InstOf(f) /\ ~(r = s /\ p = f) /\ alive[r][t][p] = 1
 
 AliveOn(k, t, n) == Cardinality({sf \in Scopes \X Flights : KeyS(sf[1]) = k /\ InstOf(sf[2]) = n /\ alive[sf[1]][t][sf[2]] = 1})
 OnInst(s, t, n) == orphan[KeyS(s)][t][n] + AliveOn(KeyS(s), t, n)
@@ -447,6 +479,7 @@ TypeOK ==
     /\ gt \in [Scopes -> [Targets -> 0..MaxRestarts]]
     /\ foreignReap \in BOOLEAN
     /\ restartRetiring \in BOOLEAN
+    /\ siblingCut \in BOOLEAN
 
 Init ==
     /\ gw = [g \in Gens |-> IF g = MinGen THEN "up" ELSE "none"]
@@ -466,33 +499,35 @@ Init ==
     /\ gt = [s \in Scopes |-> [t \in Targets |-> 0]]
     /\ foreignReap = FALSE
     /\ restartRetiring = FALSE
+    /\ siblingCut = FALSE
 
 StartServe(s, t) ==
     /\ s \in Gens /\ gw[s] = "up" /\ ~ret[s]
     /\ st[s][t]["s"] \in Gone /\ pre[s][t] # "refused"
+    /\ (pre[s][t] = "met" => ClaimFree(s, t, "s"))
     /\ st' = [st EXCEPT ![s][t]["s"] = IF pre[s][t] = "met" THEN "claim" ELSE "pre"]
     /\ pre' = [pre EXCEPT ![s][t] = "unknown"]
     /\ cc' = [cc EXCEPT ![s][t] = 0]
     /\ gt' = [gt EXCEPT ![s][t] = 0]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Health(s, t) ==
     /\ s \in Gens /\ gw[s] = "up" /\ pre[s][t] = "unknown"
     /\ pre' = [pre EXCEPT ![s][t] = IF cond = "ok" THEN "met" ELSE IF CacheRefusal THEN "refused" ELSE "unknown"]
     /\ pre' # pre
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 PreOk(s, t, f) ==
-    /\ st[s][t][f] = "pre" /\ cond = "ok"
+    /\ st[s][t][f] = "pre" /\ cond = "ok" /\ ClaimFree(s, t, f)
     /\ st' = [st EXCEPT ![s][t][f] = "claim"]
     /\ pre' = [pre EXCEPT ![s][t] = IF f = "s" THEN "met" ELSE pre[s][t]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 PreBad(s, t, f) ==
     /\ st[s][t][f] = "pre" /\ cond = "bad"
     /\ st' = [st EXCEPT ![s][t][f] = "idle"]
     /\ pre' = [pre EXCEPT ![s][t] = IF f = "s" /\ CacheRefusal THEN "refused" ELSE pre[s][t]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ClaimOk(s, t, f) ==
     LET n == InstOf(f)
@@ -501,6 +536,7 @@ ClaimOk(s, t, f) ==
     /\ st[s][t][f] = "claim" /\ ~hung[s][t][f] /\ (OnInst(s, t, n) = 0 \/ MayReap(s, t, n))
     /\ st' = [st EXCEPT ![s][t][f] = "spawn"]
     /\ foreignReap' = (foreignReap \/ ForeignFootprint(s, t, n))
+    /\ siblingCut' = (siblingCut \/ CutsSibling(s, t, f))
     /\ orphan' = [s2 \in Scopes |-> [t2 \in Targets |-> [n2 \in Insts |->
             IF t2 = t /\ n2 = n /\ s2 \in ReapKeys(s) THEN 0 ELSE orphan[s2][t2][n2]]]]
     /\ tries' = [tries EXCEPT ![k][t][n] = 0]
@@ -516,7 +552,7 @@ ClaimKept(s, t, f) ==
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
     /\ tries' = [tries EXCEPT ![k][t][n] = Spend(k, t, n)]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ClaimBusy(s, t, f) ==
     LET n == InstOf(f)
@@ -524,26 +560,26 @@ ClaimBusy(s, t, f) ==
     /\ st[s][t][f] = "claim" /\ ~hung[s][t][f] /\ OnInst(s, t, n) > 0 /\ ~MayReap(s, t, n)
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ClaimEnd(s, t, f) == ClaimOk(s, t, f) \/ ClaimKept(s, t, f) \/ ClaimBusy(s, t, f)
 
 Hang(s, t, f) ==
     /\ ~ClaimBounded /\ st[s][t][f] = "claim" /\ ~hung[s][t][f]
     /\ hung' = [hung EXCEPT ![s][t][f] = TRUE]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Spawn(s, t, f) ==
     /\ st[s][t][f] = "spawn"
     /\ st' = [st EXCEPT ![s][t][f] = "ready"]
     /\ alive' = [alive EXCEPT ![s][t][f] = 1]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Ready(s, t, f) ==
     /\ st[s][t][f] = "ready" /\ alive[s][t][f] = 1
     /\ st' = [st EXCEPT ![s][t][f] = IF f = "s" THEN "running" ELSE "measure"]
     /\ cc' = [cc EXCEPT ![s][t] = IF f = "s" /\ ResetOnReady THEN 0 ELSE cc[s][t]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ChildCrash(s, t, f) ==
     /\ childCrashes < MaxChildCrashes /\ alive[s][t][f] = 1 /\ st[s][t][f] \in {"ready", "running", "measure"}
@@ -551,30 +587,30 @@ ChildCrash(s, t, f) ==
     /\ alive' = [alive EXCEPT ![s][t][f] = 0]
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
-    /\ UNCHANGED <<gw, ret, gwCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ExpirePre(s, t, f) ==
     /\ st[s][t][f] = "pre"
     /\ st' = [st EXCEPT ![s][t][f] = "idle"]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ExpireSpawn(s, t, f) ==
     /\ st[s][t][f] = "spawn"
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ExpireReady(s, t, f) ==
     /\ st[s][t][f] = "ready"
     /\ alive' = [alive EXCEPT ![s][t][f] = 0]
     /\ st' = [st EXCEPT ![s][t][f] = EndOf(s, t, f)]
     /\ pre' = ClearedPre(s, t, f)
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, orphan, tries, taint, hung, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ExpireMeasure(s, t, f) ==
     /\ f \in Probes /\ st[s][t][f] = "measure"
     /\ st' = [st EXCEPT ![s][t][f] = "stopping"]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Expire(s, t, f) == ExpirePre(s, t, f) \/ ExpireSpawn(s, t, f) \/ ExpireReady(s, t, f) \/ ExpireMeasure(s, t, f)
 
@@ -586,23 +622,23 @@ TimerFires(s, t) ==
     /\ cc' = [cc EXCEPT ![s][t] = cc[s][t] + 1]
     /\ gt' = [gt EXCEPT ![s][t] = gt[s][t] + 1]
     /\ restartRetiring' = (restartRetiring \/ (ret[s] /\ calls[s][t] = 0))
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, reaped, foreignReap>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, reaped, foreignReap, siblingCut>>
 
 WindowDone(s, t) ==
     /\ st[s][t]["s"] = "running" /\ (cc[s][t] > 0 \/ gt[s][t] > 0)
     /\ cc' = [cc EXCEPT ![s][t] = 0]
     /\ gt' = [gt EXCEPT ![s][t] = 0]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Accept(s, t) ==
     /\ s \in Gens /\ gw[s] = "up" /\ ~ret[s] /\ calls[s][t] < MaxCalls
     /\ calls' = [calls EXCEPT ![s][t] = calls[s][t] + 1]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 CallEnd(s, t) ==
     /\ calls[s][t] > 0
     /\ calls' = [calls EXCEPT ![s][t] = calls[s][t] - 1]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 ProbeStart(s, t, f) ==
     /\ f \in Probes /\ st[s][t][f] = "idle" /\ ProbeGate(s, f)
@@ -610,12 +646,12 @@ ProbeStart(s, t, f) ==
     /\ (SingleFlight = "none" \/ \A r \in Scopes : Locked(s, r) => \A j \in Probes : ((r = s /\ j = f) \/ st[r][t][j] = "idle" \/ taint[r][t][j]))
     /\ st' = [st EXCEPT ![s][t][f] = IF InstanceWait /\ InstanceBusy(s, t, f) THEN "wait" ELSE "pre"]
     /\ taint' = [taint EXCEPT ![s][t][f] = FALSE]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Enter(s, t, f) ==
     /\ st[s][t][f] = "wait" /\ ~InstanceBusy(s, t, f)
     /\ st' = [st EXCEPT ![s][t][f] = "pre"]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 StopEnd(s, t, f) ==
     LET n == InstOf(f)
@@ -629,13 +665,13 @@ StopEnd(s, t, f) ==
     /\ pre' = ClearedPre(s, t, f)
     /\ taint' = [taint EXCEPT ![s][t][f] = FALSE]
     /\ hung' = [hung EXCEPT ![s][t][f] = FALSE]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, tries, cond, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, tries, cond, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Cancel(t) ==
     /\ cancels < MaxCancels /\ st[0][t]["p2"] \in {"pre", "claim", "spawn", "ready", "measure"}
     /\ st' = [st EXCEPT ![0][t]["p2"] = "stopping"]
     /\ cancels' = cancels + 1
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, closes, calls, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 CliCrash(t) ==
     /\ cancels < MaxCancels /\ st[0][t]["p2"] # "idle"
@@ -645,7 +681,7 @@ CliCrash(t) ==
     /\ taint' = [taint EXCEPT ![0][t]["p2"] = FALSE]
     /\ hung' = [hung EXCEPT ![0][t]["p2"] = FALSE]
     /\ cancels' = cancels + 1
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, closes, calls, tries, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, closes, calls, tries, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Close(g) ==
     /\ gw[g] = "up" /\ closes < MaxCloses
@@ -658,7 +694,7 @@ Close(g) ==
                 ELSE st[g][t][f]]]]
     /\ pre' = [pre EXCEPT ![g] = [t \in Targets |-> "unknown"]]
     /\ reaped' = [reaped EXCEPT ![g] = FALSE]
-    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, calls, alive, orphan, tries, taint, hung, cond, cc, gt, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, calls, alive, orphan, tries, taint, hung, cond, cc, gt, foreignReap, restartRetiring, siblingCut>>
 
 Crash(g) ==
     /\ gw[g] = "up" /\ gwCrashes < MaxGwCrashes
@@ -674,7 +710,7 @@ Crash(g) ==
     /\ cc' = [cc EXCEPT ![g] = [t \in Targets |-> 0]]
     /\ gt' = [gt EXCEPT ![g] = [t \in Targets |-> 0]]
     /\ reaped' = [reaped EXCEPT ![g] = FALSE]
-    /\ UNCHANGED <<ret, childCrashes, keyChanges, refusals, cancels, closes, calls, tries, cond, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<ret, childCrashes, keyChanges, refusals, cancels, closes, calls, tries, cond, foreignReap, restartRetiring, siblingCut>>
 
 ReapGone(g) ==
     /\ gw[g] = "down" /\ ~reaped[g]
@@ -690,7 +726,7 @@ ReapGone(g) ==
                 IF ~Signalled(t, n) THEN tries[k][t][n]
                 ELSE IF kill[t][n] THEN 0
                 ELSE Spend(k, t, n)]]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, taint, hung, cond, pre, cc, gt, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, taint, hung, cond, pre, cc, gt, foreignReap, restartRetiring, siblingCut>>
 
 SupervisorReap == \E g \in Gens : ReapGone(g)
 
@@ -701,33 +737,33 @@ GwUp(g) ==
     /\ hung' = [hung EXCEPT ![g] = [t \in Targets |-> [f \in Flights |-> IF f \in GwOwned THEN FALSE ELSE hung[g][t][f]]]]
     /\ cc' = [cc EXCEPT ![g] = [t \in Targets |-> 0]]
     /\ gt' = [gt EXCEPT ![g] = [t \in Targets |-> 0]]
-    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, cond, pre, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, cond, pre, reaped, foreignReap, restartRetiring, siblingCut>>
 
 GwStart(g) ==
     /\ gw[g] = "none"
     /\ gw' = [gw EXCEPT ![g] = "up"]
-    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Retire(g) ==
     /\ ~ret[g] /\ (\E h \in Gens : h > g /\ gw[h] # "none")
     /\ ret' = [ret EXCEPT ![g] = TRUE]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 KeyChange ==
     /\ keyChanges < MaxKeyChanges
     /\ keyChanges' = keyChanges + 1
     /\ taint' = [s \in Scopes |-> [t \in Targets |-> [f \in Flights |-> taint[s][t][f] \/ (f \in Probes /\ st[s][t][f] # "idle")]]]
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, refusals, cancels, closes, calls, st, alive, orphan, tries, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, refusals, cancels, closes, calls, st, alive, orphan, tries, hung, cond, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Refuse ==
     /\ cond = "ok" /\ refusals < MaxRefusals
     /\ cond' = "bad" /\ refusals' = refusals + 1
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, cancels, closes, calls, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, cancels, closes, calls, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Fix ==
     /\ cond = "bad" /\ refusals < MaxRefusals
     /\ cond' = "ok" /\ refusals' = refusals + 1
-    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, cancels, closes, calls, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped, foreignReap, restartRetiring>>
+    /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, cancels, closes, calls, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped, foreignReap, restartRetiring, siblingCut>>
 
 Next ==
     \/ \E t \in Targets : Cancel(t) \/ CliCrash(t)
@@ -757,7 +793,7 @@ Spec == Init /\ [][Next]_vars /\ Fairness
 (* P1: at most one live child per instance, that is per key and instance *)
 OneLiveChild == \A k \in Scopes, t \in Targets, n \in Insts : orphan[k][t][n] + AliveOn(k, t, n) <= 1
 
-(* P7: a flight runs only beside flights that do not share its lock, or of older keys *)
+(* P7: a flight runs only beside flights of other processes, or of older keys *)
 OneFlight == \A t \in Targets : \A s, r \in Scopes : \A p, q \in Probes :
     (Locked(s, r) /\ ~(s = r /\ p = q) /\ st[s][t][p] # "idle" /\ st[r][t][q] # "idle") => (taint[s][t][p] \/ taint[r][t][q])
 
@@ -772,6 +808,9 @@ GenerationIsolation == \A g \in Gens, t \in Targets, p \in Flights : alive[g][t]
 
 (* reap: a claim's reap touches only its own generation's keys (18.2.3, item 12) *)
 ReapOwnGenerationOnly == ~foreignReap
+
+(* item 12: a claim never stops the live child of another flight of its instance *)
+NoSiblingCut == ~siblingCut
 
 (* 18.8: a timer restart at a retiring gateway needs an accepted call of that generation *)
 GwNoRestartRetiring == ~restartRetiring
