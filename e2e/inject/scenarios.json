@@ -178,11 +178,11 @@
       },
       "effect": "effect",
       "params": {
-        "timeoutMs": 10000
+        "idleTimeoutMs": 2000
       },
       "expect": {
-        "status": "STOPPED",
-        "stopReason": "timeout"
+        "status": "COMPLETED",
+        "attemptFailed": true
       }
     },
     {

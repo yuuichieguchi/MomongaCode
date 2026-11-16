@@ -13,8 +13,12 @@ type ScenarioResult =
   | { id: string; status: 'ran'; witness: Record<string, number>; outcomes: string[] }
   | { id: string; status: 'not_run'; reason: string };
 
+type InjectionHost = { linuxContainer: boolean };
+
 type InjectionRunner = {
-  runInjectionScenario(scenario: Scenario, host: { linuxContainer: boolean }): Promise<ScenarioResult[]>;
+  runInjectionScenario(scenario: Scenario, host: InjectionHost): Promise<ScenarioResult[]>;
+  detectInjectionHost(): InjectionHost;
+  scenarioBoundMs(scenario: Scenario): number;
   injectionReportOf(results: readonly ScenarioResult[]): { format: string; kind: string; population: { notRun: { id: string; reason: string }[] } };
 };
 
@@ -24,9 +28,17 @@ const scenarios = (): Scenario[] => {
   return file.scenarios;
 };
 
-const runner = async (): Promise<InjectionRunner> => (await import(RUNNER)) as InjectionRunner;
+const { detectInjectionHost, injectionReportOf, runInjectionScenario, scenarioBoundMs } = (await import(RUNNER)) as InjectionRunner;
 
-const INJECT_TIMEOUT_MS = 1_800_000;
+const HOST = detectInjectionHost();
+
+const expectRan = (results: readonly ScenarioResult[]): void => {
+  expect(results.length).toBeGreaterThan(0);
+  for (const result of results) {
+    expect(result.status, result.id).toBe('ran');
+    if (result.status === 'ran') for (const [key, count] of Object.entries(result.witness)) expect(count, `${result.id} ${key}`).toBeLessThanOrEqual(1);
+  }
+};
 
 describe('the injection scenario set (4.1, 4.3)', () => {
   it(titleOf('inject-faults'), () => {
@@ -36,25 +48,29 @@ describe('the injection scenario set (4.1, 4.3)', () => {
     expect(all.filter((scenario) => scenario.requires === 'linux-container')).toHaveLength(1);
   });
 
-  it(titleOf('inject-p9'), { timeout: INJECT_TIMEOUT_MS }, async () => {
-    const { runInjectionScenario } = await runner();
-    const results: ScenarioResult[] = [];
-    for (const scenario of scenarios().filter((candidate) => candidate.requires === 'any')) results.push(...(await runInjectionScenario(scenario, { linuxContainer: false })));
-    expect(results.length).toBeGreaterThan(0);
-    for (const result of results) {
-      expect(result.status, result.id).toBe('ran');
-      if (result.status === 'ran') for (const [key, count] of Object.entries(result.witness)) expect(count, `${result.id} ${key}`).toBeLessThanOrEqual(1);
+  describe(titleOf('inject-p9'), () => {
+    for (const scenario of scenarios().filter((candidate) => candidate.requires === 'any')) {
+      it(scenario.id, { timeout: scenarioBoundMs(scenario) }, async () => {
+        expectRan(await runInjectionScenario(scenario, HOST));
+      });
     }
   });
 
-  it(titleOf('inject-not-run'), async () => {
-    const { injectionReportOf, runInjectionScenario } = await runner();
-    const diskFull = scenarios().find((scenario) => scenario.requires === 'linux-container');
-    expect(diskFull).toBeDefined();
-    const results = await runInjectionScenario(diskFull as Scenario, { linuxContainer: false });
-    expect(results).toEqual([{ id: (diskFull as Scenario).id, status: 'not_run', reason: expect.stringMatching(/linux-container/) }]);
+  const diskFull = (): Scenario => {
+    const found = scenarios().find((scenario) => scenario.requires === 'linux-container');
+    if (found === undefined) throw new Error('the scenario set holds no scenario for the Linux container');
+    return found;
+  };
+
+  it.skipIf(HOST.linuxContainer)(titleOf('inject-not-run'), async () => {
+    const results = await runInjectionScenario(diskFull(), HOST);
+    expect(results).toEqual([{ id: diskFull().id, status: 'not_run', reason: expect.stringMatching(/linux-container/) }]);
     const report = injectionReportOf(results);
     expect(report).toMatchObject({ format: RELIABILITY_FORMAT, kind: 'injection' });
-    expect(report.population.notRun).toEqual([{ id: (diskFull as Scenario).id, reason: expect.stringMatching(/linux-container/) }]);
+    expect(report.population.notRun).toEqual([{ id: diskFull().id, reason: expect.stringMatching(/linux-container/) }]);
+  });
+
+  it.runIf(HOST.linuxContainer)('P9: the out-of-disk scenario runs on the size-limited volume of the Linux container', { timeout: scenarioBoundMs(diskFull()) }, async () => {
+    expectRan(await runInjectionScenario(diskFull(), HOST));
   });
 });
