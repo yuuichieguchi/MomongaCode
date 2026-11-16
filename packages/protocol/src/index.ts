@@ -835,6 +835,7 @@ export type { BillingChangeReason, BillingChangeRecord, FallbackCause, SpanFallb
 export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';
 export type { NamedPlanAccountRef } from './plan-account.ts';
 export type { JsonSchema } from './schema-helpers.ts';
+export { closed, nonEmptyString, nonNegativeInteger } from './schema-helpers.ts';
 export {
   ACTIVATE_SKILL_TOOL_NAME,
   AGENT_TOOL_NAME,

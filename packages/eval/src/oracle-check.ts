@@ -1,3 +1,4 @@
+import { nonEmptyString as text } from '@momonga/protocol';
 export const EVIDENCE_KINDS = ['acceptance', 'unit', 'regression', 'lint', 'static', 'security'] as const;
 
 export type OracleCheck =
@@ -5,7 +6,6 @@ export type OracleCheck =
   | { id: string; kind: 'unchangedPaths'; paths: string[] }
   | { id: string; kind: 'changedPathsWithin'; paths: string[] };
 
-const text = { type: 'string', minLength: 1 } as const;
 const count = { type: 'integer', minimum: 1 } as const;
 const paths = { type: 'array', minItems: 1, items: text } as const;
 

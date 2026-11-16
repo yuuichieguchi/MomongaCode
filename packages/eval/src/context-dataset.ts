@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { GOVERNING_KINDS } from '@momonga/protocol';
+import { GOVERNING_KINDS, nonEmptyString as string } from '@momonga/protocol';
 import type { GoverningKind } from '@momonga/protocol';
 import { DATASET_SCHEMA, DatasetError, assertGoldenCases, describeFirstError, isInsideWorkspace, jsonOf } from './dataset.ts';
 import type { GoldenCase, GraderSpec } from './dataset.ts';
@@ -57,7 +57,6 @@ export type ExpandedContextDataset = { format: typeof CONTEXT_DATASET_FORMAT; na
 
 export const REVISION_PLACEHOLDER = '{revision}';
 
-const string = { type: 'string', minLength: 1 } as const;
 
 const ruleSchema = {
   type: 'object',

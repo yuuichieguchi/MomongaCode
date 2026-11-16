@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema, isRecord, sha256Hex } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { CACHE_READS_NOT_REPORTED, MODEL_KINDS, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, WORDS, escapeTerminalLine, modelKindOf } from '@momonga/protocol';
+import { CACHE_READS_NOT_REPORTED, MODEL_KINDS, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, WORDS, closed, escapeTerminalLine, modelKindOf, nonNegativeInteger as count } from '@momonga/protocol';
 import type { ModelKind } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
@@ -544,10 +544,8 @@ export const formatContextReport = (report: ContextReport): string => {
   return lines.map(escapeTerminalLine).join('\n');
 };
 
-const count = { type: 'integer', minimum: 0 } as const;
 const rate = { type: 'number', minimum: 0 } as const;
 
-const closed = (properties: Record<string, unknown>, required: readonly string[]) => ({ type: 'object', properties, required, additionalProperties: false }) as const;
 
 const proportionSchema = closed({ successes: count, trials: count, rate, low: rate, high: rate }, ['successes', 'trials', 'rate', 'low', 'high']);
 

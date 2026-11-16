@@ -17,6 +17,9 @@ export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEve
     case 'tool.updated':
     case 'tool.completed':
     case 'tool.reconciled':
+    case 'tool.held':
+    case 'tool.held.resolved':
+    case 'tool.waiting':
       return { ...event, callId: qualified(event.runId, event.callId) };
     case 'tool.unknown.requested':
       return { ...event, callIds: event.callIds.map((callId) => qualified(event.runId, callId)) };
@@ -27,6 +30,9 @@ export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEve
     case 'tool.elicitation.resolved':
     case 'tool.elicitation.cancelled':
     case 'mcp.authorization.required':
+    case 'verification.completed':
+    case 'budget.exhausted':
+    case 'notice':
       return event;
     case 'user.message':
     case 'run.started':
@@ -41,17 +47,12 @@ export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEve
     case 'tool.permission.classifying':
     case 'hook.started':
     case 'verification.started':
-    case 'verification.completed':
     case 'tool.loaded':
     case 'tool.offered':
     case 'loop.warned':
-    case 'budget.exhausted':
-    case 'tool.held':
-    case 'tool.held.resolved':
     case 'run.quiescent':
     case 'model.rejected':
     case 'meter.observed':
-    case 'tool.waiting':
     case 'job.finished':
     case 'plan.updated':
     case 'mode.changed':
@@ -73,7 +74,6 @@ export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEve
     case 'skill.activated':
     case 'approval.rule.persisted':
     case 'user.compact':
-    case 'notice':
       return undefined;
     default:
       return noEventTypeLeft(event);

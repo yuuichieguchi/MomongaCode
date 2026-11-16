@@ -37,7 +37,7 @@ export type CliTimers = Pick<Timing, 'setTimeout' | 'clearTimeout' | 'monotonicM
 
 export type StandardInput = { isTerminal: boolean; bytes(): AsyncIterable<Uint8Array> };
 
-export type CliFiles = Pick<FileSystem, 'readFile' | 'readTextFile' | 'stat' | 'mkdir' | 'mkdirPrivate' | 'mkdtemp' | 'rm' | 'rename'> & WorkspaceFiles & {
+export type CliFiles = Pick<FileSystem, 'readFile' | 'readTextFile' | 'stat' | 'lstat' | 'mkdir' | 'mkdirPrivate' | 'mkdtemp' | 'rm' | 'rename'> & WorkspaceFiles & {
   copyTreeVerbatim(from: string, to: string): Promise<void>;
   readText(file: string): Promise<string>;
   writeText(file: string, text: string): Promise<void>;

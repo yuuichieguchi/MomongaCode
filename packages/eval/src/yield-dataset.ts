@@ -1,4 +1,5 @@
 import { canonicalJson, defineProductSchema, sha256Hex } from '@momonga/foundation';
+import { nonEmptyString as string } from '@momonga/protocol';
 import type { ProductValidator } from '@momonga/foundation';
 import { MINIMUM_PAIRS } from './bootstrap.ts';
 import { CONTEXT_DATASET_SCHEMA } from './context-dataset.ts';
@@ -20,7 +21,6 @@ export type YieldFamily = { id: string; description?: string; learn: YieldLearn;
 
 export type YieldDataset = { format: typeof YIELD_DATASET_FORMAT; name: string; families: YieldFamily[] };
 
-const string = { type: 'string', minLength: 1 } as const;
 
 const golden = DATASET_SCHEMA.properties.cases.items.properties;
 
