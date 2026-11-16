@@ -200,6 +200,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
         timers: ports.timers,
         pasted,
         confirmIdentity,
+        warn: (text) => print(ports.stderr, [text]),
         authorize: async ({ url }, waiting) => {
           if (options.browser === false) {
             print(ports.stdout, sensitiveUrlLines(url));
