@@ -26,7 +26,7 @@ describe.each([`hook-${'b'.repeat(32)}`, `evidence-${'c'.repeat(32)}`, `${CALL_K
     await markerGroups.recordMarkerGroup(marker, LEAVER_PGID);
     const refused = resultOf(await runOne(h, 'Writer', 'next'));
     expect(refused.status).toBe('failed');
-    expect(refused.output).toContain(`(marker ${name}, unidentified) ${STILL_RUNNING}`);
+    expect(refused.output).toContain(`(marker ${name}) ${STILL_RUNNING}`);
     expect(refused.output).not.toContain('could not check');
     expect(h.askedGroups).toContain(LEAVER_PGID);
   });
