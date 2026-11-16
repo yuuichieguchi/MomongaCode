@@ -32,8 +32,8 @@ describe('context constants', () => {
     expect(CONTRIBUTION_KINDS).toEqual(['memory', 'governing', 'summary', 'working_state']);
   });
 
-  it('keeps the in-run charge purposes and lists the out-of-run ones separately', () => {
-    expect(USAGE_CHARGE_PURPOSES).toEqual(['compaction', 'permission_classifier', 'rejected_answer']);
+  it('charges a reflection inside the run it follows and lists the charges without a run separately', () => {
+    expect(USAGE_CHARGE_PURPOSES).toEqual(['compaction', 'permission_classifier', 'rejected_answer', 'reflection']);
     expect(CONTEXT_CHARGE_PURPOSES).toEqual(['reflection', 'guideline']);
   });
 
@@ -250,12 +250,12 @@ describe('public context.compacted', () => {
 describe('public usage.charged', () => {
   const charged = { ...ENVELOPE, type: 'usage.charged', inputTokens: 5, outputTokens: 1, totalTokens: 6 };
 
-  it.each(['compaction', 'permission_classifier'])('accepts purpose %s', (purpose) => {
+  it.each(USAGE_CHARGE_PURPOSES)('accepts purpose %s', (purpose) => {
     expect(acceptsEvent({ ...charged, purpose })).toBe(true);
   });
 
-  it.each(['reflection', 'guideline'])('rejects purpose %s, which is charged outside a run', (purpose) => {
-    expect(acceptsEvent({ ...charged, purpose })).toBe(false);
+  it('rejects purpose guideline, which is charged outside a run', () => {
+    expect(acceptsEvent({ ...charged, purpose: 'guideline' })).toBe(false);
   });
 
   it('rejects an unlisted purpose', () => {
