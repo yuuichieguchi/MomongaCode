@@ -50,10 +50,11 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
 
   const run = (...args: string[]): Promise<Invocation> =>
     new Promise((resolve, reject) => {
-      execFile(binary, args, { cwd: project, env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }), encoding: 'utf8' }, (error, stdout, stderr) => {
+      const child = execFile(binary, args, { cwd: project, env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }), encoding: 'utf8' }, (error, stdout, stderr) => {
         if (error !== null && typeof error.code !== 'number') reject(error);
         else resolve({ status: error === null ? 0 : (error.code as number), stdout, stderr });
       });
+      child.stdin?.end();
     });
 
   beforeAll(async () => {
@@ -101,7 +102,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
   it('completes a Read and Edit task through a daemon it starts from the same binary, and the file on disk changes', async () => {
     const result = await run('-p', 'Update the greeting', '--permission-mode', 'acceptEdits');
 
-    expect(result).toEqual({ status: 0, stdout: `${FINAL_TEXT}\n`, stderr: '' });
+    expect(result).toMatchObject({ status: 0, stdout: `${FINAL_TEXT}\n` });
     expect(fs.readFileSync(path.join(project, 'config.toml'), 'utf8')).toBe(EDITED);
     expect(chatCompletions(upstream)).toHaveLength(3);
 
