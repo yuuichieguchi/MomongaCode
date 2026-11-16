@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, uuidv7 } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, Random } from '@momonga/foundation';
 import { APPROVAL_KINDS, APPROVAL_STATUSES } from '@momonga/protocol';
 import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionOption } from '@momonga/protocol';
 import { corrupt, expectOneOf, isRecord, readerFor, storedOneOf } from './rows.ts';
@@ -84,7 +84,7 @@ export type ApprovalOps = {
   end(id: string, status: 'expired' | 'withdrawn' | 'superseded'): void;
 };
 
-export const createApprovalStore = (db: DatabaseSync, clock: Clock, context: DecodeContext): ApprovalOps => {
+export const createApprovalStore = (db: DatabaseSync, clock: Clock, random: Random, context: DecodeContext): ApprovalOps => {
   const runExists = db.prepare('SELECT 1 AS present FROM runs WHERE id = :runId');
   const insert = db.prepare(
     `INSERT INTO approvals (id, run_id, call_id, status, options_json, expires_at, created_at, subject_digest, kind, server, requests_json)
@@ -117,7 +117,7 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock, context: Dec
   };
 
   const insertPending = (input: ApprovalRequest): Approval => {
-    const id = uuidv7(clock);
+    const id = uuidv7(clock, random);
     insert.run({
       id,
       runId: input.runId,
