@@ -32,7 +32,7 @@ describe('the tools a model declared with an 8192-token window is offered (tools
     const notices = env.ofType(run.id, 'notice').filter((notice) => notice.code === 'tools_dropped').map((notice) => notice.message);
     expect(offered).toEqual(['Glob', 'Grep', 'Read', 'Edit', 'Write', 'ReadOutput', 'Bash', 'BashOutput', 'KillBash', 'UpdatePlan', 'GitBranch', 'GitCommit', 'GitFetch', 'GitPush', 'GitStage', 'GitUpdate', 'IssueComment', 'IssueRead', 'PullRequestComment']);
     expect(notices).toEqual([
-      `Tools optional: PullRequestComments, PullRequestCreate, PullRequestMerge, PullRequestStatus were left out because the declared context window of fm (${DECLARED_WINDOW} tokens) leaves no room for them; raise the declared context window of that model, or shorten the instructions`,
+      `The declared context window of fm (${DECLARED_WINDOW} tokens) leaves no room for these tools, so they were left out: PullRequestComments, PullRequestCreate, PullRequestMerge, PullRequestStatus (optional tools); raise the declared context window of that model, or shorten the instructions`,
     ]);
   });
 });
