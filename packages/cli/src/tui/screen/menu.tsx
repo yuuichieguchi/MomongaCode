@@ -49,7 +49,7 @@ export const slashMatches = (text: string, commands: readonly SlashCommand[]): S
     if (names.some((name) => name.startsWith(typed))) return 1;
     return names.some((name) => name.includes(typed)) ? 2 : 3;
   };
-  return [0, 1, 2].flatMap((rank) => commands.filter((command) => rankOf(command) === rank));
+  return [0, 1, 2].flatMap((rank) => commands.filter((command) => rankOf(command) === rank).toSorted((left, right) => left.name.length - right.name.length));
 };
 
 export const noCommandsMatch = (text: string): string => `No commands match "${text}"`;
