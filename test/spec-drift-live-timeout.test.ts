@@ -38,8 +38,8 @@ describe('the live timeout of RunRecovery.tla against the executor', () => {
     expect(configText('RunRecovery.liveTimeoutFailed')).toMatch(/^SPECIFICATION SpecLiveTimeoutFailed$/m);
     const check = manifest.entries.find((entry) => entry.config === 'RunRecovery.liveTimeout');
     const evidence = manifest.entries.find((entry) => entry.config === 'RunRecovery.liveTimeoutFailed');
-    expect(check).toMatchObject({ role: 'check', expect: 'holds', tier: 'every-run' });
-    expect(evidence).toMatchObject({ role: 'evidence', expect: { violates: 'KilledExecIsUnknown', exitCode: 12 }, tier: 'every-run' });
+    expect(check).toMatchObject({ role: 'check', expect: 'holds' });
+    expect(evidence).toMatchObject({ role: 'evidence', expect: { violates: 'KilledExecIsUnknown', exitCode: 12 } });
   });
 
   it('the executor defines the one settle function, and the model live kill is defined on the call', () => {

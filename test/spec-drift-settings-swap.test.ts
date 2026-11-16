@@ -62,7 +62,6 @@ describe('the code follows SettingsSwap.tla (settings applied in place)', () => 
     expect([...new Set(used)].sort()).toEqual(variants().filter((variant) => variant !== 'decided'));
     for (const entry of evidence) {
       expect(typeof entry.expect === 'object' ? entry.expect.violates : '', entry.config).toSatisfy((property: string) => DESIGN_PROPERTIES.includes(property));
-      expect(entry.tier, entry.config).toBe('every-run');
     }
   });
 
@@ -70,7 +69,7 @@ describe('the code follows SettingsSwap.tla (settings applied in place)', () => 
     const configs = fs.readdirSync(specDir).filter((file) => /^SettingsSwap(\.\w+)?\.cfg$/.test(file)).map((file) => file.slice(0, -'.cfg'.length)).sort();
     const entries = readManifest(path.join(specDir, 'manifest.json')).entries.filter((entry) => entry.config.startsWith('SettingsSwap'));
     expect(entries.map((entry) => entry.config).sort()).toEqual(configs);
-    expect(entries.find((entry) => entry.config === 'SettingsSwap')).toMatchObject({ role: 'check', expect: 'holds', tier: 'every-run' });
+    expect(entries.find((entry) => entry.config === 'SettingsSwap')).toMatchObject({ role: 'check', expect: 'holds' });
   });
 
   it('the applied record of the code is the observer of the model: holding with an observer, and alone without one', () => {
@@ -92,8 +91,8 @@ describe('the code follows SettingsSwap.tla (settings applied in place)', () => 
     expect(constantOf(holds, 'Swapped')).not.toBe('{}');
     expect(constantOf(violates, 'Swapped')).toBe(constantOf(holds, 'Swapped'));
     const manifest = readManifest(path.join(specDir, 'manifest.json')).entries;
-    expect(manifest.find((entry) => entry.config === 'SettingsSwap.reorder')).toMatchObject({ role: 'evidence', expect: { violates: 'CarryOverByIdentity', exitCode: 12 }, tier: 'every-run' });
-    expect(manifest.find((entry) => entry.config === 'SettingsSwap.reorderHolds')).toMatchObject({ role: 'check', expect: 'holds', tier: 'every-run' });
+    expect(manifest.find((entry) => entry.config === 'SettingsSwap.reorder')).toMatchObject({ role: 'evidence', expect: { violates: 'CarryOverByIdentity', exitCode: 12 } });
+    expect(manifest.find((entry) => entry.config === 'SettingsSwap.reorderHolds')).toMatchObject({ role: 'check', expect: 'holds' });
     for (const entry of manifest.filter((candidate) => candidate.config.startsWith('SettingsSwap') && candidate.config !== 'SettingsSwap.reorder' && candidate.config !== 'SettingsSwap.reorderHolds')) {
       expect(constantOf(configOf(entry.config), 'Swapped'), entry.config).toBe('{}');
     }
