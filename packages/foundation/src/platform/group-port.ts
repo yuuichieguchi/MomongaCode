@@ -104,10 +104,7 @@ export const createJobGroupPort = (kept: KeptGroupControl): ProcessGroupPort => 
   names: { nameOf: (pgid) => kept.nameOf(pgid), recall: (pgid, name) => kept.recall(pgid, name) },
   keeper: kept,
   ended: (pgid, options) => kept.ended(pgid, options),
-  signal: async (pgid, _signal, options) => {
-    await kept.terminate(pgid, options);
-    return 'sent';
-  },
+  signal: (pgid, _signal, options) => kept.terminate(pgid, options),
   alive: async (pgid, options) => {
     const answer = await kept.members(pgid, options);
     return answer.kind === 'members' && answer.pids.length > 0;

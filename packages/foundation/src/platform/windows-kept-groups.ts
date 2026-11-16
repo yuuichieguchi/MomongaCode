@@ -1,5 +1,5 @@
 import { KEEPER_JOB_PREFIX, KEEPER_NAME_FORM } from '../process-contract.ts';
-import type { GroupProbeOptions } from './group-port.ts';
+import type { GroupProbeOptions, GroupSignalOutcome } from './group-port.ts';
 import { hostKeeperHost } from './windows-keeper-host.ts';
 import { KeeperLostError, attachKept, openKeptLaunch } from './windows-keeper.ts';
 import type { KeeperFailureReason, KeeperHost, KeeperRun, KeeperStart, KeptCommand, KeptGroup } from './windows-keeper.ts';
@@ -43,7 +43,7 @@ export type KeptGroupControl = {
   recall(pgid: number, name: string): void;
   leads(pgid: number): boolean;
   members(pgid: number, options: GroupProbeOptions): Promise<KeptMembers>;
-  terminate(pgid: number, options: GroupProbeOptions): Promise<void>;
+  terminate(pgid: number, options: GroupProbeOptions): Promise<GroupSignalOutcome>;
   ended(pgid: number, options: GroupProbeOptions): Promise<void>;
 };
 
@@ -177,20 +177,21 @@ export const createKeptGroupControl = (host: KeeperHost): KeptGroupControl => {
     },
     terminate: async (pgid, options) => {
       const entry = entries.get(pgid);
-      if (entry === undefined || entry.gone) return;
+      if (entry === undefined || entry.gone) return 'gone';
       const signal = options.signal ?? unbounded;
       const live = await liveOf(entry, signal);
       if (live !== undefined) {
         if ((await listed(live, signal)) !== undefined) {
           live.terminate();
-          return;
+          return 'sent';
         }
-        if (await emptied(pgid, entry, live, signal)) return;
+        if (await emptied(pgid, entry, live, signal)) return 'gone';
       }
-      if (entry.gone) return;
-      await byName(pgid, entry, signal, undefined, async (group) => {
+      if (entry.gone) return 'gone';
+      return byName<GroupSignalOutcome>(pgid, entry, signal, 'gone', async (group) => {
         group.terminate();
         await group.ended(signal);
+        return 'sent';
       });
     },
     ended: async (pgid, options) => {
