@@ -281,8 +281,9 @@ describe('the analysis call', () => {
     ['analysis', GUIDELINE_ANALYSIS_SCHEMA],
     ['candidate', GUIDELINE_CANDIDATE_SCHEMA],
   ])('guards a reply shape that a dialect would rewrite: the %s schema is closed and requires every property', (_label, schema) => {
-    expect(schema.additionalProperties).toBe(false);
-    expect([...schema.required].sort()).toEqual(Object.keys(schema.properties).sort());
+    const shape = schema as { additionalProperties: unknown; required: readonly string[]; properties: Record<string, unknown> };
+    expect(shape.additionalProperties).toBe(false);
+    expect([...shape.required].sort()).toEqual(Object.keys(shape.properties).sort());
   });
 
   it('guards a candidate from no evidence: when every analysis fails no candidate is sampled', async () => {

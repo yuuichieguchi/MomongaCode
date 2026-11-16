@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema, isRecord, parseOutsideJson, sha256Hex } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { GUIDELINE_TEXT_PATTERN } from '@momonga/protocol';
+import { GUIDELINE_TEXT_PATTERN, nonNegativeInteger as count } from '@momonga/protocol';
 import { GATE_CHECKS, TOKEN_PRIMARY_METRICS } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
 import { CONTEXT_MODELS } from './context-report.ts';
@@ -102,7 +102,6 @@ const nullableVersion = { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null
 
 const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
 
-const count = { type: 'integer', minimum: 0 } as const;
 
 const tokens = {
   type: 'object',
