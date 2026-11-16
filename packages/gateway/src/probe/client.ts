@@ -1,5 +1,5 @@
 import { request } from 'undici';
-import { OperationLimitError, createOutboundDispatcher, createUdsClient, fixedSocket, operationLimit } from '@momonga/foundation';
+import { OperationLimitError, createOutboundDispatcher, createUdsClient, fixedSocket, operationLimit, parseOutsideJson } from '@momonga/foundation';
 import type { Clock, OutboundNetwork, Timing, UdsClient, UdsResponse } from '@momonga/foundation';
 import { readTextLimited } from '../adapters/shared/body-reading.ts';
 import type { RequestGate } from './request-gate.ts';
@@ -91,7 +91,7 @@ const createTcpClient = (origin: string, network: OutboundNetwork, connectTimeou
       for (const [name, value] of Object.entries(response.headers)) {
         if (value !== undefined) headers[name.toLowerCase()] = Array.isArray(value) ? value.join(', ') : value;
       }
-      return { status: response.statusCode, headers, body: response.body, text: () => response.body.text(), json: () => response.body.json() };
+      return { status: response.statusCode, headers, body: response.body, text: () => response.body.text(), json: async () => parseOutsideJson(await response.body.text()) };
     },
     close: () => agent.close(),
     destroy: () => agent.destroy().then(() => undefined),
