@@ -11,9 +11,18 @@ export type FailureReason =
   | 'dependency'
   | 'ref-sibling'
   | 'written-key'
-  | 'unresolved-ref';
+  | 'unresolved-ref'
+  | 'free-form-object';
 
-export const STATED_REASONS: readonly FailureReason[] = ['loop', 'reject', 'polarity', 'dependency', 'written-key', 'unsatisfiable', 'ref-sibling'];
+export const STATED_REASONS: readonly FailureReason[] = ['loop', 'reject', 'polarity', 'dependency', 'written-key', 'unsatisfiable', 'ref-sibling', 'free-form-object'];
+
+export class FreeFormObject extends Error {
+  readonly path: string;
+  constructor(path: string) {
+    super(`a free-form object at ${path} cannot be closed`);
+    this.path = path;
+  }
+}
 
 export class RenderFailure extends Error {
   readonly reason: FailureReason;
@@ -42,6 +51,7 @@ export interface State {
   ancestors: Ancestor[];
   holder: { value: Schema };
   pendingDrops: { node: JsonObject; keys: string[] }[];
+  entered: Schema;
 }
 
 export type Position = 'P' | 'N' | 'M';
@@ -322,6 +332,16 @@ const constAsEnum = (node: JsonObject, state: State): JsonObject => {
   return result;
 };
 
+const admitsAnObject = (node: JsonObject): boolean => {
+  const types = typesOf(node);
+  if (types !== undefined && !types.includes('object')) return false;
+  if (Object.hasOwn(node, 'const') && !isObject(node['const'])) return false;
+  const values = node['enum'];
+  return !Array.isArray(values) || values.some((value) => isObject(value));
+};
+
+const isFreeFormObject = (node: JsonObject, entered: Schema): boolean => admitsAnObject(node) && !(isObject(entered) && isObject(entered['properties']));
+
 const ensureKey = (node: JsonObject, rule: Extract<Rule, { op: 'ensure-key' }>, state: State): JsonObject => {
   const present = Object.hasOwn(node, rule.key);
   const overwrite = rule.overwrite ?? 'never';
@@ -332,6 +352,9 @@ const ensureKey = (node: JsonObject, rule: Extract<Rule, { op: 'ensure-key' }>, 
     if (overwrite === 'always') write = current !== false;
   }
   if (!write) return node;
+  if (rule.key === 'additionalProperties' && rule.value === false && overwrite === 'always' && state.position === 'P' && isFreeFormObject(node, state.entered)) {
+    throw new FreeFormObject(pathOf(state));
+  }
   if (rule.key === 'additionalProperties' && rule.value === true && unevaluatedConflict(node, state)) {
     throw new RenderFailure('dependency', pathOf(state), 'additionalProperties true would mark properties evaluated');
   }
