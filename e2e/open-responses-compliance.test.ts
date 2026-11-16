@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { modelSettings, startFakeChatCompletions } from '@momonga/testkit';
+import { modelSettings, standInEnv, startFakeChatCompletions } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import { SUPERVISOR_APP_VERSION } from './support/app-version.ts';
@@ -99,7 +99,7 @@ describe('Open Responses compliance suite against the supervised gateway debug l
     });
     const port = debugPortOf(home.paths.logFiles.gateway);
 
-    const { output, exitCode } = await runSuite(`http://127.0.0.1:${port}/v1`, home.root, { PATH: '/usr/bin:/bin', HOME: home.home, TMPDIR: home.sessionTmp });
+    const { output, exitCode } = await runSuite(`http://127.0.0.1:${port}/v1`, home.root, { ...standInEnv('/usr/bin:/bin'), HOME: home.home, TMPDIR: home.sessionTmp });
 
     const idsWith = (status: SuiteResult['status']): string[] => output.results.filter((result) => result.status === status).map((result) => result.id).sort();
     expect(output.results.filter((result) => result.status !== 'passed' && !NOT_SERVED.some((id) => id === result.id))).toEqual([]);

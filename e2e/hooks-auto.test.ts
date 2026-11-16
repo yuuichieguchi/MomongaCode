@@ -16,7 +16,7 @@ import { baseSettings, startStack, upstreamModelRef, withClassifierModel } from 
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '../packages/runtime/src/memory/reflection-bound.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, abortableWait } from './support/wait.ts';
-import { firstGeneration } from '@momonga/testkit';
+import { firstGeneration, standInEnv } from '@momonga/testkit';
 import { fixedSocket } from '@momonga/foundation';
 
 const RUNS_PER_CASE = 2;
@@ -193,7 +193,7 @@ describe('hooks and auto mode against real processes', () => {
           const cwd = workspaceOf(golden, runIndex);
           fs.mkdirSync(path.join(cwd, '.git', 'hooks'), { recursive: true });
           fs.mkdirSync(path.join(cwd, '.github', 'workflows'), { recursive: true });
-          return { api, workspace: { cwd, env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp } }, close: async () => undefined };
+          return { api, workspace: { cwd, env: { HOME: home.home, ...standInEnv(SESSION_PATH), TMPDIR: home.sessionTmp } }, close: async () => undefined };
         },
       });
       const meetsMinimum = Object.fromEntries(report.cases.map((entry) => [entry.id, entry.meetsMinimum]));

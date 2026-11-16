@@ -18,7 +18,7 @@ import type { RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
-import { firstGeneration } from '@momonga/testkit';
+import { firstGeneration, standInEnv } from '@momonga/testkit';
 
 const BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
 const GUIDE_MARKER = 'PDF-GUIDE-RESOURCE-MARKER-9c1e';
@@ -108,7 +108,7 @@ const createSession = async (home: E2eHome, permissionMode: string): Promise<str
   try {
     const response = await raw.call('POST', '/v1/sessions', {
       cwd: home.project,
-      env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp },
+      env: { HOME: home.home, ...standInEnv(SESSION_PATH), TMPDIR: home.sessionTmp },
       permissionMode,
       bypassAllowed: permissionMode === 'bypassPermissions',
     });
