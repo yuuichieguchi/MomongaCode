@@ -8,7 +8,7 @@ import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HO
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
-import { RULE_VERIFY_BUDGET_MS, applyCapabilityOverride } from '@momonga/protocol';
+import { RULE_VERIFY_BUDGET_MS, imageCapability } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, Mandate, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createAgentLoader } from '@momonga/agents';
 import { contributionAtTerminal, createSkillsPort, createWorker } from '@momonga/runtime';
@@ -50,9 +50,8 @@ export const TEST_PROMPT_PREFIX = 'You are the MomongaCode test agent working in
 
 export const testSystemPrompt = ({ cwd }: { cwd: string; platform: string }): string => `${TEST_PROMPT_PREFIX} ${cwd}.`;
 
-export const capabilitiesFor = (contextWindow: number, overrides: CapabilityOverride = {}): Capabilities =>
-  applyCapabilityOverride(
-    {
+export const capabilitiesFor = (contextWindow: number, { imageInput, imageTokens, ...overrides }: CapabilityOverride = {}): Capabilities =>
+  ({ ...{
       contextWindow,
       maxOutputTokens: 4096,
       toolCalling: 'native',
@@ -66,9 +65,7 @@ export const capabilitiesFor = (contextWindow: number, overrides: CapabilityOver
       usageReported: true,
       maxConcurrency: 1,
       source: 'declared',
-    },
-    overrides,
-  );
+    }, ...overrides, ...imageCapability(imageInput ?? false, imageTokens) })
 
 export { fakeSandbox };
 
