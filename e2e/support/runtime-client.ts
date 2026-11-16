@@ -5,7 +5,7 @@ import type { SocketResolver } from '@momonga/foundation';
 import { isOpaqueEvent } from '@momonga/protocol';
 import type { AnsweredByView, PermissionMode, ReportPage, RunHealth, Mandate } from '@momonga/protocol';
 import { RunApiError, createRuntimeClient as createProductClient } from '../../packages/cli/src/client/runtime-client.ts';
-import type { RuntimeClient as ProductClient } from '../../packages/cli/src/client/runtime-client.ts';
+import type { RuntimeClient as ProductClient, UserShellEnd, UserShellIo } from '../../packages/cli/src/client/runtime-client.ts';
 import { nodeClock } from '../../packages/cli/src/node-ports.ts';
 import type { ApprovalView, RunView, SessionView } from '../../packages/cli/src/client/views.ts';
 import type { E2eHome } from './home.ts';
@@ -37,7 +37,7 @@ export type CreateSessionOptions = { permissionMode?: PermissionMode };
 
 export type RawResponse = { readonly status: number; readonly body: unknown };
 
-export type CreateRunOptions = { history?: 'inherit' | 'fresh'; mandate?: Mandate };
+export type CreateRunOptions = { history?: 'inherit' | 'fresh'; mandate?: Mandate; attachMentions?: boolean };
 
 export type RuntimeClient = {
   createSession(options?: CreateSessionOptions): Promise<{ session: SessionView }>;
@@ -52,6 +52,7 @@ export type RuntimeClient = {
   health(): Promise<RunHealth>;
   reportFacts(request: { cursor: string | null; limit: number }): Promise<ReportPage>;
   answeredBy(runId: string): Promise<AnsweredByView[]>;
+  userShell(sessionId: string, command: string, include: boolean, io: UserShellIo): Promise<UserShellEnd>;
   close(): Promise<void>;
 };
 
@@ -206,6 +207,7 @@ export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver
     health: () => product.health(),
     reportFacts: (request) => product.reportFacts(request),
     answeredBy: async (runId) => (await product.runAnsweredBy(runId)).answeredBy,
+    userShell: (sessionId, command, include, io) => product.userShell(sessionId, command, include, io),
     close,
   };
 };

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
 import { createFakeClock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
 import { LIMIT_TEST, limitArmed, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
-import { BASE_ENV, makeDir, onCleanup } from './mcp-harness.ts';
+import { BASE_ENV, makeDir, makeRecordFile, modernConfig, onCleanup } from './mcp-harness.ts';
 
 const NEVER_ANSWERS = { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'] };
 
@@ -55,5 +55,27 @@ describe('mcp.connectTimeoutMs bounds the connect of a server that never answers
       await settledAfter(attempt);
       expect((attempt.error() as Error).message).toBe('the connect did not finish within the MCP connect limit of 5000 ms');
     }
+  });
+
+  it('a server that answers connects inside the bound, and the bound armed for that connect is cleared with it', LIMIT_TEST, async () => {
+    const connection = createManagedConnection({
+      launch: TEST_STDIO_LAUNCH,
+      files: nodeFileSystem,
+      clientVersion: '0.0.0-test',
+      name: 's',
+      config: modernConfig(makeRecordFile()),
+      scope: 'user',
+      projectDir: makeDir(),
+      baseEnv: BASE_ENV,
+      clock: createFakeClock(1_000_000),
+      random: () => 0,
+      connectTimeoutMs: 5000,
+    });
+    onCleanup(() => connection.close());
+    useLimitTimers();
+
+    await connection.connect();
+    expect(connection.diagnostics().state).toBe('connected');
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
