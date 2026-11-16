@@ -53,6 +53,7 @@ describe('a server declared in the user settings resolves to the one description
     const description = declaredOf(loaded.settings.models, 'mine');
     expect(description).toEqual({
       id: 'mine',
+      label: 'the server mine',
       provider: 'mine',
       wire: 'chat-completions',
       binary: { defaultPath: COMMAND },

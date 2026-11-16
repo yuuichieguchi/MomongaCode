@@ -79,13 +79,13 @@ describe('createMcpPool diagnostics and close', () => {
   it('reports idle before the first listing and connected details after it', async () => {
     const harness = makePool([entry('modern', modernConfig(makeRecordFile())), entry('legacy', legacyConfig())]);
     expect(harness.pool.diagnostics()).toEqual([
-      { server: 'modern', state: 'idle', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '' },
-      { server: 'legacy', state: 'idle', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '' },
+      { server: 'modern', state: 'idle', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '', exit: null },
+      { server: 'legacy', state: 'idle', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '', exit: null },
     ]);
     await harness.snapshot();
     const [modern, legacy] = harness.pool.diagnostics();
-    expect(modern).toMatchObject({ server: 'modern', state: 'connected', protocolVersion: '2026-07-28', lastError: null });
-    expect(legacy).toMatchObject({ server: 'legacy', state: 'connected', protocolVersion: '2025-11-25', lastError: null });
+    expect(modern).toMatchObject({ server: 'modern', state: 'connected', protocolVersion: '2026-07-28', lastError: null, exit: null });
+    expect(legacy).toMatchObject({ server: 'legacy', state: 'connected', protocolVersion: '2025-11-25', lastError: null, exit: null });
     expect(await groupExists(modern?.pgid as number)).toBe(true);
     expect(await groupExists(legacy?.pgid as number)).toBe(true);
     expect(modern?.pgid).not.toBe(legacy?.pgid);

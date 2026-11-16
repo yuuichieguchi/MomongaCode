@@ -281,7 +281,7 @@ describe('worker skills: cancelling an activation', () => {
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.portCalls.abandon).toEqual([]);
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([]);
-    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: 'call_skill', status: 'failed', output: 'activate_skill was cancelled' })]);
+    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: 'call_skill', status: 'failed', output: 'activate_skill was cancelled before it changed anything; nothing changed.' })]);
     expect(env.ofType(run.id, 'skill.activated')).toEqual([]);
   });
 

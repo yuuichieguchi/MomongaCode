@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadSettings, loadUserSettings } from '@momonga/config';
+import { DEFAULT_BASH_DRAIN_IDLE_MS, loadSettings, loadUserSettings } from '@momonga/config';
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const userResolved = async (settings: Record<string, unknown>) => {
@@ -17,7 +17,7 @@ const userRejected = async (settings: Record<string, unknown>, fragment: RegExp)
 describe('the time limits of the tools are settings', () => {
   it('default to the values of the host-bounds design', async () => {
     const { tools, update } = await userResolved({});
-    expect(tools.bash).toEqual({ defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000 });
+    expect(tools.bash).toEqual({ defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000, drainIdleMs: DEFAULT_BASH_DRAIN_IDLE_MS });
     expect(tools.search).toEqual({ timeoutMs: 60_000 });
     expect(tools.operations).toEqual({ timeoutMs: 120_000 });
     expect(update).toEqual({ stallTimeoutMs: 30_000 });
@@ -25,7 +25,7 @@ describe('the time limits of the tools are settings', () => {
 
   it('take the values the person sets, each key by itself', async () => {
     const { tools, update } = await userResolved({ tools: { bash: { maxTimeoutMs: 900_000, onTimeout: 'kill' }, search: { timeoutMs: 20_000 }, operations: { timeoutMs: 45_000 } }, update: { stallTimeoutMs: 90_000 } });
-    expect(tools.bash).toEqual({ defaultTimeoutMs: 120_000, maxTimeoutMs: 900_000, onTimeout: 'kill', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000 });
+    expect(tools.bash).toEqual({ defaultTimeoutMs: 120_000, maxTimeoutMs: 900_000, onTimeout: 'kill', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000, drainIdleMs: DEFAULT_BASH_DRAIN_IDLE_MS });
     expect(tools.search.timeoutMs).toBe(20_000);
     expect(tools.operations.timeoutMs).toBe(45_000);
     expect(update.stallTimeoutMs).toBe(90_000);

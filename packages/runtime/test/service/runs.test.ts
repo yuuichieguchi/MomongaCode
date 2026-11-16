@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PROMPT_BODY_MAX_BYTES } from '@momonga/protocol';
 import { DEFAULT_LIMITS, DEFAULT_TIMEOUT_MS, START_MS, expectError, startService } from './helpers.ts';
 
 const DAY_MS = 86_400_000;
@@ -211,14 +212,24 @@ describe('run idempotency', () => {
 describe('request framing', () => {
   it('rejects a body above maxBodyBytes with 413', async () => {
     const env = await startService({ maxBodyBytes: 1024 });
-    const session = await env.createSession();
-    expectError(await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'a'.repeat(2048) } }), 413, 'body_too_large');
+    expectError(await env.http('POST', '/v1/sessions', { body: { title: 'a'.repeat(2048) } }), 413, 'body_too_large');
   });
 
   it('rejects a body above the 2 MiB default with 413', async () => {
     const env = await startService();
+    expectError(await env.http('POST', '/v1/sessions', { body: { title: 'a'.repeat(2 * 1024 * 1024 + 16) } }), 413, 'body_too_large');
+  });
+
+  it('reads a run request up to the prompt body bound, not maxBodyBytes', async () => {
+    const env = await startService({ maxBodyBytes: 1024 });
     const session = await env.createSession();
-    expectError(await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'a'.repeat(2 * 1024 * 1024 + 16) } }), 413, 'body_too_large');
+    expect((await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'a'.repeat(2048) } })).status).toBe(202);
+  });
+
+  it('rejects a run request above the prompt body bound with 413', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+    expectError(await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'a'.repeat(PROMPT_BODY_MAX_BYTES + 16) } }), 413, 'body_too_large');
   });
 
   it('rejects a non-JSON content type with 415', async () => {
