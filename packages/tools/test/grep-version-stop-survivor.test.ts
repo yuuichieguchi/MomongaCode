@@ -37,6 +37,7 @@ const scene = (survivor: Survivor) => {
   const groupPort: ProcessGroupPort = {
     signal: async (pgid) => {
       if (survivor === 'none' || pgid !== groupOf(survivor)) runnable.delete(pgid);
+      return 'sent' as const;
     },
     alive: async (pgid) => runnable.has(pgid),
   };

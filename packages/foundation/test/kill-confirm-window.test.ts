@@ -17,6 +17,7 @@ const ignoresTerm = (goneAfterKillMs: number | undefined): Scripted => {
       if (pgid !== PGID) throw new Error(`unexpected group ${pgid}`);
       if (signal === 'SIGTERM') termAt ??= clock.now();
       if (signal === 'SIGKILL') killedAt ??= clock.now();
+      return 'sent' as const;
     },
     alive: async () => killedAt === undefined || goneAfterKillMs === undefined || clock.now() < killedAt + goneAfterKillMs,
   };
@@ -62,6 +63,7 @@ describe('terminateGroup confirms a SIGKILL in its own window K = KILL_CONFIRM_M
       signal: async (_pgid, signal, options) => {
         if (options?.signal?.aborted === true) throw new Error('stop bound ended');
         if (signal === 'SIGKILL') killedAt ??= clock.monotonicMs();
+        return 'sent' as const;
       },
       alive: async (_pgid, options) => {
         if (!identified) {

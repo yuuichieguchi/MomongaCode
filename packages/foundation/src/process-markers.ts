@@ -2,7 +2,7 @@ import type { Dirent, Stats } from 'node:fs';
 import path from 'node:path';
 import type { SignalSender } from './process-alive.ts';
 import { groupPortOf, hostAsyncSignalSender } from './platform/group-port.ts';
-import type { AsyncSignalSender, ProcessGroupPort } from './platform/group-port.ts';
+import type { AsyncSignalSender, GroupProbeOptions, GroupSignalOutcome, ProcessGroupPort } from './platform/group-port.ts';
 import type { MarkerMode, MarkerState } from './marker-state.ts';
 import { commandMayStillRun } from './command-liveness.ts';
 import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
@@ -151,20 +151,30 @@ const groupTarget = (pgid: number, proof: readonly Identity[], alive: boolean): 
 
 type SignalPass = { sent: number[]; stoppedHolders: number[]; unsignalled: number[]; unreadable: number[] };
 
-const sendCounted = async (send: AsyncSignalSender, target: number, signal: NodeJS.Signals, stop: AbortSignal, pass: SignalPass): Promise<void> => {
+type Deliver = (target: number, signal: NodeJS.Signals, options: GroupProbeOptions) => Promise<GroupSignalOutcome>;
+
+const deliverBy =
+  (send: AsyncSignalSender): Deliver =>
+  async (target, signal, options) => {
+    try {
+      await send(target, signal, options);
+      return 'sent';
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'EPERM') return 'denied';
+      if (code === 'ESRCH') return 'gone';
+      throw error;
+    }
+  };
+
+const sendCounted = async (deliver: Deliver, target: number, signal: NodeJS.Signals, stop: AbortSignal, pass: SignalPass): Promise<void> => {
   pass.sent.push(target);
-  try {
-    await send(target, signal, { signal: stop });
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'EPERM') pass.unsignalled.push(Math.abs(target));
-    else if (code !== 'ESRCH') throw error;
-  }
+  if ((await deliver(target, signal, { signal: stop })) === 'denied') pass.unsignalled.push(Math.abs(target));
 };
 
 type ProvedSignal = { send: AsyncSignalSender; reads: PassReads; stop: AbortSignal; group?: ProcessGroupPort };
 
-const groupSenderOf = (group: ProcessGroupPort): AsyncSignalSender => (target, signal, options) => (signal === 0 ? group.alive(Math.abs(target), options).then(() => undefined) : group.signal(Math.abs(target), signal, options));
+const groupDeliverOf = (group: ProcessGroupPort): Deliver => (target, signal, options) => group.signal(Math.abs(target), signal, options);
 
 const startUnchanged = async ({ pid, startedAt }: Identity, reads: PassReads, pass: SignalPass): Promise<boolean> => {
   const read = await reads.startTime(pid);
@@ -174,18 +184,18 @@ const startUnchanged = async ({ pid, startedAt }: Identity, reads: PassReads, pa
 
 const signalHolder = async ({ send, stop }: ProvedSignal, pid: number, signal: NodeJS.Signals, pass: SignalPass): Promise<void> => {
   pass.stoppedHolders.push(pid);
-  await sendCounted(send, pid, signal, stop, pass);
+  await sendCounted(deliverBy(send), pid, signal, stop, pass);
 };
 
 const signalGroupTarget = async (proved: ProvedSignal, group: number, proof: readonly Identity[], signal: NodeJS.Signals, pass: SignalPass): Promise<void> => {
   const { reads, stop } = proved;
-  const send = proved.group === undefined ? proved.send : groupSenderOf(proved.group);
+  const deliver = proved.group === undefined ? deliverBy(proved.send) : groupDeliverOf(proved.group);
   for (const identity of proof) {
     if (!(await startUnchanged(identity, reads, pass))) continue;
     const groupNow = (await reads.groups([identity.pid], [group])).get(identity.pid);
     if (groupNow === group) {
       pass.stoppedHolders.push(...proof.map(({ pid }) => pid));
-      await sendCounted(send, -group, signal, stop, pass);
+      await sendCounted(deliver, -group, signal, stop, pass);
       return;
     }
     if (groupNow !== undefined) await signalHolder(proved, identity.pid, signal, pass);

@@ -49,7 +49,7 @@ const recordingTerminate = (signals: NodeJS.Signals[]): NonNullable<StdioTranspo
   const port: ProcessGroupPort = {
     signal: async (pgid, signal, options) => {
       signals.push(signal);
-      await host.signal(pgid, signal, options);
+      return host.signal(pgid, signal, options);
     },
     alive: (pgid, options) => host.alive(pgid, options),
   };

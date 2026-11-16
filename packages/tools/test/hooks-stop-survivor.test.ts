@@ -38,6 +38,7 @@ const contextFor = (survives: boolean) => {
   const groupPort: ProcessGroupPort = {
     signal: async () => {
       if (!survives) alive = false;
+      return 'sent' as const;
     },
     alive: async () => alive,
   };

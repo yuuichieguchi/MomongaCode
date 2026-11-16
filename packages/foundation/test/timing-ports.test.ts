@@ -20,7 +20,7 @@ const groupPort = (aliveUntil: () => boolean): { port: ProcessGroupPort; signals
   return {
     signals,
     port: {
-      signal: async (_pgid, signal) => void signals.push(signal),
+      signal: async (_pgid, signal) => (signals.push(signal), 'sent' as const),
       alive: async () => aliveUntil(),
     },
   };
@@ -82,6 +82,7 @@ describe('process group termination on an injected timing', () => {
       signal: async (_pgid, signal) => {
         signals.push(signal);
         if (signal === 'SIGKILL') killed = true;
+        return 'sent' as const;
       },
       alive: async () => !killed,
     };

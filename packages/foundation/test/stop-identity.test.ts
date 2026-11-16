@@ -71,7 +71,7 @@ const worldOf = (initial: Record<number, Proc>, hooks: Hooks = {}) => {
     for (const pid of victims) deliver(pid, signal);
   };
   const groupPort: ProcessGroupPort = {
-    signal: async (pgid, signal) => kill(-pgid, signal),
+    signal: async (pgid, signal) => (kill(-pgid, signal), 'sent' as const),
     alive: async (pgid) => [...procs.values()].some((proc) => proc.group === pgid),
   };
   const clock = createFakeClock(0);
@@ -274,6 +274,7 @@ const recorded = (world: World): Event[] => {
     kill(target, signal);
   };
   Object.assign(world, { kill: recordingKill });
+  Object.assign(world.groupPort, { signal: async (pgid: number, signal: NodeJS.Signals) => (recordingKill(-pgid, signal), 'sent' as const) });
   return events;
 };
 

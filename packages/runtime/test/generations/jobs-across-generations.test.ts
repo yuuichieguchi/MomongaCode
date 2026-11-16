@@ -131,7 +131,7 @@ const generationOf = (w: World, generation: number, role: GenerationRole = 'serv
         return { removed: true };
       },
     },
-    groupPort: { signal: async () => undefined, alive: async () => false },
+    groupPort: { signal: async () => 'sent' as const, alive: async () => false },
   });
   const spawned: FakeProcess[] = [];
   const start = (callKey: string): Promise<{ jobId: string }> =>

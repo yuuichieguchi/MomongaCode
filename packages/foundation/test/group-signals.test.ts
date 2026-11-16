@@ -23,6 +23,7 @@ const worldOf = (signals: ProcessGroupPort['signals'], diesOn: NodeJS.Signals | 
       signal: async (_pgid, signal) => {
         sent.push({ signal, at: clock.now() });
         if (signal === diesOn) alive = false;
+        return 'sent' as const;
       },
       alive: async () => {
         probes += 1;
@@ -76,7 +77,7 @@ describe('a port that can push the end of its group is not polled', () => {
     const sleeps: number[] = [];
     const port: ProcessGroupPort = {
       signals: ['SIGTERM'],
-      signal: async () => undefined,
+      signal: async () => 'sent' as const,
       alive: async () => {
         probes += 1;
         return alive;
@@ -98,7 +99,7 @@ describe('a port that can push the end of its group is not polled', () => {
     let probes = 0;
     const port: ProcessGroupPort = {
       signals: ['SIGTERM'],
-      signal: async () => undefined,
+      signal: async () => 'sent' as const,
       alive: async () => {
         probes += 1;
         return true;

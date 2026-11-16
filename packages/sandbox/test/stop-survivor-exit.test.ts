@@ -18,7 +18,7 @@ describe('a group member that survives the stop after the leader exits is report
     const timing = virtualTiming();
     const signals: string[] = [];
     const groupPort: ProcessGroupPort = {
-      signal: async (_pgid, signal) => void signals.push(signal),
+      signal: async (_pgid, signal) => (signals.push(signal), 'sent' as const),
       alive: async () => true,
     };
     const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
@@ -48,6 +48,7 @@ describe('a group member that survives the stop after the leader exits is report
     const groupPort: ProcessGroupPort = {
       signal: async (_pgid, signal) => {
         if (signal === 'SIGTERM') alive = false;
+        return 'sent' as const;
       },
       alive: async () => alive,
     };
@@ -76,6 +77,7 @@ describe('a group member that survives the stop after the leader exits is report
     const groupPort: ProcessGroupPort = {
       signal: async (_pgid, signal) => {
         if (signal === 'SIGTERM') alive = false;
+        return 'sent' as const;
       },
       alive: async () => alive,
     };

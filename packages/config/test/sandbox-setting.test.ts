@@ -5,7 +5,7 @@ import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSetting
 describe('sandbox setting', () => {
   it('is declared in the settings schema as seatbelt, bubblewrap or none', () => {
     const properties = SETTINGS_SCHEMA.properties as Record<string, unknown>;
-    expect(properties['sandbox']).toEqual({ enum: ['seatbelt', 'bubblewrap', 'none'], defaultsBy: { by: 'platform', values: { darwin: 'seatbelt', linux: 'bubblewrap', win32: 'none' } } });
+    expect(properties['sandbox']).toEqual({ enum: ['seatbelt', 'bubblewrap', 'none'] });
   });
 
   it.each([

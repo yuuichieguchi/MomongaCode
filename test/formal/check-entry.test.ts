@@ -182,7 +182,7 @@ describe('checking one configuration', () => {
     [
       'a run whose process group stays alive',
       () => {
-        const port: ProcessGroupPort = { signal: async () => undefined, alive: async () => true };
+        const port: ProcessGroupPort = { signal: async () => 'sent' as const, alive: async () => true };
         return { groupPort: port, timing: timingThatPassesOnEveryRead(() => undefined) };
       },
     ],
@@ -311,7 +311,7 @@ describe('checking one configuration', () => {
   it('fails a run whose process group still has members at the test limit and stores nothing', async () => {
     let probes = 0;
     const port: ProcessGroupPort = {
-      signal: async () => undefined,
+      signal: async () => 'sent' as const,
       alive: async () => {
         probes += 1;
         return true;

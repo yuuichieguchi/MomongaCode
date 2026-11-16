@@ -23,7 +23,7 @@ const recordingPort = (asked: number[]): ProcessGroupPort => {
     },
     signal: async (pgid, signal, options) => {
       asked.push(pgid);
-      await host.signal(pgid, signal, options);
+      return host.signal(pgid, signal, options);
     },
   };
 };

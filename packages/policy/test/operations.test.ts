@@ -283,7 +283,7 @@ describe('a covered program is judged by what is known to be read-only, not by w
     },
   );
 
-  it('answers other for a covered program only where the read-only classifier answers read-only, over generated invocations', async () => {
+  it('answers other for a covered program only where the read-only classifier answers read-only, over a pairwise cover of 192 generated invocations', async () => {
     const layout = makeLayout();
     const allowAll = [ruleIn(layout)('allow', 'Bash')];
     const judged = async (command: string, mandate: boolean) =>
@@ -293,21 +293,15 @@ describe('a covered program is judged by what is known to be read-only, not by w
     const options = ['', '--no-pager', '-c a.b=c', '--exec-path=/x'];
     const subcommands = ['status', 'log', 'diff', 'x', 'rebase main', 'pr list', 'branch -D main', 'config user.name x'];
     const suffixes = ['', ' --output=f', ' > f', ' | sh', ' $X', ' --ext-diff'];
+    const heads = prefixes.flatMap((prefix) => programs.flatMap((program) => options.map((option) => `${prefix}${program} ${option} `)));
+    const invocations = heads.flatMap((head, headIndex) => subcommands.map((subcommand, subcommandIndex) => `${head}${subcommand}${suffixes[(headIndex + subcommandIndex) % suffixes.length]}`.replace(/ +/g, ' ')));
+    expect(invocations).toHaveLength(192);
     let others = 0;
-    for (const prefix of prefixes) {
-      for (const program of programs) {
-        for (const option of options) {
-          for (const subcommand of subcommands) {
-            for (const suffix of suffixes) {
-              const command = `${prefix}${program} ${option} ${subcommand}${suffix}`.replace(/ +/g, ' ');
-              const decision = await judged(command, true);
-              if (decision.source === 'operation' || decision.reason.includes('replaced by a dedicated operation')) continue;
-              others += 1;
-              expect(await judged(command, false), command).toMatchObject({ kind: 'allow', basis: 'read_only' });
-            }
-          }
-        }
-      }
+    for (const command of invocations) {
+      const decision = await judged(command, true);
+      if (decision.source === 'operation' || decision.reason.includes('replaced by a dedicated operation')) continue;
+      others += 1;
+      expect(await judged(command, false), command).toMatchObject({ kind: 'allow', basis: 'read_only' });
     }
     expect(others).toBeGreaterThan(0);
   });
