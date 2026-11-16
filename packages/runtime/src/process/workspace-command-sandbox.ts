@@ -35,7 +35,8 @@ export const workspaceCommandSandbox = async (input: WorkspaceCommandSandboxInpu
   const paths = momongaPaths(home, input.platform, input.env);
   const shellHost = nodeShellHost();
   const bubblewrap = input.platform === 'linux' && (await bubblewrapPresent(DEFAULT_BWRAP_PATH, (file) => nodeFileSystem.access(file, 'execute')));
-  const kernelLock = resolveLayoutLocks(paths).mechanism;
+  const locks = resolveLayoutLocks(paths);
+  const kernelLock = locks.mechanism;
   const sandbox = await createSandboxOf({
     platform: input.platform,
     paths,
@@ -52,7 +53,7 @@ export const workspaceCommandSandbox = async (input: WorkspaceCommandSandboxInpu
   return {
     start: async (command, workspace, env, signal) => {
       const root = await resolver.canonicalPath(workspace);
-      const scratch = await ensureSessionTmpDir(paths, `${ORACLE_SCRATCH_PREFIX}${systemRandom.uuid()}`, { lock: kernelLock });
+      const scratch = await ensureSessionTmpDir(paths, `${ORACLE_SCRATCH_PREFIX}${systemRandom.uuid()}`, { lock: locks.mechanismOf(paths.tmp.sessions) });
       const removeScratch = async (): Promise<void> => {
         releaseSessionScratch(scratch.dir);
         await nodeFileSystem.rm(scratch.dir, { recursive: true });
