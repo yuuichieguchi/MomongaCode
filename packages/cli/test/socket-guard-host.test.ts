@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { LINUX_SOCKET_GUARD_BINARY_ASSET, LINUX_SOCKET_GUARD_MANIFEST_ASSET, LinuxSocketGuardDistributionError, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, sha256Hex } from '@momonga/foundation';
 import { testKernelLock, testLocks } from '@momonga/testkit';
 import { hostExtractedLinuxSocketGuard, nodeSourceKeeperFiles } from '../src/node-ports.ts';
-import { sourceBuiltLinuxSocketGuard } from '../src/keeper/source.ts';
-import type { SourceKeeperPorts } from '../src/keeper/source.ts';
+import { prebuiltLinuxSocketGuard } from '../src/keeper/source.ts';
+import type { PrebuiltPorts } from '../src/keeper/source.ts';
 import { socketGuardSourceOf } from '../src/socket-guard/host.ts';
 import { createTempDir } from '@momonga/testkit';
 
@@ -32,39 +32,36 @@ const writesGuard = (workDir: string): void => {
   fs.writeFileSync(path.join(directory, LINUX_SOCKET_GUARD_MANIFEST_ASSET), MANIFEST);
 };
 
-const portsOf = (root: string, build: (workDir: string) => number | null): SourceKeeperPorts => {
-  const script = path.join(root, 'scripts', 'linux-socket-guard.ts');
-  fs.mkdirSync(path.dirname(script), { recursive: true });
-  fs.writeFileSync(script, '');
-  return { script, executablesRoot: path.join(root, 'executables'), build: (_script, workDir) => build(workDir), files: nodeSourceKeeperFiles, random: { hex: () => 'abcdef0123456789' }, lock: testKernelLock() };
-};
+const BUILDER = '/repo/scripts/linux-socket-guard.ts';
 
-describe('the socket guard of a from-source run on Linux', () => {
-  it('is built on first need, kept under the executables area by its checksum as a file its owner can run, and checked before every start', async () => {
+const portsOf = (root: string): PrebuiltPorts => ({
+  builtDirectory: path.join(root, 'dist', 'linux-socket-guard'),
+  builder: BUILDER,
+  executablesRoot: path.join(root, 'executables'),
+  files: nodeSourceKeeperFiles,
+  random: { hex: () => 'abcdef0123456789' },
+  lock: testKernelLock(),
+});
+
+describe('the socket guard of a from-source run on Linux is the one the packaging step built', () => {
+  it('is kept under the executables area by its checksum as a file its owner can run, and checked before every start', async () => {
     const root = rootOf();
-    let builds = 0;
-    const executable = sourceBuiltLinuxSocketGuard(
-      portsOf(root, (workDir) => {
-        builds += 1;
-        writesGuard(workDir);
-        return 0;
-      }),
-    );
-    expect(builds).toBe(0);
-    const check = await executable();
+    writesGuard(path.join(root, 'dist', 'linux-socket-guard'));
+    const check = await prebuiltLinuxSocketGuard(portsOf(root))();
     const file = check();
 
     expect(file).toBe(path.join(root, 'executables', `linux-socket-guard-${SHA.slice(0, 16)}`, 'momonga-socket-guard'));
     expect(fs.statSync(file).mode & 0o100).toBe(0o100);
     expect(check()).toBe(file);
-    expect(builds).toBe(1);
     fs.writeFileSync(file, 'other bytes');
     expect(() => check()).toThrow(LinuxSocketGuardDistributionError);
   });
 
-  it('refuses with one sentence that names the compiler when it is absent', async () => {
-    await expect(sourceBuiltLinuxSocketGuard(portsOf(rootOf(), () => WINDOWS_KEEPER_COMPILER_MISSING_EXIT))()).rejects.toThrow(
-      'cc was not found on PATH, so the socket guard executable that a from-source run on Linux needs could not be built from native/linux-socket-guard/guard.c',
+  it('refuses a start with no built guard, with one sentence that names the build, and compiles nothing', async () => {
+    const root = rootOf();
+    const manifest = path.join(root, 'dist', 'linux-socket-guard', 'linux-socket-guard', LINUX_SOCKET_GUARD_MANIFEST_ASSET);
+    await expect(prebuiltLinuxSocketGuard(portsOf(root))()).rejects.toThrow(
+      `the socket guard executable is not built: ${manifest} is missing; the packaging step builds it with node ${BUILDER}`,
     );
   });
 });
@@ -77,9 +74,9 @@ describe('where the runtime gets its socket guard', () => {
   const extracted = hostExtractedLinuxSocketGuard;
 
   it('is nowhere on a host that is not Linux, and nowhere in a single executable that carries none', () => {
-    expect(socketGuardSourceOf({ platform: 'darwin', embedded: undefined, builtFromSource: neverBuilt, extracted })).toBeUndefined();
-    expect(socketGuardSourceOf({ platform: 'win32', embedded: embedded({}), builtFromSource: neverBuilt, extracted })).toBeUndefined();
-    expect(socketGuardSourceOf({ platform: 'linux', embedded: embedded({}), builtFromSource: neverBuilt, extracted })).toBeUndefined();
+    expect(socketGuardSourceOf({ platform: 'darwin', embedded: undefined, prebuilt: neverBuilt, extracted })).toBeUndefined();
+    expect(socketGuardSourceOf({ platform: 'win32', embedded: embedded({}), prebuilt: neverBuilt, extracted })).toBeUndefined();
+    expect(socketGuardSourceOf({ platform: 'linux', embedded: embedded({}), prebuilt: neverBuilt, extracted })).toBeUndefined();
   });
 
   it('is extracted from the single executable under the executables area', async () => {
@@ -87,7 +84,7 @@ describe('where the runtime gets its socket guard', () => {
     const source = socketGuardSourceOf({
       platform: 'linux',
       embedded: embedded({ [LINUX_SOCKET_GUARD_MANIFEST_ASSET]: new TextEncoder().encode(MANIFEST), [LINUX_SOCKET_GUARD_BINARY_ASSET]: BINARY }),
-      builtFromSource: neverBuilt,
+      prebuilt: neverBuilt,
       extracted,
     });
     const file = await source?.({ executables: path.join(root, 'executables') }, testLocks())();
@@ -101,7 +98,7 @@ describe('where the runtime gets its socket guard', () => {
     const source = socketGuardSourceOf({
       platform: 'linux',
       embedded: undefined,
-      builtFromSource: (executablesRoot) => async () => {
+      prebuilt: (executablesRoot) => async () => {
         asked.push(executablesRoot);
         return () => '/built/guard';
       },

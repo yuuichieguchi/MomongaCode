@@ -39,7 +39,7 @@ import {
   endpointScopeOf,
 } from '@momonga/foundation';
 import type { FileSystem, GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism, EndpointScope } from '@momonga/foundation';
-import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
+import { prebuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
@@ -187,19 +187,15 @@ export const hostSourceBuiltWindowsKeeper = (executablesRoot: string, lock: Kern
 
 export const LINUX_SOCKET_GUARD_BUILD_SCRIPT = path.resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'linux-socket-guard.ts');
 
-export const runSocketGuardBuild = (script: string, workDir: string): number | null => {
-  const run = spawnSync(process.execPath, [script, '--work-dir', workDir, '--compiler', 'host'], { stdio: ['ignore', 'ignore', 'inherit'] });
-  if (run.error !== undefined) throw run.error;
-  return run.status;
-};
+export const LINUX_SOCKET_GUARD_BUILT_DIRECTORY = path.resolve(import.meta.dirname, '..', '..', '..', 'dist', 'linux-socket-guard');
 
 export const hostPlatform = (): NodeJS.Platform => process.platform;
 
 export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string, lock: KernelLockMechanism): Promise<string> =>
   ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem, lock });
 
-export const hostSourceBuiltLinuxSocketGuard = (executablesRoot: string, lock: KernelLockMechanism): (() => Promise<() => string>) =>
-  sourceBuiltLinuxSocketGuard({ script: LINUX_SOCKET_GUARD_BUILD_SCRIPT, executablesRoot, build: runSocketGuardBuild, files: nodeSourceKeeperFiles, random: systemRandom, lock });
+export const hostPrebuiltLinuxSocketGuard = (executablesRoot: string, lock: KernelLockMechanism): (() => Promise<() => string>) =>
+  prebuiltLinuxSocketGuard({ builtDirectory: LINUX_SOCKET_GUARD_BUILT_DIRECTORY, builder: LINUX_SOCKET_GUARD_BUILD_SCRIPT, executablesRoot, files: nodeSourceKeeperFiles, random: systemRandom, lock });
 
 export const nodeSpawnDetached: SpawnDetached = (spec) => {
   const child = launchApart(spec.command, spec.args, {
