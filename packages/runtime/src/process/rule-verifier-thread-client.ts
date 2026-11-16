@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads';
+import { SOLVER_THREAD_STOP_BOUND_MS } from '@momonga/foundation';
 import { isRuleVerdict } from '@momonga/protocol';
 import type { ServiceTimers } from '../service/timers.ts';
 import type { RuleVerification, RuleVerifyAbort, RuleVerifyJob } from './rule-verifier-thread.ts';
@@ -9,6 +10,13 @@ export class RuleVerificationFailure extends Error {
   constructor(reason: string) {
     super(reason);
     this.name = 'RuleVerificationFailure';
+  }
+}
+
+export class VerificationThreadNotStoppedError extends RuleVerificationFailure {
+  constructor() {
+    super(`the verification thread did not stop within ${SOLVER_THREAD_STOP_BOUND_MS} ms`);
+    this.name = 'VerificationThreadNotStoppedError';
   }
 }
 
@@ -51,7 +59,17 @@ export const verifyInThread = ({ code, timers, startBoundMs, onEntered }: RuleVe
       ended = true;
       clearStartBound();
       signal.removeEventListener('abort', onAbort);
-      worker.terminate().then(settle, reject);
+      const stopBound = timers.setTimeout(() => reject(new VerificationThreadNotStoppedError()), SOLVER_THREAD_STOP_BOUND_MS);
+      worker.terminate().then(
+        () => {
+          timers.clearTimeout(stopBound);
+          settle();
+        },
+        (error: unknown) => {
+          timers.clearTimeout(stopBound);
+          reject(error);
+        },
+      );
     };
     const onAbort = (): void => {
       const told: RuleVerifyAbort = { abort: messageOf(signal.reason) };

@@ -309,6 +309,7 @@ export {
   managedServerStopBoundMs,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
+  SOLVER_THREAD_STOP_BOUND_MS,
 } from './process-contract.ts';
 export type { EventPayload, JsonLogger, LogFields, LogLevel, LogValue, ReadyFields, ReservedLogKey, StopValueName, StopValues, TextStream } from './process-contract.ts';
 export { parseProgressLine, startupSteps } from './startup-progress.ts';

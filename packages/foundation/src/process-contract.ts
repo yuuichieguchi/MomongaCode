@@ -46,6 +46,7 @@ export const ABANDON_KILL_GRACE_MS = REAP_KILL_GRACE_MS;
 export const groupTerminationBoundMs = (graceMs: number): number => graceMs + KILL_CONFIRM_MS + 2 * POLL_INTERVAL_MS;
 export const RUNTIME_ABORT_BUDGET_MS = ABORT_SETTLE_LIMIT_MS + groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS);
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
+export const SOLVER_THREAD_STOP_BOUND_MS = 5000;
 export const STARTUP_TIMEOUT_MS = 60_000;
 
 export const startDeadlineSignal = (given: AbortSignal | undefined): AbortSignal => given ?? AbortSignal.timeout(STARTUP_TIMEOUT_MS);

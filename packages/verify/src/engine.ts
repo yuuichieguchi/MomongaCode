@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { SOLVER_THREAD_STOP_BOUND_MS } from '@momonga/foundation';
 import type { Z3Api } from './smt.ts';
 
 export type Z3Engine = { api: Z3Api; close(): Promise<void> };
@@ -14,7 +15,6 @@ export type SolverThreads = {
 };
 
 export const SOLVER_THREAD_POLL_MS = 100;
-export const SOLVER_THREAD_STOP_BOUND_MS = 5000;
 
 const anyThreadLeft = ({ PThread }: SolverThreads): boolean => PThread.runningWorkers.length > 0 || PThread.unusedWorkers.length > 0;
 

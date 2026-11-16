@@ -1,3 +1,4 @@
+import { SOLVER_THREAD_STOP_BOUND_MS } from '@momonga/foundation';
 import type { UnixSocketPolicy } from '@momonga/foundation';
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
@@ -31,7 +32,7 @@ describe('the rule verifier of the runtime process', () => {
     expect(await verifier.inputOf(request, NEVER_CANCELLED)).toEqual({ ...subject, unixSockets, secretLocations: [{ label: 'ssh', directory: '/home/u/.ssh' }], deniedLocations: [{ label: 'ssh', directory: '/home/u/.ssh' }], protectedSet: expect.any(Object) });
   });
 
-  it('verifies in a thread that runs the code of its host, with the version of the solver, under one timer that bounds only the start of the thread', async () => {
+  it('verifies in a thread that runs the code of its host, with the version of the solver, under one timer that bounds the start of the thread and one that bounds its stop, and none that bounds the verification', async () => {
     const timers = createFakeTimers(createFakeClock(0));
     const waits: number[] = [];
     const verifier = createRuleVerifier({
@@ -46,7 +47,7 @@ describe('the rule verifier of the runtime process', () => {
     });
     expect(await verifier.verify(await verifier.inputOf(request, NEVER_CANCELLED), new AbortController().signal)).toEqual({ verdict: 'proved', solver: FAKE_SOLVER_VERSION, refuted: [], unknown: [], notProved: [] });
     expect(RULE_VERIFY_LOAD_ALLOWANCE_MS).toBeGreaterThan(0);
-    expect(waits).toEqual([RULE_VERIFY_LOAD_ALLOWANCE_MS]);
+    expect(waits).toEqual([RULE_VERIFY_LOAD_ALLOWANCE_MS, SOLVER_THREAD_STOP_BOUND_MS]);
   });
 
   it('fails with an error, not a verdict, when its thread fails', async () => {

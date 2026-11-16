@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { SOLVER_THREAD_POLL_MS, SOLVER_THREAD_STOP_BOUND_MS, stopSolverThreads } from '../src/engine.ts';
+import { SOLVER_THREAD_STOP_BOUND_MS } from '@momonga/foundation';
+import { SOLVER_THREAD_POLL_MS, stopSolverThreads } from '../src/engine.ts';
 import type { SolverThreads } from '../src/engine.ts';
 
 type Stub = { terminated: boolean };
