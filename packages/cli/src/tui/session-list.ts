@@ -21,10 +21,21 @@ const firstPromptOf = async (reads: Pick<SessionReads, 'streamEvents'>, runId: s
   }
 };
 
+const isCommandText = (text: string): boolean => text.startsWith('/');
+
+const titleOf = async (reads: Pick<SessionReads, 'streamEvents'>, runs: readonly RunView[], signal: AbortSignal): Promise<string> => {
+  let first: string | undefined;
+  for (const run of runs) {
+    const prompt = await firstPromptOf(reads, run.id, signal);
+    first ??= prompt;
+    if (!isCommandText(prompt)) return prompt;
+  }
+  return first ?? '';
+};
+
 const listed = async (reads: SessionReads, stored: SessionView, signal: AbortSignal): Promise<SessionSummary> => {
   const runs = await ownRunsOf(reads, stored.id);
-  const [first] = runs;
-  return { id: stored.id, createdAt: stored.createdAt, runs: runs.length, firstPrompt: first === undefined ? '' : await firstPromptOf(reads, first.id, signal) };
+  return { id: stored.id, createdAt: stored.createdAt, runs: runs.length, firstPrompt: await titleOf(reads, runs, signal) };
 };
 
 export const listedSessions = async (reads: SessionReads, cwd: string, openId: string | undefined, signal: AbortSignal): Promise<SessionSummary[]> => {

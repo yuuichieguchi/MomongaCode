@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { providerNameOf, serverNameFromCommand } from '@momonga/config';
+import { baseUrlProblem, providerNameOf, serverNameFromCommand } from '@momonga/config';
 import { LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS, PROVIDER_NAME_PATTERN, canonOf, displayMapOf, managedServerOf, withDefaultTag } from '@momonga/protocol';
 import type { ManagedServerDescription, DetectedLocalServer, DetectedModel, LocalServerDetection, ModelView } from '@momonga/protocol';
 import { describeFailure } from '../../failure.ts';
@@ -51,10 +51,11 @@ export type Added = { readonly model: string | undefined };
 
 const NOT_ADDED = undefined;
 
-const addressProblem = (text: string): string | undefined => {
+export const addressProblem = (text: string): string | undefined => {
   if (!URL.canParse(text.trim())) return NOT_AN_ADDRESS;
   const { protocol } = new URL(text.trim());
-  return protocol === 'http:' || protocol === 'https:' ? undefined : NOT_AN_ADDRESS;
+  if (protocol !== 'http:' && protocol !== 'https:') return NOT_AN_ADDRESS;
+  return baseUrlProblem(text.trim(), false);
 };
 
 const wholeNumberIn = wholeNumberWithin;

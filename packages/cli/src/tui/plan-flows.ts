@@ -118,7 +118,10 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       const { title, body, action } = profile.messages.firstSignIn;
       await ports.pick({ title, lines: [body, `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`], rows: [{ label: action }] });
     }
-    if (account.pinnedBy.length === 0) {
+    const serves = (await backend.models()).some((entry) =>
+      entry.chain.some((member) => member.plan !== undefined && member.plan.profile === profile.id && (member.plan.account === undefined ? account.active : member.plan.account === account.label)),
+    );
+    if (account.pinnedBy.length === 0 && !serves) {
       await catalogPicker(profile, account.label);
       return;
     }
@@ -203,8 +206,11 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         return;
       case SIGNED_IN_OUTCOME:
         ports.info(signedInLine(answer.account));
-        await afterSignIn(profile, answer.account, answer.firstSignIn);
-        await ports.signedIn();
+        try {
+          await afterSignIn(profile, answer.account, answer.firstSignIn);
+        } finally {
+          await ports.signedIn();
+        }
         return;
     }
   };

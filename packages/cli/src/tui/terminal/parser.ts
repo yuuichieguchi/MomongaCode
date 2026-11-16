@@ -7,6 +7,9 @@ export type InputParser = { push(bytes: Uint8Array): TerminalEvent[]; holdsOpen(
 const ESC = '\u001b';
 const BEL = '\u0007';
 const PASTE_END = `${ESC}[201~`;
+const PASTE_START = `${ESC}[200~`;
+
+const beginsPasteMarker = (text: string): boolean => [PASTE_START, PASTE_END].some((marker) => marker.length > text.length && marker.startsWith(text));
 
 type Parsed = { events: TerminalEvent[]; next: number; pasteStarts: boolean };
 type Step = Parsed | 'incomplete';
@@ -320,6 +323,7 @@ export const createInputParser = (): InputParser => {
   let readEndedWithEscape = false;
   let paste: OpenPaste | undefined;
   let cutBySettle: string | undefined;
+  let heldMarker: { cut: string; rest: string } | undefined;
 
   const closed = (open: OpenPaste): TerminalEvent => (open.overflow ? OVERFLOWED_PASTE : { type: 'paste', text: open.pieces.join(''), overflow: false });
 
@@ -360,9 +364,16 @@ export const createInputParser = (): InputParser => {
 
   const holdsAbandonedPaste = (): boolean => paste?.abandoned === true;
 
-  const holdsOpen = (): boolean => holdsLoneEscape() || holdsBareIntroducer() || holdsAbandonedPaste();
+  const holdsOpen = (): boolean => holdsLoneEscape() || holdsBareIntroducer() || holdsAbandonedPaste() || heldMarker !== undefined;
 
   const settle = (): TerminalEvent[] => {
+    if (heldMarker !== undefined) {
+      const { rest } = heldMarker;
+      heldMarker = undefined;
+      const keys: TerminalEvent[] = [];
+      for (let at = 0; at < rest.length; at += 1) keys.push(plainKey(rest.charCodeAt(at), false));
+      return keys;
+    }
     if (holdsAbandonedPaste()) {
       paste = undefined;
       cutBySettle = pending === '' ? undefined : pending;
@@ -391,9 +402,24 @@ export const createInputParser = (): InputParser => {
   };
 
   const resumed = (read: string): string => {
-    if (read === '' || cutBySettle === undefined) return read;
+    if (read === '') return read;
+    if (heldMarker !== undefined) {
+      const held = heldMarker;
+      const joined = held.cut + held.rest + read;
+      if (beginsPasteMarker(joined)) {
+        heldMarker = { cut: held.cut, rest: held.rest + read };
+        return '';
+      }
+      heldMarker = undefined;
+      return continuesCut(held.cut, held.rest + read) ? joined : held.rest + read;
+    }
+    if (cutBySettle === undefined) return read;
     const cut = cutBySettle;
     cutBySettle = undefined;
+    if (beginsPasteMarker(cut + read)) {
+      heldMarker = { cut, rest: read };
+      return '';
+    }
     return continuesCut(cut, read) ? cut + read : read;
   };
 

@@ -54,9 +54,12 @@ const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedSer
   sampling: 'none',
 });
 
+export const declaredCommandProblem = (command: string): string | undefined => (path.isAbsolute(command) ? undefined : `must be an absolute path; got ${JSON.stringify(command)}`);
+
 const checkDeclaration = (id: string, declared: DeclaredServer, where: string): void => {
   if (MANAGED_SERVERS.some((server) => server.id === id)) throw new ConfigError(`${where}: ${JSON.stringify(id)} is a built-in managed server and cannot be declared; choose another id`);
-  if (!path.isAbsolute(declared.command)) throw new ConfigError(`${where}.command must be an absolute path; got ${JSON.stringify(declared.command)}`);
+  const commandProblem = declaredCommandProblem(declared.command);
+  if (commandProblem !== undefined) throw new ConfigError(`${where}.command ${commandProblem}`);
   declared.args.forEach((arg, index) => {
     if (arg !== SOCKET_PLACEHOLDER && arg.includes(SOCKET_PLACEHOLDER)) {
       throw new ConfigError(`${where}.args[${index}] contains ${JSON.stringify(SOCKET_PLACEHOLDER)} inside a longer argument; the placeholder must be a whole argument`);

@@ -239,13 +239,33 @@ describe('a lone ESC byte', () => {
   });
 
   it('with [ whose settle ended is the Alt key of a legacy terminal, and what is typed later is typed keys', () => {
-    for (const typed of ['A', 'a', '2', '~', '2x']) {
+    for (const typed of ['A', 'a', '~', '2x']) {
       const parser = createInputParser();
       parser.push(bytesOf(`${ESC}[`));
       expect(parser.settle()).toEqual([text('[', { alt: true })]);
       expect(parser.push(bytesOf(typed)), typed).toEqual(textOf(typed));
       expect(parser.push(bytesOf('b'))).toEqual([text('b')]);
     }
+  });
+
+  it('with [ whose settle ended holds digits that begin a paste marker until the marker completes, in any number of pieces (ruling 6 (c))', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${ESC}[`));
+    expect(parser.settle()).toEqual([text('[', { alt: true })]);
+    expect(parser.push(bytesOf('2'))).toEqual([]);
+    expect(parser.holdsOpen()).toBe(true);
+    expect(parser.push(bytesOf('0'))).toEqual([]);
+    expect(parser.push(bytesOf('0'))).toEqual([]);
+    expect(parser.push(bytesOf(`~rm -rf x\r${ESC}[201~`))).toEqual([{ type: 'paste', text: 'rm -rf x\r', overflow: false }]);
+  });
+
+  it('with [ whose settle ended gives the held digits as typed keys when the settle ends again', () => {
+    const parser = createInputParser();
+    parser.push(bytesOf(`${ESC}[`));
+    parser.settle();
+    expect(parser.push(bytesOf('20'))).toEqual([]);
+    expect(parser.settle()).toEqual(textOf('20'));
+    expect(parser.push(bytesOf('b'))).toEqual([text('b')]);
   });
 
   it('reads only the very next read as the continuation of an introducer whose settle ended', () => {
