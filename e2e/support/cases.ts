@@ -44,6 +44,7 @@ export type E2eCaseFile =
   | 'same-name-models.test.ts'
   | 'settings-live.test.ts'
   | 'gitpr-crash.test.ts'
+  | 'gitpr-delegated.test.ts'
   | 'issue-run.test.ts'
   | 'interrupt-cleanup.test.ts';
 
@@ -211,6 +212,12 @@ export const E2E_CASES = [
   { id: 'gitpr-commit-kill', file: 'gitpr-crash.test.ts', title: 'gitpr: a runtime SIGKILL inside the commit of GitCommit leaves the head unchanged, and recovery commits once', needsBash: true },
   { id: 'gitpr-create-response-lost', file: 'gitpr-crash.test.ts', title: 'gitpr: a runtime SIGKILL after the forge opened the pull request and before its answer arrived: recovery finds it and opens no second one', needsBash: false },
   { id: 'gitpr-create-in-flight', file: 'gitpr-crash.test.ts', title: 'gitpr: a runtime SIGKILL with the create request in flight and not applied: recovery sees no pull request and opens exactly one', needsBash: false },
+  { id: 'gitpr-delegated-sequence', file: 'gitpr-delegated.test.ts', title: 'gitpr delegated: under a mandate a run branches, writes after reading, stages, commits, pushes to the bare remote, opens one pull request and reads its check', needsBash: false },
+  { id: 'gitpr-delegated-commit-kill', file: 'gitpr-delegated.test.ts', title: 'gitpr delegated: a runtime SIGKILL inside the commit of a mandate run, and recovery commits exactly once', needsBash: true },
+  { id: 'gitpr-delegated-remotes', file: 'gitpr-delegated.test.ts', title: 'gitpr delegated: a remote in SSH form on a declared forge pushes to its push destination, a remote on no declared forge is refused with the way forward', needsBash: false },
+  { id: 'gitpr-delegated-nested', file: 'gitpr-delegated.test.ts', title: 'gitpr delegated: in a nested repository with its own origin the approval and the push name that repository', needsBash: false },
+  { id: 'gitpr-delegated-pre-push', file: 'gitpr-delegated.test.ts', title: 'gitpr delegated: the pre-push hook of core.hooksPath runs before the push, and a failing one stops it', needsBash: false },
+  { id: 'gitpr-delegated-hosts-relay', file: 'gitpr-delegated.test.ts', title: 'gitpr delegated (Linux): a GitPush over the hosts scope goes through the relay, and a host not granted is refused', needsBash: false },
   { id: 'issue-run', file: 'issue-run.test.ts', title: 'issue: momonga --issue under a mandate reads issue #7, branches, commits, pushes, opens a pull request that closes #7, comments on #7, and the run record names #7', needsBash: false },
   { id: 'eval-interrupt-cleanup', file: 'interrupt-cleanup.test.ts', title: 'cancels the run it started, starts no other, removes the workspaces it made and exits 130', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
