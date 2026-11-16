@@ -427,10 +427,10 @@ describe('the database reader', () => {
 });
 
 describe('teardown helpers', () => {
-  it('leftoverEntries reports the roots of this run, never the harness files, testkit dirs or other runs', () => {
-    const listing = ['mme-ab12-pids', 'mme-ab12-live', 'mme-ab12-x1Y2z3', 'mme-cd34-aaaaaa', 'mmt-ab12-QqQqQq', 'mmt-x-zzzzzz', 'mm-abcdef', 'mme-ab12-a0b1c2'];
+  it('leftoverEntries reports the roots of this run, never the pids file of the run, testkit dirs or other runs', () => {
+    const listing = ['mme-ab12-pids', 'mme-ab12-x1Y2z3', 'mme-cd34-aaaaaa', 'mmt-ab12-QqQqQq', 'mmt-x-zzzzzz', 'mm-abcdef', 'mme-ab12-a0b1c2'];
     expect([...leftoverEntries(listing, 'ab12')].sort()).toEqual(['mme-ab12-a0b1c2', 'mme-ab12-x1Y2z3']);
-    expect(leftoverEntries(['mme-ab12-pids', 'mme-ab12-live'], 'ab12')).toEqual([]);
+    expect(leftoverEntries(['mme-ab12-pids'], 'ab12')).toEqual([]);
   });
 
   it('leakedTestkitEntries reports only the testkit dirs of this run', () => {

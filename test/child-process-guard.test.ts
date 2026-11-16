@@ -407,6 +407,7 @@ const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set([
   'test/fake-programs.test.ts',
   'test/ports-bypass.test.ts',
   'test/support/child-process-guard.ts',
+  'test/support/reuse-recorder.ts',
 ]);
 
 const testSources = (): string[] => {

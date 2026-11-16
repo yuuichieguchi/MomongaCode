@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { repoRoot } from './bundle.ts';
 import { SEA_NODE_VERSION } from './node-runtime.ts';
+import { TEST_REUSE_ENV } from '../test/support/reuse-observed.ts';
+import { currentTestReusePlan } from '../test/support/test-reuse.ts';
+import config from '../vitest.config.ts';
 
 const workflow = fs.readFileSync(`${repoRoot}.github/workflows/ci.yml`, 'utf8');
 const vitestConfig = fs.readFileSync(`${repoRoot}vitest.config.ts`, 'utf8');
@@ -64,8 +67,8 @@ describe('CI configuration', () => {
   };
 
   it('pins the reuse of model-checking results in each script that runs the tier: off in test and test:tlc-deep, on in test:reuse', () => {
-    expect(scriptParts('test')).toEqual({ assignments: { MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit --project e2e --project packaging' });
-    expect(scriptParts('test:reuse')).toEqual({ assignments: { MOMONGA_TLC_REUSE: '1' }, command: 'vitest run --project unit --project e2e --project packaging' });
+    expect(scriptParts('test')).toEqual({ assignments: { [TEST_REUSE_ENV]: '0', MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit --project e2e --project packaging' });
+    expect(scriptParts('test:reuse')).toEqual({ assignments: { [TEST_REUSE_ENV]: '1', MOMONGA_TLC_REUSE: '1' }, command: 'vitest run --project unit --project e2e --project packaging' });
     expect(scriptParts('test:tlc-deep')).toEqual({ assignments: { MOMONGA_TLC_TIER: 'deep', MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit test/formal' });
   });
 
@@ -81,7 +84,8 @@ describe('CI configuration', () => {
     }
   });
 
-  it('a project with no matching test file fails the run instead of passing green', () => {
-    expect(vitestConfig).not.toContain('passWithNoTests');
+  it('a project with no matching test file fails the run instead of passing green, unless the run replays test files', () => {
+    const replaysAny = [...currentTestReusePlan().replayed.values()].some((files) => files.length > 0);
+    expect((config as { test?: { passWithNoTests?: boolean } }).test?.passWithNoTests).toBe(replaysAny);
   });
 });

@@ -10,12 +10,14 @@ const REUSE = testReusePlan(import.meta.dirname, ['unit', 'calibration', 'packag
 
 const replayedIn = (project: string): readonly string[] => REUSE.replayed.get(project) ?? [];
 
+const replaysAny = [...REUSE.replayed.values()].some((files) => files.length > 0);
+
 export default defineConfig({
   test: {
     pool: 'forks',
     includeTaskLocation: true,
     reporters: ['default', './test/support/skip-ledger.ts', './test/support/reuse-reporter.ts'],
-    passWithNoTests: REUSE.mode === 'on',
+    passWithNoTests: replaysAny,
     teardownTimeout: E2E_HOOK_TIMEOUT_MS,
     projects: [
       {
