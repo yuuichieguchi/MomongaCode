@@ -2,7 +2,7 @@ import type { DialectRule } from '@momonga/protocol';
 import { dropKeys } from './drop.ts';
 import { inlineRefs } from './inline-refs.ts';
 import { nullableOptional } from './nullable-optional.ts';
-import { isRecord, jsonTypeOf, typeIncludes } from './schema.ts';
+import { isRecord, jsonTypeOf, typeIncludes, typesOf } from './schema.ts';
 import type { JsonObject } from './schema.ts';
 import { constAsEnum, splitEnum, splitTypeArray } from './split.ts';
 import { FreeFormObject, fail, guardWrittenKeys, hasActiveUneval, reportNarrowing, requirePositive } from './state.ts';
@@ -51,6 +51,14 @@ const requireAll = (state: RenderState, node: JsonObject, context: NodeContext, 
   return { ...node, required: [...existing, ...added] };
 };
 
+const admitsAnObject = (node: JsonObject): boolean => {
+  const types = typesOf(node);
+  if (types !== undefined && !types.includes('object')) return false;
+  if ('const' in node && !isRecord(node['const'])) return false;
+  const values = node['enum'];
+  return !Array.isArray(values) || values.some((value) => isRecord(value));
+};
+
 const namesNoProperty = (state: RenderState, node: JsonObject): boolean => {
   const properties = node['properties'];
   return !isRecord(properties) || state.writtenProperties.has(node);
@@ -62,7 +70,7 @@ const closeObject = (state: RenderState, node: JsonObject, context: NodeContext,
   const replaces = current === undefined || (overwrite === 'non-boolean' && isRecord(current)) || (overwrite === 'always' && current !== false);
   if (!replaces) return node;
   requirePositive(state, context, 'ensure-key additionalProperties false');
-  const freeForm = !context.absent && namesNoProperty(state, node);
+  const freeForm = !context.absent && admitsAnObject(node) && namesNoProperty(state, node);
   if (freeForm && overwrite === 'always') throw new FreeFormObject(context.origin);
   guardWrittenKeys(state, ['additionalProperties'], 'ensure-key');
   if (freeForm || current !== undefined) reportNarrowing(state, context, rule);
