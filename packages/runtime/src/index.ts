@@ -79,8 +79,8 @@ export type { SessionStates, SessionStatesOptions } from './process/session-stat
 export { createSettingsComposition } from './process/settings-port.ts';
 export type { SettingsComposition, SettingsCompositionOptions, UserSnapshot } from './process/settings-port.ts';
 export { createPolicyFor, createRecoveryContextFor } from './process/tool-policy.ts';
-export { createPolicyFilesystem, homeProtectedLaunch, hostHomeProtectedLaunch, listFileCandidates, operationCatalogueFacts, unprotectedLaunch } from '@momonga/tools';
-export type { HomeProtectedLaunchInput } from '@momonga/tools';
+export { createPolicyFilesystem, listFileCandidates, operationCatalogueFacts } from '@momonga/tools';
+export { hostNoneSandboxLaunch } from './process/host-none-sandbox-launch.ts';
 export { installedRuleSolver } from './process/rule-verifier.ts';
 export type { PolicyForOptions } from './process/tool-policy.ts';
 export { createMemoryPort } from './process/memory-port.ts';

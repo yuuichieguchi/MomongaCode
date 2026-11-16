@@ -2,10 +2,10 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { createGitWorkTreeObserver, observerStoreOf, pruneGitObserverStores, unprotectedLaunch } from '@momonga/tools';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
+import { createGitWorkTreeObserver, observerStoreOf, pruneGitObserverStores } from '@momonga/tools';
 
-const LAUNCH = unprotectedLaunch('the tests of the observer retention start git without the protection of the home');
+const LAUNCH = TEST_UNPROTECTED_LAUNCH;
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 

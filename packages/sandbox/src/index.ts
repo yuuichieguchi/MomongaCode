@@ -27,3 +27,5 @@ export type { TunnelOpening } from './tunnel-opening.ts';
 export { socketFilter, socketFilterArchitectureOf } from './seccomp.ts';
 export type { SocketFilterArchitecture, SocketFilterKind } from './seccomp.ts';
 export { NETWORK_RELAY_HELPER, RELAY_CHANNEL_SLOT, relayCommandOf, relayInside, runNetworkRelay, serveRelayChannel } from './relay.ts';
+export { noneSandboxLaunchOf } from './none-sandbox-launch.ts';
+export type { NoneSandboxLaunchInput } from './none-sandbox-launch.ts';

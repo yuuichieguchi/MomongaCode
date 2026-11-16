@@ -1,14 +1,16 @@
 import type { ChildLaunch, LayoutEnvironment } from '@momonga/foundation';
-import { DEFAULT_BWRAP_PATH, DEFAULT_SANDBOX_EXEC_PATH, childProtectionFor, protectionCommandOf } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH } from './bubblewrap.ts';
+import { childProtectionFor, protectionCommandOf } from './protection.ts';
+import { DEFAULT_SANDBOX_EXEC_PATH } from './seatbelt.ts';
 
-export type ManagedLaunchInput = {
+export type NoneSandboxLaunchInput = {
   home: string;
   platform: NodeJS.Platform;
   env: LayoutEnvironment;
   isUsableBinary: (file: string) => Promise<boolean>;
 };
 
-export const managedLaunchOf = async ({ home, platform, env, isUsableBinary }: ManagedLaunchInput): Promise<ChildLaunch> => {
+export const noneSandboxLaunchOf = async ({ home, platform, env, isUsableBinary }: NoneSandboxLaunchInput): Promise<ChildLaunch> => {
   const bubblewrap = platform === 'linux' && (await isUsableBinary(DEFAULT_BWRAP_PATH));
   const protection = childProtectionFor({ sandbox: 'none', home, platform, env, bubblewrap });
   return {

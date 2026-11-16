@@ -8,7 +8,7 @@ import { createMcpPool, inheritedEnvOf } from '@momonga/mcp';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_LEASE, unconfiguredDerivedNetworkOf, MCP_MODERN_SERVER_PATH, modelSettings, waitFor, NEVER_CANCELLED, testLocks, testKernelLock, TEST_STDIO_LAUNCH } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_LEASE, unconfiguredDerivedNetworkOf, MCP_MODERN_SERVER_PATH, modelSettings, waitFor, NEVER_CANCELLED, testLocks, testKernelLock, TEST_STDIO_LAUNCH, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { ToolSource } from '@momonga/tools';
 import {
@@ -406,7 +406,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     const f = await makeRuntimeFixture();
     let error: unknown;
     try {
-      runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: runtime.unprotectedLaunch('the tests of the runtime start git without the protection of the home'), hostParallelism: 8,
+      runtime.createToolRuntime({ mcpLaunch: TEST_STDIO_LAUNCH, childLaunch: TEST_UNPROTECTED_LAUNCH, hostParallelism: 8,
         kernelLock: testKernelLock(),
         lockCapability: testLocks().capability,
         version: '0.0.0-test',

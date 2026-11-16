@@ -315,8 +315,8 @@ export const createTuiBackend = (
     },
     userInput: {
       fileCandidates: async (signal) => {
-        const { hostHomeProtectedLaunch, listFileCandidates } = await import('@momonga/runtime');
-        const launch = await hostHomeProtectedLaunch({ home: paths.home, platform: ports.platform, env: ports.env }, signal);
+        const { hostNoneSandboxLaunch, listFileCandidates } = await import('@momonga/runtime');
+        const launch = await hostNoneSandboxLaunch({ home: paths.home, platform: ports.platform, env: ports.env }, signal);
         return listFileCandidates({ root: ports.cwd, env: ports.env, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal }, launch);
       },
       shell: (command, include, io) => runtime().userShell(current().id, command, include, io),

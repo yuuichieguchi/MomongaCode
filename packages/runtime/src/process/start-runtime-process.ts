@@ -48,10 +48,11 @@ import { folderPolicyVerification, mandateRunVerification } from './folder-verif
 import type { MandateRunSources } from './folder-verification.ts';
 import { supervisedGatewayStanding } from './supervised-gateway.ts';
 import type { RuleSolverSource } from './rule-verifier.ts';
-import { RetiringYield, createMarkerOwners, createPolicyFilesystem, homeProtectedLaunch, nodeShellHost, operationCatalogueFacts, pruneGitObserverStores, sweepCallLocks } from '@momonga/tools';
+import { RetiringYield, createMarkerOwners, createPolicyFilesystem, nodeShellHost, operationCatalogueFacts, pruneGitObserverStores, sweepCallLocks } from '@momonga/tools';
 import type { BundledRipgrepResolver, ChildLaunch, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
+import { hostNoneSandboxLaunch } from './host-none-sandbox-launch.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../memory/journal-thread-limits.ts';
 import { startJournalThread } from '../memory/journal-thread-client.ts';
 import type { GatewayClient } from '../gateway-client.ts';
@@ -433,7 +434,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const journalDirectory = placeholderJournalDirectoryOf(paths);
     const { helperSelf } = options;
-    const childLaunch: ChildLaunch = await homeProtectedLaunch({ home: canonicalHome, platform, env: process.env, files: nodeFileSystem }, startDeadlineSignal(signal));
+    const childLaunch: ChildLaunch = await hostNoneSandboxLaunch({ home: canonicalHome, platform, env: process.env }, startDeadlineSignal(signal));
     const noneProtection = childLaunch.protection;
     const sandboxOf = createSandboxOf({
       platform,
