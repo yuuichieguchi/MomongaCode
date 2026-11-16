@@ -280,7 +280,7 @@ The secret locations, such as `~/.ssh`, `~/.aws`, `~/.netrc`, the home of Momong
 
 An approval shows the whole command, or every argument of an MCP call or an operation, escaped so that no character of it can redraw the screen, and the model's own description of the call labelled as the model's claim. A changed argument or description asks again. In `/config`, removing a permission rule or an additional folder asks first and names the rule or the folder and the settings file it comes from.
 
-When a trusted folder adds or changes a hook, an MCP server, or an agent, that item is not used until you approve it: you are asked about that item, and `momonga trust` lists what waits for approval.
+When a trusted folder adds or changes a hook group, its mandate file, a server of its `.mcp.json`, or one of its agents, that item is not used until you approve it: you are asked about that item, and `momonga trust` lists what waits for approval.
 
 With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer lets a command run without approval: Bash asks before every command, and in `auto` mode the classifier decides.
 
