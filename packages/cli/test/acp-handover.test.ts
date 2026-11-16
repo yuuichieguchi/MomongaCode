@@ -111,7 +111,8 @@ describe('the ACP bridge across the move (16.7, red test 13)', () => {
       request.onEvent(frameOf('run-2', 2, message('m2', 'seen before the move')));
       await live.promise;
       request.onEvent(frameOf('run-2', 3, message('m2', ' and after it')));
-      return runView({ id: 'run-2', status: 'COMPLETED', lastSeq: 3 });
+      request.onEvent(frameOf('run-2', 4, { type: 'model.responded', step: 1, attempt: 0, response: { status: 'completed', output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }));
+      return runView({ id: 'run-2', status: 'COMPLETED', lastSeq: 4 });
     });
 
     await harness.bridge.adopt({ sessions: [SESSION.id], lastSeq: { 'run-1': 2, 'run-2': 2 } });
@@ -121,7 +122,7 @@ describe('the ACP bridge across the move (16.7, red test 13)', () => {
     expect(harness.bridge.snapshot()).toMatchObject({ initialize: INITIALIZE, sessions: [SESSION.id], lastSeq: { 'run-1': 2, 'run-2': 2 } });
     live.resolve();
     await harness.peer.untilReceived((received) => updatesOf([received]).length > 0);
-    expect(updatesOf(harness.peer.received).map((update) => update['content'])).toEqual([{ type: 'text', text: ' and after it' }]);
+    expect(updatesOf(harness.peer.received).map((update) => update['content'])).toEqual([{ type: 'text', text: 'seen before the move and after it' }]);
 
     harness.scripts.set('run-1', async () => runView({ id: 'run-1', status: 'COMPLETED' }));
     harness.runtime.createRunResult = async () => runView({ id: 'run-1', status: 'QUEUED' });

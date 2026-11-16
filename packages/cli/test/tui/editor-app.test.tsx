@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { systemTiming } from '@momonga/foundation';
 import type { SkillView } from '@momonga/protocol';
-import { App, EXIT_ARM_MS } from '../../src/tui/app.tsx';
+import { App, EXIT_ARM_MS, taskRunningHint } from '../../src/tui/app.tsx';
+import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import type { AppProps, TuiOutcome } from '../../src/tui/app.tsx';
 import type { ExternalEdit } from '../../src/tui/external-editor.ts';
 import { fakeBackend, runView } from '../fake-backend.ts';
@@ -12,7 +13,7 @@ import { manualClock } from './screen-clock.ts';
 import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './screen-fakes.ts';
 
 const READY = 'mode: manual (shift+tab)';
-const TASK_RUNNING = 'A task is running. Esc stops it.';
+const TASK_RUNNING = taskRunningHint(DEFAULT_KEY_TABLE);
 const paste = (text: string): string => `${KEYS.pasteStart}${text}${KEYS.pasteEnd}`;
 
 const inputLines = (shown: string): string[] =>

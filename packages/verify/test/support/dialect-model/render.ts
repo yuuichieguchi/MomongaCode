@@ -1,6 +1,6 @@
 import { classOf, resolveRules, type Definition, type Rule } from './definition.ts';
 import { clone, deepEqual, isObject, parsePointer, type Json, type JsonObject, type Schema } from './json.ts';
-import { applyRule, RenderFailure, type FailureReason, type Position, type State } from './primitives.ts';
+import { applyRule, FreeFormObject, RenderFailure, type FailureReason, type Position, type State } from './primitives.ts';
 import { selects, type Site } from './selector.ts';
 import { childSlots, collectReferenceSegments, labelStep, NODE_EDGES, setSlot, slotValue } from './walk.ts';
 
@@ -59,6 +59,7 @@ const definitionPositions = (document: Schema): Map<string, Position> => {
 const applyAt = (rules: readonly Rule[], initial: Schema, state: State, write: (value: Schema) => void): Schema => {
   const trueIsNode = initial === true && (state.edges.length === 0 || NODE_EDGES.includes(state.edges[state.edges.length - 1] as string));
   let node: Schema = trueIsNode ? {} : initial;
+  state.entered = node;
   for (const rule of rules) {
     if (!selects(rule.select, node, { site: state.site, edges: state.edges })) continue;
     const before = node;
@@ -102,6 +103,7 @@ const visit = (rules: readonly Rule[], read: () => Schema, write: (value: Schema
           ? (definitionPositions(state.holder.value).get(JSON.stringify([...state.pointer, ...slot.segments])) ?? 'P')
           : compose(state.position, slot.edge, node),
       pendingDrops: [],
+      entered: undefined,
       ancestors: [...state.ancestors, { node, edge: slot.edge, pointerLength: state.pointer.length }],
       holder: state.holder,
     };
@@ -112,12 +114,16 @@ const visit = (rules: readonly Rule[], read: () => Schema, write: (value: Schema
 export const render = (input: Schema | null, definition: Definition, site: Site): Rendered => {
   const rules = resolveRules(definition);
   const holder: { value: Schema } = { value: input === null ? undefined : clone(input) };
-  const state: State = { site, edges: [], pointer: [], label: [], position: 'P', pendingDrops: [], ancestors: [], holder };
+  const state: State = { site, edges: [], pointer: [], label: [], position: 'P', pendingDrops: [], entered: undefined, ancestors: [], holder };
   try {
     visit(rules, () => holder.value, (value) => {
       holder.value = value;
     }, state);
   } catch (error) {
+    if (error instanceof FreeFormObject) {
+      if (site === 'tool-parameters' && definition.strictPerTool === true) return { ok: true, schema: input === null ? undefined : clone(input) };
+      return { ok: false, reason: 'free-form-object', path: error.path, detail: error.message, node: undefined };
+    }
     if (error instanceof RenderFailure) return { ok: false, reason: error.reason, path: error.path, detail: error.message, node: error.node };
     throw error;
   }

@@ -3,7 +3,7 @@ import { toPublicRunEvent } from '@momonga/protocol';
 import { expectError, startService } from './helpers.ts';
 
 const PNG_BYTES = Buffer.from('fake png bytes');
-const totals = { calls: 1, localCalls: 0, unpricedCalls: 1, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { usage_not_reported: 1 } };
+const totals = { calls: 1, retries: 0, localCalls: 0, unpricedCalls: 1, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, amount: null, currency: 'USD', priceVersions: [], unpriced: { usage_not_reported: 1 } };
 const IMAGE = { mediaType: 'image/png', data: PNG_BYTES.toString('base64') };
 
 describe('POST /v1/sessions/:id/runs with images', () => {
@@ -110,12 +110,12 @@ describe('GET /v1/cost', () => {
 });
 
 describe('store-protocol-C35: unpadded base64 at admission', () => {
-  it('answers 400 naming images[0].data and the padding rule, and creates no run', async () => {
+  it('answers 400 naming /images/0/data and the padding rule, and creates no run', async () => {
     const env = await startService({ imageInput: true });
     const session = await env.createSession();
     const refused = await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'x', images: [{ mediaType: 'image/png', data: 'iVBORw' }] } });
     expectError(refused, 400, 'invalid_request');
-    expect(JSON.stringify(refused.json)).toContain('images[0].data');
+    expect(JSON.stringify(refused.json)).toContain('/images/0/data');
     expect(JSON.stringify(refused.json)).toContain('padded base64');
     expect(env.store.listRuns(session.id)).toEqual([]);
   });

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, SETTINGS_SCHEMA, TUI_SCREEN_MODES, editSettings, loadSettings, loadUserSettings, readSettingsSnapshot } from '@momonga/config';
+import { ConfigError, SETTINGS_SCHEMA, TUI_SCREEN_MODES, defaultTuiSettings, editSettings, loadSettings, loadUserSettings, readSettingsSnapshot } from '@momonga/config';
 import { distrusting, localSettingsPath, makeTree, mcpJsonPath, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -203,9 +203,10 @@ describe('tui.screen, tui.mouse and tui.copyOnSelect', () => {
   it('are keys of the tui object with the two screen modes', () => {
     expect(TUI_SCREEN_MODES).toEqual(['fullscreen', 'scrollback']);
     const tui = SETTINGS_SCHEMA.properties.tui.properties;
-    expect(tui.screen).toEqual({ enum: ['fullscreen', 'scrollback'] });
-    expect(tui.mouse).toEqual({ type: 'boolean' });
-    expect(tui.copyOnSelect).toEqual({ type: 'boolean' });
+    const defaults = defaultTuiSettings();
+    expect(tui.screen).toEqual({ enum: ['fullscreen', 'scrollback'], default: defaults.screen });
+    expect(tui.mouse).toEqual({ type: 'boolean', default: defaults.mouse });
+    expect(tui.copyOnSelect).toEqual({ type: 'boolean', default: defaults.copyOnSelect });
   });
 
   it('default to fullscreen, true and true and take the value of the user file', async () => {

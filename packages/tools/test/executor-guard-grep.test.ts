@@ -7,7 +7,7 @@ import { keyFor } from './helpers.ts';
 import { LEAVER_PGID, leaver, resultOf, runOne, world } from './guard-world.ts';
 
 const SEARCH_GROUP = 999_993;
-const SETTLED_PREFIX = (name: string) => `Not run: a process started by an earlier command (marker ${name}, unidentified) may still be running and could not be stopped. `;
+const SETTLED_PREFIX = (name: string) => `Not run: a process started by an earlier command (marker ${name}) may still be running and could not be stopped. `;
 
 const fakeRipgrep: RipgrepLocator = { locate: async () => ({ ok: true, path: '/fake/rg', source: 'path', version: '15.2.0', release: async () => undefined }) };
 

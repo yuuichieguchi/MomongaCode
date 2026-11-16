@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { TOOL_OUTPUT_TAG } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime } from '@momonga/testkit';
 import { STORE_MAX_TOTAL_ATTEMPTS } from '../../src/process/constants.ts';
 import type { FakeScriptedReply } from '@momonga/testkit';
@@ -104,8 +105,10 @@ describe('wrap-up call on the wire (in-process gateway, fake chat-completions up
     const last = messages.at(-1);
     expect(last?.role).toBe('user');
     expect(typeof last?.content).toBe('string');
-    expect(last?.content as string).toContain('<tool_result call_id="');
-    expect((last?.content as string).endsWith(`</tool_result>\n\n${MAX_STEPS_INSTRUCTION}`)).toBe(true);
+    const content = last?.content as string;
+    const boundary = new RegExp(`<${TOOL_OUTPUT_TAG} call="[^"]+" tool="Read" boundary="([^"]+)">`).exec(content)?.[1];
+    expect(boundary).toBeDefined();
+    expect(content.endsWith(`</${TOOL_OUTPUT_TAG} boundary="${boundary}">\n\n${MAX_STEPS_INSTRUCTION}`)).toBe(true);
   });
 
   it('stops with max_steps and a notice when the upstream answers HTTP 400 to the wrap-up call, without requeueing', async () => {

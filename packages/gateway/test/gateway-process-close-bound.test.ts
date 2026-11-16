@@ -32,7 +32,9 @@ type FakeServes = { managed: FakeChatCompletionsServer[]; probe: FakeChatComplet
 const unkillableFmSpawn = (dir: string, clock: FakeClock, timers: FakeTimers, probePhase: ProbePhase, serves: FakeServes) => {
   let nextPid = 5000;
   return async (_file: string, args: readonly string[]): Promise<ManagedChild> => {
-    const socketPath = args[2] ?? '';
+    const socketFlag = args.lastIndexOf('--socket');
+    const socketPath = args[socketFlag + 1];
+    if (socketFlag < 0 || socketPath === undefined) throw new Error(`the fm launch names no --socket: ${JSON.stringify(args)}`);
     const isProbe = path.basename(socketPath).startsWith('_probe-');
     const pid = nextPid++;
     const marker = path.join(dir, `marker-${pid}`);

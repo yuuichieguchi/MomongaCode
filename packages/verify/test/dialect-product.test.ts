@@ -14,7 +14,7 @@ const TIMEOUT_MS = 60 * 60 * 1000;
 const segmentsOf = (pointer: string): string[] => (pointer === '' ? [] : pointer.slice(1).split('/').map((segment) => segment.replaceAll('~1', '/').replaceAll('~0', '~')));
 
 export const productRenderer: NonNullable<CaseInput['renderer']> = (schema, definition, site) => {
-  const resolved = { id: 'reference-model', definition: { rules: resolveRules(definition) } as unknown as DialectDefinition };
+  const resolved = { id: 'reference-model', definition: { rules: resolveRules(definition), ...(definition.strictPerTool === undefined ? {} : { strictPerTool: definition.strictPerTool }) } as unknown as DialectDefinition };
   try {
     const rendered = renderSchema(schema, site === 'tool-parameters' ? { kind: 'tool-parameters', tool: 'gen' } : { kind: 'response-format' }, resolved);
     return { ok: true, schema: rendered.schema as Json | undefined };
@@ -34,6 +34,7 @@ describe('dialect reference model against the product renderer', () => {
       expect(model, id).toBeDefined();
       const productRules = BUILTIN_DIALECTS[id].rules.filter((rule) => rule.op !== 'nullable-optional');
       expect(productRules, id).toEqual((model as Definition).rules);
+      expect(BUILTIN_DIALECTS[id].strictPerTool === true, id).toBe((model as Definition).strictPerTool === true);
     }
   });
 

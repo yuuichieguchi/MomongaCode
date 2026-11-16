@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
+import issueComment from '../packages/tools/src/operations/specs/issue-comment.json' with { type: 'json' };
 import { fakeSecretProgramsBin, startFakeForge, writeFakeSecretItem } from '@momonga/testkit';
 import type { FakeScriptEntry } from '@momonga/testkit';
 import { skipCase, titleOf } from './support/cases.ts';
@@ -96,7 +97,9 @@ describe('issue: one run from an issue, end to end', () => {
 
     const result = await runCli(home, ['--issue', issueUrl, '--mandate', 'fix']);
 
-    expect(result.stderr).toBe('momonga: completion condition passed: true\n');
+    const notes = result.stderr.trimEnd().split('\n');
+    expect(notes).toContain(`momonga: ${issueComment.report.replace('{input.number}', '7')}`);
+    expect(notes.at(-1)).toBe('momonga: completion condition passed: true');
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('closes issue #7');
     expect(gitAt(home, bare, 'log', '-1', '--format=%s', BRANCH)).toBe('Show the widgets again');

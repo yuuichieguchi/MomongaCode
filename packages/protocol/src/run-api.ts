@@ -1848,7 +1848,7 @@ export const RUN_API_SCHEMAS = {
   RulesResponse: root(closed({ facts: { type: 'array', items: governingFactView } }, ['facts'])),
   PolicyVerifyRequest: root(closed({ project: string, mode: permissionMode, secrets: { type: 'array', items: string }, mandate: string }, ['project', 'secrets'])),
   PolicyVerifyResponse: root(
-    closed({ fingerprint: string, stored: boolean, exitCode: integer, text: string, findings: { type: 'object', required: ['exitCode'] } }, ['fingerprint', 'stored', 'exitCode', 'text', 'findings']),
+    closed({ fingerprint: string, stored: boolean, exitCode: integer, text: string, findings: { type: 'object', properties: { exitCode: integer }, required: ['exitCode'] } }, ['fingerprint', 'stored', 'exitCode', 'text', 'findings']),
   ),
   PolicyGovernanceResponse: root(
     closed(

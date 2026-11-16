@@ -73,8 +73,7 @@ describe('tool call arguments and the one JSON depth bound', () => {
       expect(outputs).toHaveLength(1);
       expect(outputs[0]).toMatch(/invalid/i);
       expect(outputs[0]).toContain('Tree');
-      expect(outputs[0]).toMatch(/depth/i);
-      expect(outputs[0]).toContain(String(MAX_JSON_DEPTH));
+      expect(outputs[0]).toContain(`nest deeper than ${MAX_JSON_DEPTH} levels`);
       expect(outputs[0]).not.toMatch(/Maximum call stack size exceeded/);
       expect(env.gateway.script).toEqual([]);
     },

@@ -93,6 +93,7 @@ export type { SettingReadPoint } from './setting-read-points.ts';
 export { resolveNetwork, resolveNetworkSources } from './network.ts';
 export type { NetworkEnvironment, NetworkSources, ShownNetworkValue } from './network.ts';
 export {
+  DEFAULT_BASH_DRAIN_IDLE_MS,
   DEFAULT_FORGET_AFTER_DAYS,
   DEFAULT_UPDATE_STALL_TIMEOUT_MS,
   DEFAULT_VERIFICATION_COMMANDS,

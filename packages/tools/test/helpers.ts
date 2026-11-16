@@ -12,7 +12,7 @@ import type { PermissionRule, RuleEffect } from '@momonga/policy';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, validateSandboxPolicy } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxExit, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { PassThrough, Readable } from 'node:stream';
-import { runFileWriter } from '../src/node-ports.ts';
+import { runFileWriter } from '../src/executable-helpers.ts';
 
 const SEATBELT_PATH = '/usr/bin/sandbox-exec';
 

@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from '@momonga/testkit/child-process';
+import { measuringAskOf } from '../src/probe/sources.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -215,7 +216,7 @@ describe('managed fm under startGatewayProcess', () => {
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = listedEntryOf(models.body, 'fm/system');
-    expect(entry.capabilities).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' });
+    expect(entry.capabilities).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { ...measuringAskOf('fm/system', ['toolCalling', 'contextWindow']), step: null, elapsedSeconds: expect.any(Number) } }, source: 'unprobed' });
     await until(() => servePids(dumpFile).length === 1, 'the probe of the current key to start its fm serve');
   });
 });

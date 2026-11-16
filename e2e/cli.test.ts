@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { EXIT_WAITING_FOR_APPROVAL } from '@momonga/foundation';
 import { createFakeFm, modelSettings, startFakeChatCompletions } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
+import { stoppingText } from '../packages/cli/src/commands/daemon.ts';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { CLI_FAKES_BUNDLE, runCli, runCliWithFakes, setFakeCliVersion, startCli } from './support/cli.ts';
@@ -235,7 +236,9 @@ describe('cli: momonga -p', () => {
     expect(trace.stdout).toMatch(/4 model calls, 3 tool calls/);
     const reportedTotal = chatCompletions(fake).reduce((sum, request) => sum + SCRIPTED_USAGE(request.body).total_tokens, 0);
     const traceJson = jsonLines((await runCli(home, ['trace', runId, '--json'])).stdout)[0];
-    expect(traceJson).toMatchObject({ runId, summary: { toolCalls: 3 }, usage: { total: { total_tokens: reportedTotal } } });
+    expect(traceJson).toMatchObject({ runId, summary: { toolCalls: 3 } });
+    const summary = (traceJson as { summary: { inputTokens: number; outputTokens: number } }).summary;
+    expect(summary.inputTokens + summary.outputTokens).toBe(reportedTotal);
   });
 
   it(titleOf('cli-interrupt'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -366,7 +369,7 @@ describe('cli: momonga -p', () => {
     const hold = stack.fake.hold();
     const runtime = createRuntimeClient(home);
     const session = await runtime.createSession({ permissionMode: 'bypassPermissions' });
-    await runtime.createRun(session.session.id, 'work in progress');
+    const held = (await runtime.createRun(session.session.id, 'work in progress')).run;
     await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
     const oldPid = stack.supervisor.pid;
     setFakeCliVersion(home, '2.0.0');
@@ -377,7 +380,7 @@ describe('cli: momonga -p', () => {
     const stopped = await runCliWithFakes(home, ['daemon', 'stop'], { boundMs: E2E_SUPERVISOR_CLOSE_BOUND_MS });
 
     expect(stopped.code).toBe(0);
-    expect(stopped.stdout).toBe('Stopping the daemon. This interrupts 1 running steps and 0 background jobs. Interrupted runs resume when the daemon starts again.\nmomonga daemon stopped\n');
+    expect(stopped.stdout).toBe(`${stoppingText({ steps: 1, jobs: 0, items: [{ kind: 'run', id: held.id }] })}\nmomonga daemon stopped\n`);
     expect(() => process.kill(oldPid, 0)).toThrow();
     expect(() => process.kill(newPid, 0)).toThrow();
     expect((await runCliWithFakes(home, ['daemon', 'status'])).stdout).toBe('momonga daemon is not running\n');

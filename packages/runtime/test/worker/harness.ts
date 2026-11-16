@@ -1,4 +1,5 @@
 import { TEST_WRITER_LAUNCH } from '../../../tools/test/writer-launch.ts';
+import { fakeSandbox } from '../../../tools/test/helpers.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -12,7 +13,7 @@ import type { Capabilities, CapabilityOverride, Mandate, PermissionMode, RunEven
 import { createAgentLoader } from '@momonga/agents';
 import { contributionAtTerminal, createSkillsPort, createWorker } from '@momonga/runtime';
 import type { AgentCatalogPort, EvidenceRun, GovernancePort, HistoryPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
-import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import type { SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
@@ -69,12 +70,7 @@ export const capabilitiesFor = (contextWindow: number, overrides: CapabilityOver
     overrides,
   );
 
-export const fakeSandbox: Sandbox = {
-  kind: 'seatbelt',
-  spawn: () => {
-    throw new Error('the fake sandbox does not spawn processes');
-  },
-};
+export { fakeSandbox };
 
 type Cleanup = () => void | Promise<void>;
 

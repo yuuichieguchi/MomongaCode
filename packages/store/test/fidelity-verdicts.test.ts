@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createFakeClock } from '@momonga/testkit';
-import { START_MS, enqueue, harness, newSession, openStoreAt, rawDb } from './helpers.ts';
+import { NEVER_CANCELLED, createFakeClock } from '@momonga/testkit';
+import { START_MS, cancelToEnd, enqueue, harness, newSession, openStoreAt, rawDb } from './helpers.ts';
+
+const PERIOD_MS = 30 * 86_400_000;
 
 const KEY = ['run_id', 'cwd', 'fold_version', 'token'];
 
@@ -36,13 +38,13 @@ describe('the memo of attestation verdicts, fidelity_verdicts (decision 40 B, 13
     expect(key).toEqual(KEY);
   });
 
-  it('removes the rows of a session when the session is deleted', async () => {
-    const { dbPath, session, run } = await withRun();
+  it('removes the rows of a run when the retention sweep deletes its session', async () => {
+    const { dbPath, store, clock, run } = await withRun();
+    await cancelToEnd(store, run.id);
     insertVerdict(dbPath, run.id, 1);
     expect(verdictCount(dbPath)).toBe(1);
-    const db = rawDb(dbPath);
-    db.exec('PRAGMA foreign_keys = OFF');
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(session.id);
+    clock.advance(PERIOD_MS + 1);
+    expect(await store.retention.sweep({ periodMs: PERIOD_MS, purges: [] }, NEVER_CANCELLED)).toMatchObject({ sessionsDeleted: 1 });
     expect(verdictCount(dbPath)).toBe(0);
   });
 

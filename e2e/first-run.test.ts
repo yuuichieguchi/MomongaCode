@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { EXIT_FAILURE } from '@momonga/foundation';
+import { messageOf } from '@momonga/protocol';
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
@@ -15,10 +16,7 @@ describe('the first run with nothing configured', () => {
 
     expect(result.code).toBe(EXIT_FAILURE);
     expect(result.stdout).toBe('');
-    const lines = result.stderr.split('\n');
-    expect(lines[0]).toBe('momonga: no model target is set up');
-    expect(result.stderr).toContain('momonga models detect');
-    expect(result.stderr).toContain(home.paths.settingsFile);
+    expect(result.stderr).toBe(`momonga: ${messageOf('noModelConnected', 'cli')}\n`);
     expect(result.stderr).not.toMatch(/probe/i);
     expect(result.stderr).not.toContain('\\u000a');
     expect(fs.existsSync(home.paths.settingsFile)).toBe(false);
@@ -32,6 +30,6 @@ describe('the first run with nothing configured', () => {
     expect(result.code).toBe(EXIT_FAILURE);
     const reply = JSON.parse(result.stdout) as { error?: { code?: string; message?: string } };
     expect(reply.error?.code).toBe('target_not_ready');
-    expect(reply.error?.message).toContain('no model target is set up');
+    expect(reply.error?.message).toContain(messageOf('noModelConnected', 'cli'));
   });
 });

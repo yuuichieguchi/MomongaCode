@@ -26,7 +26,7 @@ const span = (overrides: Partial<SpanRecord>): SpanRecord => ({
 
 describe('runTraceOf', () => {
   it('summarises the spans recorded for the run and lists them without their events', async (context) => {
-    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(withTempDir(context), 'traces.db') });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(withTempDir(context), 'traces.db'), clock: createFakeClock(0) });
     registerCleanup(context, () => store.close());
     store.writeSpans([
       span({}),
@@ -53,7 +53,7 @@ describe('runTraceOf', () => {
   });
 
   it('has no trace for a run without spans', async (context) => {
-    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(withTempDir(context), 'traces.db') });
+    const store = openTraceStore({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, path: path.join(withTempDir(context), 'traces.db'), clock: createFakeClock(0) });
     registerCleanup(context, () => store.close());
 
     expect(await runTraceOf({ local: store, gateway: NO_GATEWAY_SPANS }, 'run-1', OPEN)).toBeUndefined();

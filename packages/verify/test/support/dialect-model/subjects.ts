@@ -39,15 +39,20 @@ export interface Variant {
   cls: CheckClass;
 }
 
+const strictnessOf = (definition: Definition): Pick<Definition, 'strictPerTool'> => {
+  const strictPerTool = definition.strictPerTool ?? (definition.extends === undefined ? undefined : BUILTINS[definition.extends]?.strictPerTool);
+  return strictPerTool === undefined ? {} : { strictPerTool };
+};
+
 export const variantsOf = (definition: Definition): Variant[] => {
   const flat = resolveRules(definition);
   const kept = flat.filter((rule) => rule.op !== 'drop');
   const dropped = flat.filter((rule) => rule.op === 'drop');
   const variants: Variant[] = [];
   if (kept.length > 0 || dropped.length === 0) {
-    variants.push({ definition: { rules: kept }, cls: kept.some((rule) => classOf(rule) === 'N') ? 'N' : 'P' });
+    variants.push({ definition: { rules: kept, ...strictnessOf(definition) }, cls: kept.some((rule) => classOf(rule) === 'N') ? 'N' : 'P' });
   }
-  if (dropped.length > 0) variants.push({ definition: { rules: dropped }, cls: 'W' });
+  if (dropped.length > 0) variants.push({ definition: { rules: dropped, ...strictnessOf(definition) }, cls: 'W' });
   return variants;
 };
 

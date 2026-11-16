@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SETTINGS_SCHEMA, loadSettings, loadUserSettings } from '@momonga/config';
+import { SETTINGS_SCHEMA, SETTING_UNIT_OF, loadSettings, loadUserSettings } from '@momonga/config';
 import { MCP_CONNECT_TIMEOUT_LIMITS } from '@momonga/foundation';
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
@@ -7,7 +7,8 @@ describe('mcp.connectTimeoutMs is one global user setting for the connect of eve
   it('has the range 1 to 3600000 and the default 30000', () => {
     expect(MCP_CONNECT_TIMEOUT_LIMITS).toEqual({ min: 1, max: 3_600_000, default: 30_000 });
     const mcp = SETTINGS_SCHEMA.properties['mcp'] as { properties: Record<string, unknown> };
-    expect(mcp.properties['connectTimeoutMs']).toEqual({ type: 'integer', minimum: 1, maximum: 3_600_000 });
+    expect(mcp.properties['connectTimeoutMs']).toEqual({ type: 'integer', minimum: 1, maximum: 3_600_000, default: 30_000 });
+    expect(SETTING_UNIT_OF['mcp.connectTimeoutMs']).toBe('milliseconds');
   });
 
   it.each([1, 30_000, 3_600_000])('accepts %d from user settings', async (value) => {
