@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createGitWorkTreeObserver, observerStoreOf, pruneGitObserverStores, unprotectedLaunch } from '@momonga/tools';
+import { systemClock } from '@momonga/foundation';
 
 const LAUNCH = unprotectedLaunch('the tests of the observer retention start git without the protection of the home');
 
@@ -55,7 +56,7 @@ describe('the observer store under retention', () => {
     const before = looseObjects();
     expect(before).toBeGreaterThan(0);
 
-    await pruneGitObserverStores({ storeRoot, cutoffMs: Date.now() - HOUR_MS }, LAUNCH, signal());
+    await pruneGitObserverStores({ storeRoot, cutoffMs: systemClock.now() - HOUR_MS }, LAUNCH, signal());
 
     expect(looseObjects()).toBe(before);
   });
@@ -64,12 +65,12 @@ describe('the observer store under retention', () => {
     await createGitWorkTreeObserver({ storeRoot, cwd: project, trusted: true }, LAUNCH).mark(signal());
     expect(looseObjects()).toBeGreaterThan(0);
 
-    await pruneGitObserverStores({ storeRoot, cutoffMs: Date.now() + HOUR_MS }, LAUNCH, signal());
+    await pruneGitObserverStores({ storeRoot, cutoffMs: systemClock.now() + HOUR_MS }, LAUNCH, signal());
 
     expect(looseObjects()).toBe(0);
   });
 
   it('does nothing when no observer store was ever made', async () => {
-    await expect(pruneGitObserverStores({ storeRoot, cutoffMs: Date.now() }, LAUNCH, signal())).resolves.toBeUndefined();
+    await expect(pruneGitObserverStores({ storeRoot, cutoffMs: systemClock.now() }, LAUNCH, signal())).resolves.toBeUndefined();
   });
 });

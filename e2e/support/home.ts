@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { FIRST_GENERATION, assertUnixSocketPathFits, ensureMomongaDirs, generationLayout, isProcessAlive, momongaPaths, scopeToGeneration } from '@momonga/foundation';
+import { FIRST_GENERATION, assertUnixSocketPathFits, ensureMomongaDirs, generationLayout, isProcessAlive, momongaPaths, scopeToGeneration, systemTiming } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { stopSupervisorHolders } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
@@ -164,9 +164,9 @@ const survivorsAfterStop = async (home: E2eHome, bounds: E2eStopBounds): Promise
   const first = await readSurvivors(home);
   const supervisors = liveSupervisorsOf(home);
   for (const pid of supervisors) process.kill(pid, 'SIGTERM');
-  const deadline = performance.now() + (supervisors.length > 0 ? bounds.supervisorAsked : bounds.orphaned);
+  const deadline = systemTiming.monotonicMs() + (supervisors.length > 0 ? bounds.supervisorAsked : bounds.orphaned);
   let reading = first;
-  while ((reading.survivors.length > 0 || reading.collectFailure !== undefined) && performance.now() < deadline) {
+  while ((reading.survivors.length > 0 || reading.collectFailure !== undefined) && systemTiming.monotonicMs() < deadline) {
     await abortableWait(UNTIL_DEFAULT_INTERVAL_MS);
     reading = await readSurvivors(home);
   }

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { DRAIN_RESIDUE_MAX_BYTES, drainIncompleteNote, pumpOutput } from '../src/capture.ts';
 import { cfgNames } from '../../../test/formal/cfg-names.ts';
+import { sleep, systemWaitTiming } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
@@ -15,7 +16,9 @@ type Step = 'chunk' | 'shortGap' | 'idleGap' | 'end' | 'flood';
 
 const STEPS: readonly Step[] = ['chunk', 'shortGap', 'idleGap', 'end', 'flood'];
 
-const turn = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+const turn = async (): Promise<void> => {
+  await sleep(systemWaitTiming, 0);
+};
 
 const traces = (length: number): Step[][] => {
   let all: Step[][] = [[]];
