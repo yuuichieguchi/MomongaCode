@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import { describe, expect, it } from 'vitest';
 import { findProgramOnPath, nodeFileSystem, systemTiming } from '@momonga/foundation';
 import { createClipboardPrograms } from '../../src/tui/screen/clipboard-host.ts';

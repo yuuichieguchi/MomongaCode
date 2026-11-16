@@ -1,14 +1,14 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createTempDir } from '@momonga/testkit';
 import { parseDataset, runDataset } from '@momonga/eval';
 import type { EvalRunApi, EvalSessionInput, GoldenCase, GraderSpec } from '@momonga/eval';
 
 const MANDATE_FILE = path.resolve(import.meta.dirname, '..', 'datasets', 'mandate.json');
 const dataset = parseDataset(fs.readFileSync(MANDATE_FILE, 'utf8'), 'mandate.json');
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mandate-routes-'));
+const scratch = createTempDir();
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
 type Expected = Extract<GraderSpec, { kind: 'permissionDecision' }>;
