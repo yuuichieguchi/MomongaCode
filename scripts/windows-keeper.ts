@@ -23,16 +23,28 @@ export const compileCommandOf = (source: string, output: string, zigTarget: stri
   args: ['cc', '-target', zigTarget, '-municode', '-Os', '-s', '-Wall', '-Wextra', '-Werror', '-o', output, source, '-ladvapi32'],
 });
 
+export class WindowsCompilerMissingError extends Error {
+  constructor(options: { cause: unknown }) {
+    super('zig was not found on PATH, so the Windows keeper cannot be compiled; install zig (https://ziglang.org/download/) and put it on PATH', options);
+    this.name = 'WindowsCompilerMissingError';
+  }
+}
+
+const isMissingProgram = (error: unknown, program: string): boolean => {
+  const { code, syscall } = error as NodeJS.ErrnoException;
+  return code === 'ENOENT' && syscall === `spawnSync ${program}`;
+};
+
 export const compileWindowsProgram = (source: string, output: string, zigTarget: string): void => {
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.mkdirSync(zigCacheDir, { recursive: true });
   const { file, args } = compileCommandOf(source, output, zigTarget);
-  execFileSync(file, args, { env: { ...process.env, ZIG_GLOBAL_CACHE_DIR: zigCacheDir, ZIG_LOCAL_CACHE_DIR: zigCacheDir }, stdio: ['ignore', 'inherit', 'inherit'] });
-};
-
-export const compilerMissing = (error: unknown): boolean => {
-  const { code, syscall } = error as NodeJS.ErrnoException;
-  return code === 'ENOENT' && syscall === 'spawnSync zig';
+  try {
+    execFileSync(file, args, { env: { ...process.env, ZIG_GLOBAL_CACHE_DIR: zigCacheDir, ZIG_LOCAL_CACHE_DIR: zigCacheDir }, stdio: ['ignore', 'inherit', 'inherit'] });
+  } catch (error) {
+    if (isMissingProgram(error, file)) throw new WindowsCompilerMissingError({ cause: error });
+    throw error;
+  }
 };
 
 export const buildWindowsKeeperAssets = async (workDir: string, target: ReleaseTargetName): Promise<Record<string, string>> => {
@@ -62,8 +74,8 @@ if (import.meta.main) {
   try {
     assets = await buildWindowsKeeperAssets(values['work-dir'], values.target as ReleaseTargetName);
   } catch (error) {
-    if (!compilerMissing(error)) throw error;
-    process.stderr.write('zig was not found on PATH, so the keeper cannot be compiled\n');
+    if (!(error instanceof WindowsCompilerMissingError)) throw error;
+    process.stderr.write(`${error.message}\n`);
     process.exit(WINDOWS_KEEPER_COMPILER_MISSING_EXIT);
   }
   process.stdout.write(`${assets[WINDOWS_KEEPER_BINARY_ASSET]}\n`);

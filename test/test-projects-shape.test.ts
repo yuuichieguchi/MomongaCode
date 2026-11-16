@@ -15,10 +15,10 @@ describe('the vitest projects', () => {
     expect(projects.find((project) => project.test?.name === 'packaging')?.test?.provide?.[RUN_CLASS_KEY]).toBe('heavy');
   });
 
-  it('selecting the unit and the e2e project in one run is refused, and so is a run that names no project; e2e alone is accepted', () => {
-    expect(refusedSelection(['vitest', 'run', '--project', 'unit', '--project', 'e2e'])).toMatch(/npm run test:e2e/);
-    expect(refusedSelection(['vitest', 'run', '--project=unit', '--project=e2e'])).toMatch(/npm run test:e2e/);
-    expect(refusedSelection(['vitest', 'run'])).toMatch(/npm run test:e2e/);
+  it('the merge gate runs the unit, the e2e and the packaging projects in one run, and a run that names no project is refused', () => {
+    expect(refusedSelection(['vitest', 'run', '--project', 'unit', '--project', 'e2e', '--project', 'packaging'])).toBeUndefined();
+    expect(refusedSelection(['vitest', 'run', '--project=unit', '--project=e2e'])).toBeUndefined();
     expect(refusedSelection(['vitest', 'run', '--project', 'e2e', 'e2e/cli.test.ts'])).toBeUndefined();
+    expect(refusedSelection(['vitest', 'run'])).toMatch(/names no project/);
   });
 });

@@ -10,8 +10,8 @@
   },
   "packageManager": "npm@11.19.1",
   "scripts": {
-    "test": "MOMONGA_TLC_REUSE=0 vitest run --project unit",
-    "test:reuse": "MOMONGA_TLC_REUSE=1 vitest run --project unit",
+    "test": "MOMONGA_TLC_REUSE=0 vitest run --project unit --project e2e --project packaging",
+    "test:reuse": "MOMONGA_TLC_REUSE=1 vitest run --project unit --project e2e --project packaging",
     "test:tlc-deep": "MOMONGA_TLC_REUSE=0 MOMONGA_TLC_TIER=deep vitest run --project unit test/formal",
     "test:setup": "node scripts/fetch-tla.ts",
     "test:e2e": "vitest run --project e2e",

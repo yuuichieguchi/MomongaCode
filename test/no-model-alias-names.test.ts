@@ -42,9 +42,6 @@ const PERMANENT_FILES: readonly string[] = LEGACY_KEY_FILES;
 
 const PERMANENT_FOR_COMMAND_AND_PATH_ALIASES: readonly string[] = [
   'packages/verify/src/path-model.ts',
-  'scripts/sea-cli.test.ts',
-  'scripts/sea-ripgrep.test.ts',
-  'scripts/update-sea.test.ts',
   'packages/cli/src/tui/slash.ts',
 ];
 
