@@ -90,6 +90,9 @@ const reapedGroupId = (): number => {
 };
 
 const FORK_LOOP_ITERATIONS = 30;
+const FORK_LOOP_LIVE_MEMBERS = 16;
+const FORK_LOOP_SAMPLES = 10;
+const FORK_LOOP_SAMPLE_INTERVAL_MS = 100;
 
 const READY_WAIT_MS = 5000;
 const GRANDCHILD_DEATH_WAIT_MS = 5000;
@@ -97,10 +100,10 @@ const GRANDCHILD_DEATH_WAIT_MS = 5000;
 const spawnForkLoopGroup = async (): Promise<{ pgid: number; exited: Promise<void> }> => {
   const dir = makeDir();
   const readyFile = path.join(dir, 'ready');
-  const child = spawn('/bin/sh', ['-c', `trap '' TERM; touch "$DIR/ready"; while :; do /bin/sleep 60 & done`], {
+  const child = spawn('/bin/sh', ['-c', `trap '' TERM; touch "$DIR/ready"; while :; do i=0; while [ "$i" -lt "$LIVE" ]; do /bin/sleep 0.2 & i=$((i + 1)); done; wait; done`], {
     detached: true,
     stdio: 'ignore',
-    env: { PATH: '/usr/bin:/bin', DIR: dir },
+    env: { PATH: '/usr/bin:/bin', DIR: dir, LIVE: String(FORK_LOOP_LIVE_MEMBERS) },
   });
   const pgid = child.pid;
   if (pgid === undefined) throw new Error('spawn failed');
@@ -278,6 +281,18 @@ describe('terminateGroup', () => {
     expect(await terminateGroup(pgid, { graceMs: 5000 })).toBe('terminated');
     expect(await exited).toBe('SIGTERM');
     expect(await groupAlive(pgid)).toBe(false);
+  });
+
+  it('keeps the fork-loop group forking without end while its live members stay within the stated bound', async () => {
+    const { pgid } = await spawnForkLoopGroup();
+    const counts: number[] = [];
+    for (let sample = 0; sample < FORK_LOOP_SAMPLES; sample += 1) {
+      await new Promise((resolve) => setTimeout(resolve, FORK_LOOP_SAMPLE_INTERVAL_MS));
+      counts.push(spawnSync('ps', ['-A', '-o', 'pgid='], { encoding: 'utf8' }).stdout.split('\n').filter((line) => Number(line.trim()) === pgid).length);
+    }
+    await killGroupsForCleanup([pgid]);
+    expect(Math.max(...counts)).toBeLessThanOrEqual(FORK_LOOP_LIVE_MEMBERS + 1);
+    expect(new Set(counts).size > 1 || counts.every((count) => count > 1)).toBe(true);
   });
 
   it('reports a group that keeps forking while SIGKILL is delivered as killed only when no member is left, and otherwise as unconfirmed within its grace', async () => {
