@@ -8,7 +8,7 @@ import type { MeasuringAsk } from './auto-probe.ts';
 
 export type SourceField = 'toolCalling' | 'contextWindow';
 
-export type ReportedFields = { toolCalling?: ToolCallingMode; contextWindow?: number };
+export type ReportedFields = { toolCalling?: ToolCallingMode; contextWindow?: number; thinking?: boolean; vision?: boolean };
 
 export type ToolCallingDeclaration = ToolCallingMode | 'auto';
 
@@ -19,6 +19,7 @@ export const reportedFieldsOf = (details: ModelDetails | undefined): ReportedFie
   return {
     ...(details.tools === 'unknown' ? {} : { toolCalling: details.tools === 'yes' ? 'native' : 'none' }),
     ...(details.window === undefined ? {} : { contextWindow: details.window }),
+    ...(details.capabilities === undefined ? {} : { thinking: details.capabilities.includes('thinking'), vision: details.capabilities.includes('vision') }),
   };
 };
 
