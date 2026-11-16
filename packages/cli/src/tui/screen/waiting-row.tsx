@@ -32,6 +32,7 @@ export const SPINNER_MS = 100;
 
 export const STARTING_TEXT = 'starting the momonga daemon';
 export const RECONNECTING_TEXT = 'reconnecting to the daemon';
+export const DAEMON_STOPPING_TEXT = 'The daemon is stopping. A run it interrupts goes on when the daemon starts again.';
 export const MEASURING_TEXT = 'measuring this model (once per model and OS build)';
 
 export const loadingText = (done: number, total: number): string => `loading the conversation ${done} of ${total} events`;

@@ -49,7 +49,7 @@ import {
   unknownSkill,
 } from './errors.ts';
 import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
-import type { EventSource } from './event-stream.ts';
+import type { EventSource, StreamNotice } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, pageLimitOf, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
 import { compactInputOf, compactPinOf } from '../worker/compact-pin.ts';
@@ -140,6 +140,7 @@ export type RunAppDeps = {
   closeSignal: AbortSignal;
   userCommands: UserCommandRegistry;
   retireSignal: AbortSignal;
+  stopping: StreamNotice;
   retireFrame: () => Uint8Array | undefined;
   runTrace: (runId: string, signal: AbortSignal) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
@@ -841,6 +842,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
           keepAliveMs: deps.keepAliveMs,
           signals: [deps.closeSignal, deps.retireSignal, context.req.raw.signal],
           finalFrame: deps.retireFrame,
+          stopping: deps.stopping,
           onError: deps.onError,
         });
 

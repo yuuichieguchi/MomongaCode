@@ -41,6 +41,7 @@ describe('SW1 event stream read failure', () => {
       timers,
       keepAliveMs: 15_000,
       signals: [closeController.signal, requestController.signal],
+      stopping: { signal: new AbortController().signal, frame: new Uint8Array() },
       onError: (error: unknown) => errors.push(error),
     });
     expect(notifier.subscriberCount()).toBe(1);
@@ -272,6 +273,7 @@ describe('SS5 coverage gaps', () => {
       timers,
       keepAliveMs: 15_000,
       signals: [],
+      stopping: { signal: new AbortController().signal, frame: new Uint8Array() },
       onError: () => undefined,
     });
     const reader = response.body?.getReader();
@@ -329,6 +331,7 @@ describe('SS5 coverage gaps', () => {
         timers,
         keepAliveMs: 15_000,
         signals: [closeController.signal],
+        stopping: { signal: new AbortController().signal, frame: new Uint8Array() },
         onError: () => undefined,
       }),
     );

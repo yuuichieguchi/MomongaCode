@@ -6,6 +6,7 @@ import { account, startPlan } from '../fake-plan-gateway.tsx';
 import { KEYS, untilFrame } from '../ink-helpers.ts';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
+import { DAEMON_STOPPING_TEXT } from '../../src/tui/screen/waiting-row.tsx';
 import { SESSION } from '../fake-backend.ts';
 
 const linesOf = (text: string | undefined): string[] => (text ?? '').split('\n');
@@ -59,6 +60,20 @@ describe('the waiting row in the screen (6.1)', () => {
     await untilFrame(app, 'reconnecting to the daemon 0s · esc to cancel');
     backend.emit(frame({ type: 'tool.started', callId: 'c1', idemKey: 'k' }));
     await untilFrame(app, /running Bash ls \d+s · esc to cancel/);
+    app.unmount();
+  });
+});
+
+describe('a daemon stop under an open run (real-use-30)', () => {
+  it('says once that the daemon is stopping, and the reconnect follows as its phase', async () => {
+    const { app, backend, clock } = await working({ columns: 100, rows: 20 });
+    backend.following().onDaemonStopping();
+    backend.following().onDaemonStopping();
+    const said = await untilFrame(app, DAEMON_STOPPING_TEXT);
+    expect(said.split(DAEMON_STOPPING_TEXT)).toHaveLength(2);
+    backend.following().onReconnecting(0);
+    clock.advance(100);
+    await untilFrame(app, 'reconnecting to the daemon 0s · esc to cancel');
     app.unmount();
   });
 });

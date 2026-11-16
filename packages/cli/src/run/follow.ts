@@ -33,7 +33,7 @@ export class ReconnectBoundExceeded extends Error {
   }
 }
 
-export type StreamOpener = (options: { lastEventId?: number; signal?: AbortSignal; onOpen?: () => void }) => AsyncIterable<RunEventFrame>;
+export type StreamOpener = (options: { lastEventId?: number; signal?: AbortSignal; onOpen?: () => void; onDaemonStopping?: () => void }) => AsyncIterable<RunEventFrame>;
 
 export type ReconnectPolicy = {
   clock: CliClock;
@@ -103,6 +103,7 @@ export type FollowEventsOptions<Result> = ReconnectPolicy & {
   open: StreamOpener;
   finished(): Promise<Result | undefined>;
   onEvent(frame: RunEventFrame): void;
+  onDaemonStopping?(): void;
 };
 
 export const followEvents = async <Result>(options: FollowEventsOptions<Result>): Promise<Result> => {
@@ -115,6 +116,7 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
         ...(cursor > 0 ? { lastEventId: cursor } : {}),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         onOpen: reconnector.opened,
+        ...(options.onDaemonStopping === undefined ? {} : { onDaemonStopping: options.onDaemonStopping }),
       };
       for await (const frame of options.open(streamOptions)) {
         cursor = frame.id;
@@ -153,6 +155,7 @@ export type FollowOptions = {
   onChildStarted?: ChildLifeHandler;
   onChildEnded?: ChildLifeHandler;
   onReconnecting?(attempt: number): void;
+  onDaemonStopping?(): void;
   signal?: AbortSignal;
 };
 
@@ -232,6 +235,7 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
       restoreConnection: options.restoreConnection,
       onEvent,
       ...(options.onReconnecting === undefined ? {} : { onReconnecting: options.onReconnecting }),
+      ...(options.onDaemonStopping === undefined ? {} : { onDaemonStopping: options.onDaemonStopping }),
       signal,
     });
   } catch (error) {

@@ -68,7 +68,7 @@ import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useToolView } from './screen/tool-view.ts';
 import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
-import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
+import { DAEMON_STOPPING_TEXT, commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
 import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
 import { createSlashRegistry, modeToastText, namesOf, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
 import type { AutoModePort, SelectedText, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
@@ -726,6 +726,7 @@ export function App(props: AppProps) {
 
   const follow = (runId: string, replay: Replay | undefined): Promise<RunView> => {
     let firstSeq: number | undefined;
+    let toldStopping = false;
     const deliver = (work: () => void, position?: number): void => {
       if (replay === undefined) work();
       else replay.queue.push(work, position);
@@ -769,6 +770,11 @@ export function App(props: AppProps) {
       onChildStarted: (agent, childRunId) => deliver(() => subagentStarted(store, agent, childRunId, now())),
       onChildEnded: (_agent, childRunId) => deliver(() => subagentEnded(store, childRunId)),
       onReconnecting: () => setReconnectingSince((since) => since ?? now()),
+      onDaemonStopping: () => {
+        if (toldStopping) return;
+        toldStopping = true;
+        append({ kind: 'notice', level: 'info', text: DAEMON_STOPPING_TEXT });
+      },
     });
   };
 
