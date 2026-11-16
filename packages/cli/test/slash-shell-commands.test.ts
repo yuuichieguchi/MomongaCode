@@ -199,17 +199,22 @@ describe('the shell commands that have a slash form', () => {
     expect(seen?.aborted).toBe(true);
   });
 
-  it('lists the runs of /report under the waiting row, and esc stops the listing before anything runs', async () => {
+  it('hands /report with no id to the momonga report form under the waiting row, and esc stops it', async () => {
     const seen: string[][] = [];
-    const { context, backgrounds, controller } = slashContext();
-    const shell = { run: async (argv: readonly string[]) => (seen.push([...argv]), 0) };
-    const backend = { ...context.backend, runs: () => new Promise<never>(() => undefined) };
-    const ran = run('/report', { ...context, shell, backend } as unknown as SlashContext);
-    await Promise.resolve();
+    const { context, backgrounds, controller, infos } = slashContext();
+    const shell = {
+      run: (argv: readonly string[], io: { signal: AbortSignal }) => {
+        seen.push([...argv]);
+        return new Promise<number>((_resolve, reject) => io.signal.addEventListener('abort', () => reject(io.signal.reason)));
+      },
+    };
+    await run('/report', { ...context, shell } as unknown as SlashContext);
     expect(backgrounds.map((entry) => entry.label)).toEqual(['/report']);
+    expect(seen).toEqual([['report']]);
     controller.abort();
-    await expect(ran).rejects.toThrow();
-    expect(seen).toEqual([]);
+    await Promise.all(backgrounds.map((entry) => entry.done));
+    await Promise.resolve();
+    expect(infos.some((line) => line.startsWith('/report stopped: '))).toBe(true);
   });
 
   it('refuses /auth login with the usage and the way to sign in, and runs nothing', async () => {

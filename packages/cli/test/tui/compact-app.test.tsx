@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SLASH_COMMANDS } from '../../src/tui/commands/index.ts';
+import { taskRunningHint } from '../../src/tui/app.tsx';
+import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import { runView } from '../fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
 
 const WIDE = { columns: 140, rows: 60 };
-const TASK_RUNNING = 'A run is working. Esc stops it.';
+const TASK_RUNNING = taskRunningHint(DEFAULT_KEY_TABLE);
+const READY = 'mode: manual (shift+tab)';
 
 const compacting = async (line: string, call: string) => {
   const started = await start({}, {}, WIDE);
+  await untilFrame(started.app, READY);
   await type(started.app, line, `> ${line}`);
   started.app.stdin.write(KEYS.enter);
   await started.backend.called(call);
@@ -61,6 +65,7 @@ describe('/compact', () => {
 
   it('is refused while a run is open', async () => {
     const { app, backend } = await start({}, {}, WIDE);
+    await untilFrame(app, READY);
     await runStarted(backend, app, 'go');
     await type(app, '/compact', '> /compact');
     app.stdin.write(KEYS.enter);
