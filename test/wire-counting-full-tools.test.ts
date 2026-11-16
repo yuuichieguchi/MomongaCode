@@ -4,7 +4,7 @@ import { createChatCompletionsAdapter, estimateInputTokens, wireTokensOf, unauth
 import type { AdapterRequest, Capabilities, FunctionTool, ToolCallingMode } from '@momonga/protocol';
 import { buildSystemPrompt } from '@momonga/runtime';
 import { createBuiltinTools, createToolRegistry } from '@momonga/tools';
-import { TEST_BUILTIN_TOOL_OFFER, createFakeClock } from '@momonga/testkit';
+import { BUILTIN_OFFER_ORDER, TEST_BUILTIN_TOOL_OFFER, createFakeClock } from '@momonga/testkit';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import { TEST_FENCE } from '@momonga/testkit';
 
@@ -64,7 +64,7 @@ describe('wire counting for the full builtin tool set at fm\'s window', () => {
   it('counts the constrained wire with the tool listing in the system message, above the count of the input and the tools', async () => {
     const request = await firstRequest();
     const tools = request.tools ?? [];
-    expect(tools.map((tool) => tool.name)).toEqual(['Glob', 'Grep', 'Read', 'ReadOutput', 'Bash', 'BashOutput', 'KillBash', 'Edit', 'UpdatePlan', 'Write']);
+    expect(tools.map((tool) => tool.name)).toEqual(BUILTIN_OFFER_ORDER);
     const wire = adapterIn('constrained').renderWire?.(request, { name: 'apple/system', display: 'system', model: 'system' }, { reasoningOrigin: NO_REASONING_IS_OWN, capabilities: { ...CAPABILITIES, toolCalling: 'constrained' } }) as { messages: Array<{ role: string; content: string }> };
     expect(wire).not.toHaveProperty('response_format');
     const system = wire.messages.find((message) => message.role === 'system')?.content ?? '';

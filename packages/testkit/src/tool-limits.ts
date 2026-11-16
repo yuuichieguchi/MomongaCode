@@ -9,3 +9,5 @@ export const TEST_BUILTIN_TOOL_OFFER = {
   sandboxNetwork: 'ask',
   bash: { kind: 'resolved', path: '/bin/bash' },
 } as const;
+
+export const BUILTIN_OFFER_ORDER = ['Glob', 'Grep', 'Read', 'Edit', 'Write', 'ReadOutput', 'Bash', 'BashOutput', 'KillBash', 'UpdatePlan'] as const;

@@ -1,5 +1,5 @@
 import { EMPTY_FILE_RULES, defaultProtectedPaths, momongaLayout, standardSecretLocations } from '@momonga/foundation';
-import { TEST_BUILTIN_TOOL_OFFER, TEST_TOOL_LIMITS, protectedSetWith, NEVER_CANCELLED } from '@momonga/testkit';
+import { BUILTIN_OFFER_ORDER, TEST_BUILTIN_TOOL_OFFER, TEST_TOOL_LIMITS, protectedSetWith, NEVER_CANCELLED } from '@momonga/testkit';
 import type { ProtectedSet } from '@momonga/foundation';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { buildSandboxPolicy, createBuiltinTools, createToolRegistry } from '@momonga/tools';
@@ -9,7 +9,6 @@ import { makeLayout, ruleFor } from '../helpers.ts';
 import { makeBuiltins } from './fixtures.ts';
 
 const NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan'];
-const OFFERED = ['Glob', 'Grep', 'Read', 'ReadOutput', 'Bash', 'BashOutput', 'KillBash', 'Edit', 'UpdatePlan', 'Write'];
 
 type Definition = ToolDefinition<Record<string, unknown>>;
 
@@ -81,8 +80,8 @@ describe('createBuiltinTools', () => {
     const registry = createToolRegistry();
     for (const tool of createBuiltinTools(TEST_BUILTIN_TOOL_OFFER)) registry.register(tool);
     const toolSet = await registry.snapshot();
-    expect(toolSet.tools.map((tool: AnyTool) => tool.name)).toEqual(OFFERED);
-    expect(toolSet.forModel({ mode: 'manual', rules: [] }).map((tool) => tool.name)).toEqual(OFFERED);
+    expect(toolSet.tools.map((tool: AnyTool) => tool.name)).toEqual(BUILTIN_OFFER_ORDER);
+    expect(toolSet.forModel({ mode: 'manual', rules: [] }).map((tool) => tool.name)).toEqual(BUILTIN_OFFER_ORDER);
   });
 
   describe('offering the job tools', () => {
@@ -96,7 +95,7 @@ describe('createBuiltinTools', () => {
       (await snapshot()).forModel({ mode, rules }).map((tool) => tool.name);
 
     it('declares the tool they serve', async () => {
-      expect((await snapshot()).companions).toEqual(new Map([['BashOutput', 'Bash'], ['KillBash', 'Bash']]));
+      expect((await snapshot()).companions).toEqual(new Map([['BashOutput', 'Bash'], ['Edit', 'Read'], ['KillBash', 'Bash'], ['Write', 'Read']]));
     });
 
     it('are offered with Bash', async () => {
