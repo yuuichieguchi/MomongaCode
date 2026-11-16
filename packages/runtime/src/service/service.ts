@@ -7,7 +7,7 @@ import type { MarkerOwners } from '@momonga/tools';
 import type { MandateRunVerification, PolicyVerification } from '../process/folder-verification.ts';
 import type { GatewayStanding } from '../process/supervised-gateway.ts';
 import type { Clock, FileSystem, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
-import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
@@ -114,6 +114,8 @@ const isStreamRequest = (request: http.IncomingMessage): boolean => (request.met
 const frameOf = (current: DaemonCurrentFrame): Uint8Array =>
   new TextEncoder().encode(encodeSse({ event: DAEMON_CURRENT_EVENT, data: JSON.stringify({ generation: current.generation, version: current.version }) }));
 
+const STOPPING_FRAME = new TextEncoder().encode(encodeSse({ event: DAEMON_STOPPING_EVENT, data: '{}' }));
+
 const reportToStderr = (error: unknown): void => {
   console.error(error);
 };
@@ -154,6 +156,11 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
   const retireController = new AbortController();
   let retireFrame: Uint8Array | undefined;
   let draining = false;
+  const drainController = new AbortController();
+  const startDraining = (): void => {
+    draining = true;
+    drainController.abort();
+  };
   const runTimeoutMs = options.defaults.runTimeoutMs ?? SIX_HOURS_MS;
   const personCapability = await personCapabilityOf({ files: options.files, random: systemRandom, lock: options.lock }, options.home);
   const app = createRunApp({
@@ -179,9 +186,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     skillFiles: options.skillFiles,
     platform: options.platform,
     isDraining: () => draining,
-    beginDraining: () => {
-      draining = true;
-    },
+    beginDraining: startDraining,
     role: () => options.role.current(),
     work: options.work,
     health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind },
@@ -195,6 +200,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     userCommands,
     retireSignal: retireController.signal,
     retireFrame: () => retireFrame,
+    stopping: { signal: drainController.signal, frame: STOPPING_FRAME },
     runTrace: options.runTrace,
     runCost: options.runCost,
     runCostBreakdown: options.runCostBreakdown,
@@ -333,9 +339,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
       );
       return { status: response.status, body: await response.json() };
     },
-    beginDraining: () => {
-      draining = true;
-    },
+    beginDraining: startDraining,
     applyRole,
     openRequests: () => openRequests,
     userCommands,

@@ -302,7 +302,7 @@ describe('the slash menu is the same rows, inline above the input', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/mo', '> /mo');
     const shown = await untilFrame(app, '› /mode');
-    expect(shown).toMatch(/› \/mode .*\n {2}\/model \[model\] \[--start\] {2}/);
+    expect(shown).toMatch(/› \/mode .*\n {2}\/model \[model\] \[--start\] {2}.*\n {2}\/models \[add /);
     app.unmount();
   });
 
@@ -312,7 +312,7 @@ describe('the slash menu is the same rows, inline above the input', () => {
     await type(app, '/mo', '> /mo');
     await untilFrame(app, '› /mode');
     app.stdin.write(KEYS.down);
-    await untilFrame(app, '› /model');
+    await untilFrame(app, '› /model [model]');
     app.stdin.write('\t');
     await untilFrame(app, /│ > \/model {2}/);
     app.unmount();

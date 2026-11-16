@@ -84,7 +84,7 @@ describe('the quiet point and the record of a stream client (16.5, 16.7, O4)', (
       },
       check: async () => {
         const surface = surfaces[0];
-        if (surface !== undefined) quietAtCheck.push(surface.quiet());
+        if (surface !== undefined) quietAtCheck.push(surface.quiet('live'));
       },
     };
     const watching = watchRun(s.ports, s.paths, { client: s.client, runId: 'run-1', format: 'stream-json', verbose: true, interrupt: new AbortController().signal, onInterrupt: 'cancel', move: { mover, kind: 'headless', recordFile: (session) => `/run/handover/${session}.json` } });

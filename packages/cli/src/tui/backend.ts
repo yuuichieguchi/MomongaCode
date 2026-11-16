@@ -47,6 +47,7 @@ export type FollowHandlers = {
   onChildStarted(agent: string, runId: string): void;
   onChildEnded(agent: string, runId: string): void;
   onReconnecting(attempt: number): void;
+  onDaemonStopping(): void;
 };
 
 export type { SessionSummary };
@@ -301,6 +302,7 @@ export const createTuiBackend = (
         onChildStarted: handlers.onChildStarted,
         onChildEnded: handlers.onChildEnded,
         onReconnecting: handlers.onReconnecting,
+        onDaemonStopping: handlers.onDaemonStopping,
         signal: closing.signal,
       }),
     cancel: async (runId) => {
@@ -323,6 +325,7 @@ export const createTuiBackend = (
           onEvent: (frame) => {
             if (frame.data.type === 'inbox.changed') changed();
           },
+          onDaemonStopping: () => undefined,
           signal,
         }),
     },

@@ -35,6 +35,7 @@ const EXPECTED_TABLES = [
   'meter_records',
   'permission_reviews',
   'reflection_jobs',
+  'retention_sweeps',
   'rule_verdicts',
   'run_answerers',
   'run_calls',
@@ -96,6 +97,7 @@ describe('openRuntimeStore', () => {
     expect(tables).toEqual(EXPECTED_TABLES);
     const columns = db.prepare('PRAGMA table_info(runs)').all().map((row) => row['name']);
     for (const column of RUN_COLUMNS) expect(columns).toContain(column);
+    expect(db.prepare('PRAGMA table_info(run_inbox)').all().map((row) => row['name'])).toContain('mention_attachments');
     expect(Number(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()?.['n'])).toBeGreaterThanOrEqual(1);
   });
 

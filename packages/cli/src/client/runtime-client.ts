@@ -2,7 +2,7 @@ import type { TrustItemsView } from '@momonga/protocol';
 import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
-import { DAEMON_CURRENT_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, ToolResultPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
@@ -116,7 +116,7 @@ export class DaemonMoved extends Error {
 
 export type RunEventFrame = { readonly id: number; readonly event: string | undefined; readonly data: PublicStreamEvent };
 
-export type EventsOptions = { after?: number; lastEventId?: number; signal?: AbortSignal; onOpen?: () => void };
+export type EventsOptions = { after?: number; lastEventId?: number; signal?: AbortSignal; onOpen?: () => void; onDaemonStopping?: () => void };
 
 export type CreateSessionInput = {
   cwd: string;
@@ -853,7 +853,10 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     });
     if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
     eventsOptions.onOpen?.();
-    for await (const event of decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES })) yield frameOf(event, description);
+    for await (const event of decodeSse(response.body, { maxEventBytes: SSE_EVENT_MAX_BYTES })) {
+      if (event.id === undefined && event.event === DAEMON_STOPPING_EVENT) eventsOptions.onDaemonStopping?.();
+      else yield frameOf(event, description);
+    }
   }
 
   async function* streamEvents(runId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> {

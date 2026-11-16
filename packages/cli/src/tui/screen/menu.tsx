@@ -7,7 +7,7 @@ import { ChoiceRow, MoreRow, spanAt, topFor } from '../select.tsx';
 import { namesOf } from '../slash.ts';
 import type { SlashCommand } from '../slash.ts';
 import { menuRowsCap } from './layout.ts';
-import { inertText } from './wrap.ts';
+import { inertText, wrapLine } from './wrap.ts';
 
 export type Invitation = { profile: PlanProfileView };
 
@@ -20,11 +20,19 @@ export const invitationLine = (invitation: Invitation, keys: KeyTable): string =
   return `${invitation.profile.messages.inviteTitle} /login connects it${hide === '' ? '' : ` · ${hide} hides this line`}`;
 };
 
-export function InvitationLine({ invitation, keys }: { invitation: Invitation; keys: KeyTable }) {
-  return <Text dimColor wrap="truncate">{inertText(invitationLine(invitation, keys))}</Text>;
-}
+export const invitationRows = (invitation: Invitation, keys: KeyTable, columns: number): string[] => wrapLine(inertText(invitationLine(invitation, keys)), columns).map((row) => row.text.trimEnd());
 
-export const INVITATION_ROWS = 1;
+export function InvitationLine({ rows }: { rows: readonly string[] }) {
+  return (
+    <>
+      {rows.map((row, index) => (
+        <Text key={index} dimColor wrap="truncate">
+          {row}
+        </Text>
+      ))}
+    </>
+  );
+}
 
 const COMPLETABLE = /^\/[^\s/]*$/;
 const MENU_FLOOR_ROWS = 3;
@@ -41,7 +49,7 @@ export const slashMatches = (text: string, commands: readonly SlashCommand[]): S
     if (names.some((name) => name.startsWith(typed))) return 1;
     return names.some((name) => name.includes(typed)) ? 2 : 3;
   };
-  return [0, 1, 2].flatMap((rank) => commands.filter((command) => rankOf(command) === rank));
+  return [0, 1, 2].flatMap((rank) => commands.filter((command) => rankOf(command) === rank).toSorted((left, right) => left.name.length - right.name.length));
 };
 
 export const noCommandsMatch = (text: string): string => `No commands match "${text}"`;

@@ -30,6 +30,7 @@ export async function* followedRunEvents(client: Pick<RuntimeClient, 'streamEven
       queue.push(frame);
       woken();
     },
+    onDaemonStopping: () => undefined,
   }).then(
     () => {
       ended = { failed: false };

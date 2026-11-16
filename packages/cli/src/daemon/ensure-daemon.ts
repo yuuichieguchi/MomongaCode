@@ -39,6 +39,7 @@ import { reportVersionInvocation, superviseInvocation } from './launcher.ts';
 import { anotherVersionInstalledText, installedVersionUnreportedText, startFailureText } from './start-failure.ts';
 import type { StartFailure } from './start-failure.ts';
 import type { StopNotice } from './stop-notice.ts';
+import type { OwnGeneration } from '../handover/mover.ts';
 
 export class DaemonStartError extends Error {
   readonly logFile: string;
@@ -521,7 +522,7 @@ export const ensureCurrentDaemon = async (ports: DaemonPorts, paths: MomongaPath
   return connection.health;
 };
 
-export type NewerListener = (version: string) => Promise<void>;
+export type NewerListener = (version: string, own: OwnGeneration) => Promise<void>;
 
 export type EnsureSessionOptions = EnsureDaemonOptions & { onNewer?: NewerListener };
 
@@ -539,8 +540,8 @@ export const ensureSessionDaemon = async (ports: DaemonPorts, paths: MomongaPath
   const { onNewer, ...daemonOptions } = options;
   const newer = await newerVersionOf(ports, paths, daemonOptions);
   if (newer === undefined) return;
-  await onNewer?.(newer);
   const own = await resolveGenerationFor(paths, ports.version, { lock: options.lock ?? resolveLayoutLocks(paths).mechanism, scope: await ports.endpointScope(paths) });
+  await onNewer?.(newer, own === undefined ? 'gone' : 'live');
   if (own === undefined) throw new DaemonStartError(reopenSessionMessage(newer), paths.logFiles.supervisor, notPointingAtLog);
 };
 

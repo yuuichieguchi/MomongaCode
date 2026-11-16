@@ -114,6 +114,7 @@ describe('the invitation is one line that takes no key', () => {
   it('/login has no Not now row once the answer is stored', async () => {
     const { app, backend } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': '2026-11-01T00:00:00.000Z' } });
     await backend.called('openSession');
+    await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login');
     const shown = await untilRow(app, 'Add a local server');
     expect(shown).not.toContain(NOT_NOW_LABEL);

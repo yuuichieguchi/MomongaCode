@@ -1,3 +1,4 @@
+import { DAEMON_STOPPING_TEXT } from '../src/run/follow.ts';
 import { describe, expect, it } from 'vitest';
 import type { ModelViews, PermissionOption } from '@momonga/protocol';
 import { SESSION, runView } from './fake-backend.ts';
@@ -212,6 +213,21 @@ describe('session/prompt', () => {
     expect(updatesOf(harness.peer.received).filter((update) => update.sessionUpdate !== 'available_commands_update')).toEqual([
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hello' }, messageId: 'run-1/m1' },
     ]);
+    await harness.peer.close();
+  });
+
+  it('says, as a notice, that the daemon is stopping (real-use-30, one rule for every reader)', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+    harness.scripts.set('run-1', async ({ onDaemonStopping }) => {
+      onDaemonStopping();
+      return finishedRun();
+    });
+
+    await prompt(harness, sessionId, 'Say hello');
+
+    const said = updatesOf(harness.peer.received).filter((update) => JSON.stringify(update).includes(DAEMON_STOPPING_TEXT));
+    expect(said).toEqual([{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `momonga info: ${DAEMON_STOPPING_TEXT}\n` }, messageId: 'run-1/daemon-stopping' }]);
     await harness.peer.close();
   });
 

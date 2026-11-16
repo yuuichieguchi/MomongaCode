@@ -12,6 +12,7 @@ import { cancellable, chosenOf, confirmAndWrite, hostOf, openEdit, refusedSenten
 import type { ModelsFlowContext, Opened } from './context.ts';
 import {
   ADDRESS_PROMPT,
+  allConfiguredText,
   ADD_TITLE,
   API_ROWS,
   BACK_ROW,
@@ -102,7 +103,14 @@ export const addFoundModel = async (context: ModelsFlowContext, opened: Opened, 
   return written === undefined ? NOT_ADDED : { model: written.model };
 };
 
-const addFromServer = async (context: ModelsFlowContext, opened: Opened, server: DetectedLocalServer): Promise<Added | undefined> => {
+const addableOf = (edit: ModelsEdit, server: DetectedLocalServer): DetectedLocalServer => ({ ...server, models: foundNotConfigured(edit, [server]).map((found) => found.model) });
+
+const addFromServer = async (context: ModelsFlowContext, opened: Opened, found: DetectedLocalServer): Promise<Added | undefined> => {
+  const server = addableOf(opened.edit, found);
+  if (server.models.length === 0) {
+    context.info(allConfiguredText(server.provider, server.address));
+    return NOT_ADDED;
+  }
   const displays = await refusedSentence(context, async () => foundDisplays(opened.edit, server));
   if (displays === undefined) return NOT_ADDED;
   const index = await chosenOf(context, { title: foundRowOf(server), rows: displays.value.map((label) => ({ label })) });
@@ -145,9 +153,10 @@ const addUnanswered = async (context: ModelsFlowContext, opened: Opened, address
 };
 
 export const addFromFound = async (context: ModelsFlowContext, servers: readonly DetectedLocalServer[]): Promise<Added | undefined> => {
-  const index = await chosenOf(context, { title: SEARCH_ROW, rows: servers.map((server) => ({ label: foundRowOf(server) })) });
+  const opened = await openEdit(context);
+  const index = await chosenOf(context, { title: SEARCH_ROW, rows: servers.map((server) => ({ label: foundRowOf(addableOf(opened.edit, server)) })) });
   const server = index === undefined ? undefined : servers[index];
-  return server === undefined ? NOT_ADDED : addFromServer(context, await openEdit(context), server);
+  return server === undefined ? NOT_ADDED : addFromServer(context, opened, server);
 };
 
 export const builtInRowOf = (server: Pick<ManagedServerDescription, 'label'>): string => builtInServerRow(server.label);

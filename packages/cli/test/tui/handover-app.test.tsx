@@ -119,11 +119,11 @@ describe('the quiet point of the TUI (16.5, red tests 12 and 28)', () => {
     expect(move.surface().session()).toBeUndefined();
     await untilFrame(app, 'mode: manual');
     expect(move.surface().session()).toBe('session-1');
-    expect(move.surface().quiet()).toBe(true);
+    expect(move.surface().quiet('live')).toBe(true);
     await runStarted(backend, app, 'go');
     backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text: 'Working.' }));
     await untilFrame(app, 'Working.');
-    expect(move.surface().quiet()).toBe(true);
+    expect(move.surface().quiet('live')).toBe(true);
     app.unmount();
   });
 
@@ -134,23 +134,36 @@ describe('the quiet point of the TUI (16.5, red tests 12 and 28)', () => {
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: {} }));
     backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'commands require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
     await untilFrame(app, 'Allow once');
-    expect(move.surface().quiet()).toBe(false);
+    expect(move.surface().quiet('live')).toBe(false);
     const before = move.checks();
     backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', callId: 'c1', optionId: 'o1', decision: 'allow' }));
     await untilFrame(app, (shown) => !shown.includes('Allow once'));
-    expect(move.surface().quiet()).toBe(true);
+    expect(move.surface().quiet('live')).toBe(true);
     expect(move.checks()).toBeGreaterThan(before);
     app.unmount();
   });
 
-  it('is not quiet with an elicitation open', async () => {
+  it('is quiet with an approval open once its own generation is gone, since the approval waits in the store for the next process', async () => {
+    const { backend, app, move } = await open({});
+    await untilFrame(app, 'mode: manual');
+    await runStarted(backend, app, 'go');
+    backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: {} }));
+    backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'commands require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
+    await untilFrame(app, 'Allow once');
+    expect(move.surface().quiet('live')).toBe(false);
+    expect(move.surface().quiet('gone')).toBe(true);
+    app.unmount();
+  });
+
+  it('is not quiet with an elicitation open, even when its generation is gone', async () => {
     const { backend, app, move } = await open({});
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'mcp__remote__ask', kind: 'other', title: 'Ask', rawInput: {} }));
     backend.emit(frame({ type: 'tool.elicitation.requested', inputId: 'in1', callId: 'c1', server: 'remote', expiresAt: 10, requests: [{ key: 'k1', mode: 'form', message: 'Which branch?', requestedSchema: { type: 'object', properties: { branch: { type: 'string' } } } }] }));
     await untilFrame(app, 'Which branch?');
-    expect(move.surface().quiet()).toBe(false);
+    expect(move.surface().quiet('live')).toBe(false);
+    expect(move.surface().quiet('gone')).toBe(false);
     app.unmount();
   });
 
@@ -160,12 +173,12 @@ describe('the quiet point of the TUI (16.5, red tests 12 and 28)', () => {
     await untilFrame(app, 'mode: manual');
     const work = Promise.withResolvers<void>();
     const running = tasks.run(() => work.promise);
-    expect(move.surface().quiet()).toBe(false);
+    expect(move.surface().quiet('live')).toBe(false);
     const before = move.checks();
     work.resolve();
     await running;
     await waitFor(() => move.checks() > before, { description: 'the check made again when the task ended' });
-    expect(move.surface().quiet()).toBe(true);
+    expect(move.surface().quiet('live')).toBe(true);
     expect(move.checks()).toBeGreaterThan(before);
     app.unmount();
   });
@@ -176,14 +189,14 @@ describe('the quiet point of the TUI (16.5, red tests 12 and 28)', () => {
     const during: boolean[] = [];
     const setScreen = terminal.setScreen;
     terminal.setScreen = (screen) => {
-      during.push(move.surface().quiet());
+      during.push(move.surface().quiet('live'));
       setScreen(screen);
     };
     await type(app, '/tui scrollback', '> /tui scrollback');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, 'screen: scrollback');
     expect(during).toEqual([false]);
-    expect(move.surface().quiet()).toBe(true);
+    expect(move.surface().quiet('live')).toBe(true);
     app.unmount();
   });
 });
@@ -383,7 +396,7 @@ describe('the scrollback output across the move (16.6, red test 8)', () => {
     const old = await open({ conversations: [STREAMING] }, { reopen: { kind: 'id', id: SESSION_ID } }, { screen: 'scrollback' });
     await untilFrame(old.app, 'Found two files, now checking');
     await untilOutput(old.app, '> list the files');
-    await vi.waitFor(() => expect(old.move.surface().quiet()).toBe(true), { timeout: 5000 });
+    await vi.waitFor(() => expect(old.move.surface().quiet('live')).toBe(true), { timeout: 5000 });
     await old.move.surface().suspend();
     const snapshot = old.move.surface().snapshot();
     old.app.unmount();

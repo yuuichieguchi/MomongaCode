@@ -41,6 +41,7 @@ const clientOf = (streams: Streams, failing: ReadonlySet<string> = new Set(), ch
 
 const optionsOf = (client: RuntimeClient, extra: Partial<FollowOptions>): FollowOptions => ({
   client,
+  onDaemonStopping: () => undefined,
   clock: virtualClock(),
   random: () => 0.5,
   runId: 'parent',

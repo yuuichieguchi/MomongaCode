@@ -1449,6 +1449,8 @@ export type RunHealth = {
 
 export const DAEMON_CURRENT_EVENT = 'daemon.current';
 
+export const DAEMON_STOPPING_EVENT = 'daemon.stopping';
+
 export type DaemonCurrentFrame = { generation: number; version: string };
 
 export const STREAM_FAILED_EVENT = 'stream.failed';

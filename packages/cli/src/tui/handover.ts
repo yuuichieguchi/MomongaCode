@@ -1,3 +1,4 @@
+import type { OwnGeneration } from '../handover/mover.ts';
 import type { EntryKey, EventKey, HandoverNote, HandoverToggles, HandoverView, TuiRecord } from '../handover/record.ts';
 import type { TranscriptStore } from './screen/store.ts';
 import type { Position } from './screen/viewport.ts';
@@ -8,7 +9,7 @@ export type TuiSnapshot = Omit<TuiRecord, 'format' | 'fromVersion' | 'toVersion'
 
 export type TuiSurface = {
   session(): string | undefined;
-  quiet(): boolean;
+  quiet(own: OwnGeneration): boolean;
   snapshot(): TuiSnapshot | undefined;
   suspend(): Promise<void>;
   resume(): void;

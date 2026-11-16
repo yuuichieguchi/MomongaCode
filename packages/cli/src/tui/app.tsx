@@ -59,7 +59,7 @@ import type { RowRequests } from './screen/layout.ts';
 import { allocate, drawnTranscriptRows, inputTopOf, menuRowsCap, naturalRows, panelRowsCap, regionAt } from './screen/layout.ts';
 import { chordContextsOf, keyRouteOf } from './screen/key-route.ts';
 import type { KeyRoute, KeyRouteFacts } from './screen/key-route.ts';
-import { INVITATION_ROWS, InvitationLine, invitationKeyOf, isMenuAction, useSlashMenu } from './screen/menu.tsx';
+import { InvitationLine, invitationKeyOf, invitationRows, isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
 import { SubagentRows } from './screen/subagents.tsx';
@@ -68,7 +68,7 @@ import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useToolView } from './screen/tool-view.ts';
 import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
-import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
+import { DAEMON_STOPPING_TEXT, commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
 import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
 import { createSlashRegistry, modeToastText, namesOf, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
 import type { AutoModePort, SelectedText, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
@@ -87,6 +87,7 @@ import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } fro
 import type { ColourHost, ThemeId } from './screen/theme.ts';
 import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, blockingPrompt, nextMode, promptTakesFocus, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
 import type { Entry } from './transcript.ts';
+import type { OwnGeneration } from '../handover/mover.ts';
 import { attachmentDigest } from '../handover/record.ts';
 import type { HandoverAttachment, HandoverInput, HandoverNote } from '../handover/record.ts';
 import { attachmentChangedText, attachmentUnreadableText } from '../handover/texts.ts';
@@ -317,12 +318,12 @@ export function App(props: AppProps) {
         notes: origins.notes(),
       };
     };
-    const quiet = (): boolean => {
+    const quiet = (own: OwnGeneration): boolean => {
       const state = store.state();
       const now = facts.current;
       if (openedSession.current === undefined || phaseRef.current !== 'ready' || now.overlay) return false;
       if (readingRef.current || switchingRef.current || shellRunning.current || now.tasks.count() > 0) return false;
-      if (state.approval !== undefined || state.elicitation !== undefined) return false;
+      if ((state.approval !== undefined && own === 'live') || state.elicitation !== undefined) return false;
       return now.terminal.state().screen === 'fullscreen' || sourceRef.current === undefined || !feedRef.current.pending(sourceRef.current, store.settledAt);
     };
     const surface: TuiSurface = {
@@ -746,9 +747,10 @@ export function App(props: AppProps) {
             if (key !== undefined) origins.at(key);
             if (event.type === 'model.responded' && event.target !== undefined) setServedTarget(event.target);
             if (event.type === 'user.message' && event.source !== undefined) refreshInbox().catch(reportError);
-            if (replay === undefined) foldLiveEvent(store, event, first);
-            if (replay === undefined && isPrompt(event, first)) showPromptNotes();
-            else foldReplayedEvent(store, event, first, (record) => showShellRecord(store, record, now()));
+            if (replay === undefined) {
+              foldLiveEvent(store, event, first);
+              if (isPrompt(event, first)) showPromptNotes();
+            } else foldReplayedEvent(store, event, first, (record) => showShellRecord(store, record, now()));
             if (key !== undefined) replay?.notes?.after(key);
           },
           replay === undefined || seq === undefined ? undefined : replay.before + seq,
@@ -767,6 +769,9 @@ export function App(props: AppProps) {
       onChildStarted: (agent, childRunId) => deliver(() => subagentStarted(store, agent, childRunId, now())),
       onChildEnded: (_agent, childRunId) => deliver(() => subagentEnded(store, childRunId)),
       onReconnecting: () => setReconnectingSince((since) => since ?? now()),
+      onDaemonStopping: () => {
+        append({ kind: 'notice', level: 'info', text: DAEMON_STOPPING_TEXT });
+      },
     });
   };
 
@@ -1587,6 +1592,7 @@ export function App(props: AppProps) {
   const waitingLines = inputShown ? waitingRows(waitingMessages, columns) : [];
   const busyHintRow = !inputShown || phase.kind !== 'ready' ? undefined : shellDraft ? shellHint(keys) : !busy ? undefined : slashMenu.open || atMenu.open ? completionHint(keys) : busyHint(keys, waitingMessages.length > 0);
   const invitationInMenu = menuShown && phase.kind === 'ready' && invitationShown;
+  const invitationText = invitationInMenu && prompts.invitation !== undefined ? invitationRows(prompts.invitation, keys, columns) : [];
   const waiting = waitingOf({
     startingSince: phase.kind === 'starting' ? openedAt : undefined,
     prompting: blockingPrompt(transcript),
@@ -1600,7 +1606,7 @@ export function App(props: AppProps) {
   const rowRequests: RowRequests = {
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
     inputRows: inputRowsOf(editor, columns),
-    invitation: invitationInMenu ? INVITATION_ROWS : 0,
+    invitation: invitationText.length,
     menu: !menuShown || invitationInMenu ? 0 : atMenu.open ? atMenu.rows : slashMenu.rows,
     subagents: transcript.subagents.length,
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
@@ -1749,7 +1755,7 @@ export function App(props: AppProps) {
         ) : (
           <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
         ),
-        menu: !menuShown ? null : invitationInMenu && prompts.invitation !== undefined ? <InvitationLine invitation={prompts.invitation} keys={keys} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
+        menu: !menuShown ? null : invitationText.length > 0 ? <InvitationLine rows={fullscreen ? invitationText.slice(0, allocation.menu) : invitationText} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
         waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
         lines: inputShown ? (
           <>

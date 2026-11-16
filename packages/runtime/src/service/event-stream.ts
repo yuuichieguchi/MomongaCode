@@ -21,6 +21,8 @@ export type EventSource = {
   cursorOf(event: StoredEvent): number;
 };
 
+export type StreamNotice = { signal: AbortSignal; frame: Uint8Array };
+
 export type EventStreamOptions = {
   source: EventSource;
   cursor: number;
@@ -29,6 +31,7 @@ export type EventStreamOptions = {
   keepAliveMs: number;
   signals: readonly AbortSignal[];
   finalFrame?: () => Uint8Array | undefined;
+  stopping: StreamNotice;
   onError: (error: unknown) => void;
 };
 
@@ -52,6 +55,13 @@ export const eventStreamResponse = (options: EventStreamOptions): Response => {
     wakeRequested = true;
     settleWait?.('wake');
   });
+
+  let stoppingDue = options.stopping.signal.aborted;
+  const onStopping = (): void => {
+    stoppingDue = true;
+    settleWait?.('wake');
+  };
+  if (!stoppingDue) options.stopping.signal.addEventListener('abort', onStopping, { once: true });
 
   const onAbort = (): void => {
     aborted = true;
@@ -80,6 +90,7 @@ export const eventStreamResponse = (options: EventStreamOptions): Response => {
     disarmKeepAlive();
     unsubscribe();
     for (const signal of options.signals) signal.removeEventListener('abort', onAbort);
+    options.stopping.signal.removeEventListener('abort', onStopping);
     settleWait?.('closed');
   };
 
@@ -127,6 +138,11 @@ export const eventStreamResponse = (options: EventStreamOptions): Response => {
         const frame = options.finalFrame?.();
         if (frame !== undefined) controller.enqueue(frame);
         controller.close();
+        return;
+      }
+      if (stoppingDue) {
+        stoppingDue = false;
+        controller.enqueue(options.stopping.frame);
         return;
       }
       wakeRequested = false;

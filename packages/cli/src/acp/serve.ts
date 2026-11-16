@@ -51,7 +51,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
         },
         operation,
       ),
-    follow: ({ runId, onEvent, onChildEvent, signal }) =>
+    follow: ({ runId, onEvent, onChildEvent, onDaemonStopping, signal }) =>
       followRun({
         client: runtime,
         clock: ports.clock,
@@ -61,6 +61,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
         restoreConnection: restoreDaemon(ports, paths, onNewer),
         onEvent,
         onChildEvent,
+        onDaemonStopping,
         onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
         signal,
       }),
@@ -75,6 +76,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
         restoreConnection: restoreDaemon(ports, paths, onNewer),
         onEvent,
         onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the session event stream, reconnecting (attempt ${attempt + 1})\n`),
+        onDaemonStopping: () => undefined,
         signal,
       }),
     report: (message) => ports.stderr.write(acpDiagnosticText(message)),

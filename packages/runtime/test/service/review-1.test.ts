@@ -20,7 +20,7 @@ const runningRun = async (env: ServiceEnv) => {
 };
 
 describe('SW1 event stream read failure', () => {
-  it('unsubscribes, reports the error once through onError and removes its abort listeners', async () => {
+  it('ends with the stream.failed frame, unsubscribes, reports the error once through onError and removes its abort listeners', async () => {
     const clock = createFakeClock(START_MS);
     const timers = createFakeTimers(clock);
     const notifier = createRunNotifier();
@@ -28,6 +28,7 @@ describe('SW1 event stream read failure', () => {
     const requestController = new AbortController();
     const failure = new Error('read exploded');
     const errors: unknown[] = [];
+    const stopping = new AbortController();
 
     const response = eventStreamResponse({
       source: {
@@ -41,18 +42,22 @@ describe('SW1 event stream read failure', () => {
       timers,
       keepAliveMs: 15_000,
       signals: [closeController.signal, requestController.signal],
+      stopping: { signal: stopping.signal, frame: new Uint8Array() },
       onError: (error: unknown) => errors.push(error),
     });
     expect(notifier.subscriberCount()).toBe(1);
 
     const reader = response.body?.getReader();
     if (reader === undefined) throw new Error('stream body missing');
-    await expect(reader.read()).rejects.toBe(failure);
+    const first = await reader.read();
+    expect(new TextDecoder().decode(first.value)).toMatch(/^event: stream\.failed\ndata: .*read exploded/);
+    expect((await reader.read()).done).toBe(true);
 
     expect(errors).toEqual([failure]);
     expect(notifier.subscriberCount()).toBe(0);
     expect(getEventListeners(closeController.signal, 'abort')).toHaveLength(0);
     expect(getEventListeners(requestController.signal, 'abort')).toHaveLength(0);
+    expect(getEventListeners(stopping.signal, 'abort')).toHaveLength(0);
     expect(timers.pending()).toEqual([]);
   });
 });
@@ -272,6 +277,7 @@ describe('SS5 coverage gaps', () => {
       timers,
       keepAliveMs: 15_000,
       signals: [],
+      stopping: { signal: new AbortController().signal, frame: new Uint8Array() },
       onError: () => undefined,
     });
     const reader = response.body?.getReader();
@@ -329,6 +335,7 @@ describe('SS5 coverage gaps', () => {
         timers,
         keepAliveMs: 15_000,
         signals: [closeController.signal],
+        stopping: { signal: new AbortController().signal, frame: new Uint8Array() },
         onError: () => undefined,
       }),
     );

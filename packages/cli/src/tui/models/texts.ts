@@ -55,6 +55,8 @@ export const READY_PATH_PROBLEM = 'Write a path starting with /.';
 
 export const programNamePrompt = (prefill: string | undefined): string => (prefill === undefined ? 'Name for this server:' : `Name for this server (Enter: ${prefill}):`);
 
+export const allConfiguredText = (provider: string, address: string): string => `Every model that ${provider} at ${address} lists is in your settings already.`;
+
 export const nameTakenText = (name: string): string => `${name} is already used by another server.`;
 
 export const MODEL_ACTIONS = ['Edit', 'Remove'] as const;

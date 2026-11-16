@@ -77,7 +77,7 @@ const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, laye
       const session = surface?.session();
       return session === undefined ? undefined : recordFileOf(paths, 'tui', session);
     },
-    quiet: () => surface?.quiet() === true,
+    quiet: (own) => surface?.quiet(own) === true,
     snapshot: (toVersion) => {
       const snapshot = attached().snapshot();
       if (snapshot === undefined) throw new Error('the interface has no open session to move');
@@ -102,7 +102,7 @@ const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, laye
     probing = true;
     try {
       const newer = await newerCurrentVersion(ports, paths);
-      if (newer !== undefined) await mover.learned(newer);
+      if (newer !== undefined) await mover.learned(newer, 'live');
     } finally {
       probing = false;
     }
