@@ -231,7 +231,7 @@ describe('the run lock global setup classifies a vitest run and holds its lock',
     expect(Object.keys(byName).sort()).toEqual(['calibration', 'e2e', 'packaging', 'unit']);
     for (const name of ['unit', 'packaging', 'e2e', 'calibration']) expect(byName[name]?.globalSetup[0]).toBe('test/support/run-lock.ts');
     expect(byName['unit']?.provide?.['momonga.runClass']).toBe('heavy-when-whole');
-    expect(byName['packaging']?.provide?.['momonga.runClass']).toBeUndefined();
+    expect(byName['packaging']?.provide?.['momonga.runClass']).toBe('heavy');
     expect(byName['e2e']?.provide?.['momonga.runClass']).toBe('heavy');
     expect(byName['calibration']?.provide?.['momonga.runClass']).toBe('heavy');
   });
